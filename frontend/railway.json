@@ -2,9 +2,9 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "npm install && npm run build && npm install -g serve"
+    "buildCommand": "npm install && npm run build"
   },
   "deploy": {
-    "startCommand": "serve dist -s -l $PORT"
+    "startCommand": "npx -y serve dist -s -l $PORT"
   }
 }
