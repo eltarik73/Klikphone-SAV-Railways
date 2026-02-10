@@ -128,7 +128,7 @@ class TicketOut(BaseModel):
     personne_charge: Optional[str] = None
     technicien_assigne: Optional[str] = None
     commande_piece: Optional[int] = 0
-    date_recuperation: Optional[datetime] = None
+    date_recuperation: Optional[str] = None
     client_contacte: Optional[int] = 0
     client_accord: Optional[int] = 0
     paye: Optional[int] = 0
