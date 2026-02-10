@@ -9,8 +9,9 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog
@@ -18,7 +19,7 @@ from app.api import auth, tickets, clients, config, team, parts, catalog
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle: fermer proprement le pool DB à l'arrêt."""
+    """Lifecycle: fermer proprement le pool DB a l'arret."""
     yield
     close_pool()
 
@@ -30,23 +31,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ─── CORS ───────────────────────────────────────────────────────
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-allowed_origins = [
-    frontend_url,
-    "http://localhost:5173",
-    "http://localhost:3000",
-]
-
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ─── ROUTERS ────────────────────────────────────────────────────
+# --- ERROR HANDLER ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+# --- ROUTERS ---
 app.include_router(auth.router)
 app.include_router(tickets.router)
 app.include_router(clients.router)
@@ -56,10 +61,21 @@ app.include_router(parts.router)
 app.include_router(catalog.router)
 
 
-# ─── HEALTH CHECK ───────────────────────────────────────────────
+# --- HEALTH CHECK ---
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "klikphone-sav-api"}
+
+
+@app.get("/health/db")
+async def health_db():
+    try:
+        from app.database import get_cursor
+        with get_cursor() as cur:
+            cur.execute("SELECT 1")
+        return {"status": "ok", "db": "connected"}
+    except Exception as e:
+        return {"status": "error", "db": str(e)}
 
 
 @app.get("/")
