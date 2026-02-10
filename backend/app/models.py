@@ -3,8 +3,8 @@ Schemas Pydantic pour validation des données.
 Compatible avec le schéma PostgreSQL existant de Klikphone SAV.
 """
 
-from pydantic import BaseModel
-from typing import Any, Field
+from pydantic import BaseModel, ConfigDict
+from typing import Any
 from typing import Optional, List
 from datetime import datetime
 
@@ -47,6 +47,8 @@ class ClientUpdate(BaseModel):
 
 
 class ClientOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     nom: Optional[str] = None
     prenom: Optional[str] = None
@@ -54,7 +56,7 @@ class ClientOut(BaseModel):
     email: Optional[str] = None
     societe: Optional[str] = None
     carte_camby: Optional[int] = 0
-    date_creation: Optional[str] = None
+    date_creation: Optional[datetime] = None
 
 
 # ============================================================
@@ -101,6 +103,8 @@ class StatusChange(BaseModel):
 
 
 class TicketOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     ticket_code: Optional[str] = None
     client_id: Optional[int] = None
@@ -124,7 +128,7 @@ class TicketOut(BaseModel):
     personne_charge: Optional[str] = None
     technicien_assigne: Optional[str] = None
     commande_piece: Optional[int] = 0
-    date_recuperation: Optional[Any] = None
+    date_recuperation: Optional[datetime] = None
     client_contacte: Optional[int] = 0
     client_accord: Optional[int] = 0
     paye: Optional[int] = 0
@@ -132,9 +136,9 @@ class TicketOut(BaseModel):
     msg_sms: Optional[int] = 0
     msg_email: Optional[int] = 0
     statut: Optional[str] = None
-    date_depot: Optional[str | object] = None
-    date_maj: Optional[str | object] = None
-    date_cloture: Optional[str | object] = None
+    date_depot: Optional[datetime] = None
+    date_maj: Optional[datetime] = None
+    date_cloture: Optional[datetime] = None
     type_ecran: Optional[str] = None
     historique: Optional[str] = None
 
@@ -169,6 +173,8 @@ class CommandePieceUpdate(BaseModel):
 
 
 class CommandePieceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     ticket_id: Optional[int] = None
     description: Optional[str] = None
@@ -176,10 +182,10 @@ class CommandePieceOut(BaseModel):
     reference: Optional[str] = None
     prix: Optional[float] = 0
     statut: Optional[str] = None
-    date_commande: Optional[str] = None
-    date_reception: Optional[str] = None
+    date_commande: Optional[datetime] = None
+    date_reception: Optional[datetime] = None
     notes: Optional[str] = None
-    date_creation: Optional[str] = None
+    date_creation: Optional[datetime] = None
 
 
 # ============================================================

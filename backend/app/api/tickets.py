@@ -27,6 +27,30 @@ STATUTS = [
 ]
 
 
+# ─── KPI DASHBOARD ───────────────────────────────────────────────
+@router.get("/stats/kpi", response_model=KPIResponse)
+async def get_kpi(user: dict = Depends(get_current_user)):
+    """Récupère les KPI du dashboard."""
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
+                COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
+                COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
+                COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
+                COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
+                COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
+                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui
+            FROM tickets
+        """, (today, today))
+        row = cur.fetchone()
+
+    return KPIResponse(**row) if row else KPIResponse()
+
+
 # ─── LISTE / RECHERCHE ─────────────────────────────────────────
 @router.get("", response_model=list[TicketFull])
 async def list_tickets(
@@ -288,25 +312,3 @@ async def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
-# ─── KPI DASHBOARD ───────────────────────────────────────────────
-@router.get("/stats/kpi", response_model=KPIResponse)
-async def get_kpi(user: dict = Depends(get_current_user)):
-    """Récupère les KPI du dashboard."""
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT 
-                COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
-                COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
-                COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
-                COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
-                COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
-                COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui
-            FROM tickets
-        """, (today, today))
-        row = cur.fetchone()
-
-    return KPIResponse(**row) if row else KPIResponse()
