@@ -99,7 +99,7 @@ export default function TicketDetailPage() {
   if (!ticket) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <p className="text-slate-400 font-medium">Ticket non trouv\u00E9</p>
+        <p className="text-slate-400 font-medium">Ticket non trouvé</p>
         <button onClick={() => navigate(basePath)} className="btn-secondary mt-4">
           <ArrowLeft className="w-4 h-4" /> Retour
         </button>
@@ -122,7 +122,7 @@ export default function TicketDetailPage() {
             <h1 className="text-xl font-bold font-mono text-brand-600">{t.ticket_code}</h1>
             <StatusBadge statut={t.statut} />
           </div>
-          <p className="text-sm text-slate-500 mt-1 truncate">{appareil} \u2014 {t.panne}</p>
+          <p className="text-sm text-slate-500 mt-1 truncate">{appareil} — {t.panne}</p>
         </div>
 
         {/* Status dropdown */}
@@ -169,7 +169,7 @@ export default function TicketDetailPage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
               <div>
-                <p className="text-slate-400 text-xs mb-0.5">Cat\u00E9gorie</p>
+                <p className="text-slate-400 text-xs mb-0.5">Catégorie</p>
                 <p className="font-medium text-slate-800">{t.categorie}</p>
               </div>
               <div>
@@ -177,8 +177,8 @@ export default function TicketDetailPage() {
                 <p className="font-medium text-slate-800">{t.marque}</p>
               </div>
               <div>
-                <p className="text-slate-400 text-xs mb-0.5">Mod\u00E8le</p>
-                <p className="font-medium text-slate-800">{t.modele || t.modele_autre || '\u2014'}</p>
+                <p className="text-slate-400 text-xs mb-0.5">Modèle</p>
+                <p className="font-medium text-slate-800">{t.modele || t.modele_autre || '—'}</p>
               </div>
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">Panne</p>
@@ -186,11 +186,11 @@ export default function TicketDetailPage() {
               </div>
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">IMEI</p>
-                <p className="font-medium text-slate-800 font-mono text-xs">{t.imei || '\u2014'}</p>
+                <p className="font-medium text-slate-800 font-mono text-xs">{t.imei || '—'}</p>
               </div>
               <div>
-                <p className="text-slate-400 text-xs mb-0.5">D\u00E9tail</p>
-                <p className="font-medium text-slate-800">{t.panne_detail || '\u2014'}</p>
+                <p className="text-slate-400 text-xs mb-0.5">Détail</p>
+                <p className="font-medium text-slate-800">{t.panne_detail || '—'}</p>
               </div>
               {t.pin && (
                 <div>
@@ -220,7 +220,7 @@ export default function TicketDetailPage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
-                <label className="input-label">Devis estim\u00E9 (\u20AC)</label>
+                <label className="input-label">Devis estimé (€)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.devis_estime}
@@ -229,7 +229,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Tarif final (\u20AC)</label>
+                <label className="input-label">Tarif final (€)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.tarif_final}
@@ -238,7 +238,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Acompte (\u20AC)</label>
+                <label className="input-label">Acompte (€)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.acompte}
@@ -247,7 +247,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">R\u00E9paration supp.</label>
+                <label className="input-label">Réparation supp.</label>
                 <input
                   type="text"
                   value={editFields.reparation_supp}
@@ -256,7 +256,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Prix supp. (\u20AC)</label>
+                <label className="input-label">Prix supp. (€)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.prix_supp}
@@ -265,13 +265,13 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Type \u00E9cran</label>
+                <label className="input-label">Type écran</label>
                 <select
                   value={editFields.type_ecran}
                   onChange={e => setEditFields(f => ({ ...f, type_ecran: e.target.value }))}
                   className="input"
                 >
-                  <option value="">\u2014</option>
+                  <option value="">—</option>
                   <option value="Original">Original</option>
                   <option value="Compatible">Compatible</option>
                   <option value="OLED">OLED</option>
@@ -391,22 +391,22 @@ export default function TicketDetailPage() {
             </div>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">D\u00E9p\u00F4t</span>
+                <span className="text-slate-500">Dépôt</span>
                 <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Mise \u00E0 jour</span>
+                <span className="text-slate-500">Mise à jour</span>
                 <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
               </div>
               {t.date_cloture && (
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Cl\u00F4ture</span>
+                  <span className="text-slate-500">Clôture</span>
                   <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
                 </div>
               )}
               {t.date_recuperation && (
                 <div className="flex justify-between items-center">
-                  <span className="text-slate-500">R\u00E9cup\u00E9ration</span>
+                  <span className="text-slate-500">Récupération</span>
                   <span className="font-medium text-slate-800">{t.date_recuperation}</span>
                 </div>
               )}
@@ -417,7 +417,7 @@ export default function TicketDetailPage() {
           <div className="card p-5">
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Assignation</h2>
             <div>
-              <label className="input-label">Technicien assign\u00E9</label>
+              <label className="input-label">Technicien assigné</label>
               <input
                 type="text"
                 value={editFields.technicien_assigne}

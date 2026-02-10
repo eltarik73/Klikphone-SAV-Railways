@@ -61,7 +61,7 @@ export default function ClientFormPage() {
       setCreatedCode(result.ticket_code);
       setStep(3);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la cr\u00E9ation');
+      alert(err.message || 'Erreur lors de la création');
     } finally {
       setLoading(false);
     }
@@ -83,8 +83,8 @@ export default function ClientFormPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-bold text-slate-900">D\u00E9poser un appareil</h1>
-            <p className="text-xs text-slate-400">\u00C9tape {step + 1} sur {STEPS.length} \u2014 {STEPS[step]}</p>
+            <h1 className="text-lg font-bold text-slate-900">Déposer un appareil</h1>
+            <p className="text-xs text-slate-400">Étape {step + 1} sur {STEPS.length} — {STEPS[step]}</p>
           </div>
         </div>
 
@@ -109,7 +109,7 @@ export default function ClientFormPage() {
               <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
                 <User className="w-5 h-5 text-sky-600" />
               </div>
-              <h2 className="text-lg font-semibold text-slate-900">Vos coordonn\u00E9es</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Vos coordonnées</h2>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -118,12 +118,12 @@ export default function ClientFormPage() {
                 <input value={form.nom} onChange={e => updateForm('nom', e.target.value)} className="input" />
               </div>
               <div>
-                <label className="input-label">Pr\u00E9nom</label>
+                <label className="input-label">Prénom</label>
                 <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)} className="input" />
               </div>
             </div>
             <div>
-              <label className="input-label">T\u00E9l\u00E9phone *</label>
+              <label className="input-label">Téléphone *</label>
               <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)} className="input" placeholder="06 XX XX XX XX" />
             </div>
             <div>
@@ -144,7 +144,7 @@ export default function ClientFormPage() {
             </div>
 
             <div>
-              <label className="input-label">Cat\u00E9gorie *</label>
+              <label className="input-label">Catégorie *</label>
               <div className="grid grid-cols-2 gap-2">
                 {categories.map(cat => (
                   <button
@@ -165,7 +165,7 @@ export default function ClientFormPage() {
               <div>
                 <label className="input-label">Marque *</label>
                 <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
-                  <option value="">S\u00E9lectionner...</option>
+                  <option value="">Sélectionner...</option>
                   {marques.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
@@ -173,9 +173,9 @@ export default function ClientFormPage() {
 
             {form.marque && modeles.length > 0 && (
               <div>
-                <label className="input-label">Mod\u00E8le</label>
+                <label className="input-label">Modèle</label>
                 <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
-                  <option value="">S\u00E9lectionner...</option>
+                  <option value="">Sélectionner...</option>
                   {modeles.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
@@ -183,7 +183,7 @@ export default function ClientFormPage() {
 
             {(form.marque === 'Autre' || form.modele === 'Autre') && (
               <div>
-                <label className="input-label">Pr\u00E9ciser le mod\u00E8le</label>
+                <label className="input-label">Préciser le modèle</label>
                 <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)} className="input" />
               </div>
             )}
@@ -202,7 +202,7 @@ export default function ClientFormPage() {
               <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-amber-600" />
               </div>
-              <h2 className="text-lg font-semibold text-slate-900">D\u00E9crivez le probl\u00E8me</h2>
+              <h2 className="text-lg font-semibold text-slate-900">Décrivez le problème</h2>
             </div>
 
             <div>
@@ -224,12 +224,12 @@ export default function ClientFormPage() {
             </div>
 
             <div>
-              <label className="input-label">D\u00E9tails suppl\u00E9mentaires</label>
+              <label className="input-label">Détails supplémentaires</label>
               <textarea
                 value={form.panne_detail}
                 onChange={e => updateForm('panne_detail', e.target.value)}
                 className="input min-h-[80px] resize-none"
-                placeholder="D\u00E9crivez plus pr\u00E9cis\u00E9ment le probl\u00E8me..."
+                placeholder="Décrivez plus précisément le problème..."
               />
             </div>
 
@@ -239,7 +239,7 @@ export default function ClientFormPage() {
                 <input type="password" value={form.pin} onChange={e => updateForm('pin', e.target.value)} className="input" placeholder="Optionnel" />
               </div>
               <div>
-                <label className="input-label">Sch\u00E9ma</label>
+                <label className="input-label">Schéma</label>
                 <input value={form.pattern} onChange={e => updateForm('pattern', e.target.value)} className="input" placeholder="Optionnel" />
               </div>
             </div>
@@ -250,7 +250,7 @@ export default function ClientFormPage() {
                 value={form.notes_client}
                 onChange={e => updateForm('notes_client', e.target.value)}
                 className="input min-h-[60px] resize-none"
-                placeholder="Informations compl\u00E9mentaires..."
+                placeholder="Informations complémentaires..."
               />
             </div>
           </div>
@@ -262,23 +262,23 @@ export default function ClientFormPage() {
             <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
               <Check className="w-10 h-10 text-emerald-500" />
             </div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Demande enregistr\u00E9e !</h2>
-            <p className="text-slate-500 mb-6">Votre num\u00E9ro de ticket :</p>
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Demande enregistrée !</h2>
+            <p className="text-slate-500 mb-6">Votre numéro de ticket :</p>
             <div className="bg-brand-50 rounded-xl py-4 px-6 mb-6">
               <p className="text-3xl font-bold font-mono text-brand-600">{createdCode}</p>
             </div>
             <p className="text-sm text-slate-400 mb-8">
-              Conservez ce code pour suivre l'avancement de votre r\u00E9paration.
+              Conservez ce code pour suivre l'avancement de votre réparation.
             </p>
             <div className="space-y-3">
               <button
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
                 className="btn-primary w-full"
               >
-                Suivre ma r\u00E9paration
+                Suivre ma réparation
               </button>
               <button onClick={() => navigate('/')} className="btn-secondary w-full">
-                Retour \u00E0 l'accueil
+                Retour à l'accueil
               </button>
             </div>
           </div>
@@ -308,7 +308,7 @@ export default function ClientFormPage() {
                 disabled={loading || !canNext()}
                 className="btn-success"
               >
-                {loading ? 'Envoi...' : 'Confirmer le d\u00E9p\u00F4t'}
+                {loading ? 'Envoi...' : 'Confirmer le dépôt'}
               </button>
             )}
           </div>

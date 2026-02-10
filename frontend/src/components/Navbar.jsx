@@ -66,7 +66,7 @@ export default function Navbar() {
           </div>
           <div className="flex-1 min-w-0">
             <h1 className="text-white font-bold text-[15px] tracking-tight leading-none">KLIKPHONE</h1>
-            <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-0.5">Service apr\u00E8s-vente</p>
+            <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-0.5">Service après-vente</p>
           </div>
           <button
             onClick={() => setMobileOpen(false)}
@@ -115,7 +115,7 @@ export default function Navbar() {
             <button
               onClick={() => { logout(); navigate('/'); }}
               className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5 transition-colors"
-              title="D\u00E9connexion"
+              title="Déconnexion"
             >
               <LogOut className="w-4 h-4" />
             </button>

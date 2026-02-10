@@ -14,7 +14,7 @@ export default function HomePage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">KLIKPHONE</h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em]">Service apr\u00E8s-vente</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em]">Service après-vente</p>
           </div>
         </div>
       </header>
@@ -25,11 +25,11 @@ export default function HomePage() {
           {/* Headline */}
           <div className="text-center mb-8 animate-in">
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white leading-tight">
-              R\u00E9paration<br />
+              Réparation<br />
               <span className="text-brand-400">rapide & fiable</span>
             </h2>
             <p className="text-slate-400 text-sm mt-3 max-w-xs mx-auto">
-              Smartphones, tablettes, PC portables et consoles. D\u00E9posez votre appareil ou suivez votre r\u00E9paration.
+              Smartphones, tablettes, PC portables et consoles. Déposez votre appareil ou suivez votre réparation.
             </p>
           </div>
 
@@ -43,8 +43,8 @@ export default function HomePage() {
               <Smartphone className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-[15px]">D\u00E9poser un appareil</p>
-              <p className="text-sm text-brand-200 mt-0.5">Cr\u00E9er un ticket de r\u00E9paration</p>
+              <p className="font-semibold text-[15px]">Déposer un appareil</p>
+              <p className="text-sm text-brand-200 mt-0.5">Créer un ticket de réparation</p>
             </div>
             <ArrowRight className="w-5 h-5 text-brand-200 group-hover:translate-x-1 transition-transform" />
           </button>
@@ -58,15 +58,15 @@ export default function HomePage() {
               <Search className="w-6 h-6 text-emerald-400" />
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-[15px]">Suivre ma r\u00E9paration</p>
-              <p className="text-sm text-slate-400 mt-0.5">Avec mon num\u00E9ro de ticket</p>
+              <p className="font-semibold text-[15px]">Suivre ma réparation</p>
+              <p className="text-sm text-slate-400 mt-0.5">Avec mon numéro de ticket</p>
             </div>
             <ArrowRight className="w-5 h-5 text-slate-500 group-hover:translate-x-1 transition-transform" />
           </button>
 
           {/* Staff access */}
           <div className="pt-4 animate-in" style={{ animationDelay: '300ms' }}>
-            <p className="text-center text-[11px] text-slate-500 uppercase tracking-widest font-medium mb-3">Acc\u00E8s staff</p>
+            <p className="text-center text-[11px] text-slate-500 uppercase tracking-widest font-medium mb-3">Accès staff</p>
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => navigate('/login/accueil')}
@@ -97,8 +97,8 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="px-6 py-5 border-t border-white/[0.04]">
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint L\u00E9ger, Chamb\u00E9ry</span>
-          <span className="hidden sm:block">\u00B7</span>
+          <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</span>
+          <span className="hidden sm:block">·</span>
           <span className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</span>
         </div>
       </footer>

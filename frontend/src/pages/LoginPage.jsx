@@ -95,7 +95,7 @@ export default function LoginPage() {
                   inputMode="numeric"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  placeholder="\u2022\u2022\u2022\u2022"
+                  placeholder="••••"
                   className="input pl-10 text-center text-xl tracking-[0.4em] font-bold"
                   maxLength={6}
                   autoFocus
@@ -125,7 +125,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-slate-600 mt-6">
-          Klikphone SAV \u2014 Chamb\u00E9ry
+          Klikphone SAV — Chambéry
         </p>
       </div>
     </div>

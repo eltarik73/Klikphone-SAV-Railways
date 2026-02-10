@@ -51,9 +51,9 @@ export default function DashboardPage() {
 
   const kpiCards = kpi ? [
     { label: 'Attente diagnostic', value: kpi.en_attente_diagnostic, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', iconBg: 'bg-amber-100' },
-    { label: 'En r\u00E9paration', value: kpi.en_cours, icon: WrenchIcon, color: 'text-sky-600', bg: 'bg-sky-50', iconBg: 'bg-sky-100' },
-    { label: 'Attente pi\u00E8ce', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-600', bg: 'bg-violet-50', iconBg: 'bg-violet-100' },
-    { label: 'Termin\u00E9es', value: kpi.reparation_terminee, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', iconBg: 'bg-emerald-100' },
+    { label: 'En réparation', value: kpi.en_cours, icon: WrenchIcon, color: 'text-sky-600', bg: 'bg-sky-50', iconBg: 'bg-sky-100' },
+    { label: 'Attente pièce', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-600', bg: 'bg-violet-50', iconBg: 'bg-violet-100' },
+    { label: 'Terminées', value: kpi.reparation_terminee, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', iconBg: 'bg-emerald-100' },
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', bg: 'bg-brand-50', iconBg: 'bg-brand-100' },
     { label: "Aujourd'hui", value: kpi.nouveaux_aujourdhui, icon: TrendingUp, color: 'text-cyan-600', bg: 'bg-cyan-50', iconBg: 'bg-cyan-100' },
   ] : [];
@@ -61,11 +61,11 @@ export default function DashboardPage() {
   const filterTabs = [
     { label: 'Tous', value: '', count: kpi?.total_actifs },
     { label: 'Diagnostic', value: 'En attente de diagnostic', count: kpi?.en_attente_diagnostic },
-    { label: 'En r\u00E9paration', value: 'En cours de r\u00E9paration', count: kpi?.en_cours },
-    { label: 'Attente pi\u00E8ce', value: 'En attente de pi\u00E8ce', count: kpi?.en_attente_piece },
-    { label: 'Termin\u00E9s', value: 'R\u00E9paration termin\u00E9e', count: kpi?.reparation_terminee },
+    { label: 'En réparation', value: 'En cours de réparation', count: kpi?.en_cours },
+    { label: 'Attente pièce', value: 'En attente de pièce', count: kpi?.en_attente_piece },
+    { label: 'Terminés', value: 'Réparation terminée', count: kpi?.reparation_terminee },
     { label: 'Rendus', value: 'Rendu au client' },
-    { label: 'Cl\u00F4tur\u00E9s', value: 'Cl\u00F4tur\u00E9' },
+    { label: 'Clôturés', value: 'Clôturé' },
   ];
 
   return (
@@ -74,13 +74,13 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Vue d'ensemble des r\u00E9parations</p>
+          <p className="text-sm text-slate-500 mt-0.5">Vue d'ensemble des réparations</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setRefreshKey(k => k + 1)}
             className="btn-ghost p-2.5"
-            title="Rafra\u00EEchir"
+            title="Rafraîchir"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -115,7 +115,7 @@ export default function DashboardPage() {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="Rechercher par nom, t\u00E9l\u00E9phone, code ticket, marque..."
+              placeholder="Rechercher par nom, téléphone, code ticket, marque..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
@@ -171,8 +171,8 @@ export default function DashboardPage() {
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
               <Smartphone className="w-7 h-7 text-slate-300" />
             </div>
-            <p className="text-slate-500 font-medium">Aucun ticket trouv\u00E9</p>
-            <p className="text-sm text-slate-400 mt-1">Modifiez vos filtres ou cr\u00E9ez un nouveau ticket</p>
+            <p className="text-slate-500 font-medium">Aucun ticket trouvé</p>
+            <p className="text-sm text-slate-400 mt-1">Modifiez vos filtres ou créez un nouveau ticket</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100/80">
@@ -217,7 +217,7 @@ export default function DashboardPage() {
                   {(t.devis_estime || t.tarif_final) ? (
                     <p className="text-sm font-semibold text-slate-800">{formatPrix(t.tarif_final || t.devis_estime)}</p>
                   ) : (
-                    <p className="text-xs text-slate-300">\u2014</p>
+                    <p className="text-xs text-slate-300">—</p>
                   )}
                 </div>
 
