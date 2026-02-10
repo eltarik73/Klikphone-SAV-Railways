@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import { ArrowLeft, ArrowRight, Check, Wrench, Smartphone, User, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle } from 'lucide-react';
 
 const STEPS = ['Client', 'Appareil', 'Panne', 'Confirmation'];
 
@@ -11,13 +11,11 @@ export default function ClientFormPage() {
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState(null);
 
-  // Données catalogue
   const [categories, setCategories] = useState([]);
   const [marques, setMarques] = useState([]);
   const [modeles, setModeles] = useState([]);
   const [pannes, setPannes] = useState([]);
 
-  // Données formulaire
   const [form, setForm] = useState({
     nom: '', prenom: '', telephone: '', email: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
@@ -25,7 +23,6 @@ export default function ClientFormPage() {
     imei: '',
   });
 
-  // Charger les catalogues
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
     api.getPannes().then(setPannes).catch(() => {});
@@ -50,39 +47,26 @@ export default function ClientFormPage() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // 1. Créer ou retrouver le client
       const client = await api.createOrGetClient({
-        nom: form.nom,
-        prenom: form.prenom,
-        telephone: form.telephone,
-        email: form.email,
+        nom: form.nom, prenom: form.prenom,
+        telephone: form.telephone, email: form.email,
       });
-
-      // 2. Créer le ticket
       const result = await api.createTicket({
-        client_id: client.id,
-        categorie: form.categorie,
-        marque: form.marque,
-        modele: form.modele,
-        modele_autre: form.modele_autre,
-        panne: form.panne,
-        panne_detail: form.panne_detail,
-        pin: form.pin,
-        pattern: form.pattern,
-        notes_client: form.notes_client,
-        imei: form.imei,
+        client_id: client.id, categorie: form.categorie,
+        marque: form.marque, modele: form.modele,
+        modele_autre: form.modele_autre, panne: form.panne,
+        panne_detail: form.panne_detail, pin: form.pin,
+        pattern: form.pattern, notes_client: form.notes_client, imei: form.imei,
       });
-
       setCreatedCode(result.ticket_code);
-      setStep(3); // Confirmation
+      setStep(3);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la création');
+      alert(err.message || 'Erreur lors de la cr\u00E9ation');
     } finally {
       setLoading(false);
     }
   };
 
-  // Validation par étape
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
     if (step === 1) return form.categorie && form.marque;
@@ -91,7 +75,7 @@ export default function ClientFormPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-brand-50/30">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
@@ -99,30 +83,34 @@ export default function ClientFormPage() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-bold">Déposer un appareil</h1>
-            <p className="text-xs text-gray-400">{STEPS[step]} — Étape {step + 1}/{STEPS.length}</p>
+            <h1 className="text-lg font-bold text-slate-900">D\u00E9poser un appareil</h1>
+            <p className="text-xs text-slate-400">\u00C9tape {step + 1} sur {STEPS.length} \u2014 {STEPS[step]}</p>
           </div>
         </div>
 
         {/* Progress bar */}
         <div className="flex gap-1.5 mb-8">
-          {STEPS.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1 rounded-full flex-1 transition-all duration-500 ${
-                i <= step ? 'bg-brand-500' : 'bg-gray-200'
-              }`}
-            />
+          {STEPS.map((s, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
+              <div className={`h-1.5 w-full rounded-full transition-all duration-500 ${
+                i < step ? 'bg-brand-500' : i === step ? 'bg-brand-400' : 'bg-slate-200'
+              }`} />
+              <span className={`text-[10px] font-medium ${
+                i <= step ? 'text-brand-600' : 'text-slate-400'
+              }`}>{s}</span>
+            </div>
           ))}
         </div>
 
         {/* Step 0: Client */}
         {step === 0 && (
           <div className="card p-6 space-y-4 animate-in">
-            <div className="w-12 h-12 rounded-xl bg-sky-50 flex items-center justify-center mb-2">
-              <User className="w-6 h-6 text-sky-600" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
+                <User className="w-5 h-5 text-sky-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">Vos coordonn\u00E9es</h2>
             </div>
-            <h2 className="text-lg font-semibold">Vos coordonnées</h2>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -130,12 +118,12 @@ export default function ClientFormPage() {
                 <input value={form.nom} onChange={e => updateForm('nom', e.target.value)} className="input" />
               </div>
               <div>
-                <label className="input-label">Prénom</label>
+                <label className="input-label">Pr\u00E9nom</label>
                 <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)} className="input" />
               </div>
             </div>
             <div>
-              <label className="input-label">Téléphone *</label>
+              <label className="input-label">T\u00E9l\u00E9phone *</label>
               <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)} className="input" placeholder="06 XX XX XX XX" />
             </div>
             <div>
@@ -148,20 +136,24 @@ export default function ClientFormPage() {
         {/* Step 1: Appareil */}
         {step === 1 && (
           <div className="card p-6 space-y-4 animate-in">
-            <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center mb-2">
-              <Smartphone className="w-6 h-6 text-brand-600" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
+                <Smartphone className="w-5 h-5 text-brand-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">Votre appareil</h2>
             </div>
-            <h2 className="text-lg font-semibold">Votre appareil</h2>
 
             <div>
-              <label className="input-label">Catégorie *</label>
+              <label className="input-label">Cat\u00E9gorie *</label>
               <div className="grid grid-cols-2 gap-2">
                 {categories.map(cat => (
                   <button
                     key={cat}
                     onClick={() => updateForm('categorie', cat)}
-                    className={`p-3 rounded-xl text-sm font-medium border transition-all
-                      ${form.categorie === cat ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 hover:border-gray-300'}`}
+                    className={`p-3 rounded-lg text-sm font-medium border-2 transition-all
+                      ${form.categorie === cat
+                        ? 'border-brand-500 bg-brand-50 text-brand-700'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
                   >
                     {cat}
                   </button>
@@ -173,7 +165,7 @@ export default function ClientFormPage() {
               <div>
                 <label className="input-label">Marque *</label>
                 <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
-                  <option value="">Sélectionner...</option>
+                  <option value="">S\u00E9lectionner...</option>
                   {marques.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
@@ -181,9 +173,9 @@ export default function ClientFormPage() {
 
             {form.marque && modeles.length > 0 && (
               <div>
-                <label className="input-label">Modèle</label>
+                <label className="input-label">Mod\u00E8le</label>
                 <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
-                  <option value="">Sélectionner...</option>
+                  <option value="">S\u00E9lectionner...</option>
                   {modeles.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
@@ -191,7 +183,7 @@ export default function ClientFormPage() {
 
             {(form.marque === 'Autre' || form.modele === 'Autre') && (
               <div>
-                <label className="input-label">Préciser le modèle</label>
+                <label className="input-label">Pr\u00E9ciser le mod\u00E8le</label>
                 <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)} className="input" />
               </div>
             )}
@@ -206,10 +198,12 @@ export default function ClientFormPage() {
         {/* Step 2: Panne */}
         {step === 2 && (
           <div className="card p-6 space-y-4 animate-in">
-            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center mb-2">
-              <AlertTriangle className="w-6 h-6 text-amber-600" />
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <h2 className="text-lg font-semibold text-slate-900">D\u00E9crivez le probl\u00E8me</h2>
             </div>
-            <h2 className="text-lg font-semibold">Décrivez le problème</h2>
 
             <div>
               <label className="input-label">Type de panne *</label>
@@ -218,8 +212,10 @@ export default function ClientFormPage() {
                   <button
                     key={p}
                     onClick={() => updateForm('panne', p)}
-                    className={`p-2.5 rounded-xl text-xs font-medium border transition-all text-left
-                      ${form.panne === p ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 hover:border-gray-300'}`}
+                    className={`p-2.5 rounded-lg text-xs font-medium border-2 transition-all text-left
+                      ${form.panne === p
+                        ? 'border-brand-500 bg-brand-50 text-brand-700'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
                   >
                     {p}
                   </button>
@@ -228,22 +224,22 @@ export default function ClientFormPage() {
             </div>
 
             <div>
-              <label className="input-label">Détails supplémentaires</label>
+              <label className="input-label">D\u00E9tails suppl\u00E9mentaires</label>
               <textarea
                 value={form.panne_detail}
                 onChange={e => updateForm('panne_detail', e.target.value)}
                 className="input min-h-[80px] resize-none"
-                placeholder="Décrivez plus précisément le problème..."
+                placeholder="D\u00E9crivez plus pr\u00E9cis\u00E9ment le probl\u00E8me..."
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="input-label">Code PIN / mot de passe</label>
+                <label className="input-label">Code PIN</label>
                 <input type="password" value={form.pin} onChange={e => updateForm('pin', e.target.value)} className="input" placeholder="Optionnel" />
               </div>
               <div>
-                <label className="input-label">Schéma de déverrouillage</label>
+                <label className="input-label">Sch\u00E9ma</label>
                 <input value={form.pattern} onChange={e => updateForm('pattern', e.target.value)} className="input" placeholder="Optionnel" />
               </div>
             </div>
@@ -254,7 +250,7 @@ export default function ClientFormPage() {
                 value={form.notes_client}
                 onChange={e => updateForm('notes_client', e.target.value)}
                 className="input min-h-[60px] resize-none"
-                placeholder="Informations complémentaires..."
+                placeholder="Informations compl\u00E9mentaires..."
               />
             </div>
           </div>
@@ -266,21 +262,23 @@ export default function ClientFormPage() {
             <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
               <Check className="w-10 h-10 text-emerald-500" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Demande enregistrée !</h2>
-            <p className="text-gray-500 mb-6">Votre numéro de ticket :</p>
-            <p className="text-4xl font-bold font-mono text-brand-600 mb-6">{createdCode}</p>
-            <p className="text-sm text-gray-400 mb-8">
-              Conservez ce code pour suivre l'avancement de votre réparation.
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">Demande enregistr\u00E9e !</h2>
+            <p className="text-slate-500 mb-6">Votre num\u00E9ro de ticket :</p>
+            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-6">
+              <p className="text-3xl font-bold font-mono text-brand-600">{createdCode}</p>
+            </div>
+            <p className="text-sm text-slate-400 mb-8">
+              Conservez ce code pour suivre l'avancement de votre r\u00E9paration.
             </p>
             <div className="space-y-3">
               <button
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
                 className="btn-primary w-full"
               >
-                Suivre ma réparation
+                Suivre ma r\u00E9paration
               </button>
               <button onClick={() => navigate('/')} className="btn-secondary w-full">
-                Retour à l'accueil
+                Retour \u00E0 l'accueil
               </button>
             </div>
           </div>
@@ -310,7 +308,7 @@ export default function ClientFormPage() {
                 disabled={loading || !canNext()}
                 className="btn-success"
               >
-                {loading ? 'Envoi...' : '✓ Confirmer le dépôt'}
+                {loading ? 'Envoi...' : 'Confirmer le d\u00E9p\u00F4t'}
               </button>
             )}
           </div>

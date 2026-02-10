@@ -3,17 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
-import { formatDate, formatPrix, STATUTS, getStatusIcon } from '../lib/utils';
+import { formatDate, formatDateShort, formatPrix, STATUTS, getStatusIcon } from '../lib/utils';
 import {
-  Search, Plus, Filter, RefreshCw, Clock, AlertTriangle,
-  Wrench as WrenchIcon, CheckCircle2, Package, Users, ChevronRight,
-  Phone, Mail, MessageCircle,
+  Search, Plus, RefreshCw, Clock, AlertTriangle,
+  Wrench as WrenchIcon, CheckCircle2, Package, ChevronRight,
+  Phone, Smartphone, TrendingUp,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+
   const [kpi, setKpi] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,34 +44,43 @@ export default function DashboardPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Auto-refresh toutes les 30s
   useEffect(() => {
     const interval = setInterval(() => setRefreshKey(k => k + 1), 30000);
     return () => clearInterval(interval);
   }, []);
 
   const kpiCards = kpi ? [
-    { label: 'En attente diagnostic', value: kpi.en_attente_diagnostic, icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { label: 'En cours', value: kpi.en_cours, icon: WrenchIcon, color: 'text-sky-500', bg: 'bg-sky-50' },
-    { label: 'Attente pièce', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-500', bg: 'bg-violet-50' },
-    { label: 'Terminées', value: kpi.reparation_terminee, icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-50' },
-    { label: 'Nouveaux aujourd\'hui', value: kpi.nouveaux_aujourdhui, icon: Plus, color: 'text-brand-500', bg: 'bg-brand-50' },
-    { label: 'Attente accord', value: kpi.en_attente_accord, icon: AlertTriangle, color: 'text-rose-500', bg: 'bg-rose-50' },
+    { label: 'Attente diagnostic', value: kpi.en_attente_diagnostic, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', iconBg: 'bg-amber-100' },
+    { label: 'En r\u00E9paration', value: kpi.en_cours, icon: WrenchIcon, color: 'text-sky-600', bg: 'bg-sky-50', iconBg: 'bg-sky-100' },
+    { label: 'Attente pi\u00E8ce', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-600', bg: 'bg-violet-50', iconBg: 'bg-violet-100' },
+    { label: 'Termin\u00E9es', value: kpi.reparation_terminee, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50', iconBg: 'bg-emerald-100' },
+    { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', bg: 'bg-brand-50', iconBg: 'bg-brand-100' },
+    { label: "Aujourd'hui", value: kpi.nouveaux_aujourdhui, icon: TrendingUp, color: 'text-cyan-600', bg: 'bg-cyan-50', iconBg: 'bg-cyan-100' },
   ] : [];
 
+  const filterTabs = [
+    { label: 'Tous', value: '', count: kpi?.total_actifs },
+    { label: 'Diagnostic', value: 'En attente de diagnostic', count: kpi?.en_attente_diagnostic },
+    { label: 'En r\u00E9paration', value: 'En cours de r\u00E9paration', count: kpi?.en_cours },
+    { label: 'Attente pi\u00E8ce', value: 'En attente de pi\u00E8ce', count: kpi?.en_attente_piece },
+    { label: 'Termin\u00E9s', value: 'R\u00E9paration termin\u00E9e', count: kpi?.reparation_terminee },
+    { label: 'Rendus', value: 'Rendu au client' },
+    { label: 'Cl\u00F4tur\u00E9s', value: 'Cl\u00F4tur\u00E9' },
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 lg:p-8">
+      {/* Page header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Vue d'ensemble des réparations</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Vue d'ensemble des r\u00E9parations</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setRefreshKey(k => k + 1)}
-            className="btn-ghost p-2"
-            title="Rafraîchir"
+            className="btn-ghost p-2.5"
+            title="Rafra\u00EEchir"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -81,117 +91,140 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {kpiCards.map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="kpi-card">
-            <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
-              <Icon className={`w-5 h-5 ${color}`} />
+      {/* KPI Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        {kpiCards.map(({ label, value, icon: Icon, color, bg, iconBg }, i) => (
+          <div
+            key={label}
+            className="card p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 animate-in"
+            style={{ animationDelay: `${i * 50}ms` }}
+          >
+            <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center mb-3`}>
+              <Icon className={`w-4.5 h-4.5 ${color}`} />
             </div>
-            <div className="min-w-0">
-              <p className="kpi-value">{value}</p>
-              <p className="kpi-label truncate">{label}</p>
-            </div>
+            <p className="text-2xl font-bold text-slate-900 tracking-tight">{value}</p>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5 leading-tight">{label}</p>
           </div>
         ))}
       </div>
 
-      {/* Recherche & Filtres */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher par nom, téléphone, code ticket, marque..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input pl-10"
-          />
+      {/* Search & Filters card */}
+      <div className="card overflow-hidden mb-6">
+        <div className="p-3 sm:p-4 border-b border-slate-100">
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Rechercher par nom, t\u00E9l\u00E9phone, code ticket, marque..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+            />
+          </div>
         </div>
-        <select
-          value={filterStatut}
-          onChange={(e) => setFilterStatut(e.target.value)}
-          className="input w-full sm:w-64"
-        >
-          <option value="">Tous les statuts</option>
-          {STATUTS.map(s => (
-            <option key={s} value={s}>{getStatusIcon(s)} {s}</option>
+
+        {/* Filter tabs */}
+        <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
+          {filterTabs.map(({ label, value, count }) => (
+            <button
+              key={value}
+              onClick={() => setFilterStatut(value)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
+                ${filterStatut === value
+                  ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
+                  : 'text-slate-500 hover:bg-white hover:text-slate-700 hover:shadow-sm'
+                }`}
+            >
+              {label}
+              {count !== undefined && count > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  filterStatut === value ? 'bg-white/20' : 'bg-slate-200/60 text-slate-500'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
-      {/* Liste des tickets */}
+      {/* Tickets Table */}
       <div className="card overflow-hidden">
+        {/* Table header */}
+        <div className="hidden lg:grid grid-cols-[90px_1fr_180px_160px_90px_80px_32px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Code</span>
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Client / Appareil</span>
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Panne</span>
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Statut</span>
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Date</span>
+          <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider text-right">Prix</span>
+          <span></span>
+        </div>
+
         {loading && tickets.length === 0 ? (
-          <div className="p-12 text-center">
-            <RefreshCw className="w-8 h-8 text-gray-300 animate-spin mx-auto mb-3" />
-            <p className="text-sm text-gray-400">Chargement...</p>
+          <div className="py-16 text-center">
+            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-slate-400">Chargement des tickets...</p>
           </div>
         ) : tickets.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-gray-400">Aucun ticket trouvé</p>
+          <div className="py-16 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+              <Smartphone className="w-7 h-7 text-slate-300" />
+            </div>
+            <p className="text-slate-500 font-medium">Aucun ticket trouv\u00E9</p>
+            <p className="text-sm text-slate-400 mt-1">Modifiez vos filtres ou cr\u00E9ez un nouveau ticket</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-slate-100/80">
             {tickets.map((t, i) => (
               <div
                 key={t.id}
                 onClick={() => navigate(`${basePath}/ticket/${t.id}`)}
-                className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50/50 cursor-pointer transition-colors animate-in"
-                style={{ animationDelay: `${i * 30}ms` }}
+                className="lg:grid lg:grid-cols-[90px_1fr_180px_160px_90px_80px_32px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-brand-50/40 cursor-pointer transition-colors group"
               >
-                {/* Code ticket */}
-                <div className="w-24 shrink-0">
+                {/* Code */}
+                <div>
                   <p className="text-sm font-bold text-brand-600 font-mono">{t.ticket_code}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{formatDate(t.date_depot)?.split(' ')[0]}</p>
                 </div>
 
-                {/* Appareil */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
+                {/* Client / Appareil */}
+                <div className="min-w-0 mt-1 lg:mt-0">
+                  <p className="text-sm font-semibold text-slate-800 truncate">
                     {t.client_prenom || ''} {t.client_nom || ''}
                   </p>
-                  <p className="text-xs text-gray-500 truncate mt-0.5">
-                    {t.marque} {t.modele || t.modele_autre} — {t.panne}
+                  <p className="text-xs text-slate-500 truncate">
+                    {t.marque} {t.modele || t.modele_autre}
                   </p>
                 </div>
 
-                {/* Contact rapide */}
-                <div className="hidden md:flex items-center gap-1.5">
-                  {t.client_tel && (
-                    <a
-                      href={`tel:${t.client_tel}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-400 hover:text-sky-500 transition-colors"
-                      title={t.client_tel}
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                  {t.client_email && (
-                    <a
-                      href={`mailto:${t.client_email}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-500 transition-colors"
-                    >
-                      <Mail className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
-
-                {/* Prix */}
-                <div className="hidden sm:block w-20 text-right">
-                  {(t.devis_estime || t.tarif_final) && (
-                    <p className="text-sm font-semibold">{formatPrix(t.tarif_final || t.devis_estime)}</p>
-                  )}
+                {/* Panne */}
+                <div className="hidden lg:block">
+                  <p className="text-sm text-slate-600 truncate">{t.panne}</p>
                 </div>
 
                 {/* Statut */}
-                <div className="shrink-0">
+                <div className="mt-2 lg:mt-0">
                   <StatusBadge statut={t.statut} />
                 </div>
 
-                <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
+                {/* Date */}
+                <div className="hidden lg:block">
+                  <p className="text-xs text-slate-500">{formatDateShort(t.date_depot)}</p>
+                </div>
+
+                {/* Prix */}
+                <div className="hidden lg:block text-right">
+                  {(t.devis_estime || t.tarif_final) ? (
+                    <p className="text-sm font-semibold text-slate-800">{formatPrix(t.tarif_final || t.devis_estime)}</p>
+                  ) : (
+                    <p className="text-xs text-slate-300">\u2014</p>
+                  )}
+                </div>
+
+                {/* Arrow */}
+                <div className="hidden lg:flex justify-end">
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+                </div>
               </div>
             ))}
           </div>

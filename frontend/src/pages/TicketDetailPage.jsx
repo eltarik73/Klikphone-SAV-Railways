@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
-import { formatDate, formatPrix, STATUTS, waLink, smsLink } from '../lib/utils';
+import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Save, Trash2,
-  ChevronDown, Plus, CreditCard, FileText, Clock,
+  ChevronDown, Plus, Clock, User, Wrench, CreditCard,
+  FileText, ExternalLink,
 } from 'lucide-react';
 
 export default function TicketDetailPage() {
@@ -14,6 +15,7 @@ export default function TicketDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -21,9 +23,7 @@ export default function TicketDetailPage() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [editFields, setEditFields] = useState({});
 
-  useEffect(() => {
-    loadTicket();
-  }, [id]);
+  useEffect(() => { loadTicket(); }, [id]);
 
   const loadTicket = async () => {
     setLoading(true);
@@ -90,16 +90,19 @@ export default function TicketDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12 text-center">
-        <div className="animate-spin w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full mx-auto" />
+      <div className="flex items-center justify-center py-20">
+        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!ticket) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12 text-center">
-        <p className="text-gray-400">Ticket non trouvé</p>
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="text-slate-400 font-medium">Ticket non trouv\u00E9</p>
+        <button onClick={() => navigate(basePath)} className="btn-secondary mt-4">
+          <ArrowLeft className="w-4 h-4" /> Retour
+        </button>
       </div>
     );
   }
@@ -108,74 +111,116 @@ export default function TicketDetailPage() {
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim();
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <button onClick={() => navigate(-1)} className="btn-ghost p-2">
+      <div className="flex items-start gap-3 mb-6">
+        <button onClick={() => navigate(-1)} className="btn-ghost p-2 mt-0.5 shrink-0">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="text-xl font-bold font-mono text-brand-600">{t.ticket_code}</h1>
             <StatusBadge statut={t.statut} />
           </div>
-          <p className="text-sm text-gray-500 mt-0.5">{appareil} — {t.panne}</p>
+          <p className="text-sm text-slate-500 mt-1 truncate">{appareil} \u2014 {t.panne}</p>
         </div>
 
-        {/* Bouton changer statut */}
-        <div className="relative">
+        {/* Status dropdown */}
+        <div className="relative shrink-0">
           <button
             onClick={() => setShowStatusMenu(!showStatusMenu)}
             className="btn-primary"
           >
-            Statut <ChevronDown className="w-4 h-4" />
+            Statut <ChevronDown className={`w-4 h-4 transition-transform ${showStatusMenu ? 'rotate-180' : ''}`} />
           </button>
           {showStatusMenu && (
-            <div className="absolute right-0 top-full mt-2 w-72 card p-2 shadow-xl z-50 animate-in">
-              {STATUTS.map(s => (
-                <button
-                  key={s}
-                  onClick={() => handleStatusChange(s)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors
-                    ${s === t.statut ? 'bg-brand-50 text-brand-700 font-semibold' : 'hover:bg-gray-50'}`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
+              <div className="absolute right-0 top-full mt-2 w-72 card p-1.5 shadow-xl z-50 animate-scale-in">
+                {STATUTS.map(s => {
+                  const sc = getStatusConfig(s);
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => handleStatusChange(s)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
+                        ${s === t.statut ? 'bg-brand-50 text-brand-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Colonne principale */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Infos appareil */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Appareil</h2>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="text-gray-400">Catégorie</span><p className="font-medium mt-0.5">{t.categorie}</p></div>
-              <div><span className="text-gray-400">Marque</span><p className="font-medium mt-0.5">{t.marque}</p></div>
-              <div><span className="text-gray-400">Modèle</span><p className="font-medium mt-0.5">{t.modele || t.modele_autre || '—'}</p></div>
-              <div><span className="text-gray-400">IMEI</span><p className="font-medium mt-0.5 font-mono">{t.imei || '—'}</p></div>
-              <div><span className="text-gray-400">Panne</span><p className="font-medium mt-0.5">{t.panne}</p></div>
-              <div><span className="text-gray-400">Détail</span><p className="font-medium mt-0.5">{t.panne_detail || '—'}</p></div>
-              {t.pin && <div><span className="text-gray-400">PIN</span><p className="font-medium mt-0.5 font-mono">{t.pin}</p></div>}
-              {t.pattern && <div><span className="text-gray-400">Pattern</span><p className="font-medium mt-0.5">{t.pattern}</p></div>}
+      {/* Content grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left column */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Device info */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Wrench className="w-4 h-4 text-slate-400" />
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Appareil</h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">Cat\u00E9gorie</p>
+                <p className="font-medium text-slate-800">{t.categorie}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">Marque</p>
+                <p className="font-medium text-slate-800">{t.marque}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">Mod\u00E8le</p>
+                <p className="font-medium text-slate-800">{t.modele || t.modele_autre || '\u2014'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">Panne</p>
+                <p className="font-medium text-slate-800">{t.panne}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">IMEI</p>
+                <p className="font-medium text-slate-800 font-mono text-xs">{t.imei || '\u2014'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">D\u00E9tail</p>
+                <p className="font-medium text-slate-800">{t.panne_detail || '\u2014'}</p>
+              </div>
+              {t.pin && (
+                <div>
+                  <p className="text-slate-400 text-xs mb-0.5">Code PIN</p>
+                  <p className="font-medium text-slate-800 font-mono">{t.pin}</p>
+                </div>
+              )}
+              {t.pattern && (
+                <div>
+                  <p className="text-slate-400 text-xs mb-0.5">Pattern</p>
+                  <p className="font-medium text-slate-800">{t.pattern}</p>
+                </div>
+              )}
             </div>
             {t.notes_client && (
-              <div className="mt-4 p-3 bg-amber-50 rounded-xl text-sm text-amber-800">
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
                 <span className="font-semibold">Note client :</span> {t.notes_client}
               </div>
             )}
           </div>
 
-          {/* Tarification */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Tarification</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {/* Pricing */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <CreditCard className="w-4 h-4 text-slate-400" />
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tarification</h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
-                <label className="input-label">Devis estimé (€)</label>
+                <label className="input-label">Devis estim\u00E9 (\u20AC)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.devis_estime}
@@ -184,7 +229,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Tarif final (€)</label>
+                <label className="input-label">Tarif final (\u20AC)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.tarif_final}
@@ -193,7 +238,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Acompte (€)</label>
+                <label className="input-label">Acompte (\u20AC)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.acompte}
@@ -202,7 +247,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Réparation supp.</label>
+                <label className="input-label">R\u00E9paration supp.</label>
                 <input
                   type="text"
                   value={editFields.reparation_supp}
@@ -211,7 +256,7 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Prix supp. (€)</label>
+                <label className="input-label">Prix supp. (\u20AC)</label>
                 <input
                   type="number" step="0.01"
                   value={editFields.prix_supp}
@@ -220,13 +265,13 @@ export default function TicketDetailPage() {
                 />
               </div>
               <div>
-                <label className="input-label">Type écran</label>
+                <label className="input-label">Type \u00E9cran</label>
                 <select
                   value={editFields.type_ecran}
                   onChange={e => setEditFields(f => ({ ...f, type_ecran: e.target.value }))}
                   className="input"
                 >
-                  <option value="">—</option>
+                  <option value="">\u2014</option>
                   <option value="Original">Original</option>
                   <option value="Compatible">Compatible</option>
                   <option value="OLED">OLED</option>
@@ -234,7 +279,7 @@ export default function TicketDetailPage() {
                 </select>
               </div>
             </div>
-            <div className="flex justify-end mt-4">
+            <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
               <button onClick={handleSave} disabled={saving} className="btn-primary">
                 <Save className="w-4 h-4" />
                 {saving ? 'Enregistrement...' : 'Enregistrer'}
@@ -242,11 +287,14 @@ export default function TicketDetailPage() {
             </div>
           </div>
 
-          {/* Notes internes */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Notes internes</h2>
+          {/* Internal notes */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="w-4 h-4 text-slate-400" />
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Notes internes</h2>
+            </div>
             {t.notes_internes && (
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-xl p-4 mb-4 max-h-48 overflow-y-auto">
+              <pre className="text-sm text-slate-700 whitespace-pre-wrap bg-slate-50 rounded-lg p-4 mb-4 max-h-48 overflow-y-auto border border-slate-100">
                 {t.notes_internes}
               </pre>
             )}
@@ -259,93 +307,117 @@ export default function TicketDetailPage() {
                 placeholder="Ajouter une note..."
                 className="input flex-1"
               />
-              <button onClick={handleAddNote} className="btn-secondary">
+              <button onClick={handleAddNote} className="btn-secondary px-3">
                 <Plus className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Historique */}
+          {/* History */}
           {t.historique && (
-            <div className="card p-6">
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
-                <Clock className="w-4 h-4 inline mr-1.5" />Historique
-              </h2>
-              <pre className="text-sm text-gray-600 whitespace-pre-wrap max-h-48 overflow-y-auto">
-                {t.historique}
-              </pre>
+            <div className="card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Clock className="w-4 h-4 text-slate-400" />
+                <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Historique</h2>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {t.historique.split('\n').filter(Boolean).reverse().map((line, i) => (
+                  <div key={i} className="flex items-start gap-3 text-sm">
+                    <div className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0" />
+                    <p className="text-slate-600">{line}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Sidebar - Infos client + Actions */}
-        <div className="space-y-6">
-          {/* Client */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Client</h2>
-            <p className="text-lg font-bold">{t.client_prenom || ''} {t.client_nom || ''}</p>
-            {t.client_societe && <p className="text-sm text-gray-500">{t.client_societe}</p>}
-            <div className="mt-4 space-y-2">
+        {/* Right column */}
+        <div className="space-y-5">
+          {/* Client info */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <User className="w-4 h-4 text-slate-400" />
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Client</h2>
+            </div>
+            <p className="text-lg font-bold text-slate-900">{t.client_prenom || ''} {t.client_nom || ''}</p>
+            {t.client_societe && <p className="text-sm text-slate-500 mt-0.5">{t.client_societe}</p>}
+            <div className="mt-3 space-y-2">
               {t.client_tel && (
-                <a href={`tel:${t.client_tel}`} className="flex items-center gap-2 text-sm text-gray-600 hover:text-brand-600">
-                  <Phone className="w-4 h-4" /> {t.client_tel}
+                <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <Phone className="w-4 h-4 text-slate-500" />
+                  </div>
+                  {t.client_tel}
                 </a>
               )}
               {t.client_email && (
-                <a href={`mailto:${t.client_email}`} className="flex items-center gap-2 text-sm text-gray-600 hover:text-brand-600">
-                  <Mail className="w-4 h-4" /> {t.client_email}
+                <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <Mail className="w-4 h-4 text-slate-500" />
+                  </div>
+                  {t.client_email}
                 </a>
               )}
             </div>
 
-            {/* Actions communication */}
-            <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+            {/* Communication actions */}
+            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
               {t.client_tel && (
                 <a
                   href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
                   target="_blank"
-                  className="btn-success w-full text-xs"
+                  className="btn-success text-xs py-2"
                 >
-                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
                 </a>
               )}
               {t.client_tel && (
                 <a
                   href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)}
-                  className="btn-secondary w-full text-xs"
+                  className="btn-secondary text-xs py-2"
                 >
-                  <Send className="w-4 h-4" /> SMS
+                  <Send className="w-3.5 h-3.5" /> SMS
                 </a>
               )}
             </div>
           </div>
 
           {/* Dates */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Dates</h2>
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dates</h2>
+            </div>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Dépôt</span>
-                <span className="font-medium">{formatDate(t.date_depot)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">D\u00E9p\u00F4t</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Mise à jour</span>
-                <span className="font-medium">{formatDate(t.date_maj)}</span>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Mise \u00E0 jour</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
               </div>
               {t.date_cloture && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Clôture</span>
-                  <span className="font-medium">{formatDate(t.date_cloture)}</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Cl\u00F4ture</span>
+                  <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
+                </div>
+              )}
+              {t.date_recuperation && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">R\u00E9cup\u00E9ration</span>
+                  <span className="font-medium text-slate-800">{t.date_recuperation}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Technicien */}
-          <div className="card p-6">
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Assignation</h2>
+          {/* Assignment */}
+          <div className="card p-5">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Assignation</h2>
             <div>
-              <label className="input-label">Technicien assigné</label>
+              <label className="input-label">Technicien assign\u00E9</label>
               <input
                 type="text"
                 value={editFields.technicien_assigne}
@@ -354,14 +426,16 @@ export default function TicketDetailPage() {
                 placeholder="Nom du technicien"
               />
             </div>
-            <div className="mt-3">
-              <label className="input-label">Personne en charge</label>
-              <p className="text-sm font-medium">{t.personne_charge || '—'}</p>
-            </div>
+            {t.personne_charge && (
+              <div className="mt-3">
+                <p className="text-xs text-slate-400 mb-0.5">Personne en charge</p>
+                <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
+              </div>
+            )}
           </div>
 
           {/* Danger zone */}
-          <div className="card p-6 border-rose-100">
+          <div className="card p-5 border-red-200/50">
             <button
               onClick={async () => {
                 if (confirm('Supprimer ce ticket ?')) {
@@ -369,9 +443,9 @@ export default function TicketDetailPage() {
                   navigate(basePath);
                 }
               }}
-              className="btn-danger w-full"
+              className="btn-danger w-full text-xs"
             >
-              <Trash2 className="w-4 h-4" /> Supprimer le ticket
+              <Trash2 className="w-3.5 h-3.5" /> Supprimer le ticket
             </button>
           </div>
         </div>

@@ -14,8 +14,11 @@ function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-spin w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full" />
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-slate-400 font-medium">Chargement...</p>
+      </div>
     </div>
   );
 
@@ -23,10 +26,12 @@ function ProtectedRoute({ children, allowedTargets }) {
   if (allowedTargets && !allowedTargets.includes(user.target)) return <Navigate to="/" replace />;
 
   return (
-    <>
+    <div className="min-h-screen bg-slate-50">
       <Navbar />
-      <main>{children}</main>
-    </>
+      <main className="lg:pl-64 pt-14 lg:pt-0 min-h-screen">
+        {children}
+      </main>
+    </div>
   );
 }
 
