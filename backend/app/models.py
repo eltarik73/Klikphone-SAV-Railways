@@ -3,7 +3,8 @@ Schemas Pydantic pour validation des données.
 Compatible avec le schéma PostgreSQL existant de Klikphone SAV.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from typing import Any, Field
 from typing import Optional, List
 from datetime import datetime
 
@@ -92,7 +93,7 @@ class TicketUpdate(BaseModel):
     reparation_supp: Optional[str] = None
     prix_supp: Optional[float] = None
     type_ecran: Optional[str] = None
-    date_recuperation: Optional[str] = None
+    date_recuperation: Optional[Any] = None
 
 
 class StatusChange(BaseModel):
@@ -123,7 +124,7 @@ class TicketOut(BaseModel):
     personne_charge: Optional[str] = None
     technicien_assigne: Optional[str] = None
     commande_piece: Optional[int] = 0
-    date_recuperation: Optional[str] = None
+    date_recuperation: Optional[Any] = None
     client_contacte: Optional[int] = 0
     client_accord: Optional[int] = 0
     paye: Optional[int] = 0
@@ -131,9 +132,9 @@ class TicketOut(BaseModel):
     msg_sms: Optional[int] = 0
     msg_email: Optional[int] = 0
     statut: Optional[str] = None
-    date_depot: Optional[str] = None
-    date_maj: Optional[str] = None
-    date_cloture: Optional[str] = None
+    date_depot: Optional[str | object] = None
+    date_maj: Optional[str | object] = None
+    date_cloture: Optional[str | object] = None
     type_ecran: Optional[str] = None
     historique: Optional[str] = None
 
