@@ -7,99 +7,102 @@ export default function LoginPage() {
   const { target } = useParams();
   const { login, user } = useAuth();
   const navigate = useNavigate();
-  const [pin, setPin] = useState('');
+  const [digits, setDigits] = useState(['', '', '', '']);
   const [team] = useState(['Marina', 'Jonathan', 'Tarik', 'Oualid', 'Agent accueil']);
   const [selectedUser, setSelectedUser] = useState('Marina');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef();
+  const refs = [useRef(), useRef(), useRef(), useRef()];
 
   useEffect(() => {
-    if (user) {
-      navigate(user.target === 'tech' ? '/tech' : '/accueil');
-    }
+    if (user) navigate(user.target === 'tech' ? '/tech' : '/accueil');
   }, [user]);
 
+  useEffect(() => { refs[0].current?.focus(); }, []);
+
+  const handleDigit = (idx, val) => {
+    if (!/^\d?$/.test(val)) return;
+    const next = [...digits];
+    next[idx] = val;
+    setDigits(next);
+    if (val && idx < 3) refs[idx + 1].current?.focus();
+  };
+
+  const handleKeyDown = (idx, e) => {
+    if (e.key === 'Backspace' && !digits[idx] && idx > 0) {
+      refs[idx - 1].current?.focus();
+    }
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!pin) return;
+    e?.preventDefault();
+    const pin = digits.join('');
+    if (pin.length < 4) return;
     setError('');
     setLoading(true);
-
     try {
       await login(pin, target, selectedUser);
       navigate(target === 'tech' ? '/tech' : '/accueil');
     } catch (err) {
       setError(err.message || 'PIN incorrect');
-      setPin('');
+      setDigits(['', '', '', '']);
+      refs[0].current?.focus();
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (digits.every(d => d !== '')) handleSubmit();
+  }, [digits]);
+
   const isAccueil = target === 'accueil';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        {/* Back */}
-        <button
-          onClick={() => navigate('/')}
-          className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-300 mb-8 transition-colors"
-        >
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-slate-50 flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <button onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Retour
         </button>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl shadow-2xl shadow-black/20 p-8 animate-in">
-          {/* Icon */}
+        <div className="bg-white rounded-2xl shadow-2xl shadow-brand-600/5 p-8 border border-slate-100 animate-in">
           <div className="flex justify-center mb-6">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-              isAccueil ? 'bg-sky-50' : 'bg-violet-50'
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
+              isAccueil ? 'bg-sky-500 shadow-sky-500/25' : 'bg-brand-600 shadow-brand-600/25'
             }`}>
               {isAccueil
-                ? <Monitor className="w-8 h-8 text-sky-600" />
-                : <Wrench className="w-8 h-8 text-violet-600" />
+                ? <Monitor className="w-8 h-8 text-white" />
+                : <Wrench className="w-8 h-8 text-white" />
               }
             </div>
           </div>
 
-          <h1 className="text-xl font-bold text-center text-slate-900 mb-1">
+          <h1 className="text-xl font-display font-bold text-center text-slate-900 mb-1">
             {isAccueil ? 'Espace Accueil' : 'Espace Technicien'}
           </h1>
-          <p className="text-sm text-slate-400 text-center mb-6">Entrez votre PIN pour continuer</p>
+          <p className="text-sm text-slate-400 text-center mb-8">Entrez votre PIN pour continuer</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* User select */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="input-label">Utilisateur</label>
-              <select
-                value={selectedUser}
-                onChange={(e) => setSelectedUser(e.target.value)}
-                className="input"
-              >
-                {team.map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
+              <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                {team.map(name => <option key={name} value={name}>{name}</option>)}
               </select>
             </div>
 
-            {/* PIN */}
             <div>
               <label className="input-label">Code PIN</label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  ref={inputRef}
-                  type="password"
-                  inputMode="numeric"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  placeholder="••••"
-                  className="input pl-10 text-center text-xl tracking-[0.4em] font-bold"
-                  maxLength={6}
-                  autoFocus
-                />
+              <div className="flex gap-3 justify-center">
+                {digits.map((d, i) => (
+                  <input key={i} ref={refs[i]} type="password" inputMode="numeric" maxLength={1}
+                    value={d}
+                    onChange={e => handleDigit(i, e.target.value)}
+                    onKeyDown={e => handleKeyDown(i, e)}
+                    className="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-slate-200 bg-slate-50
+                      focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 focus:bg-white outline-none transition-all"
+                  />
+                ))}
               </div>
             </div>
 
@@ -109,22 +112,18 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading || !pin}
+            <button type="submit" disabled={loading || digits.some(d => !d)}
               className={`w-full btn text-white shadow-lg ${
                 isAccueil
                   ? 'bg-sky-500 hover:bg-sky-600 shadow-sky-500/25'
-                  : 'bg-violet-500 hover:bg-violet-600 shadow-violet-500/25'
-              }`}
-            >
+                  : 'bg-brand-600 hover:bg-brand-700 shadow-brand-600/25'
+              }`}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Se connecter'}
             </button>
           </form>
         </div>
 
-        {/* Footer */}
-        <p className="text-center text-xs text-slate-600 mt-6">
+        <p className="text-center text-xs text-slate-400 mt-6">
           Klikphone SAV — Chambéry
         </p>
       </div>

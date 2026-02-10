@@ -2,13 +2,16 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/Navbar';
 
-// Pages
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import TicketDetailPage from './pages/TicketDetailPage';
 import ClientFormPage from './pages/ClientFormPage';
 import SuiviPage from './pages/SuiviPage';
+import ClientsPage from './pages/ClientsPage';
+import CommandesPage from './pages/CommandesPage';
+import AttestationPage from './pages/AttestationPage';
+import ConfigPage from './pages/ConfigPage';
 
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
@@ -16,7 +19,7 @@ function ProtectedRoute({ children, allowedTargets }) {
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
         <p className="text-sm text-slate-400 font-medium">Chargement...</p>
       </div>
     </div>
@@ -35,40 +38,30 @@ function ProtectedRoute({ children, allowedTargets }) {
   );
 }
 
+const P = ({ children, targets }) => <ProtectedRoute allowedTargets={targets}>{children}</ProtectedRoute>;
+
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public */}
       <Route path="/" element={<HomePage />} />
       <Route path="/login/:target" element={<LoginPage />} />
       <Route path="/client" element={<ClientFormPage />} />
       <Route path="/suivi" element={<SuiviPage />} />
 
-      {/* Staff - Accueil */}
-      <Route path="/accueil" element={
-        <ProtectedRoute allowedTargets={['accueil']}>
-          <DashboardPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/accueil/ticket/:id" element={
-        <ProtectedRoute allowedTargets={['accueil']}>
-          <TicketDetailPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/accueil" element={<P targets={['accueil']}><DashboardPage /></P>} />
+      <Route path="/accueil/ticket/:id" element={<P targets={['accueil']}><TicketDetailPage /></P>} />
+      <Route path="/accueil/clients" element={<P targets={['accueil']}><ClientsPage /></P>} />
+      <Route path="/accueil/commandes" element={<P targets={['accueil']}><CommandesPage /></P>} />
+      <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
+      <Route path="/accueil/config" element={<P targets={['accueil']}><ConfigPage /></P>} />
 
-      {/* Technicien */}
-      <Route path="/tech" element={
-        <ProtectedRoute allowedTargets={['tech']}>
-          <DashboardPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/tech/ticket/:id" element={
-        <ProtectedRoute allowedTargets={['tech']}>
-          <TicketDetailPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
+      <Route path="/tech/ticket/:id" element={<P targets={['tech']}><TicketDetailPage /></P>} />
+      <Route path="/tech/clients" element={<P targets={['tech']}><ClientsPage /></P>} />
+      <Route path="/tech/commandes" element={<P targets={['tech']}><CommandesPage /></P>} />
+      <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
+      <Route path="/tech/config" element={<P targets={['tech']}><ConfigPage /></P>} />
 
-      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

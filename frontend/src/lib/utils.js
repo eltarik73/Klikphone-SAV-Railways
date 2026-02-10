@@ -46,41 +46,41 @@ export const STATUTS = [
 const STATUS_CONFIG = {
   'En attente de diagnostic': {
     bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200/80',
-    dot: 'bg-amber-500', icon: '🔍',
+    dot: 'bg-amber-500', color: '#F59E0B',
   },
   'En attente de pièce': {
     bg: 'bg-violet-50', text: 'text-violet-700', ring: 'ring-violet-200/80',
-    dot: 'bg-violet-500', icon: '📦',
+    dot: 'bg-violet-500', color: '#8B5CF6',
   },
   'Pièce reçue': {
-    bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200/80',
-    dot: 'bg-blue-500', icon: '📬',
+    bg: 'bg-cyan-50', text: 'text-cyan-700', ring: 'ring-cyan-200/80',
+    dot: 'bg-cyan-500', color: '#06B6D4',
   },
   "En attente d'accord client": {
-    bg: 'bg-pink-50', text: 'text-pink-700', ring: 'ring-pink-200/80',
-    dot: 'bg-pink-500', icon: '⏳',
+    bg: 'bg-orange-50', text: 'text-orange-700', ring: 'ring-orange-200/80',
+    dot: 'bg-orange-500', color: '#F97316',
   },
   'En cours de réparation': {
-    bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-200/80',
-    dot: 'bg-sky-500', icon: '🔧',
+    bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200/80',
+    dot: 'bg-blue-500', color: '#3B82F6',
   },
   'Réparation terminée': {
     bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200/80',
-    dot: 'bg-emerald-500', icon: '✅',
+    dot: 'bg-emerald-500', color: '#10B981',
   },
   'Rendu au client': {
-    bg: 'bg-cyan-50', text: 'text-cyan-700', ring: 'ring-cyan-200/80',
-    dot: 'bg-cyan-500', icon: '🤝',
+    bg: 'bg-gray-50', text: 'text-gray-600', ring: 'ring-gray-200/80',
+    dot: 'bg-gray-500', color: '#6B7280',
   },
   'Clôturé': {
-    bg: 'bg-slate-100', text: 'text-slate-500', ring: 'ring-slate-200/80',
-    dot: 'bg-slate-400', icon: '📁',
+    bg: 'bg-slate-100', text: 'text-slate-600', ring: 'ring-slate-200/80',
+    dot: 'bg-slate-800', color: '#1E293B',
   },
 };
 
 const DEFAULT_STATUS = {
   bg: 'bg-slate-100', text: 'text-slate-500', ring: 'ring-slate-200/80',
-  dot: 'bg-slate-400', icon: '📋',
+  dot: 'bg-slate-400', color: '#94A3B8',
 };
 
 export function getStatusConfig(statut) {
@@ -90,10 +90,6 @@ export function getStatusConfig(statut) {
 export function getStatusStyle(statut) {
   const c = getStatusConfig(statut);
   return `${c.bg} ${c.text} ring-1 ${c.ring}`;
-}
-
-export function getStatusIcon(statut) {
-  return getStatusConfig(statut).icon;
 }
 
 export function waLink(tel, msg) {
@@ -106,3 +102,12 @@ export function smsLink(tel, msg) {
   const t = tel.replace(/\D/g, '');
   return `sms:${t}?body=${encodeURIComponent(msg)}`;
 }
+
+export const MESSAGE_TEMPLATES = [
+  { key: 'diagnostic_termine', label: 'Diagnostic terminé' },
+  { key: 'demande_accord', label: 'Demande accord client' },
+  { key: 'attente_piece', label: 'En attente de pièce' },
+  { key: 'reparation_terminee', label: 'Réparation terminée' },
+  { key: 'relance', label: 'Relance récupération' },
+  { key: 'refus_reparation', label: 'Non réparable' },
+];

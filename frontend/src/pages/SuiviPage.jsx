@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
-import { formatDate, getStatusIcon, getStatusConfig, STATUTS } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, CheckCircle2, MapPin, Phone } from 'lucide-react';
+import ProgressTracker from '../components/ProgressTracker';
+import { formatDate } from '../lib/utils';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone } from 'lucide-react';
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
@@ -41,18 +42,15 @@ export default function SuiviPage() {
     doSearch();
   };
 
-  const steps = STATUTS.slice(0, -1);
-  const currentIdx = ticket ? steps.indexOf(ticket.statut) : -1;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30">
       <div className="max-w-lg mx-auto px-4 py-8">
         {/* Header */}
         <div className="text-center mb-8 animate-in">
-          <div className="w-16 h-16 rounded-2xl bg-brand-500 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-brand-500/20">
+          <div className="w-16 h-16 rounded-2xl bg-brand-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-brand-600/20">
             <Smartphone className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Suivi de réparation</h1>
+          <h1 className="text-2xl font-display font-bold text-slate-900">Suivi de réparation</h1>
           <p className="text-sm text-slate-500 mt-1">Entrez votre code ticket</p>
         </div>
 
@@ -73,12 +71,20 @@ export default function SuiviPage() {
 
         {error && (
           <div className="card p-6 text-center animate-in">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-3">
+              <Smartphone className="w-6 h-6 text-red-300" />
+            </div>
             <p className="text-red-500 font-medium">{error}</p>
           </div>
         )}
 
         {ticket && (
           <div className="space-y-5 animate-in">
+            {/* Progress tracker */}
+            <div className="card p-5">
+              <ProgressTracker statut={ticket.statut} />
+            </div>
+
             {/* Ticket card */}
             <div className="card p-6">
               <div className="flex items-center justify-between mb-4">
@@ -114,44 +120,11 @@ export default function SuiviPage() {
               )}
             </div>
 
-            {/* Progress timeline */}
-            <div className="card p-6">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-6">Progression</h3>
-              <div className="space-y-0">
-                {steps.map((stepName, i) => {
-                  const done = i <= currentIdx;
-                  const isCurrent = i === currentIdx;
-                  const sc = getStatusConfig(stepName);
-                  return (
-                    <div key={stepName} className="flex items-start gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all
-                          ${done
-                            ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
-                            : 'bg-slate-100 text-slate-400'
-                          }
-                          ${isCurrent ? 'ring-4 ring-emerald-100 scale-110' : ''}
-                        `}>
-                          {done ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs font-bold">{i + 1}</span>}
-                        </div>
-                        {i < steps.length - 1 && (
-                          <div className={`w-0.5 h-8 transition-colors ${i < currentIdx ? 'bg-emerald-300' : 'bg-slate-200'}`} />
-                        )}
-                      </div>
-                      <div className={`pt-1.5 ${isCurrent ? 'font-bold text-slate-900' : done ? 'text-slate-600' : 'text-slate-400'}`}>
-                        <p className="text-sm">{stepName}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* Contact */}
             <div className="card p-6 text-center">
               <p className="text-sm text-slate-500 mb-3">Une question sur votre réparation ?</p>
               <div className="flex items-center justify-center gap-2 text-lg font-bold text-slate-900">
-                <Phone className="w-5 h-5 text-brand-500" />
+                <Phone className="w-5 h-5 text-brand-600" />
                 04 79 60 89 22
               </div>
               <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 mt-2">
