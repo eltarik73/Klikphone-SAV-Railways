@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import { formatDate, formatPrix, STATUTS, getStatusIcon } from '../lib/utils';
@@ -11,6 +12,8 @@ import {
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const [kpi, setKpi] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +136,7 @@ export default function DashboardPage() {
             {tickets.map((t, i) => (
               <div
                 key={t.id}
-                onClick={() => navigate(`/accueil/ticket/${t.id}`)}
+                onClick={() => navigate(`${basePath}/ticket/${t.id}`)}
                 className="flex items-center gap-4 px-5 py-4 hover:bg-gray-50/50 cursor-pointer transition-colors animate-in"
                 style={{ animationDelay: `${i * 30}ms` }}
               >

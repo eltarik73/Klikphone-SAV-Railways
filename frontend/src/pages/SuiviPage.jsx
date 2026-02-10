@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
@@ -12,21 +12,34 @@ export default function SuiviPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSearch = async (e) => {
-    e?.preventDefault();
-    if (!code.trim()) return;
+  // Auto-search when ?ticket= param is present
+  useEffect(() => {
+    const ticketParam = searchParams.get('ticket');
+    if (ticketParam) {
+      doSearch(ticketParam);
+    }
+  }, []);
+
+  const doSearch = useCallback(async (searchCode) => {
+    const c = (searchCode || code).trim().toUpperCase();
+    if (!c) return;
     setLoading(true);
     setError('');
     setTicket(null);
 
     try {
-      const data = await api.getTicketByCode(code.trim().toUpperCase());
+      const data = await api.getTicketByCode(c);
       setTicket(data);
     } catch {
       setError('Aucun ticket trouvé avec ce code.');
     } finally {
       setLoading(false);
     }
+  }, [code]);
+
+  const handleSearch = (e) => {
+    e?.preventDefault();
+    doSearch();
   };
 
   // Étapes de progression

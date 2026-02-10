@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink } from '../lib/utils';
@@ -11,6 +12,8 @@ import {
 export default function TicketDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -363,7 +366,7 @@ export default function TicketDetailPage() {
               onClick={async () => {
                 if (confirm('Supprimer ce ticket ?')) {
                   await api.deleteTicket(id);
-                  navigate('/accueil');
+                  navigate(basePath);
                 }
               }}
               className="btn-danger w-full"

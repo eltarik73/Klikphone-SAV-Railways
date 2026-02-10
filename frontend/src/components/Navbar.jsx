@@ -1,13 +1,10 @@
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Wrench, LayoutDashboard, Users, Settings, Package } from 'lucide-react';
+import { LogOut, Wrench, LayoutDashboard } from 'lucide-react';
 
 const NAV_ITEMS = {
   accueil: [
     { path: '/accueil', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/accueil/clients', label: 'Clients', icon: Users },
-    { path: '/accueil/pieces', label: 'Pièces', icon: Package },
-    { path: '/accueil/config', label: 'Config', icon: Settings },
   ],
   tech: [
     { path: '/tech', label: 'Mes tickets', icon: Wrench },
