@@ -3,17 +3,18 @@ import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as Cop
 import api from '../lib/api';
 
 const PRINT_TYPES = [
-  { type: 'client', label: 'Client', desc: 'Reçu 80mm thermique', icon: Receipt, thermal: true },
-  { type: 'staff', label: 'Atelier', desc: 'Fiche technique 80mm', icon: ClipboardList, thermal: true },
-  { type: 'combined', label: 'Double', desc: 'Client + Atelier', icon: CopyIcon, thermal: true },
-  { type: 'devis', label: 'Devis', desc: 'Document A4 violet', icon: FileText, thermal: false },
-  { type: 'recu', label: 'Reçu', desc: 'Reçu A4 paiement', icon: Receipt, thermal: false },
+  { type: 'client', label: 'Client', desc: 'Reçu de dépôt', icon: Receipt },
+  { type: 'staff', label: 'Atelier', desc: 'Fiche technicien', icon: ClipboardList },
+  { type: 'combined', label: 'Double', desc: 'Client + Atelier', icon: CopyIcon },
+  { type: 'devis', label: 'Devis', desc: 'Devis détaillé', icon: FileText },
+  { type: 'recu', label: 'Reçu', desc: 'Reçu de paiement', icon: Receipt },
 ];
 
 export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
   const [activeType, setActiveType] = useState('client');
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
+  const [printing, setPrinting] = useState(false);
 
   const printUrl = api.getPrintUrl(ticketId, activeType);
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
@@ -28,9 +29,29 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
     return () => { document.body.style.overflow = ''; };
   }, [open, activeType]);
 
-  const handlePrint = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.print();
+  // Print via window.open — works reliably across browsers
+  const handlePrint = async () => {
+    setPrinting(true);
+    try {
+      const res = await fetch(printUrl);
+      const html = await res.text();
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        // Popup blocked — fallback to new tab
+        window.open(printUrl, '_blank');
+        return;
+      }
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 300);
+    } catch {
+      // Fallback — open in new tab
+      window.open(printUrl, '_blank');
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -68,7 +89,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
 
         {/* Type tabs */}
         <div className="flex gap-1 px-5 py-3 border-b border-slate-100 overflow-x-auto scrollbar-none shrink-0 bg-slate-50/50">
-          {PRINT_TYPES.map(({ type, label, icon: Icon, thermal }) => (
+          {PRINT_TYPES.map(({ type, label, icon: Icon }) => (
             <button
               key={type}
               onClick={() => { setActiveType(type); setIframeLoading(true); }}
@@ -80,11 +101,9 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
-              {thermal && (
-                <span className={`text-[9px] px-1 py-0.5 rounded ${
-                  activeType === type ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
-                }`}>80mm</span>
-              )}
+              <span className={`text-[9px] px-1 py-0.5 rounded ${
+                activeType === type ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
+              }`}>80mm</span>
             </button>
           ))}
         </div>
@@ -93,12 +112,8 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
         <div className="flex-1 relative bg-slate-100 overflow-hidden">
           {/* Format indicator */}
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-            <span className={`text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm ${
-              currentType?.thermal
-                ? 'bg-slate-800 text-white'
-                : 'bg-brand-600 text-white'
-            }`}>
-              {currentType?.thermal ? 'THERMIQUE 80mm' : 'A4'}
+            <span className="text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm bg-slate-800 text-white">
+              THERMIQUE 80mm
             </span>
           </div>
 
@@ -112,20 +127,14 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
             </div>
           )}
 
-          {/* Iframe container with centering for thermal */}
-          <div className={`h-full overflow-auto flex ${
-            currentType?.thermal ? 'justify-center pt-4 pb-8' : 'p-4'
-          }`}>
-            <div className={
-              currentType?.thermal
-                ? 'w-[320px] bg-white shadow-xl rounded-lg overflow-hidden shrink-0'
-                : 'w-full bg-white shadow-xl rounded-lg overflow-hidden'
-            }>
+          {/* Iframe container — thermal centered */}
+          <div className="h-full overflow-auto flex justify-center pt-4 pb-8">
+            <div className="w-[320px] bg-white shadow-xl rounded-lg overflow-hidden shrink-0">
               <iframe
                 ref={iframeRef}
                 src={printUrl}
                 className="w-full h-full border-0"
-                style={{ minHeight: currentType?.thermal ? '600px' : '900px' }}
+                style={{ minHeight: '600px' }}
                 title={`Aperçu ${currentType?.label}`}
                 onLoad={() => setIframeLoading(false)}
               />
@@ -138,10 +147,11 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
           <div className="flex items-center gap-3">
             <button
               onClick={handlePrint}
+              disabled={printing}
               className="btn-primary flex-1 justify-center shadow-lg shadow-brand-600/20"
             >
               <Printer className="w-4 h-4" />
-              Imprimer
+              {printing ? 'Ouverture...' : 'Imprimer'}
             </button>
             <button
               onClick={handleOpenTab}
@@ -152,10 +162,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
             </button>
           </div>
           <p className="text-[10px] text-slate-400 text-center mt-2">
-            {currentType?.thermal
-              ? 'Format optimisé pour imprimante thermique 80mm'
-              : 'Format A4 — imprimante standard ou PDF'
-            }
+            Format optimisé pour imprimante thermique 80mm
           </p>
         </div>
       </div>

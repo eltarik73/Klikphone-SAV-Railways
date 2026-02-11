@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/Navbar';
+import { ToastProvider } from './components/Toast';
 
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -13,6 +14,7 @@ import CommandesPage from './pages/CommandesPage';
 import AttestationPage from './pages/AttestationPage';
 import ConfigPage from './pages/ConfigPage';
 import AdminPage from './pages/AdminPage';
+import DepotPage from './pages/DepotPage';
 
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
@@ -47,6 +49,7 @@ function AppRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login/:target" element={<LoginPage />} />
       <Route path="/client" element={<ClientFormPage />} />
+      <Route path="/depot" element={<DepotPage />} />
       <Route path="/suivi" element={<SuiviPage />} />
 
       <Route path="/accueil" element={<P targets={['accueil']}><DashboardPage /></P>} />
@@ -74,7 +77,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

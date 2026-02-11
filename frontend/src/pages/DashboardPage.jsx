@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [activeKpi, setActiveKpi] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [techColors, setTechColors] = useState({});
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -45,6 +46,16 @@ export default function DashboardPage() {
   }, [search, filterStatut, refreshKey]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    api.getActiveTeam()
+      .then(members => {
+        const map = {};
+        members.forEach(m => { if (m.couleur) map[m.nom] = m.couleur; });
+        setTechColors(map);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => setRefreshKey(k => k + 1), 30000);
@@ -223,7 +234,12 @@ export default function DashboardPage() {
 
                 {/* Tech */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <p className="text-xs text-slate-600 truncate">{t.technicien_assigne || '—'}</p>
+                  <div className="flex items-center gap-1.5">
+                    {t.technicien_assigne && techColors[t.technicien_assigne] && (
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: techColors[t.technicien_assigne] }} />
+                    )}
+                    <p className="text-xs text-slate-600 truncate">{t.technicien_assigne || '—'}</p>
+                  </div>
                 </div>
 
                 {/* Statut */}

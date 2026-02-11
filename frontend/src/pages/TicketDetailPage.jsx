@@ -7,6 +7,7 @@ import ProgressTracker from '../components/ProgressTracker';
 import PatternGrid from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig, MESSAGE_TEMPLATES } from '../lib/utils';
+import { useToast } from '../components/Toast';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Save, Trash2,
   ChevronDown, Plus, Minus, Clock, User, Wrench, CreditCard,
@@ -19,6 +20,7 @@ export default function TicketDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
 
   const [ticket, setTicket] = useState(null);
@@ -42,6 +44,9 @@ export default function TicketDetailPage() {
   // Accord client modal state
   const [showAccordModal, setShowAccordModal] = useState(false);
   const [accordLoading, setAccordLoading] = useState(false);
+
+  // Team members for tech dropdown
+  const [teamMembers, setTeamMembers] = useState([]);
 
   const loadTicket = useCallback(async () => {
     setLoading(true);
@@ -67,6 +72,10 @@ export default function TicketDetailPage() {
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
 
+  useEffect(() => {
+    api.getActiveTeam().then(setTeamMembers).catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -82,8 +91,10 @@ export default function TicketDetailPage() {
       }
       await api.updateTicket(id, updates);
       await loadTicket();
+      toast.success('Modifications enregistrées');
     } catch (err) {
       console.error(err);
+      toast.error('Erreur lors de la sauvegarde');
     } finally {
       setSaving(false);
     }
@@ -94,8 +105,10 @@ export default function TicketDetailPage() {
       await api.changeStatus(id, statut);
       await loadTicket();
       setShowStatusMenu(false);
+      toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       console.error(err);
+      toast.error('Erreur changement de statut');
     }
   };
 
@@ -106,8 +119,10 @@ export default function TicketDetailPage() {
       await api.addNote(id, `${prefix} ${noteText}`);
       setNoteText('');
       await loadTicket();
+      toast.success('Note ajoutée');
     } catch (err) {
       console.error(err);
+      toast.error('Erreur ajout de note');
     }
   };
 
@@ -173,8 +188,10 @@ export default function TicketDetailPage() {
   const handleSendCaisse = async () => {
     try {
       await api.sendToCaisse(id);
+      toast.success('Envoyé en caisse');
     } catch (err) {
       console.error(err);
+      toast.error('Erreur envoi en caisse');
     }
   };
 
@@ -192,8 +209,10 @@ export default function TicketDetailPage() {
       }
       setShowAccordModal(false);
       await loadTicket();
+      toast.success('Demande envoyée au client');
     } catch (err) {
       console.error(err);
+      toast.error('Erreur envoi de la demande');
     } finally {
       setAccordLoading(false);
     }
@@ -798,13 +817,38 @@ export default function TicketDetailPage() {
             </div>
             <div>
               <label className="input-label">Technicien assigné</label>
-              <input
-                type="text"
-                value={editFields.technicien_assigne}
-                onChange={e => setEditFields(f => ({ ...f, technicien_assigne: e.target.value }))}
-                className="input"
-                placeholder="Nom du technicien"
-              />
+              {teamMembers.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 gap-1">
+                    {teamMembers.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={() => setEditFields(f => ({ ...f, technicien_assigne: m.nom }))}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
+                          editFields.technicien_assigne === m.nom
+                            ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
+                            : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: m.couleur || '#94A3B8' }} />
+                        {m.nom}
+                        {m.role && <span className="text-[10px] text-slate-400 ml-auto">{m.role}</span>}
+                      </button>
+                    ))}
+                  </div>
+                  {editFields.technicien_assigne && !teamMembers.find(m => m.nom === editFields.technicien_assigne) && (
+                    <p className="text-xs text-slate-500">Assigné : {editFields.technicien_assigne}</p>
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={editFields.technicien_assigne}
+                  onChange={e => setEditFields(f => ({ ...f, technicien_assigne: e.target.value }))}
+                  className="input"
+                  placeholder="Nom du technicien"
+                />
+              )}
             </div>
             {t.personne_charge && (
               <div className="mt-3 p-2.5 bg-slate-50 rounded-lg">

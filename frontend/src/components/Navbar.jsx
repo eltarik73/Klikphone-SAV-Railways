@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
+import api from '../lib/api';
 import {
   LogOut, LayoutDashboard, Plus, Users, Package, FileText,
-  Settings, Menu, X, Search, Lock,
+  Settings, Menu, X, Search, Shield,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -11,13 +12,26 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchKpi = () => {
+      api.getKPI()
+        .then(kpi => setPendingCount(kpi?.total_actifs || 0))
+        .catch(() => {});
+    };
+    fetchKpi();
+    const interval = setInterval(fetchKpi, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   if (!user) return null;
 
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
 
   const navItems = [
-    { path: basePath, label: 'Dashboard', icon: LayoutDashboard },
+    { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
     { path: '/client', label: '+ Nouveau', icon: Plus },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
@@ -44,6 +58,11 @@ export default function Navbar() {
           <img src="/logo_k.png" alt="Klikphone" className="w-7 h-7 rounded-lg object-contain" />
           <span className="text-white font-display font-bold tracking-tight">KLIKPHONE</span>
         </div>
+        {pendingCount > 0 && (
+          <span className="ml-auto bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+            {pendingCount}
+          </span>
+        )}
       </div>
 
       {/* Backdrop */}
@@ -73,7 +92,7 @@ export default function Navbar() {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto scrollbar-none">
           <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Menu</p>
-          {navItems.map(({ path, label, icon: Icon }) => (
+          {navItems.map(({ path, label, icon: Icon, badge }) => (
             <button key={path} onClick={() => handleNav(path)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
                 ${isActive(path)
@@ -82,7 +101,12 @@ export default function Navbar() {
                 }`}
             >
               <Icon className={`w-[18px] h-[18px] ${isActive(path) ? 'text-brand-400' : ''}`} />
-              {label}
+              <span className="flex-1 text-left">{label}</span>
+              {badge > 0 && (
+                <span className="bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                  {badge}
+                </span>
+              )}
             </button>
           ))}
 
@@ -92,11 +116,11 @@ export default function Navbar() {
             <button onClick={() => handleNav(`${basePath}/admin`)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
                 ${location.pathname.includes('/admin')
-                  ? 'bg-brand-600/20 text-brand-300 border-l-2 border-brand-400 pl-[10px]'
+                  ? 'bg-amber-500/20 text-amber-300 border-l-2 border-amber-400 pl-[10px]'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
                 }`}
             >
-              <Lock className={`w-[18px] h-[18px] ${location.pathname.includes('/admin') ? 'text-brand-400' : ''}`} />
+              <Shield className={`w-[18px] h-[18px] ${location.pathname.includes('/admin') ? 'text-amber-400' : 'text-amber-500/60'}`} />
               Admin
             </button>
           </div>
