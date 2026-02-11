@@ -54,6 +54,7 @@ export default function TicketDetailPage() {
   const { user } = useAuth();
   const toast = useToast();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+  const isTech = user?.target === 'tech';
 
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,7 @@ export default function TicketDetailPage() {
   const [editingDevice, setEditingDevice] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [editingPricing, setEditingPricing] = useState(false);
+  const [editingAssign, setEditingAssign] = useState(false);
 
   // Edit form data
   const [deviceForm, setDeviceForm] = useState({});
@@ -995,6 +997,148 @@ export default function TicketDetailPage() {
             </select>
           </div>
 
+          {/* ═══ Assignation technicien ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                  <UserCheck className="w-4 h-4 text-violet-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Assignation</h2>
+              </div>
+              {isTech && !editingAssign && (
+                <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {isTech && editingAssign && (
+                <button onClick={() => setEditingAssign(false)} className="btn-ghost text-xs px-2.5 py-1.5">
+                  <X className="w-3.5 h-3.5" /> Fermer
+                </button>
+              )}
+            </div>
+
+            {/* Tech view: read-only by default */}
+            {isTech && !editingAssign ? (
+              <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 rounded-lg">
+                {(() => {
+                  const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
+                  return assignedMember ? (
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
+                  ) : null;
+                })()}
+                <span className="text-sm font-medium text-slate-800">{t.technicien_assigne || 'Non assigné'}</span>
+              </div>
+            ) : (
+              /* Accueil view OR tech edit mode: full list */
+              <div>
+                <label className="input-label">Technicien assigné</label>
+                {teamMembers.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-1">
+                    {teamMembers.map(m => (
+                      <button
+                        key={m.id}
+                        onClick={async () => {
+                          setPricingForm(f => ({ ...f, technicien_assigne: m.nom }));
+                          try {
+                            await api.updateTicket(id, { technicien_assigne: m.nom });
+                            await loadTicket();
+                            toast.success(`Assigné à ${m.nom}`);
+                            if (isTech) setEditingAssign(false);
+                          } catch { toast.error('Erreur assignation'); }
+                        }}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
+                          (t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '))
+                            ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
+                            : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: m.couleur || '#94A3B8' }} />
+                        {m.nom}
+                        {m.role && <span className="text-[10px] text-slate-400 ml-auto">{m.role}</span>}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={pricingForm.technicien_assigne}
+                    onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
+                    className="input"
+                    placeholder="Nom du technicien"
+                  />
+                )}
+              </div>
+            )}
+
+            {t.personne_charge && (
+              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Prise en charge</p>
+                <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
+              </div>
+            )}
+          </div>
+
+          {/* ═══ Message Composer ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-green-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Messages client</h2>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                {t.msg_whatsapp ? <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600">WA</span> : null}
+                {t.msg_sms ? <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">SMS</span> : null}
+                {t.msg_email ? <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">Email</span> : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {MESSAGE_TEMPLATES.map(tmpl => (
+                <button
+                  key={tmpl.key}
+                  onClick={() => handleGenerateMessage(tmpl.key)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    selectedTemplate === tmpl.key
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {tmpl.label}
+                </button>
+              ))}
+            </div>
+
+            <textarea
+              value={messageText}
+              onChange={e => setMessageText(e.target.value)}
+              placeholder="Sélectionnez un modèle ou tapez votre message..."
+              rows={4}
+              className="input resize-none mb-3"
+              disabled={messageLoading}
+            />
+
+            <div className="flex flex-wrap gap-2">
+              {t.client_tel && (
+                <button onClick={handleSendWhatsApp} disabled={!messageText} className="btn-whatsapp text-xs">
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+              )}
+              {t.client_tel && (
+                <button onClick={handleSendSMS} disabled={!messageText} className="btn-secondary text-xs">
+                  <Send className="w-3.5 h-3.5" /> SMS
+                </button>
+              )}
+              {t.client_email && (
+                <button onClick={handleSendEmail} disabled={!messageText} className="btn-ghost text-xs border border-slate-200">
+                  <Mail className="w-3.5 h-3.5" /> Email
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* ═══ Notes & Timeline ═══ */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-4">
@@ -1073,121 +1217,6 @@ export default function TicketDetailPage() {
                     );
                   })}
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* ═══ Message Composer ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-green-600" />
-                </div>
-                <h2 className="text-sm font-semibold text-slate-800">Messages client</h2>
-              </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                {t.msg_whatsapp ? <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600">WA</span> : null}
-                {t.msg_sms ? <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">SMS</span> : null}
-                {t.msg_email ? <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">Email</span> : null}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {MESSAGE_TEMPLATES.map(tmpl => (
-                <button
-                  key={tmpl.key}
-                  onClick={() => handleGenerateMessage(tmpl.key)}
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    selectedTemplate === tmpl.key
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {tmpl.label}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              value={messageText}
-              onChange={e => setMessageText(e.target.value)}
-              placeholder="Sélectionnez un modèle ou tapez votre message..."
-              rows={4}
-              className="input resize-none mb-3"
-              disabled={messageLoading}
-            />
-
-            <div className="flex flex-wrap gap-2">
-              {t.client_tel && (
-                <button onClick={handleSendWhatsApp} disabled={!messageText} className="btn-whatsapp text-xs">
-                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                </button>
-              )}
-              {t.client_tel && (
-                <button onClick={handleSendSMS} disabled={!messageText} className="btn-secondary text-xs">
-                  <Send className="w-3.5 h-3.5" /> SMS
-                </button>
-              )}
-              {t.client_email && (
-                <button onClick={handleSendEmail} disabled={!messageText} className="btn-ghost text-xs border border-slate-200">
-                  <Mail className="w-3.5 h-3.5" /> Email
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Assignment */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                <UserCheck className="w-4 h-4 text-violet-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Assignation</h2>
-            </div>
-            <div>
-              <label className="input-label">Technicien assigné</label>
-              {teamMembers.length > 0 ? (
-                <div className="space-y-1.5">
-                  <div className="grid grid-cols-1 gap-1">
-                    {teamMembers.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={async () => {
-                          setPricingForm(f => ({ ...f, technicien_assigne: m.nom }));
-                          try {
-                            await api.updateTicket(id, { technicien_assigne: m.nom });
-                            await loadTicket();
-                            toast.success(`Assigné à ${m.nom}`);
-                          } catch { toast.error('Erreur assignation'); }
-                        }}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
-                          (t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '))
-                            ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
-                            : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: m.couleur || '#94A3B8' }} />
-                        {m.nom}
-                        {m.role && <span className="text-[10px] text-slate-400 ml-auto">{m.role}</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={pricingForm.technicien_assigne}
-                  onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
-                  className="input"
-                  placeholder="Nom du technicien"
-                />
-              )}
-            </div>
-            {t.personne_charge && (
-              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Prise en charge</p>
-                <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
               </div>
             )}
           </div>
