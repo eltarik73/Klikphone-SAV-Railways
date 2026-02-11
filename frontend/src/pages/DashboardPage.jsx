@@ -124,13 +124,25 @@ export default function DashboardPage() {
   const isTech = user?.target === 'tech';
   const techName = user?.utilisateur;
 
-  let filteredTickets = isTech && techName && !debouncedSearch
-    ? tickets.filter(t => t.technicien_assigne === techName || !t.technicien_assigne)
-    : tickets;
+  let filteredTickets = tickets;
 
-  // Tech filter (accueil view)
+  // If a specific tech is selected in the dropdown, use that filter
   if (filterTech) {
-    filteredTickets = filteredTickets.filter(t => t.technicien_assigne === filterTech);
+    console.log('[TechFilter] filterTech =', JSON.stringify(filterTech));
+    filteredTickets = tickets.filter(t => {
+      const assigned = (t.technicien_assigne || '').trim();
+      const match = assigned === filterTech.trim();
+      if (!match && assigned) {
+        console.log('[TechFilter] NO MATCH:', JSON.stringify(assigned), '!==', JSON.stringify(filterTech));
+      }
+      return match;
+    });
+  } else if (isTech && techName && !debouncedSearch) {
+    // Default tech view: show own tickets + unassigned
+    filteredTickets = tickets.filter(t => {
+      const assigned = (t.technicien_assigne || '').trim();
+      return assigned === techName.trim() || !assigned;
+    });
   }
 
   const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
@@ -218,10 +230,10 @@ export default function DashboardPage() {
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
               />
             </div>
-            {!isTech && teamList.length > 0 && (
+            {teamList.length > 0 && (
               <select value={filterTech} onChange={e => { setFilterTech(e.target.value); setPage(0); }}
                 className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
-                <option value="">Tous les techs</option>
+                <option value="">{isTech ? 'Mes tickets' : 'Tous les techs'}</option>
                 {teamList.map(m => (
                   <option key={m.id} value={m.nom}>{m.nom}</option>
                 ))}
