@@ -1337,6 +1337,8 @@ export default function TicketDetailPage() {
         onClose={() => setShowPrintDrawer(false)}
         ticketId={id}
         ticketCode={t.ticket_code}
+        clientTel={t.client_tel}
+        clientEmail={t.client_email}
       />
     </div>
   );

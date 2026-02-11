@@ -4,7 +4,8 @@ import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import { formatDate } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard } from 'lucide-react';
+import { formatPrix } from '../lib/utils';
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
@@ -168,6 +169,79 @@ export default function SuiviPage() {
                   <p className="font-medium text-slate-800">{formatDate(ticket.date_maj)}</p>
                 </div>
               </div>
+
+              {/* Date de récupération */}
+              {ticket.date_recuperation && (
+                <div className="mt-4 flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                  <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
+                  <div className="text-sm">
+                    <span className="text-blue-600 font-medium">Récupération prévue : </span>
+                    <span className="text-blue-800 font-bold">{ticket.date_recuperation}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Réparations */}
+              {(ticket.reparation_supp || ticket.panne_detail) && (
+                <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
+                  <div className="flex items-center gap-1.5 text-slate-600 font-semibold mb-2">
+                    <Wrench className="w-3.5 h-3.5" />
+                    Détail réparation
+                  </div>
+                  {ticket.panne_detail && (
+                    <p className="text-slate-600 text-xs mb-1">{ticket.panne_detail}</p>
+                  )}
+                  {ticket.reparation_supp && (
+                    <p className="text-slate-600 text-xs">Réparation supp. : {ticket.reparation_supp}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Tarification */}
+              {(() => {
+                const devis = Number(ticket.devis_estime || 0);
+                const prixSupp = Number(ticket.prix_supp || 0);
+                const acompte = Number(ticket.acompte || 0);
+                const total = devis + prixSupp;
+                if (total <= 0) return null;
+                const reste = total - acompte;
+                return (
+                  <div className="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-sm">
+                    <div className="flex items-center gap-1.5 text-emerald-700 font-semibold mb-2">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      Tarification
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-slate-700">
+                        <span>{ticket.panne}</span>
+                        <span className="font-medium">{formatPrix(devis)}</span>
+                      </div>
+                      {ticket.reparation_supp && prixSupp > 0 && (
+                        <div className="flex justify-between text-slate-600 text-xs">
+                          <span>{ticket.reparation_supp}</span>
+                          <span>{formatPrix(prixSupp)}</span>
+                        </div>
+                      )}
+                      <div className="border-t border-emerald-200 pt-1 mt-1 flex justify-between font-bold text-emerald-800">
+                        <span>Total</span>
+                        <span>{formatPrix(total)}</span>
+                      </div>
+                      {acompte > 0 && (
+                        <>
+                          <div className="flex justify-between text-slate-500 text-xs">
+                            <span>Acompte versé</span>
+                            <span>- {formatPrix(acompte)}</span>
+                          </div>
+                          <div className="flex justify-between font-bold text-emerald-900">
+                            <span>Reste à payer</span>
+                            <span>{formatPrix(reste)}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {ticket.commentaire_client && (
                 <div className="mt-4 p-3 bg-brand-50 border border-brand-100 rounded-lg text-sm text-brand-800">

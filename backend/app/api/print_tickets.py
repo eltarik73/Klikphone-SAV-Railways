@@ -195,12 +195,20 @@ def _ticket_client_html(t: dict) -> str:
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
     qr = _qr_url(code)
+    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
+    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
+    horaires = _get_config("horaires", "Lundi-Samedi 10h-19h")
 
     devis = float(t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
     total = devis + prix_supp
     reste = total - acompte
+
+    # Date de récupération
+    recup_html = ""
+    if t.get("date_recuperation"):
+        recup_html = f'<div class="info-box center" style="margin-top:6px"><div class="bold small">Date de récupération prévue</div><div style="font-size:15px;font-weight:bold">{t["date_recuperation"]}</div></div>'
 
     # Tarification section
     tarif_html = ""
@@ -216,7 +224,7 @@ def _ticket_client_html(t: dict) -> str:
         tarif_html += f'<div class="total-box"><div class="row"><span>TOTAL</span><span>{_fp(total)}€</span></div></div>'
         if acompte > 0:
             tarif_html += f'<div class="row"><span>Acompte versé</span><span class="val">- {_fp(acompte)}€</span></div>'
-        tarif_html += f'<div class="total-box center">★ RESTE À PAYER  {_fp(reste)}€ ★</div>'
+        tarif_html += f'<div class="total-box center">RESTE À PAYER  {_fp(reste)}€</div>'
         tarif_html += '</div>'
 
     # Note publique
@@ -229,8 +237,8 @@ def _ticket_client_html(t: dict) -> str:
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
   <div class="small" style="font-weight:bold">Spécialiste Apple & Multimarque</div>
-  <div class="small">79 Place Saint Léger, 73000 Chambéry</div>
-  <div class="small">Tél: 04 79 60 89 22</div>
+  <div class="small">{adresse}</div>
+  <div class="small">Tél: {tel_boutique}</div>
 </div>
 <hr class="sep-bold">
 <div class="center"><h2>TICKET DE DÉPÔT</h2></div>
@@ -239,6 +247,7 @@ def _ticket_client_html(t: dict) -> str:
   <div class="highlight">{code}</div>
   <div class="small">{_fd(t.get('date_depot'))}</div>
 </div>
+{recup_html}
 <hr class="sep">
 <div class="section">
   <div class="section-title">CLIENT</div>
@@ -288,6 +297,11 @@ def _ticket_staff_html(t: dict) -> str:
     code = t.get("ticket_code", "")
     tech = t.get("technicien_assigne") or "—"
     date_recup = t.get("date_recuperation") or "—"
+
+    # Attention flag
+    attention_html = ""
+    if t.get("attention"):
+        attention_html = f'<div class="info-box" style="border:2px solid #000;margin:6px 0"><div class="bold center">⚠ ATTENTION</div><div class="small center">{t["attention"]}</div></div>'
 
     # Sécurité
     sec_html = ""
@@ -353,6 +367,7 @@ def _ticket_staff_html(t: dict) -> str:
 {supp_html}
 {sec_html}
 {notes_html}
+{attention_html}
 <hr class="sep-bold">
 <div class="section">
   {f'<div class="total-box"><div class="row"><span>Tarif:</span><span>{_fp(tarif)}€</span></div></div>' if tarif else ''}
@@ -368,20 +383,24 @@ def _ticket_staff_html(t: dict) -> str:
 def _devis_html(t: dict) -> str:
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
+    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
+    tva_rate = float(_get_config("tva", "20"))
+
     devis = float(t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
     total_ttc = devis + prix_supp
-    tva = round(total_ttc * 0.2 / 1.2, 2)
+    tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
     reste = total_ttc - acompte
+    tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
     if devis > 0:
-        ht = round(devis / 1.2, 2)
+        ht = round(devis * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(ht)}€ HT</span></div>'
     if t.get("reparation_supp") and prix_supp > 0:
-        ht_s = round(prix_supp / 1.2, 2)
+        ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
 
     siret = _get_config("SIRET", "")
@@ -391,8 +410,7 @@ def _devis_html(t: dict) -> str:
 <div class="center">
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
-  <div class="small">79 Place Saint Léger</div>
-  <div class="small">73000 Chambéry</div>
+  <div class="small">{adresse}</div>
 </div>
 <hr class="sep-bold">
 <div class="center"><h2>D E V I S</h2></div>
@@ -400,6 +418,7 @@ def _devis_html(t: dict) -> str:
 <div class="section">
   <div class="row"><span>N°:</span><span class="val">{code}</span></div>
   <div class="row"><span>Date:</span><span>{_fd(t.get('date_depot'))}</span></div>
+  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
 </div>
 <hr class="sep">
 <div class="section">
@@ -414,7 +433,7 @@ def _devis_html(t: dict) -> str:
 <hr class="sep">
 <div class="section">
   <div class="row"><span>Total HT:</span><span class="val">{_fp(total_ht)}€</span></div>
-  <div class="row"><span>TVA (20%):</span><span class="val">{_fp(tva)}€</span></div>
+  <div class="row"><span>{tva_label}:</span><span class="val">{_fp(tva)}€</span></div>
 </div>
 <hr class="sep-bold">
 <div class="total-box"><div class="row"><span>TOTAL TTC:</span><span>{_fp(total_ttc)}€</span></div></div>
@@ -439,20 +458,24 @@ def _devis_html(t: dict) -> str:
 def _recu_html(t: dict) -> str:
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
+    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
+    tva_rate = float(_get_config("tva", "20"))
+
     tarif = float(t.get("tarif_final") or t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
     total_ttc = tarif + prix_supp
-    tva = round(total_ttc * 0.2 / 1.2, 2)
+    tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
     reste = total_ttc - acompte
+    tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
     if tarif > 0:
-        ht = round(tarif / 1.2, 2)
+        ht = round(tarif * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(ht)}€ HT</span></div>'
     if t.get("reparation_supp") and prix_supp > 0:
-        ht_s = round(prix_supp / 1.2, 2)
+        ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
 
     siret = _get_config("SIRET", "")
@@ -462,8 +485,7 @@ def _recu_html(t: dict) -> str:
 <div class="center">
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
-  <div class="small">79 Place Saint Léger</div>
-  <div class="small">73000 Chambéry</div>
+  <div class="small">{adresse}</div>
 </div>
 <hr class="sep-bold">
 <div class="center"><h2>R E Ç U</h2></div>
@@ -471,6 +493,7 @@ def _recu_html(t: dict) -> str:
 <div class="section">
   <div class="row"><span>N°:</span><span class="val">{code}</span></div>
   <div class="row"><span>Date:</span><span>{datetime.now().strftime("%d/%m/%Y")}</span></div>
+  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
 </div>
 <hr class="sep">
 <div class="section">
@@ -485,7 +508,7 @@ def _recu_html(t: dict) -> str:
 <hr class="sep">
 <div class="section">
   <div class="row"><span>Total HT:</span><span class="val">{_fp(total_ht)}€</span></div>
-  <div class="row"><span>TVA (20%):</span><span class="val">{_fp(tva)}€</span></div>
+  <div class="row"><span>{tva_label}:</span><span class="val">{_fp(tva)}€</span></div>
 </div>
 <hr class="sep-bold">
 <div class="total-box"><div class="row"><span>TOTAL TTC:</span><span>{_fp(total_ttc)}€</span></div></div>

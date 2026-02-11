@@ -313,7 +313,20 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
     appareil = ticket.get("modele_autre") or f"{ticket.get('marque', '')} {ticket.get('modele', '')}".strip()
     prix = ticket.get("tarif_final") or ticket.get("devis_estime") or 0
 
-    return template["message"].format(
+    # Config variables from params table
+    adresse = _get_param("adresse") or "79 Place Saint Léger, 73000 Chambéry"
+    horaires = _get_param("horaires") or "Lundi-Samedi 10h-19h"
+    tel_boutique = _get_param("tel_boutique") or "04 79 60 89 22"
+    nom_boutique = _get_param("nom_boutique") or "Klikphone"
+
+    msg = template["message"]
+    # Replace config placeholders in hardcoded template text
+    msg = msg.replace("04 79 60 89 22", tel_boutique)
+    msg = msg.replace("79 Place Saint Léger, Chambéry", adresse)
+    msg = msg.replace("79 Place Saint Léger", adresse)
+    msg = msg.replace("Lundi-Samedi 10h-19h", horaires)
+
+    return msg.format(
         prenom=client.get("prenom") or client.get("nom", ""),
         appareil=appareil,
         panne=ticket.get("panne", ""),

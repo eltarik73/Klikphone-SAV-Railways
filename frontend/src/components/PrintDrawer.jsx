@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon } from 'lucide-react';
+import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown } from 'lucide-react';
 import api from '../lib/api';
+import { waLink, smsLink } from '../lib/utils';
 
 const PRINT_TYPES = [
   { type: 'client', label: 'Client', desc: 'Reçu de dépôt', icon: Receipt },
@@ -10,11 +11,13 @@ const PRINT_TYPES = [
   { type: 'recu', label: 'Reçu', desc: 'Reçu de paiement', icon: Receipt },
 ];
 
-export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
+export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clientTel, clientEmail }) {
   const [activeType, setActiveType] = useState('client');
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const printUrl = api.getPrintUrl(ticketId, activeType);
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
@@ -57,6 +60,33 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
 
   const handleOpenTab = () => {
     window.open(printUrl, '_blank');
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!clientTel) return;
+    const msg = `Bonjour, voici votre document ${ticketCode}: ${printUrl}`;
+    window.open(waLink(clientTel, msg), '_blank');
+    setSendOpen(false);
+  };
+
+  const handleSendSMS = () => {
+    if (!clientTel) return;
+    const msg = `Klikphone - ${ticketCode}: ${printUrl}`;
+    window.open(smsLink(clientTel, msg), '_blank');
+    setSendOpen(false);
+  };
+
+  const handleSendEmail = async () => {
+    if (!clientEmail) return;
+    setSending(true);
+    try {
+      await api.sendEmail(ticketId, `Votre document ${activeType} - ${ticketCode}`, `${activeType} - ${ticketCode}`);
+      setSendOpen(false);
+    } catch {
+      // silently fail
+    } finally {
+      setSending(false);
+    }
   };
 
   if (!open) return null;
@@ -144,7 +174,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
 
         {/* Footer actions */}
         <div className="px-5 py-4 border-t border-slate-100 bg-white shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={handlePrint}
               disabled={printing}
@@ -153,9 +183,49 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode }) {
               <Printer className="w-4 h-4" />
               {printing ? 'Ouverture...' : 'Imprimer'}
             </button>
+
+            {/* Send dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setSendOpen(!sendOpen)}
+                className="btn-ghost border border-slate-200 px-3 gap-1"
+              >
+                <Send className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {sendOpen && (
+                <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50">
+                  <button
+                    onClick={handleSendWhatsApp}
+                    disabled={!clientTel}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    <MessageCircle className="w-4 h-4 text-green-600" />
+                    WhatsApp
+                  </button>
+                  <button
+                    onClick={handleSendSMS}
+                    disabled={!clientTel}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    <Send className="w-4 h-4 text-blue-600" />
+                    SMS
+                  </button>
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={!clientEmail || sending}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    <Mail className="w-4 h-4 text-red-500" />
+                    {sending ? 'Envoi...' : 'Email'}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={handleOpenTab}
-              className="btn-ghost border border-slate-200 px-4"
+              className="btn-ghost border border-slate-200 px-3"
               title="Ouvrir dans un nouvel onglet"
             >
               <ExternalLink className="w-4 h-4" />
