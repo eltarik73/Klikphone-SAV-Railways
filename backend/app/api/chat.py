@@ -70,12 +70,11 @@ def _get_param(key: str) -> str:
         return ""
 
 
-def _is_manager(user: str) -> bool:
-    """Verifie si l'utilisateur a le role Manager."""
+def _is_manager_check(cur, user: str) -> bool:
+    """Verifie si l'utilisateur a le role Manager (utilise un curseur existant)."""
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user,))
-            row = cur.fetchone()
+        cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user,))
+        row = cur.fetchone()
         return row is not None and "manager" in (row.get("role") or "").lower()
     except Exception:
         return False
@@ -426,11 +425,9 @@ async def send_team_message(msg: TeamMessageCreate):
 async def get_team_messages(user: str, limit: int = Query(50, le=200)):
     """Recupere les messages d'equipe visibles par l'utilisateur."""
     _ensure_table()
-    is_mgr = _is_manager(user)
-
     with get_cursor() as cur:
+        is_mgr = _is_manager_check(cur, user)
         if is_mgr:
-            # Manager voit tout
             cur.execute("""
                 SELECT id, sender, recipient, message, is_private, read_by, created_at
                 FROM chat_messages
@@ -438,7 +435,6 @@ async def get_team_messages(user: str, limit: int = Query(50, le=200)):
                 LIMIT %s
             """, (limit,))
         else:
-            # Utilisateur normal : messages publics + ses propres + adresses a lui
             cur.execute("""
                 SELECT id, sender, recipient, message, is_private, read_by, created_at
                 FROM chat_messages
@@ -451,7 +447,6 @@ async def get_team_messages(user: str, limit: int = Query(50, le=200)):
 
         messages = cur.fetchall() or []
 
-    # Reverse to chronological order (oldest first)
     messages.reverse()
     for m in messages:
         rb = m.get("read_by") or ""
@@ -464,9 +459,8 @@ async def get_team_messages(user: str, limit: int = Query(50, le=200)):
 async def mark_as_read(user: str):
     """Marque tous les messages visibles comme lus pour cet utilisateur."""
     _ensure_table()
-    is_mgr = _is_manager(user)
-
     with get_cursor() as cur:
+        is_mgr = _is_manager_check(cur, user)
         if is_mgr:
             cur.execute("""
                 UPDATE chat_messages
@@ -496,9 +490,8 @@ async def mark_as_read(user: str):
 async def get_unread_count(user: str):
     """Nombre de messages non lus pour cet utilisateur."""
     _ensure_table()
-    is_mgr = _is_manager(user)
-
     with get_cursor() as cur:
+        is_mgr = _is_manager_check(cur, user)
         if is_mgr:
             cur.execute("""
                 SELECT COUNT(*) as count FROM chat_messages
@@ -512,5 +505,4 @@ async def get_unread_count(user: str):
                   AND sender != %s
                   AND (recipient = 'all' OR recipient = %s)
             """, (user, user, user))
-
-    return {"unread": cur.fetchone()["count"]}
+        return {"unread": cur.fetchone()["count"]}
