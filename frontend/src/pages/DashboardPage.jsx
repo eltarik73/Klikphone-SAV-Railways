@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -7,7 +7,7 @@ import { formatDateShort, formatPrix, waLink, smsLink } from '../lib/utils';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight,
-  Smartphone, MessageCircle, Send, Mail,
+  Smartphone, MessageCircle, Send, Mail, Lock, Shield,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -19,17 +19,26 @@ export default function DashboardPage() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [activeKpi, setActiveKpi] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [techColors, setTechColors] = useState({});
+  const searchTimer = useRef(null);
+
+  // Debounced search (300ms)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [search]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const params = { limit: 200 };
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatut) params.statut = filterStatut;
 
       const [kpiData, ticketsData] = await Promise.all([
@@ -43,7 +52,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatut, refreshKey]);
+  }, [debouncedSearch, filterStatut, refreshKey]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -73,8 +82,16 @@ export default function DashboardPage() {
     }
   };
 
-  const activeTickets = tickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
-  const archivedTickets = tickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut));
+  // For tech view: filter by assigned tech
+  const isTech = user?.target === 'tech';
+  const techName = user?.utilisateur;
+
+  const filteredTickets = isTech && techName && !debouncedSearch
+    ? tickets.filter(t => t.technicien_assigne === techName || !t.technicien_assigne)
+    : tickets;
+
+  const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
+  const archivedTickets = filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut));
   const displayedTickets = showArchived ? archivedTickets : activeTickets;
 
   const kpiCards = kpi ? [
@@ -102,8 +119,14 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Vue d'ensemble des réparations</p>
+          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+            {user?.target === 'tech' ? 'Espace Technicien' : 'Tableau de bord'}
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {user?.target === 'tech'
+              ? `Bienvenue ${user?.utilisateur || ''} — vos réparations`
+              : 'Vue d\'ensemble des réparations'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setRefreshKey(k => k + 1)} className="btn-ghost p-2.5" title="Rafraîchir">
@@ -230,6 +253,20 @@ export default function DashboardPage() {
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <p className="text-xs text-slate-700 font-medium truncate">{t.marque} {t.modele || t.modele_autre}</p>
                   <p className="text-[11px] text-slate-400 truncate">{t.panne}</p>
+                  {isTech && (t.pin || t.pattern) && (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {t.pin && (
+                        <span className="text-[10px] font-mono text-amber-600 flex items-center gap-0.5">
+                          <Lock className="w-2.5 h-2.5" /> {t.pin}
+                        </span>
+                      )}
+                      {t.pattern && (
+                        <span className="text-[10px] font-mono text-violet-600 flex items-center gap-0.5">
+                          <Shield className="w-2.5 h-2.5" /> {t.pattern}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Tech */}

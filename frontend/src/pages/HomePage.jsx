@@ -1,8 +1,17 @@
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import { Smartphone, Search, ArrowRight, Monitor, Wrench, MapPin, Phone } from 'lucide-react';
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+
+  // Auto-redirect si déjà connecté
+  if (!loading && user) {
+    const dest = user.target === 'tech' ? '/tech' : '/accueil';
+    navigate(dest, { replace: true });
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-brand-900 flex flex-col">

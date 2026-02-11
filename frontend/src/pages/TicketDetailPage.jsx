@@ -13,8 +13,40 @@ import {
   ChevronDown, Plus, Minus, Clock, User, Wrench, CreditCard,
   FileText, Printer, ExternalLink, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Hash, Shield, Calendar, UserCheck,
-  MessageSquare, Zap,
+  MessageSquare, Zap, Edit3, X, DollarSign, CheckCircle2,
+  Flag, ChevronUp,
 } from 'lucide-react';
+
+// ─── Editable Section Component ────────────────────────────────
+function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit, onSave, onCancel, children, viewContent }) {
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center`}>
+            <Icon className={`w-4 h-4 ${iconColor}`} />
+          </div>
+          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+        </div>
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <button onClick={onCancel} className="btn-ghost text-xs px-2.5 py-1.5">
+              <X className="w-3.5 h-3.5" /> Annuler
+            </button>
+            <button onClick={onSave} className="btn-primary text-xs px-2.5 py-1.5">
+              <Save className="w-3.5 h-3.5" /> Sauver
+            </button>
+          </div>
+        ) : (
+          <button onClick={onEdit} className="btn-ghost p-1.5" title="Modifier">
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {editing ? children : viewContent}
+    </div>
+  );
+}
 
 export default function TicketDetailPage() {
   const { id } = useParams();
@@ -29,8 +61,20 @@ export default function TicketDetailPage() {
   const [noteText, setNoteText] = useState('');
   const [notePrivate, setNotePrivate] = useState(true);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [editFields, setEditFields] = useState({});
   const [copied, setCopied] = useState(false);
+
+  // Edit states per section
+  const [editingDevice, setEditingDevice] = useState(false);
+  const [editingClient, setEditingClient] = useState(false);
+  const [editingPricing, setEditingPricing] = useState(false);
+
+  // Edit form data
+  const [deviceForm, setDeviceForm] = useState({});
+  const [clientForm, setClientForm] = useState({});
+  const [pricingForm, setPricingForm] = useState({});
+
+  // Repair lines (parsed from reparation_supp JSON or legacy)
+  const [repairLines, setRepairLines] = useState([]);
 
   // Message composer state
   const [showMessageComposer, setShowMessageComposer] = useState(false);
@@ -44,25 +88,66 @@ export default function TicketDetailPage() {
   // Accord client modal state
   const [showAccordModal, setShowAccordModal] = useState(false);
   const [accordLoading, setAccordLoading] = useState(false);
+  const [accordForm, setAccordForm] = useState({ reparation: '', prix: '' });
 
   // Team members for tech dropdown
   const [teamMembers, setTeamMembers] = useState([]);
+
+  // Attention flag
+  const [showAttention, setShowAttention] = useState(false);
+
+  const parseRepairLines = (ticket) => {
+    try {
+      if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
+        return JSON.parse(ticket.reparation_supp);
+      }
+    } catch {}
+    // Legacy: single reparation_supp + prix_supp
+    const lines = [];
+    if (ticket.panne) {
+      lines.push({ label: ticket.panne, prix: ticket.devis_estime || 0 });
+    }
+    if (ticket.reparation_supp) {
+      lines.push({ label: ticket.reparation_supp, prix: ticket.prix_supp || 0 });
+    }
+    return lines.length > 0 ? lines : [{ label: '', prix: 0 }];
+  };
 
   const loadTicket = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.getTicket(id);
       setTicket(data);
-      setEditFields({
+      setDeviceForm({
+        categorie: data.categorie || '',
+        marque: data.marque || '',
+        modele: data.modele || '',
+        modele_autre: data.modele_autre || '',
+        imei: data.imei || '',
+        panne: data.panne || '',
+        panne_detail: data.panne_detail || '',
+        pin: data.pin || '',
+        pattern: data.pattern || '',
+        notes_client: data.notes_client || '',
+      });
+      setClientForm({
+        nom: data.client_nom || '',
+        prenom: data.client_prenom || '',
+        telephone: data.client_tel || '',
+        email: data.client_email || '',
+        societe: data.client_societe || '',
+      });
+      setPricingForm({
         devis_estime: data.devis_estime || '',
         tarif_final: data.tarif_final || '',
         acompte: data.acompte || '',
-        notes_internes: data.notes_internes || '',
         technicien_assigne: data.technicien_assigne || '',
-        reparation_supp: data.reparation_supp || '',
-        prix_supp: data.prix_supp || '',
         type_ecran: data.type_ecran || '',
+        date_recuperation: data.date_recuperation || '',
       });
+      setRepairLines(parseRepairLines(data));
+      // Show attention flag if notes contain [ATTENTION]
+      setShowAttention((data.notes_internes || '').includes('[ATTENTION]'));
     } catch (err) {
       console.error(err);
     } finally {
@@ -76,28 +161,54 @@ export default function TicketDetailPage() {
     api.getActiveTeam().then(setTeamMembers).catch(() => {});
   }, []);
 
-  const handleSave = async () => {
+  // ─── Save handlers ────────────────────────────────────────────
+
+  const handleSaveDevice = async () => {
     setSaving(true);
     try {
-      const updates = {};
-      for (const [k, v] of Object.entries(editFields)) {
-        if (v !== '' && v !== null && v !== undefined) {
-          updates[k] = ['devis_estime', 'tarif_final', 'acompte', 'prix_supp'].includes(k)
-            ? parseFloat(v) || 0
-            : v;
-        } else {
-          updates[k] = null;
-        }
-      }
-      await api.updateTicket(id, updates);
+      await api.updateTicket(id, deviceForm);
+      setEditingDevice(false);
       await loadTicket();
-      toast.success('Modifications enregistrées');
+      toast.success('Appareil mis à jour');
     } catch (err) {
-      console.error(err);
-      toast.error('Erreur lors de la sauvegarde');
-    } finally {
-      setSaving(false);
-    }
+      toast.error('Erreur sauvegarde appareil');
+    } finally { setSaving(false); }
+  };
+
+  const handleSaveClient = async () => {
+    setSaving(true);
+    try {
+      await api.updateClient(ticket.client_id, clientForm);
+      setEditingClient(false);
+      await loadTicket();
+      toast.success('Client mis à jour');
+    } catch (err) {
+      toast.error('Erreur sauvegarde client');
+    } finally { setSaving(false); }
+  };
+
+  const handleSavePricing = async () => {
+    setSaving(true);
+    try {
+      // Calculate totals from repair lines
+      const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+      const reparationsJson = JSON.stringify(repairLines.filter(l => l.label));
+
+      const updates = {
+        ...pricingForm,
+        devis_estime: parseFloat(pricingForm.devis_estime) || null,
+        tarif_final: parseFloat(pricingForm.tarif_final) || totalRepairs || null,
+        acompte: parseFloat(pricingForm.acompte) || null,
+        reparation_supp: reparationsJson,
+        prix_supp: totalRepairs,
+      };
+      await api.updateTicket(id, updates);
+      setEditingPricing(false);
+      await loadTicket();
+      toast.success('Tarification mise à jour');
+    } catch (err) {
+      toast.error('Erreur sauvegarde tarification');
+    } finally { setSaving(false); }
   };
 
   const handleStatusChange = async (statut) => {
@@ -107,7 +218,6 @@ export default function TicketDetailPage() {
       setShowStatusMenu(false);
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
-      console.error(err);
       toast.error('Erreur changement de statut');
     }
   };
@@ -121,13 +231,32 @@ export default function TicketDetailPage() {
       await loadTicket();
       toast.success('Note ajoutée');
     } catch (err) {
-      console.error(err);
       toast.error('Erreur ajout de note');
     }
   };
 
+  const handleAddAttention = async () => {
+    try {
+      await api.addNote(id, '[ATTENTION] ⚠ Ce ticket nécessite une attention particulière');
+      await loadTicket();
+      toast.success('Flag attention ajouté');
+    } catch (err) {
+      toast.error('Erreur ajout attention');
+    }
+  };
+
+  const handleTogglePaye = async () => {
+    try {
+      const result = await api.togglePaye(id);
+      await loadTicket();
+      toast.success(result.paye ? 'Marqué payé' : 'Marqué non payé');
+    } catch (err) {
+      toast.error('Erreur toggle payé');
+    }
+  };
+
   const adjustPrice = (field, delta) => {
-    setEditFields(f => ({
+    setPricingForm(f => ({
       ...f,
       [field]: Math.max(0, (parseFloat(f[field]) || 0) + delta).toString(),
     }));
@@ -190,7 +319,6 @@ export default function TicketDetailPage() {
       await api.sendToCaisse(id);
       toast.success('Envoyé en caisse');
     } catch (err) {
-      console.error(err);
       toast.error('Erreur envoi en caisse');
     }
   };
@@ -198,9 +326,15 @@ export default function TicketDetailPage() {
   const handleDemanderAccord = async () => {
     setAccordLoading(true);
     try {
-      const reparation = editFields.reparation_supp || '';
-      const prix = editFields.prix_supp || 0;
-      await api.updateTicket(id, { reparation_supp: reparation, prix_supp: parseFloat(prix) || 0 });
+      // Add repair line to list
+      const newLine = { label: accordForm.reparation, prix: parseFloat(accordForm.prix) || 0 };
+      const updatedLines = [...repairLines.filter(l => l.label), newLine];
+      const totalRepairs = updatedLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+
+      await api.updateTicket(id, {
+        reparation_supp: JSON.stringify(updatedLines),
+        prix_supp: totalRepairs,
+      });
       await api.changeStatus(id, "En attente d'accord client");
       const result = await api.generateMessage(id, 'devis_a_valider');
       const msg = result.message || result;
@@ -208,15 +342,38 @@ export default function TicketDetailPage() {
         window.open(waLink(ticket.client_tel, msg), '_blank');
       }
       setShowAccordModal(false);
+      setAccordForm({ reparation: '', prix: '' });
       await loadTicket();
       toast.success('Demande envoyée au client');
     } catch (err) {
-      console.error(err);
       toast.error('Erreur envoi de la demande');
     } finally {
       setAccordLoading(false);
     }
   };
+
+  // ─── Repair Lines ─────────────────────────────────────────────
+
+  const addRepairLine = () => {
+    setRepairLines(lines => [...lines, { label: '', prix: 0 }]);
+  };
+
+  const removeRepairLine = (idx) => {
+    setRepairLines(lines => lines.filter((_, i) => i !== idx));
+  };
+
+  const updateRepairLine = (idx, field, value) => {
+    setRepairLines(lines => lines.map((l, i) => i === idx ? { ...l, [field]: value } : l));
+  };
+
+  const adjustRepairPrice = (idx, delta) => {
+    setRepairLines(lines => lines.map((l, i) => i === idx ? { ...l, prix: Math.max(0, (parseFloat(l.prix) || 0) + delta) } : l));
+  };
+
+  const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+  const reste = (parseFloat(pricingForm.tarif_final) || totalRepairs) - (parseFloat(pricingForm.acompte) || 0);
+
+  // ─── Render ───────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -245,12 +402,50 @@ export default function TicketDetailPage() {
 
   const t = ticket;
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim();
-  const reste = (parseFloat(editFields.tarif_final) || 0) - (parseFloat(editFields.acompte) || 0);
+
+  // Parse notes into timeline entries
+  const timelineEntries = [];
+  if (t.notes_internes) {
+    t.notes_internes.split('\n').filter(Boolean).forEach(line => {
+      const isInternal = line.includes('[INTERNE]');
+      const isClient = line.includes('[CLIENT]');
+      const isAttention = line.includes('[ATTENTION]');
+      const cleanLine = line.replace(/\[(INTERNE|CLIENT|ATTENTION)\]\s*/g, '');
+      const tsMatch = cleanLine.match(/^\[(\d{2}\/\d{2}\/?\d{0,4}\s?\d{2}:\d{2})\]\s*/);
+      const timestamp = tsMatch ? tsMatch[1] : '';
+      const text = tsMatch ? cleanLine.replace(tsMatch[0], '') : cleanLine;
+      timelineEntries.push({
+        type: isAttention ? 'attention' : isClient ? 'client' : 'internal',
+        text, timestamp, raw: line,
+      });
+    });
+  }
+  if (t.historique) {
+    t.historique.split('\n').filter(Boolean).forEach(line => {
+      const tsMatch = line.match(/^\[(\d{2}\/\d{2}\s?\d{2}:\d{2})\]\s*/);
+      const timestamp = tsMatch ? tsMatch[1] : '';
+      const text = tsMatch ? line.replace(tsMatch[0], '') : line;
+      timelineEntries.push({ type: 'history', text, timestamp, raw: line });
+    });
+  }
+  // Sort by timestamp desc (most recent first)
+  timelineEntries.reverse();
 
   return (
     <div className="max-w-7xl mx-auto">
+      {/* Attention Banner */}
+      {showAttention && (
+        <div className="bg-red-600 text-white px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <span className="text-sm font-semibold">Ce ticket nécessite une attention particulière</span>
+          <button onClick={() => setShowAttention(false)} className="ml-auto p-1 hover:bg-white/20 rounded">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Dark Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900/80 text-white px-4 sm:px-6 lg:px-8 py-5 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
+      <div className={`bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900/80 text-white px-4 sm:px-6 lg:px-8 py-5 -mx-4 sm:-mx-6 lg:-mx-8 ${showAttention ? '' : '-mt-4 sm:-mt-6 lg:-mt-8'} mb-6`}>
         <div className="max-w-7xl mx-auto">
           <div className="flex items-start gap-3">
             <button onClick={() => navigate(-1)} className="p-2.5 mt-0.5 shrink-0 rounded-lg hover:bg-white/10 transition-colors">
@@ -263,6 +458,11 @@ export default function TicketDetailPage() {
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
                 </button>
                 <StatusBadge statut={t.statut} size="lg" />
+                {t.paye ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Payé
+                  </span>
+                ) : null}
               </div>
               <p className="text-sm text-slate-400 mt-1 truncate">
                 {appareil} — {t.panne}
@@ -271,7 +471,6 @@ export default function TicketDetailPage() {
 
             {/* Action buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* Print drawer trigger */}
               <button onClick={() => setShowPrintDrawer(true)} className="p-2.5 rounded-lg hover:bg-white/10 transition-colors" title="Imprimer">
                 <Printer className="w-4 h-4 text-slate-300" />
               </button>
@@ -331,8 +530,8 @@ export default function TicketDetailPage() {
                 <div>
                   <label className="input-label">Réparation supplémentaire</label>
                   <input type="text"
-                    value={editFields.reparation_supp}
-                    onChange={e => setEditFields(f => ({ ...f, reparation_supp: e.target.value }))}
+                    value={accordForm.reparation}
+                    onChange={e => setAccordForm(f => ({ ...f, reparation: e.target.value }))}
                     className="input" placeholder="Ex: changement batterie"
                   />
                 </div>
@@ -340,8 +539,8 @@ export default function TicketDetailPage() {
                   <label className="input-label">Prix supplémentaire</label>
                   <div className="relative">
                     <input type="number" step="0.01"
-                      value={editFields.prix_supp}
-                      onChange={e => setEditFields(f => ({ ...f, prix_supp: e.target.value }))}
+                      value={accordForm.prix}
+                      onChange={e => setAccordForm(f => ({ ...f, prix: e.target.value }))}
                       className="input pr-7" placeholder="0.00"
                     />
                     <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
@@ -375,228 +574,292 @@ export default function TicketDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* ─── Left column (2/3) ─── */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Device info */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
-                <Smartphone className="w-4 h-4 text-brand-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Appareil</h2>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-              {[
-                { label: 'Catégorie', value: t.categorie, icon: null },
-                { label: 'Marque', value: t.marque },
-                { label: 'Modèle', value: t.modele || t.modele_autre || '—' },
-                { label: 'Panne', value: t.panne },
-                { label: 'IMEI / N° série', value: t.imei, mono: true },
-                { label: 'Détail panne', value: t.panne_detail },
-              ].map(({ label, value, mono }) => (
-                <div key={label}>
-                  <p className="text-slate-400 text-xs mb-0.5">{label}</p>
-                  <p className={`font-medium text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</p>
+
+          {/* ═══ Device info (editable) ═══ */}
+          <EditableSection
+            title="Appareil" icon={Smartphone} iconBg="bg-brand-50" iconColor="text-brand-600"
+            editing={editingDevice}
+            onEdit={() => setEditingDevice(true)}
+            onSave={handleSaveDevice}
+            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
+            viewContent={
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+                  {[
+                    { label: 'Catégorie', value: t.categorie },
+                    { label: 'Marque', value: t.marque },
+                    { label: 'Modèle', value: t.modele || t.modele_autre || '—' },
+                    { label: 'Panne', value: t.panne },
+                    { label: 'IMEI / N° série', value: t.imei, mono: true },
+                    { label: 'Détail panne', value: t.panne_detail },
+                  ].map(({ label, value, mono }) => (
+                    <div key={label}>
+                      <p className="text-slate-400 text-xs mb-0.5">{label}</p>
+                      <p className={`font-medium text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+                {(t.pin || t.pattern) && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
+                    {t.pin && (
+                      <div>
+                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Code PIN
+                        </p>
+                        <p className="text-lg font-bold font-mono text-slate-800 tracking-widest">{t.pin}</p>
+                      </div>
+                    )}
+                    {t.pattern && (
+                      <div>
+                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> Pattern
+                        </p>
+                        <PatternGrid value={t.pattern} readOnly size={120} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {t.notes_client && (
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
+                    <span className="font-semibold">Note client :</span> {t.notes_client}
+                  </div>
+                )}
+              </>
+            }
+          >
+            {/* Edit mode for device */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="input-label">Catégorie</label>
+                <input value={deviceForm.categorie} onChange={e => setDeviceForm(f => ({ ...f, categorie: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Marque</label>
+                <input value={deviceForm.marque} onChange={e => setDeviceForm(f => ({ ...f, marque: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Modèle</label>
+                <input value={deviceForm.modele} onChange={e => setDeviceForm(f => ({ ...f, modele: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Panne</label>
+                <input value={deviceForm.panne} onChange={e => setDeviceForm(f => ({ ...f, panne: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">IMEI</label>
+                <input value={deviceForm.imei} onChange={e => setDeviceForm(f => ({ ...f, imei: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">Détail panne</label>
+                <input value={deviceForm.panne_detail} onChange={e => setDeviceForm(f => ({ ...f, panne_detail: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Code PIN</label>
+                <input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} />
+              </div>
+              <div>
+                <label className="input-label">Pattern</label>
+                <input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" />
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <label className="input-label">Note client</label>
+                <textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} />
+              </div>
             </div>
+          </EditableSection>
 
-            {/* PIN / Pattern */}
-            {(t.pin || t.pattern) && (
-              <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
-                {t.pin && (
+          {/* ═══ Tarification (editable) ═══ */}
+          <EditableSection
+            title="Tarification" icon={CreditCard} iconBg="bg-emerald-50" iconColor="text-emerald-600"
+            editing={editingPricing}
+            onEdit={() => setEditingPricing(true)}
+            onSave={handleSavePricing}
+            onCancel={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '' }); setRepairLines(parseRepairLines(t)); }}
+            viewContent={
+              <>
+                {/* Repair lines summary */}
+                <div className="space-y-2 mb-4">
+                  {repairLines.filter(l => l.label).map((line, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 bg-slate-50 rounded-lg">
+                      <span className="text-slate-700">{line.label}</span>
+                      <span className="font-semibold text-slate-800">{formatPrix(line.prix)}</span>
+                    </div>
+                  ))}
+                  {repairLines.filter(l => l.label).length === 0 && (
+                    <p className="text-sm text-slate-400 italic">Aucune réparation enregistrée</p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-slate-100">
                   <div>
-                    <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> Code PIN
-                    </p>
-                    <p className="text-lg font-bold font-mono text-slate-800 tracking-widest">{t.pin}</p>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Devis estimé</p>
+                    <p className="text-lg font-bold text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Tarif final</p>
+                    <p className="text-lg font-bold text-slate-800">{t.tarif_final ? formatPrix(t.tarif_final) : formatPrix(totalRepairs)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Acompte</p>
+                    <p className="text-lg font-bold text-slate-800">{t.acompte ? formatPrix(t.acompte) : '—'}</p>
+                  </div>
+                </div>
+
+                {reste > 0 && (
+                  <div className="mt-3 flex items-center justify-between p-3 bg-brand-50 rounded-lg">
+                    <span className="text-sm font-medium text-brand-700">Reste à payer</span>
+                    <span className="text-lg font-bold text-brand-600">{formatPrix(reste)}</span>
                   </div>
                 )}
-                {t.pattern && (
-                  <div>
-                    <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
-                      <Shield className="w-3 h-3" /> Pattern
-                    </p>
-                    <PatternGrid value={t.pattern} readOnly size={120} />
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
+                  <button onClick={handleTogglePaye}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      t.paye
+                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {t.paye ? 'Payé ✓' : 'Marquer payé'}
+                  </button>
+                  <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
+                    <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
+                  </button>
+                  <button onClick={() => setShowAccordModal(true)} className="btn-ghost text-xs gap-1.5 text-orange-600 hover:bg-orange-50">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Accord client
+                  </button>
+                </div>
+              </>
+            }
+          >
+            {/* Edit mode for pricing */}
+            <div className="space-y-4">
+              {/* Repair lines */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="input-label mb-0">Lignes de réparation</label>
+                  <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1">
+                    <Plus className="w-3 h-3" /> Ajouter
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {repairLines.map((line, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        value={line.label}
+                        onChange={e => updateRepairLine(i, 'label', e.target.value)}
+                        className="input flex-1"
+                        placeholder="Description réparation"
+                      />
+                      <div className="relative w-28 shrink-0">
+                        <input type="number" step="0.01"
+                          value={line.prix}
+                          onChange={e => updateRepairLine(i, 'prix', e.target.value)}
+                          className="input text-right pr-7"
+                          placeholder="0"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                      </div>
+                      <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0">
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0">
+                        <Plus className="w-3 h-3" />
+                      </button>
+                      {repairLines.length > 1 && (
+                        <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-right mt-2">
+                  <span className="text-xs text-slate-400">Total réparations :</span>
+                  <span className="text-sm font-bold text-slate-800 ml-2">{formatPrix(totalRepairs)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="input-label">Devis estimé</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.devis_estime}
+                        onChange={e => setPricingForm(f => ({ ...f, devis_estime: e.target.value }))}
+                        className="input text-center pr-7" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
                   </div>
-                )}
+                </div>
+                <div>
+                  <label className="input-label">Tarif final</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.tarif_final}
+                        onChange={e => setPricingForm(f => ({ ...f, tarif_final: e.target.value }))}
+                        className="input text-center pr-7" placeholder={totalRepairs || ''} />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                  </div>
+                </div>
+                <div>
+                  <label className="input-label">Acompte</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.acompte}
+                        onChange={e => setPricingForm(f => ({ ...f, acompte: e.target.value }))}
+                        className="input text-center pr-7" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* Client notes */}
-            {t.notes_client && (
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
-                <span className="font-semibold">Note client :</span> {t.notes_client}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Type écran</label>
+                  <select value={pricingForm.type_ecran} onChange={e => setPricingForm(f => ({ ...f, type_ecran: e.target.value }))} className="input">
+                    <option value="">—</option>
+                    <option value="Original">Original</option>
+                    <option value="Compatible">Compatible</option>
+                    <option value="OLED">OLED</option>
+                    <option value="Incell">Incell</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="input-label">Date récupération</label>
+                  <input type="text" value={pricingForm.date_recuperation}
+                    onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))}
+                    className="input" placeholder="Ex: demain 14h, lundi..." />
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          </EditableSection>
 
-          {/* Pricing */}
+          {/* ═══ Notes & Timeline ═══ */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                  <CreditCard className="w-4 h-4 text-emerald-600" />
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-amber-600" />
                 </div>
-                <h2 className="text-sm font-semibold text-slate-800">Tarification</h2>
+                <h2 className="text-sm font-semibold text-slate-800">Notes & Historique</h2>
               </div>
-              {reste > 0 && (
-                <div className="text-right">
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">Reste à payer</p>
-                  <p className="text-lg font-bold text-brand-600">{formatPrix(reste)}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              {/* Devis */}
-              <div>
-                <label className="input-label">Devis estimé</label>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0">
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <div className="relative flex-1">
-                    <input type="number" step="0.01"
-                      value={editFields.devis_estime}
-                      onChange={e => setEditFields(f => ({ ...f, devis_estime: e.target.value }))}
-                      className="input text-center pr-7"
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                  </div>
-                  <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0">
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Tarif final */}
-              <div>
-                <label className="input-label">Tarif final</label>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0">
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <div className="relative flex-1">
-                    <input type="number" step="0.01"
-                      value={editFields.tarif_final}
-                      onChange={e => setEditFields(f => ({ ...f, tarif_final: e.target.value }))}
-                      className="input text-center pr-7"
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                  </div>
-                  <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0">
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Acompte */}
-              <div>
-                <label className="input-label">Acompte</label>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0">
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <div className="relative flex-1">
-                    <input type="number" step="0.01"
-                      value={editFields.acompte}
-                      onChange={e => setEditFields(f => ({ ...f, acompte: e.target.value }))}
-                      className="input text-center pr-7"
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                  </div>
-                  <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0">
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Réparation supp */}
-              <div>
-                <label className="input-label">Réparation supp.</label>
-                <input type="text"
-                  value={editFields.reparation_supp}
-                  onChange={e => setEditFields(f => ({ ...f, reparation_supp: e.target.value }))}
-                  className="input"
-                  placeholder="Ex: changement batterie"
-                />
-              </div>
-
-              {/* Prix supp */}
-              <div>
-                <label className="input-label">Prix supp.</label>
-                <div className="relative">
-                  <input type="number" step="0.01"
-                    value={editFields.prix_supp}
-                    onChange={e => setEditFields(f => ({ ...f, prix_supp: e.target.value }))}
-                    className="input pr-7"
-                  />
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                </div>
-              </div>
-
-              {/* Type écran */}
-              <div>
-                <label className="input-label">Type écran</label>
-                <select
-                  value={editFields.type_ecran}
-                  onChange={e => setEditFields(f => ({ ...f, type_ecran: e.target.value }))}
-                  className="input"
-                >
-                  <option value="">—</option>
-                  <option value="Original">Original</option>
-                  <option value="Compatible">Compatible</option>
-                  <option value="OLED">OLED</option>
-                  <option value="Incell">Incell</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-              <div className="flex items-center gap-2">
-                <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
-                  <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
-                </button>
-                <button onClick={() => setShowAccordModal(true)} className="btn-ghost text-xs gap-1.5 text-orange-600 hover:bg-orange-50">
-                  <AlertTriangle className="w-3.5 h-3.5" /> Demander accord client
-                </button>
-              </div>
-              <button onClick={handleSave} disabled={saving} className="btn-primary">
-                <Save className="w-4 h-4" />
-                {saving ? 'Enregistrement...' : 'Enregistrer'}
+              <button onClick={handleAddAttention} className="btn-ghost text-xs gap-1 text-red-500 hover:bg-red-50" title="Ajouter flag attention">
+                <Flag className="w-3.5 h-3.5" /> Attention
               </button>
             </div>
-          </div>
 
-          {/* Notes */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                <FileText className="w-4 h-4 text-amber-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Notes</h2>
-            </div>
-
-            {t.notes_internes && (
-              <div className="space-y-2 mb-4 max-h-48 overflow-y-auto">
-                {t.notes_internes.split('\n').filter(Boolean).map((line, i) => {
-                  const isInternal = line.includes('[INTERNE]');
-                  const cleanLine = line.replace('[INTERNE] ', '').replace('[CLIENT] ', '');
-                  return (
-                    <div key={i} className={`flex items-start gap-2.5 text-sm p-2.5 rounded-lg ${
-                      isInternal ? 'bg-slate-50' : 'bg-blue-50'
-                    }`}>
-                      {isInternal
-                        ? <Lock className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        : <Eye className="w-3.5 h-3.5 text-blue-400 mt-0.5 shrink-0" />
-                      }
-                      <p className={isInternal ? 'text-slate-600' : 'text-blue-700'}>{cleanLine}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="flex gap-2">
+            {/* Add note input */}
+            <div className="flex gap-2 mb-4">
               <div className="flex-1 flex gap-2">
                 <button
                   onClick={() => setNotePrivate(!notePrivate)}
@@ -622,9 +885,36 @@ export default function TicketDetailPage() {
                 <Plus className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Timeline */}
+            {timelineEntries.length > 0 && (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {timelineEntries.map((entry, i) => {
+                  const styles = {
+                    internal: { bg: 'bg-slate-50', icon: Lock, iconColor: 'text-slate-400', textColor: 'text-slate-600' },
+                    client: { bg: 'bg-blue-50', icon: Eye, iconColor: 'text-blue-400', textColor: 'text-blue-700' },
+                    attention: { bg: 'bg-red-50 border border-red-200', icon: AlertTriangle, iconColor: 'text-red-500', textColor: 'text-red-700' },
+                    history: { bg: 'bg-slate-50/60', icon: Clock, iconColor: 'text-slate-300', textColor: 'text-slate-500' },
+                  };
+                  const s = styles[entry.type];
+                  const EntryIcon = s.icon;
+                  return (
+                    <div key={i} className={`flex items-start gap-2.5 text-sm p-2.5 rounded-lg ${s.bg}`}>
+                      <EntryIcon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${s.iconColor}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={s.textColor}>{entry.text}</p>
+                      </div>
+                      {entry.timestamp && (
+                        <span className="text-[10px] text-slate-400 shrink-0 mt-0.5">{entry.timestamp}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Message Composer */}
+          {/* ═══ Message Composer ═══ */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -640,7 +930,6 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
-            {/* Template buttons */}
             <div className="flex flex-wrap gap-1.5 mb-3">
               {MESSAGE_TEMPLATES.map(tmpl => (
                 <button
@@ -657,7 +946,6 @@ export default function TicketDetailPage() {
               ))}
             </div>
 
-            {/* Message textarea */}
             <textarea
               value={messageText}
               onChange={e => setMessageText(e.target.value)}
@@ -667,113 +955,110 @@ export default function TicketDetailPage() {
               disabled={messageLoading}
             />
 
-            {/* Send buttons */}
             <div className="flex flex-wrap gap-2">
               {t.client_tel && (
-                <button onClick={handleSendWhatsApp} disabled={!messageText}
-                  className="btn-whatsapp text-xs">
+                <button onClick={handleSendWhatsApp} disabled={!messageText} className="btn-whatsapp text-xs">
                   <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
                 </button>
               )}
               {t.client_tel && (
-                <button onClick={handleSendSMS} disabled={!messageText}
-                  className="btn-secondary text-xs">
+                <button onClick={handleSendSMS} disabled={!messageText} className="btn-secondary text-xs">
                   <Send className="w-3.5 h-3.5" /> SMS
                 </button>
               )}
               {t.client_email && (
-                <button onClick={handleSendEmail} disabled={!messageText}
-                  className="btn-ghost text-xs border border-slate-200">
+                <button onClick={handleSendEmail} disabled={!messageText} className="btn-ghost text-xs border border-slate-200">
                   <Mail className="w-3.5 h-3.5" /> Email
                 </button>
               )}
             </div>
           </div>
-
-          {/* History */}
-          {t.historique && (
-            <div className="card p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-slate-500" />
-                </div>
-                <h2 className="text-sm font-semibold text-slate-800">Historique</h2>
-              </div>
-              <div className="space-y-1 max-h-60 overflow-y-auto">
-                {t.historique.split('\n').filter(Boolean).reverse().map((line, i) => (
-                  <div key={i} className="flex items-start gap-3 text-sm py-1.5">
-                    <div className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0" />
-                    <p className="text-slate-600 text-[13px]">{line}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ─── Right column (1/3) ─── */}
         <div className="space-y-5">
-          {/* Client info */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                <User className="w-4 h-4 text-blue-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Client</h2>
-            </div>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                <span className="text-brand-700 font-bold text-sm">
-                  {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
-                </span>
-              </div>
-              <div className="min-w-0">
-                <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
-                {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {t.client_tel && (
-                <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                    <Phone className="w-4 h-4 text-slate-500" />
+          {/* ═══ Client info (editable) ═══ */}
+          <EditableSection
+            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
+            editing={editingClient}
+            onEdit={() => setEditingClient(true)}
+            onSave={handleSaveClient}
+            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
+            viewContent={
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                    <span className="text-brand-700 font-bold text-sm">
+                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
+                    </span>
                   </div>
-                  <span className="font-mono text-xs">{t.client_tel}</span>
-                </a>
-              )}
-              {t.client_email && (
-                <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4 text-slate-500" />
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
+                    {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
                   </div>
-                  <span className="text-xs truncate">{t.client_email}</span>
-                </a>
-              )}
-            </div>
+                </div>
 
-            {/* Quick contact buttons */}
-            <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
-              {t.client_tel && (
-                <a
-                  href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
-                  target="_blank" rel="noopener noreferrer"
-                  className="btn-whatsapp text-xs py-2"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                </a>
-              )}
-              {t.client_tel && (
-                <a
-                  href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)}
-                  className="btn-secondary text-xs py-2"
-                >
-                  <Send className="w-3.5 h-3.5" /> SMS
-                </a>
-              )}
+                <div className="space-y-2">
+                  {t.client_tel && (
+                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="font-mono text-xs">{t.client_tel}</span>
+                    </a>
+                  )}
+                  {t.client_email && (
+                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="text-xs truncate">{t.client_email}</span>
+                    </a>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
+                  {t.client_tel && (
+                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
+                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                  )}
+                  {t.client_tel && (
+                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
+                      <Send className="w-3.5 h-3.5" /> SMS
+                    </a>
+                  )}
+                </div>
+              </>
+            }
+          >
+            {/* Edit mode for client */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="input-label">Prénom</label>
+                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="input-label">Nom</label>
+                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                </div>
+              </div>
+              <div>
+                <label className="input-label">Téléphone</label>
+                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">Email</label>
+                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Société</label>
+                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
+              </div>
             </div>
-          </div>
+          </EditableSection>
 
           {/* Dates */}
           <div className="card p-5">
@@ -823,9 +1108,16 @@ export default function TicketDetailPage() {
                     {teamMembers.map(m => (
                       <button
                         key={m.id}
-                        onClick={() => setEditFields(f => ({ ...f, technicien_assigne: m.nom }))}
+                        onClick={async () => {
+                          setPricingForm(f => ({ ...f, technicien_assigne: m.nom }));
+                          try {
+                            await api.updateTicket(id, { technicien_assigne: m.nom });
+                            await loadTicket();
+                            toast.success(`Assigné à ${m.nom}`);
+                          } catch { toast.error('Erreur assignation'); }
+                        }}
                         className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
-                          editFields.technicien_assigne === m.nom
+                          t.technicien_assigne === m.nom
                             ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
                             : 'border-slate-200 hover:border-slate-300 text-slate-700'
                         }`}
@@ -836,15 +1128,12 @@ export default function TicketDetailPage() {
                       </button>
                     ))}
                   </div>
-                  {editFields.technicien_assigne && !teamMembers.find(m => m.nom === editFields.technicien_assigne) && (
-                    <p className="text-xs text-slate-500">Assigné : {editFields.technicien_assigne}</p>
-                  )}
                 </div>
               ) : (
                 <input
                   type="text"
-                  value={editFields.technicien_assigne}
-                  onChange={e => setEditFields(f => ({ ...f, technicien_assigne: e.target.value }))}
+                  value={pricingForm.technicien_assigne}
+                  onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
                   className="input"
                   placeholder="Nom du technicien"
                 />

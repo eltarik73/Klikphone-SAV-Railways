@@ -78,6 +78,18 @@ class TicketCreate(BaseModel):
 
 
 class TicketUpdate(BaseModel):
+    # Device / repair fields (now editable)
+    categorie: Optional[str] = None
+    marque: Optional[str] = None
+    modele: Optional[str] = None
+    modele_autre: Optional[str] = None
+    imei: Optional[str] = None
+    panne: Optional[str] = None
+    panne_detail: Optional[str] = None
+    pin: Optional[str] = None
+    pattern: Optional[str] = None
+    notes_client: Optional[str] = None
+    # Pricing / assignment
     notes_internes: Optional[str] = None
     commentaire_client: Optional[str] = None
     devis_estime: Optional[float] = None

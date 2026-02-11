@@ -2,7 +2,7 @@
 API Catalogue marques et modèles.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
 from app.api.auth import get_current_user, get_optional_user
 
@@ -82,3 +82,49 @@ async def add_modele(
             (categorie, marque, modele),
         )
     return {"ok": True}
+
+
+@router.delete("/marques")
+async def delete_marque(
+    categorie: str = Query(...),
+    marque: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """Supprime une marque du catalogue."""
+    with get_cursor() as cur:
+        cur.execute(
+            "DELETE FROM catalog_marques WHERE categorie = %s AND marque = %s",
+            (categorie, marque),
+        )
+        cur.execute(
+            "DELETE FROM catalog_modeles WHERE categorie = %s AND marque = %s",
+            (categorie, marque),
+        )
+    return {"ok": True}
+
+
+@router.delete("/modeles")
+async def delete_modele(
+    categorie: str = Query(...),
+    marque: str = Query(...),
+    modele: str = Query(...),
+    user: dict = Depends(get_current_user),
+):
+    """Supprime un modèle du catalogue."""
+    with get_cursor() as cur:
+        cur.execute(
+            "DELETE FROM catalog_modeles WHERE categorie = %s AND marque = %s AND modele = %s",
+            (categorie, marque, modele),
+        )
+    return {"ok": True}
+
+
+@router.get("/all")
+async def get_all_catalog(user: dict = Depends(get_current_user)):
+    """Retourne tout le catalogue (marques + modèles) pour la page config."""
+    with get_cursor() as cur:
+        cur.execute("SELECT DISTINCT categorie, marque FROM catalog_marques ORDER BY categorie, marque")
+        marques = cur.fetchall()
+        cur.execute("SELECT DISTINCT categorie, marque, modele FROM catalog_modeles ORDER BY categorie, marque, modele")
+        modeles = cur.fetchall()
+    return {"marques": marques, "modeles": modeles}

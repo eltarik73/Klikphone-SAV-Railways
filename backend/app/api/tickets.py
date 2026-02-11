@@ -184,7 +184,7 @@ async def update_ticket(
     user: dict = Depends(get_current_user),
 ):
     """Met à jour un ticket (champs partiels)."""
-    updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    updates = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
     if not updates:
         return {"ok": True}
 
@@ -200,6 +200,35 @@ async def update_ticket(
         )
 
     return {"ok": True}
+
+
+# ─── TOGGLE PAYÉ ────────────────────────────────────────────────
+@router.patch("/{ticket_id}/paye", response_model=dict)
+async def toggle_paye(
+    ticket_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Bascule le statut payé du ticket."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ts = datetime.now().strftime("%d/%m %H:%M")
+
+    with get_cursor() as cur:
+        cur.execute("SELECT paye, historique FROM tickets WHERE id = %s", (ticket_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Ticket non trouvé")
+
+        new_paye = 0 if row.get("paye") else 1
+        historique = row.get("historique") or ""
+        log_entry = f"[{ts}] {'Marqué payé' if new_paye else 'Marqué non payé'}"
+        new_hist = f"{historique.rstrip()}\n{log_entry}" if historique.strip() else log_entry
+
+        cur.execute(
+            "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s WHERE id = %s",
+            (new_paye, now, new_hist, ticket_id),
+        )
+
+    return {"ok": True, "paye": new_paye}
 
 
 # ─── CHANGEMENT DE STATUT ───────────────────────────────────────

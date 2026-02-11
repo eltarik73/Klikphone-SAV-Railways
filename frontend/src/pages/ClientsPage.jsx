@@ -242,6 +242,14 @@ export default function ClientsPage() {
                 )}
               </div>
 
+              {/* New repair for this client */}
+              <button
+                onClick={() => navigate(`/client?client_id=${selectedClient.id}&tel=${encodeURIComponent(selectedClient.telephone || '')}`)}
+                className="btn-primary w-full justify-center text-xs mb-5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Nouvelle réparation pour ce client
+              </button>
+
               {/* Client tickets */}
               <div className="card p-5">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">

@@ -8,16 +8,26 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restaurer la session depuis localStorage
     const token = localStorage.getItem('kp_token');
     const target = localStorage.getItem('kp_target');
     const utilisateur = localStorage.getItem('kp_user');
 
     if (token && target && utilisateur) {
       api.setToken(token);
-      setUser({ target, utilisateur });
+      // Vérifier la validité du token
+      api.get('/api/auth/me')
+        .then(() => {
+          setUser({ target, utilisateur });
+          setLoading(false);
+        })
+        .catch(() => {
+          api.logout();
+          setUser(null);
+          setLoading(false);
+        });
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   const login = async (pin, target, utilisateur) => {

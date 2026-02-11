@@ -2,7 +2,13 @@
 API Config — gestion des paramètres boutique (table params).
 """
 
-from fastapi import APIRouter, Depends
+import json
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from app.database import get_cursor
 from app.models import ParamUpdate, ParamOut
 from app.api.auth import get_current_user
@@ -67,3 +73,49 @@ async def set_params_batch(
                 ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
             """, (p.cle, p.valeur))
     return {"ok": True}
+
+
+class PinChangeRequest(BaseModel):
+    target: str  # "accueil" or "tech"
+    old_pin: str
+    new_pin: str
+
+
+@router.post("/change-pin")
+async def change_pin(data: PinChangeRequest, user: dict = Depends(get_current_user)):
+    """Change le PIN d'accès."""
+    if data.target not in ("accueil", "tech"):
+        raise HTTPException(400, "Target invalide")
+    if len(data.new_pin) != 4 or not data.new_pin.isdigit():
+        raise HTTPException(400, "Le PIN doit être composé de 4 chiffres")
+
+    param_key = f"PIN_{data.target.upper()}"
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = %s", (param_key,))
+        row = cur.fetchone()
+        if not row or row["valeur"] != data.old_pin:
+            raise HTTPException(401, "Ancien PIN incorrect")
+        cur.execute(
+            "UPDATE params SET valeur = %s WHERE cle = %s",
+            (data.new_pin, param_key),
+        )
+    return {"ok": True}
+
+
+@router.get("/backup")
+async def export_backup(user: dict = Depends(get_current_user)):
+    """Exporte toute la BDD au format JSON pour backup."""
+    tables = {}
+    with get_cursor() as cur:
+        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles"]:
+            try:
+                cur.execute(f"SELECT * FROM {table}")
+                rows = cur.fetchall()
+                tables[table] = [{k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row.items()} for row in rows]
+            except Exception:
+                tables[table] = []
+
+    return JSONResponse(
+        content={"backup_date": datetime.now().isoformat(), "tables": tables},
+        headers={"Content-Disposition": f"attachment; filename=klikphone_backup_{datetime.now().strftime('%Y%m%d')}.json"},
+    )

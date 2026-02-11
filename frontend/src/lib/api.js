@@ -71,6 +71,7 @@ class ApiClient {
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
   addNote(id, note) { return this.post(`/api/tickets/${id}/note?note=${encodeURIComponent(note)}`); }
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
+  togglePaye(id) { return this.patch(`/api/tickets/${id}/paye`, {}); }
 
   // ─── CLIENTS ───────────────────────────────
   getClients(params = {}) {
@@ -89,6 +90,11 @@ class ApiClient {
   getPannes() { return this.get('/api/catalog/pannes'); }
   getMarques(categorie) { return this.get(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}`); }
   getModeles(categorie, marque) { return this.get(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
+  getAllCatalog() { return this.get('/api/catalog/all'); }
+  addMarque(categorie, marque) { return this.post(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
+  addModele(categorie, marque, modele) { return this.post(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`); }
+  deleteMarque(categorie, marque) { return this.delete(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
+  deleteModele(categorie, marque, modele) { return this.delete(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`); }
 
   // ─── TEAM ──────────────────────────────────
   getTeam() { return this.get('/api/team'); }
@@ -111,6 +117,9 @@ class ApiClient {
   getPublicConfig() { return this.get('/api/config/public'); }
   setParam(cle, valeur) { return this.put('/api/config', { cle, valeur }); }
   setParams(params) { return this.put('/api/config/batch', params); }
+  changePin(target, old_pin, new_pin) { return this.post('/api/config/change-pin', { target, old_pin, new_pin }); }
+  getBackup() { return this.get('/api/config/backup'); }
+  exportClientsCsv() { return `${API_URL}/api/clients/export/csv`; }
 
   // ─── NOTIFICATIONS ─────────────────────────
   getTemplates() { return this.get('/api/notifications/templates'); }

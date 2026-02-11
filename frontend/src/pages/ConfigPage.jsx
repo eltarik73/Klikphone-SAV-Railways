@@ -1,26 +1,43 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import { useToast } from '../components/Toast';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2,
+  Database, Download, Upload, Shield, Palette,
+  BookOpen, ChevronDown, ChevronRight,
 } from 'lucide-react';
 
+const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
+
 export default function ConfigPage() {
+  const { user } = useAuth();
+  const toast = useToast();
   const [config, setConfig] = useState({});
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
   // Team form
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [teamForm, setTeamForm] = useState({ nom: '', role: 'tech', pin: '', actif: true });
+  const [teamForm, setTeamForm] = useState({ nom: '', role: 'tech', couleur: '#3B82F6', actif: true });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // PIN change
+  const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
+  const [pinChanging, setPinChanging] = useState(false);
+
+  // Catalog
+  const [catalog, setCatalog] = useState({ marques: [], modeles: [] });
+  const [catalogExpanded, setCatalogExpanded] = useState({});
+  const [newMarque, setNewMarque] = useState({ categorie: 'Smartphone', marque: '' });
+  const [newModele, setNewModele] = useState({ categorie: 'Smartphone', marque: '', modele: '' });
+
+  const categories = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
+
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
@@ -44,14 +61,27 @@ export default function ConfigPage() {
     }
   };
 
+  const loadCatalog = async () => {
+    try {
+      const data = await api.getAllCatalog();
+      setCatalog(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'catalog') loadCatalog();
+  }, [activeTab]);
+
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
-      await api.setParams(config);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      const params = Object.entries(config).map(([cle, valeur]) => ({ cle, valeur: valeur || '' }));
+      await api.setParams(params);
+      toast.success('Configuration enregistrée');
     } catch (err) {
-      console.error(err);
+      toast.error('Erreur sauvegarde');
     } finally {
       setSaving(false);
     }
@@ -61,8 +91,9 @@ export default function ConfigPage() {
     setConfig(c => ({ ...c, [key]: value }));
   };
 
+  // Team
   const resetTeamForm = () => {
-    setTeamForm({ nom: '', role: 'tech', pin: '', actif: true });
+    setTeamForm({ nom: '', role: 'tech', couleur: '#3B82F6', actif: true });
     setEditingMember(null);
     setShowTeamForm(false);
   };
@@ -76,8 +107,9 @@ export default function ConfigPage() {
       }
       resetTeamForm();
       await loadData();
+      toast.success(editingMember ? 'Membre mis à jour' : 'Membre créé');
     } catch (err) {
-      console.error(err);
+      toast.error('Erreur');
     }
   };
 
@@ -86,8 +118,8 @@ export default function ConfigPage() {
     setTeamForm({
       nom: member.nom || '',
       role: member.role || 'tech',
-      pin: member.pin || '',
-      actif: member.actif !== false,
+      couleur: member.couleur || '#3B82F6',
+      actif: member.actif !== 0,
     });
     setShowTeamForm(true);
   };
@@ -97,16 +129,102 @@ export default function ConfigPage() {
     try {
       await api.deleteTeamMember(id);
       await loadData();
+      toast.success('Membre supprimé');
     } catch (err) {
-      console.error(err);
+      toast.error('Erreur suppression');
     }
   };
 
+  // PIN
+  const handleChangePin = async () => {
+    setPinChanging(true);
+    try {
+      await api.changePin(pinForm.target, pinForm.old_pin, pinForm.new_pin);
+      setPinForm({ target: pinForm.target, old_pin: '', new_pin: '' });
+      toast.success('PIN modifié');
+    } catch (err) {
+      toast.error(err.message || 'Erreur changement PIN');
+    } finally {
+      setPinChanging(false);
+    }
+  };
+
+  // Catalog
+  const handleAddMarque = async () => {
+    if (!newMarque.marque.trim()) return;
+    try {
+      await api.addMarque(newMarque.categorie, newMarque.marque.trim());
+      setNewMarque(f => ({ ...f, marque: '' }));
+      await loadCatalog();
+      toast.success('Marque ajoutée');
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleAddModele = async () => {
+    if (!newModele.modele.trim() || !newModele.marque) return;
+    try {
+      await api.addModele(newModele.categorie, newModele.marque, newModele.modele.trim());
+      setNewModele(f => ({ ...f, modele: '' }));
+      await loadCatalog();
+      toast.success('Modèle ajouté');
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleDeleteMarque = async (categorie, marque) => {
+    if (!confirm(`Supprimer ${marque} et tous ses modèles ?`)) return;
+    try {
+      await api.deleteMarque(categorie, marque);
+      await loadCatalog();
+      toast.success('Marque supprimée');
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleDeleteModele = async (categorie, marque, modele) => {
+    try {
+      await api.deleteModele(categorie, marque, modele);
+      await loadCatalog();
+      toast.success('Modèle supprimé');
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  // Backup
+  const handleDownloadBackup = async () => {
+    try {
+      const data = await api.getBackup();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `klikphone_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Backup téléchargé');
+    } catch (err) {
+      toast.error('Erreur backup');
+    }
+  };
+
+  const handleExportCSV = () => {
+    const url = api.exportClientsCsv();
+    window.open(url, '_blank');
+    toast.success('Export CSV lancé');
+  };
+
   const tabs = [
-    { id: 'general', label: 'Général', icon: Store },
+    { id: 'general', label: 'Boutique', icon: Store },
     { id: 'team', label: 'Équipe', icon: Users },
+    { id: 'catalog', label: 'Catalogue', icon: BookOpen },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'print', label: 'Impression', icon: Printer },
+    { id: 'security', label: 'Sécurité', icon: Shield },
+    { id: 'backup', label: 'Sauvegarde', icon: Database },
   ];
 
   if (loading) {
@@ -119,7 +237,6 @@ export default function ConfigPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Configuration</h1>
@@ -142,7 +259,7 @@ export default function ConfigPage() {
         ))}
       </div>
 
-      {/* General tab */}
+      {/* ═══ General tab ═══ */}
       {activeTab === 'general' && (
         <div className="space-y-5">
           <div className="card p-5">
@@ -174,21 +291,57 @@ export default function ConfigPage() {
               </div>
               <div>
                 <label className="input-label">TVA</label>
-                <input value={config.tva || ''} onChange={e => updateConfig('tva', e.target.value)} className="input" placeholder="Ex: 20%" />
+                <select value={config.tva || '20'} onChange={e => updateConfig('tva', e.target.value)} className="input">
+                  <option value="0">Sans TVA</option>
+                  <option value="20">20%</option>
+                  <option value="10">10%</option>
+                  <option value="5.5">5.5%</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Impression & Caisse</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="input-label">Mentions légales (bas de ticket)</label>
+                <textarea value={config.mentions_legales || ''} onChange={e => updateConfig('mentions_legales', e.target.value)}
+                  className="input min-h-[80px] resize-none" placeholder="Conditions générales, garantie..." />
+              </div>
+              <div>
+                <label className="input-label">Message personnalisé (ticket client)</label>
+                <input value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
+                  className="input" placeholder="Merci de votre confiance !" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="input-label">URL API Caisse</label>
+                  <input value={config.caisse_url || ''} onChange={e => updateConfig('caisse_url', e.target.value)}
+                    className="input font-mono text-xs" placeholder="https://app.caisse-enregistreuse.fr/api/..." />
+                </div>
+                <div>
+                  <label className="input-label">Token API Caisse</label>
+                  <input type="password" value={config.caisse_token || ''} onChange={e => updateConfig('caisse_token', e.target.value)} className="input" />
+                </div>
+                <div>
+                  <label className="input-label">ID Boutique</label>
+                  <input value={config.caisse_shop_id || ''} onChange={e => updateConfig('caisse_shop_id', e.target.value)} className="input font-mono" />
+                </div>
               </div>
             </div>
           </div>
 
           <div className="flex justify-end">
-            <button onClick={handleSaveConfig} disabled={saving} className={`btn-primary ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {saved ? 'Enregistré !' : 'Enregistrer'}
+            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Enregistrer
             </button>
           </div>
         </div>
       )}
 
-      {/* Team tab */}
+      {/* ═══ Team tab ═══ */}
       {activeTab === 'team' && (
         <div className="space-y-5">
           <div className="flex justify-end">
@@ -221,9 +374,17 @@ export default function ConfigPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="input-label">Code PIN</label>
-                  <input type="text" value={teamForm.pin} onChange={e => setTeamForm(f => ({ ...f, pin: e.target.value }))}
-                    className="input font-mono text-center tracking-widest" maxLength={4} placeholder="0000" />
+                  <label className="input-label">Couleur</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {COLORS.map(c => (
+                      <button key={c} onClick={() => setTeamForm(f => ({ ...f, couleur: c }))}
+                        className={`w-7 h-7 rounded-lg border-2 transition-all ${
+                          teamForm.couleur === c ? 'border-slate-900 scale-110' : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
                 </div>
                 <div className="flex items-end">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -252,14 +413,16 @@ export default function ConfigPage() {
               <div className="divide-y divide-slate-100">
                 {team.map(member => (
                   <div key={member.id} className="flex items-center gap-4 px-5 py-3.5">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                      <span className="text-brand-700 font-bold text-sm">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: (member.couleur || '#3B82F6') + '20' }}>
+                      <span className="font-bold text-sm" style={{ color: member.couleur || '#3B82F6' }}>
                         {(member.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold text-slate-800">{member.nom}</p>
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: member.couleur || '#94A3B8' }} />
                         {!member.actif && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-400">Inactif</span>
                         )}
@@ -267,11 +430,6 @@ export default function ConfigPage() {
                       <p className="text-xs text-slate-400 capitalize">{member.role}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      {member.pin && (
-                        <span className="text-xs font-mono text-slate-400 mr-2">
-                          <Key className="w-3 h-3 inline mr-0.5" />{member.pin}
-                        </span>
-                      )}
                       <button onClick={() => handleEditMember(member)} className="btn-ghost p-1.5">
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
@@ -287,7 +445,96 @@ export default function ConfigPage() {
         </div>
       )}
 
-      {/* Notifications tab */}
+      {/* ═══ Catalog tab ═══ */}
+      {activeTab === 'catalog' && (
+        <div className="space-y-5">
+          {/* Add marque */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter une marque</h2>
+            <div className="flex gap-2">
+              <select value={newMarque.categorie} onChange={e => setNewMarque(f => ({ ...f, categorie: e.target.value }))} className="input w-40">
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input value={newMarque.marque} onChange={e => setNewMarque(f => ({ ...f, marque: e.target.value }))}
+                className="input flex-1" placeholder="Nom de la marque" onKeyDown={e => e.key === 'Enter' && handleAddMarque()} />
+              <button onClick={handleAddMarque} disabled={!newMarque.marque.trim()} className="btn-primary px-3">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Add modele */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter un modèle</h2>
+            <div className="flex gap-2 flex-wrap">
+              <select value={newModele.categorie} onChange={e => setNewModele(f => ({ ...f, categorie: e.target.value, marque: '' }))} className="input w-36">
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={newModele.marque} onChange={e => setNewModele(f => ({ ...f, marque: e.target.value }))} className="input w-40">
+                <option value="">— Marque —</option>
+                {[...new Set(catalog.marques.filter(m => m.categorie === newModele.categorie).map(m => m.marque))].map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <input value={newModele.modele} onChange={e => setNewModele(f => ({ ...f, modele: e.target.value }))}
+                className="input flex-1" placeholder="Nom du modèle" onKeyDown={e => e.key === 'Enter' && handleAddModele()} />
+              <button onClick={handleAddModele} disabled={!newModele.modele.trim() || !newModele.marque} className="btn-primary px-3">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Catalog tree */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+              <span className="table-header">Catalogue ({catalog.marques.length} marques, {catalog.modeles.length} modèles)</span>
+            </div>
+            {categories.map(cat => {
+              const catMarques = [...new Set(catalog.marques.filter(m => m.categorie === cat).map(m => m.marque))];
+              if (catMarques.length === 0) return null;
+              return (
+                <div key={cat}>
+                  <button onClick={() => setCatalogExpanded(e => ({ ...e, [cat]: !e[cat] }))}
+                    className="w-full flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                    {catalogExpanded[cat] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    {cat} <span className="text-xs text-slate-400 font-normal">({catMarques.length})</span>
+                  </button>
+                  {catalogExpanded[cat] && (
+                    <div className="pl-8 pr-5 pb-2">
+                      {catMarques.map(marque => {
+                        const modeles = catalog.modeles.filter(m => m.categorie === cat && m.marque === marque);
+                        return (
+                          <div key={marque} className="mb-2">
+                            <div className="flex items-center gap-2 py-1">
+                              <span className="text-xs font-semibold text-slate-600">{marque}</span>
+                              <span className="text-[10px] text-slate-400">({modeles.length} modèles)</span>
+                              <button onClick={() => handleDeleteMarque(cat, marque)} className="ml-auto btn-ghost p-1">
+                                <Trash2 className="w-3 h-3 text-red-400" />
+                              </button>
+                            </div>
+                            <div className="flex flex-wrap gap-1 ml-3">
+                              {modeles.map(m => (
+                                <span key={m.modele} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-600">
+                                  {m.modele}
+                                  <button onClick={() => handleDeleteModele(cat, marque, m.modele)} className="hover:text-red-500">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Notifications tab ═══ */}
       {activeTab === 'notifications' && (
         <div className="space-y-5">
           <div className="card p-5">
@@ -322,58 +569,68 @@ export default function ConfigPage() {
           </div>
 
           <div className="flex justify-end">
-            <button onClick={handleSaveConfig} disabled={saving} className={`btn-primary ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {saved ? 'Enregistré !' : 'Enregistrer'}
+            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Enregistrer
             </button>
           </div>
         </div>
       )}
 
-      {/* Print tab */}
-      {activeTab === 'print' && (
+      {/* ═══ Security tab ═══ */}
+      {activeTab === 'security' && (
         <div className="space-y-5">
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Paramètres d'impression</h2>
-            <div className="space-y-4">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Changer le PIN d'accès</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="input-label">Mentions légales (bas de ticket)</label>
-                <textarea value={config.mentions_legales || ''} onChange={e => updateConfig('mentions_legales', e.target.value)}
-                  className="input min-h-[80px] resize-none" placeholder="Conditions générales, garantie..." />
+                <label className="input-label">Espace</label>
+                <select value={pinForm.target} onChange={e => setPinForm(f => ({ ...f, target: e.target.value }))} className="input">
+                  <option value="accueil">Accueil</option>
+                  <option value="tech">Technicien</option>
+                </select>
               </div>
               <div>
-                <label className="input-label">Message personnalisé (ticket client)</label>
-                <input value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
-                  className="input" placeholder="Merci de votre confiance !" />
+                <label className="input-label">Ancien PIN</label>
+                <input type="password" value={pinForm.old_pin} onChange={e => setPinForm(f => ({ ...f, old_pin: e.target.value }))}
+                  className="input font-mono text-center tracking-widest" maxLength={4} placeholder="····" />
+              </div>
+              <div>
+                <label className="input-label">Nouveau PIN</label>
+                <input type="password" value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value }))}
+                  className="input font-mono text-center tracking-widest" maxLength={4} placeholder="····" />
               </div>
             </div>
+            <div className="flex justify-end mt-4">
+              <button onClick={handleChangePin}
+                disabled={pinChanging || pinForm.old_pin.length !== 4 || pinForm.new_pin.length !== 4}
+                className="btn-primary">
+                {pinChanging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                Changer le PIN
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Backup tab ═══ */}
+      {activeTab === 'backup' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Export clients</h2>
+            <p className="text-sm text-slate-500 mb-3">Téléchargez la liste de tous les clients au format CSV.</p>
+            <button onClick={handleExportCSV} className="btn-primary">
+              <Download className="w-4 h-4" /> Exporter clients (CSV)
+            </button>
           </div>
 
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Caisse enregistreuse</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="input-label">URL API Caisse</label>
-                <input value={config.caisse_url || ''} onChange={e => updateConfig('caisse_url', e.target.value)}
-                  className="input font-mono text-xs" placeholder="https://app.caisse-enregistreuse.fr/api/..." />
-              </div>
-              <div>
-                <label className="input-label">Token API</label>
-                <input type="password" value={config.caisse_token || ''} onChange={e => updateConfig('caisse_token', e.target.value)}
-                  className="input" />
-              </div>
-              <div>
-                <label className="input-label">ID Boutique</label>
-                <input value={config.caisse_shop_id || ''} onChange={e => updateConfig('caisse_shop_id', e.target.value)}
-                  className="input font-mono" />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-end">
-            <button onClick={handleSaveConfig} disabled={saving} className={`btn-primary ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-              {saved ? 'Enregistré !' : 'Enregistrer'}
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Sauvegarde complète</h2>
+            <p className="text-sm text-slate-500 mb-3">
+              Téléchargez un backup JSON complet de la base de données (clients, tickets, config, équipe, catalogue).
+            </p>
+            <button onClick={handleDownloadBackup} className="btn-primary">
+              <Database className="w-4 h-4" /> Télécharger le backup (JSON)
             </button>
           </div>
         </div>

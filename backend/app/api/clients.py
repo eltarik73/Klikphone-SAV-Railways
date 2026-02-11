@@ -2,8 +2,12 @@
 API CRUD Clients — compatible schéma PostgreSQL existant.
 """
 
+import csv
+import io
 from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from app.database import get_cursor
 from app.models import ClientCreate, ClientUpdate, ClientOut
 from app.api.auth import get_current_user
@@ -143,3 +147,24 @@ async def get_client_tickets(client_id: int, user: dict = Depends(get_current_us
             (client_id,),
         )
         return cur.fetchall()
+
+
+@router.get("/export/csv")
+async def export_clients_csv(user: dict = Depends(get_current_user)):
+    """Exporte tous les clients au format CSV."""
+    with get_cursor() as cur:
+        cur.execute("SELECT id, nom, prenom, telephone, email, societe, carte_camby, date_creation FROM clients ORDER BY nom")
+        rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création"])
+    for r in rows:
+        writer.writerow([r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], r["date_creation"]])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clients_klikphone.csv"},
+    )
