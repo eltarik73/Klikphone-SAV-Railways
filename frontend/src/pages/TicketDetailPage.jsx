@@ -60,7 +60,6 @@ export default function TicketDetailPage() {
   const [saving, setSaving] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [notePrivate, setNotePrivate] = useState(true);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // Edit states per section
@@ -215,7 +214,6 @@ export default function TicketDetailPage() {
     try {
       await api.changeStatus(id, statut);
       await loadTicket();
-      setShowStatusMenu(false);
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       toast.error('Erreur changement de statut');
@@ -444,67 +442,61 @@ export default function TicketDetailPage() {
         </div>
       )}
 
-      {/* Dark Header */}
-      <div className={`bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900/80 text-white px-4 sm:px-6 lg:px-8 py-5 -mx-4 sm:-mx-6 lg:-mx-8 ${showAttention ? '' : '-mt-4 sm:-mt-6 lg:-mt-8'} mb-6`}>
+      {/* Dark Header — spacious */}
+      <div className={`bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 ${showAttention ? '' : '-mt-4 sm:-mt-6 lg:-mt-8'} mb-6`}>
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-start gap-3">
-            <button onClick={() => navigate(-1)} className="p-2.5 mt-0.5 shrink-0 rounded-lg hover:bg-white/10 transition-colors">
-              <ArrowLeft className="w-5 h-5 text-slate-300" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
-                <button onClick={handleCopyCode} className="p-1 rounded hover:bg-white/10 transition-colors" title="Copier le code">
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+          {/* Top row: back button */}
+          <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors mb-5 -ml-1">
+            <ArrowLeft className="w-4 h-4" />
+            <span className="text-xs font-medium">Retour</span>
+          </button>
+
+          <div className="flex flex-col sm:flex-row sm:items-start gap-5">
+            {/* Left: ticket info */}
+            <div className="flex-1 min-w-0 space-y-3">
+              {/* Ticket code */}
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
+                <button onClick={handleCopyCode} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Copier le code">
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
                 </button>
-                <StatusBadge statut={t.statut} size="lg" />
-                {t.paye ? (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Payé
+                {t.paye && (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Payé
                   </span>
-                ) : null}
-              </div>
-              <p className="text-sm text-slate-400 mt-1 truncate">
-                {appareil} — {t.panne}
-              </p>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={() => setShowPrintDrawer(true)} className="p-2.5 rounded-lg hover:bg-white/10 transition-colors" title="Imprimer">
-                <Printer className="w-4 h-4 text-slate-300" />
-              </button>
-
-              {/* Status dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowStatusMenu(!showStatusMenu)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-brand-600/25"
-                >
-                  Statut <ChevronDown className={`w-4 h-4 transition-transform ${showStatusMenu ? 'rotate-180' : ''}`} />
-                </button>
-                {showStatusMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-72 card p-1.5 shadow-xl z-50 animate-in">
-                      {STATUTS.map(s => {
-                        const sc = getStatusConfig(s);
-                        return (
-                          <button
-                            key={s}
-                            onClick={() => handleStatusChange(s)}
-                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
-                              ${s === t.statut ? 'bg-brand-50 text-brand-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'}`}
-                          >
-                            <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
-                            {s}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
                 )}
               </div>
+
+              {/* Info lines */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <User className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span className="text-base text-slate-300">{t.client_prenom || ''} {t.client_nom || ''}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Smartphone className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span className="text-base text-slate-300">{appareil || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <Wrench className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span className="text-base text-slate-300">{t.panne || '—'}</span>
+                </div>
+                {t.client_tel && (
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 text-slate-500 shrink-0" />
+                    <a href={`tel:${t.client_tel}`} className="text-base text-slate-300 hover:text-white font-mono transition-colors">{t.client_tel}</a>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: status badge + print */}
+            <div className="flex sm:flex-col items-center sm:items-end gap-3 shrink-0">
+              <StatusBadge statut={t.statut} size="lg" />
+              <button onClick={() => setShowPrintDrawer(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white text-sm font-medium transition-colors">
+                <Printer className="w-4 h-4" /> Imprimer
+              </button>
             </div>
           </div>
         </div>
@@ -975,6 +967,33 @@ export default function TicketDetailPage() {
               </div>
             </div>
           </EditableSection>
+
+          {/* ═══ Changement de statut ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: getStatusConfig(t.statut).color + '20' }}>
+                <ChevronDown className="w-4 h-4" style={{ color: getStatusConfig(t.statut).color }} />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Changer le statut</h2>
+            </div>
+            <select
+              value={t.statut}
+              onChange={e => handleStatusChange(e.target.value)}
+              className="w-full py-3 px-4 text-base font-semibold rounded-xl border-2 transition-colors cursor-pointer appearance-none bg-no-repeat"
+              style={{
+                borderColor: getStatusConfig(t.statut).color,
+                color: getStatusConfig(t.statut).color,
+                backgroundColor: getStatusConfig(t.statut).color + '10',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatusConfig(t.statut).color)}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 12px center',
+                backgroundSize: '20px',
+              }}
+            >
+              {STATUTS.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
 
           {/* ═══ Notes & Timeline ═══ */}
           <div className="card p-5">
