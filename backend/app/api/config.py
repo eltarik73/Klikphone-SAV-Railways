@@ -40,15 +40,6 @@ async def get_public_params():
     return {row["cle"]: row["valeur"] for row in rows}
 
 
-@router.get("/{cle}")
-async def get_param(cle: str, user: dict = Depends(get_current_user)):
-    """Récupère un paramètre par clé."""
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = %s", (cle,))
-        row = cur.fetchone()
-    return {"cle": cle, "valeur": row["valeur"] if row else None}
-
-
 @router.put("")
 async def set_param(data: ParamUpdate, user: dict = Depends(get_current_user)):
     """Crée ou met à jour un paramètre."""
@@ -119,3 +110,12 @@ async def export_backup(user: dict = Depends(get_current_user)):
         content={"backup_date": datetime.now().isoformat(), "tables": tables},
         headers={"Content-Disposition": f"attachment; filename=klikphone_backup_{datetime.now().strftime('%Y%m%d')}.json"},
     )
+
+
+@router.get("/{cle}")
+async def get_param(cle: str, user: dict = Depends(get_current_user)):
+    """Récupère un paramètre par clé."""
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = %s", (cle,))
+        row = cur.fetchone()
+    return {"cle": cle, "valeur": row["valeur"] if row else None}
