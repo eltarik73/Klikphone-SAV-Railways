@@ -19,6 +19,30 @@ from app.database import get_cursor
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+# Ensure chat_messages table exists on first use
+_table_checked = False
+
+def _ensure_table():
+    global _table_checked
+    if _table_checked:
+        return
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    recipient TEXT DEFAULT 'all',
+                    message TEXT NOT NULL,
+                    is_private BOOLEAN DEFAULT FALSE,
+                    read_by TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        _table_checked = True
+    except Exception:
+        pass
+
 
 # ─── MODELS ───────────────────────────────────────────────
 
@@ -386,6 +410,7 @@ async def clear_conversation(conv_id: str):
 @router.post("/team/send")
 async def send_team_message(msg: TeamMessageCreate):
     """Envoie un message d'equipe."""
+    _ensure_table()
     is_private = msg.recipient != "all"
     with get_cursor() as cur:
         cur.execute("""
@@ -400,6 +425,7 @@ async def send_team_message(msg: TeamMessageCreate):
 @router.get("/team/messages")
 async def get_team_messages(user: str, limit: int = Query(50, le=200)):
     """Recupere les messages d'equipe visibles par l'utilisateur."""
+    _ensure_table()
     is_mgr = _is_manager(user)
 
     with get_cursor() as cur:
@@ -437,6 +463,7 @@ async def get_team_messages(user: str, limit: int = Query(50, le=200)):
 @router.put("/team/read")
 async def mark_as_read(user: str):
     """Marque tous les messages visibles comme lus pour cet utilisateur."""
+    _ensure_table()
     is_mgr = _is_manager(user)
 
     with get_cursor() as cur:
@@ -468,6 +495,7 @@ async def mark_as_read(user: str):
 @router.get("/team/unread")
 async def get_unread_count(user: str):
     """Nombre de messages non lus pour cet utilisateur."""
+    _ensure_table()
     is_mgr = _is_manager(user)
 
     with get_cursor() as cur:
