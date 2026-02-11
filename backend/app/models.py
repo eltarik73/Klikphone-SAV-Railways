@@ -108,6 +108,7 @@ class TicketUpdate(BaseModel):
     prix_supp: Optional[float] = None
     type_ecran: Optional[str] = None
     date_recuperation: Optional[Any] = None
+    attention: Optional[str] = None
 
 
 class StatusChange(BaseModel):
@@ -153,6 +154,7 @@ class TicketOut(BaseModel):
     date_cloture: Optional[datetime] = None
     type_ecran: Optional[str] = None
     historique: Optional[str] = None
+    attention: Optional[str] = None
 
 
 class TicketFull(TicketOut):

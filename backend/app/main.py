@@ -32,6 +32,7 @@ async def lifespan(app: FastAPI):
                     date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT")
     except Exception as e:
         print(f"Warning: could not create historique table: {e}")
     yield

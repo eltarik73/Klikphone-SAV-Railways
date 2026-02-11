@@ -100,6 +100,9 @@ export default function TicketDetailPage() {
   // Structured historique (from historique table)
   const [historiqueEntries, setHistoriqueEntries] = useState([]);
 
+  // TVA config
+  const [tvaRate, setTvaRate] = useState(0);
+
   const parseRepairLines = (ticket) => {
     try {
       if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
@@ -150,8 +153,8 @@ export default function TicketDetailPage() {
         date_recuperation: data.date_recuperation || '',
       });
       setRepairLines(parseRepairLines(data));
-      // Show attention flag if notes contain [ATTENTION]
-      setShowAttention((data.notes_internes || '').includes('[ATTENTION]'));
+      // Show attention flag from dedicated field or notes
+      setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
     } catch (err) {
       console.error(err);
     } finally {
@@ -172,6 +175,11 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     api.getActiveTeam().then(setTeamMembers).catch(() => {});
+    api.getConfig().then(params => {
+      const arr = Array.isArray(params) ? params : [];
+      const tvaParam = arr.find(p => p.cle === 'tva');
+      if (tvaParam) setTvaRate(parseFloat(tvaParam.valeur) || 0);
+    }).catch(() => {});
   }, []);
 
   // ─── Save handlers ────────────────────────────────────────────
@@ -252,6 +260,7 @@ export default function TicketDetailPage() {
   const handleAddAttention = async () => {
     try {
       await api.addNote(id, '[ATTENTION] ⚠ Ce ticket nécessite une attention particulière');
+      await api.updateTicket(id, { attention: 'Ce ticket nécessite une attention particulière' });
       await loadTicket();
       await loadHistorique();
       toast.success('Flag attention ajouté');
@@ -387,7 +396,10 @@ export default function TicketDetailPage() {
   };
 
   const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
-  const reste = (parseFloat(pricingForm.tarif_final) || totalRepairs) - (parseFloat(pricingForm.acompte) || 0);
+  const subtotalHT = parseFloat(pricingForm.tarif_final) || totalRepairs;
+  const tvaAmount = tvaRate > 0 ? subtotalHT * (tvaRate / 100) : 0;
+  const totalTTC = subtotalHT + tvaAmount;
+  const reste = totalTTC - (parseFloat(pricingForm.acompte) || 0);
 
   // ─── Render ───────────────────────────────────────────────────
 
@@ -453,7 +465,7 @@ export default function TicketDetailPage() {
       {showAttention && (
         <div className="bg-red-600 text-white px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span className="text-sm font-semibold">Ce ticket nécessite une attention particulière</span>
+          <span className="text-sm font-semibold">ATTENTION : {t.attention || 'Ce ticket nécessite une attention particulière'}</span>
           <button onClick={() => setShowAttention(false)} className="ml-auto p-1 hover:bg-white/20 rounded">
             <X className="w-4 h-4" />
           </button>
@@ -832,24 +844,36 @@ export default function TicketDetailPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 pt-3 border-t border-slate-100">
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Devis estimé</p>
-                    <p className="text-lg font-bold text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</p>
+                <div className="space-y-2 pt-3 border-t border-slate-100">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Devis estimé</span>
+                    <span className="font-medium text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</span>
                   </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Tarif final</p>
-                    <p className="text-lg font-bold text-slate-800">{t.tarif_final ? formatPrix(t.tarif_final) : formatPrix(totalRepairs)}</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{tvaRate > 0 ? 'Sous-total HT' : 'Tarif final'}</span>
+                    <span className="font-semibold text-slate-800">{formatPrix(subtotalHT)}</span>
                   </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Acompte</p>
-                    <p className="text-lg font-bold text-slate-800">{t.acompte ? formatPrix(t.acompte) : '—'}</p>
+                  {tvaRate > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">TVA ({tvaRate}%)</span>
+                        <span className="font-medium text-slate-600">{formatPrix(tvaAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-2">
+                        <span className="text-slate-800">Total TTC</span>
+                        <span className="text-slate-900">{formatPrix(totalTTC)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Acompte versé</span>
+                    <span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span>
                   </div>
                 </div>
 
                 {reste > 0 && (
-                  <div className="mt-3 flex items-center justify-between p-3 bg-brand-50 rounded-lg">
-                    <span className="text-sm font-medium text-brand-700">Reste à payer</span>
+                  <div className="mt-3 flex items-center justify-between p-3 bg-brand-50 rounded-lg border-2 border-brand-200">
+                    <span className="text-sm font-bold text-brand-700">RESTE À PAYER</span>
                     <span className="text-lg font-bold text-brand-600">{formatPrix(reste)}</span>
                   </div>
                 )}

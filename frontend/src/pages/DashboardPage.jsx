@@ -8,7 +8,7 @@ import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
-  SquareCheck, Square, X, Filter,
+  SquareCheck, Square, X, Filter, Calendar,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -174,6 +174,38 @@ export default function DashboardPage() {
     { label: 'Accord client', value: kpi.en_attente_accord, icon: AlertTriangle, color: 'text-orange-600', iconBg: 'bg-orange-100', filter: "En attente d'accord client" },
     { label: 'Pièces', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-600', iconBg: 'bg-violet-100', filter: 'En attente de pièce' },
   ] : [];
+
+  // Recovery date countdown helper
+  const getRecoveryInfo = (dateStr) => {
+    if (!dateStr) return { text: 'Non définie', color: 'text-slate-400', urgent: false };
+    // Try to parse various formats
+    const now = new Date();
+    let target;
+    // ISO date
+    if (dateStr.includes('-') && dateStr.length >= 10) {
+      target = new Date(dateStr);
+    } else {
+      // Try French format DD/MM/YYYY or free text — skip for free text
+      const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (match) {
+        target = new Date(`${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`);
+      } else {
+        return { text: dateStr, color: 'text-slate-500', urgent: false };
+      }
+    }
+    if (isNaN(target.getTime())) return { text: dateStr, color: 'text-slate-500', urgent: false };
+    const diffMs = target - now;
+    const diffH = Math.round(diffMs / 3600000);
+    const diffD = Math.floor(Math.abs(diffH) / 24);
+    const remH = Math.abs(diffH) % 24;
+    if (diffMs > 0) {
+      const label = diffD > 0 ? `dans ${diffD}j ${remH}h` : `dans ${Math.abs(diffH)}h`;
+      return { text: label, color: 'text-emerald-600', urgent: false };
+    } else {
+      const label = diffD > 0 ? `DÉPASSÉ ${diffD}j ${remH}h` : `DÉPASSÉ ${Math.abs(diffH)}h`;
+      return { text: label, color: 'text-red-600 font-bold', urgent: true };
+    }
+  };
 
   const filterTabs = [
     { label: 'Tous', value: '' },
@@ -359,7 +391,10 @@ export default function DashboardPage() {
 
                 {/* Ticket code */}
                 <div className="cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
+                  <div className="flex items-center gap-1">
+                    {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
+                    <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
+                  </div>
                 </div>
 
                 {/* Client */}
@@ -417,6 +452,14 @@ export default function DashboardPage() {
                 {/* Date */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <p className="text-[11px] text-slate-500">{formatDateShort(t.date_depot)}</p>
+                  {t.date_recuperation && (() => {
+                    const ri = getRecoveryInfo(t.date_recuperation);
+                    return (
+                      <p className={`text-[10px] flex items-center gap-0.5 mt-0.5 ${ri.color}`}>
+                        <Calendar className="w-2.5 h-2.5" /> {ri.text}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 {/* Contact icons */}

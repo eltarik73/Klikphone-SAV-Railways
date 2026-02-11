@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -9,8 +9,6 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 
-const PAGE_SIZE = 50;
-
 export default function ClientsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -19,32 +17,41 @@ export default function ClientsPage() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
   const [clientTickets, setClientTickets] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_clients_page_size') || '50'));
   const [hasMore, setHasMore] = useState(true);
   const [sortField, setSortField] = useState('date_creation');
   const [sortDir, setSortDir] = useState('desc');
+  const searchTimer = useRef(null);
+
+  // Debounced search (300ms)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => { setDebouncedSearch(search); setPage(0); }, 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [search]);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
-      if (search) params.search = search;
+      const params = { limit: pageSize, offset: page * pageSize };
+      if (debouncedSearch) params.search = debouncedSearch;
       const data = await api.getClients(params);
       setClients(data);
-      setHasMore(data.length === PAGE_SIZE);
+      setHasMore(data.length === pageSize);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [search, page]);
+  }, [debouncedSearch, page, pageSize]);
 
   useEffect(() => { loadClients(); }, [loadClients]);
-  useEffect(() => { setPage(0); }, [search]);
 
   const sorted = [...clients].sort((a, b) => {
     let va = a[sortField], vb = b[sortField];
@@ -120,7 +127,7 @@ export default function ClientsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Clients</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{clients.length} client(s) affichés — page {page + 1}</p>
+          <p className="text-sm text-slate-500 mt-0.5">{clients.length} client(s) — page {page + 1}</p>
         </div>
       </div>
 
@@ -204,14 +211,25 @@ export default function ClientsPage() {
             {/* Pagination */}
             {!loading && (page > 0 || hasMore) && (
               <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-                <button
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="btn-ghost text-xs disabled:opacity-30"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" /> Précédent
-                </button>
-                <span className="text-xs text-slate-400">Page {page + 1}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="btn-ghost text-xs disabled:opacity-30"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> Précédent
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Page {page + 1}</span>
+                  <select value={pageSize}
+                    onChange={e => { const s = Number(e.target.value); setPageSize(s); setPage(0); localStorage.setItem('kp_clients_page_size', s.toString()); }}
+                    className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600">
+                    {[10, 20, 50, 100].map(n => (
+                      <option key={n} value={n}>{n} / page</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   onClick={() => setPage(p => p + 1)}
                   disabled={!hasMore}
