@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  MessageCircle, X, Send, Bot, Users, Lock,
-  ChevronDown, Loader2, Trash2, Sparkles
+  MessageCircle, X, Send, Bot, Users, Lock, ArrowLeft,
+  Loader2, Trash2, Sparkles, Megaphone
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -14,7 +14,6 @@ function ChatMessageContent({ content }) {
 
   if (!content) return null;
 
-  // Escape HTML, then add safe formatting
   let html = content
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -60,19 +59,35 @@ function ChatMessageContent({ content }) {
 const SUGGESTIONS = [
   { icon: '📊', text: 'Combien de tickets en cours ?' },
   { icon: '🔍', text: 'Quels tickets sont en attente de diagnostic ?' },
-  { icon: '🔧', text: 'Comment changer l\'ecran d\'un iPhone 15 ?' },
+  { icon: '🔧', text: "Comment changer l'ecran d'un iPhone 15 ?" },
   { icon: '💰', text: 'Quel est le CA du jour ?' },
   { icon: '📱', text: 'Quels tickets sont assignes a Marina ?' },
 ];
 
-// ─── CHAT ASSISTANT TAB ──────────────────────────────────
+// ─── HELPER: format time ────────────────────────────────
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function roleIcon(role) {
+  if (!role) return '🔧';
+  const r = role.toLowerCase();
+  if (r.includes('manager')) return '👔';
+  if (r.includes('accueil')) return '📋';
+  return '🔧';
+}
+
+// ═════════════════════════════════════════════════════════
+// TAB 1: ASSISTANT IA
+// ═════════════════════════════════════════════════════════
 
 function TabAssistant() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [convId, setConvId] = useState(null);
-  const [error, setError] = useState('');
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
@@ -87,7 +102,6 @@ function TabAssistant() {
 
     setMessages(prev => [...prev, { role: 'user', content: msg }]);
     setInput('');
-    setError('');
     setLoading(true);
 
     try {
@@ -95,7 +109,6 @@ function TabAssistant() {
       setConvId(data.conversation_id);
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
     } catch (err) {
-      setError(err.message || 'Erreur de connexion');
       setMessages(prev => [...prev, { role: 'assistant', content: `Erreur : ${err.message || 'connexion impossible'}` }]);
     } finally {
       setLoading(false);
@@ -107,12 +120,10 @@ function TabAssistant() {
     if (convId) api.clearAIConversation(convId).catch(() => {});
     setMessages([]);
     setConvId(null);
-    setError('');
   };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center py-6">
@@ -168,7 +179,6 @@ function TabAssistant() {
         )}
       </div>
 
-      {/* Input */}
       <div className="border-t border-slate-200 p-3 bg-white">
         {messages.length > 0 && (
           <button onClick={clearChat} className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 mb-2 transition">
@@ -200,44 +210,36 @@ function TabAssistant() {
   );
 }
 
-// ─── TEAM CHAT TAB ───────────────────────────────────────
+// ═════════════════════════════════════════════════════════
+// TAB 2: GENERAL (public messages)
+// ═════════════════════════════════════════════════════════
 
-function TabTeam({ onReadMessages }) {
+function TabGeneral({ onReadMessages }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [recipient, setRecipient] = useState('all');
-  const [team, setTeam] = useState([]);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
 
-  // Load team members
-  useEffect(() => {
-    api.getActiveTeam().then(setTeam).catch(() => {});
-  }, []);
-
-  // Fetch messages
   const fetchMessages = useCallback(async () => {
     try {
-      const msgs = await api.chatTeamMessages(currentUser);
+      const msgs = await api.chatTeamMessages(currentUser, 'general');
       setMessages(msgs);
     } catch { /* silent */ }
   }, [currentUser]);
 
-  // Poll every 5 seconds
   useEffect(() => {
     fetchMessages();
     const interval = setInterval(fetchMessages, 5000);
     return () => clearInterval(interval);
   }, [fetchMessages]);
 
-  // Mark as read when viewing
+  // Mark general messages as read
   useEffect(() => {
     api.chatTeamMarkRead(currentUser).then(() => onReadMessages?.()).catch(() => {});
   }, [messages.length, currentUser, onReadMessages]);
 
-  // Auto-scroll
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
@@ -247,7 +249,7 @@ function TabTeam({ onReadMessages }) {
     if (!msg || sending) return;
     setSending(true);
     try {
-      await api.chatTeamSend(msg, currentUser, recipient);
+      await api.chatTeamSend(msg, currentUser, 'all');
       setInput('');
       fetchMessages();
     } catch { /* silent */ }
@@ -255,76 +257,230 @@ function TabTeam({ onReadMessages }) {
     inputRef.current?.focus();
   };
 
-  const roleIcon = (name) => {
-    const member = team.find(t => t.nom === name);
-    if (!member) return '';
-    const role = (member.role || '').toLowerCase();
-    if (role.includes('manager')) return '👔';
-    if (role.includes('accueil')) return '📋';
-    return '🔧';
-  };
-
   return (
     <div className="flex flex-col h-full">
-      {/* Recipient selector */}
-      <div className="border-b border-slate-100 px-3 py-2 bg-slate-50/50">
-        <select
-          value={recipient}
-          onChange={e => setRecipient(e.target.value)}
-          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white focus:border-brand-400 outline-none"
-        >
-          <option value="all">📢 Tout le monde</option>
-          {team.map(t => (
-            <option key={t.id} value={t.nom}>
-              {(t.role || '').toLowerCase().includes('manager') ? '👔' :
-               (t.role || '').toLowerCase().includes('accueil') ? '📋' : '🔧'} {t.nom}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5">
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <Megaphone className="w-8 h-8 text-slate-300 mx-auto mb-2" />
             <p className="text-xs text-slate-400">Aucun message pour le moment</p>
           </div>
         )}
 
         {messages.map(msg => {
           const isMine = msg.sender === currentUser;
-          const isPrivate = msg.is_private;
+          const color = msg.sender_color || '#94a3b8';
 
           return (
             <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] ${isMine ? 'items-end' : 'items-start'}`}>
-                {/* Header: sender -> recipient */}
                 <div className={`flex items-center gap-1 text-[10px] mb-0.5 ${isMine ? 'justify-end' : ''} text-slate-400`}>
-                  <span className="font-medium">{roleIcon(msg.sender)} {msg.sender}</span>
-                  {msg.recipient !== 'all' && (
-                    <>
-                      <span>→</span>
-                      <span>{roleIcon(msg.recipient)} {msg.recipient}</span>
-                    </>
-                  )}
-                  {isPrivate && <Lock className="w-2.5 h-2.5 text-brand-400" />}
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ background: color }}
+                  />
+                  <span className="font-medium">{msg.sender}</span>
+                  <span>{fmtTime(msg.created_at)}</span>
                 </div>
-
-                {/* Bubble */}
                 <div className={`rounded-2xl px-3.5 py-2 text-sm ${
                   isMine
-                    ? 'bg-brand-600 text-white rounded-br-md'
-                    : isPrivate
-                      ? 'bg-brand-50 text-slate-700 border border-brand-100 rounded-bl-md'
-                      : 'bg-slate-100 text-slate-700 rounded-bl-md'
+                    ? 'bg-brand-600 text-white rounded-br-sm'
+                    : 'bg-slate-100 text-slate-700 rounded-bl-sm'
                 }`}>
                   {msg.message}
                 </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-                {/* Time */}
+      <div className="border-t border-slate-200 p-3 bg-white flex gap-2">
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+          placeholder="Message a tout le monde..."
+          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm
+                     focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+          disabled={sending}
+        />
+        <button
+          onClick={sendMessage}
+          disabled={sending || !input.trim()}
+          className="px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
+                     disabled:opacity-40 transition shrink-0"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════
+// TAB 3: PRIVE (WhatsApp-style contacts + conversations)
+// ═════════════════════════════════════════════════════════
+
+function TabPrivate({ onReadMessages }) {
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+  const inputRef = useRef(null);
+  const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
+
+  // Fetch contacts list
+  const fetchContacts = useCallback(async () => {
+    try {
+      const data = await api.chatTeamContacts(currentUser);
+      setContacts(data);
+    } catch { /* silent */ }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchContacts();
+    const interval = setInterval(fetchContacts, 5000);
+    return () => clearInterval(interval);
+  }, [fetchContacts]);
+
+  // Fetch conversation when contact selected
+  const fetchConversation = useCallback(async (contact) => {
+    try {
+      const data = await api.chatTeamConversation(currentUser, contact);
+      setMessages(data);
+    } catch { /* silent */ }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!selectedContact) return;
+    fetchConversation(selectedContact);
+    // Mark as read
+    api.chatTeamMarkRead(currentUser, selectedContact).then(() => {
+      onReadMessages?.();
+      fetchContacts();
+    }).catch(() => {});
+    const interval = setInterval(() => fetchConversation(selectedContact), 3000);
+    return () => clearInterval(interval);
+  }, [selectedContact, fetchConversation, currentUser, onReadMessages, fetchContacts]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  const sendPrivateMessage = async () => {
+    const msg = input.trim();
+    if (!msg || !selectedContact || sending) return;
+    setSending(true);
+    try {
+      await api.chatTeamSend(msg, currentUser, selectedContact);
+      setInput('');
+      fetchConversation(selectedContact);
+    } catch { /* silent */ }
+    setSending(false);
+    inputRef.current?.focus();
+  };
+
+  // ─── CONTACT LIST VIEW ──────────────────────
+  if (!selectedContact) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-4 py-3 border-b border-slate-100">
+          <h3 className="font-semibold text-slate-700 text-sm flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 text-brand-500" />
+            Messages prives
+          </h3>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {contacts.length === 0 && (
+            <div className="text-center py-8">
+              <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+              <p className="text-xs text-slate-400">Aucun contact</p>
+            </div>
+          )}
+          {contacts.map(contact => (
+            <button
+              key={contact.name}
+              onClick={() => setSelectedContact(contact.name)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition border-b border-slate-50"
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                style={{ background: contact.color || '#94a3b8' }}
+              >
+                {contact.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold text-sm text-slate-700">
+                    {roleIcon(contact.role)} {contact.name}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {contact.last_message_time || ''}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 truncate">
+                  {contact.last_message || 'Pas de message'}
+                </p>
+              </div>
+              {contact.unread > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0">
+                  {contact.unread > 9 ? '9+' : contact.unread}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── CONVERSATION VIEW ──────────────────────
+  const contactInfo = contacts.find(c => c.name === selectedContact);
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 shrink-0">
+        <button
+          onClick={() => { setSelectedContact(null); setMessages([]); }}
+          className="text-slate-400 hover:text-slate-600 transition p-0.5"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+          style={{ background: contactInfo?.color || '#94a3b8' }}
+        >
+          {selectedContact.charAt(0).toUpperCase()}
+        </div>
+        <span className="font-semibold text-sm text-slate-700">{selectedContact}</span>
+      </div>
+
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+        {messages.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-xs text-slate-400">Commencez une conversation avec {selectedContact}</p>
+          </div>
+        )}
+        {messages.map(msg => {
+          const isMine = msg.sender === currentUser;
+          return (
+            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+              <div className="max-w-[80%]">
+                <div className={`rounded-2xl px-3.5 py-2.5 text-sm ${
+                  isMine
+                    ? 'bg-brand-600 text-white rounded-br-sm'
+                    : 'bg-slate-100 text-slate-700 rounded-bl-sm'
+                }`}>
+                  {msg.message}
+                </div>
                 <div className={`text-[10px] text-slate-300 mt-0.5 ${isMine ? 'text-right' : ''}`}>
-                  {msg.created_at ? new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}
+                  {fmtTime(msg.created_at)}
                 </div>
               </div>
             </div>
@@ -333,53 +489,65 @@ function TabTeam({ onReadMessages }) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-200 p-3 bg-white">
-        <div className="flex gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder={`Message ${recipient === 'all' ? 'a tous' : 'a ' + recipient}...`}
-            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm
-                       focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
-            disabled={sending}
-          />
-          <button
-            onClick={sendMessage}
-            disabled={sending || !input.trim()}
-            className="px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
-                       disabled:opacity-40 transition shrink-0"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
+      <div className="border-t border-slate-200 p-3 bg-white flex gap-2 shrink-0">
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendPrivateMessage()}
+          placeholder={`Message a ${selectedContact}...`}
+          className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-sm
+                     focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+          disabled={sending}
+        />
+        <button
+          onClick={sendPrivateMessage}
+          disabled={sending || !input.trim()}
+          className="px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
+                     disabled:opacity-40 transition shrink-0"
+        >
+          <Send className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── MAIN CHAT WIDGET ────────────────────────────────────
+// ═════════════════════════════════════════════════════════
+// MAIN CHAT WIDGET
+// ═════════════════════════════════════════════════════════
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState('ai'); // 'ai' | 'team'
-  const [unread, setUnread] = useState(0);
+  const [tab, setTab] = useState('ai'); // 'ai' | 'general' | 'private'
+  const [unreadGeneral, setUnreadGeneral] = useState(0);
+  const [unreadPrivate, setUnreadPrivate] = useState(0);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
 
-  // Poll unread count
+  // Poll total unread count
   useEffect(() => {
     const fetchUnread = () => {
-      api.chatTeamUnread(currentUser).then(data => setUnread(data.unread || 0)).catch(() => {});
+      api.chatTeamUnreadTotal(currentUser)
+        .then(data => {
+          setUnreadGeneral(data.general || 0);
+          setUnreadPrivate(data.private || 0);
+        })
+        .catch(() => {});
     };
     fetchUnread();
-    const interval = setInterval(fetchUnread, 10000);
+    const interval = setInterval(fetchUnread, 8000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
-  const handleReadMessages = useCallback(() => {
-    setUnread(0);
-  }, []);
+  const totalUnread = unreadGeneral + unreadPrivate;
+
+  const handleReadGeneral = useCallback(() => setUnreadGeneral(0), []);
+  const handleReadPrivate = useCallback(() => {
+    // Re-fetch to update per-contact counts
+    api.chatTeamUnreadTotal(currentUser)
+      .then(data => setUnreadPrivate(data.private || 0))
+      .catch(() => {});
+  }, [currentUser]);
 
   return (
     <>
@@ -392,10 +560,10 @@ export default function ChatWidget() {
                      transition-all flex items-center justify-center"
         >
           <MessageCircle className="w-6 h-6" />
-          {unread > 0 && (
+          {totalUnread > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white
                            text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
-              {unread > 9 ? '9+' : unread}
+              {totalUnread > 9 ? '9+' : totalUnread}
             </span>
           )}
         </button>
@@ -403,11 +571,11 @@ export default function ChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-5 right-5 z-[100] w-[380px] h-[560px] bg-white rounded-2xl
-                        shadow-2xl border border-slate-200 flex flex-col overflow-hidden
-                        animate-in"
-             style={{ animationName: 'chatSlideUp', animationDuration: '250ms' }}>
-
+        <div
+          className="fixed bottom-5 right-5 z-[100] w-[380px] h-[560px] bg-white rounded-2xl
+                     shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+          style={{ animation: 'chatSlideUp 250ms ease-out' }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-brand-600 text-white shrink-0">
             <div className="flex items-center gap-2">
@@ -422,32 +590,53 @@ export default function ChatWidget() {
             </button>
           </div>
 
-          {/* Tabs */}
+          {/* 3 Tabs */}
           <div className="flex border-b border-slate-100 shrink-0">
+            {/* Assistant IA */}
             <button
               onClick={() => setTab('ai')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition ${
+              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition ${
                 tab === 'ai'
                   ? 'text-brand-600 border-b-2 border-brand-600 bg-brand-50/30'
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
-              Assistant IA
+              Assistant
             </button>
+
+            {/* General */}
             <button
-              onClick={() => { setTab('team'); }}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition relative ${
-                tab === 'team'
+              onClick={() => setTab('general')}
+              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition relative ${
+                tab === 'general'
                   ? 'text-brand-600 border-b-2 border-brand-600 bg-brand-50/30'
                   : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
-              Equipe
-              {unread > 0 && tab !== 'team' && (
+              <Megaphone className="w-3.5 h-3.5" />
+              General
+              {unreadGeneral > 0 && tab !== 'general' && (
                 <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {unread}
+                  {unreadGeneral > 9 ? '9+' : unreadGeneral}
+                </span>
+              )}
+            </button>
+
+            {/* Prive */}
+            <button
+              onClick={() => setTab('private')}
+              className={`flex-1 flex items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition relative ${
+                tab === 'private'
+                  ? 'text-brand-600 border-b-2 border-brand-600 bg-brand-50/30'
+                  : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Prive
+              {unreadPrivate > 0 && tab !== 'private' && (
+                <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {unreadPrivate > 9 ? '9+' : unreadPrivate}
                 </span>
               )}
             </button>
@@ -455,12 +644,13 @@ export default function ChatWidget() {
 
           {/* Content */}
           <div className="flex-1 overflow-hidden">
-            {tab === 'ai' ? <TabAssistant /> : <TabTeam onReadMessages={handleReadMessages} />}
+            {tab === 'ai' && <TabAssistant />}
+            {tab === 'general' && <TabGeneral onReadMessages={handleReadGeneral} />}
+            {tab === 'private' && <TabPrivate onReadMessages={handleReadPrivate} />}
           </div>
         </div>
       )}
 
-      {/* Animation */}
       <style>{`
         @keyframes chatSlideUp {
           from { opacity: 0; transform: translateY(20px) scale(0.95); }

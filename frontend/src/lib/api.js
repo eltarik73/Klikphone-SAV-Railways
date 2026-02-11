@@ -229,14 +229,24 @@ class ApiClient {
   chatTeamSend(message, sender, recipient = 'all') {
     return this.post('/api/chat/team/send', { message, sender, recipient });
   }
-  chatTeamMessages(user, limit = 50) {
-    return this.get(`/api/chat/team/messages?user=${encodeURIComponent(user)}&limit=${limit}`);
+  chatTeamMessages(user, channel = 'all', limit = 50) {
+    return this.get(`/api/chat/team/messages?user=${encodeURIComponent(user)}&channel=${channel}&limit=${limit}`);
   }
-  chatTeamMarkRead(user) {
-    return this.put(`/api/chat/team/read?user=${encodeURIComponent(user)}`);
+  chatTeamContacts(user) {
+    return this.get(`/api/chat/team/contacts?user=${encodeURIComponent(user)}`);
+  }
+  chatTeamConversation(user, contact) {
+    return this.get(`/api/chat/team/conversation?user=${encodeURIComponent(user)}&with=${encodeURIComponent(contact)}`);
+  }
+  chatTeamMarkRead(user, contact) {
+    const qs = contact ? `&contact=${encodeURIComponent(contact)}` : '';
+    return this.put(`/api/chat/team/read?user=${encodeURIComponent(user)}${qs}`);
   }
   chatTeamUnread(user) {
     return this.get(`/api/chat/team/unread?user=${encodeURIComponent(user)}`);
+  }
+  chatTeamUnreadTotal(user) {
+    return this.get(`/api/chat/team/unread/total?user=${encodeURIComponent(user)}`);
   }
 }
 
