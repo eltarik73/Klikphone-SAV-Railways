@@ -5,6 +5,7 @@ import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import PatternGrid from '../components/PatternGrid';
+import PrintDrawer from '../components/PrintDrawer';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig, MESSAGE_TEMPLATES } from '../lib/utils';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Save, Trash2,
@@ -35,8 +36,8 @@ export default function TicketDetailPage() {
   const [messageText, setMessageText] = useState('');
   const [messageLoading, setMessageLoading] = useState(false);
 
-  // Print state
-  const [showPrintMenu, setShowPrintMenu] = useState(false);
+  // Print drawer state
+  const [showPrintDrawer, setShowPrintDrawer] = useState(false);
 
   // Accord client modal state
   const [showAccordModal, setShowAccordModal] = useState(false);
@@ -251,39 +252,10 @@ export default function TicketDetailPage() {
 
             {/* Action buttons */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* Print menu */}
-              <div className="relative">
-                <button onClick={() => setShowPrintMenu(!showPrintMenu)} className="p-2.5 rounded-lg hover:bg-white/10 transition-colors" title="Imprimer">
-                  <Printer className="w-4 h-4 text-slate-300" />
-                </button>
-                {showPrintMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowPrintMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 w-56 card p-1.5 shadow-xl z-50 animate-in">
-                      {[
-                        { type: 'client', label: 'Ticket client', desc: 'Reçu 80mm' },
-                        { type: 'staff', label: 'Fiche atelier', desc: 'Fiche technique' },
-                        { type: 'combined', label: 'Les deux', desc: 'Client + Atelier' },
-                        { type: 'devis', label: 'Devis A4', desc: 'Document PDF' },
-                        { type: 'recu', label: 'Reçu A4', desc: 'Reçu de paiement' },
-                      ].map(p => (
-                        <a key={p.type}
-                          href={api.getPrintUrl(id, p.type)}
-                          target="_blank" rel="noopener noreferrer"
-                          onClick={() => setShowPrintMenu(false)}
-                          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors"
-                        >
-                          <FileText className="w-4 h-4 text-slate-400" />
-                          <div>
-                            <p className="font-medium text-slate-700">{p.label}</p>
-                            <p className="text-[11px] text-slate-400">{p.desc}</p>
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              {/* Print drawer trigger */}
+              <button onClick={() => setShowPrintDrawer(true)} className="p-2.5 rounded-lg hover:bg-white/10 transition-colors" title="Imprimer">
+                <Printer className="w-4 h-4 text-slate-300" />
+              </button>
 
               {/* Status dropdown */}
               <div className="relative">
@@ -850,24 +822,13 @@ export default function TicketDetailPage() {
               </div>
               <h2 className="text-sm font-semibold text-slate-800">Impressions</h2>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <a href={api.getPrintUrl(id, 'client')} target="_blank" rel="noopener noreferrer"
-                className="btn-ghost text-xs py-2 border border-slate-200 justify-center">
-                Ticket client
-              </a>
-              <a href={api.getPrintUrl(id, 'staff')} target="_blank" rel="noopener noreferrer"
-                className="btn-ghost text-xs py-2 border border-slate-200 justify-center">
-                Fiche atelier
-              </a>
-              <a href={api.getPrintUrl(id, 'devis')} target="_blank" rel="noopener noreferrer"
-                className="btn-ghost text-xs py-2 border border-slate-200 justify-center">
-                Devis A4
-              </a>
-              <a href={api.getPrintUrl(id, 'recu')} target="_blank" rel="noopener noreferrer"
-                className="btn-ghost text-xs py-2 border border-slate-200 justify-center">
-                Reçu A4
-              </a>
-            </div>
+            <button
+              onClick={() => setShowPrintDrawer(true)}
+              className="w-full btn-primary justify-center text-xs"
+            >
+              <Printer className="w-3.5 h-3.5" /> Ouvrir le panneau d'impression
+            </button>
+            <p className="text-[10px] text-slate-400 text-center mt-2">5 formats : client, atelier, double, devis, reçu</p>
           </div>
 
           {/* Danger zone */}
@@ -887,6 +848,14 @@ export default function TicketDetailPage() {
         </div>
       </div>
       </div>
+
+      {/* Print Drawer */}
+      <PrintDrawer
+        open={showPrintDrawer}
+        onClose={() => setShowPrintDrawer(false)}
+        ticketId={id}
+        ticketCode={t.ticket_code}
+      />
     </div>
   );
 }
