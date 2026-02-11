@@ -638,6 +638,23 @@ export default function ConfigPage() {
             </div>
           </div>
 
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Chat & Assistant IA</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="input-label">Cle API Anthropic</label>
+                <input type="password" value={config.ANTHROPIC_API_KEY || ''} onChange={e => updateConfig('ANTHROPIC_API_KEY', e.target.value)}
+                  className="input font-mono text-xs" placeholder="sk-ant-..." />
+                <p className="text-[10px] text-slate-400 mt-1">Necessaire pour l'assistant IA. Obtenir sur console.anthropic.com</p>
+              </div>
+              <div>
+                <label className="input-label">Modele Claude (optionnel)</label>
+                <input value={config.ANTHROPIC_MODEL || ''} onChange={e => updateConfig('ANTHROPIC_MODEL', e.target.value)}
+                  className="input text-xs" placeholder="claude-sonnet-4-5-20250929" />
+              </div>
+            </div>
+          </div>
+
           <div className="flex justify-end">
             <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}

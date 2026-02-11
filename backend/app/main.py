@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat
 
 
 @asynccontextmanager
@@ -33,6 +33,17 @@ async def lifespan(app: FastAPI):
                 )
             """)
             cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    recipient TEXT DEFAULT 'all',
+                    message TEXT NOT NULL,
+                    is_private BOOLEAN DEFAULT FALSE,
+                    read_by TEXT[] DEFAULT ARRAY[]::TEXT[],
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
     except Exception as e:
         print(f"Warning: could not create historique table: {e}")
     yield
@@ -79,6 +90,7 @@ app.include_router(print_tickets.router)
 app.include_router(caisse_api.router)
 app.include_router(attestation.router)
 app.include_router(admin.router)
+app.include_router(chat.router)
 
 
 # --- HEALTH CHECK ---

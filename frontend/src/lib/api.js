@@ -218,6 +218,26 @@ class ApiClient {
   getAdminTempsReparation(p) { return this.get(`/api/admin/stats/temps-reparation${this._adminQs(p)}`); }
   getAdminTauxConversion(p) { return this.get(`/api/admin/stats/taux-conversion${this._adminQs(p)}`); }
   getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
+
+  // ─── CHAT ───────────────────────────────────
+  chatAI(message, user, conversationId) {
+    return this.post('/api/chat/ai', { message, user, conversation_id: conversationId });
+  }
+  clearAIConversation(convId) {
+    return this.delete(`/api/chat/ai/conversation/${convId}`);
+  }
+  chatTeamSend(message, sender, recipient = 'all') {
+    return this.post('/api/chat/team/send', { message, sender, recipient });
+  }
+  chatTeamMessages(user, limit = 50) {
+    return this.get(`/api/chat/team/messages?user=${encodeURIComponent(user)}&limit=${limit}`);
+  }
+  chatTeamMarkRead(user) {
+    return this.put(`/api/chat/team/read?user=${encodeURIComponent(user)}`);
+  }
+  chatTeamUnread(user) {
+    return this.get(`/api/chat/team/unread?user=${encodeURIComponent(user)}`);
+  }
 }
 
 export const api = new ApiClient();
