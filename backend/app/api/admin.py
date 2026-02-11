@@ -45,6 +45,14 @@ def _safe_int(val):
         return 0
 
 
+def _resolve_dates(date_start, date_end):
+    if date_start and date_end:
+        return date_start, date_end
+    end = datetime.now().strftime('%Y-%m-%d')
+    start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    return date_start or start, date_end or end
+
+
 # ============================================================
 # 1. LOGIN ADMIN
 # ============================================================
@@ -60,12 +68,17 @@ async def admin_login(data: AdminLoginRequest):
 # 2. STATS OVERVIEW (6 KPI cards)
 # ============================================================
 @router.get("/stats/overview")
-async def get_stats_overview():
+async def get_stats_overview(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
     Vue d'ensemble : CA jour/mois, CA potentiel, réparations jour/mois, ticket moyen.
     """
     today = datetime.now().strftime("%Y-%m-%d")
     first_of_month = datetime.now().strftime("%Y-%m-01")
+    ds = date_start or first_of_month
+    de = date_end or today
 
     with get_cursor() as cur:
         cur.execute("""
@@ -75,7 +88,7 @@ async def get_stats_overview():
                 ), 0) AS ca_jour,
 
                 COALESCE(SUM(tarif_final) FILTER (
-                    WHERE date_cloture::date >= %(first)s::date AND paye = 1
+                    WHERE date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date AND paye = 1
                 ), 0) AS ca_mois,
 
                 COALESCE(SUM(devis_estime) FILTER (
@@ -90,15 +103,15 @@ async def get_stats_overview():
 
                 COUNT(*) FILTER (
                     WHERE statut = 'Réparation terminée'
-                      AND date_cloture::date >= %(first)s::date
+                      AND date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date
                 ) AS reparations_mois_termine,
 
                 COUNT(*) FILTER (
-                    WHERE date_cloture::date >= %(first)s::date
+                    WHERE date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date
                 ) AS reparations_mois
 
             FROM tickets
-        """, {"today": today, "first": first_of_month})
+        """, {"today": today, "first": first_of_month, "ds": ds, "de": de})
         row = cur.fetchone()
 
     ca_mois = _safe_float(row["ca_mois"])
@@ -126,14 +139,17 @@ async def get_stats_legacy(period: Optional[str] = Query(None, regex="^(7d|30d|9
 # ============================================================
 @router.get("/stats/reparations-par-tech")
 async def get_reparations_par_tech(
-    days: int = Query(7, ge=7, le=90),
+    days: int = Query(7, ge=1, le=365),
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
 ):
     """
     Réparations par technicien par jour pour barres empilées.
     Retourne [{ jour: "05/02", tech1: 3, tech2: 2 }, ...]
     + liste des techniciens avec couleurs.
     """
-    date_start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    ds = date_start or (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    de = date_end or datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Get repairs per tech per day
@@ -145,11 +161,12 @@ async def get_reparations_par_tech(
             FROM tickets
             WHERE date_cloture IS NOT NULL
               AND date_cloture::date >= %(start)s::date
+              AND date_cloture::date <= %(end_d)s::date
               AND technicien_assigne IS NOT NULL
               AND technicien_assigne != ''
             GROUP BY date_cloture::date, technicien_assigne
             ORDER BY jour
-        """, {"start": date_start})
+        """, {"start": ds, "end_d": de})
         rows = cur.fetchall()
 
         # Get team colors
@@ -169,9 +186,9 @@ async def get_reparations_par_tech(
 
     # Fill all days in range (no gaps)
     result = []
-    current = datetime.now() - timedelta(days=days)
-    end = datetime.now()
-    while current.date() <= end.date():
+    current = datetime.strptime(ds, "%Y-%m-%d")
+    end_dt = datetime.strptime(de, "%Y-%m-%d")
+    while current.date() <= end_dt.date():
         jour_str = current.strftime("%d/%m")
         entry = day_data.get(jour_str, {"jour": jour_str})
         for t in techs:
@@ -192,11 +209,15 @@ async def get_reparations_par_tech(
 # 4. AFFLUENCE PAR HEURE (moyenne)
 # ============================================================
 @router.get("/stats/affluence-heure")
-async def get_affluence_heure():
+async def get_affluence_heure(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
-    Nombre moyen de dépôts par heure (sur les 30 derniers jours).
+    Nombre moyen de dépôts par heure.
     """
-    date_start = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    ds = date_start or (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    de = date_end or datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Count distinct days in period
@@ -205,7 +226,7 @@ async def get_affluence_heure():
             FROM tickets
             WHERE date_depot IS NOT NULL
               AND date_depot::date >= %(start)s::date
-        """, {"start": date_start})
+        """, {"start": ds, "end_d": de})
         nb_jours = max(cur.fetchone()["nb_jours"], 1)
 
         # Count per hour
@@ -217,7 +238,7 @@ async def get_affluence_heure():
               AND EXTRACT(HOUR FROM date_depot) BETWEEN 8 AND 19
             GROUP BY EXTRACT(HOUR FROM date_depot)
             ORDER BY heure
-        """, {"start": date_start})
+        """, {"start": ds, "end_d": de})
         raw = {r["heure"]: r["count"] for r in cur.fetchall()}
 
     result = []
@@ -240,11 +261,15 @@ JOURS_SEMAINE = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "D
 
 
 @router.get("/stats/affluence-jour")
-async def get_affluence_jour():
+async def get_affluence_jour(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
-    Nombre moyen de dépôts par jour de la semaine (sur les 3 derniers mois).
+    Nombre moyen de dépôts par jour de la semaine.
     """
-    date_start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    ds = date_start or (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    de = date_end or datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Count weeks in period per day of week
@@ -258,7 +283,7 @@ async def get_affluence_jour():
               AND date_depot::date >= %(start)s::date
             GROUP BY EXTRACT(ISODOW FROM date_depot)
             ORDER BY dow
-        """, {"start": date_start})
+        """, {"start": ds, "end_d": de})
         raw = {}
         for r in cur.fetchall():
             # Calculate number of that weekday in the period
@@ -285,16 +310,28 @@ async def get_affluence_jour():
 # 6. RÉPARTITION PAR MARQUE (top 8 + Autres)
 # ============================================================
 @router.get("/stats/repartition-marques")
-async def get_repartition_marques():
+async def get_repartition_marques(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """Top 8 marques + Autres avec pourcentages."""
     with get_cursor() as cur:
-        cur.execute("""
+        df = ""
+        p = {}
+        if date_start:
+            df += " AND date_depot::date >= %(ds)s::date"
+            p["ds"] = date_start
+        if date_end:
+            df += " AND date_depot::date <= %(de)s::date"
+            p["de"] = date_end
+        cur.execute(f"""
             SELECT COALESCE(NULLIF(TRIM(marque), ''), 'Inconnu') AS marque,
                    COUNT(*) AS count
             FROM tickets
+            WHERE 1=1 {df}
             GROUP BY COALESCE(NULLIF(TRIM(marque), ''), 'Inconnu')
             ORDER BY count DESC
-        """)
+        """, p)
         rows = cur.fetchall()
 
     total = sum(r["count"] for r in rows)
@@ -327,17 +364,29 @@ async def get_repartition_marques():
 # 7. RÉPARTITION PAR TYPE DE PANNE (top 10)
 # ============================================================
 @router.get("/stats/repartition-pannes")
-async def get_repartition_pannes():
+async def get_repartition_pannes(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """Top 10 types de panne les plus fréquents."""
     with get_cursor() as cur:
-        cur.execute("""
+        df = ""
+        p = {}
+        if date_start:
+            df += " AND date_depot::date >= %(ds)s::date"
+            p["ds"] = date_start
+        if date_end:
+            df += " AND date_depot::date <= %(de)s::date"
+            p["de"] = date_end
+        cur.execute(f"""
             SELECT COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné') AS panne,
                    COUNT(*) AS count
             FROM tickets
+            WHERE 1=1 {df}
             GROUP BY COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné')
             ORDER BY count DESC
             LIMIT 10
-        """)
+        """, p)
         rows = cur.fetchall()
 
     return [{"panne": r["panne"], "count": r["count"]} for r in rows]
@@ -347,7 +396,10 @@ async def get_repartition_pannes():
 # 8. ÉVOLUTION CA (2 courbes : encaissé + potentiel)
 # ============================================================
 @router.get("/stats/evolution-ca")
-async def get_evolution_ca():
+async def get_evolution_ca(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
     Évolution mensuelle sur 12 mois :
     - ca_encaisse : tickets payés clôturés
@@ -405,7 +457,10 @@ async def get_evolution_ca():
 # 9. TEMPS MOYEN DE RÉPARATION PAR PANNE
 # ============================================================
 @router.get("/stats/temps-reparation")
-async def get_temps_reparation():
+async def get_temps_reparation(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
     Temps moyen entre dépôt et clôture par type de panne.
     Trié du plus rapide au plus lent.
@@ -443,7 +498,10 @@ async def get_temps_reparation():
 # 10. TAUX DE CONVERSION DEVIS
 # ============================================================
 @router.get("/stats/taux-conversion")
-async def get_taux_conversion():
+async def get_taux_conversion(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """
     Taux de conversion : devis envoyés vs acceptés.
     - Envoyés : tickets passés par le statut 'En attente d'accord client'
@@ -494,10 +552,21 @@ async def get_taux_conversion():
 # 11. TOP CLIENTS
 # ============================================================
 @router.get("/stats/top-clients")
-async def get_top_clients():
+async def get_top_clients(
+    date_start: Optional[str] = Query(None),
+    date_end: Optional[str] = Query(None),
+):
     """Top 10 clients par nombre de réparations + CA total."""
     with get_cursor() as cur:
-        cur.execute("""
+        df = ""
+        p = {}
+        if date_start:
+            df += " AND t.date_depot::date >= %(ds)s::date"
+            p["ds"] = date_start
+        if date_end:
+            df += " AND t.date_depot::date <= %(de)s::date"
+            p["de"] = date_end
+        cur.execute(f"""
             SELECT
                 COALESCE(c.nom, t.nom_client, 'Inconnu') AS nom,
                 COALESCE(c.telephone, t.telephone, '') AS tel,
@@ -505,12 +574,13 @@ async def get_top_clients():
                 COALESCE(SUM(t.tarif_final) FILTER (WHERE t.paye = 1), 0) AS ca_total
             FROM tickets t
             LEFT JOIN clients c ON t.client_id = c.id
+            WHERE 1=1 {df}
             GROUP BY COALESCE(c.nom, t.nom_client, 'Inconnu'),
                      COALESCE(c.telephone, t.telephone, '')
             HAVING COUNT(*) >= 2
             ORDER BY nb_reparations DESC, ca_total DESC
             LIMIT 10
-        """)
+        """, p)
         rows = cur.fetchall()
 
     return [

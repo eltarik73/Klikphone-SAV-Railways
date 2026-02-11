@@ -195,17 +195,28 @@ class ApiClient {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/api/admin/evolution${qs ? '?' + qs : ''}`);
   }
-  // New admin stats endpoints
-  getAdminOverview() { return this.get('/api/admin/stats/overview'); }
-  getAdminReparationsParTech(days = 7) { return this.get(`/api/admin/stats/reparations-par-tech?days=${days}`); }
-  getAdminAffluenceHeure() { return this.get('/api/admin/stats/affluence-heure'); }
-  getAdminAffluenceJour() { return this.get('/api/admin/stats/affluence-jour'); }
-  getAdminRepartitionMarques() { return this.get('/api/admin/stats/repartition-marques'); }
-  getAdminRepartitionPannes() { return this.get('/api/admin/stats/repartition-pannes'); }
-  getAdminEvolutionCA() { return this.get('/api/admin/stats/evolution-ca'); }
-  getAdminTempsReparation() { return this.get('/api/admin/stats/temps-reparation'); }
-  getAdminTauxConversion() { return this.get('/api/admin/stats/taux-conversion'); }
-  getAdminTopClients() { return this.get('/api/admin/stats/top-clients'); }
+  // New admin stats endpoints (all accept optional date_start, date_end)
+  _adminQs(params = {}) {
+    const p = {};
+    if (params.date_start) p.date_start = params.date_start;
+    if (params.date_end) p.date_end = params.date_end;
+    const qs = new URLSearchParams(p).toString();
+    return qs ? '?' + qs : '';
+  }
+  getAdminOverview(p) { return this.get(`/api/admin/stats/overview${this._adminQs(p)}`); }
+  getAdminReparationsParTech(days = 7, p = {}) {
+    const extra = this._adminQs(p);
+    const sep = extra ? '&' : '?';
+    return this.get(`/api/admin/stats/reparations-par-tech?days=${days}${extra ? '&' + extra.slice(1) : ''}`);
+  }
+  getAdminAffluenceHeure(p) { return this.get(`/api/admin/stats/affluence-heure${this._adminQs(p)}`); }
+  getAdminAffluenceJour(p) { return this.get(`/api/admin/stats/affluence-jour${this._adminQs(p)}`); }
+  getAdminRepartitionMarques(p) { return this.get(`/api/admin/stats/repartition-marques${this._adminQs(p)}`); }
+  getAdminRepartitionPannes(p) { return this.get(`/api/admin/stats/repartition-pannes${this._adminQs(p)}`); }
+  getAdminEvolutionCA(p) { return this.get(`/api/admin/stats/evolution-ca${this._adminQs(p)}`); }
+  getAdminTempsReparation(p) { return this.get(`/api/admin/stats/temps-reparation${this._adminQs(p)}`); }
+  getAdminTauxConversion(p) { return this.get(`/api/admin/stats/taux-conversion${this._adminQs(p)}`); }
+  getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
 }
 
 export const api = new ApiClient();
