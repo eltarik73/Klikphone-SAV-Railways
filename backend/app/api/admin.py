@@ -177,14 +177,14 @@ async def get_reparations(
 
         # --- Par mois (12 derniers mois) ---
         cur.execute(f"""
-            SELECT TO_CHAR(DATE_TRUNC('month', date_cloture), 'YYYY-MM') AS mois,
+            SELECT TO_CHAR(DATE_TRUNC('month', date_cloture::timestamp), 'YYYY-MM') AS mois,
                    COUNT(*) AS count
             FROM tickets
             WHERE date_cloture IS NOT NULL
-              AND date_cloture >= NOW() - INTERVAL '12 months'
+              AND date_cloture::timestamp >= NOW() - INTERVAL '12 months'
               {extra_conditions}
-            GROUP BY DATE_TRUNC('month', date_cloture)
-            ORDER BY DATE_TRUNC('month', date_cloture)
+            GROUP BY DATE_TRUNC('month', date_cloture::timestamp)
+            ORDER BY DATE_TRUNC('month', date_cloture::timestamp)
         """, params)
         par_mois = [
             {"mois": row["mois"], "count": row["count"]}
@@ -339,7 +339,7 @@ async def get_performance_tech():
                 COALESCE(
                     ROUND(
                         AVG(
-                            EXTRACT(EPOCH FROM (date_cloture - date_depot)) / 60
+                            EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 60
                         )
                     ),
                     0
@@ -385,26 +385,26 @@ async def get_evolution(
         if metric == "ca":
             cur.execute("""
                 SELECT
-                    TO_CHAR(DATE_TRUNC('month', date_cloture), 'YYYY-MM') AS date,
+                    TO_CHAR(DATE_TRUNC('month', date_cloture::timestamp), 'YYYY-MM') AS date,
                     COALESCE(SUM(tarif_final), 0) AS value
                 FROM tickets
                 WHERE date_cloture IS NOT NULL
                   AND paye = 1
-                  AND date_cloture >= NOW() - (%(months)s || ' months')::INTERVAL
-                GROUP BY DATE_TRUNC('month', date_cloture)
-                ORDER BY DATE_TRUNC('month', date_cloture)
+                  AND date_cloture::timestamp >= NOW() - (%(months)s || ' months')::INTERVAL
+                GROUP BY DATE_TRUNC('month', date_cloture::timestamp)
+                ORDER BY DATE_TRUNC('month', date_cloture::timestamp)
             """, {"months": months})
         else:
             # metric == "flux"
             cur.execute("""
                 SELECT
-                    TO_CHAR(DATE_TRUNC('month', date_depot), 'YYYY-MM') AS date,
+                    TO_CHAR(DATE_TRUNC('month', date_depot::timestamp), 'YYYY-MM') AS date,
                     COUNT(*) AS value
                 FROM tickets
                 WHERE date_depot IS NOT NULL
-                  AND date_depot >= NOW() - (%(months)s || ' months')::INTERVAL
-                GROUP BY DATE_TRUNC('month', date_depot)
-                ORDER BY DATE_TRUNC('month', date_depot)
+                  AND date_depot::timestamp >= NOW() - (%(months)s || ' months')::INTERVAL
+                GROUP BY DATE_TRUNC('month', date_depot::timestamp)
+                ORDER BY DATE_TRUNC('month', date_depot::timestamp)
             """, {"months": months})
 
         rows = cur.fetchall()
