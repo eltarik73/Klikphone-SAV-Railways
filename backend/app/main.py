@@ -4,6 +4,7 @@ Point d'entrée principal.
 """
 
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -11,10 +12,14 @@ load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin
+
+# Frontend dist directory (built by Vite)
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -83,10 +88,52 @@ async def health_db():
         return {"status": "error", "db": str(e)}
 
 
-@app.get("/")
-async def root():
+@app.get("/api")
+async def api_root():
     return {
         "service": "Klikphone SAV API",
         "version": "2.0.0",
         "docs": "/docs",
     }
+
+
+# --- FRONTEND STATIC FILES ---
+if FRONTEND_DIST.exists():
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="static-assets")
+
+    # Serve files from root (favicon, logo, etc.)
+    @app.get("/favicon.svg")
+    @app.get("/favicon.ico")
+    @app.get("/logo_k.png")
+    async def static_root_file(request: Request):
+        filename = request.url.path.lstrip("/")
+        filepath = FRONTEND_DIST / filename
+        if filepath.exists():
+            return FileResponse(str(filepath))
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+
+    # SPA fallback — serve index.html for all non-API routes
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Don't catch API routes or docs
+        if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json"):
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+        # Try to serve static file first
+        file_path = FRONTEND_DIST / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        # SPA fallback
+        index = FRONTEND_DIST / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return JSONResponse({"detail": "Frontend not built"}, status_code=404)
+else:
+    @app.get("/")
+    async def root():
+        return {
+            "service": "Klikphone SAV API",
+            "version": "2.0.0",
+            "docs": "/docs",
+            "note": "Frontend not found. Run 'npm run build' in frontend/",
+        }
