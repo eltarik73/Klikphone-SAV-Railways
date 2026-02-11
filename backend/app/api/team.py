@@ -19,8 +19,8 @@ async def list_members(user: dict = Depends(get_current_user)):
 
 
 @router.get("/active", response_model=list[MembreEquipeOut])
-async def list_active_members(user: dict = Depends(get_current_user)):
-    """Liste les membres actifs uniquement."""
+async def list_active_members():
+    """Liste les membres actifs uniquement (public — utilisé par la page login)."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM membres_equipe WHERE actif = 1 ORDER BY nom")
         return cur.fetchall()
