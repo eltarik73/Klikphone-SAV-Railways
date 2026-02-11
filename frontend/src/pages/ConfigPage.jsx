@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import { useSettings } from '../hooks/useSettings';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2,
   Database, Download, Upload, Shield, Palette,
-  BookOpen, ChevronDown, ChevronRight, AlertTriangle,
+  BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -14,6 +15,7 @@ const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308'
 export default function ConfigPage() {
   const { user } = useAuth();
   const toast = useToast();
+  const { animations, setAnimations } = useSettings();
   const [config, setConfig] = useState({});
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -279,6 +281,7 @@ export default function ConfigPage() {
     { id: 'catalog', label: 'Catalogue', icon: BookOpen },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Sécurité', icon: Shield },
+    { id: 'appearance', label: 'Apparence', icon: Monitor },
     { id: 'backup', label: 'Sauvegarde', icon: Database },
   ];
 
@@ -676,6 +679,30 @@ export default function ConfigPage() {
                 Changer le PIN
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Appearance tab ═══ */}
+      {activeTab === 'appearance' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Apparence</h2>
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <p className="text-sm font-medium text-slate-800">Activer les animations</p>
+                <p className="text-xs text-slate-400 mt-0.5">Transitions, effets de survol, apparitions progressives</p>
+              </div>
+              <button
+                onClick={() => setAnimations(!animations)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${animations ? 'bg-brand-600' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${animations ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2 pt-3 border-t border-slate-100">
+              Désactivez les animations pour améliorer la fluidité sur les appareils plus lents.
+            </p>
           </div>
         </div>
       )}

@@ -26,12 +26,6 @@ export default {
         display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
         sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
       },
-      boxShadow: {
-        'card': '0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)',
-        'card-hover': '0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)',
-        'glow-brand': '0 0 20px rgba(124,58,237,0.15)',
-        'glow-orange': '0 0 30px rgba(249,115,22,0.2)',
-      },
     },
   },
   plugins: [],

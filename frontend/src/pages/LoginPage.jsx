@@ -76,24 +76,19 @@ export default function LoginPage() {
   const isAccueil = target === 'accueil';
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden"
-      style={{ background: 'linear-gradient(135deg, #F5F3FF 0%, #FFFFFF 40%, #F8FAFC 100%)' }}>
-      {/* Decorative background elements */}
-      <div className="absolute top-0 right-0 w-96 h-96 bg-brand-200/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-      <div className="absolute bottom-0 left-0 w-72 h-72 bg-brand-300/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
-
-      <div className="w-full max-w-md relative z-10">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50">
+      <div className="w-full max-w-md">
         <button onClick={() => navigate('/')}
           className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Retour
         </button>
 
-        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl shadow-brand-600/5 p-8 border border-white/60 animate-in">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 p-8 animate-in">
           {/* Logo */}
           <div className="flex justify-center mb-6">
-            <img src="/logo_k.png" alt="Klikphone"
-              className="w-24 h-24 rounded-2xl object-contain shadow-lg shadow-brand-600/10"
-            />
+            <div className="w-20 h-20 rounded-2xl bg-white border border-slate-100 p-1.5 overflow-hidden">
+              <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
+            </div>
           </div>
 
           <h1 className="text-xl font-display font-bold text-center text-slate-900 mb-1">
@@ -137,15 +132,9 @@ export default function LoginPage() {
             )}
 
             <button type="submit" disabled={loading || digits.some(d => !d)}
-              className="w-full btn text-white shadow-lg"
-              style={{
-                background: isAccueil
-                  ? 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)'
-                  : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
-                boxShadow: isAccueil
-                  ? '0 4px 12px rgba(14,165,233,0.25)'
-                  : '0 4px 12px rgba(124,58,237,0.25)',
-              }}>
+              className={`w-full btn text-white shadow-sm ${
+                isAccueil ? 'bg-sky-500 hover:bg-sky-600' : 'bg-brand-600 hover:bg-brand-700'
+              }`}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Se connecter'}
             </button>
           </form>

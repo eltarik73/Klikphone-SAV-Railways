@@ -155,10 +155,11 @@ export default function DepotPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30 flex flex-col">
       {/* Kiosk header — no sidebar */}
-      <div className="text-white px-6 py-4 flex items-center justify-between shrink-0"
-        style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)' }}>
+      <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <img src="/logo_k.png" alt="Klikphone" className="w-12 h-12 rounded-xl object-contain shadow-lg shadow-orange-500/15" />
+          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden">
+            <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
+          </div>
           <div>
             <h1 className="text-lg font-display font-bold tracking-tight">KLIKPHONE</h1>
             <p className="text-[11px] text-slate-400">Déposer un appareil en réparation</p>

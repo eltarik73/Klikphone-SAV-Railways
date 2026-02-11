@@ -36,8 +36,7 @@ export default function HomePage() {
         {/* CTA buttons */}
         <div className="mt-10 w-full max-w-sm space-y-3">
           <button onClick={() => navigate('/client')}
-            className="w-full flex items-center gap-4 p-4 rounded-2xl text-white shadow-lg shadow-brand-600/30 transition-all group hover:-translate-y-0.5"
-            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)' }}>
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/30 transition-all group hover:-translate-y-0.5">
             <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
               <img src="/logo_k.png" alt="" className="w-6 h-6 object-contain" />
             </div>

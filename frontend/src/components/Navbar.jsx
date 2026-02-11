@@ -95,14 +95,16 @@ export default function Navbar() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 bottom-0 bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col z-50
+        fixed top-0 left-0 bottom-0 bg-slate-900 flex flex-col z-50
         transition-all duration-300 ease-in-out
         ${collapsed ? 'w-[68px]' : 'w-64'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>
         {/* Logo */}
         <div className="h-16 px-4 flex items-center gap-3 border-b border-white/[0.06] shrink-0">
-          <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain shadow-lg shadow-brand-600/10 shrink-0" />
+          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0">
+            <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
+          </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none">KLIKPHONE</h1>
