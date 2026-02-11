@@ -26,6 +26,10 @@ export default function ConfigPage() {
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [teamForm, setTeamForm] = useState({ nom: '', role: 'tech', couleur: '#3B82F6', actif: true });
+  const [showAdminCodeModal, setShowAdminCodeModal] = useState(false);
+  const [adminCode, setAdminCode] = useState('');
+  const [adminCodeError, setAdminCodeError] = useState('');
+  const [discordTesting, setDiscordTesting] = useState(false);
 
   // PIN change
   const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
@@ -121,18 +125,33 @@ export default function ConfigPage() {
     setShowTeamForm(false);
   };
 
-  const handleSaveTeamMember = async () => {
+  const handleSaveTeamMember = async (code) => {
+    const isManager = teamForm.role === 'manager';
+    // If manager role and no admin code provided yet, show modal
+    if (isManager && !code) {
+      setAdminCode('');
+      setAdminCodeError('');
+      setShowAdminCodeModal(true);
+      return;
+    }
     try {
       if (editingMember) {
-        await api.updateTeamMember(editingMember.id, teamForm);
+        await api.updateTeamMember(editingMember.id, teamForm, isManager ? code : undefined);
       } else {
-        await api.createTeamMember(teamForm);
+        await api.createTeamMember(teamForm, isManager ? code : undefined);
       }
       resetTeamForm();
+      setShowAdminCodeModal(false);
+      setAdminCode('');
       await loadData();
       toast.success(editingMember ? 'Membre mis à jour' : 'Membre créé');
     } catch (err) {
-      toast.error('Erreur');
+      if (err.message?.includes('Code administrateur')) {
+        setAdminCodeError('Code administrateur incorrect');
+      } else {
+        toast.error(err.message || 'Erreur');
+        setShowAdminCodeModal(false);
+      }
     }
   };
 
@@ -441,6 +460,7 @@ export default function ConfigPage() {
                     <option value="tech">Technicien</option>
                     <option value="accueil">Accueil</option>
                     <option value="admin">Admin</option>
+                    <option value="manager">Manager</option>
                   </select>
                 </div>
                 <div>
@@ -466,7 +486,7 @@ export default function ConfigPage() {
                 </div>
               </div>
               <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
-                <button onClick={handleSaveTeamMember} disabled={!teamForm.nom} className="btn-primary">
+                <button onClick={() => handleSaveTeamMember()} disabled={!teamForm.nom} className="btn-primary">
                   <Save className="w-4 h-4" /> {editingMember ? 'Mettre à jour' : 'Créer'}
                 </button>
               </div>
@@ -512,6 +532,39 @@ export default function ConfigPage() {
               </div>
             )}
           </div>
+
+          {/* Admin code modal for Manager role */}
+          {showAdminCodeModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAdminCodeModal(false)}>
+              <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4 animate-in" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 mb-4">
+                  <Shield className="w-5 h-5 text-amber-500" />
+                  <h3 className="text-sm font-bold text-slate-800">Code administrateur requis</h3>
+                </div>
+                <p className="text-xs text-slate-500 mb-4">Le rôle Manager donne accès aux données financières. Entrez le code administrateur pour continuer.</p>
+                <input
+                  type="password"
+                  value={adminCode}
+                  onChange={e => { setAdminCode(e.target.value); setAdminCodeError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveTeamMember(adminCode)}
+                  className="input w-full mb-2"
+                  placeholder="Code administrateur"
+                  autoFocus
+                />
+                {adminCodeError && (
+                  <p className="text-xs text-red-500 mb-3">{adminCodeError}</p>
+                )}
+                <div className="flex justify-end gap-2 mt-3">
+                  <button onClick={() => setShowAdminCodeModal(false)} className="btn-ghost text-sm px-3 py-1.5">
+                    Annuler
+                  </button>
+                  <button onClick={() => handleSaveTeamMember(adminCode)} disabled={!adminCode} className="btn-primary text-sm px-3 py-1.5">
+                    Valider
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -609,10 +662,59 @@ export default function ConfigPage() {
         <div className="space-y-5">
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Discord Webhook</h2>
-            <div>
-              <label className="input-label">URL du webhook</label>
-              <input value={config.discord_webhook || ''} onChange={e => updateConfig('discord_webhook', e.target.value)}
-                className="input font-mono text-xs" placeholder="https://discord.com/api/webhooks/..." />
+            <div className="space-y-4">
+              <div>
+                <label className="input-label">URL du webhook</label>
+                <div className="flex gap-2">
+                  <input value={config.DISCORD_WEBHOOK || ''} onChange={e => updateConfig('DISCORD_WEBHOOK', e.target.value)}
+                    className="input font-mono text-xs flex-1" placeholder="https://discord.com/api/webhooks/..." />
+                  <button
+                    onClick={async () => {
+                      setDiscordTesting(true);
+                      try {
+                        // Save first to make sure the URL is stored
+                        await handleSaveConfig();
+                        await api.testDiscord();
+                        toast.success('Webhook Discord fonctionnel !');
+                      } catch (err) {
+                        toast.error(err.message || 'Erreur webhook');
+                      } finally {
+                        setDiscordTesting(false);
+                      }
+                    }}
+                    disabled={discordTesting || !config.DISCORD_WEBHOOK}
+                    className="btn-primary px-3 py-2 text-xs whitespace-nowrap"
+                  >
+                    {discordTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Tester'}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="input-label mb-2">Notifications activées</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { key: 'nouveau_ticket', label: 'Nouveau ticket', desc: 'Quand un ticket est créé' },
+                    { key: 'changement_statut', label: 'Changement de statut', desc: 'Quand un statut change' },
+                    { key: 'reparation_terminee', label: 'Réparation terminée', desc: 'Quand une réparation est finie' },
+                    { key: 'accord_client', label: 'Accord client', desc: 'Acceptation ou refus du devis' },
+                    { key: 'connexion', label: 'Connexions', desc: 'Connexions / déconnexions' },
+                  ].map(n => (
+                    <label key={n.key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                      <input
+                        type="checkbox"
+                        checked={(config[`discord_notif_${n.key}`] || '1') !== '0'}
+                        onChange={e => updateConfig(`discord_notif_${n.key}`, e.target.checked ? '1' : '0')}
+                        className="rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5"
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">{n.label}</p>
+                        <p className="text-[10px] text-slate-400">{n.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

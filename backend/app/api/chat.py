@@ -51,6 +51,7 @@ class AIChatRequest(BaseModel):
     message: str
     user: str
     conversation_id: Optional[str] = None
+    role: Optional[str] = ""
 
 
 class TeamMessageCreate(BaseModel):
@@ -302,6 +303,28 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
 # ASSISTANT IA
 # ═════════════════════════════════════════════════════════
 
+SECURITY_RESTRICTION = """
+
+RESTRICTION DE SECURITE : Tu n'as PAS acces aux donnees financieres (chiffre d'affaires, tarifs, devis, montants, statistiques financieres). Si on te demande des informations sur le CA, les revenus, les prix ou toute donnee financiere, reponds poliment que ces informations sont reservees au Manager."""
+
+
+def _get_tools_for_role(role: str) -> list:
+    """Retourne les outils disponibles selon le role de l'utilisateur."""
+    is_manager = role and "manager" in role.lower()
+    if is_manager:
+        return TOOLS
+    # Non-manager: pas d'acces aux stats financieres
+    return [t for t in TOOLS if t["name"] != "get_stats"]
+
+
+def _get_system_prompt_for_role(role: str) -> str:
+    """Retourne le system prompt adapte au role."""
+    is_manager = role and "manager" in role.lower()
+    if is_manager:
+        return SYSTEM_PROMPT
+    return SYSTEM_PROMPT + SECURITY_RESTRICTION
+
+
 @router.post("/ai")
 async def chat_ai(msg: AIChatRequest):
     """Chat avec l'assistant IA Klikphone (Claude + tools BDD)."""
@@ -311,6 +334,11 @@ async def chat_ai(msg: AIChatRequest):
         raise HTTPException(500, "Cle API Anthropic non configuree. Ajoutez ANTHROPIC_API_KEY dans Configuration ou en variable d'environnement.")
 
     model = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-5-20250929"
+
+    # Role-based tools and prompt
+    user_role = msg.role or ""
+    tools = _get_tools_for_role(user_role)
+    system_prompt = _get_system_prompt_for_role(user_role)
 
     # Conversation (in-memory, keyed by conv_id)
     conv_id = msg.conversation_id or f"conv_{msg.user}_{int(time.time())}"
@@ -334,8 +362,8 @@ async def chat_ai(msg: AIChatRequest):
                 json={
                     "model": model,
                     "max_tokens": 1024,
-                    "system": SYSTEM_PROMPT,
-                    "tools": TOOLS,
+                    "system": system_prompt,
+                    "tools": tools,
                     "messages": messages
                 }
             )
@@ -376,8 +404,8 @@ async def chat_ai(msg: AIChatRequest):
                     json={
                         "model": model,
                         "max_tokens": 1024,
-                        "system": SYSTEM_PROMPT,
-                        "tools": TOOLS,
+                        "system": system_prompt,
+                        "tools": tools,
                         "messages": messages
                     }
                 )

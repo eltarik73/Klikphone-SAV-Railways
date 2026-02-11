@@ -152,6 +152,22 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
     return {"ok": True, "imported": counts}
 
 
+@router.post("/test-discord")
+async def test_discord(user: dict = Depends(get_current_user)):
+    """Teste le webhook Discord configuré."""
+    from app.services.notifications import test_discord_webhook
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = 'DISCORD_WEBHOOK'")
+        row = cur.fetchone()
+    webhook_url = row["valeur"] if row else ""
+    if not webhook_url:
+        raise HTTPException(400, "Webhook Discord non configuré")
+    ok, msg = test_discord_webhook(webhook_url)
+    if not ok:
+        raise HTTPException(500, msg)
+    return {"ok": True, "message": msg}
+
+
 @router.get("/{cle}")
 async def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé."""

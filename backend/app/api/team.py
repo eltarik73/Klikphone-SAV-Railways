@@ -2,12 +2,14 @@
 API Membres équipe.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
 from app.models import MembreEquipeCreate, MembreEquipeUpdate, MembreEquipeOut
 from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/team", tags=["team"])
+
+ADMIN_CODE_MANAGER = "caramail"
 
 
 @router.get("", response_model=list[MembreEquipeOut])
@@ -27,8 +29,15 @@ async def list_active_members():
 
 
 @router.post("", response_model=dict)
-async def create_member(data: MembreEquipeCreate, user: dict = Depends(get_current_user)):
+async def create_member(
+    data: MembreEquipeCreate,
+    admin_code: str = Query(default="", description="Code admin requis pour le rôle Manager"),
+    user: dict = Depends(get_current_user),
+):
     """Ajoute un membre à l'équipe."""
+    if data.role and "manager" in data.role.lower():
+        if admin_code != ADMIN_CODE_MANAGER:
+            raise HTTPException(403, "Code administrateur incorrect pour le rôle Manager")
     with get_cursor() as cur:
         cur.execute(
             "INSERT INTO membres_equipe (nom, role, couleur) VALUES (%s, %s, %s) RETURNING id",
@@ -42,9 +51,13 @@ async def create_member(data: MembreEquipeCreate, user: dict = Depends(get_curre
 async def update_member(
     membre_id: int,
     data: MembreEquipeUpdate,
+    admin_code: str = Query(default="", description="Code admin requis pour le rôle Manager"),
     user: dict = Depends(get_current_user),
 ):
     """Met à jour un membre."""
+    if data.role and "manager" in data.role.lower():
+        if admin_code != ADMIN_CODE_MANAGER:
+            raise HTTPException(403, "Code administrateur incorrect pour le rôle Manager")
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     if not updates:
         return {"ok": True}

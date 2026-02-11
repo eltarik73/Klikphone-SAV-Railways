@@ -101,8 +101,14 @@ class ApiClient {
   // ─── TEAM ──────────────────────────────────
   getTeam() { return this.get('/api/team'); }
   getActiveTeam() { return this.get('/api/team/active'); }
-  createTeamMember(data) { return this.post('/api/team', data); }
-  updateTeamMember(id, data) { return this.patch(`/api/team/${id}`, data); }
+  createTeamMember(data, adminCode) {
+    const qs = adminCode ? `?admin_code=${encodeURIComponent(adminCode)}` : '';
+    return this.post(`/api/team${qs}`, data);
+  }
+  updateTeamMember(id, data, adminCode) {
+    const qs = adminCode ? `?admin_code=${encodeURIComponent(adminCode)}` : '';
+    return this.patch(`/api/team/${id}${qs}`, data);
+  }
   deleteTeamMember(id) { return this.delete(`/api/team/${id}`); }
 
   // ─── PARTS ─────────────────────────────────
@@ -120,6 +126,7 @@ class ApiClient {
   setParam(cle, valeur) { return this.put('/api/config', { cle, valeur }); }
   setParams(params) { return this.put('/api/config/batch', params); }
   changePin(target, old_pin, new_pin) { return this.post('/api/config/change-pin', { target, old_pin, new_pin }); }
+  testDiscord() { return this.post('/api/config/test-discord'); }
   getBackup() { return this.get('/api/config/backup'); }
   importBackup(data) { return this.post('/api/config/backup/import', data); }
   async exportFile(path, filename) {
@@ -220,8 +227,8 @@ class ApiClient {
   getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
 
   // ─── CHAT ───────────────────────────────────
-  chatAI(message, user, conversationId) {
-    return this.post('/api/chat/ai', { message, user, conversation_id: conversationId });
+  chatAI(message, user, conversationId, role) {
+    return this.post('/api/chat/ai', { message, user, conversation_id: conversationId, role: role || '' });
   }
   clearAIConversation(convId) {
     return this.delete(`/api/chat/ai/conversation/${convId}`);

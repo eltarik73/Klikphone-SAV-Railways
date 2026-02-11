@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
+from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.models import LoginRequest, TokenResponse
@@ -19,12 +20,12 @@ security = HTTPBearer(auto_error=False)
 
 JWT_SECRET = os.getenv("JWT_SECRET", "klikphone-secret-change-me-in-prod")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24
+JWT_EXPIRE_DAYS = 30
 
 
 def create_token(target: str, utilisateur: str) -> str:
     """Crée un JWT token."""
-    expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+    expire = datetime.utcnow() + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
         "sub": utilisateur,
         "target": target,
@@ -101,10 +102,36 @@ async def login(req: LoginRequest):
     )
 
 
+class SwitchUserRequest(BaseModel):
+    utilisateur: str
+
+
+@router.post("/switch-user", response_model=TokenResponse)
+async def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
+    """Change d'utilisateur sans re-saisir le PIN (le token courant est valide)."""
+    target = user["target"]
+    token = create_token(target, req.utilisateur)
+    return TokenResponse(
+        access_token=token,
+        target=target,
+        utilisateur=req.utilisateur,
+    )
+
+
 @router.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):
     """Retourne les infos de l'utilisateur connecté."""
+    role = ""
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user["sub"],))
+            row = cur.fetchone()
+            if row:
+                role = row["role"] or ""
+    except Exception:
+        pass
     return {
         "utilisateur": user["sub"],
         "target": user["target"],
+        "role": role,
     }

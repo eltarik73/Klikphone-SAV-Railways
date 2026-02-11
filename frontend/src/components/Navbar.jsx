@@ -5,7 +5,7 @@ import api from '../lib/api';
 import {
   LogOut, LayoutDashboard, Plus, Users, Package, FileText,
   Settings, Menu, X, Search, Shield, PanelLeftClose, PanelLeftOpen,
-  ArrowRightLeft,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -38,8 +38,6 @@ export default function Navbar() {
   if (!user) return null;
 
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
-  const otherTarget = user.target === 'tech' ? 'accueil' : 'tech';
-  const otherBasePath = user.target === 'tech' ? '/accueil' : '/tech';
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
@@ -58,16 +56,8 @@ export default function Navbar() {
     setMobileOpen(false);
   };
 
-  const handleSwitchTarget = async () => {
-    try {
-      // Re-login with same PIN for other target
-      const pin = '2626'; // Will be prompted if needed
-      const data = await api.login(pin, otherTarget, user.utilisateur);
-      navigate(otherBasePath);
-    } catch {
-      // If auto-switch fails, redirect to login page for other target
-      navigate(`/login/${otherTarget}`);
-    }
+  const handleSwitchUser = () => {
+    navigate(`/login/${user.target}?switch=1`);
   };
 
   return (
@@ -183,6 +173,11 @@ export default function Navbar() {
                   {user.utilisateur?.charAt(0)?.toUpperCase()}
                 </span>
               </div>
+              <button onClick={handleSwitchUser}
+                className="p-2 rounded-lg text-slate-500 hover:text-brand-400 hover:bg-white/5 transition-colors"
+                title="Changer d'utilisateur">
+                <RefreshCw className="w-4 h-4" />
+              </button>
               <button onClick={() => { logout(); navigate('/'); }}
                 className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5 transition-colors"
                 title="Déconnexion">
@@ -190,21 +185,28 @@ export default function Navbar() {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-3 px-3 py-2">
-              <div className="w-9 h-9 rounded-full bg-brand-600/20 flex items-center justify-center shrink-0">
-                <span className="text-brand-300 font-bold text-sm">
-                  {user.utilisateur?.charAt(0)?.toUpperCase()}
-                </span>
+            <div className="space-y-2 px-3 py-2">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-brand-600/20 flex items-center justify-center shrink-0">
+                  <span className="text-brand-300 font-bold text-sm">
+                    {user.utilisateur?.charAt(0)?.toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate">{user.utilisateur}</p>
+                  <p className="text-[11px] text-slate-500 capitalize">{user.target}{user.role ? ` · ${user.role}` : ''}</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-200 truncate">{user.utilisateur}</p>
-                <p className="text-[11px] text-slate-500 capitalize">{user.target}</p>
+              <div className="flex gap-1">
+                <button onClick={handleSwitchUser}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-brand-300 hover:bg-white/5 transition-colors">
+                  <RefreshCw className="w-3 h-3" /> Changer
+                </button>
+                <button onClick={() => { logout(); navigate('/'); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-colors">
+                  <LogOut className="w-3 h-3" /> Déconnexion
+                </button>
               </div>
-              <button onClick={() => { logout(); navigate('/'); }}
-                className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5 transition-colors"
-                title="Déconnexion">
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
           )}
         </div>

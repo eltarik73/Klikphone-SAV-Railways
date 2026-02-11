@@ -91,6 +91,7 @@ function TabAssistant() {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
+  const currentRole = localStorage.getItem('kp_role') || '';
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -105,7 +106,7 @@ function TabAssistant() {
     setLoading(true);
 
     try {
-      const data = await api.chatAI(msg, currentUser, convId);
+      const data = await api.chatAI(msg, currentUser, convId, currentRole);
       setConvId(data.conversation_id);
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
     } catch (err) {

@@ -27,50 +27,145 @@ def _get_param(key: str) -> str:
     return row["valeur"] if row else ""
 
 
-# ─── DISCORD ────────────────────────────────────────────────────
+# ─── DISCORD (EMBEDS) ──────────────────────────────────────────
 
-def envoyer_notification_discord(message: str, emoji: str = "📢", utilisateur: str = ""):
-    """Envoie une notification vers Discord via webhook (non bloquant)."""
+# Couleurs Discord (valeurs int pour les embeds)
+DISCORD_COLORS = {
+    "green": 0x22C55E,
+    "blue": 0x3B82F6,
+    "orange": 0xF97316,
+    "red": 0xEF4444,
+    "purple": 0x8B5CF6,
+    "yellow": 0xEAB308,
+    "gray": 0x64748B,
+}
+
+
+def _is_notif_enabled(notif_type: str) -> bool:
+    """Vérifie si un type de notification Discord est activé."""
+    val = _get_param(f"discord_notif_{notif_type}")
+    # Par défaut activé si le param n'existe pas
+    return val != "0"
+
+
+def envoyer_discord_embed(title: str, description: str, color: int = 0x3B82F6, fields: list = None, notif_type: str = ""):
+    """Envoie une notification Discord avec un embed riche."""
     try:
         webhook_url = _get_param("DISCORD_WEBHOOK")
         if not webhook_url:
             return False
 
-        contenu = f"{emoji} **{utilisateur}** : {message}" if utilisateur else f"{emoji} {message}"
+        # Vérifier si ce type de notification est activé
+        if notif_type and not _is_notif_enabled(notif_type):
+            return False
 
-        # Utiliser httpx en mode sync pour ne pas bloquer
-        with httpx.Client(timeout=3) as client:
-            resp = client.post(webhook_url, json={"content": contenu})
+        embed = {
+            "title": title,
+            "description": description,
+            "color": color,
+            "timestamp": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "footer": {"text": "Klikphone SAV"},
+        }
+        if fields:
+            embed["fields"] = fields
+
+        with httpx.Client(timeout=5) as client:
+            resp = client.post(webhook_url, json={"embeds": [embed]})
             return resp.status_code == 204
     except Exception:
         return False
 
 
+def test_discord_webhook(webhook_url: str) -> tuple:
+    """Teste un webhook Discord en envoyant un embed de test."""
+    try:
+        embed = {
+            "title": "Test Klikphone SAV",
+            "description": "Le webhook Discord est correctement configuré !",
+            "color": DISCORD_COLORS["green"],
+            "footer": {"text": "Klikphone SAV - Test"},
+        }
+        with httpx.Client(timeout=5) as client:
+            resp = client.post(webhook_url, json={"embeds": [embed]})
+            if resp.status_code == 204:
+                return True, "Webhook fonctionnel"
+            return False, f"Erreur HTTP {resp.status_code}"
+    except Exception as e:
+        return False, f"Erreur: {str(e)}"
+
+
 def notif_nouveau_ticket(ticket_code: str, appareil: str, panne: str):
-    envoyer_notification_discord(f"Nouveau ticket **{ticket_code}** - {appareil} - {panne}", "🆕")
+    envoyer_discord_embed(
+        title="Nouveau ticket",
+        description=f"Un nouveau ticket a été créé",
+        color=DISCORD_COLORS["blue"],
+        fields=[
+            {"name": "Ticket", "value": ticket_code, "inline": True},
+            {"name": "Appareil", "value": appareil or "-", "inline": True},
+            {"name": "Panne", "value": panne or "-", "inline": False},
+        ],
+        notif_type="nouveau_ticket",
+    )
 
 
 def notif_changement_statut(ticket_code: str, ancien_statut: str, nouveau_statut: str):
-    envoyer_notification_discord(f"**{ticket_code}** : {ancien_statut} → **{nouveau_statut}**", "🔄")
+    envoyer_discord_embed(
+        title="Changement de statut",
+        description=f"Le ticket **{ticket_code}** a changé de statut",
+        color=DISCORD_COLORS["orange"],
+        fields=[
+            {"name": "Ancien statut", "value": ancien_statut, "inline": True},
+            {"name": "Nouveau statut", "value": nouveau_statut, "inline": True},
+        ],
+        notif_type="changement_statut",
+    )
 
 
 def notif_accord_client(ticket_code: str, accepte: bool = True):
     if accepte:
-        envoyer_notification_discord(f"**{ticket_code}** : Client a ACCEPTÉ le devis ✅", "✅")
+        envoyer_discord_embed(
+            title="Devis accepté",
+            description=f"Le client a **accepté** le devis pour **{ticket_code}**",
+            color=DISCORD_COLORS["green"],
+            notif_type="accord_client",
+        )
     else:
-        envoyer_notification_discord(f"**{ticket_code}** : Client a REFUSÉ le devis", "❌")
+        envoyer_discord_embed(
+            title="Devis refusé",
+            description=f"Le client a **refusé** le devis pour **{ticket_code}**",
+            color=DISCORD_COLORS["red"],
+            notif_type="accord_client",
+        )
 
 
 def notif_reparation_terminee(ticket_code: str):
-    envoyer_notification_discord(f"**{ticket_code}** : Réparation terminée ! Prêt pour récupération", "🎉")
+    envoyer_discord_embed(
+        title="Réparation terminée",
+        description=f"Le ticket **{ticket_code}** est prêt pour récupération !",
+        color=DISCORD_COLORS["green"],
+        fields=[
+            {"name": "Statut", "value": "Prêt à rendre", "inline": True},
+        ],
+        notif_type="reparation_terminee",
+    )
 
 
 def notif_connexion(utilisateur: str, interface: str):
-    envoyer_notification_discord(f"s'est connecté à {interface}", "🟢", utilisateur)
+    envoyer_discord_embed(
+        title="Connexion",
+        description=f"**{utilisateur}** s'est connecté à **{interface}**",
+        color=DISCORD_COLORS["gray"],
+        notif_type="connexion",
+    )
 
 
 def notif_deconnexion(utilisateur: str):
-    envoyer_notification_discord("s'est déconnecté", "🔴", utilisateur)
+    envoyer_discord_embed(
+        title="Déconnexion",
+        description=f"**{utilisateur}** s'est déconnecté",
+        color=DISCORD_COLORS["gray"],
+        notif_type="connexion",
+    )
 
 
 # ─── EMAIL SMTP ─────────────────────────────────────────────────
