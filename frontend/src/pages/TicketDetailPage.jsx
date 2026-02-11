@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
+import FideliteCard from '../components/FideliteCard';
 import PatternGrid from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig, MESSAGE_TEMPLATES } from '../lib/utils';
@@ -1230,6 +1231,9 @@ export default function TicketDetailPage() {
               )}
             </div>
           </div>
+
+          {/* ═══ Fidélité ═══ */}
+          {t.client_id && <FideliteCard clientId={t.client_id} />}
 
           {/* ═══ Notes & Timeline ═══ */}
           <div className="card p-5">

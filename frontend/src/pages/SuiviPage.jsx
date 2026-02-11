@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
+import FideliteCard from '../components/FideliteCard';
+import ScratchCard from '../components/ScratchCard';
 import { formatDate } from '../lib/utils';
 import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard } from 'lucide-react';
 import { formatPrix } from '../lib/utils';
@@ -249,6 +251,12 @@ export default function SuiviPage() {
                 </div>
               )}
             </div>
+
+            {/* Fidélité */}
+            <FideliteCard ticketCode={ticket.ticket_code} compact />
+
+            {/* Jeu de grattage */}
+            <ScratchCard ticketCode={ticket.ticket_code} />
 
             {/* Contact */}
             <div className="card p-6 text-center">

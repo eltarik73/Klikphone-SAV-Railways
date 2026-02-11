@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite
 
 
 @asynccontextmanager
@@ -44,6 +44,22 @@ async def lifespan(app: FastAPI):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # Fidélité + Grattage
+            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS fidelite_historique (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id),
+                    ticket_id INTEGER REFERENCES tickets(id),
+                    type TEXT NOT NULL,
+                    points INTEGER NOT NULL,
+                    description TEXT,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE")
+            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT")
     except Exception as e:
         print(f"Warning: could not create historique table: {e}")
     yield
@@ -91,6 +107,7 @@ app.include_router(caisse_api.router)
 app.include_router(attestation.router)
 app.include_router(admin.router)
 app.include_router(chat.router)
+app.include_router(fidelite.router)
 
 
 # --- HEALTH CHECK ---

@@ -236,12 +236,16 @@ async def toggle_paye(
     ticket_id: int,
     user: dict = Depends(get_current_user),
 ):
-    """Bascule le statut payé du ticket."""
+    """Bascule le statut payé du ticket. Crédite les points fidélité si marqué payé."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
+    fidelite_result = None
 
     with get_cursor() as cur:
-        cur.execute("SELECT paye, historique FROM tickets WHERE id = %s", (ticket_id,))
+        cur.execute(
+            "SELECT paye, historique, client_id, tarif_final, devis_estime, prix_supp FROM tickets WHERE id = %s",
+            (ticket_id,),
+        )
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Ticket non trouvé")
@@ -257,7 +261,57 @@ async def toggle_paye(
         )
         _ajouter_historique(cur, ticket_id, 'statut', 'Marqué payé' if new_paye else 'Marqué non payé')
 
-    return {"ok": True, "paye": new_paye}
+        # Auto-crédit fidélité quand marqué payé
+        if new_paye == 1:
+            try:
+                fidelite_active = "1"
+                cur.execute("SELECT valeur FROM params WHERE cle = 'fidelite_active'")
+                r = cur.fetchone()
+                if r:
+                    fidelite_active = r["valeur"]
+
+                if fidelite_active != "0":
+                    client_id = row["client_id"]
+                    montant = float(row.get("tarif_final") or row.get("devis_estime") or 0) + float(row.get("prix_supp") or 0)
+                    if montant > 0:
+                        cur.execute("SELECT valeur FROM params WHERE cle = 'fidelite_points_par_euro'")
+                        r2 = cur.fetchone()
+                        pts_par_euro = int(r2["valeur"]) if r2 else 10
+                        points_gagnes = int(montant * pts_par_euro)
+
+                        # Vérifier pas déjà crédité
+                        cur.execute(
+                            "SELECT id FROM fidelite_historique WHERE ticket_id = %s AND type = 'gain'",
+                            (ticket_id,),
+                        )
+                        if not cur.fetchone() and points_gagnes > 0:
+                            cur.execute("""
+                                UPDATE clients
+                                SET points_fidelite = COALESCE(points_fidelite, 0) + %s,
+                                    total_depense = COALESCE(total_depense, 0) + %s
+                                WHERE id = %s
+                                RETURNING points_fidelite
+                            """, (points_gagnes, montant, client_id))
+                            pts_row = cur.fetchone()
+                            total_pts = pts_row["points_fidelite"] if pts_row else 0
+
+                            cur.execute("""
+                                INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
+                                VALUES (%s, %s, 'gain', %s, %s)
+                            """, (client_id, ticket_id, points_gagnes,
+                                  f"Réparation {montant:.2f}€ — +{points_gagnes} pts"))
+
+                            fidelite_result = {
+                                "points_gagnes": points_gagnes,
+                                "total_points": total_pts,
+                            }
+            except Exception:
+                pass  # Ne pas bloquer le paiement si la fidélité échoue
+
+    result = {"ok": True, "paye": new_paye}
+    if fidelite_result:
+        result["fidelite"] = fidelite_result
+    return result
 
 
 # ─── CHANGEMENT DE STATUT ───────────────────────────────────────

@@ -56,6 +56,41 @@ def _fp(p):
     return f"{float(p):,.2f}".replace(",", " ").replace(".", ",")
 
 
+def _fidelite_section(t: dict) -> str:
+    """Section fidélité pour le reçu."""
+    try:
+        active = _get_config("fidelite_active", "1")
+        if active != "1":
+            return ""
+        client_id = t.get("client_id")
+        if not client_id:
+            return ""
+        with get_cursor() as cur:
+            cur.execute("SELECT points_fidelite, total_depense FROM clients WHERE id = %s", (client_id,))
+            row = cur.fetchone()
+        if not row:
+            return ""
+        pts = int(row.get("points_fidelite") or 0)
+        palier_film = int(_get_config("fidelite_palier_film", "1000"))
+        palier_reduction = int(_get_config("fidelite_palier_reduction", "5000"))
+        montant_reduction = _get_config("fidelite_montant_reduction", "10")
+        prochain = min(palier_film, palier_reduction)
+        restant = max(0, prochain - pts)
+        return f"""
+<hr class="sep">
+<div class="section center">
+  <div class="bold">PROGRAMME FIDÉLITÉ</div>
+  <div>Vos points : <b>{pts}</b> pts</div>
+  <div class="tiny" style="margin-top:2px">
+    {palier_film} pts = Film verre trempé offert |
+    {palier_reduction} pts = {montant_reduction}€ de réduction
+  </div>
+  {f'<div class="tiny">Plus que {restant} pts pour votre prochaine récompense !</div>' if restant > 0 else '<div class="tiny bold">Récompense disponible !</div>'}
+</div>"""
+    except Exception:
+        return ""
+
+
 def _suivi_url(code: str) -> str:
     """URL de suivi pour le QR code."""
     return f"{_FRONTEND_URL}/suivi?ticket={urllib.parse.quote(code)}"
@@ -518,6 +553,7 @@ def _recu_html(t: dict) -> str:
 <div class="tiny">
   Ce ticket de garantie ne fait pas office de facture.
 </div>
+{_fidelite_section(t)}
 <hr class="sep">
 <div class="center small">
   KLIKPHONE SARL<br>

@@ -179,6 +179,14 @@ class ApiClient {
     return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}`, data);
   }
 
+  // ─── FIDELITE ─────────────────────────────────
+  getFidelite(clientId) { return this.get(`/api/fidelite/${clientId}`); }
+  getFideliteByTicket(ticketCode) { return this.get(`/api/fidelite/ticket/${ticketCode}`); }
+  crediterPoints(data) { return this.post('/api/fidelite/crediter', data); }
+  utiliserPoints(data) { return this.post('/api/fidelite/utiliser', data); }
+  getGrattage(ticketCode) { return this.get(`/api/fidelite/grattage/${ticketCode}`); }
+  gratter(ticketCode) { return this.post(`/api/fidelite/grattage/${ticketCode}`); }
+
   // ─── ADMIN ──────────────────────────────────
   adminLogin(identifiant, password) {
     return this.post('/api/admin/login', { identifiant, password });

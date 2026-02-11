@@ -6,7 +6,7 @@ import { useSettings } from '../hooks/useSettings';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2,
-  Database, Download, Upload, Shield, Palette,
+  Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
 } from 'lucide-react';
 
@@ -299,6 +299,7 @@ export default function ConfigPage() {
     { id: 'team', label: 'Équipe', icon: Users },
     { id: 'catalog', label: 'Catalogue', icon: BookOpen },
     { id: 'notifications', label: 'Notifications', icon: Bell },
+    { id: 'fidelite', label: 'Fidélité & Jeu', icon: Star },
     { id: 'security', label: 'Sécurité', icon: Shield },
     { id: 'appearance', label: 'Apparence', icon: Monitor },
     { id: 'backup', label: 'Sauvegarde', icon: Database },
@@ -337,7 +338,7 @@ export default function ConfigPage() {
       </div>
 
       {/* Unsaved changes banner */}
-      {hasUnsavedChanges() && (activeTab === 'general' || activeTab === 'notifications') && (
+      {hasUnsavedChanges() && (activeTab === 'general' || activeTab === 'notifications' || activeTab === 'fidelite') && (
         <div className="flex items-center gap-3 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl animate-in">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
           <p className="text-sm text-amber-800 font-medium flex-1">Modifications non sauvegardées</p>
@@ -753,6 +754,82 @@ export default function ConfigPage() {
                 <label className="input-label">Modele Claude (optionnel)</label>
                 <input value={config.ANTHROPIC_MODEL || ''} onChange={e => updateConfig('ANTHROPIC_MODEL', e.target.value)}
                   className="input text-xs" placeholder="claude-sonnet-4-5-20250929" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Fidélité & Jeu tab ═══ */}
+      {activeTab === 'fidelite' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Programme de fidélité</h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Activer le programme fidélité</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Les clients cumulent des points sur chaque réparation</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('fidelite_active', (config.fidelite_active || '1') === '1' ? '0' : '1')}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${(config.fidelite_active || '1') === '1' ? 'bg-brand-600' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${(config.fidelite_active || '1') === '1' ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="input-label">Points par euro dépensé</label>
+                  <input type="number" value={config.fidelite_points_par_euro || '10'} onChange={e => updateConfig('fidelite_points_par_euro', e.target.value)}
+                    className="input" min="1" />
+                </div>
+                <div>
+                  <label className="input-label">Palier film verre trempé (pts)</label>
+                  <input type="number" value={config.fidelite_palier_film || '1000'} onChange={e => updateConfig('fidelite_palier_film', e.target.value)}
+                    className="input" min="100" step="100" />
+                </div>
+                <div>
+                  <label className="input-label">Palier réduction (pts)</label>
+                  <input type="number" value={config.fidelite_palier_reduction || '5000'} onChange={e => updateConfig('fidelite_palier_reduction', e.target.value)}
+                    className="input" min="100" step="100" />
+                </div>
+                <div>
+                  <label className="input-label">Montant réduction (€)</label>
+                  <input type="number" value={config.fidelite_montant_reduction || '10'} onChange={e => updateConfig('fidelite_montant_reduction', e.target.value)}
+                    className="input" min="1" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Jeu de grattage</h2>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Activer le jeu de grattage</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Un ticket grattable sur la page de suivi client</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('grattage_actif', (config.grattage_actif || '1') === '1' ? '0' : '1')}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${(config.grattage_actif || '1') === '1' ? 'bg-brand-600' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${(config.grattage_actif || '1') === '1' ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div>
+                <label className="input-label">Fréquence de gain (1 gagnant tous les N tickets)</label>
+                <input type="number" value={config.grattage_frequence || '10'} onChange={e => updateConfig('grattage_frequence', e.target.value)}
+                  className="input w-40" min="2" />
+                <p className="text-[10px] text-slate-400 mt-1">Ex: 10 = en moyenne 1 gagnant sur 10 tickets grattés</p>
               </div>
             </div>
           </div>
