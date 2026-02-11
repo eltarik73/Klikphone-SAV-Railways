@@ -6,9 +6,9 @@ import StatusBadge from '../components/StatusBadge';
 import { formatDateShort, formatPrix, waLink, smsLink, STATUTS } from '../lib/utils';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
-  Wrench, CheckCircle2, Package, ChevronRight, ChevronDown,
+  Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
-  SquareCheck, Square, X,
+  SquareCheck, Square, X, Filter,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -29,6 +29,10 @@ export default function DashboardPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
   const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [filterTech, setFilterTech] = useState('');
+  const [teamList, setTeamList] = useState([]);
+  const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
+  const [page, setPage] = useState(0);
   const searchTimer = useRef(null);
 
   // Debounced search (300ms)
@@ -66,6 +70,7 @@ export default function DashboardPage() {
         const map = {};
         members.forEach(m => { if (m.couleur) map[m.nom] = m.couleur; });
         setTechColors(map);
+        setTeamList(members);
       })
       .catch(() => {});
   }, []);
@@ -119,13 +124,26 @@ export default function DashboardPage() {
   const isTech = user?.target === 'tech';
   const techName = user?.utilisateur;
 
-  const filteredTickets = isTech && techName && !debouncedSearch
+  let filteredTickets = isTech && techName && !debouncedSearch
     ? tickets.filter(t => t.technicien_assigne === techName || !t.technicien_assigne)
     : tickets;
 
+  // Tech filter (accueil view)
+  if (filterTech) {
+    filteredTickets = filteredTickets.filter(t => t.technicien_assigne === filterTech);
+  }
+
   const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
   const archivedTickets = filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut));
-  const displayedTickets = showArchived ? archivedTickets : activeTickets;
+  const allDisplayed = showArchived ? archivedTickets : activeTickets;
+  const totalPages = Math.ceil(allDisplayed.length / pageSize);
+  const displayedTickets = allDisplayed.slice(page * pageSize, (page + 1) * pageSize);
+
+  const handlePageSizeChange = (size) => {
+    setPageSize(size);
+    setPage(0);
+    localStorage.setItem('kp_page_size', size.toString());
+  };
 
   const kpiCards = kpi ? [
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', iconBg: 'bg-brand-100' },
@@ -192,12 +210,23 @@ export default function DashboardPage() {
       {/* Search & Filters */}
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher par nom, téléphone, code ticket, technicien..."
-              value={search} onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
-            />
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input type="text" placeholder="Rechercher par nom, téléphone, code ticket..."
+                value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+              />
+            </div>
+            {!isTech && teamList.length > 0 && (
+              <select value={filterTech} onChange={e => { setFilterTech(e.target.value); setPage(0); }}
+                className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
+                <option value="">Tous les techs</option>
+                {teamList.map(m => (
+                  <option key={m.id} value={m.nom}>{m.nom}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
@@ -406,6 +435,41 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {allDisplayed.length > pageSize && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">
+                {page * pageSize + 1}–{Math.min((page + 1) * pageSize, allDisplayed.length)} sur {allDisplayed.length}
+              </span>
+              <select value={pageSize} onChange={e => handlePageSizeChange(Number(e.target.value))}
+                className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600">
+                {[10, 25, 50, 100].map(n => (
+                  <option key={n} value={n}>{n} / page</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                <ChevronLeft className="w-4 h-4 text-slate-600" />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => (
+                <button key={i} onClick={() => setPage(i)}
+                  className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${
+                    i === page ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+                  }`}>
+                  {i + 1}
+                </button>
+              )).slice(Math.max(0, page - 2), page + 3)}
+              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                <ChevronRight className="w-4 h-4 text-slate-600" />
+              </button>
+            </div>
           </div>
         )}
       </div>

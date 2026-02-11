@@ -233,10 +233,44 @@ export default function ConfigPage() {
     }
   };
 
-  const handleExportCSV = () => {
-    const url = api.exportClientsCsv();
-    window.open(url, '_blank');
-    toast.success('Export CSV lancé');
+  const handleExportCSV = async () => {
+    try {
+      await api.exportClientsCsv();
+      toast.success('Export CSV téléchargé');
+    } catch (err) {
+      toast.error('Erreur export CSV');
+    }
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      await api.exportClientsExcel();
+      toast.success('Export Excel téléchargé');
+    } catch (err) {
+      toast.error('Erreur export Excel');
+    }
+  };
+
+  const handleImportBackup = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.tables) {
+        toast.error('Format de backup invalide');
+        return;
+      }
+      if (!confirm(`Restaurer le backup du ${data.backup_date?.slice(0, 10) || '?'} ? Cela remplacera TOUTES les données actuelles.`)) return;
+      const result = await api.importBackup(data);
+      const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
+      toast.success(`Backup restauré : ${total} enregistrements importés`);
+      await loadData();
+    } catch (err) {
+      toast.error(err.message || 'Erreur import backup');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const tabs = [
@@ -651,10 +685,15 @@ export default function ConfigPage() {
         <div className="space-y-5">
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Export clients</h2>
-            <p className="text-sm text-slate-500 mb-3">Téléchargez la liste de tous les clients au format CSV.</p>
-            <button onClick={handleExportCSV} className="btn-primary">
-              <Download className="w-4 h-4" /> Exporter clients (CSV)
-            </button>
+            <p className="text-sm text-slate-500 mb-3">Téléchargez la liste de tous les clients (avec nombre de tickets).</p>
+            <div className="flex gap-2">
+              <button onClick={handleExportCSV} className="btn-primary">
+                <Download className="w-4 h-4" /> CSV
+              </button>
+              <button onClick={handleExportExcel} className="btn-primary">
+                <Download className="w-4 h-4" /> Excel (.xlsx)
+              </button>
+            </div>
           </div>
 
           <div className="card p-5">
@@ -662,9 +701,22 @@ export default function ConfigPage() {
             <p className="text-sm text-slate-500 mb-3">
               Téléchargez un backup JSON complet de la base de données (clients, tickets, config, équipe, catalogue).
             </p>
-            <button onClick={handleDownloadBackup} className="btn-primary">
-              <Database className="w-4 h-4" /> Télécharger le backup (JSON)
-            </button>
+            <div className="flex gap-2">
+              <button onClick={handleDownloadBackup} className="btn-primary">
+                <Database className="w-4 h-4" /> Télécharger le backup (JSON)
+              </button>
+            </div>
+          </div>
+
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Restaurer un backup</h2>
+            <p className="text-sm text-slate-500 mb-3">
+              Importez un fichier JSON de backup pour restaurer les données. Attention : cela remplacera toutes les données actuelles.
+            </p>
+            <label className="btn-primary cursor-pointer inline-flex">
+              <Upload className="w-4 h-4" /> Importer un backup (.json)
+              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+            </label>
           </div>
         </div>
       )}

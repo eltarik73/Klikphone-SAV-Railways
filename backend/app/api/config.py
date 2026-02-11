@@ -112,6 +112,46 @@ async def export_backup(user: dict = Depends(get_current_user)):
     )
 
 
+@router.post("/backup/import")
+async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
+    """Importe un backup JSON complet. Remplace toutes les données existantes."""
+    tables = backup.get("tables", {})
+    if not tables:
+        raise HTTPException(400, "Format de backup invalide (pas de clé 'tables')")
+
+    # Ordre d'import : tables parentes d'abord
+    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces"]
+    counts = {}
+
+    with get_cursor() as cur:
+        # Supprimer dans l'ordre inverse (FK)
+        for table in reversed(import_order):
+            if table in tables:
+                cur.execute(f"DELETE FROM {table}")
+
+        for table in import_order:
+            rows = tables.get(table, [])
+            if not rows:
+                counts[table] = 0
+                continue
+            cols = list(rows[0].keys())
+            placeholders = ", ".join(["%s"] * len(cols))
+            col_names = ", ".join(cols)
+            for row in rows:
+                vals = [row.get(c) for c in cols]
+                cur.execute(f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING", vals)
+            counts[table] = len(rows)
+
+        # Reset sequences
+        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces"]:
+            try:
+                cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table}")
+            except Exception:
+                pass
+
+    return {"ok": True, "imported": counts}
+
+
 @router.get("/{cle}")
 async def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé."""

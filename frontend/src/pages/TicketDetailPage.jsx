@@ -570,10 +570,90 @@ export default function TicketDetailPage() {
         <ProgressTracker statut={t.statut} />
       </div>
 
-      {/* Content grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* ─── Left column (2/3) ─── */}
-        <div className="lg:col-span-2 space-y-5">
+      {/* Content grid — 2 columns */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* ─── Left column ─── */}
+        <div className="space-y-5">
+
+          {/* ═══ Client info (editable) ═══ */}
+          <EditableSection
+            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
+            editing={editingClient}
+            onEdit={() => setEditingClient(true)}
+            onSave={handleSaveClient}
+            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
+            viewContent={
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                    <span className="text-brand-700 font-bold text-sm">
+                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
+                    {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {t.client_tel && (
+                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="font-mono text-xs">{t.client_tel}</span>
+                    </a>
+                  )}
+                  {t.client_email && (
+                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="text-xs truncate">{t.client_email}</span>
+                    </a>
+                  )}
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
+                  {t.client_tel && (
+                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
+                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                  )}
+                  {t.client_tel && (
+                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
+                      <Send className="w-3.5 h-3.5" /> SMS
+                    </a>
+                  )}
+                </div>
+              </>
+            }
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="input-label">Prénom</label>
+                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="input-label">Nom</label>
+                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                </div>
+              </div>
+              <div>
+                <label className="input-label">Téléphone</label>
+                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">Email</label>
+                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Société</label>
+                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
+              </div>
+            </div>
+          </EditableSection>
 
           {/* ═══ Device info (editable) ═══ */}
           <EditableSection
@@ -668,6 +748,58 @@ export default function TicketDetailPage() {
             </div>
           </EditableSection>
 
+          {/* Dates */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Calendar className="w-4 h-4 text-slate-500" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Dates</h2>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Dépôt</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Mise à jour</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
+              </div>
+              {t.date_cloture && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Clôture</span>
+                  <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
+                </div>
+              )}
+              {t.date_recuperation && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Récupération</span>
+                  <span className="font-medium text-slate-800">{t.date_recuperation}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick print */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Printer className="w-4 h-4 text-slate-500" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Impressions</h2>
+            </div>
+            <button
+              onClick={() => setShowPrintDrawer(true)}
+              className="w-full btn-primary justify-center text-xs"
+            >
+              <Printer className="w-3.5 h-3.5" /> Ouvrir le panneau d'impression
+            </button>
+            <p className="text-[10px] text-slate-400 text-center mt-2">5 formats : client, atelier, double, devis, reçu</p>
+          </div>
+        </div>
+
+        {/* ─── Right column ─── */}
+        <div className="space-y-5">
           {/* ═══ Tarification (editable) ═══ */}
           <EditableSection
             title="Tarification" icon={CreditCard} iconBg="bg-emerald-50" iconColor="text-emerald-600"
@@ -886,30 +1018,42 @@ export default function TicketDetailPage() {
               </button>
             </div>
 
-            {/* Timeline */}
+            {/* Timeline with vertical line */}
             {timelineEntries.length > 0 && (
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {timelineEntries.map((entry, i) => {
-                  const styles = {
-                    internal: { bg: 'bg-slate-50', icon: Lock, iconColor: 'text-slate-400', textColor: 'text-slate-600' },
-                    client: { bg: 'bg-blue-50', icon: Eye, iconColor: 'text-blue-400', textColor: 'text-blue-700' },
-                    attention: { bg: 'bg-red-50 border border-red-200', icon: AlertTriangle, iconColor: 'text-red-500', textColor: 'text-red-700' },
-                    history: { bg: 'bg-slate-50/60', icon: Clock, iconColor: 'text-slate-300', textColor: 'text-slate-500' },
-                  };
-                  const s = styles[entry.type];
-                  const EntryIcon = s.icon;
-                  return (
-                    <div key={i} className={`flex items-start gap-2.5 text-sm p-2.5 rounded-lg ${s.bg}`}>
-                      <EntryIcon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${s.iconColor}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className={s.textColor}>{entry.text}</p>
+              <div className="relative max-h-80 overflow-y-auto pl-4">
+                {/* Vertical line */}
+                <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" />
+
+                <div className="space-y-0.5">
+                  {timelineEntries.map((entry, i) => {
+                    const styles = {
+                      internal: { dot: 'bg-slate-400', bg: 'hover:bg-slate-50', icon: Lock, textColor: 'text-slate-600', label: 'Interne' },
+                      client: { dot: 'bg-blue-500', bg: 'hover:bg-blue-50/50', icon: Eye, textColor: 'text-blue-700', label: 'Client' },
+                      attention: { dot: 'bg-red-500 ring-2 ring-red-200', bg: 'bg-red-50/50', icon: AlertTriangle, textColor: 'text-red-700', label: 'Attention' },
+                      history: { dot: 'bg-brand-400', bg: 'hover:bg-slate-50', icon: Clock, textColor: 'text-slate-500', label: 'Historique' },
+                    };
+                    const s = styles[entry.type];
+                    return (
+                      <div key={i} className={`relative flex items-start gap-3 py-2 px-2 rounded-lg transition-colors ${s.bg}`}>
+                        {/* Dot on the line */}
+                        <div className={`absolute -left-4 top-3.5 w-2.5 h-2.5 rounded-full ${s.dot} z-10`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${s.textColor}`}>{entry.text}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {entry.timestamp && (
+                              <span className="text-[10px] text-slate-400">{entry.timestamp}</span>
+                            )}
+                            <span className={`text-[9px] font-medium uppercase tracking-wider ${
+                              entry.type === 'attention' ? 'text-red-400' :
+                              entry.type === 'client' ? 'text-blue-400' :
+                              entry.type === 'history' ? 'text-brand-400' : 'text-slate-400'
+                            }`}>{s.label}</span>
+                          </div>
+                        </div>
                       </div>
-                      {entry.timestamp && (
-                        <span className="text-[10px] text-slate-400 shrink-0 mt-0.5">{entry.timestamp}</span>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -973,124 +1117,6 @@ export default function TicketDetailPage() {
               )}
             </div>
           </div>
-        </div>
-
-        {/* ─── Right column (1/3) ─── */}
-        <div className="space-y-5">
-          {/* ═══ Client info (editable) ═══ */}
-          <EditableSection
-            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
-            editing={editingClient}
-            onEdit={() => setEditingClient(true)}
-            onSave={handleSaveClient}
-            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
-            viewContent={
-              <>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                    <span className="text-brand-700 font-bold text-sm">
-                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
-                    {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {t.client_tel && (
-                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Phone className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <span className="font-mono text-xs">{t.client_tel}</span>
-                    </a>
-                  )}
-                  {t.client_email && (
-                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Mail className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <span className="text-xs truncate">{t.client_email}</span>
-                    </a>
-                  )}
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
-                  {t.client_tel && (
-                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
-                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
-                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                    </a>
-                  )}
-                  {t.client_tel && (
-                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
-                      <Send className="w-3.5 h-3.5" /> SMS
-                    </a>
-                  )}
-                </div>
-              </>
-            }
-          >
-            {/* Edit mode for client */}
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="input-label">Prénom</label>
-                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
-                </div>
-                <div>
-                  <label className="input-label">Nom</label>
-                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
-                </div>
-              </div>
-              <div>
-                <label className="input-label">Téléphone</label>
-                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
-              </div>
-              <div>
-                <label className="input-label">Email</label>
-                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Société</label>
-                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
-              </div>
-            </div>
-          </EditableSection>
-
-          {/* Dates */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Calendar className="w-4 h-4 text-slate-500" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Dates</h2>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Dépôt</span>
-                <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Mise à jour</span>
-                <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
-              </div>
-              {t.date_cloture && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Clôture</span>
-                  <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
-                </div>
-              )}
-              {t.date_recuperation && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Récupération</span>
-                  <span className="font-medium text-slate-800">{t.date_recuperation}</span>
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Assignment */}
           <div className="card p-5">
@@ -1145,23 +1171,6 @@ export default function TicketDetailPage() {
                 <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
               </div>
             )}
-          </div>
-
-          {/* Quick print */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Printer className="w-4 h-4 text-slate-500" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Impressions</h2>
-            </div>
-            <button
-              onClick={() => setShowPrintDrawer(true)}
-              className="w-full btn-primary justify-center text-xs"
-            >
-              <Printer className="w-3.5 h-3.5" /> Ouvrir le panneau d'impression
-            </button>
-            <p className="text-[10px] text-slate-400 text-center mt-2">5 formats : client, atelier, double, devis, reçu</p>
           </div>
 
           {/* Danger zone */}

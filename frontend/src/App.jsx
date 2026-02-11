@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/Navbar';
@@ -18,6 +19,15 @@ import DepotPage from './pages/DepotPage';
 
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('kp_sidebar_collapsed') === '1'
+  );
+
+  useEffect(() => {
+    const handler = (e) => setSidebarCollapsed(e.detail.collapsed);
+    window.addEventListener('sidebar-toggle', handler);
+    return () => window.removeEventListener('sidebar-toggle', handler);
+  }, []);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -34,7 +44,7 @@ function ProtectedRoute({ children, allowedTargets }) {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
-      <main className="lg:pl-64 pt-14 lg:pt-0 min-h-screen">
+      <main className={`pt-14 lg:pt-0 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}>
         {children}
       </main>
     </div>

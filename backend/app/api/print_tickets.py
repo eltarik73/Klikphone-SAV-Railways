@@ -125,10 +125,10 @@ body {{
   width: 80mm;
   max-width: 302px;
   margin: 0 auto;
-  padding: 3mm;
+  padding: 4mm;
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.5;
   color: #000;
   background: #fff;
 }}
@@ -137,40 +137,46 @@ body {{
 .right {{ text-align:right; }}
 h1 {{
   font-family: Arial, sans-serif;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 900;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
   margin: 0;
 }}
 h2 {{
   font-family: Arial, sans-serif;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: bold;
   letter-spacing: 2px;
   text-transform: uppercase;
-  margin: 2px 0;
+  margin: 3px 0;
 }}
-.sep {{ border:none; border-top:1px dashed #000; margin:6px 0; }}
-.sep-bold {{ border:none; border-top:2px solid #000; margin:8px 0; }}
-.row {{ display:flex; justify-content:space-between; padding:1px 0; }}
+.sep {{ border:none; border-top:1px dashed #000; margin:8px 0; }}
+.sep-bold {{ border:none; border-top:3px solid #000; margin:10px 0; }}
+.row {{ display:flex; justify-content:space-between; padding:2px 0; font-size:13px; }}
 .row .val {{ text-align:right; flex-shrink:0; font-weight:bold; }}
-.section {{ margin:4px 0; }}
-.small {{ font-size:9px; line-height:1.3; }}
-.tiny {{ font-size:8px; line-height:1.2; color:#333; }}
-.logo-img {{ width:150px; height:auto; display:block; margin:0 auto 4px; }}
-.qr {{ text-align:center; margin:8px 0; }}
-.qr img {{ width:180px; height:180px; }}
+.section {{ margin:6px 0; }}
+.section-title {{ font-weight:bold; font-size:12px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; border-bottom:1px solid #000; padding-bottom:2px; }}
+.small {{ font-size:10px; line-height:1.3; }}
+.tiny {{ font-size:9px; line-height:1.3; color:#333; }}
+.logo-img {{ width:160px; height:auto; display:block; margin:0 auto 6px; }}
+.qr {{ text-align:center; margin:10px 0; }}
+.qr img {{ width:200px; height:200px; }}
 .highlight {{
-  font-size:16px;
+  font-size:20px;
   font-weight:900;
-  letter-spacing:2px;
+  letter-spacing:3px;
 }}
 .total-box {{
-  border:2px solid #000;
+  border:3px solid #000;
+  padding:6px 10px;
+  margin:6px 0;
+  font-weight:bold;
+  font-size:16px;
+}}
+.info-box {{
+  border:1px solid #000;
   padding:4px 8px;
   margin:4px 0;
-  font-weight:bold;
-  font-size:14px;
 }}
 @media print {{
   body {{ width:80mm; max-width:302px; }}
@@ -222,36 +228,37 @@ def _ticket_client_html(t: dict) -> str:
 <div class="center">
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
-  <div class="small">Spécialiste Apple & Multimarque</div>
-  <div class="small">79 Place Saint Léger</div>
-  <div class="small">73000 Chambéry</div>
+  <div class="small" style="font-weight:bold">Spécialiste Apple & Multimarque</div>
+  <div class="small">79 Place Saint Léger, 73000 Chambéry</div>
   <div class="small">Tél: 04 79 60 89 22</div>
 </div>
 <hr class="sep-bold">
-<div class="center"><h2>Ticket de dépôt</h2></div>
-<hr class="sep">
-<div class="section">
-  <div class="row"><span>N°:</span><span class="highlight">{code}</span></div>
-  <div class="row"><span>Date:</span><span>{_fd(t.get('date_depot'))}</span></div>
+<div class="center"><h2>TICKET DE DÉPÔT</h2></div>
+<hr class="sep-bold">
+<div class="info-box center">
+  <div class="highlight">{code}</div>
+  <div class="small">{_fd(t.get('date_depot'))}</div>
 </div>
 <hr class="sep">
 <div class="section">
-  <div class="row"><span>Client:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span>{t.get('client_tel', '')}</span></div>
+  <div class="section-title">CLIENT</div>
+  <div class="row"><span>Nom:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
+  <div class="row"><span>Tél:</span><span class="val">{t.get('client_tel', '')}</span></div>
 </div>
 <hr class="sep">
 <div class="section">
-  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
+  <div class="section-title">APPAREIL</div>
+  <div class="row"><span>Modèle:</span><span class="val">{appareil}</span></div>
   <div class="row"><span>Catégorie:</span><span>{t.get('categorie', '')}</span></div>
-  <div class="row"><span>Motif:</span><span>{t.get('panne', '')}</span></div>
+  <div class="row"><span>Motif:</span><span class="val">{t.get('panne', '')}</span></div>
   {f'<div class="row"><span>Détail:</span><span>{t.get("panne_detail","")}</span></div>' if t.get('panne_detail') else ''}
-  {f'<div class="row"><span>IMEI:</span><span class="small">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
+  {f'<div class="row"><span>IMEI:</span><span class="small" style="font-family:monospace">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
 </div>
 {tarif_html}
 {note_html}
 <hr class="sep">
 <div class="qr"><img src="{qr}" alt="QR"></div>
-<div class="center small">
+<div class="center" style="font-weight:bold;font-size:11px">
   Scannez pour suivre votre<br>réparation en ligne
 </div>
 <hr class="sep">
@@ -265,9 +272,9 @@ def _ticket_client_html(t: dict) -> str:
   6 mois sur les réparations.
 </div>
 <hr class="sep-bold">
-<div class="center small" style="margin-top:4px">
-  Merci de votre confiance !<br>
-  <b>KLIKPHONE</b>
+<div class="center" style="margin-top:6px;font-size:12px">
+  <b>Merci de votre confiance !</b><br>
+  <span style="font-size:14px;font-weight:900;letter-spacing:2px">KLIKPHONE</span>
 </div>
 </body></html>"""
 
@@ -317,35 +324,39 @@ def _ticket_staff_html(t: dict) -> str:
     return _THERMAL.format(title=f"Fiche Technicien - {code}") + f"""
 <div class="center">
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
-  <h2>Fiche Technicien</h2>
+  <h2>FICHE TECHNICIEN</h2>
 </div>
 <hr class="sep-bold">
+<div class="info-box center">
+  <div class="highlight">{code}</div>
+</div>
 <div class="section">
-  <div class="row"><span>N°:</span><span class="highlight">{code}</span></div>
-  <div class="row"><span>Date dépôt:</span><span>{_fd(t.get('date_depot'))}</span></div>
-  <div class="row"><span>Date récup:</span><span>{date_recup}</span></div>
+  <div class="row"><span>Date dépôt:</span><span class="val">{_fd(t.get('date_depot'))}</span></div>
+  <div class="row"><span>Date récup:</span><span class="val">{date_recup}</span></div>
+  <div class="row"><span>Tech:</span><span class="val" style="font-size:15px">{tech}</span></div>
 </div>
 <hr class="sep">
 <div class="section">
-  <div class="row"><span>Client:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span>{t.get('client_tel', '')}</span></div>
+  <div class="section-title">CLIENT</div>
+  <div class="row"><span>Nom:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
+  <div class="row"><span>Tél:</span><span class="val">{t.get('client_tel', '')}</span></div>
 </div>
 <hr class="sep">
 <div class="section">
-  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
-  <div class="row"><span>Motif:</span><span>{t.get('panne', '')}</span></div>
+  <div class="section-title">APPAREIL</div>
+  <div class="row"><span>Modèle:</span><span class="val">{appareil}</span></div>
+  <div class="row"><span>Motif:</span><span class="val">{t.get('panne', '')}</span></div>
   {f'<div class="row"><span>Détail:</span><span>{t.get("panne_detail","")}</span></div>' if t.get('panne_detail') else ''}
-  {f'<div class="row"><span>IMEI:</span><span class="small">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
-  {f'<div class="row"><span>Type écran:</span><span>{t.get("type_ecran","")}</span></div>' if t.get('type_ecran') else ''}
+  {f'<div class="row"><span>IMEI:</span><span class="small" style="font-family:monospace">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
+  {f'<div class="row"><span>Type écran:</span><span class="val">{t.get("type_ecran","")}</span></div>' if t.get('type_ecran') else ''}
 </div>
 {supp_html}
 {sec_html}
 {notes_html}
 <hr class="sep-bold">
 <div class="section">
-  <div class="row"><span>Tech assigné:</span><span class="val">{tech}</span></div>
-  {f'<div class="row"><span>Tarif:</span><span class="val">{_fp(tarif)}€</span></div>' if tarif else ''}
-  <div class="row"><span>Payé:</span><span class="val">{paye}</span></div>
+  {f'<div class="total-box"><div class="row"><span>Tarif:</span><span>{_fp(tarif)}€</span></div></div>' if tarif else ''}
+  <div class="row"><span>Payé:</span><span class="val" style="font-size:15px">{paye}</span></div>
 </div>
 </body></html>"""
 

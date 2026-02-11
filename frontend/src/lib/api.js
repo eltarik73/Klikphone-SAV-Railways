@@ -120,7 +120,23 @@ class ApiClient {
   setParams(params) { return this.put('/api/config/batch', params); }
   changePin(target, old_pin, new_pin) { return this.post('/api/config/change-pin', { target, old_pin, new_pin }); }
   getBackup() { return this.get('/api/config/backup'); }
-  exportClientsCsv() { return `${API_URL}/api/clients/export/csv`; }
+  importBackup(data) { return this.post('/api/config/backup/import', data); }
+  async exportFile(path, filename) {
+    const url = `${API_URL}${path}`;
+    const headers = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(blobUrl);
+  }
+  exportClientsCsv() { return this.exportFile('/api/clients/export/csv', 'clients_klikphone.csv'); }
+  exportClientsExcel() { return this.exportFile('/api/clients/export/excel', 'clients_klikphone.xlsx'); }
 
   // ─── NOTIFICATIONS ─────────────────────────
   getTemplates() { return this.get('/api/notifications/templates'); }

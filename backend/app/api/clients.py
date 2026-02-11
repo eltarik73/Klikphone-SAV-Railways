@@ -27,9 +27,9 @@ async def list_clients(
         with get_cursor() as cur:
             s = f"%{search}%"
             cur.execute("""
-                SELECT * FROM clients 
-                WHERE nom ILIKE %s OR prenom ILIKE %s 
-                      OR telephone LIKE %s OR email ILIKE %s 
+                SELECT * FROM clients
+                WHERE nom ILIKE %s OR prenom ILIKE %s
+                      OR telephone LIKE %s OR email ILIKE %s
                       OR societe ILIKE %s
                 ORDER BY date_creation DESC
                 LIMIT %s OFFSET %s
@@ -42,6 +42,100 @@ async def list_clients(
                 (limit, offset),
             )
             return cur.fetchall()
+
+
+# ─── EXPORT routes (MUST be before /{client_id}) ──────────────
+@router.get("/export/csv")
+async def export_clients_csv(user: dict = Depends(get_current_user)):
+    """Exporte tous les clients au format CSV avec nb de tickets."""
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT c.id, c.nom, c.prenom, c.telephone, c.email, c.societe,
+                   c.carte_camby, c.date_creation,
+                   COUNT(t.id) AS nb_tickets
+            FROM clients c
+            LEFT JOIN tickets t ON t.client_id = c.id
+            GROUP BY c.id
+            ORDER BY c.nom
+        """)
+        rows = cur.fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création", "Nb tickets"])
+    for r in rows:
+        writer.writerow([r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], r["date_creation"], r["nb_tickets"]])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clients_klikphone.csv"},
+    )
+
+
+@router.get("/export/excel")
+async def export_clients_excel(user: dict = Depends(get_current_user)):
+    """Exporte tous les clients au format Excel (.xlsx) avec nb de tickets."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT c.id, c.nom, c.prenom, c.telephone, c.email, c.societe,
+                   c.carte_camby, c.date_creation,
+                   COUNT(t.id) AS nb_tickets
+            FROM clients c
+            LEFT JOIN tickets t ON t.client_id = c.id
+            GROUP BY c.id
+            ORDER BY c.nom
+        """)
+        rows = cur.fetchall()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Clients"
+
+    headers = ["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création", "Nb tickets"]
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="7C3AED", end_color="7C3AED", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin", color="E2E8F0"),
+        right=Side(style="thin", color="E2E8F0"),
+        top=Side(style="thin", color="E2E8F0"),
+        bottom=Side(style="thin", color="E2E8F0"),
+    )
+
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+        cell.border = thin_border
+
+    for i, r in enumerate(rows, 2):
+        vals = [r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], str(r["date_creation"] or ""), r["nb_tickets"]]
+        for col, v in enumerate(vals, 1):
+            cell = ws.cell(row=i, column=col, value=v)
+            cell.border = thin_border
+
+    # Auto-fit column widths
+    for col in ws.columns:
+        max_len = 0
+        for cell in col:
+            if cell.value:
+                max_len = max(max_len, len(str(cell.value)))
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 3, 40)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=clients_klikphone.xlsx"},
+    )
 
 
 @router.get("/{client_id}", response_model=ClientOut)
@@ -149,22 +243,3 @@ async def get_client_tickets(client_id: int, user: dict = Depends(get_current_us
         return cur.fetchall()
 
 
-@router.get("/export/csv")
-async def export_clients_csv(user: dict = Depends(get_current_user)):
-    """Exporte tous les clients au format CSV."""
-    with get_cursor() as cur:
-        cur.execute("SELECT id, nom, prenom, telephone, email, societe, carte_camby, date_creation FROM clients ORDER BY nom")
-        rows = cur.fetchall()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création"])
-    for r in rows:
-        writer.writerow([r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], r["date_creation"]])
-
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=clients_klikphone.csv"},
-    )

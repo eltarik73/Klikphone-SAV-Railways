@@ -4,7 +4,6 @@ API Attestation de non-réparabilité.
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 
@@ -90,13 +89,13 @@ a été examiné dans nos ateliers et que celui-ci <strong>ne peut pas être ré
 </body></html>"""
 
 
-@router.post("/generate", response_class=HTMLResponse)
+@router.post("/generate")
 async def generate_attestation(
     data: AttestationRequest,
     user: dict = Depends(get_current_user),
 ):
     """Génère l'attestation HTML."""
-    return _generate_attestation_html(data)
+    return {"html": _generate_attestation_html(data)}
 
 
 @router.post("/email")

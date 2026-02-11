@@ -22,7 +22,7 @@ export default function AttestationPage() {
     setLoading(true);
     try {
       const result = await api.generateAttestation(form);
-      setHtmlPreview(result.html || result);
+      setHtmlPreview(result.html);
     } catch (err) {
       console.error(err);
     } finally {
