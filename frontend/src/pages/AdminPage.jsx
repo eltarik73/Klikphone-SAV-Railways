@@ -3,11 +3,11 @@ import api from '../lib/api';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  AreaChart, Area,
+  Legend,
 } from 'recharts';
 import {
-  Lock, LogOut, TrendingUp, DollarSign, Users, Clock,
-  BarChart3, Activity,
+  Lock, LogOut, TrendingUp, DollarSign, Users,
+  BarChart3, Activity, Target, UserCheck, Phone,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────
@@ -15,16 +15,13 @@ const COLORS = ['#7C3AED', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#EC4899'
 const VIOLET = '#7C3AED';
 const BLUE = '#3B82F6';
 const EMERALD = '#10B981';
+const AMBER = '#F59E0B';
 
-const PERIODS = [
-  { label: '7j', value: '7d' },
-  { label: '30j', value: '30d' },
-  { label: '90j', value: '90d' },
-  { label: '12m', value: '12m' },
+const TECH_DAYS_OPTIONS = [
+  { label: '7j', value: 7 },
+  { label: '14j', value: 14 },
+  { label: '30j', value: 30 },
 ];
-
-const JOURS_SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-const HEURES = Array.from({ length: 13 }, (_, i) => i + 8); // 8h - 20h
 
 const AUTH_KEY = 'kp_admin_auth';
 
@@ -34,30 +31,29 @@ function formatEuro(n) {
   return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2 }) + ' \u20AC';
 }
 
-function formatTemps(minutes) {
-  if (!minutes && minutes !== 0) return '\u2014';
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
+function formatTemps(heures) {
+  if (!heures && heures !== 0) return '\u2014';
+  const h = Math.floor(heures);
+  const m = Math.round((heures - h) * 60);
   if (h === 0) return `${m}min`;
   return `${h}h ${m}min`;
 }
 
-// Custom dark tooltip for recharts
-function DarkTooltip({ active, payload, label, formatter }) {
+// Custom dark tooltip
+function DarkTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl">
-      <p className="text-xs text-slate-400 mb-1">{label}</p>
+    <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-xs">
+      <p className="text-slate-400 mb-1 font-medium">{label}</p>
       {payload.map((entry, i) => (
-        <p key={i} className="text-sm font-semibold" style={{ color: entry.color || entry.fill || '#fff' }}>
-          {formatter ? formatter(entry.value) : entry.value}
+        <p key={i} className="font-semibold" style={{ color: entry.color || entry.fill || '#fff' }}>
+          {entry.name}: {typeof entry.value === 'number' && entry.value % 1 !== 0 ? entry.value.toFixed(1) : entry.value}
         </p>
       ))}
     </div>
   );
 }
 
-// Spinner component
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
@@ -66,12 +62,57 @@ function Spinner() {
   );
 }
 
-// Empty state
 function EmptyState({ text }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-slate-500">
       <BarChart3 className="w-8 h-8 text-slate-600 mb-2" />
       <p className="text-sm">{text || 'Aucune donn\u00E9e disponible'}</p>
+    </div>
+  );
+}
+
+function ChartCard({ title, children, className = '' }) {
+  return (
+    <div className={`bg-slate-800 rounded-xl border border-slate-700/50 p-5 ${className}`}>
+      <h3 className="text-sm font-semibold text-white mb-4">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+// ─── Conversion Gauge ─────────────────────────────────────
+function ConversionGauge({ taux, envoyes, acceptes }) {
+  const radius = 70;
+  const circumference = Math.PI * radius;
+  const progress = (taux / 100) * circumference;
+  const color = taux >= 70 ? EMERALD : taux >= 40 ? AMBER : '#EF4444';
+
+  return (
+    <div className="flex flex-col items-center">
+      <svg width="160" height="100" viewBox="0 0 160 100">
+        <path
+          d="M 10 90 A 70 70 0 0 1 150 90"
+          fill="none"
+          stroke="#334155"
+          strokeWidth="10"
+          strokeLinecap="round"
+        />
+        <path
+          d="M 10 90 A 70 70 0 0 1 150 90"
+          fill="none"
+          stroke={color}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={`${progress} ${circumference}`}
+        />
+        <text x="80" y="75" textAnchor="middle" className="text-2xl font-bold" fill="white" fontSize="28">
+          {taux}%
+        </text>
+      </svg>
+      <div className="flex gap-6 mt-3 text-xs text-slate-400">
+        <span>Envoy\u00E9s: <strong className="text-white">{envoyes}</strong></span>
+        <span>Accept\u00E9s: <strong className="text-emerald-400">{acceptes}</strong></span>
+      </div>
     </div>
   );
 }
@@ -113,65 +154,36 @@ function AdminLogin({ onLogin }) {
               <Lock className="w-7 h-7 text-violet-400" />
             </div>
           </div>
-
-          <h1 className="text-xl font-display font-bold text-white text-center mb-1">
-            Administration
-          </h1>
-          <p className="text-sm text-slate-400 text-center mb-8">
-            Acc\u00E8s r\u00E9serv\u00E9 aux administrateurs
-          </p>
+          <h1 className="text-xl font-display font-bold text-white text-center mb-1">Administration</h1>
+          <p className="text-sm text-slate-400 text-center mb-8">Acc\u00E8s r\u00E9serv\u00E9 aux administrateurs</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Identifiant</label>
-              <input
-                type="text"
-                value={identifiant}
-                onChange={(e) => setIdentifiant(e.target.value)}
+              <input type="text" value={identifiant} onChange={(e) => setIdentifiant(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-all"
-                placeholder="Votre identifiant"
-                autoComplete="username"
-              />
+                placeholder="Votre identifiant" autoComplete="username" />
             </div>
-
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Mot de passe</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-all"
-                placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
-                autoComplete="current-password"
-              />
+                placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" autoComplete="current-password" />
             </div>
-
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-sm text-red-400 text-center">
-                {error}
-              </div>
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-sm text-red-400 text-center">{error}</div>
             )}
-
-            <button
-              type="submit"
-              disabled={loading || !identifiant || !password}
-              className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-violet-600/25 transition-all"
-            >
+            <button type="submit" disabled={loading || !identifiant || !password}
+              className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-violet-600/25 transition-all">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Connexion...
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Connexion...
                 </span>
-              ) : (
-                'Se connecter'
-              )}
+              ) : 'Se connecter'}
             </button>
           </form>
         </div>
-
-        <p className="text-center text-xs text-slate-600 mt-6">
-          Klikphone SAV — Administration
-        </p>
+        <p className="text-center text-xs text-slate-600 mt-6">Klikphone SAV — Administration</p>
       </div>
     </div>
   );
@@ -179,565 +191,423 @@ function AdminLogin({ onLogin }) {
 
 // ─── Main Dashboard ───────────────────────────────────────
 function AdminDashboard({ onLogout }) {
-  const [period, setPeriod] = useState('30d');
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState(null);
-  const [reparations, setReparations] = useState(null);
-  const [flux, setFlux] = useState(null);
+  const [techDays, setTechDays] = useState(7);
+
+  // Data states
+  const [overview, setOverview] = useState(null);
+  const [repParTech, setRepParTech] = useState(null);
+  const [affluenceHeure, setAffluenceHeure] = useState([]);
+  const [affluenceJour, setAffluenceJour] = useState([]);
+  const [marques, setMarques] = useState([]);
+  const [pannes, setPannes] = useState([]);
+  const [evolutionCA, setEvolutionCA] = useState([]);
+  const [tempsRep, setTempsRep] = useState([]);
+  const [conversion, setConversion] = useState(null);
+  const [topClients, setTopClients] = useState([]);
   const [techPerf, setTechPerf] = useState([]);
-  const [evolution, setEvolution] = useState([]);
   const [error, setError] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = { period };
-      const [statsData, reparationsData, fluxData, techPerfData, evolutionData] = await Promise.all([
-        api.getAdminStats(params).catch(() => null),
-        api.getAdminReparations(params).catch(() => null),
-        api.getAdminFluxClients(params).catch(() => null),
-        api.getAdminPerformanceTech(params).catch(() => []),
-        api.getAdminEvolution(params).catch(() => ({ data: [] })),
+      const [ov, rpt, ah, aj, mq, pn, eca, tr, tc, tcl, tp] = await Promise.all([
+        api.getAdminOverview().catch(() => null),
+        api.getAdminReparationsParTech(techDays).catch(() => null),
+        api.getAdminAffluenceHeure().catch(() => []),
+        api.getAdminAffluenceJour().catch(() => []),
+        api.getAdminRepartitionMarques().catch(() => []),
+        api.getAdminRepartitionPannes().catch(() => []),
+        api.getAdminEvolutionCA().catch(() => []),
+        api.getAdminTempsReparation().catch(() => []),
+        api.getAdminTauxConversion().catch(() => null),
+        api.getAdminTopClients().catch(() => []),
+        api.getAdminPerformanceTech().catch(() => []),
       ]);
-      setStats(statsData);
-      setReparations(reparationsData);
-      setFlux(fluxData);
-      setTechPerf(Array.isArray(techPerfData) ? techPerfData : []);
-      setEvolution(evolutionData?.data || []);
+      setOverview(ov);
+      setRepParTech(rpt);
+      setAffluenceHeure(Array.isArray(ah) ? ah : []);
+      setAffluenceJour(Array.isArray(aj) ? aj : []);
+      setMarques(Array.isArray(mq) ? mq : []);
+      setPannes(Array.isArray(pn) ? pn : []);
+      setEvolutionCA(Array.isArray(eca) ? eca : []);
+      setTempsRep(Array.isArray(tr) ? tr : []);
+      setConversion(tc);
+      setTopClients(Array.isArray(tcl) ? tcl : []);
+      setTechPerf(Array.isArray(tp) ? tp : []);
     } catch (err) {
       setError('Erreur lors du chargement des donn\u00E9es');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [techDays]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Reload only tech chart when days change
+  const loadTechChart = useCallback(async (days) => {
+    try {
+      const rpt = await api.getAdminReparationsParTech(days);
+      setRepParTech(rpt);
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleTechDays = (days) => {
+    setTechDays(days);
+    loadTechChart(days);
+  };
 
   // ── KPI Cards ──
-  const kpiCards = stats ? [
-    {
-      label: 'CA du jour',
-      value: formatEuro(stats.ca_jour),
-      icon: DollarSign,
-      color: 'text-emerald-400',
-      bg: 'bg-emerald-500/10',
-    },
-    {
-      label: 'CA du mois',
-      value: formatEuro(stats.ca_mois),
-      icon: TrendingUp,
-      color: 'text-violet-400',
-      bg: 'bg-violet-500/10',
-    },
-    {
-      label: 'R\u00E9parations ce mois',
-      value: stats.reparations_mois ?? 0,
-      icon: Activity,
-      color: 'text-blue-400',
-      bg: 'bg-blue-500/10',
-    },
-    {
-      label: 'Ticket moyen',
-      value: formatEuro(stats.ticket_moyen),
-      icon: Users,
-      color: 'text-amber-400',
-      bg: 'bg-amber-500/10',
-    },
+  const kpiCards = overview ? [
+    { label: 'CA du jour', value: formatEuro(overview.ca_jour), sub: 'pay\u00E9s', icon: DollarSign, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { label: 'CA du mois', value: formatEuro(overview.ca_mois), sub: 'pay\u00E9s', icon: TrendingUp, color: 'text-violet-400', bg: 'bg-violet-500/10' },
+    { label: 'CA potentiel', value: formatEuro(overview.ca_potentiel), sub: 'devis en cours', icon: Target, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { label: 'R\u00E9par. du jour', value: overview.reparations_jour, sub: 'termin\u00E9es', icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+    { label: 'R\u00E9par. du mois', value: overview.reparations_mois, sub: 'cl\u00F4tur\u00E9es', icon: BarChart3, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+    { label: 'Ticket moyen', value: formatEuro(overview.ticket_moyen), sub: 'CA/r\u00E9paration', icon: Users, color: 'text-pink-400', bg: 'bg-pink-500/10' },
   ] : [];
+
+  // Find peak hour
+  const peakHour = affluenceHeure.reduce((max, h) => h.moyenne > (max?.moyenne || 0) ? h : max, null);
 
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Header */}
       <div className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-display font-bold text-white tracking-tight">
-                Administration
-              </h1>
+              <h1 className="text-2xl font-display font-bold text-white tracking-tight">Administration</h1>
               <p className="text-sm text-slate-400 mt-0.5">Tableau de bord analytique</p>
             </div>
-
-            <div className="flex items-center gap-3">
-              {/* Period selector */}
-              <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700/50">
-                {PERIODS.map(({ label, value }) => (
-                  <button
-                    key={value}
-                    onClick={() => setPeriod(value)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                      period === value
-                        ? 'bg-violet-600 text-white shadow-sm'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={onLogout}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-all"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">D\u00E9connexion</span>
-              </button>
-            </div>
+            <button onClick={onLogout}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-all">
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">D\u00E9connexion</span>
+            </button>
           </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">
-            {error}
-          </div>
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">{error}</div>
         )}
 
-        {/* ─── Section 1: Vue d'ensemble ─── */}
+        {/* ═══ Section 1: KPI Cards ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            Vue d&apos;ensemble
-          </h2>
-          {loading && !stats ? (
-            <Spinner />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {kpiCards.map(({ label, value, icon: Icon, color, bg }) => (
-                <div
-                  key={label}
-                  className="bg-slate-800 rounded-xl border border-slate-700/50 p-5 hover:border-slate-600 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-medium text-slate-400">{label}</span>
-                    <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center`}>
-                      <Icon className={`w-4.5 h-4.5 ${color}`} />
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Vue d'ensemble</h2>
+          {loading && !overview ? <Spinner /> : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {kpiCards.map(({ label, value, sub, icon: Icon, color, bg }) => (
+                <div key={label} className="bg-slate-800 rounded-xl border border-slate-700/50 p-4 hover:border-slate-600 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{label}</span>
+                    <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center`}>
+                      <Icon className={`w-4 h-4 ${color}`} />
                     </div>
                   </div>
-                  <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
+                  <p className="text-xl font-bold text-white tracking-tight">{value}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>
                 </div>
               ))}
             </div>
           )}
         </section>
 
-        {/* ─── Section 2: R\u00E9parations ─── */}
+        {/* ═══ Section 2: R\u00E9parations par technicien par jour ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            R\u00E9parations
-          </h2>
-          {loading && !reparations ? (
-            <Spinner />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Par jour */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">R\u00E9parations par jour (30 derniers jours)</h3>
-                {reparations?.par_jour?.length ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={reparations.par_jour}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={VIOLET} radius={[4, 4, 0, 0]} maxBarSize={24} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState />
-                )}
-              </div>
-
-              {/* Par mois */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">R\u00E9parations par mois (12 derniers mois)</h3>
-                {reparations?.par_mois?.length ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={reparations.par_mois}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="mois" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={BLUE} radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState />
-                )}
-              </div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">R\u00E9parations par technicien</h2>
+            <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700/50">
+              {TECH_DAYS_OPTIONS.map(({ label, value }) => (
+                <button key={value} onClick={() => handleTechDays(value)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    techDays === value ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}>
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+          <ChartCard title={`R\u00E9parations par technicien (${techDays} derniers jours)`}>
+            {repParTech?.data?.length ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={repParTech.data}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="jour" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                    label={{ value: 'Jour', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false}
+                    label={{ value: 'R\u00E9parations', angle: -90, position: 'insideLeft', style: { fill: '#64748B', fontSize: 11 } }} />
+                  <Tooltip content={<DarkTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11, color: '#94A3B8' }} />
+                  {repParTech.techniciens.map((t, i) => (
+                    <Bar key={t.nom} dataKey={t.nom} stackId="a" fill={t.couleur || COLORS[i % COLORS.length]}
+                      radius={i === repParTech.techniciens.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyState text="Aucune r\u00E9paration sur la p\u00E9riode" />}
+          </ChartCard>
         </section>
 
-        {/* ─── Section 3: Analyses ─── */}
+        {/* ═══ Section 3 & 4: Affluence ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            Analyses
-          </h2>
-          {loading && !reparations ? (
-            <Spinner />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* PieChart par marque */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">R\u00E9partition par marque</h3>
-                {reparations?.par_marque?.length ? (
-                  <div>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <PieChart>
-                        <Pie
-                          data={reparations.par_marque}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={50}
-                          outerRadius={80}
-                          paddingAngle={3}
-                          dataKey="count"
-                          nameKey="marque"
-                        >
-                          {reparations.par_marque.map((_, i) => (
-                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip content={<DarkTooltip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 justify-center">
-                      {reparations.par_marque.slice(0, 6).map((item, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                          <span className="text-xs text-slate-400">{item.marque}</span>
-                        </div>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Affluence</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Par heure */}
+            <ChartCard title="Affluence par heure (30 derniers jours)">
+              {affluenceHeure.length ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={affluenceHeure}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                    <XAxis dataKey="heure" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                      label={{ value: 'Heure', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                      label={{ value: 'D\u00E9p\u00F4ts moyens', angle: -90, position: 'insideLeft', style: { fill: '#64748B', fontSize: 11 } }} />
+                    <Tooltip content={<DarkTooltip />} />
+                    <Bar dataKey="moyenne" name="Moyenne/jour" radius={[4, 4, 0, 0]} maxBarSize={28}>
+                      {affluenceHeure.map((entry, i) => (
+                        <Cell key={i} fill={entry === peakHour ? '#A78BFA' : VIOLET} />
                       ))}
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyState />
-                )}
-              </div>
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <EmptyState text="Aucune donn\u00E9e d'affluence" />}
+            </ChartCard>
 
-              {/* Top 10 pannes */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">Top 10 pannes</h3>
-                {reparations?.par_panne?.length ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={reparations.par_panne.slice(0, 10)} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <YAxis type="category" dataKey="panne" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} width={120} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={EMERALD} radius={[0, 4, 4, 0]} maxBarSize={18} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState />
-                )}
-              </div>
-
-              {/* Par technicien */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">R\u00E9parations par technicien</h3>
-                {reparations?.par_technicien?.length ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <BarChart data={reparations.par_technicien}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="technicien" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={VIOLET} radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState />
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* ─── Section 4: Flux clients ─── */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            Flux clients
-          </h2>
-          {loading && !flux ? (
-            <Spinner />
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Par heure */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">Affluence par heure (8h\u201320h)</h3>
-                {flux?.par_heure?.length ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={flux.par_heure}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="heure" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={BLUE} radius={[4, 4, 0, 0]} maxBarSize={28} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState text="Aucune donn\u00E9e de flux" />
-                )}
-              </div>
-
-              {/* Par jour semaine */}
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-                <h3 className="text-sm font-semibold text-white mb-4">Affluence par jour de la semaine</h3>
-                {flux?.par_jour_semaine?.length ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={flux.par_jour_semaine}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                      <XAxis dataKey="jour" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                      <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                      <Tooltip content={<DarkTooltip />} />
-                      <Bar dataKey="count" fill={EMERALD} radius={[4, 4, 0, 0]} maxBarSize={40} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState text="Aucune donn\u00E9e de flux" />
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* ─── Section 5: Heatmap ─── */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            Heatmap des d\u00E9p\u00F4ts
-          </h2>
-          <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-            {flux?.heatmap ? (
-              <HeatmapGrid heatmap={flux.heatmap} />
-            ) : loading ? (
-              <Spinner />
-            ) : (
-              <EmptyState text="Aucune donn\u00E9e de heatmap" />
-            )}
+            {/* Par jour de semaine (horizontal bars) */}
+            <ChartCard title="Affluence par jour de la semaine (3 derniers mois)">
+              {affluenceJour.length ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={affluenceJour} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                      label={{ value: 'D\u00E9p\u00F4ts moyens', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                    <YAxis type="category" dataKey="jour" tick={{ fontSize: 11, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} width={80} />
+                    <Tooltip content={<DarkTooltip />} />
+                    <Bar dataKey="moyenne" name="Moyenne/semaine" fill={EMERALD} radius={[0, 4, 4, 0]} maxBarSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <EmptyState text="Aucune donn\u00E9e d'affluence" />}
+            </ChartCard>
           </div>
         </section>
 
-        {/* ─── Section 6: Performance techniciens ─── */}
+        {/* ═══ Section 5 & 6: Marques & Pannes ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            Performance techniciens
-          </h2>
-          <div className="bg-slate-800 rounded-xl border border-slate-700/50 overflow-hidden">
-            {loading && !techPerf.length ? (
-              <Spinner />
-            ) : techPerf.length ? (
-              <div className="overflow-x-auto">
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Analyses</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Donut marques */}
+            <ChartCard title="R\u00E9partition par marque">
+              {marques.length ? (
+                <div className="flex flex-col lg:flex-row items-center gap-4">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie data={marques} cx="50%" cy="50%" innerRadius={55} outerRadius={90}
+                        paddingAngle={3} dataKey="count" nameKey="marque">
+                        {marques.map((_, i) => (
+                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<DarkTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 justify-center lg:flex-col lg:gap-y-1.5">
+                    {marques.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                        <span className="text-xs text-slate-300">{item.marque}</span>
+                        <span className="text-[10px] text-slate-500">{item.pct}% ({item.count})</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : <EmptyState />}
+            </ChartCard>
+
+            {/* Top pannes horizontal bar */}
+            <ChartCard title="Top 10 types de panne">
+              {pannes.length ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={pannes} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false}
+                      label={{ value: 'Nombre de tickets', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                    <YAxis type="category" dataKey="panne" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} width={130} />
+                    <Tooltip content={<DarkTooltip />} />
+                    <Bar dataKey="count" name="Tickets" fill={BLUE} radius={[0, 4, 4, 0]} maxBarSize={20} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : <EmptyState />}
+            </ChartCard>
+          </div>
+        </section>
+
+        {/* ═══ Section 7: \u00C9volution CA ═══ */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">\u00C9volution du chiffre d'affaires</h2>
+          <ChartCard title="CA encaiss\u00E9 vs CA potentiel (12 derniers mois)">
+            {evolutionCA.length ? (
+              <ResponsiveContainer width="100%" height={320}>
+                <LineChart data={evolutionCA}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="mois" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                    label={{ value: 'Mois', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                    tickFormatter={(v) => `${v}\u20AC`}
+                    label={{ value: "Chiffre d'affaires (\u20AC)", angle: -90, position: 'insideLeft', offset: 10, style: { fill: '#64748B', fontSize: 11 } }} />
+                  <Tooltip content={({ active, payload, label }) => {
+                    if (!active || !payload) return null;
+                    return (
+                      <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-xs">
+                        <p className="text-slate-400 mb-1 font-medium">{label}</p>
+                        {payload.map((e, i) => (
+                          <p key={i} style={{ color: e.color }} className="font-semibold">
+                            {e.name}: {formatEuro(e.value)}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="ca_encaisse" name="CA encaiss\u00E9" stroke={EMERALD} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="ca_potentiel" name="CA potentiel" stroke={AMBER} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} strokeDasharray="5 5" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : <EmptyState text="Aucune donn\u00E9e d'\u00E9volution" />}
+          </ChartCard>
+        </section>
+
+        {/* ═══ Section 8: Temps moyen r\u00E9paration ═══ */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Temps moyen de r\u00E9paration</h2>
+          <ChartCard title="Dur\u00E9e moyenne par type de panne">
+            {tempsRep.length ? (
+              <ResponsiveContainer width="100%" height={Math.max(250, tempsRep.length * 35)}>
+                <BarChart data={tempsRep} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }}
+                    label={{ value: 'Heures', position: 'insideBottom', offset: -5, style: { fill: '#64748B', fontSize: 11 } }} />
+                  <YAxis type="category" dataKey="panne" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} width={130} />
+                  <Tooltip content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-xs">
+                        <p className="text-slate-400 mb-1 font-medium">{label}</p>
+                        <p className="text-violet-400 font-semibold">{formatTemps(payload[0].value)}</p>
+                        <p className="text-slate-500">{payload[0].payload.nb} r\u00E9parations</p>
+                      </div>
+                    );
+                  }} />
+                  <Bar dataKey="temps_moyen_heures" name="Temps moyen" fill={VIOLET} radius={[0, 4, 4, 0]} maxBarSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyState text="Pas assez de donn\u00E9es" />}
+          </ChartCard>
+        </section>
+
+        {/* ═══ Section 9 & 10: Conversion + Performance + Top clients ═══ */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Performance</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Taux conversion */}
+            <ChartCard title="Taux de conversion devis">
+              {conversion ? (
+                <ConversionGauge taux={conversion.taux} envoyes={conversion.devis_envoyes} acceptes={conversion.devis_acceptes} />
+              ) : <EmptyState text="Aucune donn\u00E9e" />}
+            </ChartCard>
+
+            {/* Performance tech table */}
+            <ChartCard title="Performance techniciens" className="lg:col-span-2">
+              {techPerf.length ? (
+                <div className="overflow-x-auto -mx-5 px-5">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-700">
+                        <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Technicien</th>
+                        <th className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">R\u00E9par.</th>
+                        <th className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Temps moy.</th>
+                        <th className="text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">CA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {techPerf.map((t, i) => (
+                        <tr key={i} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
+                          <td className="py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                                <span className="text-[10px] font-bold text-violet-400">{(t.technicien || '?')[0].toUpperCase()}</span>
+                              </div>
+                              <span className="text-sm font-medium text-white">{t.technicien}</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-center text-sm text-slate-300">{t.reparations}</td>
+                          <td className="py-2.5 text-center text-sm text-slate-300">{formatTemps((t.temps_moyen_minutes || 0) / 60)}</td>
+                          <td className="py-2.5 text-right text-sm font-semibold text-emerald-400">{formatEuro(t.ca_genere)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <EmptyState text="Aucune donn\u00E9e" />}
+            </ChartCard>
+          </div>
+        </section>
+
+        {/* ═══ Section 10: Top clients ═══ */}
+        <section>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Top clients fid\u00E8les</h2>
+          <ChartCard title="Top 10 clients par nombre de r\u00E9parations">
+            {topClients.length ? (
+              <div className="overflow-x-auto -mx-5 px-5">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-slate-700">
-                      <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-5 py-3.5">
-                        Technicien
-                      </th>
-                      <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-5 py-3.5">
-                        R\u00E9parations
-                      </th>
-                      <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider px-5 py-3.5">
-                        Temps moyen
-                      </th>
-                      <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-wider px-5 py-3.5">
-                        CA g\u00E9n\u00E9r\u00E9
-                      </th>
+                      <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">#</th>
+                      <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Client</th>
+                      <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">T\u00E9l\u00E9phone</th>
+                      <th className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">R\u00E9parations</th>
+                      <th className="text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">CA total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {techPerf.map((tech, i) => (
-                      <tr
-                        key={i}
-                        className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors ${
-                          i % 2 === 0 ? 'bg-slate-800' : 'bg-slate-800/50'
-                        }`}
-                      >
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                              <span className="text-xs font-bold text-violet-400">
-                                {(tech.technicien || tech.nom || '?')[0].toUpperCase()}
-                              </span>
+                    {topClients.map((c, i) => (
+                      <tr key={i} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
+                        <td className="py-2.5 text-sm text-slate-500 font-medium">{i + 1}</td>
+                        <td className="py-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                              <UserCheck className="w-3.5 h-3.5 text-blue-400" />
                             </div>
-                            <span className="text-sm font-medium text-white">
-                              {tech.technicien || tech.nom || 'Inconnu'}
-                            </span>
+                            <span className="text-sm font-medium text-white">{c.nom}</span>
                           </div>
                         </td>
-                        <td className="px-5 py-3">
-                          <span className="text-sm text-slate-300">{tech.reparations ?? tech.count ?? 0}</span>
-                        </td>
-                        <td className="px-5 py-3">
-                          <span className="text-sm text-slate-300">{formatTemps(tech.temps_moyen_minutes ?? tech.temps_moyen)}</span>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className="text-sm font-semibold text-emerald-400">
-                            {formatEuro(tech.ca_genere ?? tech.ca)}
+                        <td className="py-2.5">
+                          <span className="flex items-center gap-1.5 text-sm text-slate-400">
+                            <Phone className="w-3 h-3" /> {c.tel || '\u2014'}
                           </span>
                         </td>
+                        <td className="py-2.5 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-500/20 text-violet-300">
+                            {c.nb_reparations}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-right text-sm font-semibold text-emerald-400">{formatEuro(c.ca_total)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <EmptyState text="Aucune donn\u00E9e de performance" />
-            )}
-          </div>
-        </section>
-
-        {/* ─── Section 7: Courbes d'\u00E9volution ─── */}
-        <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">
-            \u00C9volution du chiffre d&apos;affaires
-          </h2>
-          <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-5">
-            {loading && !evolution.length ? (
-              <Spinner />
-            ) : evolution.length ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <AreaChart data={evolution}>
-                  <defs>
-                    <linearGradient id="gradientViolet" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={VIOLET} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={VIOLET} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10, fill: '#94A3B8' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#334155' }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: '#94A3B8' }}
-                    tickLine={false}
-                    axisLine={{ stroke: '#334155' }}
-                    tickFormatter={(v) => `${v}\u20AC`}
-                  />
-                  <Tooltip content={<DarkTooltip formatter={(v) => formatEuro(v)} />} />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke={VIOLET}
-                    strokeWidth={2.5}
-                    fill="url(#gradientViolet)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState text="Aucune donn\u00E9e d'\u00E9volution" />
-            )}
-          </div>
+            ) : <EmptyState text="Aucun client r\u00E9current" />}
+          </ChartCard>
         </section>
 
         {/* Footer */}
         <div className="pt-4 pb-8 text-center">
-          <p className="text-xs text-slate-600">Klikphone SAV — Panneau d&apos;administration</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Heatmap Grid Component ──────────────────────────────
-function HeatmapGrid({ heatmap }) {
-  // heatmap can be an object { "Lundi": { "8": 3, "9": 5, ... }, ... }
-  // or an array. Normalize to grid.
-  let maxVal = 1;
-  const grid = {};
-
-  if (heatmap && typeof heatmap === 'object' && !Array.isArray(heatmap)) {
-    // Object format: { jour: { heure: count } }
-    JOURS_SEMAINE.forEach((jour) => {
-      grid[jour] = {};
-      HEURES.forEach((h) => {
-        const val = Number(heatmap[jour]?.[h] ?? heatmap[jour]?.[String(h)] ?? 0);
-        grid[jour][h] = val;
-        if (val > maxVal) maxVal = val;
-      });
-    });
-  } else if (Array.isArray(heatmap)) {
-    // Array format: [{ jour, heure, count }] — jour can be 0-6 numeric or day name
-    JOURS_SEMAINE.forEach((jour) => { grid[jour] = {}; HEURES.forEach((h) => { grid[jour][h] = 0; }); });
-    heatmap.forEach((item) => {
-      const jourRaw = item.jour;
-      const jour = typeof jourRaw === 'number' ? (JOURS_SEMAINE[jourRaw] || null) : jourRaw;
-      const h = Number(item.heure);
-      if (jour && grid[jour] && HEURES.includes(h)) {
-        grid[jour][h] = Number(item.count || 0);
-        if (grid[jour][h] > maxVal) maxVal = grid[jour][h];
-      }
-    });
-  } else {
-    return <EmptyState text="Format heatmap non reconnu" />;
-  }
-
-  function getOpacity(val) {
-    if (val === 0) return 0.05;
-    return 0.15 + (val / maxVal) * 0.85;
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[600px]">
-        {/* Header row */}
-        <div className="grid gap-1" style={{ gridTemplateColumns: `100px repeat(${HEURES.length}, 1fr)` }}>
-          <div />
-          {HEURES.map((h) => (
-            <div key={h} className="text-center text-xs text-slate-500 py-1">
-              {h}h
-            </div>
-          ))}
-        </div>
-
-        {/* Data rows */}
-        {JOURS_SEMAINE.map((jour) => (
-          <div
-            key={jour}
-            className="grid gap-1 mb-1"
-            style={{ gridTemplateColumns: `100px repeat(${HEURES.length}, 1fr)` }}
-          >
-            <div className="flex items-center text-xs text-slate-400 font-medium pr-2">
-              {jour}
-            </div>
-            {HEURES.map((h) => {
-              const val = grid[jour]?.[h] || 0;
-              return (
-                <div
-                  key={h}
-                  className="aspect-square rounded-sm flex items-center justify-center cursor-default"
-                  style={{ backgroundColor: `rgba(124, 58, 237, ${getOpacity(val)})` }}
-                  title={`${jour} ${h}h : ${val} d\u00E9p\u00F4t(s)`}
-                >
-                  {val > 0 && (
-                    <span className="text-[9px] font-medium text-violet-300">{val}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-
-        {/* Legend */}
-        <div className="flex items-center gap-2 mt-4 justify-end">
-          <span className="text-xs text-slate-500">Moins</span>
-          {[0.05, 0.25, 0.5, 0.75, 1].map((op, i) => (
-            <div
-              key={i}
-              className="w-4 h-4 rounded-sm"
-              style={{ backgroundColor: `rgba(124, 58, 237, ${op})` }}
-            />
-          ))}
-          <span className="text-xs text-slate-500">Plus</span>
+          <p className="text-xs text-slate-600">Klikphone SAV — Panneau d'administration</p>
         </div>
       </div>
     </div>
@@ -750,23 +620,12 @@ export default function AdminPage() {
     try {
       const stored = localStorage.getItem(AUTH_KEY);
       return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   });
 
-  const handleLogin = (authData) => {
-    setAuth(authData);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem(AUTH_KEY);
-    setAuth(null);
-  };
-
   if (!auth) {
-    return <AdminLogin onLogin={handleLogin} />;
+    return <AdminLogin onLogin={(data) => setAuth(data)} />;
   }
 
-  return <AdminDashboard onLogout={handleLogout} />;
+  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); setAuth(null); }} />;
 }

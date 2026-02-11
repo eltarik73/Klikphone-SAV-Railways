@@ -195,6 +195,17 @@ class ApiClient {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/api/admin/evolution${qs ? '?' + qs : ''}`);
   }
+  // New admin stats endpoints
+  getAdminOverview() { return this.get('/api/admin/stats/overview'); }
+  getAdminReparationsParTech(days = 7) { return this.get(`/api/admin/stats/reparations-par-tech?days=${days}`); }
+  getAdminAffluenceHeure() { return this.get('/api/admin/stats/affluence-heure'); }
+  getAdminAffluenceJour() { return this.get('/api/admin/stats/affluence-jour'); }
+  getAdminRepartitionMarques() { return this.get('/api/admin/stats/repartition-marques'); }
+  getAdminRepartitionPannes() { return this.get('/api/admin/stats/repartition-pannes'); }
+  getAdminEvolutionCA() { return this.get('/api/admin/stats/evolution-ca'); }
+  getAdminTempsReparation() { return this.get('/api/admin/stats/temps-reparation'); }
+  getAdminTauxConversion() { return this.get('/api/admin/stats/taux-conversion'); }
+  getAdminTopClients() { return this.get('/api/admin/stats/top-clients'); }
 }
 
 export const api = new ApiClient();
