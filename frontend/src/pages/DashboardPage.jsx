@@ -124,25 +124,35 @@ export default function DashboardPage() {
   const isTech = user?.target === 'tech';
   const techName = user?.utilisateur;
 
+  // Match tech name: handles both "Marina" and "Marina (Technicien Apple)" formats
+  const matchTech = (assigned, name) => {
+    if (!assigned || !name) return false;
+    const a = assigned.trim();
+    const n = name.trim();
+    return a === n || a.startsWith(n + ' ');
+  };
+
+  // Find tech color for an assignment (handles "Name (Role)" format)
+  const getTechColor = (assigned) => {
+    if (!assigned) return null;
+    const direct = techColors[assigned];
+    if (direct) return direct;
+    for (const [name, color] of Object.entries(techColors)) {
+      if (matchTech(assigned, name)) return color;
+    }
+    return null;
+  };
+
   let filteredTickets = tickets;
 
   // If a specific tech is selected in the dropdown, use that filter
   if (filterTech) {
-    console.log('[TechFilter] filterTech =', JSON.stringify(filterTech));
-    filteredTickets = tickets.filter(t => {
-      const assigned = (t.technicien_assigne || '').trim();
-      const match = assigned === filterTech.trim();
-      if (!match && assigned) {
-        console.log('[TechFilter] NO MATCH:', JSON.stringify(assigned), '!==', JSON.stringify(filterTech));
-      }
-      return match;
-    });
+    filteredTickets = tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
   } else if (isTech && techName && !debouncedSearch) {
     // Default tech view: show own tickets + unassigned
-    filteredTickets = tickets.filter(t => {
-      const assigned = (t.technicien_assigne || '').trim();
-      return assigned === techName.trim() || !assigned;
-    });
+    filteredTickets = tickets.filter(t =>
+      matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
+    );
   }
 
   const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
@@ -389,8 +399,8 @@ export default function DashboardPage() {
                 {/* Tech */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <div className="flex items-center gap-1.5">
-                    {t.technicien_assigne && techColors[t.technicien_assigne] && (
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: techColors[t.technicien_assigne] }} />
+                    {t.technicien_assigne && getTechColor(t.technicien_assigne) && (
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTechColor(t.technicien_assigne) }} />
                     )}
                     <p className="text-xs text-slate-600 truncate">{t.technicien_assigne || '—'}</p>
                   </div>

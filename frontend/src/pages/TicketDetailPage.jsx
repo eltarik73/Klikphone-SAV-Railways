@@ -1162,7 +1162,7 @@ export default function TicketDetailPage() {
                           } catch { toast.error('Erreur assignation'); }
                         }}
                         className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
-                          t.technicien_assigne === m.nom
+                          (t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '))
                             ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
                             : 'border-slate-200 hover:border-slate-300 text-slate-700'
                         }`}
