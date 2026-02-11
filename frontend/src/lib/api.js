@@ -64,6 +64,7 @@ class ApiClient {
   }
   getTicket(id) { return this.get(`/api/tickets/${id}`); }
   getTicketByCode(code) { return this.get(`/api/tickets/code/${code}`); }
+  getTicketsByPhone(tel) { return this.get(`/api/tickets/phone/${encodeURIComponent(tel)}`); }
   createTicket(data) { return this.post('/api/tickets', data); }
   updateTicket(id, data) { return this.patch(`/api/tickets/${id}`, data); }
   changeStatus(id, statut) { return this.patch(`/api/tickets/${id}/statut`, { statut }); }

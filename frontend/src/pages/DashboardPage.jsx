@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
-import { formatDateShort, formatPrix, waLink, smsLink } from '../lib/utils';
+import { formatDateShort, formatPrix, waLink, smsLink, STATUTS } from '../lib/utils';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
-  Wrench, CheckCircle2, Package, ChevronRight,
+  Wrench, CheckCircle2, Package, ChevronRight, ChevronDown,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
+  SquareCheck, Square, X,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -25,6 +26,9 @@ export default function DashboardPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [techColors, setTechColors] = useState({});
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [showBulkMenu, setShowBulkMenu] = useState(false);
   const searchTimer = useRef(null);
 
   // Debounced search (300ms)
@@ -70,6 +74,35 @@ export default function DashboardPage() {
     const interval = setInterval(() => setRefreshKey(k => k + 1), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === displayedTickets.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayedTickets.map(t => t.id)));
+    }
+  };
+
+  const handleBulkStatus = async (statut) => {
+    if (selectedIds.size === 0) return;
+    try {
+      await Promise.all([...selectedIds].map(id => api.changeStatus(id, statut)));
+      setSelectedIds(new Set());
+      setShowBulkMenu(false);
+      setRefreshKey(k => k + 1);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleKpiClick = (filter, idx) => {
     if (activeKpi === idx) {
@@ -194,9 +227,43 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* Bulk actions bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-xl animate-in">
+          <span className="text-sm font-semibold text-brand-700">{selectedIds.size} sélectionné(s)</span>
+          <div className="relative ml-auto">
+            <button onClick={() => setShowBulkMenu(!showBulkMenu)}
+              className="btn-primary text-xs px-3 py-1.5">
+              Changer statut <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+            {showBulkMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowBulkMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 w-64 card p-1.5 shadow-xl z-50 animate-in">
+                  {STATUTS.map(s => (
+                    <button key={s} onClick={() => handleBulkStatus(s)}
+                      className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button onClick={() => setSelectedIds(new Set())} className="btn-ghost p-1.5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[28px_80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+          <button onClick={toggleSelectAll} className="flex items-center justify-center">
+            {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
+              ? <SquareCheck className="w-4 h-4 text-brand-600" />
+              : <Square className="w-4 h-4 text-slate-300" />}
+          </button>
           <span className="table-header">Ticket</span>
           <span className="table-header">Client</span>
           <span className="table-header">Appareil</span>
@@ -225,8 +292,17 @@ export default function DashboardPage() {
           <div className="divide-y divide-slate-100/80">
             {displayedTickets.map((t) => (
               <div key={t.id}
-                className="lg:grid lg:grid-cols-[80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
+                className="lg:grid lg:grid-cols-[28px_80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
               >
+                {/* Checkbox */}
+                <div className="hidden lg:flex items-center justify-center">
+                  <button onClick={() => toggleSelect(t.id)}>
+                    {selectedIds.has(t.id)
+                      ? <SquareCheck className="w-4 h-4 text-brand-600" />
+                      : <Square className="w-4 h-4 text-slate-300 group-hover:text-slate-400" />}
+                  </button>
+                </div>
+
                 {/* Ticket code */}
                 <div className="cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
@@ -290,7 +366,7 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Contact icons */}
-                <div className="hidden lg:flex items-center gap-1">
+                <div className="flex items-center gap-1 mt-2 lg:mt-0">
                   {t.client_tel && (
                     <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
                       target="_blank" rel="noopener noreferrer"

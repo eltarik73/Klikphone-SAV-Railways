@@ -5,8 +5,11 @@ import api from '../lib/api';
 import { formatDateShort } from '../lib/utils';
 import {
   Search, Users, Phone, Mail, ChevronRight, Plus,
-  Smartphone, Trash2, Edit3, X, Save,
+  Smartphone, Trash2, Edit3, X, Save, ChevronLeft,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
+
+const PAGE_SIZE = 50;
 
 export default function ClientsPage() {
   const navigate = useNavigate();
@@ -20,22 +23,56 @@ export default function ClientsPage() {
   const [clientTickets, setClientTickets] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [sortField, setSortField] = useState('date_creation');
+  const [sortDir, setSortDir] = useState('desc');
 
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
       if (search) params.search = search;
       const data = await api.getClients(params);
       setClients(data);
+      setHasMore(data.length === PAGE_SIZE);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, page]);
 
   useEffect(() => { loadClients(); }, [loadClients]);
+  useEffect(() => { setPage(0); }, [search]);
+
+  const sorted = [...clients].sort((a, b) => {
+    let va = a[sortField], vb = b[sortField];
+    if (sortField === 'nom') {
+      va = `${a.nom || ''} ${a.prenom || ''}`.toLowerCase();
+      vb = `${b.nom || ''} ${b.prenom || ''}`.toLowerCase();
+    }
+    if (va == null) va = '';
+    if (vb == null) vb = '';
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-slate-300" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="w-3 h-3 text-brand-500" />
+      : <ArrowDown className="w-3 h-3 text-brand-500" />;
+  };
 
   const handleSelectClient = async (client) => {
     setSelectedClient(client);
@@ -83,7 +120,7 @@ export default function ClientsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Clients</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{clients.length} client(s) enregistré(s)</p>
+          <p className="text-sm text-slate-500 mt-0.5">{clients.length} client(s) affichés — page {page + 1}</p>
         </div>
       </div>
 
@@ -105,9 +142,15 @@ export default function ClientsPage() {
         <div className="lg:col-span-2">
           <div className="card overflow-hidden">
             <div className="hidden lg:grid grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
-              <span className="table-header">Client</span>
-              <span className="table-header">Téléphone</span>
-              <span className="table-header">Email</span>
+              <button onClick={() => toggleSort('nom')} className="table-header flex items-center gap-1 hover:text-brand-600 transition-colors">
+                Client <SortIcon field="nom" />
+              </button>
+              <button onClick={() => toggleSort('telephone')} className="table-header flex items-center gap-1 hover:text-brand-600 transition-colors">
+                Téléphone <SortIcon field="telephone" />
+              </button>
+              <button onClick={() => toggleSort('email')} className="table-header flex items-center gap-1 hover:text-brand-600 transition-colors">
+                Email <SortIcon field="email" />
+              </button>
               <span></span>
             </div>
 
@@ -116,7 +159,7 @@ export default function ClientsPage() {
                 <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-sm text-slate-400">Chargement...</p>
               </div>
-            ) : clients.length === 0 ? (
+            ) : sorted.length === 0 ? (
               <div className="py-16 text-center">
                 <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
                   <Users className="w-7 h-7 text-slate-300" />
@@ -125,7 +168,7 @@ export default function ClientsPage() {
               </div>
             ) : (
               <div className="divide-y divide-slate-100/80">
-                {clients.map((c) => (
+                {sorted.map((c) => (
                   <div key={c.id}
                     onClick={() => handleSelectClient(c)}
                     className={`lg:grid lg:grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-4 sm:px-5 py-3.5 cursor-pointer transition-colors group
@@ -145,16 +188,37 @@ export default function ClientsPage() {
                       </div>
                     </div>
                     <div className="hidden lg:block">
-                      <p className="text-sm text-slate-600 font-mono text-xs">{c.telephone || '—'}</p>
+                      <p className="text-slate-600 font-mono text-xs">{c.telephone || '—'}</p>
                     </div>
                     <div className="hidden lg:block">
-                      <p className="text-sm text-slate-500 truncate text-xs">{c.email || '—'}</p>
+                      <p className="text-slate-500 truncate text-xs">{c.email || '—'}</p>
                     </div>
                     <div className="hidden lg:flex justify-end">
                       <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {!loading && (page > 0 || hasMore) && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="btn-ghost text-xs disabled:opacity-30"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" /> Précédent
+                </button>
+                <span className="text-xs text-slate-400">Page {page + 1}</span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={!hasMore}
+                  className="btn-ghost text-xs disabled:opacity-30"
+                >
+                  Suivant <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
           </div>

@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { formatDateShort, formatPrix } from '../lib/utils';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
-  Check, Clock, AlertTriangle, ChevronDown,
+  Check, Clock, AlertTriangle, ChevronDown, ExternalLink,
 } from 'lucide-react';
 
 const PART_STATUTS = ['En attente', 'Commandée', 'Reçue', 'Annulée'];
 
 export default function CommandesPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const [parts, setParts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -91,6 +96,15 @@ export default function CommandesPage() {
       await loadParts();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleGoToTicket = async (ticketCode) => {
+    try {
+      const ticket = await api.getTicketByCode(ticketCode);
+      if (ticket?.id) navigate(`${basePath}/ticket/${ticket.id}`);
+    } catch {
+      // ticket not found, ignore
     }
   };
 
@@ -227,7 +241,12 @@ export default function CommandesPage() {
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{p.designation}</p>
-                  {p.ticket_code && <p className="text-xs text-brand-600 font-mono">{p.ticket_code}</p>}
+                  {p.ticket_code && (
+                    <button onClick={() => handleGoToTicket(p.ticket_code)}
+                      className="text-xs text-brand-600 font-mono hover:text-brand-800 hover:underline flex items-center gap-1">
+                      {p.ticket_code} <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  )}
                   {p.notes && <p className="text-xs text-slate-400 mt-0.5 truncate">{p.notes}</p>}
                 </div>
                 <div className="hidden lg:block">

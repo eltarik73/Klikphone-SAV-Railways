@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -6,7 +6,7 @@ import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2,
   Database, Download, Upload, Shield, Palette,
-  BookOpen, ChevronDown, ChevronRight,
+  BookOpen, ChevronDown, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -28,6 +28,25 @@ export default function ConfigPage() {
   // PIN change
   const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
   const [pinChanging, setPinChanging] = useState(false);
+
+  // Track unsaved config changes
+  const initialConfigRef = useRef({});
+  const hasUnsavedChanges = useCallback(() => {
+    const init = initialConfigRef.current;
+    return Object.keys(config).some(k => (config[k] || '') !== (init[k] || ''));
+  }, [config]);
+
+  // Warn on browser close/reload if unsaved changes
+  useEffect(() => {
+    const handler = (e) => {
+      if (hasUnsavedChanges()) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   // Catalog
   const [catalog, setCatalog] = useState({ marques: [], modeles: [] });
@@ -53,6 +72,7 @@ export default function ConfigPage() {
         Object.assign(configMap, configData);
       }
       setConfig(configMap);
+      initialConfigRef.current = { ...configMap };
       setTeam(teamData);
     } catch (err) {
       console.error(err);
@@ -79,6 +99,7 @@ export default function ConfigPage() {
     try {
       const params = Object.entries(config).map(([cle, valeur]) => ({ cle, valeur: valeur || '' }));
       await api.setParams(params);
+      initialConfigRef.current = { ...config };
       toast.success('Configuration enregistrée');
     } catch (err) {
       toast.error('Erreur sauvegarde');
@@ -258,6 +279,18 @@ export default function ConfigPage() {
           </button>
         ))}
       </div>
+
+      {/* Unsaved changes banner */}
+      {hasUnsavedChanges() && (activeTab === 'general' || activeTab === 'notifications') && (
+        <div className="flex items-center gap-3 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl animate-in">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800 font-medium flex-1">Modifications non sauvegardées</p>
+          <button onClick={handleSaveConfig} disabled={saving} className="btn-primary text-xs px-3 py-1.5">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Enregistrer
+          </button>
+        </div>
+      )}
 
       {/* ═══ General tab ═══ */}
       {activeTab === 'general' && (

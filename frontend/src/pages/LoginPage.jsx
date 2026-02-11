@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import api from '../lib/api';
 import { Smartphone, Monitor, Wrench, ArrowLeft, Loader2, Lock } from 'lucide-react';
 
 export default function LoginPage() {
@@ -8,8 +9,9 @@ export default function LoginPage() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
   const [digits, setDigits] = useState(['', '', '', '']);
-  const [team] = useState(['Marina', 'Jonathan', 'Tarik', 'Oualid', 'Agent accueil']);
-  const [selectedUser, setSelectedUser] = useState('Marina');
+  const [team, setTeam] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const refs = [useRef(), useRef(), useRef(), useRef()];
@@ -19,6 +21,21 @@ export default function LoginPage() {
   }, [user]);
 
   useEffect(() => { refs[0].current?.focus(); }, []);
+
+  // Load team from API
+  useEffect(() => {
+    api.getActiveTeam()
+      .then(members => {
+        const names = members.map(m => m.nom.trim());
+        setTeam(names);
+        if (names.length > 0) setSelectedUser(names[0]);
+      })
+      .catch(() => {
+        setTeam(['Utilisateur']);
+        setSelectedUser('Utilisateur');
+      })
+      .finally(() => setTeamLoading(false));
+  }, []);
 
   const handleDigit = (idx, val) => {
     if (!/^\d?$/.test(val)) return;
@@ -86,9 +103,15 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="input-label">Utilisateur</label>
-              <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
-                {team.map(name => <option key={name} value={name}>{name}</option>)}
-              </select>
+              {teamLoading ? (
+                <div className="input flex items-center justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                </div>
+              ) : (
+                <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                  {team.map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              )}
             </div>
 
             <div>

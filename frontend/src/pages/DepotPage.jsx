@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
+import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
   Lock, Shield, Plus, RotateCcw,
 } from 'lucide-react';
+
+// Validation helpers
+const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
+const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidIMEI = (imei) => !imei || /^\d{15}$/.test(imei.replace(/[\s-]/g, ''));
 
 const STEPS = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
 
@@ -16,8 +22,10 @@ const INITIAL_FORM = {
 };
 
 export default function DepotPage() {
+  const toast = useToast();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({});
   const [createdCode, setCreatedCode] = useState(null);
   const [countdown, setCountdown] = useState(null);
   const timerRef = useRef(null);
@@ -78,7 +86,29 @@ export default function DepotPage() {
     setModeles([]);
   };
 
-  const updateForm = (field, value) => setForm(f => ({ ...f, [field]: value }));
+  const updateForm = (field, value) => {
+    setForm(f => ({ ...f, [field]: value }));
+    setErrors(e => ({ ...e, [field]: undefined }));
+  };
+
+  const validateStep = () => {
+    const errs = {};
+    if (step === 0) {
+      if (!form.nom.trim()) errs.nom = 'Le nom est requis';
+      if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
+      else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
+    }
+    if (step === 2 && form.imei && !isValidIMEI(form.imei)) {
+      errs.imei = 'IMEI invalide (15 chiffres)';
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const FieldError = ({ field }) => errors[field] ? (
+    <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
+  ) : null;
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -98,7 +128,7 @@ export default function DepotPage() {
       setCreatedCode(result.ticket_code);
       setStep(5);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la création');
+      toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
       setLoading(false);
     }
@@ -114,6 +144,7 @@ export default function DepotPage() {
   };
 
   const handleNext = () => {
+    if (!validateStep()) return;
     if (step === 4) {
       handleSubmit();
     } else {
@@ -174,7 +205,9 @@ export default function DepotPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="input-label">Nom *</label>
-                  <input value={form.nom} onChange={e => updateForm('nom', e.target.value)} className="input" placeholder="Dupont" />
+                  <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                    className={`input ${errors.nom ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Dupont" />
+                  <FieldError field="nom" />
                 </div>
                 <div>
                   <label className="input-label">Prénom</label>
@@ -183,11 +216,15 @@ export default function DepotPage() {
               </div>
               <div>
                 <label className="input-label">Téléphone *</label>
-                <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)} className="input" placeholder="06 XX XX XX XX" />
+                <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
+                  className={`input ${errors.telephone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="06 XX XX XX XX" />
+                <FieldError field="telephone" />
               </div>
               <div>
                 <label className="input-label">Email</label>
-                <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)} className="input" placeholder="optionnel" />
+                <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
+                  className={`input ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="optionnel" />
+                <FieldError field="email" />
               </div>
               <div>
                 <label className="input-label">Société</label>
@@ -266,7 +303,10 @@ export default function DepotPage() {
 
               <div>
                 <label className="input-label">IMEI / N° de série</label>
-                <input value={form.imei} onChange={e => updateForm('imei', e.target.value)} className="input font-mono" placeholder="Tapez *#06# sur votre appareil" />
+                <input value={form.imei} onChange={e => updateForm('imei', e.target.value)}
+                className={`input font-mono ${errors.imei ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+                placeholder="Tapez *#06# sur votre appareil" />
+              <FieldError field="imei" />
               </div>
             </div>
           )}

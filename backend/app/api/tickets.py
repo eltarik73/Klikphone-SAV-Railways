@@ -127,6 +127,23 @@ async def get_ticket(ticket_id: int, user: Optional[dict] = Depends(get_optional
     return row
 
 
+@router.get("/phone/{telephone}")
+async def get_tickets_by_phone(telephone: str):
+    """Récupère les tickets par téléphone client (public — pour suivi client)."""
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
+                   t.panne, t.date_depot, t.date_maj
+            FROM tickets t
+            JOIN clients c ON t.client_id = c.id
+            WHERE c.telephone LIKE %s
+            ORDER BY t.date_depot DESC
+            LIMIT 20
+        """, (f"%{telephone}%",))
+        rows = cur.fetchall()
+    return rows
+
+
 @router.get("/code/{ticket_code}", response_model=TicketFull)
 async def get_ticket_by_code(ticket_code: str):
     """Récupère un ticket par code (public — pour suivi client)."""

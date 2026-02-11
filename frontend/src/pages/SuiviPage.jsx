@@ -4,34 +4,50 @@ import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import { formatDate } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash } from 'lucide-react';
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
-  const [code, setCode] = useState(searchParams.get('ticket') || '');
+  const [code, setCode] = useState(searchParams.get('ticket') || searchParams.get('tel') || '');
   const [ticket, setTicket] = useState(null);
+  const [phoneResults, setPhoneResults] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const doSearch = useCallback(async (searchCode) => {
-    const c = (searchCode || code).trim().toUpperCase();
-    if (!c) return;
+  const isPhoneInput = (val) => /^\+?\d[\d\s.-]{5,}$/.test(val.trim());
+
+  const doSearch = useCallback(async (searchVal) => {
+    const val = (searchVal || code).trim();
+    if (!val) return;
     setLoading(true);
     setError('');
     setTicket(null);
+    setPhoneResults([]);
 
     try {
-      const data = await api.getTicketByCode(c);
-      setTicket(data);
+      if (isPhoneInput(val)) {
+        const results = await api.getTicketsByPhone(val.replace(/[\s.-]/g, ''));
+        if (results.length === 0) {
+          setError('Aucun ticket trouvé avec ce numéro.');
+        } else if (results.length === 1) {
+          const data = await api.getTicketByCode(results[0].ticket_code);
+          setTicket(data);
+        } else {
+          setPhoneResults(results);
+        }
+      } else {
+        const data = await api.getTicketByCode(val.toUpperCase());
+        setTicket(data);
+      }
     } catch {
-      setError('Aucun ticket trouvé avec ce code.');
+      setError('Aucun ticket trouvé.');
     } finally {
       setLoading(false);
     }
   }, [code]);
 
   useEffect(() => {
-    const ticketParam = searchParams.get('ticket');
+    const ticketParam = searchParams.get('ticket') || searchParams.get('tel');
     if (ticketParam) {
       doSearch(ticketParam);
     }
@@ -40,6 +56,19 @@ export default function SuiviPage() {
   const handleSearch = (e) => {
     e?.preventDefault();
     doSearch();
+  };
+
+  const handleSelectPhoneResult = async (ticketCode) => {
+    setLoading(true);
+    try {
+      const data = await api.getTicketByCode(ticketCode);
+      setTicket(data);
+      setPhoneResults([]);
+    } catch {
+      setError('Erreur de chargement du ticket.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -51,7 +80,7 @@ export default function SuiviPage() {
             <Smartphone className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-display font-bold text-slate-900">Suivi de réparation</h1>
-          <p className="text-sm text-slate-500 mt-1">Entrez votre code ticket</p>
+          <p className="text-sm text-slate-500 mt-1">Entrez votre code ticket ou numéro de téléphone</p>
         </div>
 
         {/* Search */}
@@ -59,9 +88,9 @@ export default function SuiviPage() {
           <input
             type="text"
             value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="KP-000001"
-            className="input flex-1 text-center font-mono text-lg font-bold tracking-wider uppercase"
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="KP-000001 ou 06 12 34 56 78"
+            className="input flex-1 text-center font-mono text-lg font-bold tracking-wider"
             autoFocus
           />
           <button type="submit" disabled={loading} className="btn-primary px-5">
@@ -75,6 +104,33 @@ export default function SuiviPage() {
               <Smartphone className="w-6 h-6 text-red-300" />
             </div>
             <p className="text-red-500 font-medium">{error}</p>
+          </div>
+        )}
+
+        {phoneResults.length > 0 && (
+          <div className="card overflow-hidden animate-in mb-5">
+            <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+              <p className="text-sm font-semibold text-slate-700">{phoneResults.length} ticket(s) trouvé(s)</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {phoneResults.map(r => (
+                <button key={r.ticket_code}
+                  onClick={() => handleSelectPhoneResult(r.ticket_code)}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-brand-50/40 transition-colors text-left"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
+                    <Hash className="w-4 h-4 text-brand-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-brand-600 font-mono">{r.ticket_code}</p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {r.marque} {r.modele || r.modele_autre} — {r.panne}
+                    </p>
+                  </div>
+                  <StatusBadge statut={r.statut} />
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

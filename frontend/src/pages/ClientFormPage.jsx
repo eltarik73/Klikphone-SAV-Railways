@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
+import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
@@ -9,11 +10,19 @@ import {
 
 const STEPS = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
 
+// Validation helpers
+const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
+const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const isValidIMEI = (imei) => !imei || /^\d{15}$/.test(imei.replace(/[\s-]/g, ''));
+
 export default function ClientFormPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const toast = useToast();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState(null);
+  const [errors, setErrors] = useState({});
 
   const [categories, setCategories] = useState([]);
   const [marques, setMarques] = useState([]);
@@ -30,6 +39,20 @@ export default function ClientFormPage() {
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
     api.getPannes().then(setPannes).catch(() => {});
+    // Pre-fill from query params (coming from ClientsPage "Nouvelle réparation")
+    const clientId = searchParams.get('client_id');
+    const tel = searchParams.get('tel');
+    if (clientId && tel) {
+      setForm(f => ({ ...f, telephone: tel }));
+      api.getClient(parseInt(clientId)).then(c => {
+        setForm(f => ({
+          ...f,
+          nom: c.nom || '', prenom: c.prenom || '',
+          telephone: c.telephone || tel, email: c.email || '',
+          societe: c.societe || '',
+        }));
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -46,7 +69,25 @@ export default function ClientFormPage() {
     }
   }, [form.marque]);
 
-  const updateForm = (field, value) => setForm(f => ({ ...f, [field]: value }));
+  const updateForm = (field, value) => {
+    setForm(f => ({ ...f, [field]: value }));
+    setErrors(e => ({ ...e, [field]: undefined }));
+  };
+
+  const validateStep = () => {
+    const errs = {};
+    if (step === 0) {
+      if (!form.nom.trim()) errs.nom = 'Le nom est requis';
+      if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
+      else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
+    }
+    if (step === 2 && form.imei && !isValidIMEI(form.imei)) {
+      errs.imei = 'IMEI invalide (15 chiffres)';
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -66,7 +107,7 @@ export default function ClientFormPage() {
       setCreatedCode(result.ticket_code);
       setStep(5);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la création');
+      toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
       setLoading(false);
     }
@@ -82,6 +123,7 @@ export default function ClientFormPage() {
   };
 
   const handleNext = () => {
+    if (!validateStep()) return;
     if (step === 4) {
       handleSubmit();
     } else {
@@ -89,8 +131,9 @@ export default function ClientFormPage() {
     }
   };
 
-  const stepIcons = [User, Smartphone, Smartphone, AlertTriangle, Lock, Check];
-  const stepColors = ['sky', 'brand', 'brand', 'amber', 'violet', 'emerald'];
+  const FieldError = ({ field }) => errors[field] ? (
+    <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
+  ) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30">
@@ -136,7 +179,9 @@ export default function ClientFormPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="input-label">Nom *</label>
-                <input value={form.nom} onChange={e => updateForm('nom', e.target.value)} className="input" placeholder="Dupont" />
+                <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                  className={`input ${errors.nom ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Dupont" />
+                <FieldError field="nom" />
               </div>
               <div>
                 <label className="input-label">Prénom</label>
@@ -145,11 +190,15 @@ export default function ClientFormPage() {
             </div>
             <div>
               <label className="input-label">Téléphone *</label>
-              <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)} className="input" placeholder="06 XX XX XX XX" />
+              <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
+                className={`input ${errors.telephone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="06 XX XX XX XX" />
+              <FieldError field="telephone" />
             </div>
             <div>
               <label className="input-label">Email</label>
-              <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)} className="input" placeholder="optionnel" />
+              <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
+                className={`input ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="optionnel" />
+              <FieldError field="email" />
             </div>
             <div>
               <label className="input-label">Société</label>
@@ -228,7 +277,10 @@ export default function ClientFormPage() {
 
             <div>
               <label className="input-label">IMEI / N° de série</label>
-              <input value={form.imei} onChange={e => updateForm('imei', e.target.value)} className="input font-mono" placeholder="Tapez *#06# sur votre appareil" />
+              <input value={form.imei} onChange={e => updateForm('imei', e.target.value)}
+                className={`input font-mono ${errors.imei ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+                placeholder="Tapez *#06# sur votre appareil" />
+              <FieldError field="imei" />
             </div>
           </div>
         )}
