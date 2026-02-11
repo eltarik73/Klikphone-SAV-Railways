@@ -20,6 +20,17 @@ from app.services.notifications import (
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
+
+def _ajouter_historique(cur, ticket_id, type_event, contenu):
+    """Insère une entrée dans la table historique (structured)."""
+    try:
+        cur.execute(
+            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, %s, %s)",
+            (ticket_id, type_event, contenu),
+        )
+    except Exception:
+        pass  # Table might not exist yet
+
 STATUTS = [
     "En attente de diagnostic", "En attente de pièce", "Pièce reçue",
     "En attente d'accord client", "En cours de réparation",
@@ -244,6 +255,7 @@ async def toggle_paye(
             "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s WHERE id = %s",
             (new_paye, now, new_hist, ticket_id),
         )
+        _ajouter_historique(cur, ticket_id, 'statut', 'Marqué payé' if new_paye else 'Marqué non payé')
 
     return {"ok": True, "paye": new_paye}
 
@@ -288,6 +300,7 @@ async def change_status(
                 "UPDATE tickets SET statut=%s, date_maj=%s, historique=%s WHERE id=%s",
                 (data.statut, now, new_hist, ticket_id),
             )
+        _ajouter_historique(cur, ticket_id, 'statut', f"Statut: {ancien_statut} → {data.statut}")
 
     # Notifications Discord
     if data.statut == "Réparation terminée":
@@ -298,7 +311,25 @@ async def change_status(
     return {"ok": True, "ancien_statut": ancien_statut, "nouveau_statut": data.statut}
 
 
-# ─── HISTORIQUE ──────────────────────────────────────────────────
+# ─── HISTORIQUE (structured table) ───────────────────────────────
+@router.get("/{ticket_id}/historique")
+async def get_historique(ticket_id: int, user: dict = Depends(get_current_user)):
+    """Retourne l'historique structuré d'un ticket."""
+    with get_cursor() as cur:
+        try:
+            cur.execute("""
+                SELECT id, type, contenu, date_creation
+                FROM historique
+                WHERE ticket_id = %s
+                ORDER BY date_creation DESC
+            """, (ticket_id,))
+            rows = cur.fetchall()
+            return [{**r, "date_creation": r["date_creation"].isoformat() if r.get("date_creation") else None} for r in rows]
+        except Exception:
+            return []
+
+
+# ─── HISTORIQUE (legacy text field) ──────────────────────────────
 @router.post("/{ticket_id}/historique", response_model=dict)
 async def add_history(
     ticket_id: int,
@@ -318,6 +349,7 @@ async def add_history(
         historique = row.get("historique") or ""
         new_hist = f"{historique.rstrip()}\n{entry}" if historique.strip() else entry
         cur.execute("UPDATE tickets SET historique = %s WHERE id = %s", (new_hist, ticket_id))
+        _ajouter_historique(cur, ticket_id, 'statut', texte)
 
     return {"ok": True}
 
@@ -344,6 +376,8 @@ async def add_note(
             "UPDATE tickets SET notes_internes = %s, date_maj = %s WHERE id = %s",
             (new_notes, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
         )
+        note_type = 'note_publique' if '[CLIENT]' in note else 'alerte' if '[ATTENTION]' in note else 'note_privee'
+        _ajouter_historique(cur, ticket_id, note_type, note)
 
     return {"ok": True}
 

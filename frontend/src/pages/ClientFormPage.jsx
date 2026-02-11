@@ -23,6 +23,7 @@ export default function ClientFormPage() {
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState(null);
   const [errors, setErrors] = useState({});
+  const [countdown, setCountdown] = useState(null);
 
   const [categories, setCategories] = useState([]);
   const [marques, setMarques] = useState([]);
@@ -35,6 +36,42 @@ export default function ClientFormPage() {
     panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
     imei: '',
   });
+
+  const resetForm = () => {
+    setForm({
+      nom: '', prenom: '', telephone: '', email: '', societe: '',
+      categorie: '', marque: '', modele: '', modele_autre: '',
+      panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
+      imei: '',
+    });
+    setCreatedCode(null);
+    setStep(0);
+    setErrors({});
+    setCountdown(null);
+    setCategories([]);
+    setMarques([]);
+    setModeles([]);
+    setPannes([]);
+    api.getCategories().then(setCategories).catch(() => {});
+    api.getPannes().then(setPannes).catch(() => {});
+  };
+
+  // Countdown timer after ticket creation
+  useEffect(() => {
+    if (step !== 5 || !createdCode) return;
+    setCountdown(10);
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          resetForm();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [step, createdCode]);
 
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
@@ -389,14 +426,25 @@ export default function ClientFormPage() {
             <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
               <Check className="w-10 h-10 text-emerald-500" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Demande enregistrée !</h2>
+            <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Merci pour votre confiance !</h2>
             <p className="text-slate-500 mb-6">Votre numéro de ticket :</p>
-            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-6 border border-brand-100">
-              <p className="text-3xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
+            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-4 border border-brand-100">
+              <p className="text-4xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
             </div>
-            <p className="text-sm text-slate-400 mb-8">
+            <p className="text-sm text-slate-400 mb-6">
               Conservez ce code pour suivre l'avancement de votre réparation.
             </p>
+            {countdown !== null && (
+              <div className="mb-6">
+                <div className="w-full bg-slate-200 rounded-full h-1.5 mb-2">
+                  <div
+                    className="bg-brand-500 h-1.5 rounded-full transition-all duration-1000"
+                    style={{ width: `${(countdown / 10) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-400">Retour automatique dans {countdown} seconde{countdown > 1 ? 's' : ''}...</p>
+              </div>
+            )}
             <div className="space-y-3">
               <button
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
@@ -404,8 +452,8 @@ export default function ClientFormPage() {
               >
                 <Send className="w-4 h-4" /> Suivre ma réparation
               </button>
-              <button onClick={() => navigate('/')} className="btn-secondary w-full">
-                Retour à l'accueil
+              <button onClick={resetForm} className="btn-secondary w-full">
+                <ArrowLeft className="w-4 h-4" /> Nouveau dépôt
               </button>
             </div>
           </div>

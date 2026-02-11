@@ -98,7 +98,7 @@ async def export_backup(user: dict = Depends(get_current_user)):
     """Exporte toute la BDD au format JSON pour backup."""
     tables = {}
     with get_cursor() as cur:
-        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles"]:
+        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles", "historique"]:
             try:
                 cur.execute(f"SELECT * FROM {table}")
                 rows = cur.fetchall()
@@ -120,7 +120,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
         raise HTTPException(400, "Format de backup invalide (pas de clé 'tables')")
 
     # Ordre d'import : tables parentes d'abord
-    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces"]
+    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces", "historique"]
     counts = {}
 
     with get_cursor() as cur:
@@ -143,7 +143,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             counts[table] = len(rows)
 
         # Reset sequences
-        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces"]:
+        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces", "historique"]:
             try:
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table}")
             except Exception:

@@ -19,7 +19,21 @@ from app.api import auth, tickets, clients, config, team, parts, catalog, notifi
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle: fermer proprement le pool DB a l'arret."""
+    """Lifecycle: init DB tables + fermer proprement le pool DB a l'arret."""
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS historique (
+                    id SERIAL PRIMARY KEY,
+                    ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+                    type TEXT DEFAULT 'statut',
+                    contenu TEXT,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+    except Exception as e:
+        print(f"Warning: could not create historique table: {e}")
     yield
     close_pool()
 

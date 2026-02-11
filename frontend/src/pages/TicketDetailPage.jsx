@@ -97,6 +97,9 @@ export default function TicketDetailPage() {
   // Attention flag
   const [showAttention, setShowAttention] = useState(false);
 
+  // Structured historique (from historique table)
+  const [historiqueEntries, setHistoriqueEntries] = useState([]);
+
   const parseRepairLines = (ticket) => {
     try {
       if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
@@ -158,6 +161,15 @@ export default function TicketDetailPage() {
 
   useEffect(() => { loadTicket(); }, [loadTicket]);
 
+  const loadHistorique = useCallback(async () => {
+    try {
+      const data = await api.getHistorique(id);
+      setHistoriqueEntries(data || []);
+    } catch { setHistoriqueEntries([]); }
+  }, [id]);
+
+  useEffect(() => { loadHistorique(); }, [loadHistorique]);
+
   useEffect(() => {
     api.getActiveTeam().then(setTeamMembers).catch(() => {});
   }, []);
@@ -216,6 +228,7 @@ export default function TicketDetailPage() {
     try {
       await api.changeStatus(id, statut);
       await loadTicket();
+      await loadHistorique();
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       toast.error('Erreur changement de statut');
@@ -229,6 +242,7 @@ export default function TicketDetailPage() {
       await api.addNote(id, `${prefix} ${noteText}`);
       setNoteText('');
       await loadTicket();
+      await loadHistorique();
       toast.success('Note ajoutée');
     } catch (err) {
       toast.error('Erreur ajout de note');
@@ -239,6 +253,7 @@ export default function TicketDetailPage() {
     try {
       await api.addNote(id, '[ATTENTION] ⚠ Ce ticket nécessite une attention particulière');
       await loadTicket();
+      await loadHistorique();
       toast.success('Flag attention ajouté');
     } catch (err) {
       toast.error('Erreur ajout attention');
@@ -249,6 +264,7 @@ export default function TicketDetailPage() {
     try {
       const result = await api.togglePaye(id);
       await loadTicket();
+      await loadHistorique();
       toast.success(result.paye ? 'Marqué payé' : 'Marqué non payé');
     } catch (err) {
       toast.error('Erreur toggle payé');
@@ -995,6 +1011,42 @@ export default function TicketDetailPage() {
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
+          </div>
+
+          {/* ═══ Centre de notifications ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-indigo-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Centre de notifications</h2>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {historiqueEntries.map(h => {
+                const styles = {
+                  statut: { dot: 'bg-blue-500', color: 'text-blue-700' },
+                  note_privee: { dot: 'bg-amber-400', color: 'text-amber-700' },
+                  note_publique: { dot: 'bg-emerald-500', color: 'text-emerald-700' },
+                  message: { dot: 'bg-violet-500', color: 'text-violet-700' },
+                  alerte: { dot: 'bg-red-500', color: 'text-red-700' },
+                };
+                const s = styles[h.type] || { dot: 'bg-slate-400', color: 'text-slate-600' };
+                return (
+                  <div key={h.id} className="flex gap-3 items-start text-sm py-2 px-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className={`w-2.5 h-2.5 rounded-full ${s.dot} mt-1.5 shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`${s.color} text-sm`}>{h.contenu}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {h.date_creation ? new Date(h.date_creation).toLocaleString('fr-FR') : ''}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              {historiqueEntries.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">Aucun historique</p>
+              )}
+            </div>
           </div>
 
           {/* ═══ Assignation technicien ═══ */}

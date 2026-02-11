@@ -72,6 +72,7 @@ class ApiClient {
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
   addNote(id, note) { return this.post(`/api/tickets/${id}/note?note=${encodeURIComponent(note)}`); }
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
+  getHistorique(id) { return this.get(`/api/tickets/${id}/historique`); }
   togglePaye(id) { return this.patch(`/api/tickets/${id}/paye`, {}); }
 
   // ─── CLIENTS ───────────────────────────────
