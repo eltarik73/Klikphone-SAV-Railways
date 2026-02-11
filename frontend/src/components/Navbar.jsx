@@ -102,7 +102,7 @@ export default function Navbar() {
       `}>
         {/* Logo */}
         <div className="h-16 px-4 flex items-center gap-3 border-b border-white/[0.06] shrink-0">
-          <img src="/logo_k.png" alt="Klikphone" className="w-9 h-9 rounded-xl object-contain shadow-lg shrink-0" />
+          <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain shadow-lg shadow-brand-600/10 shrink-0" />
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none">KLIKPHONE</h1>

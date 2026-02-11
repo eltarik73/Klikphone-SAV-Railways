@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Smartphone, Search, ArrowRight, Monitor, Wrench, MapPin, Phone } from 'lucide-react';
+import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone } from 'lucide-react';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -18,11 +18,11 @@ export default function HomePage() {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-12 h-12 rounded-2xl bg-brand-600 flex items-center justify-center shadow-xl shadow-brand-600/30">
-            <Smartphone className="w-7 h-7 text-white" />
-          </div>
+          <img src="/logo_k.png" alt="Klikphone"
+            className="w-20 h-20 rounded-2xl object-contain shadow-xl shadow-brand-600/20"
+          />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-display font-extrabold text-white text-center tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-display font-extrabold text-white text-center tracking-tight mt-3">
           KLIKPHONE
         </h1>
         <p className="text-brand-300 text-sm font-medium uppercase tracking-[0.2em] mt-1">
@@ -36,9 +36,10 @@ export default function HomePage() {
         {/* CTA buttons */}
         <div className="mt-10 w-full max-w-sm space-y-3">
           <button onClick={() => navigate('/client')}
-            className="w-full flex items-center gap-4 p-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/30 transition-all group">
-            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <Smartphone className="w-5 h-5" />
+            className="w-full flex items-center gap-4 p-4 rounded-2xl text-white shadow-lg shadow-brand-600/30 transition-all group hover:-translate-y-0.5"
+            style={{ background: 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)' }}>
+            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
+              <img src="/logo_k.png" alt="" className="w-6 h-6 object-contain" />
             </div>
             <div className="flex-1 text-left">
               <p className="font-semibold">Déposer un appareil</p>
@@ -48,7 +49,7 @@ export default function HomePage() {
           </button>
 
           <button onClick={() => navigate('/suivi')}
-            className="w-full flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-white transition-all group">
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white transition-all group backdrop-blur-sm hover:-translate-y-0.5">
             <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
               <Search className="w-5 h-5" />
             </div>
@@ -65,11 +66,11 @@ export default function HomePage() {
           <p className="text-center text-[11px] text-slate-500 uppercase tracking-widest font-medium mb-3">Accès staff</p>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => navigate('/login/accueil')}
-              className="flex items-center justify-center gap-2 p-3 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all">
+              className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
               <Monitor className="w-4 h-4 text-sky-400" /> Accueil
             </button>
             <button onClick={() => navigate('/login/tech')}
-              className="flex items-center justify-center gap-2 p-3 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all">
+              className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
               <Wrench className="w-4 h-4 text-violet-400" /> Technicien
             </button>
           </div>

@@ -155,9 +155,10 @@ export default function DepotPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30 flex flex-col">
       {/* Kiosk header — no sidebar */}
-      <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="text-white px-6 py-4 flex items-center justify-between shrink-0"
+        style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)' }}>
         <div className="flex items-center gap-3">
-          <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain" />
+          <img src="/logo_k.png" alt="Klikphone" className="w-12 h-12 rounded-xl object-contain shadow-lg shadow-orange-500/15" />
           <div>
             <h1 className="text-lg font-display font-bold tracking-tight">KLIKPHONE</h1>
             <p className="text-[11px] text-slate-400">Déposer un appareil en réparation</p>
@@ -173,15 +174,26 @@ export default function DepotPage() {
 
       <div className="flex-1 flex flex-col">
         <div className="max-w-lg mx-auto w-full px-4 py-6 flex-1 flex flex-col">
-          {/* Progress bar */}
+          {/* Progress bar with circles */}
           {step < 5 && (
-            <div className="flex gap-1 mb-8">
+            <div className="flex items-center mb-8">
               {STEPS.map((s, i) => (
-                <div key={i} className="flex-1">
-                  <div className={`h-2 rounded-full transition-all duration-500 ${
-                    i < step ? 'bg-brand-500' : i === step ? 'bg-brand-400' : 'bg-slate-200'
-                  }`} />
-                  <p className={`text-[9px] font-medium mt-1 text-center ${
+                <div key={i} className="flex-1 flex flex-col items-center relative">
+                  {/* Connector line */}
+                  {i > 0 && (
+                    <div className={`absolute top-3.5 right-1/2 w-full h-0.5 transition-all duration-500 ${
+                      i <= step ? 'bg-brand-500' : 'bg-slate-200'
+                    }`} />
+                  )}
+                  {/* Circle */}
+                  <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
+                    i < step ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
+                    : i === step ? 'bg-brand-500 text-white shadow-md shadow-brand-500/30 ring-4 ring-brand-100'
+                    : 'bg-slate-200 text-slate-400'
+                  }`}>
+                    {i < step ? '✓' : i + 1}
+                  </div>
+                  <p className={`text-[9px] font-medium mt-1.5 text-center ${
                     i <= step ? 'text-brand-600' : 'text-slate-400'
                   }`}>{s}</p>
                 </div>

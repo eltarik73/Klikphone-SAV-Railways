@@ -191,15 +191,18 @@ export default function DashboardPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
-            {user?.target === 'tech' ? 'Espace Technicien' : 'Tableau de bord'}
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {user?.target === 'tech'
-              ? `Bienvenue ${user?.utilisateur || ''} — vos réparations`
-              : 'Vue d\'ensemble des réparations'}
-          </p>
+        <div className="flex items-center gap-3">
+          <img src="/logo_k.png" alt="" className="w-8 h-8 rounded-lg object-contain shadow-sm hidden sm:block" />
+          <div>
+            <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+              {user?.target === 'tech' ? 'Espace Technicien' : 'Tableau de bord'}
+            </h1>
+            <p className="text-sm text-slate-500 mt-0.5">
+              {user?.target === 'tech'
+                ? `Bienvenue ${user?.utilisateur || ''} — vos réparations`
+                : 'Vue d\'ensemble des réparations'}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setRefreshKey(k => k + 1)} className="btn-ghost p-2.5" title="Rafraîchir">
