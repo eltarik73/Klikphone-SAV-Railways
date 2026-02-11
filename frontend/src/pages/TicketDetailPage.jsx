@@ -1030,43 +1030,59 @@ export default function TicketDetailPage() {
                 <span className="text-sm font-medium text-slate-800">{t.technicien_assigne || 'Non assigné'}</span>
               </div>
             ) : (
-              /* Accueil view OR tech edit mode: full list */
+              /* Accueil view OR tech edit mode: dropdown */
               <div>
-                <label className="input-label">Technicien assigné</label>
-                {teamMembers.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-1">
-                    {teamMembers.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={async () => {
-                          setPricingForm(f => ({ ...f, technicien_assigne: m.nom }));
-                          try {
-                            await api.updateTicket(id, { technicien_assigne: m.nom });
-                            await loadTicket();
-                            toast.success(`Assigné à ${m.nom}`);
-                            if (isTech) setEditingAssign(false);
-                          } catch { toast.error('Erreur assignation'); }
-                        }}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all border ${
-                          (t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '))
-                            ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
-                            : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                        }`}
-                      >
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: m.couleur || '#94A3B8' }} />
-                        {m.nom}
-                        {m.role && <span className="text-[10px] text-slate-400 ml-auto">{m.role}</span>}
-                      </button>
-                    ))}
+                {t.technicien_assigne && !editingAssign ? (
+                  /* Already assigned: show name + edit button */
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-2.5">
+                      {(() => {
+                        const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
+                        return assignedMember ? (
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
+                        ) : null;
+                      })()}
+                      <span className="text-sm font-medium text-slate-800">{t.technicien_assigne}</span>
+                    </div>
+                    <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 ) : (
-                  <input
-                    type="text"
-                    value={pricingForm.technicien_assigne}
-                    onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
-                    className="input"
-                    placeholder="Nom du technicien"
-                  />
+                  /* Not assigned or editing: show dropdown */
+                  <div>
+                    <label className="input-label">Technicien assigné</label>
+                    {teamMembers.length > 0 ? (
+                      <select
+                        value={t.technicien_assigne || ''}
+                        onChange={async (e) => {
+                          const nom = e.target.value;
+                          if (!nom) return;
+                          setPricingForm(f => ({ ...f, technicien_assigne: nom }));
+                          try {
+                            await api.updateTicket(id, { technicien_assigne: nom });
+                            await loadTicket();
+                            toast.success(`Assigné à ${nom}`);
+                            setEditingAssign(false);
+                          } catch { toast.error('Erreur assignation'); }
+                        }}
+                        className="input"
+                      >
+                        <option value="">-- Choisir un technicien --</option>
+                        {teamMembers.map(m => (
+                          <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={pricingForm.technicien_assigne}
+                        onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
+                        className="input"
+                        placeholder="Nom du technicien"
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             )}
