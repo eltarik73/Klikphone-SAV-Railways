@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
                     recipient TEXT DEFAULT 'all',
                     message TEXT NOT NULL,
                     is_private BOOLEAN DEFAULT FALSE,
-                    read_by TEXT[] DEFAULT ARRAY[]::TEXT[],
+                    read_by TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)

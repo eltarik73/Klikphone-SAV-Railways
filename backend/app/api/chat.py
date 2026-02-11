@@ -427,9 +427,9 @@ async def get_team_messages(user: str, limit: int = Query(50, le=200)):
 
     # Reverse to chronological order (oldest first)
     messages.reverse()
-    # Convert read_by array to list for JSON
     for m in messages:
-        m["read_by"] = m.get("read_by") or []
+        rb = m.get("read_by") or ""
+        m["read_by"] = [x for x in rb.split(",") if x] if isinstance(rb, str) else (rb or [])
         m["created_at"] = m["created_at"].isoformat() if m.get("created_at") else None
     return messages
 
@@ -443,18 +443,24 @@ async def mark_as_read(user: str):
         if is_mgr:
             cur.execute("""
                 UPDATE chat_messages
-                SET read_by = array_append(read_by, %s)
-                WHERE NOT (%s = ANY(COALESCE(read_by, ARRAY[]::TEXT[])))
+                SET read_by = CASE
+                    WHEN read_by = '' THEN %s
+                    ELSE read_by || ',' || %s
+                END
+                WHERE read_by NOT LIKE '%%' || %s || '%%'
                   AND sender != %s
-            """, (user, user, user))
+            """, (user, user, user, user))
         else:
             cur.execute("""
                 UPDATE chat_messages
-                SET read_by = array_append(read_by, %s)
-                WHERE NOT (%s = ANY(COALESCE(read_by, ARRAY[]::TEXT[])))
+                SET read_by = CASE
+                    WHEN read_by = '' THEN %s
+                    ELSE read_by || ',' || %s
+                END
+                WHERE read_by NOT LIKE '%%' || %s || '%%'
                   AND sender != %s
                   AND (recipient = 'all' OR recipient = %s)
-            """, (user, user, user, user))
+            """, (user, user, user, user, user))
 
     return {"status": "ok"}
 
@@ -468,13 +474,13 @@ async def get_unread_count(user: str):
         if is_mgr:
             cur.execute("""
                 SELECT COUNT(*) as count FROM chat_messages
-                WHERE NOT (%s = ANY(COALESCE(read_by, ARRAY[]::TEXT[])))
+                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by IS NULL)
                   AND sender != %s
             """, (user, user))
         else:
             cur.execute("""
                 SELECT COUNT(*) as count FROM chat_messages
-                WHERE NOT (%s = ANY(COALESCE(read_by, ARRAY[]::TEXT[])))
+                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by IS NULL)
                   AND sender != %s
                   AND (recipient = 'all' OR recipient = %s)
             """, (user, user, user))
