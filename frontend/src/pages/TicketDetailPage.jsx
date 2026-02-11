@@ -38,6 +38,10 @@ export default function TicketDetailPage() {
   // Print state
   const [showPrintMenu, setShowPrintMenu] = useState(false);
 
+  // Accord client modal state
+  const [showAccordModal, setShowAccordModal] = useState(false);
+  const [accordLoading, setAccordLoading] = useState(false);
+
   const loadTicket = useCallback(async () => {
     setLoading(true);
     try {
@@ -173,6 +177,27 @@ export default function TicketDetailPage() {
     }
   };
 
+  const handleDemanderAccord = async () => {
+    setAccordLoading(true);
+    try {
+      const reparation = editFields.reparation_supp || '';
+      const prix = editFields.prix_supp || 0;
+      await api.updateTicket(id, { reparation_supp: reparation, prix_supp: parseFloat(prix) || 0 });
+      await api.changeStatus(id, "En attente d'accord client");
+      const result = await api.generateMessage(id, 'devis_a_valider');
+      const msg = result.message || result;
+      if (ticket.client_tel) {
+        window.open(waLink(ticket.client_tel, msg), '_blank');
+      }
+      setShowAccordModal(false);
+      await loadTicket();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAccordLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -203,94 +228,153 @@ export default function TicketDetailPage() {
   const reste = (parseFloat(editFields.tarif_final) || 0) - (parseFloat(editFields.acompte) || 0);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-5">
-        <button onClick={() => navigate(-1)} className="btn-ghost p-2.5 mt-0.5 shrink-0">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="text-xl font-display font-bold text-brand-600 font-mono tracking-tight">{t.ticket_code}</h1>
-            <button onClick={handleCopyCode} className="p-1 rounded hover:bg-slate-100 transition-colors" title="Copier le code">
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+    <div className="max-w-7xl mx-auto">
+      {/* Dark Header */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900/80 text-white px-4 sm:px-6 lg:px-8 py-5 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-start gap-3">
+            <button onClick={() => navigate(-1)} className="p-2.5 mt-0.5 shrink-0 rounded-lg hover:bg-white/10 transition-colors">
+              <ArrowLeft className="w-5 h-5 text-slate-300" />
             </button>
-            <StatusBadge statut={t.statut} size="lg" />
-          </div>
-          <p className="text-sm text-slate-500 mt-1 truncate">
-            {appareil} — {t.panne}
-          </p>
-        </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
+                <button onClick={handleCopyCode} className="p-1 rounded hover:bg-white/10 transition-colors" title="Copier le code">
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                </button>
+                <StatusBadge statut={t.statut} size="lg" />
+              </div>
+              <p className="text-sm text-slate-400 mt-1 truncate">
+                {appareil} — {t.panne}
+              </p>
+            </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Print menu */}
-          <div className="relative">
-            <button onClick={() => setShowPrintMenu(!showPrintMenu)} className="btn-ghost p-2.5" title="Imprimer">
-              <Printer className="w-4 h-4" />
-            </button>
-            {showPrintMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowPrintMenu(false)} />
-                <div className="absolute right-0 top-full mt-2 w-56 card p-1.5 shadow-xl z-50 animate-in">
-                  {[
-                    { type: 'client', label: 'Ticket client', desc: 'Reçu 80mm' },
-                    { type: 'staff', label: 'Fiche atelier', desc: 'Fiche technique' },
-                    { type: 'combined', label: 'Les deux', desc: 'Client + Atelier' },
-                    { type: 'devis', label: 'Devis A4', desc: 'Document PDF' },
-                    { type: 'recu', label: 'Reçu A4', desc: 'Reçu de paiement' },
-                  ].map(p => (
-                    <a key={p.type}
-                      href={api.getPrintUrl(id, p.type)}
-                      target="_blank" rel="noopener noreferrer"
-                      onClick={() => setShowPrintMenu(false)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors"
-                    >
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <div>
-                        <p className="font-medium text-slate-700">{p.label}</p>
-                        <p className="text-[11px] text-slate-400">{p.desc}</p>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Print menu */}
+              <div className="relative">
+                <button onClick={() => setShowPrintMenu(!showPrintMenu)} className="p-2.5 rounded-lg hover:bg-white/10 transition-colors" title="Imprimer">
+                  <Printer className="w-4 h-4 text-slate-300" />
+                </button>
+                {showPrintMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowPrintMenu(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-56 card p-1.5 shadow-xl z-50 animate-in">
+                      {[
+                        { type: 'client', label: 'Ticket client', desc: 'Reçu 80mm' },
+                        { type: 'staff', label: 'Fiche atelier', desc: 'Fiche technique' },
+                        { type: 'combined', label: 'Les deux', desc: 'Client + Atelier' },
+                        { type: 'devis', label: 'Devis A4', desc: 'Document PDF' },
+                        { type: 'recu', label: 'Reçu A4', desc: 'Reçu de paiement' },
+                      ].map(p => (
+                        <a key={p.type}
+                          href={api.getPrintUrl(id, p.type)}
+                          target="_blank" rel="noopener noreferrer"
+                          onClick={() => setShowPrintMenu(false)}
+                          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors"
+                        >
+                          <FileText className="w-4 h-4 text-slate-400" />
+                          <div>
+                            <p className="font-medium text-slate-700">{p.label}</p>
+                            <p className="text-[11px] text-slate-400">{p.desc}</p>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
-          {/* Status dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowStatusMenu(!showStatusMenu)}
-              className="btn-primary"
-            >
-              Statut <ChevronDown className={`w-4 h-4 transition-transform ${showStatusMenu ? 'rotate-180' : ''}`} />
-            </button>
-            {showStatusMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
-                <div className="absolute right-0 top-full mt-2 w-72 card p-1.5 shadow-xl z-50 animate-in">
-                  {STATUTS.map(s => {
-                    const sc = getStatusConfig(s);
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => handleStatusChange(s)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
-                          ${s === t.statut ? 'bg-brand-50 text-brand-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'}`}
-                      >
-                        <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
-                        {s}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+              {/* Status dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowStatusMenu(!showStatusMenu)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-brand-600/25"
+                >
+                  Statut <ChevronDown className={`w-4 h-4 transition-transform ${showStatusMenu ? 'rotate-180' : ''}`} />
+                </button>
+                {showStatusMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowStatusMenu(false)} />
+                    <div className="absolute right-0 top-full mt-2 w-72 card p-1.5 shadow-xl z-50 animate-in">
+                      {STATUTS.map(s => {
+                        const sc = getStatusConfig(s);
+                        return (
+                          <button
+                            key={s}
+                            onClick={() => handleStatusChange(s)}
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors
+                              ${s === t.statut ? 'bg-brand-50 text-brand-700 font-semibold' : 'hover:bg-slate-50 text-slate-700'}`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${sc.dot}`} />
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Accord client modal */}
+      {showAccordModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowAccordModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Demander accord client</h3>
+                  <p className="text-sm text-slate-500">Réparation supplémentaire</p>
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-5">
+                <div>
+                  <label className="input-label">Réparation supplémentaire</label>
+                  <input type="text"
+                    value={editFields.reparation_supp}
+                    onChange={e => setEditFields(f => ({ ...f, reparation_supp: e.target.value }))}
+                    className="input" placeholder="Ex: changement batterie"
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Prix supplémentaire</label>
+                  <div className="relative">
+                    <input type="number" step="0.01"
+                      value={editFields.prix_supp}
+                      onChange={e => setEditFields(f => ({ ...f, prix_supp: e.target.value }))}
+                      className="input pr-7" placeholder="0.00"
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400 mb-4">
+                Le statut passera à "En attente d'accord client" et un message WhatsApp sera envoyé.
+              </p>
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowAccordModal(false)} className="btn-ghost flex-1">Annuler</button>
+                <button onClick={handleDemanderAccord} disabled={accordLoading}
+                  className="btn-primary flex-1 bg-orange-600 hover:bg-orange-700">
+                  {accordLoading ? 'Envoi...' : 'Envoyer la demande'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="px-4 sm:px-6 lg:px-8">
       {/* Progress tracker */}
       <div className="card p-5 mb-6">
         <ProgressTracker statut={t.statut} />
@@ -477,9 +561,14 @@ export default function TicketDetailPage() {
             </div>
 
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
-              <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
-                <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
+                </button>
+                <button onClick={() => setShowAccordModal(true)} className="btn-ghost text-xs gap-1.5 text-orange-600 hover:bg-orange-50">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Demander accord client
+                </button>
+              </div>
               <button onClick={handleSave} disabled={saving} className="btn-primary">
                 <Save className="w-4 h-4" />
                 {saving ? 'Enregistrement...' : 'Enregistrer'}
@@ -796,6 +885,7 @@ export default function TicketDetailPage() {
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

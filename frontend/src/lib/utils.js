@@ -104,10 +104,14 @@ export function smsLink(tel, msg) {
 }
 
 export const MESSAGE_TEMPLATES = [
-  { key: 'diagnostic_termine', label: 'Diagnostic terminé' },
-  { key: 'demande_accord', label: 'Demande accord client' },
-  { key: 'attente_piece', label: 'En attente de pièce' },
-  { key: 'reparation_terminee', label: 'Réparation terminée' },
+  { key: 'appareil_recu', label: 'Appareil reçu' },
+  { key: 'diagnostic_en_cours', label: 'Diagnostic en cours' },
+  { key: 'devis_a_valider', label: 'Devis à valider' },
+  { key: 'en_cours_reparation', label: 'En cours de réparation' },
+  { key: 'attente_piece', label: 'Attente de pièce' },
+  { key: 'appareil_pret', label: 'Appareil prêt' },
   { key: 'relance', label: 'Relance récupération' },
-  { key: 'refus_reparation', label: 'Non réparable' },
+  { key: 'non_reparable', label: 'Non réparable' },
+  { key: 'rappel_rdv', label: 'Rappel RDV' },
+  { key: 'personnalise', label: 'Personnalisé' },
 ];

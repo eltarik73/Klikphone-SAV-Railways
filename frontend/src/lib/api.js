@@ -144,6 +144,31 @@ class ApiClient {
   emailAttestation(data, email) {
     return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}`, data);
   }
+
+  // ─── ADMIN ──────────────────────────────────
+  adminLogin(identifiant, password) {
+    return this.post('/api/admin/login', { identifiant, password });
+  }
+  getAdminStats(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/stats${qs ? '?' + qs : ''}`);
+  }
+  getAdminReparations(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/reparations${qs ? '?' + qs : ''}`);
+  }
+  getAdminFluxClients(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/flux-clients${qs ? '?' + qs : ''}`);
+  }
+  getAdminPerformanceTech(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/performance-tech${qs ? '?' + qs : ''}`);
+  }
+  getAdminEvolution(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/admin/evolution${qs ? '?' + qs : ''}`);
+  }
 }
 
 export const api = new ApiClient();

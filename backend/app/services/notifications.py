@@ -166,11 +166,26 @@ def qr_url(data: str) -> str:
 # ─── MESSAGES PRÉDÉFINIS ────────────────────────────────────────
 
 MESSAGES_PREDEFINIES = {
-    "diagnostic_termine": {
-        "titre": "📋 Diagnostic terminé",
+    "appareil_recu": {
+        "titre": "📱 Appareil reçu",
         "message": """Bonjour {prenom},
 
-Le diagnostic de votre {appareil} est terminé.
+Nous avons bien reçu votre {appareil} en atelier.
+
+Ticket : {ticket_code}
+Panne signalée : {panne}
+
+Nous allons procéder au diagnostic et vous recontacterons rapidement.
+
+Cordialement,
+L'équipe Klikphone
+📞 04 79 60 89 22""",
+    },
+    "diagnostic_en_cours": {
+        "titre": "🔍 Diagnostic en cours",
+        "message": """Bonjour {prenom},
+
+Le diagnostic de votre {appareil} est en cours.
 
 Problème identifié : {panne}
 Réparation proposée : {reparation}
@@ -181,6 +196,32 @@ Merci de nous confirmer votre accord pour procéder à la réparation.
 Cordialement,
 L'équipe Klikphone
 📞 04 79 60 89 22""",
+    },
+    "devis_a_valider": {
+        "titre": "📋 Devis à valider",
+        "message": """Bonjour {prenom},
+
+Suite au diagnostic de votre {appareil}, voici notre proposition :
+
+Réparation : {reparation}
+Montant : {prix}€
+
+Merci de nous confirmer si vous souhaitez procéder à la réparation.
+
+Cordialement,
+L'équipe Klikphone
+📞 04 79 60 89 22""",
+    },
+    "en_cours_reparation": {
+        "titre": "🔧 En cours de réparation",
+        "message": """Bonjour {prenom},
+
+La réparation de votre {appareil} est en cours.
+
+Nous vous tiendrons informé(e) de l'avancement.
+
+Cordialement,
+L'équipe Klikphone""",
     },
     "attente_piece": {
         "titre": "📦 En attente de pièce",
@@ -195,11 +236,11 @@ Nous vous recontacterons dès réception.
 Cordialement,
 L'équipe Klikphone""",
     },
-    "reparation_terminee": {
-        "titre": "✅ Réparation terminée",
+    "appareil_pret": {
+        "titre": "✅ Appareil prêt",
         "message": """Bonjour {prenom},
 
-Votre {appareil} est réparé et prêt à être récupéré ! 🎉
+Votre {appareil} est réparé et prêt à être récupéré !
 
 📍 Klikphone - 79 Place Saint Léger, Chambéry
 🕐 Lundi-Samedi 10h-19h
@@ -225,26 +266,11 @@ Merci de passer le récupérer à votre convenance.
 Cordialement,
 L'équipe Klikphone""",
     },
-    "demande_accord": {
-        "titre": "⏳ Demande d'accord",
+    "non_reparable": {
+        "titre": "❌ Non réparable",
         "message": """Bonjour {prenom},
 
-Suite au diagnostic de votre {appareil}, voici notre proposition :
-
-Réparation : {reparation}
-Montant : {prix}€
-
-Merci de nous confirmer si vous souhaitez procéder à la réparation.
-
-Cordialement,
-L'équipe Klikphone
-📞 04 79 60 89 22""",
-    },
-    "refus_reparation": {
-        "titre": "❌ Appareil non réparé",
-        "message": """Bonjour {prenom},
-
-Suite à votre décision, nous n'avons pas procédé à la réparation de votre {appareil}.
+Après diagnostic, nous sommes au regret de vous informer que votre {appareil} n'est malheureusement pas réparable.
 
 Vous pouvez venir le récupérer à notre boutique.
 
@@ -253,6 +279,27 @@ Vous pouvez venir le récupérer à notre boutique.
 
 Cordialement,
 L'équipe Klikphone""",
+    },
+    "rappel_rdv": {
+        "titre": "📅 Rappel de rendez-vous",
+        "message": """Bonjour {prenom},
+
+Ceci est un rappel pour votre rendez-vous chez Klikphone.
+
+📍 79 Place Saint Léger, Chambéry
+🕐 Lundi-Samedi 10h-19h
+
+N'hésitez pas à nous contacter en cas d'empêchement.
+
+Cordialement,
+L'équipe Klikphone
+📞 04 79 60 89 22""",
+    },
+    "personnalise": {
+        "titre": "💬 Message personnalisé",
+        "message": """Bonjour {prenom},
+
+""",
     },
 }
 
@@ -272,4 +319,5 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
         panne=ticket.get("panne", ""),
         reparation=ticket.get("panne", ""),
         prix=prix,
+        ticket_code=ticket.get("ticket_code", ""),
     )

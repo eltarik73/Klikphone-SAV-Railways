@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LogOut, LayoutDashboard, Plus, Users, Package, FileText,
-  Settings, Menu, X, Smartphone, Search,
+  Settings, Menu, X, Search, Lock,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -18,7 +18,7 @@ export default function Navbar() {
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/client', label: 'Nouveau ticket', icon: Plus },
+    { path: '/client', label: '+ Nouveau', icon: Plus },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
@@ -26,7 +26,7 @@ export default function Navbar() {
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];
 
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
   const handleNav = (path) => {
     navigate(path);
@@ -36,14 +36,12 @@ export default function Navbar() {
   return (
     <>
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-sidebar border-b border-white/10 flex items-center px-4 z-40">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 border-b border-white/10 flex items-center px-4 z-40">
         <button onClick={() => setMobileOpen(true)} className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors">
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-2.5 ml-2">
-          <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center">
-            <Smartphone className="w-4 h-4 text-white" />
-          </div>
+          <img src="/logo_k.png" alt="Klikphone" className="w-7 h-7 rounded-lg object-contain" />
           <span className="text-white font-display font-bold tracking-tight">KLIKPHONE</span>
         </div>
       </div>
@@ -61,9 +59,7 @@ export default function Navbar() {
       `}>
         {/* Logo */}
         <div className="h-16 px-5 flex items-center gap-3 border-b border-white/[0.06] shrink-0">
-          <div className="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/30">
-            <Smartphone className="w-5 h-5 text-white" />
-          </div>
+          <img src="/logo_k.png" alt="Klikphone" className="w-9 h-9 rounded-xl object-contain shadow-lg" />
           <div className="flex-1 min-w-0">
             <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none">KLIKPHONE</h1>
             <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-0.5">Service après-vente</p>
@@ -89,6 +85,21 @@ export default function Navbar() {
               {label}
             </button>
           ))}
+
+          {/* Admin separator */}
+          <div className="pt-4 mt-4 border-t border-white/[0.06]">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Administration</p>
+            <button onClick={() => handleNav(`${basePath}/admin`)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-200
+                ${location.pathname.includes('/admin')
+                  ? 'bg-brand-600/20 text-brand-300 border-l-2 border-brand-400 pl-[10px]'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                }`}
+            >
+              <Lock className={`w-[18px] h-[18px] ${location.pathname.includes('/admin') ? 'text-brand-400' : ''}`} />
+              Admin
+            </button>
+          </div>
         </nav>
 
         {/* User section */}

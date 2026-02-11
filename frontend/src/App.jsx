@@ -12,6 +12,7 @@ import ClientsPage from './pages/ClientsPage';
 import CommandesPage from './pages/CommandesPage';
 import AttestationPage from './pages/AttestationPage';
 import ConfigPage from './pages/ConfigPage';
+import AdminPage from './pages/AdminPage';
 
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
@@ -54,6 +55,7 @@ function AppRoutes() {
       <Route path="/accueil/commandes" element={<P targets={['accueil']}><CommandesPage /></P>} />
       <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
       <Route path="/accueil/config" element={<P targets={['accueil']}><ConfigPage /></P>} />
+      <Route path="/accueil/admin" element={<P targets={['accueil']}><AdminPage /></P>} />
 
       <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
       <Route path="/tech/ticket/:id" element={<P targets={['tech']}><TicketDetailPage /></P>} />
@@ -61,6 +63,7 @@ function AppRoutes() {
       <Route path="/tech/commandes" element={<P targets={['tech']}><CommandesPage /></P>} />
       <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
       <Route path="/tech/config" element={<P targets={['tech']}><ConfigPage /></P>} />
+      <Route path="/tech/admin" element={<P targets={['tech']}><AdminPage /></P>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
