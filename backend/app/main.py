@@ -21,6 +21,21 @@ from app.api import auth, tickets, clients, config, team, parts, catalog, notifi
 async def lifespan(app: FastAPI):
     """Lifecycle: init DB tables + fermer proprement le pool DB a l'arret."""
     from app.database import get_cursor
+    # Kill any idle-in-transaction sessions that could block ALTER TABLE
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE state = 'idle in transaction'
+                AND pid != pg_backend_pid()
+            """)
+            killed = cur.rowcount
+            if killed:
+                print(f"Killed {killed} idle-in-transaction sessions")
+    except Exception as e:
+        print(f"Warning: could not kill idle sessions: {e}")
+
     try:
         with get_cursor() as cur:
             cur.execute("SET lock_timeout = '10s'")
@@ -192,6 +207,25 @@ async def health_migrate():
         except Exception as e:
             results[name] = f"ERROR: {e}"
     return results
+
+
+@app.get("/health/kill-idle")
+async def kill_idle():
+    """Kill idle-in-transaction sessions that block migrations."""
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE state = 'idle in transaction'
+                AND pid != pg_backend_pid()
+                AND query_start < now() - interval '30 seconds'
+            """)
+            killed = cur.rowcount
+        return {"killed": killed}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/")
