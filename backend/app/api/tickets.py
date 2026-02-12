@@ -93,10 +93,11 @@ async def list_tickets(
     if search:
         conditions.append(
             "(t.ticket_code ILIKE %s OR c.nom ILIKE %s OR c.prenom ILIKE %s "
-            "OR c.telephone LIKE %s OR t.marque ILIKE %s OR t.modele ILIKE %s)"
+            "OR c.telephone LIKE %s OR t.marque ILIKE %s OR t.modele ILIKE %s "
+            "OR t.modele_autre ILIKE %s)"
         )
         s = f"%{search}%"
-        params.extend([s, s, s, s, s, s])
+        params.extend([s, s, s, s, s, s, s])
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
@@ -433,6 +434,72 @@ async def add_note(
         note_type = 'note_publique' if '[CLIENT]' in note else 'alerte' if '[ATTENTION]' in note else 'note_privee'
         _ajouter_historique(cur, ticket_id, note_type, note)
 
+    return {"ok": True}
+
+
+# ─── NOTES PRIVÉES ─────────────────────────────────────────────────
+@router.get("/{ticket_id}/notes")
+async def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
+    """Récupère les notes privées d'un ticket."""
+    with get_cursor() as cur:
+        try:
+            cur.execute("""
+                SELECT id, auteur, contenu, important, date_creation
+                FROM notes_tickets
+                WHERE ticket_id = %s
+                ORDER BY date_creation DESC
+            """, (ticket_id,))
+            rows = cur.fetchall()
+            return [{**r, "date_creation": r["date_creation"].isoformat() if r.get("date_creation") else None} for r in rows]
+        except Exception:
+            return []
+
+
+@router.post("/{ticket_id}/notes")
+async def add_private_note(
+    ticket_id: int,
+    auteur: str = Query(...),
+    contenu: str = Query(...),
+    important: bool = Query(False),
+    user: dict = Depends(get_current_user),
+):
+    """Ajoute une note privée à un ticket."""
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO notes_tickets (ticket_id, auteur, contenu, important)
+            VALUES (%s, %s, %s, %s) RETURNING id, date_creation
+        """, (ticket_id, auteur, contenu, important))
+        row = cur.fetchone()
+        _ajouter_historique(cur, ticket_id, 'note_privee', f"Note ({auteur}): {contenu[:50]}...")
+    return {"id": row["id"], "date_creation": row["date_creation"].isoformat()}
+
+
+@router.delete("/{ticket_id}/notes/{note_id}")
+async def delete_private_note(
+    ticket_id: int,
+    note_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Supprime une note privée."""
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM notes_tickets WHERE id = %s AND ticket_id = %s", (note_id, ticket_id))
+    return {"ok": True}
+
+
+@router.patch("/{ticket_id}/notes/{note_id}")
+async def update_private_note(
+    ticket_id: int,
+    note_id: int,
+    important: Optional[bool] = Query(None),
+    user: dict = Depends(get_current_user),
+):
+    """Met à jour une note privée (toggle important)."""
+    if important is not None:
+        with get_cursor() as cur:
+            cur.execute(
+                "UPDATE notes_tickets SET important = %s WHERE id = %s AND ticket_id = %s",
+                (important, note_id, ticket_id),
+            )
     return {"ok": True}
 
 

@@ -15,7 +15,7 @@ import {
   FileText, Printer, ExternalLink, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Hash, Shield, Calendar, UserCheck,
   MessageSquare, Zap, Edit3, X, DollarSign, CheckCircle2,
-  Flag, ChevronUp,
+  Flag, ChevronUp, PhoneCall, StickyNote, Star, Percent,
 } from 'lucide-react';
 
 // ─── Editable Section Component ────────────────────────────────
@@ -104,6 +104,14 @@ export default function TicketDetailPage() {
   // TVA config
   const [tvaRate, setTvaRate] = useState(0);
 
+  // Notes privées
+  const [privateNotes, setPrivateNotes] = useState([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [newNoteImportant, setNewNoteImportant] = useState(false);
+
+  // Téléphone de prêt modal
+  const [showPretModal, setShowPretModal] = useState(false);
+
   const parseRepairLines = (ticket) => {
     try {
       if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
@@ -152,6 +160,8 @@ export default function TicketDetailPage() {
         technicien_assigne: data.technicien_assigne || '',
         type_ecran: data.type_ecran || '',
         date_recuperation: data.date_recuperation || '',
+        reduction_montant: data.reduction_montant || '',
+        reduction_pourcentage: data.reduction_pourcentage || '',
       });
       setRepairLines(parseRepairLines(data));
       // Show attention flag from dedicated field or notes
@@ -173,6 +183,15 @@ export default function TicketDetailPage() {
   }, [id]);
 
   useEffect(() => { loadHistorique(); }, [loadHistorique]);
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const data = await api.getNotes(id);
+      setPrivateNotes(data || []);
+    } catch { setPrivateNotes([]); }
+  }, [id]);
+
+  useEffect(() => { loadNotes(); }, [loadNotes]);
 
   useEffect(() => {
     api.getActiveTeam().then(setTeamMembers).catch(() => {});
@@ -216,11 +235,22 @@ export default function TicketDetailPage() {
       const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
       const reparationsJson = JSON.stringify(repairLines.filter(l => l.label));
 
+      // Calculate reduction
+      let reductionAmount = parseFloat(pricingForm.reduction_montant) || 0;
+      const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
+      if (reductionPct > 0) {
+        reductionAmount = totalRepairs * (reductionPct / 100);
+      }
+
+      const finalPrice = parseFloat(pricingForm.tarif_final) || (totalRepairs - reductionAmount) || null;
+
       const updates = {
         ...pricingForm,
         devis_estime: parseFloat(pricingForm.devis_estime) || null,
-        tarif_final: parseFloat(pricingForm.tarif_final) || totalRepairs || null,
+        tarif_final: finalPrice,
         acompte: parseFloat(pricingForm.acompte) || null,
+        reduction_montant: reductionAmount || null,
+        reduction_pourcentage: reductionPct || null,
         reparation_supp: reparationsJson,
         prix_supp: totalRepairs,
       };
@@ -234,6 +264,11 @@ export default function TicketDetailPage() {
   };
 
   const handleStatusChange = async (statut) => {
+    // If changing to "Rendu au client" and there's a loaned phone not returned
+    if (statut === 'Rendu au client' && ticket.telephone_pret && !ticket.telephone_pret_rendu) {
+      setShowPretModal(true);
+      return;
+    }
     try {
       await api.changeStatus(id, statut);
       await loadTicket();
@@ -241,6 +276,19 @@ export default function TicketDetailPage() {
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       toast.error('Erreur changement de statut');
+    }
+  };
+
+  const confirmRenduWithPret = async () => {
+    try {
+      await api.updateTicket(id, { telephone_pret_rendu: 1 });
+      await api.changeStatus(id, 'Rendu au client');
+      setShowPretModal(false);
+      await loadTicket();
+      await loadHistorique();
+      toast.success('Statut changé + téléphone de prêt récupéré');
+    } catch (err) {
+      toast.error('Erreur');
     }
   };
 
@@ -256,6 +304,32 @@ export default function TicketDetailPage() {
     } catch (err) {
       toast.error('Erreur ajout de note');
     }
+  };
+
+  const handleAddPrivateNote = async () => {
+    if (!newNoteText.trim()) return;
+    try {
+      await api.addPrivateNote(id, user?.utilisateur || 'Inconnu', newNoteText, newNoteImportant);
+      setNewNoteText('');
+      setNewNoteImportant(false);
+      await loadNotes();
+      toast.success('Note ajoutée');
+    } catch { toast.error('Erreur ajout note'); }
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    try {
+      await api.deleteNote(id, noteId);
+      await loadNotes();
+      toast.success('Note supprimée');
+    } catch { toast.error('Erreur suppression'); }
+  };
+
+  const handleToggleNoteImportant = async (noteId, current) => {
+    try {
+      await api.toggleNoteImportant(id, noteId, !current);
+      await loadNotes();
+    } catch { toast.error('Erreur'); }
   };
 
   const handleAddAttention = async () => {
@@ -403,7 +477,10 @@ export default function TicketDetailPage() {
   };
 
   const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
-  const subtotalHT = parseFloat(pricingForm.tarif_final) || totalRepairs;
+  const reductionMontant = parseFloat(pricingForm.reduction_montant) || 0;
+  const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
+  const effectiveReduction = reductionPct > 0 ? totalRepairs * (reductionPct / 100) : reductionMontant;
+  const subtotalHT = parseFloat(pricingForm.tarif_final) || (totalRepairs - effectiveReduction);
   const tvaAmount = tvaRate > 0 ? subtotalHT * (tvaRate / 100) : 0;
   const totalTTC = subtotalHT + tvaAmount;
   const reste = totalTTC - (parseFloat(pricingForm.acompte) || 0);
@@ -516,12 +593,32 @@ export default function TicketDetailPage() {
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Wrench className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span className="text-base text-slate-300">{t.panne || '—'}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {repairLines.filter(l => l.label).length > 0
+                      ? repairLines.filter(l => l.label).map((line, i) => (
+                          <span key={i} className="text-sm text-slate-300 bg-white/10 px-2 py-0.5 rounded">
+                            {line.label}
+                          </span>
+                        ))
+                      : <span className="text-base text-slate-300">{t.panne || '—'}</span>
+                    }
+                  </div>
                 </div>
                 {t.client_tel && (
                   <div className="flex items-center gap-2.5">
                     <Phone className="w-4 h-4 text-slate-500 shrink-0" />
                     <a href={`tel:${t.client_tel}`} className="text-base text-slate-300 hover:text-white font-mono transition-colors">{t.client_tel}</a>
+                  </div>
+                )}
+                {totalTTC > 0 && (
+                  <div className="flex items-center gap-2.5">
+                    <DollarSign className="w-4 h-4 text-slate-500 shrink-0" />
+                    <span className="text-base font-semibold text-emerald-400">{formatPrix(totalTTC)}</span>
+                    {t.paye ? (
+                      <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Payé</span>
+                    ) : reste > 0 ? (
+                      <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Reste {formatPrix(reste)}</span>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -586,6 +683,43 @@ export default function TicketDetailPage() {
                 <button onClick={handleDemanderAccord} disabled={accordLoading}
                   className="btn-primary flex-1 bg-orange-600 hover:bg-orange-700">
                   {accordLoading ? 'Envoi...' : 'Envoyer la demande'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Téléphone de prêt modal */}
+      {showPretModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowPretModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <PhoneCall className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Téléphone de prêt</h3>
+                  <p className="text-sm text-slate-500">Ce client a un téléphone de prêt !</p>
+                </div>
+              </div>
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+                <p className="text-sm font-semibold text-amber-800">
+                  Téléphone prêté : {ticket.telephone_pret}
+                </p>
+                {ticket.telephone_pret_imei && (
+                  <p className="text-xs text-amber-600 font-mono mt-1">IMEI : {ticket.telephone_pret_imei}</p>
+                )}
+                <p className="text-xs text-amber-700 mt-2 font-medium">
+                  Pensez à récupérer le téléphone de prêt avant de rendre l'appareil au client !
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowPretModal(false)} className="btn-ghost flex-1">Annuler</button>
+                <button onClick={confirmRenduWithPret} className="btn-primary flex-1">
+                  Téléphone récupéré, rendre au client
                 </button>
               </div>
             </div>
@@ -835,7 +969,7 @@ export default function TicketDetailPage() {
             editing={editingPricing}
             onEdit={() => setEditingPricing(true)}
             onSave={handleSavePricing}
-            onCancel={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '' }); setRepairLines(parseRepairLines(t)); }}
+            onCancel={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '' }); setRepairLines(parseRepairLines(t)); }}
             viewContent={
               <>
                 {/* Repair lines summary */}
@@ -856,6 +990,21 @@ export default function TicketDetailPage() {
                     <span className="text-slate-500">Devis estimé</span>
                     <span className="font-medium text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</span>
                   </div>
+                  {effectiveReduction > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span className="flex items-center gap-1">
+                        <Percent className="w-3 h-3" /> Réduction
+                        {reductionPct > 0 ? ` (${reductionPct}%)` : ''}
+                      </span>
+                      <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
+                    </div>
+                  )}
+                  {t.type_ecran && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Qualité écran</span>
+                      <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">{t.type_ecran}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500">{tvaRate > 0 ? 'Sous-total HT' : 'Tarif final'}</span>
                     <span className="font-semibold text-slate-800">{formatPrix(subtotalHT)}</span>
@@ -996,15 +1145,40 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
+              {/* Reduction */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="input-label">Type écran</label>
+                  <label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label>
+                  <input type="number" step="1" min="0" max="100"
+                    value={pricingForm.reduction_pourcentage}
+                    onChange={e => setPricingForm(f => ({ ...f, reduction_pourcentage: e.target.value, reduction_montant: '' }))}
+                    className="input" placeholder="0" />
+                </div>
+                <div>
+                  <label className="input-label">Réduction (€)</label>
+                  <div className="relative">
+                    <input type="number" step="0.01"
+                      value={pricingForm.reduction_montant}
+                      onChange={e => setPricingForm(f => ({ ...f, reduction_montant: e.target.value, reduction_pourcentage: '' }))}
+                      className="input pr-7" placeholder="0" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Qualité écran</label>
                   <select value={pricingForm.type_ecran} onChange={e => setPricingForm(f => ({ ...f, type_ecran: e.target.value }))} className="input">
                     <option value="">—</option>
-                    <option value="Original">Original</option>
+                    <option value="Original">Original (OEM)</option>
+                    <option value="Original reconditionné">Original reconditionné</option>
+                    <option value="Compatible Premium">Compatible Premium</option>
                     <option value="Compatible">Compatible</option>
                     <option value="OLED">OLED</option>
+                    <option value="OLED Premium">OLED Premium</option>
                     <option value="Incell">Incell</option>
+                    <option value="LCD">LCD</option>
                   </select>
                 </div>
                 <div>
@@ -1238,8 +1412,161 @@ export default function TicketDetailPage() {
             </div>
           </div>
 
-          {/* ═══ Fidélité ═══ */}
-          {t.client_id && <FideliteCard clientId={t.client_id} />}
+          {/* ═══ Fidélité (accueil only) ═══ */}
+          {t.client_id && !isTech && <FideliteCard clientId={t.client_id} />}
+
+          {/* ═══ Téléphone de prêt ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                <PhoneCall className="w-4 h-4 text-amber-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Téléphone de prêt</h2>
+            </div>
+            {t.telephone_pret ? (
+              <div className="space-y-2">
+                <div className={`p-3 rounded-lg border ${t.telephone_pret_rendu ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-800">{t.telephone_pret}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      t.telephone_pret_rendu
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {t.telephone_pret_rendu ? 'Récupéré' : 'En prêt'}
+                    </span>
+                  </div>
+                  {t.telephone_pret_imei && (
+                    <p className="text-xs text-slate-500 font-mono mt-1">IMEI : {t.telephone_pret_imei}</p>
+                  )}
+                </div>
+                {!t.telephone_pret_rendu && (
+                  <button
+                    onClick={async () => {
+                      await api.updateTicket(id, { telephone_pret_rendu: 1 });
+                      await loadTicket();
+                      toast.success('Téléphone de prêt récupéré');
+                    }}
+                    className="btn-ghost text-xs w-full justify-center text-amber-600 hover:bg-amber-50"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Marquer comme récupéré
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400 italic">Aucun téléphone de prêt</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Modèle du prêt"
+                    id="pret-modele"
+                    className="input text-xs"
+                  />
+                  <input
+                    type="text"
+                    placeholder="IMEI (optionnel)"
+                    id="pret-imei"
+                    className="input text-xs font-mono"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    const modele = document.getElementById('pret-modele')?.value;
+                    if (!modele) return;
+                    const imei = document.getElementById('pret-imei')?.value || '';
+                    await api.updateTicket(id, { telephone_pret: modele, telephone_pret_imei: imei });
+                    await loadTicket();
+                    toast.success('Téléphone de prêt enregistré');
+                  }}
+                  className="btn-ghost text-xs w-full justify-center"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Enregistrer un prêt
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ═══ Notes Privées ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center">
+                <StickyNote className="w-4 h-4 text-rose-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Notes privées</h2>
+            </div>
+
+            {/* Add note */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setNewNoteImportant(!newNoteImportant)}
+                className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
+                  newNoteImportant
+                    ? 'bg-amber-50 border-amber-200 text-amber-500'
+                    : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}
+                title={newNoteImportant ? 'Important' : 'Normal'}
+              >
+                <Star className={`w-4 h-4 ${newNoteImportant ? 'fill-current' : ''}`} />
+              </button>
+              <input
+                type="text"
+                value={newNoteText}
+                onChange={e => setNewNoteText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddPrivateNote()}
+                placeholder="Ajouter une note privée..."
+                className="input flex-1 text-xs"
+              />
+              <button onClick={handleAddPrivateNote} className="btn-primary px-3">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Notes list */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {privateNotes.map(note => (
+                <div key={note.id} className={`p-3 rounded-lg border text-sm ${
+                  note.important
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {note.important && (
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Important</span>
+                      )}
+                      <p className="text-sm text-slate-700">{note.contenu}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-slate-400 font-medium">{note.auteur}</span>
+                        <span className="text-[10px] text-slate-300">
+                          {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={() => handleToggleNoteImportant(note.id, note.important)}
+                        className="p-1 rounded hover:bg-white/80 transition-colors"
+                        title="Toggle important"
+                      >
+                        <Star className={`w-3 h-3 ${note.important ? 'text-amber-500 fill-current' : 'text-slate-300'}`} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="p-1 rounded hover:bg-red-50 transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-300 hover:text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {privateNotes.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-3">Aucune note privée</p>
+              )}
+            </div>
+          </div>
 
           {/* ═══ Notes & Timeline ═══ */}
           <div className="card p-5">

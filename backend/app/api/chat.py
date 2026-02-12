@@ -155,7 +155,7 @@ TOOLS = [
             "properties": {
                 "statut": {
                     "type": "string",
-                    "description": "Filtrer par statut exact (ex: 'En attente de diagnostic', 'En cours de reparation', 'Reparation terminee')"
+                    "description": "Filtrer par statut exact (ex: 'En attente de diagnostic', 'En cours de réparation', 'Réparation terminée', 'Rendu au client', 'Clôturé')"
                 },
                 "technicien": {
                     "type": "string",
@@ -257,11 +257,11 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
                     cur.execute("""
                         SELECT statut, COUNT(*) as count
                         FROM tickets
-                        WHERE statut NOT IN ('Rendu au client', 'Cloture')
+                        WHERE statut NOT IN ('Rendu au client', 'Clôturé')
                         GROUP BY statut
                     """)
                     results = {r["statut"]: r["count"] for r in cur.fetchall()}
-                    cur.execute("SELECT COUNT(*) as total FROM tickets WHERE statut NOT IN ('Rendu au client', 'Cloture')")
+                    cur.execute("SELECT COUNT(*) as total FROM tickets WHERE statut NOT IN ('Rendu au client', 'Clôturé')")
                     results["total_actifs"] = cur.fetchone()["total"]
                     return json.dumps(results, ensure_ascii=False, default=str)
 
@@ -287,7 +287,7 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
                         SELECT technicien_assigne, COUNT(*) as nb_reparations
                         FROM tickets
                         WHERE technicien_assigne IS NOT NULL
-                          AND statut IN ('Reparation terminee', 'Rendu au client', 'Cloture')
+                          AND statut IN ('Réparation terminée', 'Rendu au client', 'Clôturé')
                           AND date_maj >= CURRENT_DATE - INTERVAL '30 days'
                         GROUP BY technicien_assigne
                         ORDER BY nb_reparations DESC

@@ -2,9 +2,42 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle, X, Send, Bot, Users, Lock, ArrowLeft,
-  Loader2, Trash2, Sparkles, Megaphone
+  Loader2, Trash2, Sparkles, Megaphone, VolumeX, Volume2
 } from 'lucide-react';
 import api from '../lib/api';
+
+// ─── NOTIFICATION SOUND (Web Audio API) ─────────────────
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch { /* silent fallback */ }
+}
+
+function isMuted(channel) {
+  try {
+    const muted = JSON.parse(localStorage.getItem('kp_chat_muted') || '{}');
+    return !!muted[channel];
+  } catch { return false; }
+}
+
+function toggleMute(channel) {
+  try {
+    const muted = JSON.parse(localStorage.getItem('kp_chat_muted') || '{}');
+    muted[channel] = !muted[channel];
+    localStorage.setItem('kp_chat_muted', JSON.stringify(muted));
+    return muted[channel];
+  } catch { return false; }
+}
 
 // ─── MARKDOWN-LIKE RENDERER ──────────────────────────────
 
@@ -219,16 +252,26 @@ function TabGeneral({ onReadMessages }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [muted, setMuted] = useState(() => isMuted('general'));
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const prevCountRef = useRef(0);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
 
   const fetchMessages = useCallback(async () => {
     try {
       const msgs = await api.chatTeamMessages(currentUser, 'general');
+      // Play sound if new messages from others
+      if (msgs.length > prevCountRef.current && prevCountRef.current > 0 && !muted) {
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg && lastMsg.sender !== currentUser) {
+          playNotificationSound();
+        }
+      }
+      prevCountRef.current = msgs.length;
       setMessages(msgs);
     } catch { /* silent */ }
-  }, [currentUser]);
+  }, [currentUser, muted]);
 
   useEffect(() => {
     fetchMessages();
@@ -260,6 +303,19 @@ function TabGeneral({ onReadMessages }) {
 
   return (
     <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-50">
+        <span className="text-[10px] text-slate-400">{messages.length} message(s)</span>
+        <button
+          onClick={() => setMuted(toggleMute('general'))}
+          className="p-1 rounded hover:bg-slate-100 transition-colors"
+          title={muted ? 'Activer le son' : 'Couper le son'}
+        >
+          {muted
+            ? <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+            : <Volume2 className="w-3.5 h-3.5 text-slate-400" />
+          }
+        </button>
+      </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5">
         {messages.length === 0 && (
           <div className="text-center py-8">
@@ -330,8 +386,10 @@ function TabPrivate({ onReadMessages }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [contactMuted, setContactMuted] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const prevCountRef = useRef(0);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
 
   // Fetch contacts list
@@ -352,12 +410,22 @@ function TabPrivate({ onReadMessages }) {
   const fetchConversation = useCallback(async (contact) => {
     try {
       const data = await api.chatTeamConversation(currentUser, contact);
+      // Play sound for new messages from contact
+      if (data.length > prevCountRef.current && prevCountRef.current > 0 && !isMuted(`private_${contact}`)) {
+        const lastMsg = data[data.length - 1];
+        if (lastMsg && lastMsg.sender !== currentUser) {
+          playNotificationSound();
+        }
+      }
+      prevCountRef.current = data.length;
       setMessages(data);
     } catch { /* silent */ }
   }, [currentUser]);
 
   useEffect(() => {
     if (!selectedContact) return;
+    setContactMuted(isMuted(`private_${selectedContact}`));
+    prevCountRef.current = 0;
     fetchConversation(selectedContact);
     // Mark as read
     api.chatTeamMarkRead(currentUser, selectedContact).then(() => {
@@ -447,7 +515,7 @@ function TabPrivate({ onReadMessages }) {
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/50 shrink-0">
         <button
-          onClick={() => { setSelectedContact(null); setMessages([]); }}
+          onClick={() => { setSelectedContact(null); setMessages([]); prevCountRef.current = 0; }}
           className="text-slate-400 hover:text-slate-600 transition p-0.5"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -458,7 +526,17 @@ function TabPrivate({ onReadMessages }) {
         >
           {selectedContact.charAt(0).toUpperCase()}
         </div>
-        <span className="font-semibold text-sm text-slate-700">{selectedContact}</span>
+        <span className="font-semibold text-sm text-slate-700 flex-1">{selectedContact}</span>
+        <button
+          onClick={() => setContactMuted(toggleMute(`private_${selectedContact}`))}
+          className="p-1 rounded hover:bg-slate-100 transition-colors"
+          title={contactMuted ? 'Activer le son' : 'Couper le son'}
+        >
+          {contactMuted
+            ? <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+            : <Volume2 className="w-3.5 h-3.5 text-slate-400" />
+          }
+        </button>
       </div>
 
       {/* Messages */}
@@ -525,11 +603,19 @@ export default function ChatWidget() {
   const [unreadPrivate, setUnreadPrivate] = useState(0);
   const currentUser = localStorage.getItem('kp_user') || 'Utilisateur';
 
+  const prevTotalRef = useRef(0);
+
   // Poll total unread count
   useEffect(() => {
     const fetchUnread = () => {
       api.chatTeamUnreadTotal(currentUser)
         .then(data => {
+          const newTotal = (data.general || 0) + (data.private || 0);
+          // Play sound if unread count increased and chat is closed
+          if (newTotal > prevTotalRef.current && prevTotalRef.current >= 0 && !open && !isMuted('global')) {
+            playNotificationSound();
+          }
+          prevTotalRef.current = newTotal;
           setUnreadGeneral(data.general || 0);
           setUnreadPrivate(data.private || 0);
         })
@@ -538,7 +624,7 @@ export default function ChatWidget() {
     fetchUnread();
     const interval = setInterval(fetchUnread, 8000);
     return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, open]);
 
   const totalUnread = unreadGeneral + unreadPrivate;
 

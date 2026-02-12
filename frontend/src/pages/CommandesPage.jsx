@@ -5,7 +5,7 @@ import api from '../lib/api';
 import { formatDateShort, formatPrix } from '../lib/utils';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
-  Check, Clock, AlertTriangle, ChevronDown, ExternalLink,
+  Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
 } from 'lucide-react';
 
 const PART_STATUTS = ['En attente', 'Commandée', 'Reçue', 'Annulée'];
@@ -21,8 +21,8 @@ export default function CommandesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingPart, setEditingPart] = useState(null);
   const [form, setForm] = useState({
-    designation: '', fournisseur: '', reference: '',
-    prix_achat: '', ticket_code: '', statut: 'En attente', notes: '',
+    description: '', fournisseur: '', reference: '',
+    prix: '', ticket_code: '', statut: 'En attente', notes: '',
   });
 
   const loadParts = useCallback(async () => {
@@ -43,7 +43,7 @@ export default function CommandesPage() {
   useEffect(() => { loadParts(); }, [loadParts]);
 
   const resetForm = () => {
-    setForm({ designation: '', fournisseur: '', reference: '', prix_achat: '', ticket_code: '', statut: 'En attente', notes: '' });
+    setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '' });
     setEditingPart(null);
     setShowForm(false);
   };
@@ -52,7 +52,7 @@ export default function CommandesPage() {
     try {
       const data = {
         ...form,
-        prix_achat: form.prix_achat ? parseFloat(form.prix_achat) : null,
+        prix: form.prix ? parseFloat(form.prix) : null,
       };
       if (editingPart) {
         await api.updatePart(editingPart.id, data);
@@ -69,10 +69,10 @@ export default function CommandesPage() {
   const handleEdit = (part) => {
     setEditingPart(part);
     setForm({
-      designation: part.designation || '',
+      description: part.description || '',
       fournisseur: part.fournisseur || '',
       reference: part.reference || '',
-      prix_achat: part.prix_achat || '',
+      prix: part.prix || '',
       ticket_code: part.ticket_code || '',
       statut: part.statut || 'En attente',
       notes: part.notes || '',
@@ -118,13 +118,33 @@ export default function CommandesPage() {
     }
   };
 
+  const getStatutIcon = (statut) => {
+    switch (statut) {
+      case 'En attente': return <Clock className="w-3 h-3" />;
+      case 'Commandée': return <Package className="w-3 h-3" />;
+      case 'Reçue': return <Check className="w-3 h-3" />;
+      case 'Annulée': return <X className="w-3 h-3" />;
+      default: return null;
+    }
+  };
+
+  // Summary counts
+  const counts = {
+    total: parts.length,
+    attente: parts.filter(p => p.statut === 'En attente').length,
+    commandee: parts.filter(p => p.statut === 'Commandée').length,
+    recue: parts.filter(p => p.statut === 'Reçue').length,
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Commandes de pièces</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{parts.length} commande(s)</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {counts.total} commande(s) — {counts.attente} en attente, {counts.commandee} commandée(s), {counts.recue} reçue(s)
+          </p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary">
           <Plus className="w-4 h-4" /> Nouvelle commande
@@ -136,7 +156,7 @@ export default function CommandesPage() {
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher par désignation, fournisseur, référence..."
+            <input type="text" placeholder="Rechercher par désignation, fournisseur, référence, ticket..."
               value={search} onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
             />
@@ -146,13 +166,13 @@ export default function CommandesPage() {
           <button onClick={() => setFilterStatut('')}
             className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
               ${!filterStatut ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
-            Toutes
+            Toutes ({counts.total})
           </button>
           {PART_STATUTS.map(s => (
             <button key={s} onClick={() => setFilterStatut(s)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1
                 ${filterStatut === s ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
-              {s}
+              {getStatutIcon(s)} {s}
             </button>
           ))}
         </div>
@@ -172,7 +192,7 @@ export default function CommandesPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="col-span-2 sm:col-span-1">
               <label className="input-label">Désignation *</label>
-              <input value={form.designation} onChange={e => setForm(f => ({ ...f, designation: e.target.value }))} className="input" placeholder="Écran iPhone 15..." />
+              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="Écran iPhone 15..." />
             </div>
             <div>
               <label className="input-label">Fournisseur</label>
@@ -183,8 +203,8 @@ export default function CommandesPage() {
               <input value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input font-mono" placeholder="REF-001" />
             </div>
             <div>
-              <label className="input-label">Prix d'achat (€)</label>
-              <input type="number" step="0.01" value={form.prix_achat} onChange={e => setForm(f => ({ ...f, prix_achat: e.target.value }))} className="input" />
+              <label className="input-label">Prix (€)</label>
+              <input type="number" step="0.01" value={form.prix} onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input" />
             </div>
             <div>
               <label className="input-label">Ticket associé</label>
@@ -202,7 +222,7 @@ export default function CommandesPage() {
             </div>
           </div>
           <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
-            <button onClick={handleSubmit} disabled={!form.designation} className="btn-primary">
+            <button onClick={handleSubmit} disabled={!form.description} className="btn-primary">
               <Save className="w-4 h-4" /> {editingPart ? 'Mettre à jour' : 'Créer'}
             </button>
           </div>
@@ -211,11 +231,12 @@ export default function CommandesPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[1fr_150px_120px_90px_100px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[1fr_140px_120px_90px_120px_100px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <span className="table-header">Désignation</span>
           <span className="table-header">Fournisseur</span>
           <span className="table-header">Référence</span>
           <span className="table-header">Prix</span>
+          <span className="table-header">Dates</span>
           <span className="table-header">Statut</span>
           <span className="table-header text-right">Actions</span>
         </div>
@@ -237,10 +258,10 @@ export default function CommandesPage() {
           <div className="divide-y divide-slate-100/80">
             {parts.map((p) => (
               <div key={p.id}
-                className="lg:grid lg:grid-cols-[1fr_150px_120px_90px_100px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
+                className="lg:grid lg:grid-cols-[1fr_140px_120px_90px_120px_100px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
               >
                 <div>
-                  <p className="text-sm font-semibold text-slate-800">{p.designation}</p>
+                  <p className="text-sm font-semibold text-slate-800">{p.description}</p>
                   {p.ticket_code && (
                     <button onClick={() => handleGoToTicket(p.ticket_code)}
                       className="text-xs text-brand-600 font-mono hover:text-brand-800 hover:underline flex items-center gap-1">
@@ -256,11 +277,23 @@ export default function CommandesPage() {
                   <p className="text-xs text-slate-500 font-mono">{p.reference || '—'}</p>
                 </div>
                 <div className="hidden lg:block">
-                  <p className="text-sm font-medium text-slate-800">{p.prix_achat ? formatPrix(p.prix_achat) : '—'}</p>
+                  <p className="text-sm font-medium text-slate-800">{p.prix ? formatPrix(p.prix) : '—'}</p>
+                </div>
+                <div className="hidden lg:block">
+                  <p className="text-[11px] text-slate-500">
+                    <Calendar className="w-3 h-3 inline mr-0.5" />
+                    {p.date_creation ? formatDateShort(p.date_creation) : '—'}
+                  </p>
+                  {p.date_commande && (
+                    <p className="text-[10px] text-blue-500">Cmd: {formatDateShort(p.date_commande)}</p>
+                  )}
+                  {p.date_reception && (
+                    <p className="text-[10px] text-emerald-500">Reçue: {formatDateShort(p.date_reception)}</p>
+                  )}
                 </div>
                 <div className="mt-2 lg:mt-0">
-                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ring-1 ${getStatutStyle(p.statut)}`}>
-                    {p.statut}
+                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ring-1 ${getStatutStyle(p.statut)}`}>
+                    {getStatutIcon(p.statut)} {p.statut}
                   </span>
                 </div>
                 <div className="hidden lg:flex justify-end gap-1">

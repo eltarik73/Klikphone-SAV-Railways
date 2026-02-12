@@ -109,6 +109,11 @@ class TicketUpdate(BaseModel):
     type_ecran: Optional[str] = None
     date_recuperation: Optional[Any] = None
     attention: Optional[str] = None
+    reduction_montant: Optional[float] = None
+    reduction_pourcentage: Optional[float] = None
+    telephone_pret: Optional[str] = None
+    telephone_pret_imei: Optional[str] = None
+    telephone_pret_rendu: Optional[int] = None
 
 
 class StatusChange(BaseModel):
@@ -155,6 +160,11 @@ class TicketOut(BaseModel):
     type_ecran: Optional[str] = None
     historique: Optional[str] = None
     attention: Optional[str] = None
+    reduction_montant: Optional[float] = 0
+    reduction_pourcentage: Optional[float] = 0
+    telephone_pret: Optional[str] = None
+    telephone_pret_imei: Optional[str] = None
+    telephone_pret_rendu: Optional[int] = 0
 
 
 class TicketFull(TicketOut):
@@ -171,19 +181,26 @@ class TicketFull(TicketOut):
 # COMMANDES PIECES
 # ============================================================
 class CommandePieceCreate(BaseModel):
-    ticket_id: int
+    ticket_id: Optional[int] = None
     description: str
     fournisseur: Optional[str] = ""
     reference: Optional[str] = ""
     prix: Optional[float] = 0
     notes: Optional[str] = ""
+    ticket_code: Optional[str] = ""
 
 
 class CommandePieceUpdate(BaseModel):
+    description: Optional[str] = None
+    fournisseur: Optional[str] = None
+    reference: Optional[str] = None
+    prix: Optional[float] = None
     statut: Optional[str] = None
     date_commande: Optional[str] = None
     date_reception: Optional[str] = None
     notes: Optional[str] = None
+    ticket_code: Optional[str] = None
+    ticket_id: Optional[int] = None
 
 
 class CommandePieceOut(BaseModel):
@@ -191,6 +208,7 @@ class CommandePieceOut(BaseModel):
 
     id: int
     ticket_id: Optional[int] = None
+    ticket_code: Optional[str] = None
     description: Optional[str] = None
     fournisseur: Optional[str] = None
     reference: Optional[str] = None

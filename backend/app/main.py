@@ -60,6 +60,14 @@ async def lifespan(app: FastAPI):
             description TEXT,
             date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        """CREATE TABLE IF NOT EXISTS notes_tickets (
+            id SERIAL PRIMARY KEY,
+            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+            auteur TEXT NOT NULL,
+            contenu TEXT NOT NULL,
+            important BOOLEAN DEFAULT FALSE,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
     ]:
         try:
             with get_cursor() as cur:
@@ -74,6 +82,12 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_montant DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_pourcentage DECIMAL(5,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_imei TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_rendu BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS ticket_code TEXT DEFAULT ''",
     ]:
         try:
             with get_cursor() as cur:

@@ -270,7 +270,7 @@ export default function DashboardPage() {
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Rechercher par nom, téléphone, code ticket..."
+              <input type="text" placeholder="Rechercher par nom, téléphone, code, marque, modèle..."
                 value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
               />

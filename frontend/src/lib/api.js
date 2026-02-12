@@ -234,6 +234,16 @@ class ApiClient {
   getAdminTauxConversion(p) { return this.get(`/api/admin/stats/taux-conversion${this._adminQs(p)}`); }
   getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
 
+  // ─── NOTES PRIVÉES ────────────────────────────
+  getNotes(ticketId) { return this.get(`/api/tickets/${ticketId}/notes`); }
+  addPrivateNote(ticketId, auteur, contenu, important = false) {
+    return this.post(`/api/tickets/${ticketId}/notes?auteur=${encodeURIComponent(auteur)}&contenu=${encodeURIComponent(contenu)}&important=${important}`);
+  }
+  deleteNote(ticketId, noteId) { return this.delete(`/api/tickets/${ticketId}/notes/${noteId}`); }
+  toggleNoteImportant(ticketId, noteId, important) {
+    return this.patch(`/api/tickets/${ticketId}/notes/${noteId}?important=${important}`, {});
+  }
+
   // ─── CHAT ───────────────────────────────────
   chatAI(message, user, conversationId, role) {
     return this.post('/api/chat/ai', { message, user, conversation_id: conversationId, role: role || '' });
