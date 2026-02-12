@@ -162,16 +162,19 @@ async def test_notif():
     except Exception as e:
         results["sms"] = {"status": "ERROR", "detail": str(e)}
 
-    # 3. Email
+    # 3. Email (just check config, don't actually send - SMTP can block)
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT c.email FROM tickets t JOIN clients c ON t.client_id = c.id WHERE t.id = %s", (ticket_id,))
-            row2 = cur.fetchone()
-        if row2 and row2["email"]:
-            success, msg = envoyer_email(row2["email"], "Test Klikphone", message)
-            results["email"] = {"status": "OK" if success else "FAIL", "message": msg, "to": row2["email"]}
-        else:
-            results["email"] = {"status": "ERROR", "detail": "no email"}
+        from app.services.notifications import _get_param
+        smtp_host = _get_param("smtp_host")
+        smtp_port = _get_param("smtp_port")
+        smtp_user = _get_param("smtp_user")
+        smtp_pass = _get_param("smtp_password")
+        results["email"] = {
+            "smtp_configured": bool(smtp_host and smtp_user),
+            "smtp_host": smtp_host or "(not set)",
+            "smtp_port": smtp_port or "(not set)",
+            "smtp_user": smtp_user[:3] + "***" if smtp_user else "(not set)",
+        }
     except Exception as e:
         results["email"] = {"status": "ERROR", "detail": str(e)}
 
