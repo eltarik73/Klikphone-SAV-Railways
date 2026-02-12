@@ -21,7 +21,7 @@ from app.api import auth, tickets, clients, config, team, parts, catalog, notifi
 async def lifespan(app: FastAPI):
     """Lifecycle: init DB tables + fermer proprement le pool DB a l'arret."""
     from app.database import get_cursor
-    # Kill any idle-in-transaction sessions that could block ALTER TABLE
+    # Non-blocking migrations: kill idle sessions, short lock_timeout, skip on failure
     try:
         with get_cursor() as cur:
             cur.execute("""
@@ -30,53 +30,57 @@ async def lifespan(app: FastAPI):
                 WHERE state = 'idle in transaction'
                 AND pid != pg_backend_pid()
             """)
-            killed = cur.rowcount
-            if killed:
-                print(f"Killed {killed} idle-in-transaction sessions")
-    except Exception as e:
-        print(f"Warning: could not kill idle sessions: {e}")
+    except Exception:
+        pass
 
-    try:
-        with get_cursor() as cur:
-            cur.execute("SET lock_timeout = '10s'")
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS historique (
-                    id SERIAL PRIMARY KEY,
-                    ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-                    type TEXT DEFAULT 'statut',
-                    contenu TEXT,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT")
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id SERIAL PRIMARY KEY,
-                    sender TEXT NOT NULL,
-                    recipient TEXT DEFAULT 'all',
-                    message TEXT NOT NULL,
-                    is_private BOOLEAN DEFAULT FALSE,
-                    read_by TEXT DEFAULT '',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0")
-            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0")
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS fidelite_historique (
-                    id SERIAL PRIMARY KEY,
-                    client_id INTEGER REFERENCES clients(id),
-                    ticket_id INTEGER REFERENCES tickets(id),
-                    type TEXT NOT NULL,
-                    points INTEGER NOT NULL,
-                    description TEXT,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE")
-            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT")
-    except Exception as e:
-        print(f"Warning: migrations: {e}")
+    # CREATE TABLE statements (don't need exclusive locks)
+    for sql in [
+        """CREATE TABLE IF NOT EXISTS historique (
+            id SERIAL PRIMARY KEY,
+            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+            type TEXT DEFAULT 'statut',
+            contenu TEXT,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS chat_messages (
+            id SERIAL PRIMARY KEY,
+            sender TEXT NOT NULL,
+            recipient TEXT DEFAULT 'all',
+            message TEXT NOT NULL,
+            is_private BOOLEAN DEFAULT FALSE,
+            read_by TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS fidelite_historique (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            ticket_id INTEGER REFERENCES tickets(id),
+            type TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            description TEXT,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+    ]:
+        try:
+            with get_cursor() as cur:
+                cur.execute(sql)
+        except Exception as e:
+            print(f"Warning CREATE TABLE: {e}")
+
+    # ALTER TABLE statements (need exclusive lock — use very short timeout)
+    for sql in [
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
+    ]:
+        try:
+            with get_cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                cur.execute(sql)
+        except Exception as e:
+            print(f"Warning ALTER TABLE: {e}")
     yield
     close_pool()
 
