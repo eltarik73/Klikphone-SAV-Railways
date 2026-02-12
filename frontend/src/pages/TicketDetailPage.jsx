@@ -952,32 +952,6 @@ export default function TicketDetailPage() {
               <h2 className="text-sm font-semibold text-slate-800">Informations réparation</h2>
             </div>
 
-            {/* Add note */}
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setNewNoteImportant(!newNoteImportant)}
-                className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
-                  newNoteImportant
-                    ? 'bg-red-50 border-red-200 text-red-500'
-                    : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}
-                title={newNoteImportant ? 'Important' : 'Normal'}
-              >
-                <AlertTriangle className={`w-4 h-4 ${newNoteImportant ? '' : ''}`} />
-              </button>
-              <input
-                type="text"
-                value={newNoteText}
-                onChange={e => setNewNoteText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddPrivateNote()}
-                placeholder="Ajouter une info réparation..."
-                className="input flex-1 text-xs"
-              />
-              <button onClick={handleAddPrivateNote} className="btn-primary px-3">
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
             {/* Legend */}
             <div className="flex items-center gap-3 mb-3 text-[10px]">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Technicien</span>
