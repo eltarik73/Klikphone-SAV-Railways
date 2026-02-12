@@ -311,8 +311,8 @@ export default function TicketDetailPage() {
     if (!messageText || !ticket.client_tel) return;
     try {
       const result = await api.sendWhatsApp(id, messageText);
-      if (result?.url) window.open(result.url, '_blank');
-      else window.open(waLink(ticket.client_tel, messageText), '_blank');
+      window.open(result?.link || waLink(ticket.client_tel, messageText), '_blank');
+      toast.success('WhatsApp ouvert');
       await loadTicket();
     } catch {
       window.open(waLink(ticket.client_tel, messageText), '_blank');
@@ -322,8 +322,9 @@ export default function TicketDetailPage() {
   const handleSendSMS = async () => {
     if (!messageText || !ticket.client_tel) return;
     try {
-      await api.sendSMS(id, messageText);
-      window.open(smsLink(ticket.client_tel, messageText), '_blank');
+      const result = await api.sendSMS(id, messageText);
+      window.open(result?.link || smsLink(ticket.client_tel, messageText), '_blank');
+      toast.success('SMS ouvert');
       await loadTicket();
     } catch {
       window.open(smsLink(ticket.client_tel, messageText), '_blank');
@@ -333,10 +334,15 @@ export default function TicketDetailPage() {
   const handleSendEmail = async () => {
     if (!messageText || !ticket.client_email) return;
     try {
-      await api.sendEmail(id, messageText, `Ticket ${ticket.ticket_code} — Klikphone`);
+      const result = await api.sendEmail(id, messageText, `Ticket ${ticket.ticket_code} — Klikphone`);
+      if (result?.success) {
+        toast.success('Email envoyé');
+      } else {
+        toast.error(result?.message || 'Erreur envoi email');
+      }
       await loadTicket();
     } catch (err) {
-      console.error(err);
+      toast.error(err.message || 'Erreur envoi email');
     }
   };
 
