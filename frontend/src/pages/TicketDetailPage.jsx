@@ -943,6 +943,87 @@ export default function TicketDetailPage() {
             </div>
           </div>
 
+          {/* ═══ Notes Privées ═══ */}
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center">
+                <StickyNote className="w-4 h-4 text-rose-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Notes privées</h2>
+            </div>
+
+            {/* Add note */}
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setNewNoteImportant(!newNoteImportant)}
+                className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
+                  newNoteImportant
+                    ? 'bg-amber-50 border-amber-200 text-amber-500'
+                    : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}
+                title={newNoteImportant ? 'Important' : 'Normal'}
+              >
+                <Star className={`w-4 h-4 ${newNoteImportant ? 'fill-current' : ''}`} />
+              </button>
+              <input
+                type="text"
+                value={newNoteText}
+                onChange={e => setNewNoteText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddPrivateNote()}
+                placeholder="Ajouter une note privée..."
+                className="input flex-1 text-xs"
+              />
+              <button onClick={handleAddPrivateNote} className="btn-primary px-3">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Notes list */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {privateNotes.map(note => (
+                <div key={note.id} className={`p-3 rounded-lg border text-sm ${
+                  note.important
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-slate-50 border-slate-100'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      {note.important && (
+                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Important</span>
+                      )}
+                      <p className="text-sm text-slate-700">{note.contenu}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-slate-400 font-medium">{note.auteur}</span>
+                        <span className="text-[10px] text-slate-300">
+                          {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={() => handleToggleNoteImportant(note.id, note.important)}
+                        className="p-1 rounded hover:bg-white/80 transition-colors"
+                        title="Toggle important"
+                      >
+                        <Star className={`w-3 h-3 ${note.important ? 'text-amber-500 fill-current' : 'text-slate-300'}`} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="p-1 rounded hover:bg-red-50 transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3 h-3 text-red-300 hover:text-red-500" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {privateNotes.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-3">Aucune note privée</p>
+              )}
+            </div>
+          </div>
+
           {/* Quick print */}
           <div className="card p-5">
             <div className="flex items-center gap-2 mb-3">
@@ -1485,87 +1566,6 @@ export default function TicketDetailPage() {
                 </button>
               </div>
             )}
-          </div>
-
-          {/* ═══ Notes Privées ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center">
-                <StickyNote className="w-4 h-4 text-rose-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Notes privées</h2>
-            </div>
-
-            {/* Add note */}
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setNewNoteImportant(!newNoteImportant)}
-                className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
-                  newNoteImportant
-                    ? 'bg-amber-50 border-amber-200 text-amber-500'
-                    : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}
-                title={newNoteImportant ? 'Important' : 'Normal'}
-              >
-                <Star className={`w-4 h-4 ${newNoteImportant ? 'fill-current' : ''}`} />
-              </button>
-              <input
-                type="text"
-                value={newNoteText}
-                onChange={e => setNewNoteText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddPrivateNote()}
-                placeholder="Ajouter une note privée..."
-                className="input flex-1 text-xs"
-              />
-              <button onClick={handleAddPrivateNote} className="btn-primary px-3">
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Notes list */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {privateNotes.map(note => (
-                <div key={note.id} className={`p-3 rounded-lg border text-sm ${
-                  note.important
-                    ? 'bg-amber-50 border-amber-200'
-                    : 'bg-slate-50 border-slate-100'
-                }`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      {note.important && (
-                        <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Important</span>
-                      )}
-                      <p className="text-sm text-slate-700">{note.contenu}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] text-slate-400 font-medium">{note.auteur}</span>
-                        <span className="text-[10px] text-slate-300">
-                          {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <button
-                        onClick={() => handleToggleNoteImportant(note.id, note.important)}
-                        className="p-1 rounded hover:bg-white/80 transition-colors"
-                        title="Toggle important"
-                      >
-                        <Star className={`w-3 h-3 ${note.important ? 'text-amber-500 fill-current' : 'text-slate-300'}`} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteNote(note.id)}
-                        className="p-1 rounded hover:bg-red-50 transition-colors"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="w-3 h-3 text-red-300 hover:text-red-500" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {privateNotes.length === 0 && (
-                <p className="text-xs text-slate-400 text-center py-3">Aucune note privée</p>
-              )}
-            </div>
           </div>
 
           {/* ═══ Notes & Timeline ═══ */}
