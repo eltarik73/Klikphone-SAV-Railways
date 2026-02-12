@@ -142,6 +142,22 @@ async def health_db():
         return {"status": "error", "db": str(e)}
 
 
+@app.get("/health/cleanup-fidelite-test")
+async def cleanup_fidelite_test():
+    """Temporary: clean up test fidelite data for client 1."""
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute("DELETE FROM fidelite_historique WHERE client_id = 1")
+            deleted_hist = cur.rowcount
+            cur.execute("UPDATE clients SET points_fidelite = 0, total_depense = 0 WHERE id = 1")
+            cur.execute("UPDATE tickets SET grattage_fait = FALSE, grattage_gain = NULL WHERE client_id = 1")
+            reset_tickets = cur.rowcount
+        return {"deleted_historique": deleted_hist, "reset_tickets": reset_tickets, "client_1": "reset to 0 pts"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/health/migrate")
 async def health_migrate():
     """Diagnostic: check column existence and run migrations with lock_timeout."""
