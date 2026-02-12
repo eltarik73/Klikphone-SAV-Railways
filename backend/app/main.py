@@ -153,6 +153,20 @@ async def health_migrate():
     except Exception as e:
         results["check_error"] = str(e)
 
+    # Check locks
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT l.relation::regclass, l.mode, l.granted, a.state, a.query, a.pid
+                FROM pg_locks l
+                JOIN pg_stat_activity a ON l.pid = a.pid
+                WHERE l.relation IN ('clients'::regclass, 'tickets'::regclass)
+                ORDER BY l.relation, l.mode
+            """)
+            results["locks"] = [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        results["locks_error"] = str(e)
+
     # Try migrations with short lock timeout
     stmts = [
         ("points_fidelite", "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0"),
