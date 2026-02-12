@@ -49,6 +49,24 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
   );
 }
 
+// ─── Layout Blocks Config ────────────────────────────────────
+const INITIAL_BLOCKS = [
+  { id: 'client',       title: 'Client',              col: 'left',  order: 0, size: 'normal' },
+  { id: 'device',       title: 'Appareil',            col: 'left',  order: 1, size: 'normal' },
+  { id: 'dates',        title: 'Dates',               col: 'left',  order: 2, size: 'compact' },
+  { id: 'info_repair',  title: 'Infos réparation',    col: 'left',  order: 3, size: 'normal' },
+  { id: 'print',        title: 'Impressions',         col: 'left',  order: 4, size: 'compact' },
+  { id: 'pricing',      title: 'Tarification',        col: 'right', order: 0, size: 'normal' },
+  { id: 'status',       title: 'Statut',              col: 'right', order: 1, size: 'compact' },
+  { id: 'notifications',title: 'Notifications',       col: 'right', order: 2, size: 'normal' },
+  { id: 'assignment',   title: 'Assignation',         col: 'right', order: 3, size: 'compact' },
+  { id: 'messages',     title: 'Messages',            col: 'right', order: 4, size: 'normal' },
+  { id: 'fidelite',     title: 'Fidélité',            col: 'right', order: 5, size: 'compact' },
+  { id: 'pret',         title: 'Tél. de prêt',        col: 'right', order: 6, size: 'normal' },
+  { id: 'notes',        title: 'Notes & Historique',  col: 'right', order: 7, size: 'normal' },
+  { id: 'danger',       title: 'Zone danger',         col: 'right', order: 8, size: 'compact' },
+];
+
 export default function TicketDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -111,6 +129,11 @@ export default function TicketDetailPage() {
 
   // Téléphone de prêt modal
   const [showPretModal, setShowPretModal] = useState(false);
+
+  // Layout drag & drop
+  const [blocks, setBlocks] = useState(INITIAL_BLOCKS);
+  const [dragId, setDragId] = useState(null);
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
 
   const parseRepairLines = (ticket) => {
     try {
@@ -202,6 +225,64 @@ export default function TicketDetailPage() {
       if (tvaParam) setTvaRate(parseFloat(tvaParam.valeur) || 0);
     }).catch(() => {});
   }, []);
+
+  // ─── Layout persistence & handlers ──────────────────────────────
+
+  useEffect(() => {
+    if (!user?.utilisateur) return;
+    try {
+      const saved = localStorage.getItem(`kp_layout_${user.utilisateur}`);
+      if (saved) setBlocks(JSON.parse(saved));
+    } catch {}
+  }, [user?.utilisateur]);
+
+  const saveLayout = () => {
+    if (!user?.utilisateur) return;
+    localStorage.setItem(`kp_layout_${user.utilisateur}`, JSON.stringify(blocks));
+    toast.success('Layout sauvegardé');
+    setLayoutEditMode(false);
+  };
+
+  const resetLayout = () => {
+    if (!user?.utilisateur) return;
+    localStorage.removeItem(`kp_layout_${user.utilisateur}`);
+    setBlocks(INITIAL_BLOCKS);
+    toast.success('Layout réinitialisé');
+  };
+
+  const handleLayoutDrop = (targetId) => {
+    if (!dragId || dragId === targetId) return;
+    setBlocks(prev => {
+      const updated = prev.map(b => ({ ...b }));
+      const drag = updated.find(b => b.id === dragId);
+      const target = updated.find(b => b.id === targetId);
+      if (!drag || !target) return prev;
+      const tmpCol = drag.col, tmpOrder = drag.order;
+      drag.col = target.col; drag.order = target.order;
+      target.col = tmpCol; target.order = tmpOrder;
+      return updated;
+    });
+    setDragId(null);
+  };
+
+  const cycleSize = (blockId) => {
+    setBlocks(prev => prev.map(b =>
+      b.id === blockId
+        ? { ...b, size: b.size === 'compact' ? 'normal' : b.size === 'normal' ? 'large' : 'compact' }
+        : b
+    ));
+  };
+
+  const moveToCol = (blockId, newCol) => {
+    setBlocks(prev => {
+      const updated = prev.map(b => ({ ...b }));
+      const block = updated.find(b => b.id === blockId);
+      if (!block) return prev;
+      block.col = newCol;
+      block.order = updated.filter(b => b.col === newCol && b.id !== blockId).length;
+      return updated;
+    });
+  };
 
   // ─── Save handlers ────────────────────────────────────────────
 
@@ -544,6 +625,873 @@ export default function TicketDetailPage() {
   // Sort by timestamp desc (most recent first)
   timelineEntries.reverse();
 
+  // ─── Block rendering ──────────────────────────────────────────
+
+  const renderBlockContent = (blockId) => {
+    switch (blockId) {
+      case 'client':
+        return (
+          <EditableSection
+            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
+            editing={editingClient}
+            onEdit={() => setEditingClient(true)}
+            onSave={handleSaveClient}
+            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
+            viewContent={
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                    <span className="text-brand-700 font-bold text-sm">
+                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
+                    {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {t.client_tel && (
+                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="font-mono text-xs">{t.client_tel}</span>
+                    </a>
+                  )}
+                  {t.client_email && (
+                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <span className="text-xs truncate">{t.client_email}</span>
+                    </a>
+                  )}
+                </div>
+                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
+                  {t.client_tel && (
+                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
+                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
+                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                  )}
+                  {t.client_tel && (
+                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
+                      <Send className="w-3.5 h-3.5" /> SMS
+                    </a>
+                  )}
+                </div>
+              </>
+            }
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="input-label">Prénom</label>
+                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="input-label">Nom</label>
+                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                </div>
+              </div>
+              <div>
+                <label className="input-label">Téléphone</label>
+                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">Email</label>
+                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Société</label>
+                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
+              </div>
+            </div>
+          </EditableSection>
+        );
+
+      case 'device':
+        return (
+          <EditableSection
+            title="Appareil" icon={Smartphone} iconBg="bg-brand-50" iconColor="text-brand-600"
+            editing={editingDevice}
+            onEdit={() => setEditingDevice(true)}
+            onSave={handleSaveDevice}
+            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
+            viewContent={
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
+                  {[
+                    { label: 'Catégorie', value: t.categorie },
+                    { label: 'Marque', value: t.marque },
+                    { label: 'Modèle', value: t.modele || t.modele_autre || '—' },
+                    { label: 'Panne', value: t.panne },
+                    { label: 'IMEI / N° série', value: t.imei, mono: true },
+                    { label: 'Détail panne', value: t.panne_detail },
+                  ].map(({ label, value, mono }) => (
+                    <div key={label}>
+                      <p className="text-slate-400 text-xs mb-0.5">{label}</p>
+                      <p className={`font-medium text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+                {(t.pin || t.pattern) && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
+                    {t.pin && (
+                      <div>
+                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
+                          <Lock className="w-3 h-3" /> Code PIN
+                        </p>
+                        <p className="text-lg font-bold font-mono text-slate-800 tracking-widest">{t.pin}</p>
+                      </div>
+                    )}
+                    {t.pattern && (
+                      <div>
+                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
+                          <Shield className="w-3 h-3" /> Pattern
+                        </p>
+                        <PatternGrid value={t.pattern} readOnly size={120} />
+                      </div>
+                    )}
+                  </div>
+                )}
+                {t.notes_client && (
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
+                    <span className="font-semibold">Note client :</span> {t.notes_client}
+                  </div>
+                )}
+              </>
+            }
+          >
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="input-label">Catégorie</label>
+                <input value={deviceForm.categorie} onChange={e => setDeviceForm(f => ({ ...f, categorie: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Marque</label>
+                <input value={deviceForm.marque} onChange={e => setDeviceForm(f => ({ ...f, marque: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Modèle</label>
+                <input value={deviceForm.modele} onChange={e => setDeviceForm(f => ({ ...f, modele: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Panne</label>
+                <input value={deviceForm.panne} onChange={e => setDeviceForm(f => ({ ...f, panne: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">IMEI</label>
+                <input value={deviceForm.imei} onChange={e => setDeviceForm(f => ({ ...f, imei: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">Détail panne</label>
+                <input value={deviceForm.panne_detail} onChange={e => setDeviceForm(f => ({ ...f, panne_detail: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Code PIN</label>
+                <input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} />
+              </div>
+              <div>
+                <label className="input-label">Pattern</label>
+                <input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" />
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <label className="input-label">Note client</label>
+                <textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} />
+              </div>
+            </div>
+          </EditableSection>
+        );
+
+      case 'dates':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Calendar className="w-4 h-4 text-slate-500" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Dates</h2>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Dépôt</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Mise à jour</span>
+                <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
+              </div>
+              {t.date_cloture && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Clôture</span>
+                  <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
+                </div>
+              )}
+              {t.date_recuperation && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Récupération</span>
+                  <span className="font-medium text-slate-800">{t.date_recuperation}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'info_repair':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <StickyNote className="w-4 h-4 text-indigo-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Informations réparation</h2>
+              <span className="text-[10px] text-slate-400 ml-auto">
+                {(() => {
+                  const allNotes = [
+                    ...privateNotes.map(n => ({ source: 'db', ...n })),
+                    ...timelineEntries.filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention'),
+                  ];
+                  return `${allNotes.length} note(s)`;
+                })()}
+              </span>
+            </div>
+            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+              {privateNotes.map(note => {
+                const isTechNote = note.auteur?.toLowerCase().includes('tech');
+                const textColor = note.important
+                  ? 'text-red-600 font-semibold'
+                  : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                return (
+                  <div key={`db-${note.id}`} className="flex items-start gap-2 py-1.5">
+                    <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{note.contenu}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
+                      {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
+                    </span>
+                  </div>
+                );
+              })}
+              {timelineEntries
+                .filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention')
+                .map((entry, i) => {
+                  const textColor = entry.type === 'attention'
+                    ? 'text-red-600 font-semibold'
+                    : entry.type === 'internal' ? 'text-blue-600' : 'text-emerald-600';
+                  return (
+                    <div key={`tl-${i}`} className="flex items-start gap-2 py-1.5">
+                      <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
+                      {entry.timestamp && (
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>
+                      )}
+                    </div>
+                  );
+                })
+              }
+              {privateNotes.length === 0 && timelineEntries.filter(e => e.type !== 'history').length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-3">Aucune information</p>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'print':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Printer className="w-4 h-4 text-slate-500" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Impressions</h2>
+            </div>
+            <button onClick={() => setShowPrintDrawer(true)} className="w-full btn-primary justify-center text-xs">
+              <Printer className="w-3.5 h-3.5" /> Ouvrir le panneau d'impression
+            </button>
+            <p className="text-[10px] text-slate-400 text-center mt-2">5 formats : client, atelier, double, devis, reçu</p>
+          </div>
+        );
+
+      case 'pricing':
+        return (
+          <EditableSection
+            title="Tarification" icon={CreditCard} iconBg="bg-emerald-50" iconColor="text-emerald-600"
+            editing={editingPricing}
+            onEdit={() => setEditingPricing(true)}
+            onSave={handleSavePricing}
+            onCancel={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '' }); setRepairLines(parseRepairLines(t)); }}
+            viewContent={
+              <>
+                <div className="space-y-2 mb-4">
+                  {repairLines.filter(l => l.label).map((line, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 bg-slate-50 rounded-lg">
+                      <span className="text-slate-700">{line.label}</span>
+                      <span className="font-semibold text-slate-800">{formatPrix(line.prix)}</span>
+                    </div>
+                  ))}
+                  {repairLines.filter(l => l.label).length === 0 && (
+                    <p className="text-sm text-slate-400 italic">Aucune réparation enregistrée</p>
+                  )}
+                </div>
+                <div className="space-y-2 pt-3 border-t border-slate-100">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Devis estimé</span>
+                    <span className="font-medium text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</span>
+                  </div>
+                  {effectiveReduction > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span className="flex items-center gap-1">
+                        <Percent className="w-3 h-3" /> Réduction
+                        {reductionPct > 0 ? ` (${reductionPct}%)` : ''}
+                      </span>
+                      <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
+                    </div>
+                  )}
+                  {t.type_ecran && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">Qualité écran</span>
+                      <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">{t.type_ecran}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">{tvaRate > 0 ? 'Sous-total HT' : 'Tarif final'}</span>
+                    <span className="font-semibold text-slate-800">{formatPrix(subtotalHT)}</span>
+                  </div>
+                  {tvaRate > 0 && (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">TVA ({tvaRate}%)</span>
+                        <span className="font-medium text-slate-600">{formatPrix(tvaAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-2">
+                        <span className="text-slate-800">Total TTC</span>
+                        <span className="text-slate-900">{formatPrix(totalTTC)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Acompte versé</span>
+                    <span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span>
+                  </div>
+                </div>
+                {reste > 0 && (
+                  <div className="mt-3 flex items-center justify-between p-3 bg-brand-50 rounded-lg border-2 border-brand-200">
+                    <span className="text-sm font-bold text-brand-700">RESTE À PAYER</span>
+                    <span className="text-lg font-bold text-brand-600">{formatPrix(reste)}</span>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
+                  <button onClick={handleTogglePaye}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      t.paye
+                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {t.paye ? 'Payé ✓' : 'Marquer payé'}
+                  </button>
+                  <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
+                    <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
+                  </button>
+                  <button onClick={() => setShowAccordModal(true)} className="btn-ghost text-xs gap-1.5 text-orange-600 hover:bg-orange-50">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Accord client
+                  </button>
+                </div>
+              </>
+            }
+          >
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="input-label mb-0">Lignes de réparation</label>
+                  <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1">
+                    <Plus className="w-3 h-3" /> Ajouter
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {repairLines.map((line, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={line.label} onChange={e => updateRepairLine(i, 'label', e.target.value)} className="input flex-1" placeholder="Description réparation" />
+                      <div className="relative w-28 shrink-0">
+                        <input type="number" step="0.01" value={line.prix} onChange={e => updateRepairLine(i, 'prix', e.target.value)} className="input text-right pr-7" placeholder="0" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                      </div>
+                      <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                      <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                      {repairLines.length > 1 && (
+                        <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="text-right mt-2">
+                  <span className="text-xs text-slate-400">Total réparations :</span>
+                  <span className="text-sm font-bold text-slate-800 ml-2">{formatPrix(totalRepairs)}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="input-label">Devis estimé</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => setPricingForm(f => ({ ...f, devis_estime: e.target.value }))} className="input text-center pr-7" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                  </div>
+                </div>
+                <div>
+                  <label className="input-label">Tarif final</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.tarif_final} onChange={e => setPricingForm(f => ({ ...f, tarif_final: e.target.value }))} className="input text-center pr-7" placeholder={totalRepairs || ''} />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                  </div>
+                </div>
+                <div>
+                  <label className="input-label">Acompte</label>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                    <div className="relative flex-1">
+                      <input type="number" step="0.01" value={pricingForm.acompte} onChange={e => setPricingForm(f => ({ ...f, acompte: e.target.value }))} className="input text-center pr-7" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                    <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label>
+                  <input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => setPricingForm(f => ({ ...f, reduction_pourcentage: e.target.value, reduction_montant: '' }))} className="input" placeholder="0" />
+                </div>
+                <div>
+                  <label className="input-label">Réduction (€)</label>
+                  <div className="relative">
+                    <input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => setPricingForm(f => ({ ...f, reduction_montant: e.target.value, reduction_pourcentage: '' }))} className="input pr-7" placeholder="0" />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Qualité écran</label>
+                  <select value={pricingForm.type_ecran} onChange={e => setPricingForm(f => ({ ...f, type_ecran: e.target.value }))} className="input">
+                    <option value="">—</option>
+                    <option value="Original">Original (OEM)</option>
+                    <option value="Original reconditionné">Original reconditionné</option>
+                    <option value="Compatible Premium">Compatible Premium</option>
+                    <option value="Compatible">Compatible</option>
+                    <option value="OLED">OLED</option>
+                    <option value="OLED Premium">OLED Premium</option>
+                    <option value="Incell">Incell</option>
+                    <option value="LCD">LCD</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="input-label">Date récupération</label>
+                  <input type="text" value={pricingForm.date_recuperation} onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))} className="input" placeholder="Ex: demain 14h, lundi..." />
+                </div>
+              </div>
+            </div>
+          </EditableSection>
+        );
+
+      case 'status':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: getStatusConfig(t.statut).color + '20' }}>
+                <ChevronDown className="w-4 h-4" style={{ color: getStatusConfig(t.statut).color }} />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Changer le statut</h2>
+            </div>
+            <select
+              value={t.statut}
+              onChange={e => handleStatusChange(e.target.value)}
+              className="w-full py-3 px-4 text-base font-semibold rounded-xl border-2 transition-colors cursor-pointer appearance-none bg-no-repeat"
+              style={{
+                borderColor: getStatusConfig(t.statut).color,
+                color: getStatusConfig(t.statut).color,
+                backgroundColor: getStatusConfig(t.statut).color + '10',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatusConfig(t.statut).color)}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                backgroundPosition: 'right 12px center',
+                backgroundSize: '20px',
+              }}
+            >
+              {STATUTS.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        );
+
+      case 'notifications':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-indigo-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Centre de notifications</h2>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {historiqueEntries.map(h => {
+                const styles = {
+                  statut: { dot: 'bg-blue-500', color: 'text-blue-700' },
+                  note_privee: { dot: 'bg-amber-400', color: 'text-amber-700' },
+                  note_publique: { dot: 'bg-emerald-500', color: 'text-emerald-700' },
+                  message: { dot: 'bg-violet-500', color: 'text-violet-700' },
+                  alerte: { dot: 'bg-red-500', color: 'text-red-700' },
+                };
+                const s = styles[h.type] || { dot: 'bg-slate-400', color: 'text-slate-600' };
+                return (
+                  <div key={h.id} className="flex gap-3 items-start text-sm py-2 px-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className={`w-2.5 h-2.5 rounded-full ${s.dot} mt-1.5 shrink-0`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`${s.color} text-sm`}>{h.contenu}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {h.date_creation ? new Date(h.date_creation).toLocaleString('fr-FR') : ''}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              {historiqueEntries.length === 0 && (
+                <p className="text-sm text-slate-400 text-center py-4">Aucun historique</p>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'assignment':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                  <UserCheck className="w-4 h-4 text-violet-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Assignation</h2>
+              </div>
+              {isTech && !editingAssign && (
+                <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
+                  <Edit3 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {isTech && editingAssign && (
+                <button onClick={() => setEditingAssign(false)} className="btn-ghost text-xs px-2.5 py-1.5">
+                  <X className="w-3.5 h-3.5" /> Fermer
+                </button>
+              )}
+            </div>
+            {isTech && !editingAssign ? (
+              <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 rounded-lg">
+                {(() => {
+                  const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
+                  return assignedMember ? (
+                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
+                  ) : null;
+                })()}
+                <span className="text-sm font-medium text-slate-800">{t.technicien_assigne || 'Non assigné'}</span>
+              </div>
+            ) : (
+              <div>
+                {t.technicien_assigne && !editingAssign ? (
+                  <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-lg">
+                    <div className="flex items-center gap-2.5">
+                      {(() => {
+                        const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
+                        return assignedMember ? (
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
+                        ) : null;
+                      })()}
+                      <span className="text-sm font-medium text-slate-800">{t.technicien_assigne}</span>
+                    </div>
+                    <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="input-label">Technicien assigné</label>
+                    {teamMembers.length > 0 ? (
+                      <select
+                        value={t.technicien_assigne || ''}
+                        onChange={async (e) => {
+                          const nom = e.target.value;
+                          if (!nom) return;
+                          setPricingForm(f => ({ ...f, technicien_assigne: nom }));
+                          try {
+                            await api.updateTicket(id, { technicien_assigne: nom });
+                            await loadTicket();
+                            toast.success(`Assigné à ${nom}`);
+                            setEditingAssign(false);
+                          } catch { toast.error('Erreur assignation'); }
+                        }}
+                        className="input"
+                      >
+                        <option value="">-- Choisir un technicien --</option>
+                        {teamMembers.map(m => (
+                          <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input type="text" value={pricingForm.technicien_assigne} onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))} className="input" placeholder="Nom du technicien" />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {t.personne_charge && (
+              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Prise en charge</p>
+                <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'messages':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 text-green-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Messages client</h2>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                {t.msg_whatsapp ? <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600">WA</span> : null}
+                {t.msg_sms ? <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">SMS</span> : null}
+                {t.msg_email ? <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">Email</span> : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {MESSAGE_TEMPLATES.map(tmpl => (
+                <button key={tmpl.key} onClick={() => handleGenerateMessage(tmpl.key)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    selectedTemplate === tmpl.key ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>
+                  {tmpl.label}
+                </button>
+              ))}
+            </div>
+            <textarea value={messageText} onChange={e => setMessageText(e.target.value)}
+              placeholder="Sélectionnez un modèle ou tapez votre message..." rows={4}
+              className="input resize-none mb-3" disabled={messageLoading} />
+            <div className="flex flex-wrap gap-2">
+              {t.client_tel && (
+                <button onClick={handleSendWhatsApp} disabled={!messageText} className="btn-whatsapp text-xs">
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+              )}
+              {t.client_tel && (
+                <button onClick={handleSendSMS} disabled={!messageText} className="btn-secondary text-xs">
+                  <Send className="w-3.5 h-3.5" /> SMS
+                </button>
+              )}
+              {t.client_email && (
+                <button onClick={handleSendEmail} disabled={!messageText} className="btn-ghost text-xs border border-slate-200">
+                  <Mail className="w-3.5 h-3.5" /> Email
+                </button>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'fidelite':
+        return t.client_id && !isTech ? <FideliteCard clientId={t.client_id} /> : null;
+
+      case 'pret':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                <PhoneCall className="w-4 h-4 text-amber-600" />
+              </div>
+              <h2 className="text-sm font-semibold text-slate-800">Téléphone de prêt</h2>
+            </div>
+            {t.telephone_pret ? (
+              <div className="space-y-2">
+                <div className={`p-3 rounded-lg border ${t.telephone_pret_rendu ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-800">{t.telephone_pret}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      t.telephone_pret_rendu ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {t.telephone_pret_rendu ? 'Récupéré' : 'En prêt'}
+                    </span>
+                  </div>
+                  {t.telephone_pret_imei && (
+                    <p className="text-xs text-slate-500 font-mono mt-1">IMEI : {t.telephone_pret_imei}</p>
+                  )}
+                </div>
+                {!t.telephone_pret_rendu && (
+                  <button onClick={async () => {
+                    await api.updateTicket(id, { telephone_pret_rendu: 1 });
+                    await loadTicket();
+                    toast.success('Téléphone de prêt récupéré');
+                  }} className="btn-ghost text-xs w-full justify-center text-amber-600 hover:bg-amber-50">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Marquer comme récupéré
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400 italic">Aucun téléphone de prêt</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="text" placeholder="Modèle du prêt" id="pret-modele" className="input text-xs" />
+                  <input type="text" placeholder="IMEI (optionnel)" id="pret-imei" className="input text-xs font-mono" />
+                </div>
+                <button onClick={async () => {
+                  const modele = document.getElementById('pret-modele')?.value;
+                  if (!modele) return;
+                  const imei = document.getElementById('pret-imei')?.value || '';
+                  await api.updateTicket(id, { telephone_pret: modele, telephone_pret_imei: imei });
+                  await loadTicket();
+                  toast.success('Téléphone de prêt enregistré');
+                }} className="btn-ghost text-xs w-full justify-center">
+                  <Plus className="w-3.5 h-3.5" /> Enregistrer un prêt
+                </button>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'notes':
+        return (
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-amber-600" />
+                </div>
+                <h2 className="text-sm font-semibold text-slate-800">Notes & Historique</h2>
+              </div>
+              <button onClick={handleAddAttention} className="btn-ghost text-xs gap-1 text-red-500 hover:bg-red-50" title="Ajouter flag attention">
+                <Flag className="w-3.5 h-3.5" /> Attention
+              </button>
+            </div>
+            <div className="flex gap-2 mb-4">
+              <div className="flex-1 flex gap-2">
+                <button onClick={() => setNotePrivate(!notePrivate)}
+                  className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
+                    notePrivate ? 'bg-slate-50 border-slate-200 text-slate-500' : 'bg-blue-50 border-blue-200 text-blue-500'
+                  }`}
+                  title={notePrivate ? 'Note interne' : 'Note visible client'}>
+                  {notePrivate ? <Lock className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+                <input type="text" value={noteText} onChange={e => setNoteText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+                  placeholder={notePrivate ? 'Note interne...' : 'Note visible par le client...'}
+                  className="input flex-1" />
+              </div>
+              <button onClick={handleAddNote} className="btn-primary px-3">
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            {timelineEntries.length > 0 && (
+              <div className="relative max-h-80 overflow-y-auto pl-4">
+                <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" />
+                <div className="space-y-0.5">
+                  {timelineEntries.map((entry, i) => {
+                    const styles = {
+                      internal: { dot: 'bg-slate-400', bg: 'hover:bg-slate-50', icon: Lock, textColor: 'text-slate-600', label: 'Interne' },
+                      client: { dot: 'bg-blue-500', bg: 'hover:bg-blue-50/50', icon: Eye, textColor: 'text-blue-700', label: 'Client' },
+                      attention: { dot: 'bg-red-500 ring-2 ring-red-200', bg: 'bg-red-50/50', icon: AlertTriangle, textColor: 'text-red-700', label: 'Attention' },
+                      history: { dot: 'bg-brand-400', bg: 'hover:bg-slate-50', icon: Clock, textColor: 'text-slate-500', label: 'Historique' },
+                    };
+                    const s = styles[entry.type];
+                    return (
+                      <div key={i} className={`relative flex items-start gap-3 py-2 px-2 rounded-lg transition-colors ${s.bg}`}>
+                        <div className={`absolute -left-4 top-3.5 w-2.5 h-2.5 rounded-full ${s.dot} z-10`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${s.textColor}`}>{entry.text}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {entry.timestamp && (
+                              <span className="text-[10px] text-slate-400">{entry.timestamp}</span>
+                            )}
+                            <span className={`text-[9px] font-medium uppercase tracking-wider ${
+                              entry.type === 'attention' ? 'text-red-400' :
+                              entry.type === 'client' ? 'text-blue-400' :
+                              entry.type === 'history' ? 'text-brand-400' : 'text-slate-400'
+                            }`}>{s.label}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'danger':
+        return (
+          <div className="card p-5 border-red-100">
+            <button onClick={async () => {
+              if (confirm('Supprimer ce ticket définitivement ?')) {
+                await api.deleteTicket(id);
+                navigate(basePath);
+              }
+            }} className="btn-danger w-full text-xs">
+              <Trash2 className="w-3.5 h-3.5" /> Supprimer le ticket
+            </button>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const renderBlock = (block) => {
+    const content = renderBlockContent(block.id);
+    if (!content) return null;
+
+    if (!layoutEditMode) {
+      return <div key={block.id}>{content}</div>;
+    }
+
+    const sizeLabel = block.size === 'compact' ? 'S' : block.size === 'large' ? 'L' : 'M';
+
+    return (
+      <div
+        key={block.id}
+        draggable
+        onDragStart={() => setDragId(block.id)}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); handleLayoutDrop(block.id); }}
+        className={`relative group rounded-xl transition-all ${
+          dragId === block.id ? 'opacity-40 scale-[0.98]' : ''
+        } ${layoutEditMode ? 'ring-2 ring-dashed ring-slate-200 hover:ring-brand-400' : ''}`}
+      >
+        <div className="absolute -top-3 left-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+          <span className="px-2 py-0.5 bg-brand-600 text-white text-[10px] rounded-full font-medium cursor-grab active:cursor-grabbing shadow-sm">
+            ⠿ {block.title}
+          </span>
+          <button onClick={() => cycleSize(block.id)}
+            className="px-1.5 py-0.5 bg-slate-700 text-white text-[10px] rounded-full hover:bg-slate-600 shadow-sm">
+            {sizeLabel}
+          </button>
+          <button onClick={() => moveToCol(block.id, block.col === 'left' ? 'right' : 'left')}
+            className="px-1.5 py-0.5 bg-slate-700 text-white text-[10px] rounded-full hover:bg-slate-600 shadow-sm">
+            {block.col === 'left' ? '→' : '←'}
+          </button>
+        </div>
+        <div className={block.size === 'compact' ? 'max-h-52 overflow-hidden' : ''}>
+          {content}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto">
       {/* Dark Header — spacious */}
@@ -754,916 +1702,42 @@ export default function TicketDetailPage() {
         <ProgressTracker statut={t.statut} />
       </div>
 
-      {/* Content grid — 2 columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* ─── Left column ─── */}
-        <div className="space-y-5">
-
-          {/* ═══ Client info (editable) ═══ */}
-          <EditableSection
-            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
-            editing={editingClient}
-            onEdit={() => setEditingClient(true)}
-            onSave={handleSaveClient}
-            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
-            viewContent={
-              <>
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                    <span className="text-brand-700 font-bold text-sm">
-                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
-                    {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {t.client_tel && (
-                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Phone className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <span className="font-mono text-xs">{t.client_tel}</span>
-                    </a>
-                  )}
-                  {t.client_email && (
-                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 text-sm text-slate-600 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Mail className="w-4 h-4 text-slate-500" />
-                      </div>
-                      <span className="text-xs truncate">{t.client_email}</span>
-                    </a>
-                  )}
-                </div>
-                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
-                  {t.client_tel && (
-                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
-                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
-                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                    </a>
-                  )}
-                  {t.client_tel && (
-                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
-                      <Send className="w-3.5 h-3.5" /> SMS
-                    </a>
-                  )}
-                </div>
-              </>
-            }
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="input-label">Prénom</label>
-                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
-                </div>
-                <div>
-                  <label className="input-label">Nom</label>
-                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
-                </div>
-              </div>
-              <div>
-                <label className="input-label">Téléphone</label>
-                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
-              </div>
-              <div>
-                <label className="input-label">Email</label>
-                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Société</label>
-                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
-              </div>
-            </div>
-          </EditableSection>
-
-          {/* ═══ Device info (editable) ═══ */}
-          <EditableSection
-            title="Appareil" icon={Smartphone} iconBg="bg-brand-50" iconColor="text-brand-600"
-            editing={editingDevice}
-            onEdit={() => setEditingDevice(true)}
-            onSave={handleSaveDevice}
-            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
-            viewContent={
-              <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-                  {[
-                    { label: 'Catégorie', value: t.categorie },
-                    { label: 'Marque', value: t.marque },
-                    { label: 'Modèle', value: t.modele || t.modele_autre || '—' },
-                    { label: 'Panne', value: t.panne },
-                    { label: 'IMEI / N° série', value: t.imei, mono: true },
-                    { label: 'Détail panne', value: t.panne_detail },
-                  ].map(({ label, value, mono }) => (
-                    <div key={label}>
-                      <p className="text-slate-400 text-xs mb-0.5">{label}</p>
-                      <p className={`font-medium text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</p>
-                    </div>
-                  ))}
-                </div>
-                {(t.pin || t.pattern) && (
-                  <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
-                    {t.pin && (
-                      <div>
-                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
-                          <Lock className="w-3 h-3" /> Code PIN
-                        </p>
-                        <p className="text-lg font-bold font-mono text-slate-800 tracking-widest">{t.pin}</p>
-                      </div>
-                    )}
-                    {t.pattern && (
-                      <div>
-                        <p className="text-slate-400 text-xs mb-1 flex items-center gap-1">
-                          <Shield className="w-3 h-3" /> Pattern
-                        </p>
-                        <PatternGrid value={t.pattern} readOnly size={120} />
-                      </div>
-                    )}
-                  </div>
-                )}
-                {t.notes_client && (
-                  <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-800">
-                    <span className="font-semibold">Note client :</span> {t.notes_client}
-                  </div>
-                )}
-              </>
-            }
-          >
-            {/* Edit mode for device */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="input-label">Catégorie</label>
-                <input value={deviceForm.categorie} onChange={e => setDeviceForm(f => ({ ...f, categorie: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Marque</label>
-                <input value={deviceForm.marque} onChange={e => setDeviceForm(f => ({ ...f, marque: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Modèle</label>
-                <input value={deviceForm.modele} onChange={e => setDeviceForm(f => ({ ...f, modele: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Panne</label>
-                <input value={deviceForm.panne} onChange={e => setDeviceForm(f => ({ ...f, panne: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">IMEI</label>
-                <input value={deviceForm.imei} onChange={e => setDeviceForm(f => ({ ...f, imei: e.target.value }))} className="input font-mono" />
-              </div>
-              <div>
-                <label className="input-label">Détail panne</label>
-                <input value={deviceForm.panne_detail} onChange={e => setDeviceForm(f => ({ ...f, panne_detail: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="input-label">Code PIN</label>
-                <input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} />
-              </div>
-              <div>
-                <label className="input-label">Pattern</label>
-                <input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" />
-              </div>
-              <div className="col-span-2 sm:col-span-3">
-                <label className="input-label">Note client</label>
-                <textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} />
-              </div>
-            </div>
-          </EditableSection>
-
-          {/* Dates */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Calendar className="w-4 h-4 text-slate-500" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Dates</h2>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Dépôt</span>
-                <span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Mise à jour</span>
-                <span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span>
-              </div>
-              {t.date_cloture && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Clôture</span>
-                  <span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span>
-                </div>
-              )}
-              {t.date_recuperation && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Récupération</span>
-                  <span className="font-medium text-slate-800">{t.date_recuperation}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ═══ Informations réparation ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-                <StickyNote className="w-4 h-4 text-indigo-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Informations réparation</h2>
-              <span className="text-[10px] text-slate-400 ml-auto">
-                {(() => {
-                  const allNotes = [
-                    ...privateNotes.map(n => ({ source: 'db', ...n })),
-                    ...timelineEntries.filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention'),
-                  ];
-                  return `${allNotes.length} note(s)`;
-                })()}
-              </span>
-            </div>
-
-            {/* Compact notes list */}
-            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-              {/* Notes from notes_tickets table */}
-              {privateNotes.map(note => {
-                const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const textColor = note.important
-                  ? 'text-red-600 font-semibold'
-                  : isTechNote ? 'text-blue-600' : 'text-emerald-600';
-                return (
-                  <div key={`db-${note.id}`} className="flex items-start gap-2 py-1.5">
-                    <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{note.contenu}</span>
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
-                      {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
-                    </span>
-                  </div>
-                );
-              })}
-
-              {/* Notes from notes_internes field */}
-              {timelineEntries
-                .filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention')
-                .map((entry, i) => {
-                  const textColor = entry.type === 'attention'
-                    ? 'text-red-600 font-semibold'
-                    : entry.type === 'internal' ? 'text-blue-600' : 'text-emerald-600';
-                  return (
-                    <div key={`tl-${i}`} className="flex items-start gap-2 py-1.5">
-                      <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
-                      {entry.timestamp && (
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>
-                      )}
-                    </div>
-                  );
-                })
-              }
-
-              {privateNotes.length === 0 && timelineEntries.filter(e => e.type !== 'history').length === 0 && (
-                <p className="text-xs text-slate-400 text-center py-3">Aucune information</p>
-              )}
-            </div>
-          </div>
-
-          {/* Quick print */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Printer className="w-4 h-4 text-slate-500" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Impressions</h2>
-            </div>
-            <button
-              onClick={() => setShowPrintDrawer(true)}
-              className="w-full btn-primary justify-center text-xs"
-            >
-              <Printer className="w-3.5 h-3.5" /> Ouvrir le panneau d'impression
+      {/* Layout toolbar */}
+      <div className="flex items-center gap-2 mb-5">
+        <button
+          onClick={() => setLayoutEditMode(!layoutEditMode)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            layoutEditMode ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+          {layoutEditMode ? 'Mode édition' : 'Personnaliser'}
+        </button>
+        {layoutEditMode && (
+          <>
+            <button onClick={saveLayout} className="btn-primary text-xs px-3 py-1.5">
+              <Save className="w-3.5 h-3.5" /> Sauver
             </button>
-            <p className="text-[10px] text-slate-400 text-center mt-2">5 formats : client, atelier, double, devis, reçu</p>
-          </div>
+            <button onClick={resetLayout} className="btn-ghost text-xs px-3 py-1.5">
+              Réinitialiser
+            </button>
+          </>
+        )}
+      </div>
+
+      {layoutEditMode && (
+        <div className="p-3 mb-5 rounded-lg bg-brand-50 border border-brand-200 text-xs text-brand-700">
+          Glissez-déposez les blocs pour réorganiser. Cliquez S/M/L pour changer la taille, les flèches pour déplacer entre colonnes.
         </div>
+      )}
 
-        {/* ─── Right column ─── */}
+      {/* Content grid — dynamic layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-5">
         <div className="space-y-5">
-          {/* ═══ Tarification (editable) ═══ */}
-          <EditableSection
-            title="Tarification" icon={CreditCard} iconBg="bg-emerald-50" iconColor="text-emerald-600"
-            editing={editingPricing}
-            onEdit={() => setEditingPricing(true)}
-            onSave={handleSavePricing}
-            onCancel={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '' }); setRepairLines(parseRepairLines(t)); }}
-            viewContent={
-              <>
-                {/* Repair lines summary */}
-                <div className="space-y-2 mb-4">
-                  {repairLines.filter(l => l.label).map((line, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm py-1.5 px-3 bg-slate-50 rounded-lg">
-                      <span className="text-slate-700">{line.label}</span>
-                      <span className="font-semibold text-slate-800">{formatPrix(line.prix)}</span>
-                    </div>
-                  ))}
-                  {repairLines.filter(l => l.label).length === 0 && (
-                    <p className="text-sm text-slate-400 italic">Aucune réparation enregistrée</p>
-                  )}
-                </div>
-
-                <div className="space-y-2 pt-3 border-t border-slate-100">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Devis estimé</span>
-                    <span className="font-medium text-slate-800">{t.devis_estime ? formatPrix(t.devis_estime) : '—'}</span>
-                  </div>
-                  {effectiveReduction > 0 && (
-                    <div className="flex justify-between text-sm text-green-600">
-                      <span className="flex items-center gap-1">
-                        <Percent className="w-3 h-3" /> Réduction
-                        {reductionPct > 0 ? ` (${reductionPct}%)` : ''}
-                      </span>
-                      <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
-                    </div>
-                  )}
-                  {t.type_ecran && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">Qualité écran</span>
-                      <span className="font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded text-xs">{t.type_ecran}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">{tvaRate > 0 ? 'Sous-total HT' : 'Tarif final'}</span>
-                    <span className="font-semibold text-slate-800">{formatPrix(subtotalHT)}</span>
-                  </div>
-                  {tvaRate > 0 && (
-                    <>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500">TVA ({tvaRate}%)</span>
-                        <span className="font-medium text-slate-600">{formatPrix(tvaAmount)}</span>
-                      </div>
-                      <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-2">
-                        <span className="text-slate-800">Total TTC</span>
-                        <span className="text-slate-900">{formatPrix(totalTTC)}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Acompte versé</span>
-                    <span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span>
-                  </div>
-                </div>
-
-                {reste > 0 && (
-                  <div className="mt-3 flex items-center justify-between p-3 bg-brand-50 rounded-lg border-2 border-brand-200">
-                    <span className="text-sm font-bold text-brand-700">RESTE À PAYER</span>
-                    <span className="text-lg font-bold text-brand-600">{formatPrix(reste)}</span>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
-                  <button onClick={handleTogglePaye}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      t.paye
-                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    {t.paye ? 'Payé ✓' : 'Marquer payé'}
-                  </button>
-                  <button onClick={handleSendCaisse} className="btn-ghost text-xs gap-1.5">
-                    <Zap className="w-3.5 h-3.5" /> Envoyer en caisse
-                  </button>
-                  <button onClick={() => setShowAccordModal(true)} className="btn-ghost text-xs gap-1.5 text-orange-600 hover:bg-orange-50">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Accord client
-                  </button>
-                </div>
-              </>
-            }
-          >
-            {/* Edit mode for pricing */}
-            <div className="space-y-4">
-              {/* Repair lines */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="input-label mb-0">Lignes de réparation</label>
-                  <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1">
-                    <Plus className="w-3 h-3" /> Ajouter
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {repairLines.map((line, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <input
-                        value={line.label}
-                        onChange={e => updateRepairLine(i, 'label', e.target.value)}
-                        className="input flex-1"
-                        placeholder="Description réparation"
-                      />
-                      <div className="relative w-28 shrink-0">
-                        <input type="number" step="0.01"
-                          value={line.prix}
-                          onChange={e => updateRepairLine(i, 'prix', e.target.value)}
-                          className="input text-right pr-7"
-                          placeholder="0"
-                        />
-                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                      </div>
-                      <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0">
-                        <Minus className="w-3 h-3" />
-                      </button>
-                      <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0">
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      {repairLines.length > 1 && (
-                        <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="text-right mt-2">
-                  <span className="text-xs text-slate-400">Total réparations :</span>
-                  <span className="text-sm font-bold text-slate-800 ml-2">{formatPrix(totalRepairs)}</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="input-label">Devis estimé</label>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                    <div className="relative flex-1">
-                      <input type="number" step="0.01" value={pricingForm.devis_estime}
-                        onChange={e => setPricingForm(f => ({ ...f, devis_estime: e.target.value }))}
-                        className="input text-center pr-7" />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                    </div>
-                    <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                  </div>
-                </div>
-                <div>
-                  <label className="input-label">Tarif final</label>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                    <div className="relative flex-1">
-                      <input type="number" step="0.01" value={pricingForm.tarif_final}
-                        onChange={e => setPricingForm(f => ({ ...f, tarif_final: e.target.value }))}
-                        className="input text-center pr-7" placeholder={totalRepairs || ''} />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                    </div>
-                    <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                  </div>
-                </div>
-                <div>
-                  <label className="input-label">Acompte</label>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                    <div className="relative flex-1">
-                      <input type="number" step="0.01" value={pricingForm.acompte}
-                        onChange={e => setPricingForm(f => ({ ...f, acompte: e.target.value }))}
-                        className="input text-center pr-7" />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                    </div>
-                    <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Reduction */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label>
-                  <input type="number" step="1" min="0" max="100"
-                    value={pricingForm.reduction_pourcentage}
-                    onChange={e => setPricingForm(f => ({ ...f, reduction_pourcentage: e.target.value, reduction_montant: '' }))}
-                    className="input" placeholder="0" />
-                </div>
-                <div>
-                  <label className="input-label">Réduction (€)</label>
-                  <div className="relative">
-                    <input type="number" step="0.01"
-                      value={pricingForm.reduction_montant}
-                      onChange={e => setPricingForm(f => ({ ...f, reduction_montant: e.target.value, reduction_pourcentage: '' }))}
-                      className="input pr-7" placeholder="0" />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="input-label">Qualité écran</label>
-                  <select value={pricingForm.type_ecran} onChange={e => setPricingForm(f => ({ ...f, type_ecran: e.target.value }))} className="input">
-                    <option value="">—</option>
-                    <option value="Original">Original (OEM)</option>
-                    <option value="Original reconditionné">Original reconditionné</option>
-                    <option value="Compatible Premium">Compatible Premium</option>
-                    <option value="Compatible">Compatible</option>
-                    <option value="OLED">OLED</option>
-                    <option value="OLED Premium">OLED Premium</option>
-                    <option value="Incell">Incell</option>
-                    <option value="LCD">LCD</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="input-label">Date récupération</label>
-                  <input type="text" value={pricingForm.date_recuperation}
-                    onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))}
-                    className="input" placeholder="Ex: demain 14h, lundi..." />
-                </div>
-              </div>
-            </div>
-          </EditableSection>
-
-          {/* ═══ Changement de statut ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: getStatusConfig(t.statut).color + '20' }}>
-                <ChevronDown className="w-4 h-4" style={{ color: getStatusConfig(t.statut).color }} />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Changer le statut</h2>
-            </div>
-            <select
-              value={t.statut}
-              onChange={e => handleStatusChange(e.target.value)}
-              className="w-full py-3 px-4 text-base font-semibold rounded-xl border-2 transition-colors cursor-pointer appearance-none bg-no-repeat"
-              style={{
-                borderColor: getStatusConfig(t.statut).color,
-                color: getStatusConfig(t.statut).color,
-                backgroundColor: getStatusConfig(t.statut).color + '10',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatusConfig(t.statut).color)}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 12px center',
-                backgroundSize: '20px',
-              }}
-            >
-              {STATUTS.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* ═══ Centre de notifications ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-                <Zap className="w-4 h-4 text-indigo-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Centre de notifications</h2>
-            </div>
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {historiqueEntries.map(h => {
-                const styles = {
-                  statut: { dot: 'bg-blue-500', color: 'text-blue-700' },
-                  note_privee: { dot: 'bg-amber-400', color: 'text-amber-700' },
-                  note_publique: { dot: 'bg-emerald-500', color: 'text-emerald-700' },
-                  message: { dot: 'bg-violet-500', color: 'text-violet-700' },
-                  alerte: { dot: 'bg-red-500', color: 'text-red-700' },
-                };
-                const s = styles[h.type] || { dot: 'bg-slate-400', color: 'text-slate-600' };
-                return (
-                  <div key={h.id} className="flex gap-3 items-start text-sm py-2 px-2 rounded-lg hover:bg-slate-50 transition-colors">
-                    <div className={`w-2.5 h-2.5 rounded-full ${s.dot} mt-1.5 shrink-0`} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`${s.color} text-sm`}>{h.contenu}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {h.date_creation ? new Date(h.date_creation).toLocaleString('fr-FR') : ''}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-              {historiqueEntries.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-4">Aucun historique</p>
-              )}
-            </div>
-          </div>
-
-          {/* ═══ Assignation technicien ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-                  <UserCheck className="w-4 h-4 text-violet-600" />
-                </div>
-                <h2 className="text-sm font-semibold text-slate-800">Assignation</h2>
-              </div>
-              {isTech && !editingAssign && (
-                <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
-                  <Edit3 className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {isTech && editingAssign && (
-                <button onClick={() => setEditingAssign(false)} className="btn-ghost text-xs px-2.5 py-1.5">
-                  <X className="w-3.5 h-3.5" /> Fermer
-                </button>
-              )}
-            </div>
-
-            {/* Tech view: read-only by default */}
-            {isTech && !editingAssign ? (
-              <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50 rounded-lg">
-                {(() => {
-                  const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
-                  return assignedMember ? (
-                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
-                  ) : null;
-                })()}
-                <span className="text-sm font-medium text-slate-800">{t.technicien_assigne || 'Non assigné'}</span>
-              </div>
-            ) : (
-              /* Accueil view OR tech edit mode: dropdown */
-              <div>
-                {t.technicien_assigne && !editingAssign ? (
-                  /* Already assigned: show name + edit button */
-                  <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-lg">
-                    <div className="flex items-center gap-2.5">
-                      {(() => {
-                        const assignedMember = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
-                        return assignedMember ? (
-                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: assignedMember.couleur || '#94A3B8' }} />
-                        ) : null;
-                      })()}
-                      <span className="text-sm font-medium text-slate-800">{t.technicien_assigne}</span>
-                    </div>
-                    <button onClick={() => setEditingAssign(true)} className="btn-ghost p-1.5" title="Modifier">
-                      <Edit3 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  /* Not assigned or editing: show dropdown */
-                  <div>
-                    <label className="input-label">Technicien assigné</label>
-                    {teamMembers.length > 0 ? (
-                      <select
-                        value={t.technicien_assigne || ''}
-                        onChange={async (e) => {
-                          const nom = e.target.value;
-                          if (!nom) return;
-                          setPricingForm(f => ({ ...f, technicien_assigne: nom }));
-                          try {
-                            await api.updateTicket(id, { technicien_assigne: nom });
-                            await loadTicket();
-                            toast.success(`Assigné à ${nom}`);
-                            setEditingAssign(false);
-                          } catch { toast.error('Erreur assignation'); }
-                        }}
-                        className="input"
-                      >
-                        <option value="">-- Choisir un technicien --</option>
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={pricingForm.technicien_assigne}
-                        onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))}
-                        className="input"
-                        placeholder="Nom du technicien"
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {t.personne_charge && (
-              <div className="mt-3 p-2.5 bg-slate-50 rounded-lg">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">Prise en charge</p>
-                <p className="text-sm font-medium text-slate-800">{t.personne_charge}</p>
-              </div>
-            )}
-          </div>
-
-          {/* ═══ Message Composer ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-                  <MessageSquare className="w-4 h-4 text-green-600" />
-                </div>
-                <h2 className="text-sm font-semibold text-slate-800">Messages client</h2>
-              </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                {t.msg_whatsapp ? <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-600">WA</span> : null}
-                {t.msg_sms ? <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">SMS</span> : null}
-                {t.msg_email ? <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">Email</span> : null}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {MESSAGE_TEMPLATES.map(tmpl => (
-                <button
-                  key={tmpl.key}
-                  onClick={() => handleGenerateMessage(tmpl.key)}
-                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    selectedTemplate === tmpl.key
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {tmpl.label}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              value={messageText}
-              onChange={e => setMessageText(e.target.value)}
-              placeholder="Sélectionnez un modèle ou tapez votre message..."
-              rows={4}
-              className="input resize-none mb-3"
-              disabled={messageLoading}
-            />
-
-            <div className="flex flex-wrap gap-2">
-              {t.client_tel && (
-                <button onClick={handleSendWhatsApp} disabled={!messageText} className="btn-whatsapp text-xs">
-                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                </button>
-              )}
-              {t.client_tel && (
-                <button onClick={handleSendSMS} disabled={!messageText} className="btn-secondary text-xs">
-                  <Send className="w-3.5 h-3.5" /> SMS
-                </button>
-              )}
-              {t.client_email && (
-                <button onClick={handleSendEmail} disabled={!messageText} className="btn-ghost text-xs border border-slate-200">
-                  <Mail className="w-3.5 h-3.5" /> Email
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* ═══ Fidélité (accueil only) ═══ */}
-          {t.client_id && !isTech && <FideliteCard clientId={t.client_id} />}
-
-          {/* ═══ Téléphone de prêt ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                <PhoneCall className="w-4 h-4 text-amber-600" />
-              </div>
-              <h2 className="text-sm font-semibold text-slate-800">Téléphone de prêt</h2>
-            </div>
-            {t.telephone_pret ? (
-              <div className="space-y-2">
-                <div className={`p-3 rounded-lg border ${t.telephone_pret_rendu ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-slate-800">{t.telephone_pret}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                      t.telephone_pret_rendu
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {t.telephone_pret_rendu ? 'Récupéré' : 'En prêt'}
-                    </span>
-                  </div>
-                  {t.telephone_pret_imei && (
-                    <p className="text-xs text-slate-500 font-mono mt-1">IMEI : {t.telephone_pret_imei}</p>
-                  )}
-                </div>
-                {!t.telephone_pret_rendu && (
-                  <button
-                    onClick={async () => {
-                      await api.updateTicket(id, { telephone_pret_rendu: 1 });
-                      await loadTicket();
-                      toast.success('Téléphone de prêt récupéré');
-                    }}
-                    className="btn-ghost text-xs w-full justify-center text-amber-600 hover:bg-amber-50"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Marquer comme récupéré
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-xs text-slate-400 italic">Aucun téléphone de prêt</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder="Modèle du prêt"
-                    id="pret-modele"
-                    className="input text-xs"
-                  />
-                  <input
-                    type="text"
-                    placeholder="IMEI (optionnel)"
-                    id="pret-imei"
-                    className="input text-xs font-mono"
-                  />
-                </div>
-                <button
-                  onClick={async () => {
-                    const modele = document.getElementById('pret-modele')?.value;
-                    if (!modele) return;
-                    const imei = document.getElementById('pret-imei')?.value || '';
-                    await api.updateTicket(id, { telephone_pret: modele, telephone_pret_imei: imei });
-                    await loadTicket();
-                    toast.success('Téléphone de prêt enregistré');
-                  }}
-                  className="btn-ghost text-xs w-full justify-center"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Enregistrer un prêt
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* ═══ Notes & Timeline ═══ */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                  <FileText className="w-4 h-4 text-amber-600" />
-                </div>
-                <h2 className="text-sm font-semibold text-slate-800">Notes & Historique</h2>
-              </div>
-              <button onClick={handleAddAttention} className="btn-ghost text-xs gap-1 text-red-500 hover:bg-red-50" title="Ajouter flag attention">
-                <Flag className="w-3.5 h-3.5" /> Attention
-              </button>
-            </div>
-
-            {/* Add note input */}
-            <div className="flex gap-2 mb-4">
-              <div className="flex-1 flex gap-2">
-                <button
-                  onClick={() => setNotePrivate(!notePrivate)}
-                  className={`shrink-0 p-2.5 rounded-lg border transition-colors ${
-                    notePrivate
-                      ? 'bg-slate-50 border-slate-200 text-slate-500'
-                      : 'bg-blue-50 border-blue-200 text-blue-500'
-                  }`}
-                  title={notePrivate ? 'Note interne' : 'Note visible client'}
-                >
-                  {notePrivate ? <Lock className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-                <input
-                  type="text"
-                  value={noteText}
-                  onChange={e => setNoteText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddNote()}
-                  placeholder={notePrivate ? 'Note interne...' : 'Note visible par le client...'}
-                  className="input flex-1"
-                />
-              </div>
-              <button onClick={handleAddNote} className="btn-primary px-3">
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Timeline with vertical line */}
-            {timelineEntries.length > 0 && (
-              <div className="relative max-h-80 overflow-y-auto pl-4">
-                {/* Vertical line */}
-                <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" />
-
-                <div className="space-y-0.5">
-                  {timelineEntries.map((entry, i) => {
-                    const styles = {
-                      internal: { dot: 'bg-slate-400', bg: 'hover:bg-slate-50', icon: Lock, textColor: 'text-slate-600', label: 'Interne' },
-                      client: { dot: 'bg-blue-500', bg: 'hover:bg-blue-50/50', icon: Eye, textColor: 'text-blue-700', label: 'Client' },
-                      attention: { dot: 'bg-red-500 ring-2 ring-red-200', bg: 'bg-red-50/50', icon: AlertTriangle, textColor: 'text-red-700', label: 'Attention' },
-                      history: { dot: 'bg-brand-400', bg: 'hover:bg-slate-50', icon: Clock, textColor: 'text-slate-500', label: 'Historique' },
-                    };
-                    const s = styles[entry.type];
-                    return (
-                      <div key={i} className={`relative flex items-start gap-3 py-2 px-2 rounded-lg transition-colors ${s.bg}`}>
-                        {/* Dot on the line */}
-                        <div className={`absolute -left-4 top-3.5 w-2.5 h-2.5 rounded-full ${s.dot} z-10`} />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${s.textColor}`}>{entry.text}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {entry.timestamp && (
-                              <span className="text-[10px] text-slate-400">{entry.timestamp}</span>
-                            )}
-                            <span className={`text-[9px] font-medium uppercase tracking-wider ${
-                              entry.type === 'attention' ? 'text-red-400' :
-                              entry.type === 'client' ? 'text-blue-400' :
-                              entry.type === 'history' ? 'text-brand-400' : 'text-slate-400'
-                            }`}>{s.label}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Danger zone */}
-          <div className="card p-5 border-red-100">
-            <button
-              onClick={async () => {
-                if (confirm('Supprimer ce ticket définitivement ?')) {
-                  await api.deleteTicket(id);
-                  navigate(basePath);
-                }
-              }}
-              className="btn-danger w-full text-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Supprimer le ticket
-            </button>
-          </div>
+          {blocks.filter(b => b.col === 'left').sort((a, b) => a.order - b.order).map(renderBlock)}
+        </div>
+        <div className="space-y-5">
+          {blocks.filter(b => b.col === 'right').sort((a, b) => a.order - b.order).map(renderBlock)}
         </div>
       </div>
       </div>
