@@ -982,66 +982,37 @@ export default function TicketDetailPage() {
               </span>
             </div>
 
-            {/* Legend */}
-            <div className="flex items-center gap-3 mb-3 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> Technicien</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Accueil</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Important</span>
-            </div>
-
-            {/* Combined notes list: notes_tickets + notes_internes (INTERNE/CLIENT) */}
-            <div className="space-y-2 max-h-80 overflow-y-auto">
+            {/* Compact notes list */}
+            <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
               {/* Notes from notes_tickets table */}
               {privateNotes.map(note => {
                 const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const isImportant = note.important;
-                const colors = isImportant
-                  ? 'bg-red-50 border-red-200 border-l-red-500'
-                  : isTechNote
-                    ? 'bg-blue-50 border-blue-200 border-l-blue-500'
-                    : 'bg-emerald-50 border-emerald-200 border-l-emerald-500';
-                const dotColor = isImportant ? 'bg-red-500' : isTechNote ? 'bg-blue-500' : 'bg-emerald-500';
-                const labelText = isImportant ? 'Important' : isTechNote ? 'Technicien' : 'Accueil';
-                const labelColor = isImportant ? 'text-red-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                const textColor = note.important
+                  ? 'text-red-600 font-semibold'
+                  : isTechNote ? 'text-blue-600' : 'text-emerald-600';
                 return (
-                  <div key={`db-${note.id}`} className={`p-3 rounded-lg border border-l-4 text-sm ${colors}`}>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
-                      <span className={`text-[10px] font-semibold ${labelColor}`}>{labelText}</span>
-                      <span className="text-[10px] text-slate-300 ml-auto">
-                        {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-700">{note.contenu}</p>
-                    <span className="text-[10px] text-slate-400">{note.auteur}</span>
+                  <div key={`db-${note.id}`} className="flex items-start gap-2 py-1.5">
+                    <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{note.contenu}</span>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
+                      {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
+                    </span>
                   </div>
                 );
               })}
 
-              {/* Notes from notes_internes field (INTERNE / CLIENT / ATTENTION) */}
+              {/* Notes from notes_internes field */}
               {timelineEntries
                 .filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention')
                 .map((entry, i) => {
-                  const isImportant = entry.type === 'attention';
-                  const isTechNote = entry.type === 'internal';
-                  const colors = isImportant
-                    ? 'bg-red-50 border-red-200 border-l-red-500'
-                    : isTechNote
-                      ? 'bg-blue-50 border-blue-200 border-l-blue-500'
-                      : 'bg-emerald-50 border-emerald-200 border-l-emerald-500';
-                  const dotColor = isImportant ? 'bg-red-500' : isTechNote ? 'bg-blue-500' : 'bg-emerald-500';
-                  const labelText = isImportant ? 'Important' : isTechNote ? 'Note interne' : 'Note client';
-                  const labelColor = isImportant ? 'text-red-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                  const textColor = entry.type === 'attention'
+                    ? 'text-red-600 font-semibold'
+                    : entry.type === 'internal' ? 'text-blue-600' : 'text-emerald-600';
                   return (
-                    <div key={`tl-${i}`} className={`p-3 rounded-lg border border-l-4 text-sm ${colors}`}>
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
-                        <span className={`text-[10px] font-semibold ${labelColor}`}>{labelText}</span>
-                        {entry.timestamp && (
-                          <span className="text-[10px] text-slate-300 ml-auto">{entry.timestamp}</span>
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-700">{entry.text}</p>
+                    <div key={`tl-${i}`} className="flex items-start gap-2 py-1.5">
+                      <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
+                      {entry.timestamp && (
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>
+                      )}
                     </div>
                   );
                 })
