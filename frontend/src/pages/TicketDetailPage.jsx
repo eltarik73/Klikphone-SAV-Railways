@@ -164,8 +164,9 @@ export default function TicketDetailPage() {
         reduction_pourcentage: data.reduction_pourcentage || '',
       });
       setRepairLines(parseRepairLines(data));
-      // Show attention flag from dedicated field or notes
+      // Show attention flag from dedicated field, notes, or important private notes
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
+      // Will also check privateNotes below
     } catch (err) {
       console.error(err);
     } finally {
@@ -717,21 +718,36 @@ export default function TicketDetailPage() {
       )}
 
       <div className="px-4 sm:px-6 lg:px-8">
-      {/* Attention card — subtle */}
-      {showAttention && (
-        <div className="flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200 shadow-sm animate-in">
-          <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5 text-white" />
+      {/* Attention card — shows when attention field set OR important private notes exist */}
+      {(() => {
+        const importantNotes = privateNotes.filter(n => n.important);
+        const hasAttention = showAttention || importantNotes.length > 0;
+        if (!hasAttention) return null;
+        return (
+          <div className="flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200 shadow-sm animate-in">
+            <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1 min-w-0 space-y-1">
+              <p className="text-sm font-bold text-red-800">Note importante</p>
+              {t.attention && (
+                <p className="text-sm text-red-700">{t.attention}</p>
+              )}
+              {importantNotes.map(note => (
+                <p key={note.id} className="text-sm text-red-700">
+                  <span className="font-semibold">{note.auteur} :</span> {note.contenu}
+                </p>
+              ))}
+              {!t.attention && importantNotes.length === 0 && (
+                <p className="text-sm text-red-700">Ce ticket nécessite une attention particulière</p>
+              )}
+            </div>
+            <button onClick={() => setShowAttention(false)} className="shrink-0 p-1 rounded-lg text-red-300 hover:text-red-600 hover:bg-red-100 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-red-800">Note importante</p>
-            <p className="text-sm text-red-700 mt-0.5">{t.attention || 'Ce ticket nécessite une attention particulière'}</p>
-          </div>
-          <button onClick={() => setShowAttention(false)} className="shrink-0 p-1 rounded-lg text-red-300 hover:text-red-600 hover:bg-red-100 transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Progress tracker */}
       <div className="card p-5 mb-6">
