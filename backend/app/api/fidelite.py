@@ -23,28 +23,26 @@ def _ensure_tables():
     global _table_checked
     if _table_checked:
         return
-    stmts = [
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
-        """CREATE TABLE IF NOT EXISTS fidelite_historique (
-            id SERIAL PRIMARY KEY,
-            client_id INTEGER REFERENCES clients(id),
-            ticket_id INTEGER REFERENCES tickets(id),
-            type TEXT NOT NULL,
-            points INTEGER NOT NULL,
-            description TEXT,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
-    ]
-    for stmt in stmts:
-        try:
-            with get_cursor() as cur:
-                cur.execute(stmt)
-        except Exception as e:
-            print(f"Warning fidelite migration: {e}")
-    _table_checked = True
+    try:
+        with get_cursor() as cur:
+            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS fidelite_historique (
+                    id SERIAL PRIMARY KEY,
+                    client_id INTEGER REFERENCES clients(id),
+                    ticket_id INTEGER REFERENCES tickets(id),
+                    type TEXT NOT NULL,
+                    points INTEGER NOT NULL,
+                    description TEXT,
+                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE")
+            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT")
+        _table_checked = True
+    except Exception as e:
+        print(f"Warning fidelite tables: {e}")
 
 
 def _get_param(cur, key: str, default: str = "") -> str:
