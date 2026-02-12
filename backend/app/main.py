@@ -126,6 +126,53 @@ async def health_db():
         return {"status": "error", "db": str(e)}
 
 
+@app.get("/health/migrate")
+async def health_migrate():
+    """Diagnostic: run each migration individually and report results."""
+    from app.database import get_cursor
+    stmts = [
+        ("historique_table", """CREATE TABLE IF NOT EXISTS historique (
+            id SERIAL PRIMARY KEY,
+            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+            type TEXT DEFAULT 'statut',
+            contenu TEXT,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""),
+        ("attention_col", "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT"),
+        ("chat_messages", """CREATE TABLE IF NOT EXISTS chat_messages (
+            id SERIAL PRIMARY KEY,
+            sender TEXT NOT NULL,
+            recipient TEXT DEFAULT 'all',
+            message TEXT NOT NULL,
+            is_private BOOLEAN DEFAULT FALSE,
+            read_by TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""),
+        ("points_fidelite", "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0"),
+        ("total_depense", "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0"),
+        ("fidelite_historique", """CREATE TABLE IF NOT EXISTS fidelite_historique (
+            id SERIAL PRIMARY KEY,
+            client_id INTEGER REFERENCES clients(id),
+            ticket_id INTEGER REFERENCES tickets(id),
+            type TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            description TEXT,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )"""),
+        ("grattage_fait", "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE"),
+        ("grattage_gain", "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT"),
+    ]
+    results = {}
+    for name, sql in stmts:
+        try:
+            with get_cursor() as cur:
+                cur.execute(sql)
+            results[name] = "OK"
+        except Exception as e:
+            results[name] = f"ERROR: {e}"
+    return results
+
+
 @app.get("/")
 async def root():
     return {
