@@ -946,10 +946,19 @@ export default function TicketDetailPage() {
           {/* ═══ Informations réparation ═══ */}
           <div className="card p-5">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                <StickyNote className="w-4 h-4 text-slate-600" />
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <StickyNote className="w-4 h-4 text-indigo-600" />
               </div>
               <h2 className="text-sm font-semibold text-slate-800">Informations réparation</h2>
+              <span className="text-[10px] text-slate-400 ml-auto">
+                {(() => {
+                  const allNotes = [
+                    ...privateNotes.map(n => ({ source: 'db', ...n })),
+                    ...timelineEntries.filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention'),
+                  ];
+                  return `${allNotes.length} note(s)`;
+                })()}
+              </span>
             </div>
 
             {/* Legend */}
@@ -959,59 +968,65 @@ export default function TicketDetailPage() {
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> Important</span>
             </div>
 
-            {/* Notes list */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            {/* Combined notes list: notes_tickets + notes_internes (INTERNE/CLIENT) */}
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {/* Notes from notes_tickets table */}
               {privateNotes.map(note => {
                 const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const noteColors = note.important
+                const isImportant = note.important;
+                const colors = isImportant
                   ? 'bg-red-50 border-red-200 border-l-red-500'
                   : isTechNote
                     ? 'bg-blue-50 border-blue-200 border-l-blue-500'
                     : 'bg-emerald-50 border-emerald-200 border-l-emerald-500';
-                const dotColor = note.important ? 'bg-red-500' : isTechNote ? 'bg-blue-500' : 'bg-emerald-500';
-                const labelColor = note.important ? 'text-red-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                const dotColor = isImportant ? 'bg-red-500' : isTechNote ? 'bg-blue-500' : 'bg-emerald-500';
+                const labelText = isImportant ? 'Important' : isTechNote ? 'Technicien' : 'Accueil';
+                const labelColor = isImportant ? 'text-red-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
                 return (
-                  <div key={note.id} className={`p-3 rounded-lg border border-l-4 text-sm ${noteColors}`}>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
-                          {note.important && (
-                            <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Important</span>
-                          )}
-                          <span className={`text-[10px] font-semibold ${labelColor}`}>
-                            {isTechNote ? 'Technicien' : 'Accueil'}
-                          </span>
-                        </div>
-                        <p className="text-sm text-slate-700">{note.contenu}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] text-slate-400 font-medium">{note.auteur}</span>
-                          <span className="text-[10px] text-slate-300">
-                            {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-0.5 shrink-0">
-                        <button
-                          onClick={() => handleToggleNoteImportant(note.id, note.important)}
-                          className="p-1 rounded hover:bg-white/80 transition-colors"
-                          title="Marquer important"
-                        >
-                          <AlertTriangle className={`w-3 h-3 ${note.important ? 'text-red-500' : 'text-slate-300'}`} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteNote(note.id)}
-                          className="p-1 rounded hover:bg-red-50 transition-colors"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="w-3 h-3 text-red-300 hover:text-red-500" />
-                        </button>
-                      </div>
+                  <div key={`db-${note.id}`} className={`p-3 rounded-lg border border-l-4 text-sm ${colors}`}>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
+                      <span className={`text-[10px] font-semibold ${labelColor}`}>{labelText}</span>
+                      <span className="text-[10px] text-slate-300 ml-auto">
+                        {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR') : ''}
+                      </span>
                     </div>
+                    <p className="text-sm text-slate-700">{note.contenu}</p>
+                    <span className="text-[10px] text-slate-400">{note.auteur}</span>
                   </div>
                 );
               })}
-              {privateNotes.length === 0 && (
+
+              {/* Notes from notes_internes field (INTERNE / CLIENT / ATTENTION) */}
+              {timelineEntries
+                .filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention')
+                .map((entry, i) => {
+                  const isImportant = entry.type === 'attention';
+                  const isTechNote = entry.type === 'internal';
+                  const colors = isImportant
+                    ? 'bg-red-50 border-red-200 border-l-red-500'
+                    : isTechNote
+                      ? 'bg-blue-50 border-blue-200 border-l-blue-500'
+                      : 'bg-emerald-50 border-emerald-200 border-l-emerald-500';
+                  const dotColor = isImportant ? 'bg-red-500' : isTechNote ? 'bg-blue-500' : 'bg-emerald-500';
+                  const labelText = isImportant ? 'Important' : isTechNote ? 'Note interne' : 'Note client';
+                  const labelColor = isImportant ? 'text-red-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                  return (
+                    <div key={`tl-${i}`} className={`p-3 rounded-lg border border-l-4 text-sm ${colors}`}>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
+                        <span className={`text-[10px] font-semibold ${labelColor}`}>{labelText}</span>
+                        {entry.timestamp && (
+                          <span className="text-[10px] text-slate-300 ml-auto">{entry.timestamp}</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-700">{entry.text}</p>
+                    </div>
+                  );
+                })
+              }
+
+              {privateNotes.length === 0 && timelineEntries.filter(e => e.type !== 'history').length === 0 && (
                 <p className="text-xs text-slate-400 text-center py-3">Aucune information</p>
               )}
             </div>
