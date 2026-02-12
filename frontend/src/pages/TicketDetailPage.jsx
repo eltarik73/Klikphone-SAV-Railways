@@ -545,19 +545,8 @@ export default function TicketDetailPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Attention Banner */}
-      {showAttention && (
-        <div className="bg-red-600 text-white px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span className="text-sm font-semibold">ATTENTION : {t.attention || 'Ce ticket nécessite une attention particulière'}</span>
-          <button onClick={() => setShowAttention(false)} className="ml-auto p-1 hover:bg-white/20 rounded">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Dark Header — spacious */}
-      <div className={`bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 ${showAttention ? '' : '-mt-4 sm:-mt-6 lg:-mt-8'} mb-6`}>
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
         <div className="max-w-7xl mx-auto">
           {/* Top row: back button */}
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors mb-5 -ml-1">
@@ -728,6 +717,22 @@ export default function TicketDetailPage() {
       )}
 
       <div className="px-4 sm:px-6 lg:px-8">
+      {/* Attention card — subtle */}
+      {showAttention && (
+        <div className="flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200 shadow-sm animate-in">
+          <div className="w-10 h-10 rounded-full bg-red-500 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-red-800">Note importante</p>
+            <p className="text-sm text-red-700 mt-0.5">{t.attention || 'Ce ticket nécessite une attention particulière'}</p>
+          </div>
+          <button onClick={() => setShowAttention(false)} className="shrink-0 p-1 rounded-lg text-red-300 hover:text-red-600 hover:bg-red-100 transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Progress tracker */}
       <div className="card p-5 mb-6">
         <ProgressTracker statut={t.statut} />
