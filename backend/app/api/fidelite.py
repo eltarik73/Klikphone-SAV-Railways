@@ -16,33 +16,8 @@ from app.database import get_cursor
 
 router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
 
-_table_checked = False
 
-
-def _ensure_tables():
-    global _table_checked
-    if _table_checked:
-        return
-    try:
-        with get_cursor() as cur:
-            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0")
-            cur.execute("ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0")
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS fidelite_historique (
-                    id SERIAL PRIMARY KEY,
-                    client_id INTEGER REFERENCES clients(id),
-                    ticket_id INTEGER REFERENCES tickets(id),
-                    type TEXT NOT NULL,
-                    points INTEGER NOT NULL,
-                    description TEXT,
-                    date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE")
-            cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT")
-        _table_checked = True
-    except Exception as e:
-        print(f"Warning fidelite tables: {e}")
+# Tables are created by lifespan migration in main.py at startup.
 
 
 def _get_param(cur, key: str, default: str = "") -> str:
@@ -69,7 +44,7 @@ class UtiliserRequest(BaseModel):
 @router.post("/crediter")
 async def crediter_points(data: CrediterRequest):
     """Crédite les points quand un ticket est payé."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         pts_par_euro = int(_get_param(cur, "fidelite_points_par_euro", "10"))
         fidelite_active = _get_param(cur, "fidelite_active", "1")
@@ -126,7 +101,7 @@ async def crediter_points(data: CrediterRequest):
 @router.post("/utiliser")
 async def utiliser_points(data: UtiliserRequest):
     """Utilise des points pour une récompense."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         palier_film = int(_get_param(cur, "fidelite_palier_film", "1000"))
         palier_reduction = int(_get_param(cur, "fidelite_palier_reduction", "5000"))
@@ -166,7 +141,7 @@ async def utiliser_points(data: UtiliserRequest):
 @router.get("/{client_id}")
 async def get_fidelite(client_id: int):
     """Récupère les infos fidélité d'un client."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         fidelite_active = _get_param(cur, "fidelite_active", "1")
         palier_film = int(_get_param(cur, "fidelite_palier_film", "1000"))
@@ -225,7 +200,7 @@ async def get_fidelite(client_id: int):
 @router.get("/ticket/{ticket_code}")
 async def get_fidelite_by_ticket(ticket_code: str):
     """Récupère les infos fidélité à partir d'un code ticket (pour suivi public)."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         cur.execute("SELECT client_id FROM tickets WHERE ticket_code = %s", (ticket_code,))
         row = cur.fetchone()
@@ -243,7 +218,7 @@ async def get_fidelite_by_ticket(ticket_code: str):
 @router.get("/grattage/{ticket_code}")
 async def get_grattage(ticket_code: str):
     """Vérifie l'état du grattage pour un ticket."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         grattage_actif = _get_param(cur, "grattage_actif", "1")
         if grattage_actif == "0":
@@ -274,7 +249,7 @@ async def get_grattage(ticket_code: str):
 @router.post("/grattage/{ticket_code}")
 async def gratter(ticket_code: str):
     """Effectue le grattage d'un ticket."""
-    _ensure_tables()
+
     with get_cursor() as cur:
         grattage_actif = _get_param(cur, "grattage_actif", "1")
         if grattage_actif == "0":
