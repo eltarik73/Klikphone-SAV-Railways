@@ -58,6 +58,18 @@
     @apply block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5;
   }
 
+  /* ─── Depot form — tablet-optimized ─── */
+  .depot-form .input {
+    @apply px-5 py-4 text-base rounded-xl;
+    font-size: 16px; /* prevents iOS auto-zoom */
+  }
+  .depot-form .input-label {
+    @apply text-sm mb-2;
+  }
+  .depot-form select.input {
+    font-size: 16px;
+  }
+
   /* ─── Badges ─── */
   .badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;

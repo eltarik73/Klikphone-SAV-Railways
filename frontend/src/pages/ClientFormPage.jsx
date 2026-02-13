@@ -242,26 +242,26 @@ export default function ClientFormPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30">
-      <div className="max-w-lg mx-auto px-4 py-6">
+      <div className="depot-form w-[90%] lg:max-w-2xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={handleBack} className="btn-ghost p-2">
-            <ArrowLeft className="w-5 h-5" />
+          <button onClick={handleBack} className="btn-ghost p-3">
+            <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-display font-bold text-slate-900">Déposer un appareil</h1>
-            <p className="text-xs text-slate-400">Étape {step + 1} sur {flow.length} — {labels[currentId]}</p>
+            <h1 className="text-xl font-display font-bold text-slate-900">Déposer un appareil</h1>
+            <p className="text-sm text-slate-400">Étape {step + 1} sur {flow.length} — {labels[currentId]}</p>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="flex gap-1 mb-8">
+        <div className="flex gap-1.5 mb-8">
           {flow.map((id, i) => (
             <div key={id} className="flex-1">
-              <div className={`h-1.5 rounded-full transition-all duration-500 ${
+              <div className={`h-2.5 rounded-full transition-all duration-500 ${
                 i < step ? 'bg-brand-500' : i === step ? 'bg-brand-400' : 'bg-slate-200'
               }`} />
-              <p className={`text-[9px] font-medium mt-1 text-center ${
+              <p className={`text-xs font-semibold mt-1.5 text-center ${
                 i <= step ? 'text-brand-600' : 'text-slate-400'
               }`}>{labels[id]}</p>
             </div>
@@ -325,12 +325,12 @@ export default function ClientFormPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-3">
               {categories.map(cat => (
                 <button
                   key={cat}
                   onClick={() => updateForm('categorie', cat)}
-                  className={`p-4 rounded-xl text-sm font-medium border-2 transition-all text-left
+                  className={`p-5 rounded-xl text-base font-semibold border-2 transition-all text-left
                     ${form.categorie === cat
                       ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm shadow-brand-500/10'
                       : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
@@ -450,12 +450,12 @@ export default function ClientFormPage() {
               <>
                 <div>
                   <label className="input-label">Type de panne *</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-3">
                     {pannes.map(p => (
                       <button
                         key={p}
                         onClick={() => updateForm('panne', p)}
-                        className={`p-2.5 rounded-lg text-xs font-medium border-2 transition-all text-left
+                        className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-left
                           ${form.panne === p
                             ? 'border-brand-500 bg-brand-50 text-brand-700'
                             : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
@@ -488,44 +488,44 @@ export default function ClientFormPage() {
 
                 {/* Pièce à commander */}
                 <div className="border-t border-slate-100 pt-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-center gap-3 cursor-pointer">
                     <input type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
-                      className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
-                    <Package className="w-4 h-4 text-amber-600" />
-                    <span className="text-sm font-semibold text-amber-700">Pièce à commander</span>
+                      className="w-6 h-6 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                    <Package className="w-5 h-5 text-amber-600" />
+                    <span className="text-base font-semibold text-amber-700">Pièce à commander</span>
                   </label>
                 </div>
 
                 {pieceACommander && (
-                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 animate-in">
-                    <div className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-                      <Package className="w-3 h-3" /> Détail de la commande
+                  <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-4 animate-in">
+                    <div className="text-sm font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2">
+                      <Package className="w-4 h-4" /> Détail de la commande
                     </div>
                     <div>
-                      <label className="text-xs text-slate-600 font-semibold">Pièce à commander *</label>
+                      <label className="text-sm text-slate-600 font-semibold">Pièce à commander *</label>
                       <input value={pieceNom} onChange={e => setPieceNom(e.target.value)}
                         placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                        className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
                     </div>
                     <div>
-                      <label className="text-xs text-slate-600 font-semibold">Détails / Commentaire</label>
+                      <label className="text-sm text-slate-600 font-semibold">Détails / Commentaire</label>
                       <textarea value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
                         placeholder="Précisions sur la pièce, référence, couleur, capacité..."
                         rows={2}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1 resize-none" />
+                        className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5 resize-none" style={{ fontSize: '16px' }} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="text-xs text-slate-600 font-semibold">Fournisseur</label>
+                        <label className="text-sm text-slate-600 font-semibold">Fournisseur</label>
                         <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
                           placeholder="Ex: Utopya, MobileParts..."
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                          className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
                       </div>
                       <div>
-                        <label className="text-xs text-slate-600 font-semibold">Prix estimé</label>
+                        <label className="text-sm text-slate-600 font-semibold">Prix estimé</label>
                         <input type="number" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
                           placeholder="0.00"
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                          className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
                       </div>
                     </div>
                   </div>
@@ -621,19 +621,19 @@ export default function ClientFormPage() {
 
         {/* Navigation */}
         {!isConfirmation && (
-          <div className="flex justify-between mt-6">
-            <button onClick={handleBack} className="btn-secondary">
-              <ArrowLeft className="w-4 h-4" /> Retour
+          <div className="flex gap-3 mt-6">
+            <button onClick={handleBack} className="btn-secondary flex-1 py-4 text-lg">
+              <ArrowLeft className="w-5 h-5" /> Retour
             </button>
 
             <button
               onClick={handleNext}
               disabled={loading || !canNext()}
-              className={isLastStep ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}
+              className={`flex-[2] py-4 text-lg ${isLastStep ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}`}
             >
               {loading ? 'Envoi...' : isLastStep ? 'Confirmer le dépôt' : 'Suivant'}
-              {!isLastStep && <ArrowRight className="w-4 h-4" />}
-              {isLastStep && <Check className="w-4 h-4" />}
+              {!isLastStep && <ArrowRight className="w-5 h-5" />}
+              {isLastStep && <Check className="w-5 h-5" />}
             </button>
           </div>
         )}

@@ -174,7 +174,7 @@ export default function DepotPage() {
       </div>
 
       <div className="flex-1 flex flex-col">
-        <div className="max-w-lg mx-auto w-full px-4 py-6 flex-1 flex flex-col">
+        <div className="depot-form w-[90%] lg:max-w-2xl mx-auto px-4 py-6 flex-1 flex flex-col">
           {/* Progress bar with circles */}
           {step < 5 && (
             <div className="flex items-center mb-8">
