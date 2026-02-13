@@ -333,7 +333,7 @@ async def chat_ai(msg: AIChatRequest):
     if not api_key:
         raise HTTPException(500, "Cle API Anthropic non configuree. Ajoutez ANTHROPIC_API_KEY dans Configuration ou en variable d'environnement.")
 
-    model = _get_param("ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001"
+    model = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-20250514"
 
     # Role-based tools and prompt
     user_role = msg.role or ""
