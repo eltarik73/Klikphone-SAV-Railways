@@ -8,8 +8,15 @@ import {
   Lock, Shield, FileText, Send, Package,
 } from 'lucide-react';
 
-const STEPS_DEFAULT = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
-const STEPS_COMMANDE = ['Client', 'Appareil', 'Modèle', 'Commande', 'Sécurité', 'Confirmation'];
+// Flow = ordered list of step IDs
+const FLOW_DEFAULT = ['client', 'appareil', 'modele', 'panne', 'securite', 'confirmation'];
+const FLOW_COMMANDE = ['client', 'appareil', 'panne', 'confirmation'];
+
+const LABELS = {
+  client: 'Client', appareil: 'Appareil', modele: 'Modèle',
+  panne: 'Panne', securite: 'Sécurité', confirmation: 'Confirmation',
+};
+const LABELS_COMMANDE = { ...LABELS, panne: 'Commande' };
 
 // Validation helpers
 const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
@@ -38,12 +45,20 @@ export default function ClientFormPage() {
     imei: '',
   });
 
-  // Pièce à commander
+  // Pièce à commander (for regular tickets with piece checkbox)
   const [pieceACommander, setPieceACommander] = useState(false);
   const [pieceNom, setPieceNom] = useState('');
   const [pieceDetails, setPieceDetails] = useState('');
   const [fournisseur, setFournisseur] = useState('');
   const [prixEstime, setPrixEstime] = useState('');
+
+  // ─── Flow logic ──────────────────────────────────────────────
+  const isCommande = form.categorie === 'Commande';
+  const flow = isCommande ? FLOW_COMMANDE : FLOW_DEFAULT;
+  const labels = isCommande ? LABELS_COMMANDE : LABELS;
+  const currentId = flow[step] || 'client';
+  const isLastStep = step === flow.length - 2; // last before confirmation
+  const isConfirmation = currentId === 'confirmation';
 
   const resetForm = () => {
     setForm({
@@ -71,7 +86,7 @@ export default function ClientFormPage() {
 
   // Countdown timer after ticket creation
   useEffect(() => {
-    if (step !== 5 || !createdCode) return;
+    if (!isConfirmation || !createdCode) return;
     setCountdown(10);
     const interval = setInterval(() => {
       setCountdown(prev => {
@@ -84,7 +99,7 @@ export default function ClientFormPage() {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [step, createdCode]);
+  }, [isConfirmation, createdCode]);
 
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
@@ -119,9 +134,6 @@ export default function ClientFormPage() {
     }
   }, [form.marque]);
 
-  const isCommande = form.categorie === 'Commande';
-  const STEPS = isCommande ? STEPS_COMMANDE : STEPS_DEFAULT;
-
   const updateForm = (field, value) => {
     setForm(f => ({ ...f, [field]: value }));
     setErrors(e => ({ ...e, [field]: undefined }));
@@ -129,13 +141,13 @@ export default function ClientFormPage() {
 
   const validateStep = () => {
     const errs = {};
-    if (step === 0) {
+    if (currentId === 'client') {
       if (!form.nom.trim()) errs.nom = 'Le nom est requis';
       if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
-    if (step === 2 && form.imei && !isValidIMEI(form.imei)) {
+    if (currentId === 'modele' && form.imei && !isValidIMEI(form.imei)) {
       errs.imei = 'IMEI invalide (15 chiffres)';
     }
     setErrors(errs);
@@ -188,7 +200,7 @@ export default function ClientFormPage() {
       }
 
       setCreatedCode(result.ticket_code);
-      setStep(5);
+      setStep(flow.length - 1); // go to confirmation
     } catch (err) {
       toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
@@ -197,20 +209,30 @@ export default function ClientFormPage() {
   };
 
   const canNext = () => {
-    if (step === 0) return form.nom && form.telephone;
-    if (step === 1) return form.categorie;
-    if (step === 2) return isCommande || form.marque;
-    if (step === 3) return isCommande ? form.panne_detail.trim() : (form.panne || pieceACommander);
-    if (step === 4) return true;
-    return true;
+    switch (currentId) {
+      case 'client': return form.nom && form.telephone;
+      case 'appareil': return form.categorie;
+      case 'modele': return form.marque;
+      case 'panne': return isCommande ? form.panne_detail.trim() : (form.panne || pieceACommander);
+      case 'securite': return true;
+      default: return true;
+    }
   };
 
   const handleNext = () => {
     if (!validateStep()) return;
-    if (step === 4) {
+    if (isLastStep) {
       handleSubmit();
     } else {
       setStep(s => s + 1);
+    }
+  };
+
+  const handleBack = () => {
+    if (step === 0) {
+      navigate('/');
+    } else {
+      setStep(s => s - 1);
     }
   };
 
@@ -223,31 +245,31 @@ export default function ClientFormPage() {
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)} className="btn-ghost p-2">
+          <button onClick={handleBack} className="btn-ghost p-2">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
             <h1 className="text-lg font-display font-bold text-slate-900">Déposer un appareil</h1>
-            <p className="text-xs text-slate-400">Étape {step + 1} sur {STEPS.length} — {STEPS[step]}</p>
+            <p className="text-xs text-slate-400">Étape {step + 1} sur {flow.length} — {labels[currentId]}</p>
           </div>
         </div>
 
         {/* Progress bar */}
         <div className="flex gap-1 mb-8">
-          {STEPS.map((s, i) => (
-            <div key={i} className="flex-1">
+          {flow.map((id, i) => (
+            <div key={id} className="flex-1">
               <div className={`h-1.5 rounded-full transition-all duration-500 ${
                 i < step ? 'bg-brand-500' : i === step ? 'bg-brand-400' : 'bg-slate-200'
               }`} />
               <p className={`text-[9px] font-medium mt-1 text-center ${
                 i <= step ? 'text-brand-600' : 'text-slate-400'
-              }`}>{s}</p>
+              }`}>{labels[id]}</p>
             </div>
           ))}
         </div>
 
-        {/* Step 0: Client */}
-        {step === 0 && (
+        {/* ═══ Step: Client ═══ */}
+        {currentId === 'client' && (
           <div className="card p-6 space-y-4 animate-in">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
@@ -290,8 +312,8 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 1: Catégorie */}
-        {step === 1 && (
+        {/* ═══ Step: Appareil (catégorie) ═══ */}
+        {currentId === 'appareil' && (
           <div className="card p-6 space-y-4 animate-in">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
@@ -320,8 +342,8 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 2: Marque & Modèle */}
-        {step === 2 && (
+        {/* ═══ Step: Modèle (skipped for Commande) ═══ */}
+        {currentId === 'modele' && (
           <div className="card p-6 space-y-4 animate-in">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
@@ -333,14 +355,8 @@ export default function ClientFormPage() {
               </div>
             </div>
 
-            {isCommande && (
-              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
-                Optionnel pour une commande de pièce
-              </div>
-            )}
-
             <div>
-              <label className="input-label">Marque{isCommande ? '' : ' *'}</label>
+              <label className="input-label">Marque *</label>
               <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
                 <option value="">Sélectionner...</option>
                 {marques.map(m => <option key={m} value={m}>{m}</option>)}
@@ -374,11 +390,11 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 3: Panne / Détail commande */}
-        {step === 3 && (
+        {/* ═══ Step: Panne / Détail commande ═══ */}
+        {currentId === 'panne' && (
           <div className="card p-6 space-y-4 animate-in">
             <div className="flex items-center gap-3 mb-2">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isCommande ? 'bg-amber-50' : 'bg-amber-50'}`}>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
                 {isCommande ? <Package className="w-5 h-5 text-amber-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
               </div>
               <div>
@@ -402,6 +418,7 @@ export default function ClientFormPage() {
                     onChange={e => updateForm('panne_detail', e.target.value)}
                     className="input"
                     placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
+                    autoFocus
                   />
                 </div>
 
@@ -518,8 +535,8 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 4: Sécurité (PIN / Pattern) */}
-        {step === 4 && (
+        {/* ═══ Step: Sécurité (skipped for Commande) ═══ */}
+        {currentId === 'securite' && (
           <div className="card p-6 space-y-5 animate-in">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
@@ -563,8 +580,8 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 5: Confirmation */}
-        {step === 5 && createdCode && (
+        {/* ═══ Step: Confirmation ═══ */}
+        {isConfirmation && createdCode && (
           <div className="card p-8 text-center animate-in">
             <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
               <Check className="w-10 h-10 text-emerald-500" />
@@ -575,7 +592,7 @@ export default function ClientFormPage() {
               <p className="text-4xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
             </div>
             <p className="text-sm text-slate-400 mb-6">
-              Conservez ce code pour suivre l'avancement de votre réparation.
+              Conservez ce code pour suivre l'avancement de votre {isCommande ? 'commande' : 'réparation'}.
             </p>
             {countdown !== null && (
               <div className="mb-6">
@@ -593,7 +610,7 @@ export default function ClientFormPage() {
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
                 className="btn-primary w-full"
               >
-                <Send className="w-4 h-4" /> Suivre ma réparation
+                <Send className="w-4 h-4" /> Suivre ma {isCommande ? 'commande' : 'réparation'}
               </button>
               <button onClick={resetForm} className="btn-secondary w-full">
                 <ArrowLeft className="w-4 h-4" /> Nouveau dépôt
@@ -603,23 +620,20 @@ export default function ClientFormPage() {
         )}
 
         {/* Navigation */}
-        {step < 5 && (
+        {!isConfirmation && (
           <div className="flex justify-between mt-6">
-            <button
-              onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)}
-              className="btn-secondary"
-            >
+            <button onClick={handleBack} className="btn-secondary">
               <ArrowLeft className="w-4 h-4" /> Retour
             </button>
 
             <button
               onClick={handleNext}
               disabled={loading || !canNext()}
-              className={step === 4 ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}
+              className={isLastStep ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}
             >
-              {loading ? 'Envoi...' : step === 4 ? 'Confirmer le dépôt' : 'Suivant'}
-              {step < 4 && <ArrowRight className="w-4 h-4" />}
-              {step === 4 && <Check className="w-4 h-4" />}
+              {loading ? 'Envoi...' : isLastStep ? 'Confirmer le dépôt' : 'Suivant'}
+              {!isLastStep && <ArrowRight className="w-4 h-4" />}
+              {isLastStep && <Check className="w-4 h-4" />}
             </button>
           </div>
         )}
