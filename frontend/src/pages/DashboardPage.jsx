@@ -119,6 +119,17 @@ export default function DashboardPage() {
     }
   };
 
+  const handleInlineTech = async (ticketId, newTech) => {
+    try {
+      await api.updateTicket(ticketId, { technicien_assigne: newTech || null });
+      setTickets(prev => prev.map(t =>
+        t.id === ticketId ? { ...t, technicien_assigne: newTech || null } : t
+      ));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleKpiClick = (filter, idx) => {
     if (activeKpi === idx) {
       setActiveKpi(null);
@@ -449,14 +460,27 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Tech */}
-                <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <div className="flex items-center gap-1.5">
-                    {t.technicien_assigne && getTechColor(t.technicien_assigne) && (
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getTechColor(t.technicien_assigne) }} />
-                    )}
-                    <p className="text-xs text-slate-600 truncate">{t.technicien_assigne || '—'}</p>
-                  </div>
+                {/* Tech — inline dropdown */}
+                <div className="hidden lg:block" onClick={e => e.stopPropagation()}>
+                  <select
+                    value={t.technicien_assigne || ''}
+                    onChange={e => handleInlineTech(t.id, e.target.value)}
+                    className="w-full py-1.5 px-2 text-[11px] font-medium rounded-lg border cursor-pointer appearance-none bg-no-repeat truncate transition-colors"
+                    style={{
+                      borderColor: t.technicien_assigne ? (getTechColor(t.technicien_assigne) || '#94a3b8') : '#e2e8f0',
+                      color: t.technicien_assigne ? '#334155' : '#94a3b8',
+                      backgroundColor: t.technicien_assigne && getTechColor(t.technicien_assigne) ? getTechColor(t.technicien_assigne) + '15' : '#f8fafc',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundPosition: 'right 4px center',
+                      backgroundSize: '12px',
+                      paddingRight: '20px',
+                    }}
+                  >
+                    <option value="">— Aucun</option>
+                    {teamList.map(m => (
+                      <option key={m.id} value={m.nom}>{m.nom}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Statut — inline dropdown */}
