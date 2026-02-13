@@ -117,6 +117,9 @@ export default function TicketDetailPage() {
   // Téléphone de prêt modal
   const [showPretModal, setShowPretModal] = useState(false);
 
+  // Rendu au client — payment modal
+  const [showRenduModal, setShowRenduModal] = useState(false);
+
   // Layout drag & drop
   const [blocks, setBlocks] = useState(INITIAL_BLOCKS);
   const [dragId, setDragId] = useState(null);
@@ -336,15 +339,20 @@ export default function TicketDetailPage() {
   };
 
   const handleStatusChange = async (statut) => {
-    // If changing to "Rendu au client" and there's a loaned phone not returned
-    if (statut === 'Rendu au client' && ticket.telephone_pret && !ticket.telephone_pret_rendu) {
-      setShowPretModal(true);
+    // "Rendu au client" → special flow with modals
+    if (statut === 'Rendu au client') {
+      // Step 1: If there's a loaned phone not returned → show prêt modal first
+      if (ticket.telephone_pret && !ticket.telephone_pret_rendu) {
+        setShowPretModal(true);
+        return;
+      }
+      // Step 2: Show payment modal
+      setShowRenduModal(true);
       return;
     }
     try {
       await api.changeStatus(id, statut);
       await loadTicket();
-
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       toast.error('Erreur changement de statut');
@@ -352,13 +360,35 @@ export default function TicketDetailPage() {
   };
 
   const confirmRenduWithPret = async () => {
+    // Mark phone returned, then show payment modal
     try {
       await api.updateTicket(id, { telephone_pret_rendu: 1 });
-      await api.changeStatus(id, 'Rendu au client');
       setShowPretModal(false);
-      await loadTicket();
+      setShowRenduModal(true);
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
 
-      toast.success('Statut changé + téléphone de prêt récupéré');
+  const handleRenduPaye = async () => {
+    try {
+      await api.updateTicket(id, { paye: 1 });
+      await api.changeStatus(id, 'Rendu au client');
+      await api.changeStatus(id, 'Clôturé');
+      setShowRenduModal(false);
+      await loadTicket();
+      toast.success('Ticket clôturé');
+    } catch (err) {
+      toast.error('Erreur');
+    }
+  };
+
+  const handleRenduNonPaye = async () => {
+    try {
+      await api.changeStatus(id, 'Rendu au client');
+      setShowRenduModal(false);
+      await loadTicket();
+      toast.success('Attention : ticket non payé');
     } catch (err) {
       toast.error('Erreur');
     }
@@ -1296,6 +1326,48 @@ export default function TicketDetailPage() {
                 <button onClick={() => setShowPretModal(false)} className="btn-ghost flex-1">Annuler</button>
                 <button onClick={confirmRenduWithPret} className="btn-primary flex-1">
                   Téléphone récupéré, rendre au client
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Rendu au client — payment modal */}
+      {showRenduModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowRenduModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Rendu au client</h3>
+                  <p className="text-sm text-slate-500">Le client a-t-il réglé ?</p>
+                </div>
+              </div>
+
+              {reste > 0 && (
+                <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl mb-5 text-center">
+                  <p className="text-xs text-emerald-600 font-medium mb-1">Reste à payer</p>
+                  <p className="text-2xl font-extrabold text-emerald-700">{formatPrix(reste)}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <button onClick={handleRenduPaye}
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Oui, payé
+                </button>
+                <button onClick={handleRenduNonPaye}
+                  className="w-full py-3 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold border border-red-200 transition-colors flex items-center justify-center gap-2">
+                  <X className="w-4 h-4" /> Non, pas payé
+                </button>
+                <button onClick={() => setShowRenduModal(false)}
+                  className="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-1">
+                  <ArrowLeft className="w-3.5 h-3.5" /> Annuler
                 </button>
               </div>
             </div>
