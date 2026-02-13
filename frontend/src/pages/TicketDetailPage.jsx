@@ -1253,12 +1253,6 @@ export default function TicketDetailPage() {
                 </div>
               </div>
             )}
-            <button
-              onClick={() => { setShowDeleteModal(true); setDeleteCode(''); setDeleteError(''); }}
-              className="w-full mt-3 py-2.5 px-4 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors flex items-center justify-center gap-2"
-            >
-              <Trash2 className="w-4 h-4" /> Supprimer le ticket
-            </button>
           </div>
         );
 
@@ -1652,6 +1646,16 @@ export default function TicketDetailPage() {
           {blocks.filter(b => b.col === 'right').sort((a, b) => a.order - b.order).map(renderBlock)}
         </div>
       </div>
+      </div>
+
+      {/* Delete link */}
+      <div className="mt-10 mb-4 text-center">
+        <button
+          onClick={() => { setShowDeleteModal(true); setDeleteCode(''); setDeleteError(''); }}
+          className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+        >
+          Supprimer ce ticket
+        </button>
       </div>
 
       {/* Print Drawer */}
