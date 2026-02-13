@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/tickets", tags=["print"])
 
 # URL frontend pour les QR codes de suivi
 _FRONTEND_URL = "https://klikphone-sav-railways-production.up.railway.app"
+_LOGO_URL = f"{_FRONTEND_URL}/logo_k.png"
 
 
 def _get_ticket_full(ticket_id: int) -> dict:
@@ -285,27 +286,24 @@ def _ticket_client_html(t: dict) -> str:
     tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
     horaires = _get_config("horaires", "Lundi-Samedi 10h-19h")
 
-    devis = float(t.get("devis_estime") or 0)
-    prix_supp = float(t.get("prix_supp") or 0)
-    acompte = float(t.get("acompte") or 0)
-    subtotal = devis + prix_supp
+    repair_lines = _parse_repair_lines(t)
+    subtotal = sum(r["prix"] for r in repair_lines)
     reduction = _calc_reduction(t, subtotal)
     total = max(0, subtotal - reduction)
+    acompte = float(t.get("acompte") or 0)
     reste = total - acompte
 
     # Date de récupération
     recup_html = ""
     if t.get("date_recuperation"):
-        recup_html = f'<div class="info-box center" style="margin-top:6px"><div class="bold small">Date de récupération prévue</div><div style="font-size:15px;font-weight:bold">{t["date_recuperation"]}</div></div>'
+        recup_html = f'<div class="info-box center" style="margin-top:6px"><div class="bold small">Date de récupération prévue</div><div style="font-size:15px;font-weight:900">{t["date_recuperation"]}</div></div>'
 
     # Tarification section
     tarif_html = ""
-    if devis > 0 or prix_supp > 0:
+    if repair_lines:
         tarif_inner = ""
-        if devis > 0:
-            tarif_inner += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(devis)} €</span></div>'
-        if t.get("reparation_supp") and prix_supp > 0:
-            tarif_inner += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(prix_supp)} €</span></div>'
+        for r in repair_lines:
+            tarif_inner += f'<div class="row"><span>{r["label"]}</span><span class="val">{_fp(r["prix"])} €</span></div>'
         if reduction > 0:
             red_pct = float(t.get("reduction_pourcentage") or 0)
             label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
@@ -324,7 +322,7 @@ def _ticket_client_html(t: dict) -> str:
 
     return _THERMAL.format(title=f"Ticket Client - {code}") + f"""
 <div class="center">
-  <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
+  <img src="{_LOGO_URL}" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
   <div class="small">Spécialiste Apple & Multimarque</div>
   <div class="small">{adresse}</div>
@@ -491,7 +489,7 @@ body {{ margin:0; padding:0; background:#fff; }}
 
   <!-- LOGO -->
   <div style="text-align:center;margin-bottom:8px;">
-    <img src="/logo_k.png" width="140" style="display:inline-block;" onerror="this.style.display='none'" />
+    <img src="{_LOGO_URL}" width="140" style="display:inline-block;" onerror="this.style.display='none'" />
   </div>
 
   <!-- EN-TÊTE BOUTIQUE -->
@@ -594,10 +592,9 @@ def _devis_html(t: dict) -> str:
     adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
     tva_rate = float(_get_config("tva", "20"))
 
-    devis = float(t.get("devis_estime") or 0)
-    prix_supp = float(t.get("prix_supp") or 0)
+    repair_lines = _parse_repair_lines(t)
+    subtotal_ttc = sum(r["prix"] for r in repair_lines)
     acompte = float(t.get("acompte") or 0)
-    subtotal_ttc = devis + prix_supp
     reduction = _calc_reduction(t, subtotal_ttc)
     total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
@@ -606,24 +603,21 @@ def _devis_html(t: dict) -> str:
     tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
-    if devis > 0:
-        ht = round(devis * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(ht)}€ HT</span></div>'
-    if t.get("reparation_supp") and prix_supp > 0:
-        ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
+    for r in repair_lines:
+        ht = round(r["prix"] * 100 / (100 + tva_rate), 2)
+        lignes += f'<div class="row"><span>{r["label"]}</span><span class="val">{_fp(ht)} € HT</span></div>'
     if reduction > 0:
         red_pct = float(t.get("reduction_pourcentage") or 0)
         label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
         red_ht = round(reduction * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)}€ HT</span></div>'
+        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)} € HT</span></div>'
 
     siret = _get_config("SIRET", "")
     siret_line = f'<div class="small">SIRET: {siret}</div>' if siret else ''
 
     return _THERMAL.format(title=f"Devis - {code}") + f"""
 <div class="center">
-  <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
+  <img src="{_LOGO_URL}" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
   <div class="small">{adresse}</div>
 </div>
@@ -680,10 +674,12 @@ def _recu_html(t: dict) -> str:
     adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
     tva_rate = float(_get_config("tva", "20"))
 
-    tarif = float(t.get("tarif_final") or t.get("devis_estime") or 0)
-    prix_supp = float(t.get("prix_supp") or 0)
+    repair_lines = _parse_repair_lines(t)
+    # For reçu, use tarif_final if available (overrides devis)
+    if t.get("tarif_final") and len(repair_lines) > 0:
+        repair_lines[0]["prix"] = float(t["tarif_final"])
+    subtotal_ttc = sum(r["prix"] for r in repair_lines)
     acompte = float(t.get("acompte") or 0)
-    subtotal_ttc = tarif + prix_supp
     reduction = _calc_reduction(t, subtotal_ttc)
     total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
@@ -692,24 +688,21 @@ def _recu_html(t: dict) -> str:
     tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
-    if tarif > 0:
-        ht = round(tarif * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(ht)}€ HT</span></div>'
-    if t.get("reparation_supp") and prix_supp > 0:
-        ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
+    for r in repair_lines:
+        ht = round(r["prix"] * 100 / (100 + tva_rate), 2)
+        lignes += f'<div class="row"><span>{r["label"]}</span><span class="val">{_fp(ht)} € HT</span></div>'
     if reduction > 0:
         red_pct = float(t.get("reduction_pourcentage") or 0)
         label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
         red_ht = round(reduction * 100 / (100 + tva_rate), 2)
-        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)}€ HT</span></div>'
+        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)} € HT</span></div>'
 
     siret = _get_config("SIRET", "")
     siret_line = f'<div class="small">SIRET: {siret}</div>' if siret else ''
 
     return _THERMAL.format(title=f"Reçu - {code}") + f"""
 <div class="center">
-  <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
+  <img src="{_LOGO_URL}" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
   <div class="small">{adresse}</div>
 </div>
