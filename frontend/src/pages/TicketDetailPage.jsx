@@ -1308,7 +1308,7 @@ export default function TicketDetailPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Dark Header — spacious */}
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 pt-10 sm:pt-12 pb-8 sm:pb-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
         <div className="max-w-7xl mx-auto">
           {/* Top row: back button */}
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors mb-5 -ml-1">
@@ -1318,9 +1318,9 @@ export default function TicketDetailPage() {
 
           <div className="flex flex-col sm:flex-row sm:items-start gap-5">
             {/* Left: ticket info */}
-            <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex-1 min-w-0 space-y-1">
               {/* Ticket code */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-3">
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
                 <button onClick={handleCopyCode} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Copier le code">
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
