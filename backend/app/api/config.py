@@ -168,6 +168,33 @@ async def test_discord(user: dict = Depends(get_current_user)):
     return {"ok": True, "message": msg}
 
 
+@router.get("/message-templates")
+async def get_message_templates(user: dict = Depends(get_current_user)):
+    """Récupère les templates de messages (depuis params ou défaut)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = 'message_templates'")
+        row = cur.fetchone()
+    if row and row["valeur"]:
+        try:
+            return json.loads(row["valeur"])
+        except Exception:
+            pass
+    return []
+
+
+@router.put("/message-templates")
+async def save_message_templates(data: dict, user: dict = Depends(get_current_user)):
+    """Sauvegarde les templates de messages."""
+    templates = data.get("templates", [])
+    val = json.dumps(templates, ensure_ascii=False)
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO params (cle, valeur) VALUES ('message_templates', %s)
+            ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+        """, (val,))
+    return {"ok": True}
+
+
 @router.get("/{cle}")
 async def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé."""

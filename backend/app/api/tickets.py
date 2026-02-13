@@ -444,7 +444,8 @@ async def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         try:
             cur.execute("""
-                SELECT id, auteur, contenu, important, date_creation
+                SELECT id, auteur, contenu, important, date_creation,
+                       COALESCE(type_note, 'note') as type_note
                 FROM notes_tickets
                 WHERE ticket_id = %s
                 ORDER BY date_creation DESC
@@ -501,6 +502,25 @@ async def update_private_note(
                 (important, note_id, ticket_id),
             )
     return {"ok": True}
+
+
+# ─── LOG MESSAGE ENVOYÉ ──────────────────────────────────────────
+@router.post("/{ticket_id}/message-log", response_model=dict)
+async def log_message(
+    ticket_id: int,
+    auteur: str = Query(...),
+    contenu: str = Query(...),
+    canal: str = Query("whatsapp"),
+    user: dict = Depends(get_current_user),
+):
+    """Enregistre un message envoyé (whatsapp/sms/email) dans les notes."""
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
+            VALUES (%s, %s, %s, FALSE, %s) RETURNING id, date_creation
+        """, (ticket_id, auteur, contenu, canal))
+        row = cur.fetchone()
+    return {"id": row["id"], "date_creation": row["date_creation"].isoformat()}
 
 
 # ─── SUPPRESSION ─────────────────────────────────────────────────

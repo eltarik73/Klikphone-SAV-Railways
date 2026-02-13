@@ -5,12 +5,25 @@ import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
-  Key, Bell, Printer, Store, Check, Loader2,
+  Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
   Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
+
+const DEFAULT_MSG_TEMPLATES = [
+  { id: 1, label: "Appareil recu", message: "Bonjour {prenom}, votre {appareil} a bien ete pris en charge sous le numero {code}. Nous vous tiendrons informe de l'avancement. Klikphone 04 79 60 89 22" },
+  { id: 2, label: "Diagnostic en cours", message: "Bonjour {prenom}, le diagnostic de votre {appareil} est en cours. Nous reviendrons vers vous rapidement. Klikphone" },
+  { id: 3, label: "Devis a valider", message: "Bonjour {prenom}, le devis pour votre {appareil} est de {montant} EUR. Merci de nous confirmer votre accord. Klikphone 04 79 60 89 22" },
+  { id: 4, label: "En cours de reparation", message: "Bonjour {prenom}, la reparation de votre {appareil} est en cours. Klikphone" },
+  { id: 5, label: "Attente piece", message: "Bonjour {prenom}, nous sommes en attente d'une piece pour votre {appareil}. Nous vous previendrons des reception. Klikphone" },
+  { id: 6, label: "Appareil pret", message: "Bonjour {prenom}, votre {appareil} est pret ! Vous pouvez venir le recuperer a la boutique. Montant : {montant} EUR. Klikphone 79 Place Saint Leger, Chambery" },
+  { id: 7, label: "Commande arrivee", message: "Bonjour {prenom}, la piece commandee pour votre {appareil} est arrivee. Nous lancons la reparation. Klikphone 04 79 60 89 22" },
+  { id: 8, label: "Non reparable", message: "Bonjour {prenom}, malheureusement votre {appareil} n'est pas reparable. Vous pouvez passer recuperer votre appareil en boutique. Klikphone" },
+  { id: 9, label: "Rappel RDV", message: "Bonjour {prenom}, nous vous rappelons votre rendez-vous demain pour votre {appareil}. Klikphone 79 Place Saint Leger, Chambery" },
+  { id: 10, label: "Personnalise", message: "" },
+];
 
 export default function ConfigPage() {
   const { user } = useAuth();
@@ -30,6 +43,10 @@ export default function ConfigPage() {
   const [adminCode, setAdminCode] = useState('');
   const [adminCodeError, setAdminCodeError] = useState('');
   const [discordTesting, setDiscordTesting] = useState(false);
+
+  // Message templates
+  const [msgTemplates, setMsgTemplates] = useState([]);
+  const [msgSaving, setMsgSaving] = useState(false);
 
   // PIN change
   const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
@@ -98,6 +115,12 @@ export default function ConfigPage() {
 
   useEffect(() => {
     if (activeTab === 'catalog') loadCatalog();
+    if (activeTab === 'messages') {
+      api.getMessageTemplates().then(data => {
+        if (data && data.length > 0) setMsgTemplates(data);
+        else setMsgTemplates(DEFAULT_MSG_TEMPLATES);
+      }).catch(() => setMsgTemplates(DEFAULT_MSG_TEMPLATES));
+    }
   }, [activeTab]);
 
   const handleSaveConfig = async () => {
@@ -298,6 +321,7 @@ export default function ConfigPage() {
     { id: 'general', label: 'Boutique', icon: Store },
     { id: 'team', label: 'Équipe', icon: Users },
     { id: 'catalog', label: 'Catalogue', icon: BookOpen },
+    { id: 'messages', label: 'Messages', icon: MessageCircle },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'fidelite', label: 'Fidélité & Jeu', icon: Star },
     { id: 'security', label: 'Sécurité', icon: Shield },
@@ -654,6 +678,60 @@ export default function ConfigPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Messages tab ═══ */}
+      {activeTab === 'messages' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4" /> Messages predefinis
+            </h2>
+            <p className="text-xs text-slate-400 mb-4">
+              Variables disponibles : {'{prenom}'} {'{nom}'} {'{appareil}'} {'{code}'} {'{montant}'} {'{adresse}'} {'{tel_boutique}'} {'{horaires}'}
+            </p>
+            <div className="space-y-3">
+              {msgTemplates.map((tp, i) => (
+                <div key={tp.id}>
+                  <label className="text-xs font-semibold text-slate-600 mb-1 block">{tp.label}</label>
+                  <textarea
+                    value={tp.message}
+                    onChange={e => {
+                      const updated = [...msgTemplates];
+                      updated[i] = { ...updated[i], message: e.target.value };
+                      setMsgTemplates(updated);
+                    }}
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                    placeholder={tp.id === 10 ? 'Template libre (le texte sera modifiable)' : 'Message...'}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+              <button
+                onClick={async () => {
+                  setMsgSaving(true);
+                  try {
+                    await api.saveMessageTemplates(msgTemplates);
+                    toast.success('Templates sauvegardes');
+                  } catch { toast.error('Erreur sauvegarde'); }
+                  finally { setMsgSaving(false); }
+                }}
+                disabled={msgSaving}
+                className="btn-primary"
+              >
+                <Save className="w-4 h-4" /> {msgSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+              <button
+                onClick={() => { setMsgTemplates(DEFAULT_MSG_TEMPLATES); toast.success('Templates reinitialises (sauvegarder pour appliquer)'); }}
+                className="btn-ghost"
+              >
+                Reinitialiser
+              </button>
+            </div>
           </div>
         </div>
       )}

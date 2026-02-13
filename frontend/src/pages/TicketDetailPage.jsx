@@ -7,6 +7,7 @@ import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import PatternGrid from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
+import MessageComposer from '../components/MessageComposer';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
 import {
@@ -50,12 +51,13 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
 }
 
 // ─── Layout Blocks Config ────────────────────────────────────
-const VALID_BLOCK_IDS = new Set(['client', 'device', 'dates', 'notes', 'reparation', 'status', 'fidelite']);
+const VALID_BLOCK_IDS = new Set(['client', 'device', 'dates', 'notes', 'messages', 'reparation', 'status', 'fidelite']);
 const INITIAL_BLOCKS = [
   { id: 'client',      title: 'Client',               col: 'left',  order: 0, size: 'normal' },
   { id: 'device',      title: 'Appareil',             col: 'left',  order: 1, size: 'normal' },
   { id: 'dates',       title: 'Dates',                col: 'left',  order: 2, size: 'compact' },
-  { id: 'notes',       title: 'Notes internes',       col: 'left',  order: 3, size: 'normal' },
+  { id: 'messages',    title: 'Messages',             col: 'left',  order: 3, size: 'normal' },
+  { id: 'notes',       title: 'Notes internes',       col: 'left',  order: 4, size: 'normal' },
   { id: 'reparation',  title: 'Réparation & Tarifs',  col: 'right', order: 0, size: 'large' },
   { id: 'status',      title: 'Statut',               col: 'right', order: 1, size: 'compact' },
   { id: 'fidelite',    title: 'Fidélité',             col: 'right', order: 2, size: 'compact' },
@@ -620,18 +622,8 @@ export default function TicketDetailPage() {
                     </a>
                   )}
                 </div>
-                <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-2">
-                  {t.client_tel && (
-                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
-                      target="_blank" rel="noopener noreferrer" className="btn-whatsapp text-xs py-2">
-                      <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-                    </a>
-                  )}
-                  {t.client_tel && (
-                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)} className="btn-secondary text-xs py-2">
-                      <Send className="w-3.5 h-3.5" /> SMS
-                    </a>
-                  )}
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <p className="text-[10px] text-slate-400 text-center">Messages dans le bloc Messages ci-dessous</p>
                 </div>
               </>
             }
@@ -742,6 +734,14 @@ export default function TicketDetailPage() {
           </div>
         );
 
+      case 'messages':
+        return (
+          <MessageComposer
+            ticket={t}
+            onMessageSent={() => loadNotes()}
+          />
+        );
+
       case 'notes':
         return (
           <div className="card p-5">
@@ -782,13 +782,28 @@ export default function TicketDetailPage() {
               <button onClick={handleAddNote} className="btn-primary px-3"><Plus className="w-4 h-4" /></button>
             </div>
 
-            {/* Compact notes list — info réparation style */}
+            {/* Compact notes list with type badges */}
             <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
               {privateNotes.map(note => {
+                const tn = note.type_note || 'note';
+                const badge = tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-700', label: 'WhatsApp' }
+                  : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-700', label: 'SMS' }
+                  : tn === 'email' ? { bg: 'bg-amber-100 text-amber-700', label: 'Email' }
+                  : null;
                 const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const textColor = note.important ? 'text-red-600 font-semibold' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                const textColor = note.important ? 'text-red-600 font-semibold' : badge ? 'text-slate-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
                 return (
                   <div key={`db-${note.id}`} className="flex items-start gap-2 py-1.5">
+                    {badge && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 mt-0.5 ${badge.bg}`}>
+                        {badge.label}
+                      </span>
+                    )}
+                    {!badge && tn === 'note' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-wider shrink-0 mt-0.5">
+                        {note.auteur || 'Note'}
+                      </span>
+                    )}
                     <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{note.contenu}</span>
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
                       {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}

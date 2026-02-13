@@ -234,6 +234,13 @@ class ApiClient {
   getAdminTauxConversion(p) { return this.get(`/api/admin/stats/taux-conversion${this._adminQs(p)}`); }
   getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
 
+  // ─── MESSAGE TEMPLATES ────────────────────────
+  getMessageTemplates() { return this.get('/api/config/message-templates'); }
+  saveMessageTemplates(templates) { return this.put('/api/config/message-templates', { templates }); }
+  logMessage(ticketId, auteur, contenu, canal) {
+    return this.post(`/api/tickets/${ticketId}/message-log?auteur=${encodeURIComponent(auteur)}&contenu=${encodeURIComponent(contenu)}&canal=${encodeURIComponent(canal)}`);
+  }
+
   // ─── NOTES PRIVÉES ────────────────────────────
   getNotes(ticketId) { return this.get(`/api/tickets/${ticketId}/notes`); }
   addPrivateNote(ticketId, auteur, contenu, important = false) {
