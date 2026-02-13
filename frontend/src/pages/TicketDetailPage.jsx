@@ -1308,7 +1308,7 @@ export default function TicketDetailPage() {
   return (
     <div className="max-w-7xl mx-auto">
       {/* Dark Header — spacious */}
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
+      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 pt-10 sm:pt-12 pb-8 sm:pb-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
         <div className="max-w-7xl mx-auto">
           {/* Top row: back button */}
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors mb-5 -ml-1">
@@ -1318,9 +1318,9 @@ export default function TicketDetailPage() {
 
           <div className="flex flex-col sm:flex-row sm:items-start gap-5">
             {/* Left: ticket info */}
-            <div className="flex-1 min-w-0 space-y-3">
+            <div className="flex-1 min-w-0">
               {/* Ticket code */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-4">
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
                 <button onClick={handleCopyCode} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Copier le code">
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
@@ -1332,26 +1332,31 @@ export default function TicketDetailPage() {
                 )}
               </div>
 
-              {/* Summary line */}
-              <div className="text-sm text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-slate-500" /> {t.client_prenom || ''} {t.client_nom || ''}</span>
-                <span className="text-slate-600">•</span>
-                <span className="flex items-center gap-1"><Smartphone className="w-3.5 h-3.5 text-slate-500" /> {appareil || '—'}</span>
-                <span className="text-slate-600">•</span>
-                <span className="flex items-center gap-1">
+              {/* Info lines */}
+              <div className="text-sm text-slate-300 space-y-1.5 leading-relaxed">
+                <div className="flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-500" /> {t.client_prenom || ''} {t.client_nom || ''}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-slate-500" /> {appareil || '—'}
+                </div>
+                <div className="flex items-center gap-1.5">
                   <Wrench className="w-3.5 h-3.5 text-slate-500" />
                   {repairLines.filter(l => l.label).length > 0
                     ? repairLines.filter(l => l.label).map(l => l.label).join(' + ')
                     : (t.panne || '—')}
-                </span>
-                <span className="text-slate-600">•</span>
-                <span className="font-semibold text-emerald-400">{formatPrix(totalTTC || 0)}</span>
-                {t.paye && <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full">Payé</span>}
-                {!t.paye && reste > 0 && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Reste {formatPrix(reste)}</span>}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-emerald-400">{formatPrix(totalTTC || 0)}</span>
+                  {t.paye && <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full ml-1">Payé</span>}
+                  {!t.paye && reste > 0 && <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full ml-1">Reste {formatPrix(reste)}</span>}
+                </div>
+                {t.client_tel && (
+                  <a href={`tel:${t.client_tel}`} className="flex items-center gap-1.5 text-slate-400 hover:text-white font-mono transition-colors">
+                    <Phone className="w-3.5 h-3.5 text-slate-500" /> {t.client_tel}
+                  </a>
+                )}
               </div>
-              {t.client_tel && (
-                <a href={`tel:${t.client_tel}`} className="text-sm text-slate-400 hover:text-white font-mono transition-colors">{t.client_tel}</a>
-              )}
             </div>
 
             {/* Right: status badge + print */}
