@@ -120,6 +120,12 @@ export default function TicketDetailPage() {
   const [dragId, setDragId] = useState(null);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
 
+  // Delete ticket modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteCode, setDeleteCode] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   const parseRepairLines = (ticket) => {
     try {
       if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
@@ -353,6 +359,22 @@ export default function TicketDetailPage() {
       toast.success('Statut changé + téléphone de prêt récupéré');
     } catch (err) {
       toast.error('Erreur');
+    }
+  };
+
+  const handleDeleteTicket = async () => {
+    if (deleteCode !== 'caramail') {
+      setDeleteError('Code incorrect');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.deleteTicket(id);
+      toast.success('Ticket supprimé');
+      navigate(basePath);
+    } catch (err) {
+      toast.error('Erreur lors de la suppression');
+      setDeleting(false);
     }
   };
 
@@ -1056,6 +1078,12 @@ export default function TicketDetailPage() {
             >
               {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <button
+              onClick={() => { setShowDeleteModal(true); setDeleteCode(''); setDeleteError(''); }}
+              className="w-full mt-3 py-2.5 px-4 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" /> Supprimer le ticket
+            </button>
           </div>
         );
 
@@ -1253,6 +1281,54 @@ export default function TicketDetailPage() {
                 <button onClick={() => setShowPretModal(false)} className="btn-ghost flex-1">Annuler</button>
                 <button onClick={confirmRenduWithPret} className="btn-primary flex-1">
                   Téléphone récupéré, rendre au client
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Delete ticket modal */}
+      {showDeleteModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowDeleteModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Supprimer le ticket</h3>
+                  <p className="text-sm text-slate-500">{t.ticket_code}</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-600 mb-4">
+                Cette action est irréversible. Toutes les données liées (notes, commandes, historique) seront supprimées.
+              </p>
+              <div className="mb-4">
+                <label className="input-label">Code administrateur</label>
+                <input
+                  type="password"
+                  value={deleteCode}
+                  onChange={e => { setDeleteCode(e.target.value); setDeleteError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleDeleteTicket()}
+                  className="input"
+                  placeholder="Entrez le code admin"
+                  autoFocus
+                />
+                {deleteError && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{deleteError}</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowDeleteModal(false)} className="btn-ghost flex-1">Annuler</button>
+                <button
+                  onClick={handleDeleteTicket}
+                  disabled={deleting || !deleteCode}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deleting ? 'Suppression...' : 'Supprimer'}
                 </button>
               </div>
             </div>

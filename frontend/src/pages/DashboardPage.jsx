@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
-import StatusBadge from '../components/StatusBadge';
-import { formatDateShort, formatPrix, waLink, smsLink, STATUTS } from '../lib/utils';
+import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
@@ -109,6 +108,17 @@ export default function DashboardPage() {
     }
   };
 
+  const handleInlineStatus = async (ticketId, newStatut) => {
+    try {
+      await api.changeStatus(ticketId, newStatut);
+      setTickets(prev => prev.map(t =>
+        t.id === ticketId ? { ...t, statut: newStatut } : t
+      ));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleKpiClick = (filter, idx) => {
     if (activeKpi === idx) {
       setActiveKpi(null);
@@ -146,13 +156,13 @@ export default function DashboardPage() {
   let filteredTickets = tickets;
 
   // If a specific tech is selected in the dropdown, use that filter
-  if (filterTech) {
-    filteredTickets = tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
-  } else if (isTech && techName && !debouncedSearch) {
-    // Default tech view: show own tickets + unassigned
+  if (filterTech === '__mine__' && techName) {
+    // "Mes tickets" option: own tickets + unassigned
     filteredTickets = tickets.filter(t =>
       matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
     );
+  } else if (filterTech) {
+    filteredTickets = tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
   }
 
   const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
@@ -278,7 +288,10 @@ export default function DashboardPage() {
             {teamList.length > 0 && (
               <select value={filterTech} onChange={e => { setFilterTech(e.target.value); setPage(0); }}
                 className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
-                <option value="">{isTech ? 'Mes tickets' : 'Tous les techs'}</option>
+                <option value="">Tous les techs</option>
+                {isTech && techName && (
+                  <option value="__mine__">Mes tickets</option>
+                )}
                 {teamList.map(m => (
                   <option key={m.id} value={m.nom}>{m.nom}</option>
                 ))}
@@ -444,9 +457,24 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Statut */}
-                <div className="mt-2 lg:mt-0 cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <StatusBadge statut={t.statut} />
+                {/* Statut — inline dropdown */}
+                <div className="mt-2 lg:mt-0" onClick={e => e.stopPropagation()}>
+                  <select
+                    value={t.statut}
+                    onChange={e => handleInlineStatus(t.id, e.target.value)}
+                    className="w-full py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
+                    style={{
+                      borderColor: getStatusConfig(t.statut).color,
+                      color: getStatusConfig(t.statut).color,
+                      backgroundColor: getStatusConfig(t.statut).color + '10',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatusConfig(t.statut).color)}' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundPosition: 'right 4px center',
+                      backgroundSize: '14px',
+                      paddingRight: '22px',
+                    }}
+                  >
+                    {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
 
                 {/* Date */}

@@ -506,9 +506,12 @@ async def update_private_note(
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
 async def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
-    """Supprime un ticket et ses commandes de pièces."""
+    """Supprime un ticket et toutes ses données liées (cascade)."""
     with get_cursor() as cur:
+        cur.execute("DELETE FROM notes_tickets WHERE ticket_id = %s", (ticket_id,))
         cur.execute("DELETE FROM commandes_pieces WHERE ticket_id = %s", (ticket_id,))
+        cur.execute("DELETE FROM fidelite_historique WHERE ticket_id = %s", (ticket_id,))
+        cur.execute("DELETE FROM historique WHERE ticket_id = %s", (ticket_id,))
         cur.execute("DELETE FROM tickets WHERE id = %s", (ticket_id,))
     return {"ok": True}
 
