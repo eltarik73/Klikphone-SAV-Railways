@@ -367,7 +367,7 @@ export default function DashboardPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[28px_80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[28px_72px_1fr_120px_1fr_100px_150px_72px_80px_72px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <button onClick={toggleSelectAll} className="flex items-center justify-center">
             {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
               ? <SquareCheck className="w-4 h-4 text-brand-600" />
@@ -376,6 +376,7 @@ export default function DashboardPage() {
           <span className="table-header">Ticket</span>
           <span className="table-header">Client</span>
           <span className="table-header">Appareil</span>
+          <span className="table-header">Panne</span>
           <span className="table-header">Tech</span>
           <span className="table-header">Statut</span>
           <span className="table-header">Date</span>
@@ -401,7 +402,7 @@ export default function DashboardPage() {
           <div className="divide-y divide-slate-100/80">
             {displayedTickets.map((t) => (
               <div key={t.id}
-                className="lg:grid lg:grid-cols-[28px_80px_1fr_140px_100px_160px_80px_90px_80px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
+                className="lg:grid lg:grid-cols-[28px_72px_1fr_120px_1fr_100px_150px_72px_80px_72px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
               >
                 {/* Checkbox */}
                 <div className="hidden lg:flex items-center justify-center">
@@ -416,9 +417,6 @@ export default function DashboardPage() {
                 <div className="cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <div className="flex items-center gap-1">
                     {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
-                    {t.commande_piece === 1 && ['En attente de pièce', 'En attente de diagnostic'].includes(t.statut) && (
-                      <Package className="w-3 h-3 text-amber-500 shrink-0" title="Pièce à commander" />
-                    )}
                     <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
                   </div>
                 </div>
@@ -443,7 +441,6 @@ export default function DashboardPage() {
                 {/* Appareil */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <p className="text-xs text-slate-700 font-medium truncate">{t.marque} {t.modele || t.modele_autre}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{t.panne}</p>
                   {isTech && (t.pin || t.pattern) && (
                     <div className="flex items-center gap-2 mt-0.5">
                       {t.pin && (
@@ -458,6 +455,27 @@ export default function DashboardPage() {
                       )}
                     </div>
                   )}
+                </div>
+
+                {/* Panne */}
+                <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                  {t.commande_piece === 1 ? (
+                    <p className="text-xs text-amber-600 font-medium truncate flex items-center gap-1">
+                      <Package className="w-3 h-3 shrink-0" /> Pièce à commander
+                    </p>
+                  ) : (() => {
+                    let reps = [];
+                    try {
+                      const parsed = JSON.parse(t.reparation_supp || '[]');
+                      if (Array.isArray(parsed)) reps = parsed.filter(r => r.label).map(r => r.label);
+                    } catch { /* ignore */ }
+                    if (reps.length === 0 && t.panne) reps = [t.panne];
+                    return (
+                      <p className="text-xs text-slate-600 truncate" title={reps.join(' + ')}>
+                        {reps.join(' + ') || '—'}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 {/* Tech — inline dropdown */}
