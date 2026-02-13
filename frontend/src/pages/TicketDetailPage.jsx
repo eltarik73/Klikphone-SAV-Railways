@@ -167,6 +167,7 @@ export default function TicketDetailPage() {
         pin: data.pin || '',
         pattern: data.pattern || '',
         notes_client: data.notes_client || '',
+        commande_piece: data.commande_piece || 0,
       });
       setClientForm({
         nom: data.client_nom || '',
@@ -740,14 +741,14 @@ export default function TicketDetailPage() {
             editing={editingDevice}
             onEdit={() => setEditingDevice(true)}
             onSave={handleSaveDevice}
-            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
+            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '', commande_piece: t.commande_piece || 0 }); }}
             viewContent={
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
                   {[
                     { label: 'Catégorie', value: t.categorie },
                     { label: 'Marque', value: t.marque },
-                    { label: 'Modèle', value: t.modele || t.modele_autre || '—' },
+                    { label: 'Modèle', value: (t.modele && t.modele !== 'Autre' ? t.modele : t.modele_autre) || t.modele || '—' },
                     { label: 'Panne', value: t.panne },
                     { label: 'IMEI / N° série', value: t.imei, mono: true },
                     { label: 'Détail panne', value: t.panne_detail },
@@ -792,6 +793,12 @@ export default function TicketDetailPage() {
               <div><label className="input-label">Code PIN</label><input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} /></div>
               <div><label className="input-label">Pattern</label><input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" /></div>
               <div className="col-span-2 sm:col-span-3"><label className="input-label">Note client</label><textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} /></div>
+              <div className="col-span-2 sm:col-span-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!deviceForm.commande_piece} onChange={e => setDeviceForm(f => ({ ...f, commande_piece: e.target.checked ? 1 : 0 }))} className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                  <span className="text-sm font-medium text-slate-700">Pièce à commander</span>
+                </label>
+              </div>
             </div>
           </EditableSection>
         );
@@ -807,7 +814,29 @@ export default function TicketDetailPage() {
               <div className="flex justify-between items-center"><span className="text-slate-500">Dépôt</span><span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span></div>
               <div className="flex justify-between items-center"><span className="text-slate-500">Mise à jour</span><span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span></div>
               {t.date_cloture && <div className="flex justify-between items-center"><span className="text-slate-500">Clôture</span><span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span></div>}
-              {t.date_recuperation && <div className="flex justify-between items-center"><span className="text-slate-500">Récupération</span><span className="font-medium text-slate-800">{t.date_recuperation}</span></div>}
+              {t.date_recuperation && (() => {
+                const d = new Date(t.date_recuperation);
+                const isValid = !isNaN(d.getTime());
+                const now = new Date();
+                let countdown = '';
+                if (isValid && d > now) {
+                  const diff = d - now;
+                  const days = Math.floor(diff / 86400000);
+                  const hours = Math.floor((diff % 86400000) / 3600000);
+                  countdown = days > 0 ? `dans ${days}j ${hours}h` : `dans ${hours}h`;
+                } else if (isValid && d <= now) {
+                  countdown = 'dépassée';
+                }
+                return (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Récupération</span>
+                    <div className="text-right">
+                      <span className="font-medium text-slate-800">{isValid ? d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : t.date_recuperation}</span>
+                      {countdown && <span className={`ml-2 text-xs font-semibold ${d <= now ? 'text-red-500' : 'text-emerald-600'}`}>{countdown}</span>}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         );
@@ -1072,7 +1101,7 @@ export default function TicketDetailPage() {
                       <option value="LCD">LCD</option>
                     </select>
                   </div>
-                  <div><label className="input-label">Date récupération</label><input type="text" value={pricingForm.date_recuperation} onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))} className="input" placeholder="Ex: demain 14h, lundi..." /></div>
+                  <div><label className="input-label">Date récupération</label><input type="datetime-local" value={pricingForm.date_recuperation} onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))} className="input" /></div>
                 </div>
               </div>
             ) : (

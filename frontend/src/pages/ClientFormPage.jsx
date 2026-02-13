@@ -148,8 +148,9 @@ export default function ClientFormPage() {
       });
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
-        marque: form.marque, modele: form.modele,
-        modele_autre: form.modele_autre,
+        marque: form.marque,
+        modele: form.modele === 'Autre' ? '' : form.modele,
+        modele_autre: form.modele === 'Autre' ? form.modele_autre : '',
         panne: pieceACommander && pieceNom ? 'Pièce à commander' : form.panne,
         panne_detail: pieceACommander && pieceNom
           ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
@@ -183,7 +184,7 @@ export default function ClientFormPage() {
     if (step === 0) return form.nom && form.telephone;
     if (step === 1) return form.categorie;
     if (step === 2) return form.marque;
-    if (step === 3) return form.panne;
+    if (step === 3) return form.panne || pieceACommander;
     if (step === 4) return true;
     return true;
   };

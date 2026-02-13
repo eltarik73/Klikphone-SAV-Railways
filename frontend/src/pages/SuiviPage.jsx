@@ -177,15 +177,31 @@ export default function SuiviPage() {
               </div>
 
               {/* Date de récupération */}
-              {ticket.date_recuperation && (
-                <div className="mt-4 flex items-center gap-2 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                  <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
-                  <div className="text-sm">
-                    <span className="text-blue-600 font-medium">Récupération prévue : </span>
-                    <span className="text-blue-800 font-bold">{ticket.date_recuperation}</span>
+              {ticket.date_recuperation && (() => {
+                const d = new Date(ticket.date_recuperation);
+                const isValid = !isNaN(d.getTime());
+                const now = new Date();
+                let countdown = '';
+                if (isValid && d > now) {
+                  const diff = d - now;
+                  const days = Math.floor(diff / 86400000);
+                  const hours = Math.floor((diff % 86400000) / 3600000);
+                  countdown = days > 0 ? `dans ${days}j ${hours}h` : `dans ${hours}h`;
+                } else if (isValid && d <= now) {
+                  countdown = 'Date dépassée';
+                }
+                const displayDate = isValid ? d.toLocaleString('fr-FR', { weekday:'long', day:'numeric', month:'long', hour:'2-digit', minute:'2-digit' }) : ticket.date_recuperation;
+                return (
+                  <div className={`mt-4 flex items-center gap-2 p-3 rounded-lg ${isValid && d <= now ? 'bg-red-50 border border-red-100' : 'bg-blue-50 border border-blue-100'}`}>
+                    <Calendar className={`w-4 h-4 shrink-0 ${isValid && d <= now ? 'text-red-500' : 'text-blue-500'}`} />
+                    <div className="text-sm">
+                      <span className={`font-medium ${isValid && d <= now ? 'text-red-600' : 'text-blue-600'}`}>Récupération prévue : </span>
+                      <span className={`font-bold ${isValid && d <= now ? 'text-red-800' : 'text-blue-800'}`}>{displayDate}</span>
+                      {countdown && <span className={`ml-2 text-xs font-semibold ${isValid && d <= now ? 'text-red-500' : 'text-emerald-600'}`}>({countdown})</span>}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Réparations */}
               {(ticket.reparation_supp || ticket.panne_detail) && (
@@ -208,8 +224,12 @@ export default function SuiviPage() {
                 const devis = Number(ticket.devis_estime || 0);
                 const prixSupp = Number(ticket.prix_supp || 0);
                 const acompte = Number(ticket.acompte || 0);
-                const total = devis + prixSupp;
-                if (total <= 0) return null;
+                const redPct = Number(ticket.reduction_pourcentage || 0);
+                const redMnt = Number(ticket.reduction_montant || 0);
+                const subtotal = devis + prixSupp;
+                if (subtotal <= 0) return null;
+                const reduction = redPct > 0 ? subtotal * (redPct / 100) : redMnt;
+                const total = Math.max(0, subtotal - reduction);
                 const reste = total - acompte;
                 return (
                   <div className="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-sm">
@@ -226,6 +246,12 @@ export default function SuiviPage() {
                         <div className="flex justify-between text-slate-600 text-xs">
                           <span>{ticket.reparation_supp}</span>
                           <span>{formatPrix(prixSupp)}</span>
+                        </div>
+                      )}
+                      {reduction > 0 && (
+                        <div className="flex justify-between text-emerald-600 text-xs">
+                          <span>Réduction{redPct > 0 ? ` (${redPct}%)` : ''}</span>
+                          <span>- {formatPrix(reduction)}</span>
                         </div>
                       )}
                       <div className="border-t border-emerald-200 pt-1 mt-1 flex justify-between font-bold text-emerald-800">

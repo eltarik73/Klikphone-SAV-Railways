@@ -144,6 +144,15 @@ def _pattern_grid(pattern_str: str) -> str:
     return "\n".join(lines)
 
 
+def _calc_reduction(t: dict, total: float) -> float:
+    """Calcule la réduction effective."""
+    red_pct = float(t.get("reduction_pourcentage") or 0)
+    red_mnt = float(t.get("reduction_montant") or 0)
+    if red_pct > 0:
+        return round(total * red_pct / 100, 2)
+    return red_mnt
+
+
 def _parse_repair_lines(t: dict) -> list:
     """Parse repair lines from ticket (JSON array or legacy fields)."""
     lines = []
@@ -268,7 +277,9 @@ def _ticket_client_html(t: dict) -> str:
     devis = float(t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
-    total = devis + prix_supp
+    subtotal = devis + prix_supp
+    reduction = _calc_reduction(t, subtotal)
+    total = max(0, subtotal - reduction)
     reste = total - acompte
 
     # Date de récupération
@@ -286,6 +297,10 @@ def _ticket_client_html(t: dict) -> str:
         if t.get("reparation_supp") and prix_supp > 0:
             tarif_html += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(prix_supp)}€</span></div>'
             tarif_html += '<div class="small">(répar. supplémentaire)</div>'
+        if reduction > 0:
+            red_pct = float(t.get("reduction_pourcentage") or 0)
+            label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
+            tarif_html += f'<div class="row"><span>{label}</span><span class="val">- {_fp(reduction)}€</span></div>'
         tarif_html += '<hr class="sep">'
         tarif_html += f'<div class="total-box"><div class="row"><span>TOTAL</span><span>{_fp(total)}€</span></div></div>'
         if acompte > 0:
@@ -367,7 +382,9 @@ def _ticket_staff_html(t: dict) -> str:
 
     # --- Repair lines ---
     repair_lines = _parse_repair_lines(t)
-    total = sum(r["prix"] for r in repair_lines)
+    subtotal = sum(r["prix"] for r in repair_lines)
+    reduction = _calc_reduction(t, subtotal)
+    total = max(0, subtotal - reduction)
     acompte = float(t.get("acompte") or 0)
     reste = total - acompte
 
@@ -504,6 +521,9 @@ body {{ margin:0; padding:0; background:#fff; }}
   <!-- RÉPARATIONS -->
   {_staff_box("🔧 RÉPARATIONS",
     repairs_html
+    + (f'<div style="font-size:13px;padding:2px 0;border-bottom:1px dashed #000;">'
+       f'{"Réduction (" + str(float(t.get("reduction_pourcentage") or 0)) + "%)" if float(t.get("reduction_pourcentage") or 0) > 0 else "Réduction"}'
+       f' <span style="float:right;">- {_fp(reduction)} €</span></div>' if reduction > 0 else "")
     + f'<div style="font-size:16px;font-weight:900;padding:6px 0;margin-top:4px;">'
     + f'TOTAL : <span style="float:right;">{_fp(total)} €</span></div>'
     + (f'<div style="font-size:13px;padding:2px 0;">'
@@ -563,7 +583,9 @@ def _devis_html(t: dict) -> str:
     devis = float(t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
-    total_ttc = devis + prix_supp
+    subtotal_ttc = devis + prix_supp
+    reduction = _calc_reduction(t, subtotal_ttc)
+    total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
     reste = total_ttc - acompte
@@ -576,6 +598,11 @@ def _devis_html(t: dict) -> str:
     if t.get("reparation_supp") and prix_supp > 0:
         ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
+    if reduction > 0:
+        red_pct = float(t.get("reduction_pourcentage") or 0)
+        label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
+        red_ht = round(reduction * 100 / (100 + tva_rate), 2)
+        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)}€ HT</span></div>'
 
     siret = _get_config("SIRET", "")
     siret_line = f'<div class="small">SIRET: {siret}</div>' if siret else ''
@@ -638,7 +665,9 @@ def _recu_html(t: dict) -> str:
     tarif = float(t.get("tarif_final") or t.get("devis_estime") or 0)
     prix_supp = float(t.get("prix_supp") or 0)
     acompte = float(t.get("acompte") or 0)
-    total_ttc = tarif + prix_supp
+    subtotal_ttc = tarif + prix_supp
+    reduction = _calc_reduction(t, subtotal_ttc)
+    total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
     reste = total_ttc - acompte
@@ -651,6 +680,11 @@ def _recu_html(t: dict) -> str:
     if t.get("reparation_supp") and prix_supp > 0:
         ht_s = round(prix_supp * 100 / (100 + tva_rate), 2)
         lignes += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(ht_s)}€ HT</span></div>'
+    if reduction > 0:
+        red_pct = float(t.get("reduction_pourcentage") or 0)
+        label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
+        red_ht = round(reduction * 100 / (100 + tva_rate), 2)
+        lignes += f'<div class="row"><span>{label}</span><span class="val">- {_fp(red_ht)}€ HT</span></div>'
 
     siret = _get_config("SIRET", "")
     siret_line = f'<div class="small">SIRET: {siret}</div>' if siret else ''

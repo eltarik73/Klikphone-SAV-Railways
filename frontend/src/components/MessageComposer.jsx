@@ -40,7 +40,11 @@ export default function MessageComposer({ ticket, onMessageSent }) {
 
   const t = ticket;
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
-  const montant = t.tarif_final || t.devis_estime || 0;
+  const baseMontant = parseFloat(t.tarif_final) || parseFloat(t.devis_estime) || 0;
+  const redPct = parseFloat(t.reduction_pourcentage) || 0;
+  const redMnt = parseFloat(t.reduction_montant) || 0;
+  const reduction = redPct > 0 ? baseMontant * (redPct / 100) : redMnt;
+  const montant = Math.max(0, baseMontant - reduction);
 
   const replaceVars = (msg) => {
     return msg
