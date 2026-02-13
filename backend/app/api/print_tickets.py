@@ -4,6 +4,7 @@ Tickets client, staff, combiné, devis, reçu.
 Tout en monochrome pour imprimante thermique.
 """
 
+import json
 import urllib.parse
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
@@ -103,7 +104,7 @@ def _qr_url(code: str) -> str:
 
 
 def _pattern_grid(pattern_str: str) -> str:
-    """Dessine le schéma de déverrouillage en ASCII art."""
+    """Dessine le schéma de déverrouillage en grille HTML pour impression thermique."""
     if not pattern_str:
         return ""
 
@@ -111,16 +112,14 @@ def _pattern_grid(pattern_str: str) -> str:
     if not points:
         return ""
 
-    # Grille 3x3 : 1=haut-gauche, 9=bas-droite
-    grid_pos = {1: (0, 0), 2: (0, 1), 3: (0, 2),
-                4: (1, 0), 5: (1, 1), 6: (1, 2),
-                7: (2, 0), 8: (2, 1), 9: (2, 2)}
-
-    active = set(points)
     order = {p: i + 1 for i, p in enumerate(points)}
+    active = set(points)
+
+    sequence = " → ".join(str(p) for p in points)
 
     lines = []
-    lines.append('<div style="font-family:monospace;font-size:11px;line-height:1.6">')
+    lines.append(f'<div style="font-size:12px;font-weight:700;text-align:center;margin-top:2px">')
+    lines.append(f'Séquence : {sequence}</div>')
     lines.append('<table style="border-collapse:collapse;margin:4px auto">')
     for row in range(3):
         lines.append("<tr>")
@@ -129,23 +128,55 @@ def _pattern_grid(pattern_str: str) -> str:
             if num in active:
                 idx = order[num]
                 lines.append(
-                    f'<td style="width:24px;height:24px;text-align:center;'
-                    f'border:2px solid #000;font-weight:bold;font-size:13px">'
-                    f'{idx}</td>'
+                    f'<td style="width:28px;height:28px;text-align:center;'
+                    f'border:2px solid #000;font-weight:900;font-size:14px;'
+                    f'font-family:Courier New,monospace">{idx}</td>'
                 )
             else:
                 lines.append(
-                    '<td style="width:24px;height:24px;text-align:center;'
-                    'border:1px solid #999;color:#999">·</td>'
+                    '<td style="width:28px;height:28px;text-align:center;'
+                    'border:1px solid #999;color:#999;font-size:14px;'
+                    'font-family:Courier New,monospace">&middot;</td>'
                 )
         lines.append("</tr>")
     lines.append("</table>")
 
-    sequence = " → ".join(str(p) for p in points)
-    lines.append(f'<div style="text-align:center;font-size:10px;margin-top:2px">Séquence: {sequence}</div>')
-    lines.append("</div>")
-
     return "\n".join(lines)
+
+
+def _parse_repair_lines(t: dict) -> list:
+    """Parse repair lines from ticket (JSON array or legacy fields)."""
+    lines = []
+    reparation_supp = t.get("reparation_supp") or ""
+    if reparation_supp.startswith("["):
+        try:
+            parsed = json.loads(reparation_supp)
+            lines = [{"label": r.get("label", ""), "prix": float(r.get("prix", 0))} for r in parsed if r.get("label")]
+            return lines
+        except Exception:
+            pass
+    # Legacy format
+    if t.get("panne"):
+        lines.append({"label": t["panne"], "prix": float(t.get("devis_estime") or 0)})
+    if reparation_supp and not reparation_supp.startswith("["):
+        lines.append({"label": reparation_supp, "prix": float(t.get("prix_supp") or 0)})
+    return lines
+
+
+def _get_ticket_notes(ticket_id: int) -> list:
+    """Fetch private notes for a ticket."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT contenu, auteur, important, date_creation
+                FROM notes_tickets
+                WHERE ticket_id = %s
+                ORDER BY date_creation DESC
+            """, (ticket_id,))
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -328,87 +359,195 @@ def _ticket_client_html(t: dict) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 def _ticket_staff_html(t: dict) -> str:
+    """Ticket staff — format thermique 80mm, contraste max, encadrés."""
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
-    tech = t.get("technicien_assigne") or "—"
-    date_recup = t.get("date_recuperation") or "—"
+    tech = t.get("technicien_assigne") or "Non assigné"
+    date_recup = t.get("date_recuperation") or "Non définie"
 
-    # Attention flag
-    attention_html = ""
-    if t.get("attention"):
-        attention_html = f'<div class="info-box" style="border:2px solid #000;margin:6px 0"><div class="bold center">⚠ ATTENTION</div><div class="small center">{t["attention"]}</div></div>'
+    # --- Repair lines ---
+    repair_lines = _parse_repair_lines(t)
+    total = sum(r["prix"] for r in repair_lines)
+    acompte = float(t.get("acompte") or 0)
+    reste = total - acompte
 
-    # Sécurité
+    repairs_html = ""
+    for i, r in enumerate(repair_lines):
+        qualite = ""
+        if i == 0 and t.get("type_ecran"):
+            qualite = (
+                f'<span style="font-size:12px;font-weight:700;border:2px solid #000;'
+                f'padding:1px 6px;margin-left:4px;">{t["type_ecran"]}</span>'
+            )
+        repairs_html += (
+            f'<div style="font-size:{15 if i == 0 else 14}px;font-weight:{900 if i == 0 else 700};'
+            f'padding:4px 0;border-bottom:1px dashed #000;">'
+            f'{r["label"]} {qualite}'
+            f'<span style="float:right;">{_fp(r["prix"])} €</span></div>'
+        )
+
+    # --- Security section ---
     sec_html = ""
     if t.get("pin") or t.get("pattern"):
-        sec_html = '<hr class="sep"><div class="section"><div class="bold">SÉCURITÉ</div>'
+        sec_inner = ""
         if t.get("pin"):
-            sec_html += f'<div class="row"><span>PIN:</span><span style="font-size:16px;letter-spacing:4px;font-weight:bold">{t["pin"]}</span></div>'
+            sec_inner += (
+                '<div style="margin-bottom:8px;">'
+                '<div style="font-size:12px;font-weight:700;color:#000;">Code PIN :</div>'
+                '<div style="font-size:24px;font-weight:900;font-family:Courier New,monospace;'
+                'letter-spacing:6px;text-align:center;border:1px solid #000;padding:4px;margin-top:2px;">'
+                f'{t["pin"]}</div></div>'
+            )
         if t.get("pattern"):
-            sec_html += '<div style="margin-top:4px"><b>SCHÉMA:</b></div>'
-            sec_html += _pattern_grid(t["pattern"])
-        sec_html += "</div>"
+            sec_inner += '<div style="font-size:12px;font-weight:700;color:#000;">Schéma :</div>'
+            sec_inner += _pattern_grid(t["pattern"])
+        sec_html = _staff_box("🔒 CODES DE SÉCURITÉ", sec_inner)
 
-    # Réparation supp
-    supp_html = ""
-    if t.get("reparation_supp"):
-        prix_s = _fp(t.get("prix_supp"))
-        supp_html = f"""<hr class="sep">
-<div class="section">
-  <div class="bold">RÉPARATIONS SUPPLÉMENTAIRES</div>
-  <div class="row"><span>• {t['reparation_supp']}</span><span class="val">{prix_s}€</span></div>
-</div>"""
-
-    # Notes
+    # --- Notes from notes_tickets table ---
+    ticket_id = t.get("id")
+    notes_list = _get_ticket_notes(ticket_id) if ticket_id else []
     notes_html = ""
-    if t.get("notes_internes"):
-        notes_html += f'<hr class="sep"><div class="section"><div class="bold">NOTES INTERNES:</div><div class="small">{t["notes_internes"]}</div></div>'
-    if t.get("notes_client"):
-        notes_html += f'<hr class="sep"><div class="section"><div class="bold">NOTE CLIENT:</div><div class="small">{t["notes_client"]}</div></div>'
+    if notes_list:
+        notes_inner = ""
+        for n in notes_list:
+            if n.get("important"):
+                notes_inner += (
+                    '<div style="font-size:13px;font-weight:900;padding:4px 6px;margin:4px 0;'
+                    f'border:2px solid #000;background:#000;color:#fff;">'
+                    f'⚠️ {n["contenu"]}</div>'
+                )
+            else:
+                dt = ""
+                if n.get("date_creation"):
+                    d = n["date_creation"]
+                    dt = d.strftime("%d/%m %H:%M") if hasattr(d, "strftime") else str(d)[:10]
+                notes_inner += (
+                    f'<div style="font-size:13px;font-weight:700;padding:3px 0;'
+                    f'border-bottom:1px dotted #000;">{n["contenu"]}'
+                    f'<span style="font-size:10px;float:right;font-weight:400;">{dt}</span></div>'
+                )
+        notes_html = _staff_box("📝 NOTES", notes_inner)
 
-    # Tarif
-    tarif = t.get("tarif_final") or t.get("devis_estime")
-    paye = "Oui" if t.get("paye") else "Non"
+    # --- Téléphone de prêt ---
+    pret_html = ""
+    if t.get("telephone_pret"):
+        pret_html = _staff_box(
+            "📱 TÉL DE PRÊT",
+            f'<div style="font-size:15px;font-weight:900;text-align:center;">{t["telephone_pret"]}</div>'
+        )
 
-    return _THERMAL.format(title=f"Fiche Technicien - {code}") + f"""
-<div class="center">
-  <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
-  <h2>FICHE TECHNICIEN</h2>
-</div>
-<hr class="sep-bold">
-<div class="info-box center">
-  <div class="highlight">{code}</div>
-</div>
-<div class="section">
-  <div class="row"><span>Date dépôt:</span><span class="val">{_fd(t.get('date_depot'))}</span></div>
-  <div class="row"><span>Date récup:</span><span class="val">{date_recup}</span></div>
-  <div class="row"><span>Tech:</span><span class="val" style="font-size:15px">{tech}</span></div>
-</div>
-<hr class="sep">
-<div class="section">
-  <div class="section-title">CLIENT</div>
-  <div class="row"><span>Nom:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span class="val">{t.get('client_tel', '')}</span></div>
-</div>
-<hr class="sep">
-<div class="section">
-  <div class="section-title">APPAREIL</div>
-  <div class="row"><span>Modèle:</span><span class="val">{appareil}</span></div>
-  <div class="row"><span>Motif:</span><span class="val">{t.get('panne', '')}</span></div>
-  {f'<div class="row"><span>Détail:</span><span>{t.get("panne_detail","")}</span></div>' if t.get('panne_detail') else ''}
-  {f'<div class="row"><span>IMEI:</span><span class="small" style="font-family:monospace">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
-  {f'<div class="row"><span>Type écran:</span><span class="val">{t.get("type_ecran","")}</span></div>' if t.get('type_ecran') else ''}
-</div>
-{supp_html}
-{sec_html}
-{notes_html}
-{attention_html}
-<hr class="sep-bold">
-<div class="section">
-  {f'<div class="total-box"><div class="row"><span>Tarif:</span><span>{_fp(tarif)}€</span></div></div>' if tarif else ''}
-  <div class="row"><span>Payé:</span><span class="val" style="font-size:15px">{paye}</span></div>
+    # --- Technicien ---
+    tech_html = _staff_box(
+        "👷 TECHNICIEN",
+        f'<div style="font-size:16px;font-weight:900;text-align:center;">{tech}</div>'
+    )
+
+    # --- Full HTML ---
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Ticket Staff - {code}</title>
+<style>
+@page {{ size: 80mm auto; margin: 2mm; }}
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ margin:0; padding:0; background:#fff; }}
+@media print {{
+  body * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
+}}
+</style>
+</head><body>
+<div id="ticket-staff" style="
+  width:302px; font-family:Arial,sans-serif; padding:10px;
+  color:#000; background:#fff; line-height:1.4;
+">
+
+  <!-- LOGO -->
+  <div style="text-align:center;margin-bottom:8px;">
+    <img src="/logo_k.png" width="140" style="display:inline-block;" onerror="this.style.display='none'" />
+  </div>
+
+  <!-- EN-TÊTE BOUTIQUE -->
+  <div style="text-align:center;font-size:11px;color:#000;margin-bottom:10px;line-height:1.3;">
+    <div style="font-size:16px;font-weight:900;letter-spacing:2px;">KLIKPHONE</div>
+    <div>79 Place Saint Léger, 73000 Chambéry</div>
+    <div>Tél: 04 79 60 89 22</div>
+  </div>
+
+  <!-- TITRE TICKET -->
+  <div style="
+    background:#000;color:#fff;text-align:center;
+    padding:8px;font-size:18px;font-weight:900;
+    letter-spacing:3px;margin-bottom:10px;
+  ">TICKET STAFF</div>
+
+  <!-- NUMÉRO + DATE -->
+  <div style="border:2px solid #000;border-radius:4px;padding:10px;margin-bottom:8px;">
+    <div style="font-size:20px;font-weight:900;letter-spacing:1px;">{code}</div>
+    <div style="font-size:12px;margin-top:4px;">
+      <div><strong>Dépôt :</strong> {_fd(t.get('date_depot'))}</div>
+      <div><strong>Récup :</strong> {date_recup}</div>
+    </div>
+  </div>
+
+  <!-- CLIENT -->
+  {_staff_box("👤 CLIENT",
+    f'<div style="font-size:16px;font-weight:900;">{t.get("client_prenom", "")} {t.get("client_nom", "")}</div>'
+    f'<div style="font-size:14px;margin-top:2px;">📞 {t.get("client_tel", "")}</div>'
+  )}
+
+  <!-- APPAREIL -->
+  {_staff_box("📱 APPAREIL",
+    f'<div style="font-size:16px;font-weight:900;">{appareil}</div>'
+    f'<div style="font-size:13px;margin-top:4px;">'
+    f'<div><strong>Catégorie :</strong> {t.get("categorie", "")}</div>'
+    + (f'<div><strong>IMEI :</strong> <span style="font-family:Courier New,monospace">{t.get("imei","")}</span></div>' if t.get("imei") else "")
+    + '</div>'
+  )}
+
+  <!-- RÉPARATIONS -->
+  {_staff_box("🔧 RÉPARATIONS",
+    repairs_html
+    + f'<div style="font-size:16px;font-weight:900;padding:6px 0;margin-top:4px;">'
+    + f'TOTAL : <span style="float:right;">{_fp(total)} €</span></div>'
+    + (f'<div style="font-size:13px;padding:2px 0;">'
+       f'Acompte : <span style="float:right;">- {_fp(acompte)} €</span></div>' if acompte > 0 else "")
+    + f'<div style="border:2px solid #000;padding:6px 8px;margin-top:6px;'
+    + f'font-size:16px;font-weight:900;text-align:center;">'
+    + f'★ RESTE À PAYER : {_fp(reste)} €</div>'
+  )}
+
+  <!-- CODES DE SÉCURITÉ -->
+  {sec_html}
+
+  <!-- TECHNICIEN -->
+  {tech_html}
+
+  <!-- NOTES -->
+  {notes_html}
+
+  <!-- TÉL DE PRÊT -->
+  {pret_html}
+
+  <!-- FOOTER -->
+  <div style="
+    text-align:center;font-size:10px;color:#000;
+    margin-top:12px;padding-top:8px;
+    border-top:2px solid #000;
+  ">
+    KLIKPHONE — Document interne<br>
+    Ne pas remettre au client
+  </div>
+
 </div>
 </body></html>"""
+
+
+def _staff_box(title: str, content: str) -> str:
+    """Helper: crée une section encadrée avec titre inversé pour le ticket staff."""
+    return (
+        f'<div style="border:2px solid #000;border-radius:4px;padding:10px;margin-bottom:8px;">'
+        f'<div style="background:#000;color:#fff;font-size:11px;font-weight:700;'
+        f'padding:3px 8px;margin:-10px -10px 8px -10px;'
+        f'letter-spacing:1px;text-transform:uppercase;">{title}</div>'
+        f'{content}</div>'
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
