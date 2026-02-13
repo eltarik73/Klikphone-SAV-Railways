@@ -116,7 +116,10 @@ class ApiClient {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/api/parts${qs ? '?' + qs : ''}`);
   }
+  getPartsByTicket(ticketId) { return this.get(`/api/parts?ticket_id=${ticketId}`); }
+  getPublicCommandes(ticketCode) { return this.get(`/api/parts/public/${encodeURIComponent(ticketCode)}`); }
   createPart(data) { return this.post('/api/parts', data); }
+  createPartAuto(data) { return this.post('/api/parts/auto', data); }
   updatePart(id, data) { return this.patch(`/api/parts/${id}`, data); }
   deletePart(id) { return this.delete(`/api/parts/${id}`); }
 

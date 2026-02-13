@@ -12,7 +12,7 @@ import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } fro
 import { useToast } from '../components/Toast';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Save, Trash2,
-  ChevronDown, Plus, Minus, User, Wrench,
+  ChevronDown, Plus, Minus, User, Wrench, Package,
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
   Zap, Edit3, X, CheckCircle2,
@@ -125,6 +125,9 @@ export default function TicketDetailPage() {
   const [dragId, setDragId] = useState(null);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
 
+  // Commandes de pièces
+  const [commandes, setCommandes] = useState([]);
+
   // Delete ticket modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteCode, setDeleteCode] = useState('');
@@ -185,7 +188,11 @@ export default function TicketDetailPage() {
       setRepairLines(parseRepairLines(data));
       // Show attention flag from dedicated field, notes, or important private notes
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
-      // Will also check privateNotes below
+      // Load commandes for this ticket
+      try {
+        const cmds = await api.getPartsByTicket(data.id);
+        setCommandes(cmds || []);
+      } catch { setCommandes([]); }
     } catch (err) {
       console.error(err);
     } finally {
@@ -1030,6 +1037,38 @@ export default function TicketDetailPage() {
             ) : (
               /* ─── View mode ─── */
               <>
+                {/* Pièces commandées */}
+                {commandes.length > 0 && (
+                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <Package className="w-3 h-3" /> Pièce(s) commandée(s)
+                    </div>
+                    {commandes.map(cmd => (
+                      <div key={cmd.id} className="flex items-center justify-between py-1.5 border-b border-amber-100 last:border-0">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-700">{cmd.description}</div>
+                          {cmd.notes && <div className="text-xs text-slate-500">{cmd.notes}</div>}
+                          {cmd.fournisseur && <div className="text-xs text-slate-400">Fournisseur : {cmd.fournisseur}</div>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {cmd.prix > 0 && (
+                            <span className="text-sm font-bold">{formatPrix(cmd.prix)}</span>
+                          )}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
+                            cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
+                            cmd.statut === 'Expédiée' ? 'bg-purple-100 text-purple-700' :
+                            cmd.statut === 'Reçue' ? 'bg-green-100 text-green-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {cmd.statut}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* 2. Repair lines */}
                 <div className="mb-3">
                   {repairLines.filter(l => l.label).map((line, i) => (
@@ -1457,7 +1496,7 @@ export default function TicketDetailPage() {
 
       {/* Progress tracker */}
       <div className="card p-5 mb-6">
-        <ProgressTracker statut={t.statut} />
+        <ProgressTracker statut={t.statut} hasPiece={t.commande_piece === 1} />
       </div>
 
       {/* Layout toolbar */}

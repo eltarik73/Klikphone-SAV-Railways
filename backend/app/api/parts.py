@@ -41,15 +41,17 @@ async def list_parts(
 
     with get_cursor() as cur:
         cur.execute(
-            f"""SELECT cp.*, t.ticket_code as linked_ticket_code
+            f"""SELECT cp.*, t.ticket_code as linked_ticket_code,
+                       t.marque, t.modele, t.modele_autre,
+                       c.nom as client_nom, c.prenom as client_prenom, c.telephone as client_tel
                 FROM commandes_pieces cp
                 LEFT JOIN tickets t ON t.id = cp.ticket_id
+                LEFT JOIN clients c ON c.id = t.client_id
                 {where}
                 ORDER BY cp.date_creation DESC""",
             params,
         )
         rows = cur.fetchall()
-        # Use linked_ticket_code if ticket_code not stored directly
         results = []
         for r in rows:
             d = dict(r)
@@ -89,6 +91,41 @@ async def create_part(data: CommandePieceCreate, user: dict = Depends(get_curren
     return {"id": row["id"]}
 
 
+@router.post("/auto", response_model=dict)
+async def create_part_auto(data: dict):
+    """Crée une commande de pièce automatiquement lors du dépôt (sans auth)."""
+    ticket_id = data.get("ticket_id")
+    if not ticket_id:
+        raise HTTPException(400, "ticket_id requis")
+
+    with get_cursor() as cur:
+        # Get ticket_code
+        cur.execute("SELECT ticket_code FROM tickets WHERE id = %s", (ticket_id,))
+        t = cur.fetchone()
+        ticket_code = t["ticket_code"] if t else ""
+
+        cur.execute("""
+            INSERT INTO commandes_pieces (ticket_id, description, fournisseur, prix, notes, ticket_code, statut)
+            VALUES (%s, %s, %s, %s, %s, %s, 'En attente') RETURNING id
+        """, (
+            ticket_id,
+            data.get("description", ""),
+            data.get("fournisseur", ""),
+            data.get("prix") or None,
+            data.get("notes", ""),
+            ticket_code,
+        ))
+        row = cur.fetchone()
+
+        # Set ticket status to "En attente de pièce"
+        cur.execute(
+            "UPDATE tickets SET statut = 'En attente de pièce', commande_piece = 1, date_maj = %s WHERE id = %s",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
+        )
+
+    return {"id": row["id"]}
+
+
 @router.patch("/{commande_id}", response_model=dict)
 async def update_part(
     commande_id: int,
@@ -122,6 +159,16 @@ async def update_part(
     with get_cursor() as cur:
         cur.execute(f"UPDATE commandes_pieces SET {set_clause} WHERE id = %s", values)
 
+        # Auto-sync: if commande becomes "Reçue", update ticket status to "Pièce reçue"
+        if updates.get("statut") == "Reçue":
+            cur.execute("SELECT ticket_id FROM commandes_pieces WHERE id = %s", (commande_id,))
+            row = cur.fetchone()
+            if row and row["ticket_id"]:
+                cur.execute(
+                    "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
+                    (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
+                )
+
     return {"ok": True}
 
 
@@ -131,3 +178,27 @@ async def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("DELETE FROM commandes_pieces WHERE id = %s", (commande_id,))
     return {"ok": True}
+
+
+# ─── PUBLIC ENDPOINT (for suivi page) ──────────────────────────
+@router.get("/public/{ticket_code}")
+async def get_commandes_public(ticket_code: str):
+    """Retourne les commandes liées à un ticket (public, infos limitées)."""
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT c.id, c.description as piece, c.statut,
+                   c.date_commande, c.date_reception
+            FROM commandes_pieces c
+            JOIN tickets t ON t.id = c.ticket_id
+            WHERE t.ticket_code = %s
+            ORDER BY c.date_creation DESC
+        """, (ticket_code,))
+        rows = cur.fetchall()
+        results = []
+        for r in rows:
+            d = dict(r)
+            for key in ("date_commande", "date_reception"):
+                if d.get(key) and hasattr(d[key], "isoformat"):
+                    d[key] = d[key].isoformat()
+            results.append(d)
+        return results

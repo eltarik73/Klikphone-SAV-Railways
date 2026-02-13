@@ -6,7 +6,7 @@ import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck } from 'lucide-react';
 import { formatPrix } from '../lib/utils';
 
 export default function SuiviPage() {
@@ -14,6 +14,7 @@ export default function SuiviPage() {
   const [code, setCode] = useState(searchParams.get('ticket') || searchParams.get('tel') || '');
   const [ticket, setTicket] = useState(null);
   const [phoneResults, setPhoneResults] = useState([]);
+  const [commandes, setCommandes] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,12 +36,14 @@ export default function SuiviPage() {
         } else if (results.length === 1) {
           const data = await api.getTicketByCode(results[0].ticket_code);
           setTicket(data);
+          api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
         } else {
           setPhoneResults(results);
         }
       } else {
         const data = await api.getTicketByCode(val.toUpperCase());
         setTicket(data);
+        api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
       }
     } catch {
       setError('Aucun ticket trouvé.');
@@ -67,6 +70,7 @@ export default function SuiviPage() {
       const data = await api.getTicketByCode(ticketCode);
       setTicket(data);
       setPhoneResults([]);
+      api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
     } catch {
       setError('Erreur de chargement du ticket.');
     } finally {
@@ -141,7 +145,7 @@ export default function SuiviPage() {
           <div className="space-y-5 animate-in">
             {/* Progress tracker */}
             <div className="card p-5">
-              <ProgressTracker statut={ticket.statut} />
+              <ProgressTracker statut={ticket.statut} hasPiece={ticket.commande_piece === 1} />
             </div>
 
             {/* Ticket card */}
@@ -251,6 +255,55 @@ export default function SuiviPage() {
                 </div>
               )}
             </div>
+
+            {/* Commande de pièce — visible si existe */}
+            {commandes.map(cmd => {
+              const isReceived = cmd.statut === 'Reçue';
+              const isDone = ['Réparation terminée', 'Rendu au client', 'Clôturé'].includes(ticket.statut);
+              if (isDone) return null;
+              return isReceived ? (
+                <div key={cmd.id} className="card p-5 bg-green-50 border border-green-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                      <Package className="w-4 h-4 text-green-600" />
+                    </div>
+                    <span className="font-bold text-sm text-green-800">Pièce reçue</span>
+                  </div>
+                  <div className="text-sm font-semibold text-slate-700">{cmd.piece}</div>
+                  {cmd.date_reception && (
+                    <div className="text-xs text-green-600 mt-1">
+                      Reçue le {formatDate(cmd.date_reception)}
+                    </div>
+                  )}
+                  <div className="text-xs text-slate-500 mt-2">
+                    La réparation de votre appareil va être lancée rapidement.
+                  </div>
+                </div>
+              ) : (
+                <div key={cmd.id} className="card p-5 bg-amber-50 border border-amber-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                      <Truck className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <span className="font-bold text-sm text-amber-800">Pièce en cours d'acheminement</span>
+                  </div>
+                  <div className="text-sm font-semibold text-slate-700">{cmd.piece}</div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
+                      cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
+                      'bg-purple-100 text-purple-700'
+                    }`}>
+                      {cmd.statut === 'En attente' ? 'En attente de commande' :
+                       cmd.statut === 'Commandée' ? 'Commandée' : 'Expédiée'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500 mt-2">
+                    Nous vous préviendrons dès réception pour lancer la réparation.
+                  </div>
+                </div>
+              );
+            })}
 
             {/* Fidélité */}
             <FideliteCard ticketCode={ticket.ticket_code} compact />

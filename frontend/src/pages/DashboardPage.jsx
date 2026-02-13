@@ -406,6 +406,9 @@ export default function DashboardPage() {
                 <div className="cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <div className="flex items-center gap-1">
                     {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
+                    {t.commande_piece === 1 && ['En attente de pièce', 'En attente de diagnostic'].includes(t.statut) && (
+                      <Package className="w-3 h-3 text-amber-500 shrink-0" title="Pièce à commander" />
+                    )}
                     <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
                   </div>
                 </div>

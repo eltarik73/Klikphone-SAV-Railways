@@ -1,6 +1,6 @@
-import { Search, FileText, Wrench, CheckCircle2, Package } from 'lucide-react';
+import { Search, FileText, Wrench, CheckCircle2, Package, Truck } from 'lucide-react';
 
-const STEPS = [
+const STEPS_NORMAL = [
   { label: 'Diagnostic', icon: Search },
   { label: 'Devis', icon: FileText },
   { label: 'Réparation', icon: Wrench },
@@ -8,7 +8,16 @@ const STEPS = [
   { label: 'Rendu', icon: Package },
 ];
 
-const STATUS_TO_STEP = {
+const STEPS_PIECE = [
+  { label: 'Diagnostic', icon: Search },
+  { label: 'Devis', icon: FileText },
+  { label: 'Pièce', icon: Truck },
+  { label: 'Réparation', icon: Wrench },
+  { label: 'Terminé', icon: CheckCircle2 },
+  { label: 'Rendu', icon: Package },
+];
+
+const STATUS_TO_STEP_NORMAL = {
   'En attente de diagnostic': 0,
   'En attente de pièce': 1,
   'Pièce reçue': 1,
@@ -19,12 +28,25 @@ const STATUS_TO_STEP = {
   'Clôturé': 4,
 };
 
-export default function ProgressTracker({ statut }) {
-  const currentStep = STATUS_TO_STEP[statut] ?? -1;
+const STATUS_TO_STEP_PIECE = {
+  'En attente de diagnostic': 0,
+  "En attente d'accord client": 1,
+  'En attente de pièce': 2,
+  'Pièce reçue': 2,
+  'En cours de réparation': 3,
+  'Réparation terminée': 4,
+  'Rendu au client': 5,
+  'Clôturé': 5,
+};
+
+export default function ProgressTracker({ statut, hasPiece }) {
+  const steps = hasPiece ? STEPS_PIECE : STEPS_NORMAL;
+  const statusMap = hasPiece ? STATUS_TO_STEP_PIECE : STATUS_TO_STEP_NORMAL;
+  const currentStep = statusMap[statut] ?? -1;
 
   return (
     <div className="flex items-center justify-between w-full">
-      {STEPS.map((step, i) => {
+      {steps.map((step, i) => {
         const Icon = step.icon;
         const done = i <= currentStep;
         const isCurrent = i === currentStep;
@@ -44,7 +66,7 @@ export default function ProgressTracker({ statut }) {
                 {step.label}
               </span>
             </div>
-            {i < STEPS.length - 1 && (
+            {i < steps.length - 1 && (
               <div className={`flex-1 h-0.5 mx-2 rounded-full transition-colors ${
                 i < currentStep ? 'bg-brand-500' : 'bg-slate-200'
               }`} />

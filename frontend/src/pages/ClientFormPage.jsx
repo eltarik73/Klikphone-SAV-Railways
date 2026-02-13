@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Lock, Shield, FileText, Send,
+  Lock, Shield, FileText, Send, Package,
 } from 'lucide-react';
 
 const STEPS = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
@@ -37,6 +37,13 @@ export default function ClientFormPage() {
     imei: '',
   });
 
+  // Pièce à commander
+  const [pieceACommander, setPieceACommander] = useState(false);
+  const [pieceNom, setPieceNom] = useState('');
+  const [pieceDetails, setPieceDetails] = useState('');
+  const [fournisseur, setFournisseur] = useState('');
+  const [prixEstime, setPrixEstime] = useState('');
+
   const resetForm = () => {
     setForm({
       nom: '', prenom: '', telephone: '', email: '', societe: '',
@@ -44,6 +51,11 @@ export default function ClientFormPage() {
       panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
       imei: '',
     });
+    setPieceACommander(false);
+    setPieceNom('');
+    setPieceDetails('');
+    setFournisseur('');
+    setPrixEstime('');
     setCreatedCode(null);
     setStep(0);
     setErrors({});
@@ -137,10 +149,27 @@ export default function ClientFormPage() {
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
         marque: form.marque, modele: form.modele,
-        modele_autre: form.modele_autre, panne: form.panne,
-        panne_detail: form.panne_detail, pin: form.pin,
+        modele_autre: form.modele_autre,
+        panne: pieceACommander && pieceNom ? 'Pièce à commander' : form.panne,
+        panne_detail: pieceACommander && pieceNom
+          ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
+          : form.panne_detail,
+        pin: form.pin,
         pattern: form.pattern, notes_client: form.notes_client, imei: form.imei,
+        commande_piece: pieceACommander ? 1 : 0,
       });
+
+      // Auto-create commande if piece à commander
+      if (pieceACommander && pieceNom) {
+        await api.createPartAuto({
+          ticket_id: result.id,
+          description: pieceNom,
+          fournisseur: fournisseur || '',
+          prix: prixEstime ? parseFloat(prixEstime) : null,
+          notes: pieceDetails || '',
+        });
+      }
+
       setCreatedCode(result.ticket_code);
       setStep(5);
     } catch (err) {
@@ -372,6 +401,51 @@ export default function ClientFormPage() {
                 placeholder="Informations complémentaires (accessoires, état cosmétique...)"
               />
             </div>
+
+            {/* Pièce à commander */}
+            <div className="border-t border-slate-100 pt-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                <Package className="w-4 h-4 text-amber-600" />
+                <span className="text-sm font-semibold text-amber-700">Pièce à commander</span>
+              </label>
+            </div>
+
+            {pieceACommander && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 animate-in">
+                <div className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                  <Package className="w-3 h-3" /> Détail de la commande
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 font-semibold">Pièce à commander *</label>
+                  <input value={pieceNom} onChange={e => setPieceNom(e.target.value)}
+                    placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-600 font-semibold">Détails / Commentaire</label>
+                  <textarea value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
+                    placeholder="Précisions sur la pièce, référence, couleur, capacité..."
+                    rows={2}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1 resize-none" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-600 font-semibold">Fournisseur</label>
+                    <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
+                      placeholder="Ex: Utopya, MobileParts..."
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-600 font-semibold">Prix estimé</label>
+                    <input type="number" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

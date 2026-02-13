@@ -8,7 +8,7 @@ import {
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
 } from 'lucide-react';
 
-const PART_STATUTS = ['En attente', 'Commandée', 'Reçue', 'Annulée'];
+const PART_STATUTS = ['En attente', 'Commandée', 'Expédiée', 'Reçue', 'Annulée'];
 
 export default function CommandesPage() {
   const navigate = useNavigate();
@@ -112,6 +112,7 @@ export default function CommandesPage() {
     switch (statut) {
       case 'En attente': return 'bg-amber-50 text-amber-700 ring-amber-200/80';
       case 'Commandée': return 'bg-blue-50 text-blue-700 ring-blue-200/80';
+      case 'Expédiée': return 'bg-purple-50 text-purple-700 ring-purple-200/80';
       case 'Reçue': return 'bg-emerald-50 text-emerald-700 ring-emerald-200/80';
       case 'Annulée': return 'bg-red-50 text-red-600 ring-red-200/80';
       default: return 'bg-slate-100 text-slate-600 ring-slate-200/80';
@@ -122,6 +123,7 @@ export default function CommandesPage() {
     switch (statut) {
       case 'En attente': return <Clock className="w-3 h-3" />;
       case 'Commandée': return <Package className="w-3 h-3" />;
+      case 'Expédiée': return <ExternalLink className="w-3 h-3" />;
       case 'Reçue': return <Check className="w-3 h-3" />;
       case 'Annulée': return <X className="w-3 h-3" />;
       default: return null;
@@ -231,8 +233,9 @@ export default function CommandesPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[1fr_140px_120px_90px_120px_100px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[1fr_130px_140px_120px_90px_120px_100px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <span className="table-header">Désignation</span>
+          <span className="table-header">Client</span>
           <span className="table-header">Fournisseur</span>
           <span className="table-header">Référence</span>
           <span className="table-header">Prix</span>
@@ -258,7 +261,7 @@ export default function CommandesPage() {
           <div className="divide-y divide-slate-100/80">
             {parts.map((p) => (
               <div key={p.id}
-                className="lg:grid lg:grid-cols-[1fr_140px_120px_90px_120px_100px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
+                className="lg:grid lg:grid-cols-[1fr_130px_140px_120px_90px_120px_100px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{p.description}</p>
@@ -269,6 +272,10 @@ export default function CommandesPage() {
                     </button>
                   )}
                   {p.notes && <p className="text-xs text-slate-400 mt-0.5 truncate">{p.notes}</p>}
+                </div>
+                <div className="hidden lg:block">
+                  <p className="text-sm text-slate-700 truncate">{p.client_prenom || ''} {p.client_nom || ''}</p>
+                  {p.client_tel && <p className="text-[11px] text-slate-400 font-mono">{p.client_tel}</p>}
                 </div>
                 <div className="hidden lg:block">
                   <p className="text-sm text-slate-600">{p.fournisseur || '—'}</p>
@@ -303,6 +310,11 @@ export default function CommandesPage() {
                     </button>
                   )}
                   {p.statut === 'Commandée' && (
+                    <button onClick={() => handleQuickStatus(p, 'Expédiée')} className="btn-ghost p-1.5" title="Marquer expédiée">
+                      <ExternalLink className="w-3.5 h-3.5 text-purple-500" />
+                    </button>
+                  )}
+                  {(p.statut === 'Commandée' || p.statut === 'Expédiée') && (
                     <button onClick={() => handleQuickStatus(p, 'Reçue')} className="btn-ghost p-1.5" title="Marquer reçue">
                       <Check className="w-3.5 h-3.5 text-emerald-500" />
                     </button>
