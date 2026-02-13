@@ -201,61 +201,72 @@ body {{
   max-width: 302px;
   margin: 0 auto;
   padding: 4mm;
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
   line-height: 1.5;
   color: #000;
   background: #fff;
 }}
 .center {{ text-align:center; }}
-.bold {{ font-weight:bold; }}
+.bold {{ font-weight:900; }}
 .right {{ text-align:right; }}
 h1 {{
-  font-family: Arial, sans-serif;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 900;
   letter-spacing: 4px;
   margin: 0;
 }}
 h2 {{
-  font-family: Arial, sans-serif;
-  font-size: 15px;
-  font-weight: bold;
-  letter-spacing: 2px;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 3px;
   text-transform: uppercase;
   margin: 3px 0;
 }}
 .sep {{ border:none; border-top:1px dashed #000; margin:8px 0; }}
 .sep-bold {{ border:none; border-top:3px solid #000; margin:10px 0; }}
-.row {{ display:flex; justify-content:space-between; padding:2px 0; font-size:13px; }}
-.row .val {{ text-align:right; flex-shrink:0; font-weight:bold; }}
-.section {{ margin:6px 0; }}
-.section-title {{ font-weight:bold; font-size:12px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; border-bottom:1px solid #000; padding-bottom:2px; }}
-.small {{ font-size:10px; line-height:1.3; }}
-.tiny {{ font-size:9px; line-height:1.3; color:#333; }}
+.row {{ display:flex; justify-content:space-between; padding:3px 0; font-size:14px; font-weight:700; }}
+.row .val {{ text-align:right; flex-shrink:0; font-weight:900; }}
+.section {{ margin:8px 0; }}
+.section-title {{
+  font-weight:900; font-size:12px; letter-spacing:1px; text-transform:uppercase;
+  background:#000; color:#fff; padding:3px 8px; margin-bottom:6px;
+}}
+.box {{
+  border:2px solid #000; border-radius:4px; padding:10px; margin:8px 0;
+}}
+.box-title {{
+  background:#000; color:#fff; font-size:11px; font-weight:700;
+  padding:3px 8px; margin:-10px -10px 8px -10px;
+  letter-spacing:1px; text-transform:uppercase;
+}}
+.small {{ font-size:11px; line-height:1.4; font-weight:600; }}
+.tiny {{ font-size:10px; line-height:1.3; color:#000; }}
 .logo-img {{ width:160px; height:auto; display:block; margin:0 auto 6px; }}
 .qr {{ text-align:center; margin:10px 0; }}
 .qr img {{ width:200px; height:200px; }}
 .highlight {{
-  font-size:20px;
+  font-size:22px;
   font-weight:900;
   letter-spacing:3px;
 }}
 .total-box {{
   border:3px solid #000;
-  padding:6px 10px;
-  margin:6px 0;
-  font-weight:bold;
-  font-size:16px;
+  padding:8px 10px;
+  margin:8px 0;
+  font-weight:900;
+  font-size:17px;
 }}
 .info-box {{
-  border:1px solid #000;
-  padding:4px 8px;
-  margin:4px 0;
+  border:2px solid #000;
+  border-radius:4px;
+  padding:6px 10px;
+  margin:6px 0;
 }}
 @media print {{
   body {{ width:80mm; max-width:302px; }}
   @page {{ size:80mm auto; margin:2mm; }}
+  body * {{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }}
 }}
 </style>
 </head><body>
@@ -290,70 +301,71 @@ def _ticket_client_html(t: dict) -> str:
     # Tarification section
     tarif_html = ""
     if devis > 0 or prix_supp > 0:
-        tarif_html = '<hr class="sep">'
-        tarif_html += '<div class="section"><div class="bold">TARIFICATION</div>'
+        tarif_inner = ""
         if devis > 0:
-            tarif_html += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(devis)}€</span></div>'
+            tarif_inner += f'<div class="row"><span>{t.get("panne", "Réparation")}</span><span class="val">{_fp(devis)} €</span></div>'
         if t.get("reparation_supp") and prix_supp > 0:
-            tarif_html += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(prix_supp)}€</span></div>'
-            tarif_html += '<div class="small">(répar. supplémentaire)</div>'
+            tarif_inner += f'<div class="row"><span>{t.get("reparation_supp", "")}</span><span class="val">{_fp(prix_supp)} €</span></div>'
         if reduction > 0:
             red_pct = float(t.get("reduction_pourcentage") or 0)
             label = f'Réduction ({red_pct:g}%)' if red_pct > 0 else 'Réduction'
-            tarif_html += f'<div class="row"><span>{label}</span><span class="val">- {_fp(reduction)}€</span></div>'
-        tarif_html += '<hr class="sep">'
-        tarif_html += f'<div class="total-box"><div class="row"><span>TOTAL</span><span>{_fp(total)}€</span></div></div>'
+            tarif_inner += f'<div class="row"><span>{label}</span><span class="val">- {_fp(reduction)} €</span></div>'
+        tarif_inner += f'<div style="border-top:2px solid #000;margin-top:6px;padding-top:6px;">'
+        tarif_inner += f'<div class="row" style="font-size:16px;"><span>TOTAL</span><span class="val">{_fp(total)} €</span></div></div>'
         if acompte > 0:
-            tarif_html += f'<div class="row"><span>Acompte versé</span><span class="val">- {_fp(acompte)}€</span></div>'
-        tarif_html += f'<div class="total-box center">RESTE À PAYER  {_fp(reste)}€</div>'
-        tarif_html += '</div>'
+            tarif_inner += f'<div class="row"><span>Acompte versé</span><span class="val">- {_fp(acompte)} €</span></div>'
+        tarif_inner += f'<div style="border:3px solid #000;padding:8px;margin-top:6px;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>'
+        tarif_html = f'<div class="box"><div class="box-title">💰 TARIFICATION</div>{tarif_inner}</div>'
 
     # Note publique
     note_html = ""
     if t.get("notes_client"):
-        note_html = f'<hr class="sep"><div class="section"><div class="small"><b>Note:</b> {t["notes_client"]}</div></div>'
+        note_html = f'<div class="box"><div class="box-title">📝 NOTE</div><div style="font-size:13px;font-weight:700;">{t["notes_client"]}</div></div>'
 
     return _THERMAL.format(title=f"Ticket Client - {code}") + f"""
 <div class="center">
   <img src="/logo_k.png" class="logo-img" alt="K" onerror="this.style.display='none'">
   <h1>KLIKPHONE</h1>
-  <div class="small" style="font-weight:bold">Spécialiste Apple & Multimarque</div>
+  <div class="small">Spécialiste Apple & Multimarque</div>
   <div class="small">{adresse}</div>
   <div class="small">Tél: {tel_boutique}</div>
 </div>
 <hr class="sep-bold">
-<div class="center"><h2>TICKET DE DÉPÔT</h2></div>
-<hr class="sep-bold">
+<div style="background:#000;color:#fff;text-align:center;padding:8px;font-size:17px;font-weight:900;letter-spacing:3px;margin-bottom:8px;">
+  TICKET DE DÉPÔT
+</div>
+
 <div class="info-box center">
   <div class="highlight">{code}</div>
-  <div class="small">{_fd(t.get('date_depot'))}</div>
+  <div class="small" style="margin-top:2px">{_fd(t.get('date_depot'))}</div>
 </div>
 {recup_html}
-<hr class="sep">
-<div class="section">
-  <div class="section-title">CLIENT</div>
-  <div class="row"><span>Nom:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span class="val">{t.get('client_tel', '')}</span></div>
+
+<div class="box">
+  <div class="box-title">👤 CLIENT</div>
+  <div class="row"><span>Nom :</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
+  <div class="row"><span>Tél :</span><span class="val">{t.get('client_tel', '')}</span></div>
 </div>
-<hr class="sep">
-<div class="section">
-  <div class="section-title">APPAREIL</div>
-  <div class="row"><span>Modèle:</span><span class="val">{appareil}</span></div>
-  <div class="row"><span>Catégorie:</span><span>{t.get('categorie', '')}</span></div>
-  <div class="row"><span>Motif:</span><span class="val">{t.get('panne', '')}</span></div>
-  {f'<div class="row"><span>Détail:</span><span>{t.get("panne_detail","")}</span></div>' if t.get('panne_detail') else ''}
-  {f'<div class="row"><span>IMEI:</span><span class="small" style="font-family:monospace">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
+
+<div class="box">
+  <div class="box-title">📱 APPAREIL</div>
+  <div class="row"><span>Modèle :</span><span class="val">{appareil}</span></div>
+  <div class="row"><span>Catégorie :</span><span class="val">{t.get('categorie', '')}</span></div>
+  <div class="row"><span>Motif :</span><span class="val">{t.get('panne', '')}</span></div>
+  {f'<div class="row"><span>Détail :</span><span class="val">{t.get("panne_detail","")}</span></div>' if t.get('panne_detail') else ''}
+  {f'<div class="row"><span>IMEI :</span><span class="val" style="font-family:Courier New,monospace">{t.get("imei","")}</span></div>' if t.get('imei') else ''}
 </div>
 {tarif_html}
 {note_html}
-<hr class="sep">
+
 <div class="qr"><img src="{qr}" alt="QR"></div>
-<div class="center" style="font-weight:bold;font-size:11px">
+<div class="center" style="font-weight:900;font-size:12px">
   Scannez pour suivre votre<br>réparation en ligne
 </div>
+
 <hr class="sep">
-<div class="section tiny">
-  <b>CONDITIONS GÉNÉRALES</b><br><br>
+<div class="section tiny" style="padding:4px 0;">
+  <b style="font-size:11px">CONDITIONS GÉNÉRALES</b><br><br>
   Klikphone ne consulte ni n'accède aux données
   de votre appareil. Sauvegardez vos données
   avant le dépôt. Nous ne pouvons être tenus
@@ -361,10 +373,12 @@ def _ticket_client_html(t: dict) -> str:
   dysfonctionnement post-réparation. Garantie
   6 mois sur les réparations.
 </div>
+
 <hr class="sep-bold">
-<div class="center" style="margin-top:6px;font-size:12px">
+<div class="center" style="margin-top:8px;font-size:13px">
   <b>Merci de votre confiance !</b><br>
-  <span style="font-size:14px;font-weight:900;letter-spacing:2px">KLIKPHONE</span>
+  <div style="font-size:15px;font-weight:900;letter-spacing:3px;margin-top:4px">KLIKPHONE</div>
+  <div class="small">{horaires}</div>
 </div>
 </body></html>"""
 
@@ -614,39 +628,43 @@ def _devis_html(t: dict) -> str:
   <div class="small">{adresse}</div>
 </div>
 <hr class="sep-bold">
-<div class="center"><h2>D E V I S</h2></div>
-<hr class="sep">
-<div class="section">
-  <div class="row"><span>N°:</span><span class="val">{code}</span></div>
-  <div class="row"><span>Date:</span><span>{_fd(t.get('date_depot'))}</span></div>
-  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
+<div style="background:#000;color:#fff;text-align:center;padding:8px;font-size:17px;font-weight:900;letter-spacing:4px;margin-bottom:8px;">
+  D E V I S
 </div>
-<hr class="sep">
-<div class="section">
-  <div class="row"><span>Client:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span>{t.get('client_tel', '')}</span></div>
+
+<div class="box">
+  <div class="box-title">📋 INFORMATIONS</div>
+  <div class="row"><span>N° :</span><span class="val">{code}</span></div>
+  <div class="row"><span>Date :</span><span class="val">{_fd(t.get('date_depot'))}</span></div>
+  <div class="row"><span>Appareil :</span><span class="val">{appareil}</span></div>
 </div>
-<hr class="sep">
-<div class="section bold">DÉTAIL DES RÉPARATIONS</div>
-<div class="section">
+
+<div class="box">
+  <div class="box-title">👤 CLIENT</div>
+  <div class="row"><span>Nom :</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
+  <div class="row"><span>Tél :</span><span class="val">{t.get('client_tel', '')}</span></div>
+</div>
+
+<div class="box">
+  <div class="box-title">🔧 DÉTAIL DES RÉPARATIONS</div>
   {lignes}
+  <div style="border-top:2px solid #000;margin-top:6px;padding-top:6px;">
+    <div class="row"><span>Total HT :</span><span class="val">{_fp(total_ht)} €</span></div>
+    <div class="row"><span>{tva_label} :</span><span class="val">{_fp(tva)} €</span></div>
+  </div>
 </div>
+
+<div class="total-box"><div class="row"><span>TOTAL TTC :</span><span>{_fp(total_ttc)} €</span></div></div>
+{f'<div class="row" style="padding:2px 10px;"><span>Acompte :</span><span class="val">- {_fp(acompte)} €</span></div>' if acompte > 0 else ''}
+{f'<div style="border:3px solid #000;padding:8px;margin:6px 0;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>' if acompte > 0 else ''}
+
 <hr class="sep">
-<div class="section">
-  <div class="row"><span>Total HT:</span><span class="val">{_fp(total_ht)}€</span></div>
-  <div class="row"><span>{tva_label}:</span><span class="val">{_fp(tva)}€</span></div>
-</div>
-<hr class="sep-bold">
-<div class="total-box"><div class="row"><span>TOTAL TTC:</span><span>{_fp(total_ttc)}€</span></div></div>
-{f'<div class="row"><span>Acompte:</span><span class="val">- {_fp(acompte)}€</span></div>' if acompte > 0 else ''}
-{f'<div class="total-box center">RESTE À PAYER: {_fp(reste)}€</div>' if acompte > 0 else ''}
-<hr class="sep">
-<div class="tiny">
+<div class="tiny" style="padding:2px 0;">
   Devis valable 30 jours.
 </div>
 <hr class="sep">
 <div class="center small">
-  KLIKPHONE SARL<br>
+  <b>KLIKPHONE SARL</b><br>
   {siret_line}
 </div>
 </body></html>"""
@@ -696,40 +714,44 @@ def _recu_html(t: dict) -> str:
   <div class="small">{adresse}</div>
 </div>
 <hr class="sep-bold">
-<div class="center"><h2>R E Ç U</h2></div>
-<hr class="sep">
-<div class="section">
-  <div class="row"><span>N°:</span><span class="val">{code}</span></div>
-  <div class="row"><span>Date:</span><span>{datetime.now().strftime("%d/%m/%Y")}</span></div>
-  <div class="row"><span>Appareil:</span><span class="val">{appareil}</span></div>
+<div style="background:#000;color:#fff;text-align:center;padding:8px;font-size:17px;font-weight:900;letter-spacing:4px;margin-bottom:8px;">
+  R E Ç U
 </div>
-<hr class="sep">
-<div class="section">
-  <div class="row"><span>Client:</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
-  <div class="row"><span>Tél:</span><span>{t.get('client_tel', '')}</span></div>
+
+<div class="box">
+  <div class="box-title">📋 INFORMATIONS</div>
+  <div class="row"><span>N° :</span><span class="val">{code}</span></div>
+  <div class="row"><span>Date :</span><span class="val">{datetime.now().strftime("%d/%m/%Y")}</span></div>
+  <div class="row"><span>Appareil :</span><span class="val">{appareil}</span></div>
 </div>
-<hr class="sep">
-<div class="section bold">DÉTAIL DES RÉPARATIONS</div>
-<div class="section">
+
+<div class="box">
+  <div class="box-title">👤 CLIENT</div>
+  <div class="row"><span>Nom :</span><span class="val">{t.get('client_prenom', '')} {t.get('client_nom', '')}</span></div>
+  <div class="row"><span>Tél :</span><span class="val">{t.get('client_tel', '')}</span></div>
+</div>
+
+<div class="box">
+  <div class="box-title">🔧 DÉTAIL DES RÉPARATIONS</div>
   {lignes}
+  <div style="border-top:2px solid #000;margin-top:6px;padding-top:6px;">
+    <div class="row"><span>Total HT :</span><span class="val">{_fp(total_ht)} €</span></div>
+    <div class="row"><span>{tva_label} :</span><span class="val">{_fp(tva)} €</span></div>
+  </div>
 </div>
+
+<div class="total-box"><div class="row"><span>TOTAL TTC :</span><span>{_fp(total_ttc)} €</span></div></div>
+{f'<div class="row" style="padding:2px 10px;"><span>Acompte :</span><span class="val">- {_fp(acompte)} €</span></div>' if acompte > 0 else ''}
+{f'<div style="border:3px solid #000;padding:8px;margin:6px 0;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>' if acompte > 0 else ''}
+
 <hr class="sep">
-<div class="section">
-  <div class="row"><span>Total HT:</span><span class="val">{_fp(total_ht)}€</span></div>
-  <div class="row"><span>{tva_label}:</span><span class="val">{_fp(tva)}€</span></div>
-</div>
-<hr class="sep-bold">
-<div class="total-box"><div class="row"><span>TOTAL TTC:</span><span>{_fp(total_ttc)}€</span></div></div>
-{f'<div class="row"><span>Acompte:</span><span class="val">- {_fp(acompte)}€</span></div>' if acompte > 0 else ''}
-{f'<div class="total-box center">RESTE À PAYER: {_fp(reste)}€</div>' if acompte > 0 else ''}
-<hr class="sep">
-<div class="tiny">
+<div class="tiny" style="padding:2px 0;">
   Ce ticket de garantie ne fait pas office de facture.
 </div>
 {_fidelite_section(t)}
 <hr class="sep">
 <div class="center small">
-  KLIKPHONE SARL<br>
+  <b>KLIKPHONE SARL</b><br>
   {siret_line}
 </div>
 </body></html>"""
