@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -53,7 +53,7 @@ export default function ClientsPage() {
 
   useEffect(() => { loadClients(); }, [loadClients]);
 
-  const sorted = [...clients].sort((a, b) => {
+  const sorted = useMemo(() => [...clients].sort((a, b) => {
     let va = a[sortField], vb = b[sortField];
     if (sortField === 'nom') {
       va = `${a.nom || ''} ${a.prenom || ''}`.toLowerCase();
@@ -63,7 +63,7 @@ export default function ClientsPage() {
     if (vb == null) vb = '';
     const cmp = va < vb ? -1 : va > vb ? 1 : 0;
     return sortDir === 'asc' ? cmp : -cmp;
-  });
+  }), [clients, sortField, sortDir]);
 
   const toggleSort = (field) => {
     if (sortField === field) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -153,20 +153,19 @@ export default function DashboardPage() {
     return null;
   };
 
-  let filteredTickets = tickets;
+  const filteredTickets = useMemo(() => {
+    if (filterTech === '__mine__' && techName) {
+      return tickets.filter(t =>
+        matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
+      );
+    } else if (filterTech) {
+      return tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
+    }
+    return tickets;
+  }, [tickets, filterTech, techName]);
 
-  // If a specific tech is selected in the dropdown, use that filter
-  if (filterTech === '__mine__' && techName) {
-    // "Mes tickets" option: own tickets + unassigned
-    filteredTickets = tickets.filter(t =>
-      matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
-    );
-  } else if (filterTech) {
-    filteredTickets = tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
-  }
-
-  const activeTickets = filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut));
-  const archivedTickets = filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut));
+  const activeTickets = useMemo(() => filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
+  const archivedTickets = useMemo(() => filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
   const allDisplayed = showArchived ? archivedTickets : activeTickets;
   const totalPages = Math.ceil(allDisplayed.length / pageSize);
   const displayedTickets = allDisplayed.slice(page * pageSize, (page + 1) * pageSize);

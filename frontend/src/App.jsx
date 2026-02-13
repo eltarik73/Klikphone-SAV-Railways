@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { SettingsProvider } from './hooks/useSettings';
@@ -8,16 +8,17 @@ import ChatWidget from './components/ChatWidget';
 
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import TicketDetailPage from './pages/TicketDetailPage';
-import ClientFormPage from './pages/ClientFormPage';
 import SuiviPage from './pages/SuiviPage';
-import ClientsPage from './pages/ClientsPage';
-import CommandesPage from './pages/CommandesPage';
-import AttestationPage from './pages/AttestationPage';
-import ConfigPage from './pages/ConfigPage';
-import AdminPage from './pages/AdminPage';
-import DepotPage from './pages/DepotPage';
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const TicketDetailPage = lazy(() => import('./pages/TicketDetailPage'));
+const ClientFormPage = lazy(() => import('./pages/ClientFormPage'));
+const ClientsPage = lazy(() => import('./pages/ClientsPage'));
+const CommandesPage = lazy(() => import('./pages/CommandesPage'));
+const AttestationPage = lazy(() => import('./pages/AttestationPage'));
+const ConfigPage = lazy(() => import('./pages/ConfigPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const DepotPage = lazy(() => import('./pages/DepotPage'));
 
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
@@ -61,9 +62,15 @@ function ChatOverlay() {
   return <ChatWidget />;
 }
 
+const LazyFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50">
+    <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
+
 function AppRoutes() {
   return (
-    <>
+    <Suspense fallback={<LazyFallback />}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login/:target" element={<LoginPage />} />
@@ -90,7 +97,7 @@ function AppRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatOverlay />
-    </>
+    </Suspense>
   );
 }
 
