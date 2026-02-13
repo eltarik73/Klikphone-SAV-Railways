@@ -333,7 +333,7 @@ async def chat_ai(msg: AIChatRequest):
     if not api_key:
         raise HTTPException(500, "Cle API Anthropic non configuree. Ajoutez ANTHROPIC_API_KEY dans Configuration ou en variable d'environnement.")
 
-    model = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-5-20250929"
+    model = _get_param("ANTHROPIC_MODEL") or "claude-haiku-4-5-20251001"
 
     # Role-based tools and prompt
     user_role = msg.role or ""
@@ -348,7 +348,7 @@ async def chat_ai(msg: AIChatRequest):
     _conversations[conv_id].append({"role": "user", "content": msg.message})
 
     # Keep last 20 messages for context
-    messages = _conversations[conv_id][-20:]
+    messages = _conversations[conv_id][-10:]
 
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -361,7 +361,7 @@ async def chat_ai(msg: AIChatRequest):
                 },
                 json={
                     "model": model,
-                    "max_tokens": 1024,
+                    "max_tokens": 500,
                     "system": system_prompt,
                     "tools": tools,
                     "messages": messages
@@ -392,7 +392,7 @@ async def chat_ai(msg: AIChatRequest):
                         })
 
                 _conversations[conv_id].append({"role": "user", "content": tool_results})
-                messages = _conversations[conv_id][-20:]
+                messages = _conversations[conv_id][-10:]
 
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -403,7 +403,7 @@ async def chat_ai(msg: AIChatRequest):
                     },
                     json={
                         "model": model,
-                        "max_tokens": 1024,
+                        "max_tokens": 500,
                         "system": system_prompt,
                         "tools": tools,
                         "messages": messages
