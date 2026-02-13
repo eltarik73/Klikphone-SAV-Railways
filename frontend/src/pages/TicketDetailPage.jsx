@@ -167,7 +167,6 @@ export default function TicketDetailPage() {
         pin: data.pin || '',
         pattern: data.pattern || '',
         notes_client: data.notes_client || '',
-        commande_piece: data.commande_piece || 0,
       });
       setClientForm({
         nom: data.client_nom || '',
@@ -185,6 +184,7 @@ export default function TicketDetailPage() {
         date_recuperation: data.date_recuperation || '',
         reduction_montant: data.reduction_montant || '',
         reduction_pourcentage: data.reduction_pourcentage || '',
+        commande_piece: data.commande_piece || 0,
       });
       setRepairLines(parseRepairLines(data));
       // Show attention flag from dedicated field, notes, or important private notes
@@ -741,7 +741,7 @@ export default function TicketDetailPage() {
             editing={editingDevice}
             onEdit={() => setEditingDevice(true)}
             onSave={handleSaveDevice}
-            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '', commande_piece: t.commande_piece || 0 }); }}
+            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
             viewContent={
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
@@ -793,12 +793,6 @@ export default function TicketDetailPage() {
               <div><label className="input-label">Code PIN</label><input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} /></div>
               <div><label className="input-label">Pattern</label><input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" /></div>
               <div className="col-span-2 sm:col-span-3"><label className="input-label">Note client</label><textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} /></div>
-              <div className="col-span-2 sm:col-span-3">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!deviceForm.commande_piece} onChange={e => setDeviceForm(f => ({ ...f, commande_piece: e.target.checked ? 1 : 0 }))} className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                  <span className="text-sm font-medium text-slate-700">Pièce à commander</span>
-                </label>
-              </div>
             </div>
           </EditableSection>
         );
@@ -968,7 +962,7 @@ export default function TicketDetailPage() {
               )}
               {editingPricing && (
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '' }); setRepairLines(parseRepairLines(t)); }} className="btn-ghost text-xs px-2.5 py-1.5"><X className="w-3.5 h-3.5" /> Annuler</button>
+                  <button onClick={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '', commande_piece: t.commande_piece || 0 }); setRepairLines(parseRepairLines(t)); }} className="btn-ghost text-xs px-2.5 py-1.5"><X className="w-3.5 h-3.5" /> Annuler</button>
                   <button onClick={handleSavePricing} className="btn-primary text-xs px-2.5 py-1.5"><Save className="w-3.5 h-3.5" /> Sauver</button>
                 </div>
               )}
@@ -1038,7 +1032,13 @@ export default function TicketDetailPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="input-label mb-0">Lignes de réparation</label>
-                    <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={!!pricingForm.commande_piece} onChange={e => setPricingForm(f => ({ ...f, commande_piece: e.target.checked ? 1 : 0 }))} className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                        <span className="text-xs font-medium text-amber-700"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
+                      </label>
+                      <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     {repairLines.map((line, i) => (
