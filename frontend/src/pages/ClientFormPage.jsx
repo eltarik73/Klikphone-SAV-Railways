@@ -8,7 +8,8 @@ import {
   Lock, Shield, FileText, Send, Package,
 } from 'lucide-react';
 
-const STEPS = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
+const STEPS_DEFAULT = ['Client', 'Appareil', 'Modèle', 'Panne', 'Sécurité', 'Confirmation'];
+const STEPS_COMMANDE = ['Client', 'Appareil', 'Modèle', 'Commande', 'Sécurité', 'Confirmation'];
 
 // Validation helpers
 const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
@@ -118,6 +119,9 @@ export default function ClientFormPage() {
     }
   }, [form.marque]);
 
+  const isCommande = form.categorie === 'Commande';
+  const STEPS = isCommande ? STEPS_COMMANDE : STEPS_DEFAULT;
+
   const updateForm = (field, value) => {
     setForm(f => ({ ...f, [field]: value }));
     setErrors(e => ({ ...e, [field]: undefined }));
@@ -151,17 +155,29 @@ export default function ClientFormPage() {
         marque: form.marque,
         modele: form.modele === 'Autre' ? '' : form.modele,
         modele_autre: form.modele === 'Autre' ? form.modele_autre : '',
-        panne: pieceACommander && pieceNom ? 'Pièce à commander' : form.panne,
-        panne_detail: pieceACommander && pieceNom
+        panne: isCommande ? 'Pièce à commander' : (pieceACommander && pieceNom ? 'Pièce à commander' : form.panne),
+        panne_detail: isCommande ? form.panne_detail : (pieceACommander && pieceNom
           ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
-          : form.panne_detail,
+          : form.panne_detail),
         pin: form.pin,
-        pattern: form.pattern, notes_client: form.notes_client, imei: form.imei,
-        commande_piece: pieceACommander ? 1 : 0,
+        pattern: form.pattern,
+        notes_client: form.notes_client,
+        imei: form.imei,
+        commande_piece: (isCommande || pieceACommander) ? 1 : 0,
       });
 
-      // Auto-create commande if piece à commander
-      if (pieceACommander && pieceNom) {
+      // Auto-create commande for "Commande" type
+      if (isCommande) {
+        await api.createPartAuto({
+          ticket_id: result.id,
+          description: form.panne_detail.trim(),
+          fournisseur: fournisseur || '',
+          prix: prixEstime ? parseFloat(prixEstime) : null,
+          notes: form.notes_client || '',
+        });
+      }
+      // Auto-create commande if piece à commander (regular ticket)
+      else if (pieceACommander && pieceNom) {
         await api.createPartAuto({
           ticket_id: result.id,
           description: pieceNom,
@@ -183,8 +199,8 @@ export default function ClientFormPage() {
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
     if (step === 1) return form.categorie;
-    if (step === 2) return form.marque;
-    if (step === 3) return form.panne || pieceACommander;
+    if (step === 2) return isCommande || form.marque;
+    if (step === 3) return isCommande ? form.panne_detail.trim() : (form.panne || pieceACommander);
     if (step === 4) return true;
     return true;
   };
@@ -317,8 +333,14 @@ export default function ClientFormPage() {
               </div>
             </div>
 
+            {isCommande && (
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
+                Optionnel pour une commande de pièce
+              </div>
+            )}
+
             <div>
-              <label className="input-label">Marque *</label>
+              <label className="input-label">Marque{isCommande ? '' : ' *'}</label>
               <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
                 <option value="">Sélectionner...</option>
                 {marques.map(m => <option key={m} value={m}>{m}</option>)}
@@ -352,100 +374,146 @@ export default function ClientFormPage() {
           </div>
         )}
 
-        {/* Step 3: Panne */}
+        {/* Step 3: Panne / Détail commande */}
         {step === 3 && (
           <div className="card p-6 space-y-4 animate-in">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isCommande ? 'bg-amber-50' : 'bg-amber-50'}`}>
+                {isCommande ? <Package className="w-5 h-5 text-amber-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Le problème</h2>
-                <p className="text-xs text-slate-400">Décrivez la panne</p>
+                <h2 className="text-lg font-semibold text-slate-900">{isCommande ? 'Détail commande' : 'Le problème'}</h2>
+                <p className="text-xs text-slate-400">{isCommande ? 'Décrivez la pièce à commander' : 'Décrivez la panne'}</p>
               </div>
             </div>
 
-            <div>
-              <label className="input-label">Type de panne *</label>
-              <div className="grid grid-cols-2 gap-2">
-                {pannes.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => updateForm('panne', p)}
-                    className={`p-2.5 rounded-lg text-xs font-medium border-2 transition-all text-left
-                      ${form.panne === p
-                        ? 'border-brand-500 bg-brand-50 text-brand-700'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="input-label">Détails supplémentaires</label>
-              <textarea
-                value={form.panne_detail}
-                onChange={e => updateForm('panne_detail', e.target.value)}
-                className="input min-h-[80px] resize-none"
-                placeholder="Décrivez plus précisément le problème..."
-              />
-            </div>
-
-            <div>
-              <label className="input-label">Notes</label>
-              <textarea
-                value={form.notes_client}
-                onChange={e => updateForm('notes_client', e.target.value)}
-                className="input min-h-[60px] resize-none"
-                placeholder="Informations complémentaires (accessoires, état cosmétique...)"
-              />
-            </div>
-
-            {/* Pièce à commander */}
-            <div className="border-t border-slate-100 pt-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
-                <Package className="w-4 h-4 text-amber-600" />
-                <span className="text-sm font-semibold text-amber-700">Pièce à commander</span>
-              </label>
-            </div>
-
-            {pieceACommander && (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 animate-in">
-                <div className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-                  <Package className="w-3 h-3" /> Détail de la commande
+            {isCommande ? (
+              /* ─── Mode Commande ─── */
+              <>
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700 flex items-center gap-2">
+                  <Package className="w-4 h-4 shrink-0" />
+                  La panne sera automatiquement définie comme "Pièce à commander"
                 </div>
+
                 <div>
-                  <label className="text-xs text-slate-600 font-semibold">Pièce à commander *</label>
-                  <input value={pieceNom} onChange={e => setPieceNom(e.target.value)}
+                  <label className="input-label">Pièce à commander *</label>
+                  <input
+                    value={form.panne_detail}
+                    onChange={e => updateForm('panne_detail', e.target.value)}
+                    className="input"
                     placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                  />
                 </div>
+
                 <div>
-                  <label className="text-xs text-slate-600 font-semibold">Détails / Commentaire</label>
-                  <textarea value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
-                    placeholder="Précisions sur la pièce, référence, couleur, capacité..."
-                    rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1 resize-none" />
+                  <label className="input-label">Détails supplémentaires (référence, couleur, capacité...)</label>
+                  <textarea
+                    value={form.notes_client}
+                    onChange={e => updateForm('notes_client', e.target.value)}
+                    className="input min-h-[80px] resize-none"
+                    placeholder="Précisions sur la pièce, référence exacte, couleur, capacité..."
+                  />
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-slate-600 font-semibold">Fournisseur</label>
+                    <label className="input-label">Fournisseur</label>
                     <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
-                      placeholder="Ex: Utopya, MobileParts..."
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                      className="input" placeholder="Ex: Utopya, MobileParts..." />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-600 font-semibold">Prix estimé</label>
-                    <input type="number" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                    <label className="input-label">Prix estimé (€)</label>
+                    <input type="number" step="0.01" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
+                      className="input" placeholder="0.00" />
                   </div>
                 </div>
-              </div>
+              </>
+            ) : (
+              /* ─── Mode Réparation ─── */
+              <>
+                <div>
+                  <label className="input-label">Type de panne *</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {pannes.map(p => (
+                      <button
+                        key={p}
+                        onClick={() => updateForm('panne', p)}
+                        className={`p-2.5 rounded-lg text-xs font-medium border-2 transition-all text-left
+                          ${form.panne === p
+                            ? 'border-brand-500 bg-brand-50 text-brand-700'
+                            : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="input-label">Détails supplémentaires</label>
+                  <textarea
+                    value={form.panne_detail}
+                    onChange={e => updateForm('panne_detail', e.target.value)}
+                    className="input min-h-[80px] resize-none"
+                    placeholder="Décrivez plus précisément le problème..."
+                  />
+                </div>
+
+                <div>
+                  <label className="input-label">Notes</label>
+                  <textarea
+                    value={form.notes_client}
+                    onChange={e => updateForm('notes_client', e.target.value)}
+                    className="input min-h-[60px] resize-none"
+                    placeholder="Informations complémentaires (accessoires, état cosmétique...)"
+                  />
+                </div>
+
+                {/* Pièce à commander */}
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                    <Package className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm font-semibold text-amber-700">Pièce à commander</span>
+                  </label>
+                </div>
+
+                {pieceACommander && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl space-y-3 animate-in">
+                    <div className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                      <Package className="w-3 h-3" /> Détail de la commande
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-600 font-semibold">Pièce à commander *</label>
+                      <input value={pieceNom} onChange={e => setPieceNom(e.target.value)}
+                        placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-600 font-semibold">Détails / Commentaire</label>
+                      <textarea value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
+                        placeholder="Précisions sur la pièce, référence, couleur, capacité..."
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1 resize-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-slate-600 font-semibold">Fournisseur</label>
+                        <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
+                          placeholder="Ex: Utopya, MobileParts..."
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-600 font-semibold">Prix estimé</label>
+                        <input type="number" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm mt-1" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
