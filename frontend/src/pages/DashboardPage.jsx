@@ -490,30 +490,24 @@ export default function DashboardPage() {
                   })()}
                 </div>
 
-                {/* Contact icons */}
+                {/* Contact icons — colored if message sent via that channel */}
                 <div className="flex items-center gap-1 mt-2 lg:mt-0">
-                  {t.client_tel && (
-                    <a href={waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`)}
-                      target="_blank" rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="p-1.5 rounded-md hover:bg-green-50 transition-colors" title="WhatsApp">
-                      <MessageCircle className="w-3.5 h-3.5 text-green-500" />
-                    </a>
-                  )}
-                  {t.client_tel && (
-                    <a href={smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`)}
-                      onClick={e => e.stopPropagation()}
-                      className="p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="SMS">
-                      <Send className="w-3.5 h-3.5 text-blue-500" />
-                    </a>
-                  )}
-                  {t.client_email && (
-                    <a href={`mailto:${t.client_email}`}
-                      onClick={e => e.stopPropagation()}
-                      className="p-1.5 rounded-md hover:bg-violet-50 transition-colors" title="Email">
-                      <Mail className="w-3.5 h-3.5 text-violet-500" />
-                    </a>
-                  )}
+                  <a href={t.client_tel ? waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`) : '#'}
+                    target="_blank" rel="noopener noreferrer"
+                    onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
+                    className="p-1.5 rounded-md hover:bg-green-50 transition-colors" title="WhatsApp">
+                    <MessageCircle className={`w-3.5 h-3.5 ${t.msg_whatsapp ? 'text-green-500' : 'text-slate-300'}`} />
+                  </a>
+                  <a href={t.client_tel ? smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`) : '#'}
+                    onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
+                    className="p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="SMS">
+                    <Send className={`w-3.5 h-3.5 ${t.msg_sms ? 'text-blue-500' : 'text-slate-300'}`} />
+                  </a>
+                  <a href={t.client_email ? `mailto:${t.client_email}` : '#'}
+                    onClick={e => { if (!t.client_email) e.preventDefault(); e.stopPropagation(); }}
+                    className="p-1.5 rounded-md hover:bg-amber-50 transition-colors" title="Email">
+                    <Mail className={`w-3.5 h-3.5 ${t.msg_email ? 'text-amber-500' : 'text-slate-300'}`} />
+                  </a>
                 </div>
 
                 {/* Prix */}

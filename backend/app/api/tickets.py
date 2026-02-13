@@ -102,11 +102,14 @@ async def list_tickets(
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     query = f"""
-        SELECT t.*, 
+        SELECT t.*,
                c.nom as client_nom, c.prenom as client_prenom,
                c.telephone as client_tel, c.email as client_email,
-               c.societe as client_societe, c.carte_camby as client_carte_camby
-        FROM tickets t 
+               c.societe as client_societe, c.carte_camby as client_carte_camby,
+               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
+               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
+               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
+        FROM tickets t
         JOIN clients c ON t.client_id = c.id
         {where}
         ORDER BY t.date_depot DESC
