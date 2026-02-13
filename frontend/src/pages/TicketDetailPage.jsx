@@ -98,7 +98,7 @@ export default function TicketDetailPage() {
   // Accord client modal state
   const [showAccordModal, setShowAccordModal] = useState(false);
   const [accordLoading, setAccordLoading] = useState(false);
-  const [accordForm, setAccordForm] = useState({ reparation: '', prix: '' });
+  const [accordMessage, setAccordMessage] = useState('');
 
   // Team members for tech dropdown
   const [teamMembers, setTeamMembers] = useState([]);
@@ -502,32 +502,73 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleDemanderAccord = async () => {
+  const buildAccordMessage = () => {
+    if (!ticket) return '';
+    const t = ticket;
+    const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
+    const lines = repairLines.filter(l => l.label);
+    const total = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+    const listStr = lines.map(l => `- ${l.label} : ${parseFloat(l.prix || 0).toFixed(2)} EUR`).join('\n');
+    return `Bonjour ${t.client_prenom || ''}, suite au diagnostic de votre ${appareil}, voici le détail des réparations nécessaires :\n\n${listStr}\n\nTotal : ${total.toFixed(2)} EUR\n\nMerci de nous confirmer votre accord pour lancer la réparation.\nKlikphone 04 79 60 89 22`;
+  };
+
+  const openAccordModal = () => {
+    setAccordMessage(buildAccordMessage());
+    setShowAccordModal(true);
+  };
+
+  const handleSendAccord = async (canal) => {
+    if (!accordMessage.trim()) { toast.error('Message vide'); return; }
     setAccordLoading(true);
     try {
-      // Add repair line to list
-      const newLine = { label: accordForm.reparation, prix: parseFloat(accordForm.prix) || 0 };
-      const updatedLines = [...repairLines.filter(l => l.label), newLine];
-      const totalRepairs = updatedLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+      const tel = ticket.client_tel;
+      const email = ticket.client_email;
 
-      await api.updateTicket(id, {
-        reparation_supp: JSON.stringify(updatedLines),
-        prix_supp: totalRepairs,
-      });
-      await api.changeStatus(id, "En attente d'accord client");
-      const result = await api.generateMessage(id, 'devis_a_valider');
-      const msg = result.message || result;
-      if (ticket.client_tel) {
-        window.open(waLink(ticket.client_tel, msg), '_blank');
+      if (canal === 'whatsapp') {
+        if (!tel) { toast.error('Pas de téléphone'); setAccordLoading(false); return; }
+        window.open(waLink(tel, accordMessage), '_blank');
+      } else if (canal === 'sms') {
+        if (!tel) { toast.error('Pas de téléphone'); setAccordLoading(false); return; }
+        window.open(smsLink(tel, accordMessage), '_blank');
+      } else if (canal === 'email') {
+        if (!email) { toast.error("Pas d'adresse email"); setAccordLoading(false); return; }
+        window.open(`mailto:${email}?subject=${encodeURIComponent(`Klikphone - Accord ${ticket.ticket_code}`)}&body=${encodeURIComponent(accordMessage)}`, '_blank');
       }
+
+      // Change status
+      await api.changeStatus(id, "En attente d'accord client");
+
+      // Log in notes
+      const auteur = user?.utilisateur || 'Accueil';
+      const logText = `[Demande accord] ${accordMessage.substring(0, 120)}${accordMessage.length > 120 ? '...' : ''}`;
+      await api.logMessage(id, auteur, logText, canal);
+
       setShowAccordModal(false);
-      setAccordForm({ reparation: '', prix: '' });
       await loadTicket();
-      toast.success('Demande envoyée au client');
+      toast.success("Demande d'accord envoyée");
     } catch (err) {
       toast.error('Erreur envoi de la demande');
     } finally {
       setAccordLoading(false);
+    }
+  };
+
+  const handleAccordResponse = async (accepted) => {
+    try {
+      if (accepted) {
+        await api.changeStatus(id, 'En cours de réparation');
+        const auteur = user?.utilisateur || 'Accueil';
+        await api.addPrivateNote(id, auteur, 'Accord client reçu — réparation lancée');
+        toast.success('Ticket en cours de réparation');
+      } else {
+        await api.changeStatus(id, 'Réparation terminée');
+        const auteur = user?.utilisateur || 'Accueil';
+        await api.addPrivateNote(id, auteur, 'Client a refusé la réparation');
+        toast.success('Ticket marqué non réparable');
+      }
+      await loadTicket();
+    } catch (err) {
+      toast.error('Erreur changement de statut');
     }
   };
 
@@ -1129,7 +1170,7 @@ export default function TicketDetailPage() {
                   <button onClick={handleSendCaisse} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200 hover:bg-slate-200">
                     <Zap className="w-3.5 h-3.5 inline mr-1" />Envoyer en caisse
                   </button>
-                  <button onClick={() => setShowAccordModal(true)} className="px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
+                  <button onClick={openAccordModal} className="px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
                     <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Accord client
                   </button>
                 </div>
@@ -1162,6 +1203,26 @@ export default function TicketDetailPage() {
             >
               {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            {/* Accord client — quick response buttons */}
+            {t.statut === "En attente d'accord client" && (
+              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-xl space-y-2">
+                <p className="text-[11px] font-semibold text-orange-700 uppercase tracking-wider">Réponse du client</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleAccordResponse(true)}
+                    className="flex-1 py-2 px-3 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5 inline mr-1" />Client a validé
+                  </button>
+                  <button
+                    onClick={() => handleAccordResponse(false)}
+                    className="flex-1 py-2 px-3 rounded-lg bg-red-50 text-red-600 text-xs font-bold border border-red-200 hover:bg-red-100 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5 inline mr-1" />Client a refusé
+                  </button>
+                </div>
+              </div>
+            )}
             <button
               onClick={() => { setShowDeleteModal(true); setDeleteCode(''); setDeleteError(''); }}
               className="w-full mt-3 py-2.5 px-4 rounded-xl border-2 border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 hover:border-red-300 transition-colors flex items-center justify-center gap-2"
@@ -1286,48 +1347,76 @@ export default function TicketDetailPage() {
         <>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowAccordModal(false)} />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in">
-              <div className="flex items-center gap-3 mb-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-in max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
                   <AlertTriangle className="w-5 h-5 text-orange-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-display font-bold text-slate-900">Demander accord client</h3>
-                  <p className="text-sm text-slate-500">Réparation supplémentaire</p>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Demande d'accord client</h3>
+                  <p className="text-sm text-slate-500">
+                    {t.ticket_code} — {t.client_prenom} {t.client_nom}
+                  </p>
                 </div>
+                <button onClick={() => setShowAccordModal(false)} className="ml-auto btn-ghost p-1.5">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <div className="space-y-3 mb-5">
-                <div>
-                  <label className="input-label">Réparation supplémentaire</label>
-                  <input type="text"
-                    value={accordForm.reparation}
-                    onChange={e => setAccordForm(f => ({ ...f, reparation: e.target.value }))}
-                    className="input" placeholder="Ex: changement batterie"
-                  />
-                </div>
-                <div>
-                  <label className="input-label">Prix supplémentaire</label>
-                  <div className="relative">
-                    <input type="number" step="0.01"
-                      value={accordForm.prix}
-                      onChange={e => setAccordForm(f => ({ ...f, prix: e.target.value }))}
-                      className="input pr-7" placeholder="0.00"
-                    />
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+              {/* Recap réparations */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Récapitulatif des réparations</div>
+                {repairLines.filter(l => l.label).map((line, i) => (
+                  <div key={i} className="flex justify-between py-1.5 border-b border-slate-100 last:border-0">
+                    <span className="text-sm text-slate-700">
+                      {line.label}
+                      {t.type_ecran && i === 0 && (
+                        <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded ml-2">{t.type_ecran}</span>
+                      )}
+                    </span>
+                    <span className="text-sm font-bold text-slate-800">{formatPrix(line.prix)}</span>
                   </div>
+                ))}
+                <div className="flex justify-between pt-2 mt-1 border-t border-slate-300">
+                  <span className="text-sm font-bold text-slate-900">Total</span>
+                  <span className="text-sm font-bold text-emerald-700">{formatPrix(repairLines.filter(l => l.label).reduce((s, l) => s + (parseFloat(l.prix) || 0), 0))}</span>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-400 mb-4">
-                Le statut passera à "En attente d'accord client" et un message WhatsApp sera envoyé.
-              </p>
+              {/* Message éditable */}
+              <div className="mb-4">
+                <label className="text-xs font-semibold text-slate-600 mb-1 block">Message au client</label>
+                <textarea
+                  value={accordMessage}
+                  onChange={e => setAccordMessage(e.target.value)}
+                  rows={7}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                />
+              </div>
 
+              {/* Boutons d'envoi */}
               <div className="flex gap-2">
-                <button onClick={() => setShowAccordModal(false)} className="btn-ghost flex-1">Annuler</button>
-                <button onClick={handleDemanderAccord} disabled={accordLoading}
-                  className="btn-primary flex-1 bg-orange-600 hover:bg-orange-700">
-                  {accordLoading ? 'Envoi...' : 'Envoyer la demande'}
+                <button
+                  onClick={() => handleSendAccord('whatsapp')}
+                  disabled={accordLoading}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-bold transition-colors disabled:opacity-50"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+                <button
+                  onClick={() => handleSendAccord('sms')}
+                  disabled={accordLoading}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" /> SMS
+                </button>
+                <button
+                  onClick={() => handleSendAccord('email')}
+                  disabled={accordLoading}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
+                >
+                  <Mail className="w-3.5 h-3.5" /> Email
                 </button>
               </div>
             </div>
