@@ -84,7 +84,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
   const handleSendWhatsApp = () => {
     if (!clientTel) return;
     const url = getShareUrl();
-    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode} :\n${url}`;
+    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode}.\n\n${url.trim()}`;
     window.open(waLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
@@ -92,7 +92,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
   const handleSendSMS = () => {
     if (!clientTel) return;
     const url = getShareUrl();
-    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}: ${url}`;
+    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}\n${url.trim()}`;
     window.open(smsLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
