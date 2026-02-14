@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api
 
 
 @asynccontextmanager
@@ -142,6 +142,7 @@ app.include_router(attestation.router)
 app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(fidelite.router)
+app.include_router(email_api.router)
 
 
 # --- HEALTH CHECK ---

@@ -557,8 +557,9 @@ export default function TicketDetailPage() {
         if (!tel) { toast.error('Pas de téléphone'); setAccordLoading(false); return; }
         window.open(smsLink(tel, accordMessage), '_blank');
       } else if (canal === 'email') {
-        if (!email) { toast.error("Pas d'adresse email"); setAccordLoading(false); return; }
-        window.open(`mailto:${email}?subject=${encodeURIComponent(`Klikphone - Accord ${ticket.ticket_code}`)}&body=${encodeURIComponent(accordMessage)}`, '_blank');
+        if (!email) { toast.error("Ce client n'a pas d'adresse email"); setAccordLoading(false); return; }
+        const res = await api.envoyerEmail(email, `Klikphone SAV - Accord ${ticket.ticket_code}`, accordMessage);
+        if (res.status !== 'ok') { toast.error(res.message || "Erreur d'envoi email"); setAccordLoading(false); return; }
       }
 
       // Change status

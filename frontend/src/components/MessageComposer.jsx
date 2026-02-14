@@ -74,10 +74,6 @@ export default function MessageComposer({ ticket, onMessageSent }) {
     window.open(`sms:${telephone}?body=${encodeURIComponent(message)}`, '_blank');
   };
 
-  const sendEmail = (email, subject, message) => {
-    window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`, '_blank');
-  };
-
   const sendMessage = async (canal) => {
     if (!previewText.trim()) {
       toast.error('Message vide');
@@ -95,8 +91,12 @@ export default function MessageComposer({ ticket, onMessageSent }) {
         if (!tel) { toast.error('Pas de telephone'); return; }
         sendSMS(tel, previewText);
       } else if (canal === 'email') {
-        if (!email) { toast.error("Pas d'adresse email"); return; }
-        sendEmail(email, `Klikphone - ${t.ticket_code}`, previewText);
+        if (!email) { toast.error("Ce client n'a pas d'adresse email"); return; }
+        const res = await api.envoyerEmail(email, `Klikphone SAV - ${t.ticket_code}`, previewText);
+        if (res.status !== 'ok') {
+          toast.error(res.message || "Erreur d'envoi email");
+          return;
+        }
       }
 
       // Log to DB
@@ -105,9 +105,10 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       const logText = `[${label}] ${previewText.substring(0, 120)}${previewText.length > 120 ? '...' : ''}`;
       await api.logMessage(t.id, auteur, logText, canal);
 
-      toast.success(`Message ${canal} envoye`);
+      toast.success(canal === 'email' ? 'Email envoyé avec succès' : `Message ${canal} envoyé`);
       if (onMessageSent) onMessageSent();
     } catch (err) {
+      toast.error(err.message || 'Erreur envoi');
       console.error(err);
     } finally {
       setSending(null);

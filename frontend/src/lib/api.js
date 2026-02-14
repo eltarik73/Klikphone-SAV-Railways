@@ -200,6 +200,14 @@ class ApiClient {
     return this.post('/api/config/caisse/test');
   }
 
+  // ─── EMAIL SMTP ──────────────────────────────
+  envoyerEmail(to, subject, body) {
+    return this.post('/api/email/envoyer', { to, subject, body });
+  }
+  testSmtpEmail(to) {
+    return this.post('/api/email/test', { to });
+  }
+
   // ─── ATTESTATION ───────────────────────────
   generateAttestation(data) {
     return this.post('/api/attestation/generate', data);

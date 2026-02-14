@@ -8,7 +8,7 @@ import {
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
   Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
-  Zap, CreditCard,
+  Zap, CreditCard, AtSign, Mail,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -57,6 +57,10 @@ export default function ConfigPage() {
   const [caisseConfig, setCaisseConfig] = useState({});
   const [caisseSaving, setCaisseSaving] = useState(false);
   const [caisseTesting, setCaisseTesting] = useState(false);
+
+  // SMTP email test
+  const [smtpTesting, setSmtpTesting] = useState(false);
+  const [smtpTestEmail, setSmtpTestEmail] = useState('');
 
   // Track unsaved config changes
   const initialConfigRef = useRef({});
@@ -793,23 +797,63 @@ export default function ConfigPage() {
           </div>
 
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Email SMTP</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <AtSign className="w-4 h-4 text-brand-600" /> Email / SMTP
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="input-label">Serveur SMTP</label>
-                <input value={config.smtp_host || ''} onChange={e => updateConfig('smtp_host', e.target.value)} className="input" placeholder="smtp.gmail.com" />
+                <input value={config.SMTP_HOST || ''} onChange={e => updateConfig('SMTP_HOST', e.target.value)} className="input" placeholder="smtp.gmail.com" />
               </div>
               <div>
                 <label className="input-label">Port</label>
-                <input value={config.smtp_port || ''} onChange={e => updateConfig('smtp_port', e.target.value)} className="input" placeholder="587" />
+                <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="587" />
               </div>
               <div>
                 <label className="input-label">Email expéditeur</label>
-                <input value={config.smtp_user || ''} onChange={e => updateConfig('smtp_user', e.target.value)} className="input" />
+                <input value={config.SMTP_USER || ''} onChange={e => updateConfig('SMTP_USER', e.target.value)} className="input" placeholder="contact@klikphone.com" />
               </div>
               <div>
-                <label className="input-label">Mot de passe</label>
-                <input type="password" value={config.smtp_password || ''} onChange={e => updateConfig('smtp_password', e.target.value)} className="input" />
+                <label className="input-label">Mot de passe / App password</label>
+                <input type="password" value={config.SMTP_PASSWORD || ''} onChange={e => updateConfig('SMTP_PASSWORD', e.target.value)} className="input" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="input-label">Nom affiché</label>
+                <input value={config.SMTP_NAME || ''} onChange={e => updateConfig('SMTP_NAME', e.target.value)} className="input" placeholder="Klikphone SAV" />
+              </div>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <label className="input-label mb-1">Envoyer un email de test</label>
+              <div className="flex gap-2">
+                <input
+                  value={smtpTestEmail}
+                  onChange={e => setSmtpTestEmail(e.target.value)}
+                  className="input flex-1"
+                  placeholder="destinataire@email.com"
+                  type="email"
+                />
+                <button
+                  onClick={async () => {
+                    if (!smtpTestEmail.trim()) { toast.error('Saisissez une adresse email de test'); return; }
+                    setSmtpTesting(true);
+                    try {
+                      await handleSaveConfig();
+                      const res = await api.testSmtpEmail(smtpTestEmail.trim());
+                      if (res.status === 'ok') toast.success(res.message || 'Email de test envoyé !');
+                      else toast.error(res.message || 'Erreur envoi');
+                    } catch (err) {
+                      toast.error(err.message || 'Erreur test email');
+                    } finally {
+                      setSmtpTesting(false);
+                    }
+                  }}
+                  disabled={smtpTesting || !smtpTestEmail.trim()}
+                  className="btn-primary px-4 text-xs whitespace-nowrap"
+                >
+                  {smtpTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                  Envoyer un email de test
+                </button>
               </div>
             </div>
           </div>
