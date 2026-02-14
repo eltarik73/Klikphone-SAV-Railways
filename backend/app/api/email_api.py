@@ -3,6 +3,7 @@ API Email — envoi SMTP réel.
 """
 
 import asyncio
+import ssl
 import smtplib
 from functools import partial
 from email.mime.text import MIMEText
@@ -28,38 +29,42 @@ def _get_param(key: str) -> str:
 
 
 def _send_smtp(to: str, subject: str, body: str) -> tuple:
-    """Envoie un email via SMTP. Retourne (success, message)."""
-    smtp_host = _get_param("SMTP_HOST") or "smtp.gmail.com"
-    smtp_port = int(_get_param("SMTP_PORT") or 587)
-    smtp_user = _get_param("SMTP_USER")
-    smtp_pass = _get_param("SMTP_PASSWORD")
-    smtp_name = _get_param("SMTP_NAME") or "Klikphone SAV"
+    """Envoie un email via SMTP. Essaie SSL 465 d'abord, puis STARTTLS 587 en fallback."""
+    smtp_host = _get_param("SMTP_HOST") or "ex4.mail.ovh.net"
+    smtp_user = _get_param("SMTP_USER") or "contact@klikphone.com"
+    smtp_pass = _get_param("SMTP_PASSWORD") or "73000Kliks"
+    smtp_name = _get_param("SMTP_NAME") or "Klikphone"
 
     if not smtp_user or not smtp_pass:
         return False, "SMTP non configuré (email ou mot de passe manquant)"
 
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = formataddr((str(Header(smtp_name, "utf-8")), smtp_user))
-        msg["To"] = to
-        msg["Subject"] = Header(subject, "utf-8")
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+    msg = MIMEMultipart()
+    msg["From"] = f"{smtp_name} <{smtp_user}>"
+    msg["To"] = to
+    msg["Subject"] = Header(subject, "utf-8")
+    msg.attach(MIMEText(body, "plain", "utf-8"))
 
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-        server.starttls()
+    # Try SSL on port 465 first (works on Railway)
+    try:
+        context = ssl.create_default_context()
+        server = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=15)
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
-
         return True, "Email envoyé avec succès"
-    except smtplib.SMTPAuthenticationError:
-        return False, "Erreur d'authentification SMTP (vérifiez email/mot de passe)"
-    except smtplib.SMTPException as e:
-        return False, f"Erreur SMTP: {e}"
-    except TimeoutError:
-        return False, "Timeout connexion SMTP"
-    except Exception as e:
-        return False, f"Erreur d'envoi: {e}"
+    except Exception as e465:
+        # Fallback: STARTTLS on port 587
+        try:
+            server = smtplib.SMTP(smtp_host, 587, timeout=15)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+            server.quit()
+            return True, "Email envoyé avec succès (587)"
+        except Exception as e587:
+            return False, f"465: {str(e465)} | 587: {str(e587)}"
 
 
 class EmailRequest(BaseModel):

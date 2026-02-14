@@ -807,7 +807,7 @@ export default function ConfigPage() {
               </div>
               <div>
                 <label className="input-label">Port</label>
-                <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="587" />
+                <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
               </div>
               <div>
                 <label className="input-label">Email expéditeur</label>
