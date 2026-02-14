@@ -1021,25 +1021,350 @@ def _recu_a4_html(t: dict) -> str:
 </body></html>"""
 
 
+def _build_pdf(t: dict, doc_type: str) -> bytes:
+    """Construit un PDF A4 professionnel avec fpdf2."""
+    from fpdf import FPDF
+
+    RED = (229, 62, 46)
+    DARK = (30, 41, 59)
+    GRAY = (100, 116, 139)
+    LIGHT_BG = (248, 250, 252)
+    WHITE = (255, 255, 255)
+    GREEN = (22, 163, 74)
+
+    code = t.get("ticket_code", "")
+    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
+    categorie = t.get("categorie", "")
+    panne = t.get("panne_detail") or t.get("panne", "")
+    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
+    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
+    tva_rate = float(_get_config("tva", "20"))
+    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
+    client_tel = t.get("client_tel", "")
+    client_email = t.get("client_email", "")
+    client_societe = t.get("client_societe", "")
+    repair_lines = _parse_repair_lines(t)
+    subtotal = sum(r["prix"] for r in repair_lines)
+    reduction = _calc_reduction(t, subtotal)
+    total_ttc = max(0, subtotal - reduction)
+    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
+    total_ht = round(total_ttc - tva_amount, 2)
+    acompte = float(t.get("acompte") or 0)
+    reste = total_ttc - acompte
+    is_paid = reste <= 0
+    date_depot = _fd(t.get("date_depot"))
+    date_now = datetime.now().strftime("%d/%m/%Y")
+    is_devis = doc_type == "devis"
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pw = pdf.w - pdf.l_margin - pdf.r_margin  # printable width
+
+    # ── Red top bar ──
+    pdf.set_fill_color(*RED)
+    pdf.rect(0, 0, pdf.w, 6, "F")
+    pdf.set_y(10)
+
+    # ── Header: logo + company info ──
+    logo_x = pdf.l_margin
+    if os.path.exists(_logo_path):
+        try:
+            pdf.image(_logo_path, x=logo_x, y=12, h=18)
+        except Exception:
+            pass
+
+    pdf.set_xy(logo_x + 22, 12)
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(*RED)
+    pdf.cell(0, 8, "KLIKPHONE", new_x="LMARGIN")
+    pdf.set_xy(logo_x + 22, 20)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(0, 4, "Specialiste reparation telephonie", new_x="LMARGIN")
+
+    # Company info right-aligned
+    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_text_color(*GRAY)
+    info_lines = [adresse, f"Tel : {tel_boutique}", "www.klikphone.com", "SIRET : 81396114100013", "TVA : FR03813961141"]
+    for i, line in enumerate(info_lines):
+        pdf.set_xy(pdf.w - pdf.r_margin - 70, 12 + i * 4)
+        bold = i >= 3
+        pdf.set_font("Helvetica", "B" if bold else "", 7.5)
+        pdf.cell(70, 4, line, align="R")
+
+    # ── Red separator ──
+    pdf.set_y(35)
+    pdf.set_draw_color(*RED)
+    pdf.set_line_width(0.6)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(8)
+
+    # ── Document title ──
+    title = "D E V I S" if is_devis else "RECU DE PAIEMENT"
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_text_color(*RED)
+    pdf.cell(pw, 10, title, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # ── Meta line ──
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*DARK)
+    if is_devis:
+        meta = f"N. {code}  -  Date : {date_depot}"
+    else:
+        meta = f"N. {code}  -  Date : {date_now}  -  Depot : {date_depot}"
+    pdf.cell(pw, 6, meta, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # ── PAYE stamp for recu ──
+    if not is_devis and is_paid:
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "B", 24)
+        pdf.set_text_color(*GREEN)
+        pdf.set_draw_color(*GREEN)
+        pdf.set_line_width(1)
+        stamp_w = 55
+        stamp_x = (pdf.w - stamp_w) / 2
+        stamp_y = pdf.get_y()
+        pdf.rect(stamp_x, stamp_y, stamp_w, 14, "D")
+        pdf.set_xy(stamp_x, stamp_y + 1)
+        pdf.cell(stamp_w, 12, "P A Y E", align="C")
+        pdf.set_y(stamp_y + 18)
+
+    # ── Light separator ──
+    pdf.ln(4)
+    pdf.set_draw_color(226, 232, 240)
+    pdf.set_line_width(0.3)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(6)
+
+    # ── Client / Device info boxes ──
+    box_w = (pw - 6) / 2
+    box_y = pdf.get_y()
+
+    def _info_box(x, label, lines):
+        pdf.set_fill_color(*LIGHT_BG)
+        pdf.set_draw_color(226, 232, 240)
+        box_h = 6 + len(lines) * 5 + 4
+        pdf.rect(x, box_y, box_w, box_h, "DF")
+        pdf.set_xy(x + 4, box_y + 3)
+        pdf.set_font("Helvetica", "B", 6.5)
+        pdf.set_text_color(*RED)
+        pdf.cell(box_w - 8, 4, label.upper())
+        for i, (text, bold) in enumerate(lines):
+            pdf.set_xy(x + 4, box_y + 8 + i * 5)
+            pdf.set_font("Helvetica", "B" if bold else "", 8.5)
+            pdf.set_text_color(*DARK)
+            pdf.cell(box_w - 8, 4, text)
+        return box_h
+
+    client_lines = []
+    if client_societe:
+        client_lines.append((client_societe, True))
+    client_lines.append((client_nom, True))
+    client_lines.append((f"Tel : {client_tel}", False))
+    if client_email:
+        client_lines.append((f"Email : {client_email}", False))
+
+    device_lines = [(appareil, True)]
+    if categorie:
+        device_lines.append((f"Categorie : {categorie}", False))
+    device_lines.append((f"Panne : {panne[:60]}", False))
+
+    h1 = _info_box(pdf.l_margin, "Client", client_lines)
+    h2 = _info_box(pdf.l_margin + box_w + 6, "Appareil", device_lines)
+    pdf.set_y(box_y + max(h1, h2) + 8)
+
+    # ── Section title: repair lines ──
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(*RED)
+    pdf.cell(pw, 5, "DETAIL DES REPARATIONS" if is_devis else "DETAIL DES PRESTATIONS", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+
+    # ── Repair table ──
+    col_desc_w = pw - 40
+    col_price_w = 40
+    # Header row
+    pdf.set_fill_color(*DARK)
+    pdf.set_text_color(*WHITE)
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.cell(col_desc_w, 8, "  Description", fill=True)
+    pdf.cell(col_price_w, 8, "Prix TTC", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    # Data rows
+    if repair_lines:
+        for i, r in enumerate(repair_lines):
+            if i % 2 == 1:
+                pdf.set_fill_color(*LIGHT_BG)
+            else:
+                pdf.set_fill_color(*WHITE)
+            pdf.set_text_color(*DARK)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.cell(col_desc_w, 8, f"  {r['label']}", fill=True)
+            pdf.cell(col_price_w, 8, f"{_fp(r['prix'])} EUR", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.set_fill_color(*WHITE)
+        pdf.set_text_color(*GRAY)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(pw, 8, "Aucune ligne de reparation", align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+    # ── Totals ──
+    pdf.ln(1)
+    tot_label_w = pw - 50
+    tot_val_w = 50
+
+    def _total_row(label, value, style="normal"):
+        if style == "total":
+            pdf.set_fill_color(*RED)
+            pdf.set_text_color(*WHITE)
+            pdf.set_font("Helvetica", "B", 11)
+            h = 10
+        elif style == "reste":
+            pdf.set_fill_color(*DARK)
+            pdf.set_text_color(*WHITE)
+            pdf.set_font("Helvetica", "B", 10)
+            h = 9
+        elif style == "acompte":
+            pdf.set_fill_color(*WHITE)
+            pdf.set_text_color(*GREEN)
+            pdf.set_font("Helvetica", "I", 9)
+            h = 7
+        elif style == "reduction":
+            pdf.set_fill_color(*WHITE)
+            pdf.set_text_color(*RED)
+            pdf.set_font("Helvetica", "", 9)
+            h = 7
+        else:
+            pdf.set_fill_color(*WHITE)
+            pdf.set_text_color(*GRAY if "label" != "" else DARK)
+            pdf.set_font("Helvetica", "", 9)
+            h = 7
+        pdf.cell(tot_label_w, h, label, align="R", fill=True)
+        if style in ("total", "reste"):
+            pdf.set_font("Helvetica", "B", 11 if style == "total" else 10)
+        else:
+            pdf.set_font("Helvetica", "B" if style == "normal" else ("I" if style == "acompte" else ""), 9)
+            pdf.set_text_color(*DARK if style == "normal" else (GREEN if style == "acompte" else RED))
+        if style in ("total", "reste"):
+            pdf.set_text_color(*WHITE)
+        pdf.cell(tot_val_w, h, value, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+    _total_row("Sous-total TTC", f"{_fp(subtotal)} EUR")
+    if reduction > 0:
+        _total_row("Reduction", f"-{_fp(reduction)} EUR", "reduction")
+    # Separator
+    pdf.set_draw_color(203, 213, 225)
+    pdf.line(pdf.l_margin + tot_label_w - 20, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    _total_row("Total HT", f"{_fp(total_ht)} EUR")
+    tva_label = f"TVA ({_fp(tva_rate).replace(',00', '')}%)"
+    _total_row(tva_label, f"{_fp(tva_amount)} EUR")
+    _total_row("TOTAL TTC", f"{_fp(total_ttc)} EUR", "total")
+    if acompte > 0:
+        _total_row("Acompte verse", f"-{_fp(acompte)} EUR", "acompte")
+    if not is_devis and reste > 0:
+        _total_row("RESTE A PAYER", f"{_fp(reste)} EUR", "reste")
+    if is_devis and acompte > 0:
+        _total_row("RESTE A PAYER", f"{_fp(reste)} EUR", "reste")
+
+    # ── Fidelite for recu ──
+    if not is_devis:
+        try:
+            active = _get_config("fidelite_active", "1")
+            if active == "1" and t.get("client_id"):
+                with get_cursor() as cur:
+                    cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (t["client_id"],))
+                    row = cur.fetchone()
+                if row:
+                    pts = int(row.get("points_fidelite") or 0)
+                    pdf.ln(6)
+                    pdf.set_fill_color(254, 252, 232)
+                    pdf.set_draw_color(253, 230, 138)
+                    pdf.set_text_color(161, 98, 7)
+                    pdf.set_font("Helvetica", "B", 7)
+                    y0 = pdf.get_y()
+                    pdf.rect(pdf.l_margin, y0, pw, 14, "DF")
+                    pdf.set_xy(pdf.l_margin + 4, y0 + 2)
+                    pdf.cell(pw - 8, 4, "PROGRAMME FIDELITE")
+                    pdf.set_xy(pdf.l_margin + 4, y0 + 7)
+                    pdf.set_font("Helvetica", "", 8.5)
+                    pdf.set_text_color(120, 53, 15)
+                    pdf.cell(pw - 8, 4, f"Vos points : {pts} pts")
+                    pdf.set_y(y0 + 16)
+        except Exception:
+            pass
+
+    # ── Conditions + QR ──
+    pdf.ln(8)
+    cond_y = pdf.get_y()
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.set_text_color(*DARK)
+    pdf.set_xy(pdf.l_margin, cond_y)
+    pdf.cell(pw * 0.65, 4, "Conditions :", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(*GRAY)
+    if is_devis:
+        cond_text = "Ce devis est valable 30 jours a compter de sa date d'emission.\nToute reparation acceptee engage le client au paiement du montant indique.\nLes pieces remplacees restent la propriete de Klikphone sauf demande contraire."
+    else:
+        cond_text = "Garantie pieces et main d'oeuvre : 6 mois a compter de la date de reparation.\nLa garantie ne couvre pas les dommages causes par l'usure, les chocs ou l'oxydation.\nLes pieces remplacees restent la propriete de Klikphone sauf demande contraire."
+    pdf.multi_cell(pw * 0.65, 3.5, cond_text)
+
+    # QR code (right side)
+    try:
+        qr_url = _qr_url(code)
+        import urllib.request
+        import tempfile
+        req = urllib.request.Request(qr_url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            qr_data = resp.read()
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(qr_data)
+            tmp_path = tmp.name
+        pdf.image(tmp_path, x=pdf.w - pdf.r_margin - 25, y=cond_y, w=25)
+        os.unlink(tmp_path)
+    except Exception:
+        pass
+
+    if is_devis:
+        pdf.ln(6)
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_text_color(*GRAY)
+        pdf.cell(pw * 0.5, 4, "Signature du client (bon pour accord) :", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_draw_color(203, 213, 225)
+        pdf.set_dash_pattern(dash=2, gap=1.5)
+        sig_y = pdf.get_y() + 1
+        pdf.rect(pdf.l_margin, sig_y, pw * 0.45, 20, "D")
+        pdf.set_dash_pattern()
+        pdf.set_y(sig_y + 22)
+
+    # ── Footer bar ──
+    pdf.ln(4)
+    footer_y = pdf.get_y()
+    pdf.set_fill_color(241, 245, 249)
+    pdf.set_draw_color(*RED)
+    pdf.set_line_width(0.5)
+    pdf.line(pdf.l_margin, footer_y, pdf.w - pdf.r_margin, footer_y)
+    pdf.set_line_width(0.2)
+    pdf.rect(pdf.l_margin, footer_y + 0.5, pw, 14, "F")
+    pdf.set_xy(pdf.l_margin, footer_y + 2)
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(pw, 4, "Klikphone  -  " + adresse, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 7)
+    pdf.cell(pw, 4, f"SIRET : 81396114100013  |  TVA Intra. : FR03813961141  |  Tel : {tel_boutique}  |  www.klikphone.com", align="C")
+
+    return pdf.output()
+
+
 def generate_pdf(ticket_id: int, doc_type: str) -> tuple:
     """Génère un PDF A4 pour un ticket. Retourne (pdf_bytes, filename)."""
-    from xhtml2pdf import pisa
     t = _get_ticket_full(ticket_id)
     if not t:
         return None, None
-    generators = {"devis": _devis_a4_html, "recu": _recu_a4_html}
-    gen = generators.get(doc_type)
-    if not gen:
+    if doc_type not in ("devis", "recu"):
         return None, None
-    html = gen(t)
-    buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(html, dest=buffer, encoding="utf-8")
-    if pisa_status.err:
-        return None, None
+    pdf_bytes = _build_pdf(t, doc_type)
     code = t.get("ticket_code", "document")
     type_labels = {"devis": "Devis", "recu": "Recu"}
     filename = f"{type_labels.get(doc_type, 'Document')}-{code}.pdf"
-    return buffer.getvalue(), filename
+    return pdf_bytes, filename
 
 
 @router.get("/{ticket_id}/pdf/{doc_type}")
