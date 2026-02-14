@@ -16,13 +16,13 @@ class ApiClient {
     else localStorage.removeItem('kp_token');
   }
 
-  async request(path, options = {}) {
+  async request(path, options = {}, timeoutMs = 10000) {
     const url = `${API_URL}${path}`;
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let res;
     try {
       res = await fetch(url, { ...options, headers, signal: controller.signal });
@@ -175,7 +175,7 @@ class ApiClient {
     return this.post(`/api/notifications/sms?ticket_id=${ticketId}&message=${encodeURIComponent(message)}`);
   }
   sendEmail(ticketId, message, sujet) {
-    return this.post(`/api/notifications/email?ticket_id=${ticketId}&message=${encodeURIComponent(message)}&sujet=${encodeURIComponent(sujet)}`);
+    return this.request(`/api/notifications/email?ticket_id=${ticketId}&message=${encodeURIComponent(message)}&sujet=${encodeURIComponent(sujet)}`, { method: 'POST' }, 45000);
   }
 
   // ─── PRINT ─────────────────────────────────
@@ -202,10 +202,10 @@ class ApiClient {
 
   // ─── EMAIL SMTP ──────────────────────────────
   envoyerEmail(to, subject, body) {
-    return this.post('/api/email/envoyer', { to, subject, body });
+    return this.request('/api/email/envoyer', { method: 'POST', body: JSON.stringify({ to, subject, body }) }, 45000);
   }
   testSmtpEmail(to) {
-    return this.post('/api/email/test', { to });
+    return this.request('/api/email/test', { method: 'POST', body: JSON.stringify({ to }) }, 45000);
   }
 
   // ─── ATTESTATION ───────────────────────────
