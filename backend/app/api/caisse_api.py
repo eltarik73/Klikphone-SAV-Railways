@@ -50,11 +50,11 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
             row = cur.fetchone()
         return row["valeur"] if row else default
 
-    shopid = _get_param("CAISSE_SHOPID")
-    apikey = _get_param("CAISSE_APIKEY")
-    caisse_id = _get_param("CAISSE_ID", "49343")
-    user_id = _get_param("CAISSE_USER_ID", "42867")
-    delivery_method = _get_param("CAISSE_DELIVERY_METHOD", "4")
+    shopid = str(_get_param("CAISSE_SHOPID") or "")
+    apikey = str(_get_param("CAISSE_APIKEY") or "")
+    caisse_id = str(_get_param("CAISSE_ID", "49343") or "49343")
+    user_id = str(_get_param("CAISSE_USER_ID", "42867") or "42867")
+    delivery_method = str(_get_param("CAISSE_DELIVERY_METHOD", "4") or "4")
 
     if not shopid or not apikey:
         raise HTTPException(400, "Caisse non configurée")
@@ -63,7 +63,7 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     if montant <= 0:
         raise HTTPException(400, "Montant à 0 : rien à envoyer")
 
-    description = data.get("description", "Réparation")
+    description = str(data.get("description", "Réparation") or "Réparation")
 
     api_url = (
         f"https://caisse.enregistreuse.fr/workers/webapp.php?"
@@ -71,25 +71,26 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
         f"&idcaisse={caisse_id}&payment=-1&deliveryMethod={delivery_method}"
     )
 
-    payload = [
-        ("publicComment", f"Ticket: {data.get('ticket_code', '')}"),
-        ("itemsList[]", f"Free_{montant:.2f}_{description}"),
-    ]
+    nom = str(data.get("nom", "") or "")
+    prenom = str(data.get("prenom", "") or "")
+    telephone = str(data.get("telephone", "") or "")
+    email = str(data.get("email", "") or "")
+    ticket_code = str(data.get("ticket_code", "") or "")
 
-    nom = data.get("nom", "")
-    prenom = data.get("prenom", "")
+    form_data = {
+        "publicComment": f"Ticket: {ticket_code}",
+        "itemsList[]": f"Free_{montant:.2f}_{description}",
+    }
     if nom or prenom:
-        payload += [
-            ("client[nom]", nom),
-            ("client[prenom]", prenom),
-            ("client[telephone]", data.get("telephone", "")),
-        ]
-        if data.get("email"):
-            payload.append(("client[email]", data["email"]))
+        form_data["client[nom]"] = nom
+        form_data["client[prenom]"] = prenom
+        form_data["client[telephone]"] = telephone
+        if email:
+            form_data["client[email]"] = email
 
     try:
         with httpx.Client(timeout=15) as client:
-            res = client.post(api_url, data=payload)
+            res = client.post(api_url, data=form_data)
 
         try:
             result = res.json()
