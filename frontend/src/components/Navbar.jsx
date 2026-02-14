@@ -210,6 +210,13 @@ export default function Navbar() {
             </div>
           )}
         </div>
+
+        {/* Footer branding */}
+        {!collapsed && (
+          <p className="text-[10px] text-zinc-400 text-center pb-3">
+            Propulsé par tKs26 — une solution Klik&Dev
+          </p>
+        )}
       </aside>
     </>
   );

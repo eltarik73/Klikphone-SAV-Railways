@@ -197,6 +197,7 @@ export default function LoginPage() {
           <p className="font-medium">Klikphone SAV</p>
           <p className="flex items-center justify-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</p>
           <p className="flex items-center justify-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</p>
+          <p className="text-[10px] text-zinc-400 pt-2">Propulsé par tKs26 — une solution Klik&Dev</p>
         </div>
       </div>
     </div>

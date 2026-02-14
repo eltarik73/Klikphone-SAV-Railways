@@ -376,6 +376,7 @@ export default function SuiviPage() {
           <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
           </a>
+          <p className="text-[10px] text-zinc-400 mt-4">Propulsé par tKs26 — une solution Klik&Dev</p>
         </div>
       </div>
     </div>
