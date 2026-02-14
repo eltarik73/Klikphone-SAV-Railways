@@ -226,7 +226,7 @@ async def send_document(data: SendDocumentRequest, user: dict = Depends(get_curr
 
     # Pour devis et recu : PDF A4 en pièce jointe
     if data.doc_type in ("devis", "recu"):
-        from app.api.pdf_documents import generate_pdf
+        from app.api.print_tickets import generate_pdf
         pdf_bytes, filename = generate_pdf(data.ticket_id, data.doc_type)
         if not pdf_bytes:
             raise HTTPException(500, "Erreur lors de la génération du PDF")
