@@ -99,8 +99,8 @@ export default function DepotPage() {
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
-    if (step === 2 && form.imei && !isValidIMEI(form.imei)) {
-      errs.imei = 'IMEI invalide (15 chiffres)';
+    if (step === 2 && (form.marque === 'Autre' || form.modele === 'Autre') && !form.modele_autre.trim()) {
+      errs.modele_autre = 'Veuillez préciser le modèle';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -120,10 +120,12 @@ export default function DepotPage() {
       });
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
-        marque: form.marque, modele: form.modele,
-        modele_autre: form.modele_autre, panne: form.panne,
+        marque: form.marque,
+        modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
+        modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
+        panne: form.panne,
         panne_detail: form.panne_detail, pin: form.pin,
-        pattern: form.pattern, notes_client: form.notes_client, imei: form.imei,
+        pattern: form.pattern, notes_client: form.notes_client,
       });
       setCreatedCode(result.ticket_code);
       setStep(5);
@@ -137,7 +139,7 @@ export default function DepotPage() {
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
     if (step === 1) return form.categorie;
-    if (step === 2) return form.marque;
+    if (step === 2) return form.marque && (form.marque !== 'Autre' && form.modele !== 'Autre' || form.modele_autre.trim());
     if (step === 3) return form.panne;
     if (step === 4) return true;
     return true;
@@ -294,33 +296,29 @@ export default function DepotPage() {
                 <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
                   <option value="">Sélectionner...</option>
                   {marques.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value="Autre">Autre</option>
                 </select>
               </div>
 
-              {form.marque && modeles.length > 0 && (
+              {form.marque && form.marque !== 'Autre' && modeles.length > 0 && (
                 <div>
                   <label className="input-label">Modèle</label>
                   <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
                     <option value="">Sélectionner...</option>
                     {modeles.map(m => <option key={m} value={m}>{m}</option>)}
+                    <option value="Autre">Autre</option>
                   </select>
                 </div>
               )}
 
               {(form.marque === 'Autre' || form.modele === 'Autre') && (
                 <div>
-                  <label className="input-label">Préciser le modèle</label>
-                  <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)} className="input" placeholder="Ex: Samsung Galaxy S24" />
+                  <label className="input-label">Préciser marque / modèle *</label>
+                  <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
+                    className={`input ${errors.modele_autre ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Ex: Samsung Galaxy S24" autoFocus />
+                  <FieldError field="modele_autre" />
                 </div>
               )}
-
-              <div>
-                <label className="input-label">IMEI / N° de série</label>
-                <input value={form.imei} onChange={e => updateForm('imei', e.target.value)}
-                className={`input font-mono ${errors.imei ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
-                placeholder="Tapez *#06# sur votre appareil" />
-              <FieldError field="imei" />
-              </div>
             </div>
           )}
 

@@ -147,8 +147,8 @@ export default function ClientFormPage() {
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
-    if (currentId === 'modele' && form.imei && !isValidIMEI(form.imei)) {
-      errs.imei = 'IMEI invalide (15 chiffres)';
+    if (currentId === 'modele' && (form.marque === 'Autre' || form.modele === 'Autre') && !form.modele_autre.trim()) {
+      errs.modele_autre = 'Veuillez préciser le modèle';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -165,8 +165,8 @@ export default function ClientFormPage() {
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
         marque: form.marque,
-        modele: form.modele === 'Autre' ? '' : form.modele,
-        modele_autre: form.modele === 'Autre' ? form.modele_autre : '',
+        modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
+        modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
         panne: isCommande ? 'Pièce à commander' : (pieceACommander && pieceNom ? 'Pièce à commander' : form.panne),
         panne_detail: isCommande ? form.panne_detail : (pieceACommander && pieceNom
           ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
@@ -174,7 +174,6 @@ export default function ClientFormPage() {
         pin: form.pin,
         pattern: form.pattern,
         notes_client: form.notes_client,
-        imei: form.imei,
         commande_piece: (isCommande || pieceACommander) ? 1 : 0,
       });
 
@@ -212,7 +211,7 @@ export default function ClientFormPage() {
     switch (currentId) {
       case 'client': return form.nom && form.telephone;
       case 'appareil': return form.categorie;
-      case 'modele': return form.marque;
+      case 'modele': return form.marque && (form.marque !== 'Autre' && form.modele !== 'Autre' || form.modele_autre.trim());
       case 'panne': return isCommande ? form.panne_detail.trim() : (form.panne || pieceACommander);
       case 'securite': return true;
       default: return true;
@@ -360,33 +359,29 @@ export default function ClientFormPage() {
               <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
                 <option value="">Sélectionner...</option>
                 {marques.map(m => <option key={m} value={m}>{m}</option>)}
+                <option value="Autre">Autre</option>
               </select>
             </div>
 
-            {form.marque && modeles.length > 0 && (
+            {form.marque && form.marque !== 'Autre' && modeles.length > 0 && (
               <div>
                 <label className="input-label">Modèle</label>
                 <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
                   <option value="">Sélectionner...</option>
                   {modeles.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value="Autre">Autre</option>
                 </select>
               </div>
             )}
 
             {(form.marque === 'Autre' || form.modele === 'Autre') && (
               <div>
-                <label className="input-label">Préciser le modèle</label>
-                <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)} className="input" placeholder="Ex: Samsung Galaxy S24" />
+                <label className="input-label">Préciser marque / modèle *</label>
+                <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
+                  className={`input ${errors.modele_autre ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Ex: Samsung Galaxy S24" autoFocus />
+                <FieldError field="modele_autre" />
               </div>
             )}
-
-            <div>
-              <label className="input-label">IMEI / N° de série</label>
-              <input value={form.imei} onChange={e => updateForm('imei', e.target.value)}
-                className={`input font-mono ${errors.imei ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`}
-                placeholder="Tapez *#06# sur votre appareil" />
-              <FieldError field="imei" />
-            </div>
           </div>
         )}
 
