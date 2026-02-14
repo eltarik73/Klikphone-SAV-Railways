@@ -4,6 +4,7 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || '';
+const BACKEND_URL = API_URL || 'https://klikphone-sav-v2-production.up.railway.app';
 
 class ApiClient {
   constructor() {
@@ -186,14 +187,10 @@ class ApiClient {
     return `${API_URL}/api/tickets/${ticketId}/pdf/${type}`;
   }
   getSharePrintUrl(ticketId, type) {
-    const path = `/api/tickets/${ticketId}/print/${type}`;
-    if (API_URL) return `${API_URL}${path}`;
-    return `${window.location.origin}${path}`;
+    return `${BACKEND_URL}/api/tickets/${ticketId}/print/${type}`;
   }
   getSharePdfUrl(ticketId, type) {
-    const path = `/api/tickets/${ticketId}/pdf/${type}`;
-    if (API_URL) return `${API_URL}${path}`;
-    return `${window.location.origin}${path}`;
+    return `${BACKEND_URL}/api/tickets/${ticketId}/pdf/${type}`;
   }
 
   // ─── CAISSE ────────────────────────────────
