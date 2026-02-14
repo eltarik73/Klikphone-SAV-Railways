@@ -13,8 +13,9 @@ from app.models import SendMessageRequest
 from app.api.auth import get_current_user
 from app.services.notifications import (
     MESSAGES_PREDEFINIES, generer_message,
-    wa_link, sms_link, envoyer_email,
+    wa_link, sms_link,
 )
+from app.api.email_api import _send_email
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -128,7 +129,7 @@ async def send_email_notification(
 
     loop = asyncio.get_event_loop()
     success, msg = await loop.run_in_executor(
-        None, partial(envoyer_email, row["email"], sujet, message)
+        None, partial(_send_email, row["email"], sujet, message)
     )
 
     if success:

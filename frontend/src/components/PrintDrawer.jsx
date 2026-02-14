@@ -80,8 +80,12 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     if (!clientEmail) return;
     setSending(true);
     try {
-      await api.sendEmail(ticketId, `Votre document ${activeType} - ${ticketCode}`, `${activeType} - ${ticketCode}`);
-      setSendOpen(false);
+      const subject = `Klikphone SAV - ${currentType?.label || 'Document'} ${ticketCode}`;
+      const body = `Bonjour,\n\nVeuillez trouver ci-joint votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode}.\n\nLien : ${printUrl}\n\nCordialement,\nKlikphone`;
+      const res = await api.envoyerEmail(clientEmail, subject, body);
+      if (res.status === 'ok') {
+        setSendOpen(false);
+      }
     } catch {
       // silently fail
     } finally {
