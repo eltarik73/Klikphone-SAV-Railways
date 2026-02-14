@@ -26,15 +26,22 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
   const hasPdf = PDF_TYPES.has(activeType);
 
+  // Reset to thermal tab each time drawer opens
   useEffect(() => {
     if (open) {
-      setIframeLoading(true);
+      setActiveType('client');
+      setToast(null);
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
     }
     return () => { document.body.style.overflow = ''; };
-  }, [open, activeType]);
+  }, [open]);
+
+  // Reload iframe when tab changes
+  useEffect(() => {
+    if (open) setIframeLoading(true);
+  }, [activeType]);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -275,23 +282,25 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
         </div>
       </div>
 
-      {/* Toast notification */}
+      {/* Toast notification — inside drawer, above footer */}
       {toast && (
-        <div className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border transition-all animate-in ${
-          toast.type === 'success'
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-            : 'bg-red-50 border-red-200 text-red-800'
-        }`}
-          style={{ animationName: 'slideInRight', animationDuration: '300ms' }}
-        >
-          {toast.type === 'success'
-            ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
-            : <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
-          }
-          <span className="text-sm font-medium">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="ml-2 p-0.5 rounded hover:bg-black/5">
-            <X className="w-4 h-4" />
-          </button>
+        <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center pointer-events-none">
+          <div className={`pointer-events-auto flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border transition-all ${
+            toast.type === 'success'
+              ? 'bg-emerald-600 border-emerald-700 text-white'
+              : 'bg-red-600 border-red-700 text-white'
+          }`}
+            style={{ animation: 'toastIn 300ms ease-out' }}
+          >
+            {toast.type === 'success'
+              ? <CheckCircle className="w-5 h-5 shrink-0" />
+              : <AlertCircle className="w-5 h-5 shrink-0" />
+            }
+            <span className="text-sm font-semibold">{toast.message}</span>
+            <button onClick={() => setToast(null)} className="ml-2 p-0.5 rounded hover:bg-white/20">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -300,6 +309,10 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
         @keyframes slideInRight {
           from { transform: translateX(100%); }
           to { transform: translateX(0); }
+        }
+        @keyframes toastIn {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
       `}</style>
     </>
