@@ -1350,7 +1350,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     pdf.set_font("Helvetica", "", 7)
     pdf.cell(pw, 4, f"SIRET : 81396114100013  |  TVA Intra. : FR03813961141  |  Tel : {tel_boutique}  |  www.klikphone.com", align="C")
 
-    return pdf.output()
+    return bytes(pdf.output())
 
 
 def generate_pdf(ticket_id: int, doc_type: str) -> tuple:
