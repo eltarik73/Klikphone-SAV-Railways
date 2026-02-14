@@ -213,9 +213,17 @@ export default function Navbar() {
 
         {/* Footer branding */}
         {!collapsed && (
-          <p className="text-[10px] text-zinc-400 text-center pb-3">
-            Propulsé par tKs26 — une solution Klik&Dev
-          </p>
+          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#A1A1AA' }}>
+            Propulsé par{' '}
+            <span style={{ fontWeight: 800, fontSize: 11 }}>
+              <span style={{ color: '#7C3AED' }}>Tk</span>
+              <span style={{ color: '#18181B' }}>S</span>
+              <span style={{ color: '#EC4899' }}>∞</span>
+              <span style={{ color: '#18181B' }}>26</span>
+            </span>
+            {' '}— une solution{' '}
+            <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
+          </div>
         )}
       </aside>
     </>

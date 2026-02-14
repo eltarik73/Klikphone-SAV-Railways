@@ -376,7 +376,17 @@ export default function SuiviPage() {
           <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
           </a>
-          <p className="text-[10px] text-zinc-400 mt-4">Propulsé par tKs26 — une solution Klik&Dev</p>
+          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#A1A1AA' }}>
+            Propulsé par{' '}
+            <span style={{ fontWeight: 800, fontSize: 11 }}>
+              <span style={{ color: '#7C3AED' }}>Tk</span>
+              <span style={{ color: '#18181B' }}>S</span>
+              <span style={{ color: '#EC4899' }}>∞</span>
+              <span style={{ color: '#18181B' }}>26</span>
+            </span>
+            {' '}— une solution{' '}
+            <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
+          </div>
         </div>
       </div>
     </div>
