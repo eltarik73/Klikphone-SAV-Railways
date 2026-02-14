@@ -331,8 +331,8 @@ export default function ConfigPage() {
     { id: 'team', label: 'Équipe', icon: Users },
     { id: 'catalog', label: 'Catalogue', icon: BookOpen },
     { id: 'messages', label: 'Messages', icon: MessageCircle },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'fidelite', label: 'Fidélité & Jeu', icon: Star },
+    { id: 'notifications', label: 'Notifs', icon: Bell },
+    { id: 'fidelite', label: 'Fidélité', icon: Star },
     { id: 'caisse', label: 'Caisse', icon: CreditCard },
     { id: 'security', label: 'Sécurité', icon: Shield },
     { id: 'appearance', label: 'Apparence', icon: Monitor },
@@ -357,16 +357,16 @@ export default function ConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 overflow-x-auto scrollbar-none">
+      <div className="flex flex-wrap gap-1 mb-6">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
               ${activeTab === id
                 ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
               }`}
           >
-            <Icon className="w-4 h-4" /> {label}
+            <Icon className="w-3.5 h-3.5" /> {label}
           </button>
         ))}
       </div>
