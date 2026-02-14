@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown, Download } from 'lucide-react';
+import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown, Download, CheckCircle, AlertCircle } from 'lucide-react';
 import api from '../lib/api';
 import { waLink, smsLink } from '../lib/utils';
 
@@ -20,6 +20,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
   const [printing, setPrinting] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState(null);
 
   const printUrl = api.getPrintUrl(ticketId, activeType);
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
@@ -34,6 +35,13 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     }
     return () => { document.body.style.overflow = ''; };
   }, [open, activeType]);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Print via window.open — works reliably across browsers
   const handlePrint = async () => {
@@ -96,9 +104,12 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
       const res = await api.sendDocument(ticketId, activeType, clientEmail);
       if (res.status === 'ok') {
         setSendOpen(false);
+        setToast({ type: 'success', message: `Email envoy\u00e9 avec succ\u00e8s \u00e0 ${clientEmail}` });
+      } else {
+        setToast({ type: 'error', message: res.detail || "Erreur lors de l'envoi de l'email" });
       }
     } catch {
-      // silently fail
+      setToast({ type: 'error', message: "Erreur lors de l'envoi de l'email" });
     } finally {
       setSending(false);
     }
@@ -263,6 +274,26 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
           </p>
         </div>
       </div>
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-[60] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border transition-all animate-in ${
+          toast.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-red-50 border-red-200 text-red-800'
+        }`}
+          style={{ animationName: 'slideInRight', animationDuration: '300ms' }}
+        >
+          {toast.type === 'success'
+            ? <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0" />
+            : <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+          }
+          <span className="text-sm font-medium">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="ml-2 p-0.5 rounded hover:bg-black/5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Animation keyframe */}
       <style>{`
