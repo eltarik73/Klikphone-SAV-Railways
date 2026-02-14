@@ -21,7 +21,17 @@ class ApiClient {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
 
-    const res = await fetch(url, { ...options, headers });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let res;
+    try {
+      res = await fetch(url, { ...options, headers, signal: controller.signal });
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') throw new Error('Connexion au serveur expirée (timeout)');
+      throw err;
+    }
+    clearTimeout(timeout);
 
     if (res.status === 401) {
       this.setToken(null);
@@ -33,6 +43,10 @@ class ApiClient {
       throw new Error(body.detail || `Erreur ${res.status}`);
     }
     if (res.status === 204) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      throw new Error('Serveur indisponible (réponse non-JSON)');
+    }
     return res.json();
   }
 
