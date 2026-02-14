@@ -217,9 +217,9 @@ export default function Navbar() {
             Propulsé par{' '}
             <span style={{ fontWeight: 800, fontSize: 11 }}>
               <span style={{ color: '#7C3AED' }}>Tk</span>
-              <span style={{ color: '#18181B' }}>S</span>
+              <span style={{ color: '#FAFAFA' }}>S</span>
               <span style={{ color: '#EC4899' }}>∞</span>
-              <span style={{ color: '#18181B' }}>26</span>
+              <span style={{ color: '#FAFAFA' }}>26</span>
             </span>
             {' '}— une solution{' '}
             <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
