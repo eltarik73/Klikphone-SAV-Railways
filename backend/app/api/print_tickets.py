@@ -824,514 +824,95 @@ def _logo_img(height: int = 60) -> str:
     return ""
 
 
-_CSS_A4 = """
-@page { size: A4; margin: 1.2cm 1.5cm; }
-body { font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1e293b; line-height: 1.4; margin: 0; padding: 0; }
-.header-bar { background: #E53E2E; height: 6px; margin-bottom: 20px; }
-.header-table { width: 100%; margin-bottom: 15px; }
-.header-table td { vertical-align: top; padding: 0; }
-.company-name { font-size: 22pt; font-weight: bold; color: #E53E2E; margin: 0; letter-spacing: 1px; }
-.company-sub { font-size: 9pt; color: #64748b; margin-top: 2px; }
-.company-info { font-size: 8pt; color: #64748b; line-height: 1.6; }
-.doc-title { font-size: 24pt; font-weight: bold; color: #E53E2E; text-align: center; margin: 20px 0 5px 0; letter-spacing: 6px; }
-.doc-meta { text-align: center; font-size: 10pt; color: #475569; margin-bottom: 20px; }
-.doc-meta b { color: #1e293b; }
-.sep-line { border: none; border-top: 2px solid #E53E2E; margin: 15px 0; }
-.sep-light { border: none; border-top: 1px solid #e2e8f0; margin: 12px 0; }
-.info-grid { width: 100%; margin-bottom: 18px; border-collapse: collapse; }
-.info-grid td { vertical-align: top; padding: 0; width: 50%; }
-.info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px 14px; }
-.info-box-left { margin-right: 8px; }
-.info-box-right { margin-left: 8px; }
-.info-label { font-size: 7pt; font-weight: bold; color: #E53E2E; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
-.info-row { font-size: 9pt; color: #334155; margin-bottom: 3px; }
-.info-row b { color: #1e293b; }
-.section-title { font-size: 8pt; font-weight: bold; color: #E53E2E; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
-.repair-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
-.repair-table th { background: #1e293b; color: white; font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; text-align: left; }
-.repair-table th.right { text-align: right; }
-.repair-table td { padding: 9px 12px; font-size: 9.5pt; border-bottom: 1px solid #e2e8f0; }
-.repair-table tr.alt td { background: #f8fafc; }
-.repair-table td.right { text-align: right; }
-.totals-table { width: 100%; border-collapse: collapse; margin-top: 0; }
-.totals-table td { padding: 6px 12px; font-size: 9.5pt; }
-.totals-table td.label { text-align: right; color: #64748b; width: 70%; }
-.totals-table td.value { text-align: right; font-weight: bold; color: #1e293b; width: 30%; }
-.totals-table tr.sep td { border-top: 1px solid #cbd5e1; }
-.totals-table tr.total td { background: #E53E2E; color: white; font-size: 12pt; font-weight: bold; padding: 10px 12px; }
-.totals-table tr.total td.label { color: rgba(255,255,255,0.85); }
-.totals-table tr.reste td { background: #1e293b; color: white; font-size: 11pt; font-weight: bold; padding: 9px 12px; }
-.totals-table tr.reste td.label { color: rgba(255,255,255,0.8); }
-.totals-table tr.acompte td { color: #16a34a; font-style: italic; }
-.conditions { font-size: 8pt; color: #94a3b8; line-height: 1.5; margin-top: 25px; }
-.footer-bar { background: #f1f5f9; padding: 10px 14px; margin-top: 25px; font-size: 7.5pt; color: #64748b; text-align: center; line-height: 1.6; border-top: 2px solid #E53E2E; }
-.signature-area { margin-top: 30px; width: 100%; }
-.signature-area td { vertical-align: top; padding: 0; }
-.sig-box { border: 1px dashed #cbd5e1; height: 70px; padding: 8px; font-size: 8pt; color: #94a3b8; }
-.qr-cell { text-align: right; width: 100px; }
-.paye-stamp { color: #16a34a; font-size: 28pt; font-weight: bold; text-align: center; border: 4px solid #16a34a; padding: 6px 18px; display: inline-block; opacity: 0.7; letter-spacing: 4px; margin: 10px auto; }
-"""
 
+# ═══════════════════════════════════════════════════════════════
+# A4 DOCUMENT — HTML/CSS professionnel (Devis & Reçu)
+# ═══════════════════════════════════════════════════════════════
 
-def _devis_a4_html(t: dict) -> str:
-    code = t.get("ticket_code", "")
-    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
-    categorie = t.get("categorie", "")
-    panne = t.get("panne_detail") or t.get("panne", "")
-    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
-    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
-    tva_rate = float(_get_config("tva", "20"))
-    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
-    client_tel = t.get("client_tel", "")
-    client_email = t.get("client_email", "")
-    client_societe = t.get("client_societe", "")
-    repair_lines = _parse_repair_lines(t)
-    subtotal = sum(r["prix"] for r in repair_lines)
-    reduction = _calc_reduction(t, subtotal)
-    total_ttc = max(0, subtotal - reduction)
-    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
-    total_ht = round(total_ttc - tva_amount, 2)
-    acompte = float(t.get("acompte") or 0)
-    reste = total_ttc - acompte
-    date_depot = _fd(t.get("date_depot"))
-    date_recup = t.get("date_recuperation") or ""
-    qr = _qr_url(code)
-    rows_html = ""
-    for i, r in enumerate(repair_lines):
-        alt = ' class="alt"' if i % 2 == 1 else ""
-        rows_html += f'<tr{alt}><td>{r["label"]}</td><td class="right">{_fp(r["prix"])} &euro;</td></tr>\n'
-    if not repair_lines:
-        rows_html = '<tr><td colspan="2" style="text-align:center;color:#94a3b8;padding:20px">Aucune ligne de réparation</td></tr>'
-    totals_html = f'<tr><td class="label">Sous-total TTC</td><td class="value">{_fp(subtotal)} &euro;</td></tr>'
-    if reduction > 0:
-        totals_html += f'<tr><td class="label">Réduction</td><td class="value" style="color:#E53E2E">-{_fp(reduction)} &euro;</td></tr>'
-    totals_html += f'<tr class="sep"><td class="label">Total HT</td><td class="value">{_fp(total_ht)} &euro;</td></tr>'
-    totals_html += f'<tr><td class="label">TVA ({_fp(tva_rate).replace(",00", "")}%)</td><td class="value">{_fp(tva_amount)} &euro;</td></tr>'
-    totals_html += f'<tr class="total"><td class="label">TOTAL TTC</td><td class="value">{_fp(total_ttc)} &euro;</td></tr>'
-    if acompte > 0:
-        totals_html += f'<tr class="acompte"><td class="label">Acompte versé</td><td class="value">-{_fp(acompte)} &euro;</td></tr>'
-        totals_html += f'<tr class="reste"><td class="label">RESTE À PAYER</td><td class="value">{_fp(reste)} &euro;</td></tr>'
-    societe_html = f'<div class="info-row"><b>{client_societe}</b></div>' if client_societe else ""
-    recup_html = f'<div class="info-row">Récupération prévue : <b>{date_recup}</b></div>' if date_recup else ""
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_A4}</style></head><body>
-<div class="header-bar"></div>
-<table class="header-table"><tr>
-<td style="width:80px">{_logo_img(55)}</td>
-<td style="padding-left:12px"><div class="company-name">KLIKPHONE</div><div class="company-sub">Spécialiste réparation téléphonie</div></td>
-<td style="text-align:right"><div class="company-info">{adresse}<br>Tél : {tel_boutique}<br>www.klikphone.com<br><b>SIRET : 81396114100013</b><br><b>TVA : FR03813961141</b></div></td>
-</tr></table>
-<hr class="sep-line">
-<div class="doc-title">D E V I S</div>
-<div class="doc-meta">N° <b>{code}</b> &nbsp;&mdash;&nbsp; Date : <b>{date_depot}</b></div>
-<hr class="sep-light">
-<table class="info-grid"><tr>
-<td><div class="info-box info-box-left"><div class="info-label">Client</div>{societe_html}<div class="info-row"><b>{client_nom}</b></div><div class="info-row">Tél : {client_tel}</div>{"<div class='info-row'>Email : " + client_email + "</div>" if client_email else ""}</div></td>
-<td><div class="info-box info-box-right"><div class="info-label">Appareil</div><div class="info-row"><b>{appareil}</b></div>{"<div class='info-row'>Catégorie : " + categorie + "</div>" if categorie else ""}<div class="info-row">Panne : {panne}</div>{recup_html}</div></td>
-</tr></table>
-<div class="section-title">Détail des réparations</div>
-<table class="repair-table"><tr><th>Description</th><th class="right" style="width:120px">Prix TTC</th></tr>{rows_html}</table>
-<table class="totals-table">{totals_html}</table>
-<table class="signature-area"><tr>
-<td style="width:65%"><div class="conditions"><b>Conditions :</b><br>Ce devis est valable 30 jours à compter de sa date d'émission.<br>Toute réparation acceptée engage le client au paiement du montant indiqué.<br>Les pièces remplacées restent la propriété de Klikphone sauf demande contraire.</div><div style="margin-top:20px"><div style="font-size:8pt;color:#64748b;margin-bottom:4px">Signature du client (bon pour accord) :</div><div class="sig-box"></div></div></td>
-<td class="qr-cell"><div style="text-align:right"><img src="{qr}" style="width:90px;height:90px" /><div style="font-size:7pt;color:#94a3b8;margin-top:3px">Suivi en ligne</div></div></td>
-</tr></table>
-<div class="footer-bar"><b>Klikphone</b> &mdash; {adresse}<br>SIRET : 81396114100013 &nbsp;|&nbsp; TVA Intra. : FR03813961141 &nbsp;|&nbsp; Tél : {tel_boutique} &nbsp;|&nbsp; www.klikphone.com</div>
-</body></html>"""
-
-
-def _recu_a4_html(t: dict) -> str:
-    code = t.get("ticket_code", "")
-    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
-    categorie = t.get("categorie", "")
-    panne = t.get("panne_detail") or t.get("panne", "")
-    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
-    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
-    tva_rate = float(_get_config("tva", "20"))
-    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
-    client_tel = t.get("client_tel", "")
-    client_email = t.get("client_email", "")
-    client_societe = t.get("client_societe", "")
-    repair_lines = _parse_repair_lines(t)
-    subtotal = sum(r["prix"] for r in repair_lines)
-    reduction = _calc_reduction(t, subtotal)
-    total_ttc = max(0, subtotal - reduction)
-    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
-    total_ht = round(total_ttc - tva_amount, 2)
-    acompte = float(t.get("acompte") or 0)
-    reste = total_ttc - acompte
-    is_paid = reste <= 0
-    date_depot = _fd(t.get("date_depot"))
-    date_now = datetime.now().strftime("%d/%m/%Y")
-    qr = _qr_url(code)
-    rows_html = ""
-    for i, r in enumerate(repair_lines):
-        alt = ' class="alt"' if i % 2 == 1 else ""
-        rows_html += f'<tr{alt}><td>{r["label"]}</td><td class="right">{_fp(r["prix"])} &euro;</td></tr>\n'
-    if not repair_lines:
-        rows_html = '<tr><td colspan="2" style="text-align:center;color:#94a3b8;padding:20px">Aucune ligne</td></tr>'
-    totals_html = f'<tr><td class="label">Sous-total TTC</td><td class="value">{_fp(subtotal)} &euro;</td></tr>'
-    if reduction > 0:
-        totals_html += f'<tr><td class="label">Réduction</td><td class="value" style="color:#E53E2E">-{_fp(reduction)} &euro;</td></tr>'
-    totals_html += f'<tr class="sep"><td class="label">Total HT</td><td class="value">{_fp(total_ht)} &euro;</td></tr>'
-    totals_html += f'<tr><td class="label">TVA ({_fp(tva_rate).replace(",00", "")}%)</td><td class="value">{_fp(tva_amount)} &euro;</td></tr>'
-    totals_html += f'<tr class="total"><td class="label">TOTAL TTC</td><td class="value">{_fp(total_ttc)} &euro;</td></tr>'
-    if acompte > 0:
-        totals_html += f'<tr class="acompte"><td class="label">Acompte versé</td><td class="value">-{_fp(acompte)} &euro;</td></tr>'
-    if reste > 0:
-        totals_html += f'<tr class="reste"><td class="label">RESTE À PAYER</td><td class="value">{_fp(reste)} &euro;</td></tr>'
-    paye_html = '<div style="text-align:center;margin:15px 0"><div class="paye-stamp">PAYÉ</div></div>' if is_paid else ""
-    societe_html = f'<div class="info-row"><b>{client_societe}</b></div>' if client_societe else ""
-    fidelite_html = ""
-    try:
-        active = _get_config("fidelite_active", "1")
-        if active == "1" and t.get("client_id"):
-            with get_cursor() as cur:
-                cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (t["client_id"],))
-                row = cur.fetchone()
-            if row:
-                pts = int(row.get("points_fidelite") or 0)
-                fidelite_html = f'<div style="background:#fefce8;border:1px solid #fde68a;border-radius:4px;padding:10px 14px;margin-top:15px"><div style="font-size:8pt;font-weight:bold;color:#a16207;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Programme Fidélité</div><div style="font-size:9pt;color:#78350f">Vos points : <b>{pts} pts</b></div></div>'
-    except Exception:
-        pass
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_A4}</style></head><body>
-<div class="header-bar"></div>
-<table class="header-table"><tr>
-<td style="width:80px">{_logo_img(55)}</td>
-<td style="padding-left:12px"><div class="company-name">KLIKPHONE</div><div class="company-sub">Spécialiste réparation téléphonie</div></td>
-<td style="text-align:right"><div class="company-info">{adresse}<br>Tél : {tel_boutique}<br>www.klikphone.com<br><b>SIRET : 81396114100013</b><br><b>TVA : FR03813961141</b></div></td>
-</tr></table>
-<hr class="sep-line">
-<div class="doc-title">REÇU DE PAIEMENT</div>
-<div class="doc-meta">N° <b>{code}</b> &nbsp;&mdash;&nbsp; Date : <b>{date_now}</b> &nbsp;&mdash;&nbsp; Dépôt : {date_depot}</div>
-{paye_html}
-<hr class="sep-light">
-<table class="info-grid"><tr>
-<td><div class="info-box info-box-left"><div class="info-label">Client</div>{societe_html}<div class="info-row"><b>{client_nom}</b></div><div class="info-row">Tél : {client_tel}</div>{"<div class='info-row'>Email : " + client_email + "</div>" if client_email else ""}</div></td>
-<td><div class="info-box info-box-right"><div class="info-label">Appareil</div><div class="info-row"><b>{appareil}</b></div>{"<div class='info-row'>Catégorie : " + categorie + "</div>" if categorie else ""}<div class="info-row">Panne : {panne}</div></div></td>
-</tr></table>
-<div class="section-title">Détail des prestations</div>
-<table class="repair-table"><tr><th>Description</th><th class="right" style="width:120px">Prix TTC</th></tr>{rows_html}</table>
-<table class="totals-table">{totals_html}</table>
-{fidelite_html}
-<table class="signature-area"><tr>
-<td style="width:65%"><div class="conditions"><b>Conditions :</b><br>Garantie pièces et main d'oeuvre : 6 mois à compter de la date de réparation.<br>La garantie ne couvre pas les dommages causés par l'usure, les chocs ou l'oxydation.<br>Les pièces remplacées restent la propriété de Klikphone sauf demande contraire.</div></td>
-<td class="qr-cell"><div style="text-align:right"><img src="{qr}" style="width:90px;height:90px" /><div style="font-size:7pt;color:#94a3b8;margin-top:3px">Suivi en ligne</div></div></td>
-</tr></table>
-<div class="footer-bar"><b>Klikphone</b> &mdash; {adresse}<br>SIRET : 81396114100013 &nbsp;|&nbsp; TVA Intra. : FR03813961141 &nbsp;|&nbsp; Tél : {tel_boutique} &nbsp;|&nbsp; www.klikphone.com</div>
-</body></html>"""
-
-
-def _build_pdf(t: dict, doc_type: str) -> bytes:
-    """Construit un PDF A4 professionnel avec fpdf2."""
-    from fpdf import FPDF
-    import tempfile
-    import urllib.request
-
-    # ── Palette ──
-    BRAND = (124, 58, 237)       # Violet brand
-    BRAND_DARK = (91, 33, 182)   # Violet dark
-    DARK = (15, 23, 42)          # slate-900
-    MID = (51, 65, 85)           # slate-700
-    GRAY = (100, 116, 139)       # slate-500
-    LGRAY = (148, 163, 184)      # slate-400
-    BORDER = (226, 232, 240)     # slate-200
-    LIGHT = (248, 250, 252)      # slate-50
-    WHITE = (255, 255, 255)
-    GREEN = (5, 150, 105)        # emerald-600
-    RED_ACCENT = (239, 68, 68)   # red-500
-
-    # ── Data ──
-    code = t.get("ticket_code", "")
-    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
-    categorie = t.get("categorie", "")
-    panne = t.get("panne_detail") or t.get("panne", "")
-    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
-    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
-    tva_rate = float(_get_config("tva", "20"))
-    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
-    client_tel = t.get("client_tel", "")
-    client_email = t.get("client_email", "")
-    client_societe = t.get("client_societe", "")
-    repair_lines = _parse_repair_lines(t)
-    subtotal = sum(r["prix"] for r in repair_lines)
-    reduction = _calc_reduction(t, subtotal)
-    total_ttc = max(0, subtotal - reduction)
-    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
-    total_ht = round(total_ttc - tva_amount, 2)
-    acompte = float(t.get("acompte") or 0)
-    reste = total_ttc - acompte
-    is_paid = reste <= 0
-    date_depot = _fd(t.get("date_depot"))
-    date_now = datetime.now().strftime("%d/%m/%Y")
+def _a4_document(t: dict, doc_type: str) -> str:
+    """Generate professional A4 HTML document for devis or reçu."""
     is_devis = doc_type == "devis"
-    euro = " EUR"
 
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=20)
-    LM = pdf.l_margin
-    RM = pdf.r_margin
-    pw = pdf.w - LM - RM
-
-    # ══════════════════════════════════════════════════════════════
-    # HEADER — Left: violet band with logo+name | Right: company info
-    # ══════════════════════════════════════════════════════════════
-
-    # Full-width violet header band
-    hdr_h = 32
-    pdf.set_fill_color(*BRAND)
-    pdf.rect(0, 0, pdf.w, hdr_h, "F")
-    # Subtle darker accent at very top
-    pdf.set_fill_color(*BRAND_DARK)
-    pdf.rect(0, 0, pdf.w, 3, "F")
-
-    # Logo (white area inset)
-    logo_y = 6
-    if os.path.exists(_logo_path):
-        try:
-            pdf.image(_logo_path, x=LM + 1, y=logo_y, h=20)
-        except Exception:
-            pass
-
-    # Company name in header
-    pdf.set_xy(LM + 26, logo_y + 2)
-    pdf.set_font("Helvetica", "B", 22)
-    pdf.set_text_color(*WHITE)
-    pdf.cell(0, 9, "KLIKPHONE")
-    pdf.set_xy(LM + 26, logo_y + 12)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 4, "Expert en réparation de smartphones et tablettes")
-
-    # Company info right side (white text on violet)
-    info_r = [adresse, f"Tél : {tel_boutique}", "www.klikphone.com"]
-    pdf.set_font("Helvetica", "", 7.5)
-    for i, line in enumerate(info_r):
-        pdf.set_xy(pdf.w - RM - 75, logo_y + 2 + i * 3.8)
-        pdf.set_text_color(230, 220, 255)
-        pdf.cell(75, 3.5, line, align="R")
-    # SIRET / TVA bold
-    pdf.set_font("Helvetica", "B", 7.5)
-    pdf.set_text_color(*WHITE)
-    pdf.set_xy(pdf.w - RM - 75, logo_y + 2 + len(info_r) * 3.8)
-    pdf.cell(75, 3.5, "SIRET 81396114100013 | TVA FR03813961141", align="R")
-
-    pdf.set_y(hdr_h + 5)
-
-    # ══════════════════════════════════════════════════════════════
-    # DOCUMENT TITLE + META
-    # ══════════════════════════════════════════════════════════════
-
-    title = "DEVIS" if is_devis else "RECU DE PAIEMENT"
-    pdf.set_font("Helvetica", "B", 22)
-    pdf.set_text_color(*DARK)
-    pdf.cell(pw, 10, title, align="C", new_x="LMARGIN", new_y="NEXT")
-
-    # Meta line with light bg pill
+    # Colors per doc type
     if is_devis:
-        meta = f"N. {code}  |  Date : {date_depot}"
+        gradient = "linear-gradient(90deg, #E8461E, #F59E0B)"
+        accent = "#E8461E"
+        accent_bg = "#FFF7ED"
+        accent_border = "#FED7AA"
     else:
-        meta = f"N. {code}  |  Date : {date_now}  |  Dépôt : {date_depot}"
-    pdf.set_font("Helvetica", "", 9)
-    meta_w = pdf.get_string_width(meta) + 16
-    meta_x = (pdf.w - meta_w) / 2
-    meta_y = pdf.get_y()
-    pdf.set_fill_color(*LIGHT)
-    pdf.set_draw_color(*BORDER)
-    pdf.rect(meta_x, meta_y, meta_w, 7, "DF")
-    pdf.set_xy(meta_x, meta_y)
-    pdf.set_text_color(*MID)
-    pdf.cell(meta_w, 7, meta, align="C")
-    pdf.set_y(meta_y + 10)
+        gradient = "linear-gradient(90deg, #10B981, #06B6D4)"
+        accent = "#10B981"
+        accent_bg = "#ECFDF5"
+        accent_border = "#A7F3D0"
 
-    # PAYE stamp for recu
-    if not is_devis and is_paid:
-        stamp_w = 50
-        stamp_h = 13
-        stamp_x = (pdf.w - stamp_w) / 2
-        stamp_y = pdf.get_y()
-        pdf.set_fill_color(236, 253, 245)
-        pdf.set_draw_color(*GREEN)
-        pdf.set_line_width(0.8)
-        pdf.rect(stamp_x, stamp_y, stamp_w, stamp_h, "DF")
-        pdf.set_xy(stamp_x, stamp_y + 1)
-        pdf.set_font("Helvetica", "B", 18)
-        pdf.set_text_color(*GREEN)
-        pdf.cell(stamp_w, 11, "PAYÉ", align="C")
-        pdf.set_line_width(0.2)
-        pdf.set_y(stamp_y + stamp_h + 3)
+    # Data extraction
+    code = t.get("ticket_code", "")
+    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
+    categorie = t.get("categorie", "")
+    panne = t.get("panne_detail") or t.get("panne", "")
+    imei = t.get("imei", "")
+    adresse = _get_config("adresse", "79 Place Saint Léger, 73000 Chambéry")
+    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
+    tva_rate = float(_get_config("tva", "20"))
+    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
+    client_tel = t.get("client_tel", "")
+    client_email = t.get("client_email", "")
+    client_societe = t.get("client_societe", "")
+    technicien = t.get("technicien_assigne") or "Non assign\u00e9"
+    type_ecran = t.get("type_ecran", "")
 
-    # ══════════════════════════════════════════════════════════════
-    # CLIENT / APPAREIL — two columns with left violet accent
-    # ══════════════════════════════════════════════════════════════
+    repair_lines = _parse_repair_lines(t)
+    if not is_devis and t.get("tarif_final") and len(repair_lines) > 0:
+        repair_lines[0]["prix"] = float(t["tarif_final"])
+    subtotal_ttc = sum(r["prix"] for r in repair_lines)
+    reduction = _calc_reduction(t, subtotal_ttc)
+    total_ttc = max(0, subtotal_ttc - reduction)
+    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
+    total_ht = round(total_ttc - tva_amount, 2)
+    acompte = float(t.get("acompte") or 0)
+    reste = total_ttc - acompte
+    is_paid = reste <= 0
 
-    col_w = (pw - 8) / 2
-    col_y = pdf.get_y()
+    date_depot = _fd(t.get("date_depot"))
+    date_recup = t.get("date_recuperation") or "\u2014"
+    date_doc = date_depot if is_devis else datetime.now().strftime("%d/%m/%Y")
+    doc_title = "DEVIS" if is_devis else "RE\u00c7U"
 
-    def _card(x, y, w, label, rows):
-        """Draw an info card with violet left accent."""
-        card_h = 8 + len(rows) * 5 + 3
-        # White card bg + border
-        pdf.set_fill_color(*WHITE)
-        pdf.set_draw_color(*BORDER)
-        pdf.rect(x, y, w, card_h, "DF")
-        # Violet left accent bar
-        pdf.set_fill_color(*BRAND)
-        pdf.rect(x, y, 2.5, card_h, "F")
-        # Label
-        pdf.set_xy(x + 7, y + 3)
-        pdf.set_font("Helvetica", "B", 6.5)
-        pdf.set_text_color(*BRAND)
-        pdf.cell(w - 12, 4, label.upper())
-        # Rows
-        for i, (txt, is_bold) in enumerate(rows):
-            pdf.set_xy(x + 7, y + 8 + i * 5)
-            pdf.set_font("Helvetica", "B" if is_bold else "", 9)
-            pdf.set_text_color(*DARK if is_bold else MID)
-            pdf.cell(w - 12, 4.5, txt)
-        return card_h
+    # Repair table rows
+    repair_rows = ""
+    for i, r in enumerate(repair_lines):
+        alt = ' class="alt"' if i % 2 == 1 else ""
+        ht = round(r["prix"] * 100 / (100 + tva_rate), 2)
+        qb = ""
+        if i == 0 and type_ecran:
+            qb = f'<span class="qb">{type_ecran}</span>'
+        repair_rows += f'<tr{alt}><td>{r["label"]}</td><td class="c">{qb}</td><td class="c">1</td><td class="r">{_fp(ht)} &euro;</td></tr>'
+    if not repair_lines:
+        repair_rows = '<tr><td colspan="4" style="text-align:center;padding:20px;color:#A1A1AA">Aucune prestation</td></tr>'
 
-    cl = []
-    if client_societe:
-        cl.append((client_societe, True))
-    cl.append((client_nom, True))
-    cl.append((f"Tél : {client_tel}", False))
-    if client_email:
-        cl.append((f"Email : {client_email}", False))
-
-    dl = [(appareil, True)]
-    if categorie:
-        dl.append((f"Catégorie : {categorie}", False))
-    panne_txt = panne if len(panne) <= 55 else panne[:52] + "..."
-    dl.append((f"Panne : {panne_txt}", False))
-
-    h1 = _card(LM, col_y, col_w, "Client", cl)
-    h2 = _card(LM + col_w + 8, col_y, col_w, "Appareil", dl)
-    pdf.set_y(col_y + max(h1, h2) + 5)
-
-    # ══════════════════════════════════════════════════════════════
-    # REPAIR TABLE
-    # ══════════════════════════════════════════════════════════════
-
-    # Section label
-    section = "DÉTAIL DES RÉPARATIONS" if is_devis else "DÉTAIL DES PRESTATIONS"
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(*BRAND)
-    pdf.cell(pw, 5, section, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
-
-    col_d = pw * 0.65
-    col_p = pw * 0.35
-
-    # Table header
-    th_y = pdf.get_y()
-    pdf.set_fill_color(*BRAND)
-    pdf.set_text_color(*WHITE)
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.cell(col_d, 9, "   Description", fill=True)
-    pdf.cell(col_p, 9, "Montant TTC   ", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
-
-    # Table rows
-    if repair_lines:
-        for i, r in enumerate(repair_lines):
-            bg = LIGHT if i % 2 == 0 else WHITE
-            pdf.set_fill_color(*bg)
-            pdf.set_draw_color(*BORDER)
-            row_y = pdf.get_y()
-            pdf.set_text_color(*DARK)
-            pdf.set_font("Helvetica", "", 9.5)
-            pdf.cell(col_d, 9, f"   {r['label']}", fill=True)
-            pdf.set_font("Helvetica", "B", 9.5)
-            pdf.set_text_color(*MID)
-            pdf.cell(col_p, 9, f"{_fp(r['prix'])}{euro}   ", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
-            # Bottom border
-            pdf.set_draw_color(*BORDER)
-            pdf.line(LM, pdf.get_y(), LM + pw, pdf.get_y())
-    else:
-        pdf.set_fill_color(*LIGHT)
-        pdf.set_text_color(*LGRAY)
-        pdf.set_font("Helvetica", "I", 9)
-        pdf.cell(pw, 12, "Aucune prestation", align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
-
-    # ══════════════════════════════════════════════════════════════
-    # TOTALS — right-aligned block
-    # ══════════════════════════════════════════════════════════════
-
-    pdf.ln(4)
-    # Totals area: shift to right side
-    tot_x = LM + pw * 0.4
-    tot_w = pw * 0.6
-    tot_lbl = tot_w * 0.55
-    tot_val = tot_w * 0.45
-
-    def _trow(label, value, style="normal"):
-        x = tot_x
-        if style == "total":
-            h = 11
-            pdf.set_fill_color(*BRAND)
-            pdf.rect(x, pdf.get_y(), tot_w, h, "F")
-            pdf.set_xy(x + 4, pdf.get_y() + 0.5)
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.set_text_color(*WHITE)
-            pdf.cell(tot_lbl - 4, h - 1, label)
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(tot_val, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
-        elif style == "reste":
-            h = 10
-            pdf.set_fill_color(*DARK)
-            pdf.rect(x, pdf.get_y(), tot_w, h, "F")
-            pdf.set_xy(x + 4, pdf.get_y() + 0.5)
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.set_text_color(*WHITE)
-            pdf.cell(tot_lbl - 4, h - 1, label)
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(tot_val, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
-        elif style == "acompte":
-            h = 7
-            pdf.set_xy(x + 4, pdf.get_y())
-            pdf.set_font("Helvetica", "I", 9)
-            pdf.set_text_color(*GREEN)
-            pdf.cell(tot_lbl - 4, h, label)
-            pdf.set_font("Helvetica", "BI", 9)
-            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
-        elif style == "reduction":
-            h = 7
-            pdf.set_xy(x + 4, pdf.get_y())
-            pdf.set_font("Helvetica", "", 9)
-            pdf.set_text_color(*RED_ACCENT)
-            pdf.cell(tot_lbl - 4, h, label)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
-        else:
-            h = 7
-            pdf.set_xy(x + 4, pdf.get_y())
-            pdf.set_font("Helvetica", "", 9)
-            pdf.set_text_color(*GRAY)
-            pdf.cell(tot_lbl - 4, h, label)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.set_text_color(*DARK)
-            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
-            # Light bottom line
-            pdf.set_draw_color(*BORDER)
-            pdf.line(x, pdf.get_y(), x + tot_w, pdf.get_y())
-
-    _trow("Sous-total TTC", f"{_fp(subtotal)}{euro}")
+    # Totals
+    subtotal_ht = round(subtotal_ttc * 100 / (100 + tva_rate), 2) if subtotal_ttc > 0 else 0
+    tots = f'<div class="tr"><span>Sous-total HT</span><span class="v">{_fp(subtotal_ht)} &euro;</span></div>'
     if reduction > 0:
-        _trow("Réduction", f"-{_fp(reduction)}{euro}", "reduction")
-    _trow("Total HT", f"{_fp(total_ht)}{euro}")
-    tva_pct = _fp(tva_rate).replace(",00", "")
-    _trow(f"TVA ({tva_pct}%)", f"{_fp(tva_amount)}{euro}")
-    pdf.ln(1)
-    _trow("TOTAL TTC", f"{_fp(total_ttc)}{euro}", "total")
+        red_pct = float(t.get("reduction_pourcentage") or 0)
+        rl = f"R\u00e9duction ({red_pct:g}%)" if red_pct > 0 else "R\u00e9duction"
+        red_ht = round(reduction * 100 / (100 + tva_rate), 2)
+        tots += f'<div class="tr grn"><span>{rl}</span><span class="v">-{_fp(red_ht)} &euro;</span></div>'
+    tots += f'<div class="tr"><span>Total HT</span><span class="v">{_fp(total_ht)} &euro;</span></div>'
+    tots += f'<div class="tr"><span>TVA ({tva_rate:g}%)</span><span class="v">{_fp(tva_amount)} &euro;</span></div>'
+    tots += f'<div class="tttc" style="background:{accent}"><span>Total TTC</span><span>{_fp(total_ttc)} &euro;</span></div>'
     if acompte > 0:
-        _trow("Acompte versé", f"-{_fp(acompte)}{euro}", "acompte")
-    if reste > 0:
-        _trow("RESTE À PAYER", f"{_fp(reste)}{euro}", "reste")
+        tots += f'<div class="tr grn"><span>Acompte vers\u00e9</span><span class="v">-{_fp(acompte)} &euro;</span></div>'
+    if reste > 0 or acompte > 0:
+        tots += f'<div class="trap"><span>Reste \u00e0 payer</span><span>{_fp(max(0, reste))} &euro;</span></div>'
 
-    # ══════════════════════════════════════════════════════════════
-    # FIDELITE (recu only)
-    # ══════════════════════════════════════════════════════════════
+    # PAYE stamp
+    paye = ""
+    if not is_devis and is_paid:
+        paye = '<div style="text-align:center;margin:12px 0"><div class="paye">PAY\u00c9</div></div>'
 
+    # Fidelite
+    fidel = ""
     if not is_devis:
         try:
             active = _get_config("fidelite_active", "1")
@@ -1341,103 +922,549 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
                     row = cur.fetchone()
                 if row:
                     pts = int(row.get("points_fidelite") or 0)
-                    pdf.ln(8)
-                    fy = pdf.get_y()
-                    pdf.set_fill_color(245, 243, 255)
-                    pdf.set_draw_color(196, 181, 253)
-                    pdf.rect(LM, fy, pw, 14, "DF")
-                    pdf.set_fill_color(*BRAND)
-                    pdf.rect(LM, fy, 2.5, 14, "F")
-                    pdf.set_xy(LM + 7, fy + 2)
-                    pdf.set_font("Helvetica", "B", 7)
-                    pdf.set_text_color(*BRAND_DARK)
-                    pdf.cell(40, 4, "PROGRAMME FIDÉLITÉ")
-                    pdf.set_xy(LM + 7, fy + 7)
-                    pdf.set_font("Helvetica", "", 9)
-                    pdf.set_text_color(91, 33, 182)
-                    pdf.cell(pw - 12, 4, f"Vos points : {pts} pts")
-                    pdf.set_y(fy + 16)
+                    fidel = f'<div class="fidel"><span class="fl">Programme Fid\u00e9lit\u00e9</span><span class="fp">{pts} points</span></div>'
         except Exception:
             pass
 
-    # ══════════════════════════════════════════════════════════════
-    # CONDITIONS + QR CODE + SIGNATURE
-    # ══════════════════════════════════════════════════════════════
-
-    pdf.ln(6)
-    cond_y = pdf.get_y()
-
-    # QR code (positioned first so conditions wrap around it)
-    qr_ok = False
-    try:
-        qr_url = _qr_url(code)
-        req = urllib.request.Request(qr_url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            qr_data = resp.read()
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(qr_data)
-            tmp_path = tmp.name
-        qr_size = 28
-        qr_x = pdf.w - RM - qr_size
-        pdf.image(tmp_path, x=qr_x, y=cond_y, w=qr_size)
-        os.unlink(tmp_path)
-        pdf.set_xy(qr_x, cond_y + qr_size + 1)
-        pdf.set_font("Helvetica", "", 6)
-        pdf.set_text_color(*LGRAY)
-        pdf.cell(qr_size, 3, "Suivi en ligne", align="C")
-        qr_ok = True
-    except Exception:
-        pass
-
-    cond_w = pw * 0.62 if qr_ok else pw * 0.8
-    pdf.set_xy(LM, cond_y)
-    pdf.set_font("Helvetica", "B", 8)
-    pdf.set_text_color(*DARK)
-    pdf.cell(cond_w, 5, "Conditions", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 7.5)
-    pdf.set_text_color(*GRAY)
+    # Conditions
     if is_devis:
-        cond = "Ce devis est valable 30 jours à compter de sa date d'émission. Toute réparation acceptée engage le client au paiement du montant indiqué. Les pièces remplacées restent la propriété de Klikphone sauf demande contraire."
+        cond_text = "Devis valable 30 jours. Klikphone ne peut \u00eatre tenu responsable de la perte de donn\u00e9es. Un acompte de 30% est demand\u00e9 \u00e0 la validation du devis."
     else:
-        cond = "Garantie pièces et main d'oeuvre : 6 mois à compter de la date de réparation. La garantie ne couvre pas les dommages causés par l'usure, les chocs ou l'oxydation. Les pièces remplacées restent la propriété de Klikphone sauf demande contraire."
-    pdf.multi_cell(cond_w, 3.8, cond)
+        cond_text = "Garantie pi\u00e8ces et main d'oeuvre : 6 mois. Tout mat\u00e9riel non r\u00e9cup\u00e9r\u00e9 sous 3 mois sera consid\u00e9r\u00e9 comme abandonn\u00e9. Klikphone ne peut \u00eatre tenu responsable de la perte de donn\u00e9es."
 
-    # Signature box (devis only)
+    societe_row = f'<div class="nm">{client_societe}</div>' if client_societe else ""
+    email_row = f"<br>Email : {client_email}" if client_email else ""
+    imei_html = f'<div class="ai">IMEI : {imei}</div>' if imei else ""
+    cat_str = f" &mdash; {categorie}" if categorie else ""
+
+    # Build CSS (use .replace for dynamic values to avoid brace escaping)
+    css = """
+@page{size:A4;margin:0}*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;color:#18181B;font-size:11px;line-height:1.5}
+.pg{width:210mm;min-height:297mm;margin:0 auto;position:relative}
+.tb{height:5px;background:__GRADIENT__}
+.ct{padding:20px 28px 80px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-top:16px}
+.hl{display:flex;align-items:center;gap:12px}
+.lk{width:56px;height:56px;background:#DC2626;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:700;flex-shrink:0}
+.cn{font-size:22px;font-weight:700;color:#18181B}.cs{font-size:10px;color:#71717A;margin-top:2px}
+.hr{text-align:right}.dt{font-size:24px;font-weight:700;color:__ACCENT__}
+.dn{font-size:12px;color:#52525B;margin-top:4px}.dd{font-size:11px;color:#71717A}
+.bl{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#A1A1AA;margin-bottom:6px;font-weight:500}
+.crd{background:#FAFAFA;border:1px solid #F4F4F5;border-radius:10px;padding:14px}
+.crd .nm{font-size:13px;font-weight:700;color:#18181B;margin-bottom:3px}
+.crd .dl{font-size:11px;color:#71717A;line-height:1.6}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+.mc{background:#FAFAFA;border:1px solid #F4F4F5;border-radius:8px;padding:10px}
+.mc .ml{font-size:8px;text-transform:uppercase;letter-spacing:1px;color:#A1A1AA;margin-bottom:3px}
+.mc .mv{font-size:11px;font-weight:700;color:#18181B}
+.apc{background:__ACCENT_BG__;border:1px solid __ACCENT_BD__;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+.apc .am{font-size:14px;font-weight:700;color:#18181B}.apc .ap{font-size:11px;color:#52525B;margin-top:2px}
+.apc .ai{font-family:'Courier New',monospace;font-size:11px;color:#71717A}
+.tw{border-radius:10px;overflow:hidden;margin-bottom:0}
+table.rt{width:100%;border-collapse:collapse}
+.rt thead th{background:#18181B;color:#fff;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;padding:10px 14px;text-align:left}
+.rt thead th:last-child{text-align:right}.rt thead th.c{text-align:center}
+.rt tbody td{padding:10px 14px;font-size:11px;border-bottom:1px solid #F4F4F5}
+.rt tbody tr.alt td{background:#FAFAFA}.rt .c{text-align:center}.rt .r{text-align:right}
+.qb{display:inline-block;background:#EDE9FE;color:#7C3AED;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px}
+.tots{margin-bottom:20px}
+.tr{display:flex;justify-content:space-between;padding:7px 14px;font-size:11px;color:#52525B;border-bottom:1px solid #F4F4F5}
+.tr .v{font-weight:700;color:#18181B}.tr.grn,.tr.grn .v{color:#059669}
+.tttc{display:flex;justify-content:space-between;padding:12px 14px;color:#fff;font-size:18px;font-weight:700}
+.trap{display:flex;justify-content:space-between;padding:10px 14px;background:#18181B;color:#fff;font-size:16px;font-weight:700;border-radius:0 0 10px 10px}
+.paye{display:inline-block;color:#059669;font-size:32px;font-weight:700;border:4px solid #059669;padding:4px 24px;letter-spacing:6px;opacity:.6;transform:rotate(-5deg)}
+.fidel{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.fl{font-size:10px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:1px}
+.fp{font-size:13px;font-weight:700;color:#5B21B6}
+.cond{background:#FAFAFA;border:1px solid #F4F4F5;border-radius:10px;padding:14px;margin-bottom:20px}
+.cond .cdt{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#A1A1AA;margin-bottom:6px;font-weight:500}
+.cond .cdx{font-size:9px;color:#71717A;line-height:1.6}
+.ftr{background:#18181B;padding:12px 28px;display:flex;justify-content:space-between;align-items:center;position:absolute;bottom:0;left:0;right:0}
+.ftr span{font-size:9px;color:#71717A}
+@media print{body *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}}
+""".replace("__GRADIENT__", gradient).replace("__ACCENT_BG__", accent_bg).replace("__ACCENT_BD__", accent_border).replace("__ACCENT__", accent)
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>{css}</style></head><body>
+<div class="pg"><div class="tb"></div><div class="ct">
+<div class="hdr"><div class="hl"><div class="lk">K</div><div><div class="cn">KLIKPHONE</div>
+<div class="cs">Sp\u00e9cialiste r\u00e9paration Apple &amp; Multimarque</div></div></div>
+<div class="hr"><div class="dt">{doc_title}</div><div class="dn">N\u00b0 {code}</div><div class="dd">Date : {date_doc}</div></div></div>
+{paye}
+<div class="g2"><div><div class="bl">\u00c9METTEUR</div><div class="crd"><div class="nm">KLIKPHONE</div>
+<div class="dl">{adresse}<br>T\u00e9l : {tel_boutique}<br>SIRET : 81396114100013</div></div></div>
+<div><div class="bl">CLIENT</div><div class="crd">{societe_row}<div class="nm">{client_nom}</div>
+<div class="dl">T\u00e9l : {client_tel}{email_row}</div></div></div></div>
+<div class="apc"><div><div class="am">{appareil}{cat_str}</div><div class="ap">{panne}</div></div>{imei_html}</div>
+<div class="tw"><table class="rt"><thead><tr><th>D\u00e9signation</th><th class="c" style="width:90px">Qualit\u00e9</th>
+<th class="c" style="width:50px">Qt\u00e9</th><th class="r" style="width:100px">Prix HT</th></tr></thead>
+<tbody>{repair_rows}</tbody></table></div>
+<div class="tots">{tots}</div>
+{fidel}
+<div class="g4"><div class="mc"><div class="ml">Ticket</div><div class="mv">{code}</div></div>
+<div class="mc"><div class="ml">Technicien</div><div class="mv">{technicien}</div></div>
+<div class="mc"><div class="ml">Date d\u00e9p\u00f4t</div><div class="mv">{date_depot}</div></div>
+<div class="mc"><div class="ml">Date r\u00e9cup.</div><div class="mv">{date_recup}</div></div></div>
+<div class="cond"><div class="cdt">Conditions</div><div class="cdx">{cond_text}</div></div>
+</div>
+<div class="ftr"><span>SIRET : 81396114100013 &middot; TVA non applicable, art. 293B du CGI</span>
+<span>Propuls\u00e9 par TkS&infin;26 &mdash; une solution Klik&amp;Dev</span></div>
+</div></body></html>"""
+    return html
+
+
+def _devis_a4_html(t: dict) -> str:
+    return _a4_document(t, "devis")
+
+
+def _recu_a4_html(t: dict) -> str:
+    return _a4_document(t, "recu")
+
+
+def _build_pdf(t: dict, doc_type: str) -> bytes:
+    """Construit un PDF A4 professionnel avec fpdf2 — design DM Sans."""
+    from fpdf import FPDF
+    import tempfile
+    import urllib.request
+
+    is_devis = doc_type == "devis"
+
+    # Palette
     if is_devis:
-        pdf.ln(6)
-        sig_y = pdf.get_y()
-        pdf.set_font("Helvetica", "", 7.5)
-        pdf.set_text_color(*GRAY)
-        pdf.cell(cond_w, 4, "Signature du client (bon pour accord) :", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(1)
-        box_y = pdf.get_y()
-        pdf.set_draw_color(*BORDER)
-        pdf.set_dash_pattern(dash=1.5, gap=1.5)
-        pdf.rect(LM, box_y, pw * 0.42, 22, "D")
-        pdf.set_dash_pattern()
-        pdf.set_y(box_y + 24)
+        ACCENT = (232, 70, 30)       # #E8461E orange
+        ACCENT2 = (245, 158, 11)     # #F59E0B
+        ACCENT_BG = (255, 247, 237)  # #FFF7ED
+        ACCENT_BD = (254, 215, 170)  # #FED7AA
+    else:
+        ACCENT = (16, 185, 129)      # #10B981 green
+        ACCENT2 = (6, 182, 212)      # #06B6D4
+        ACCENT_BG = (236, 253, 245)  # #ECFDF5
+        ACCENT_BD = (167, 243, 208)  # #A7F3D0
 
-    # ══════════════════════════════════════════════════════════════
-    # FOOTER — Violet band fixed at page bottom
-    # ══════════════════════════════════════════════════════════════
+    DARK = (24, 24, 27)
+    TEXT = (24, 24, 27)
+    TEXT_MID = (82, 82, 91)
+    TEXT_GRAY = (113, 113, 122)
+    TEXT_LIGHT = (161, 161, 170)
+    CARD_BG = (250, 250, 250)
+    CARD_BD = (244, 244, 245)
+    WHITE = (255, 255, 255)
+    GREEN = (5, 150, 105)
+    VIOLET = (124, 58, 237)
+    VIOLET_BG = (237, 233, 254)
+    RED_LOGO = (220, 38, 38)
 
-    pdf.set_auto_page_break(auto=False)
-    ft_h = 11
-    footer_y = pdf.h - ft_h
-    pdf.set_fill_color(*BRAND)
-    pdf.rect(0, footer_y, pdf.w, ft_h, "F")
-    pdf.set_fill_color(*BRAND_DARK)
-    pdf.rect(0, footer_y + ft_h - 1.5, pdf.w, 1.5, "F")
-    pdf.set_xy(LM, footer_y + 1)
-    pdf.set_font("Helvetica", "B", 7)
+    euro = " EUR"
+
+    # Data
+    code = t.get("ticket_code", "")
+    appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
+    categorie = t.get("categorie", "")
+    panne = t.get("panne_detail") or t.get("panne", "")
+    if len(panne) > 60:
+        panne = panne[:57] + "..."
+    imei = t.get("imei", "")
+    adresse = _get_config("adresse", "79 Place Saint Leger, 73000 Chambery")
+    tel_boutique = _get_config("tel_boutique", "04 79 60 89 22")
+    tva_rate = float(_get_config("tva", "20"))
+    client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
+    client_tel = t.get("client_tel", "")
+    client_email = t.get("client_email", "")
+    client_societe = t.get("client_societe", "")
+    technicien = t.get("technicien_assigne") or "Non assigne"
+    type_ecran = t.get("type_ecran", "")
+
+    repair_lines = _parse_repair_lines(t)
+    if not is_devis and t.get("tarif_final") and len(repair_lines) > 0:
+        repair_lines[0]["prix"] = float(t["tarif_final"])
+    subtotal_ttc = sum(r["prix"] for r in repair_lines)
+    reduction = _calc_reduction(t, subtotal_ttc)
+    total_ttc = max(0, subtotal_ttc - reduction)
+    tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
+    total_ht = round(total_ttc - tva_amount, 2)
+    acompte = float(t.get("acompte") or 0)
+    reste = total_ttc - acompte
+    is_paid = reste <= 0
+
+    date_depot = _fd(t.get("date_depot"))
+    date_recup = t.get("date_recuperation") or "-"
+    date_doc = date_depot if is_devis else datetime.now().strftime("%d/%m/%Y")
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    LM = pdf.l_margin
+    RM = pdf.r_margin
+    pw = pdf.w - LM - RM
+
+    # ── 1. TOP ACCENT BAR ──
+    pdf.set_fill_color(*ACCENT)
+    pdf.rect(0, 0, pdf.w, 2.5, "F")
+    # Second half gradient sim
+    pdf.set_fill_color(*ACCENT2)
+    pdf.rect(pdf.w * 0.5, 0, pdf.w * 0.5, 2.5, "F")
+
+    # ── 2. HEADER ──
+    hdr_y = 6
+    # Logo K (red rounded square)
+    logo_x = LM
+    logo_size = 18
+    pdf.set_fill_color(*RED_LOGO)
+    pdf.rect(logo_x, hdr_y, logo_size, logo_size, "F")
+    pdf.set_xy(logo_x, hdr_y + 2)
+    pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(*WHITE)
-    pdf.cell(pw, 4, f"Klikphone  -  {adresse}  -  {tel_boutique}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(logo_size, logo_size - 4, "K", align="C")
+    # Try real logo overlay
+    if os.path.exists(_logo_path):
+        try:
+            pdf.image(_logo_path, x=logo_x + 1, y=hdr_y + 1, h=logo_size - 2)
+        except Exception:
+            pass
+
+    # Company name
+    pdf.set_xy(logo_x + logo_size + 4, hdr_y + 1)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(*TEXT)
+    pdf.cell(0, 7, "KLIKPHONE")
+    pdf.set_xy(logo_x + logo_size + 4, hdr_y + 9)
+    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_text_color(*TEXT_GRAY)
+    pdf.cell(0, 4, "Specialiste reparation Apple & Multimarque")
+
+    # Doc type (right side)
+    title = "DEVIS" if is_devis else "RECU"
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(*ACCENT)
+    pdf.set_xy(LM, hdr_y)
+    pdf.cell(pw, 8, title, align="R")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*TEXT_MID)
+    pdf.set_xy(LM, hdr_y + 9)
+    pdf.cell(pw, 4, f"N. {code}", align="R")
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*TEXT_GRAY)
+    pdf.set_xy(LM, hdr_y + 14)
+    pdf.cell(pw, 4, f"Date : {date_doc}", align="R")
+
+    pdf.set_y(hdr_y + logo_size + 6)
+
+    # ── PAYE STAMP (recu only) ──
+    if not is_devis and is_paid:
+        sy = pdf.get_y()
+        sw, sh = 42, 11
+        sx = (pdf.w - sw) / 2
+        pdf.set_fill_color(236, 253, 245)
+        pdf.set_draw_color(*GREEN)
+        pdf.set_line_width(0.7)
+        pdf.rect(sx, sy, sw, sh, "DF")
+        pdf.set_xy(sx, sy + 1)
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(*GREEN)
+        pdf.cell(sw, sh - 2, "PAYE", align="C")
+        pdf.set_line_width(0.2)
+        pdf.set_y(sy + sh + 3)
+
+    # ── 3. EMETTEUR / CLIENT CARDS ──
+    cy = pdf.get_y()
+    col_w = (pw - 6) / 2
+
+    def _draw_card(x, y, w, label, lines_list):
+        """Draw a card: bg + label + lines."""
+        h = 7 + len(lines_list) * 4.5 + 4
+        # Background
+        pdf.set_fill_color(*CARD_BG)
+        pdf.set_draw_color(*CARD_BD)
+        pdf.rect(x, y, w, h, "DF")
+        # Label
+        pdf.set_xy(x + 4, y + 3)
+        pdf.set_font("Helvetica", "B", 6)
+        pdf.set_text_color(*TEXT_LIGHT)
+        pdf.cell(w - 8, 3, label.upper())
+        # Lines
+        for i, (txt, bold) in enumerate(lines_list):
+            pdf.set_xy(x + 4, y + 7 + i * 4.5)
+            pdf.set_font("Helvetica", "B" if bold else "", 8.5 if bold else 8)
+            pdf.set_text_color(*TEXT if bold else TEXT_GRAY)
+            pdf.cell(w - 8, 4, txt)
+        return h
+
+    em_lines = [("KLIKPHONE", True)]
+    # Clean address for latin-1
+    addr_clean = adresse.replace("\u00e9", "e").replace("\u00e8", "e").replace("\u00e0", "a")
+    em_lines.append((addr_clean, False))
+    em_lines.append((f"Tel : {tel_boutique}", False))
+    em_lines.append(("SIRET : 81396114100013", False))
+
+    cl_lines = []
+    if client_societe:
+        cl_lines.append((client_societe, True))
+    cl_lines.append((client_nom, True))
+    cl_lines.append((f"Tel : {client_tel}", False))
+    if client_email:
+        cl_lines.append((f"Email : {client_email}", False))
+
+    h1 = _draw_card(LM, cy, col_w, "Emetteur", em_lines)
+    h2 = _draw_card(LM + col_w + 6, cy, col_w, "Client", cl_lines)
+    pdf.set_y(cy + max(h1, h2) + 4)
+
+    # ── 4. APPAREIL CARD ──
+    ay = pdf.get_y()
+    app_h = 14
+    pdf.set_fill_color(*ACCENT_BG)
+    pdf.set_draw_color(*ACCENT_BD)
+    pdf.rect(LM, ay, pw, app_h, "DF")
+    # Appareil name
+    app_txt = appareil
+    if categorie:
+        app_txt += f" - {categorie}"
+    pdf.set_xy(LM + 5, ay + 2)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_text_color(*TEXT)
+    pdf.cell(pw * 0.6, 5, app_txt)
+    # Panne
+    panne_clean = panne.replace("\u00e9", "e").replace("\u00e8", "e").replace("\u00e0", "a").replace("\u00ea", "e").replace("\u00f4", "o")
+    pdf.set_xy(LM + 5, ay + 7.5)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*TEXT_MID)
+    pdf.cell(pw * 0.6, 4, panne_clean)
+    # IMEI right
+    if imei:
+        pdf.set_xy(LM + pw * 0.6, ay + 4)
+        pdf.set_font("Courier", "", 8)
+        pdf.set_text_color(*TEXT_GRAY)
+        pdf.cell(pw * 0.4 - 5, 5, f"IMEI : {imei}", align="R")
+
+    pdf.set_y(ay + app_h + 4)
+
+    # ── 5. REPAIR TABLE ──
+    col_desc = pw * 0.45
+    col_qual = pw * 0.20
+    col_qty = pw * 0.12
+    col_prix = pw * 0.23
+
+    # Table header
+    thy = pdf.get_y()
+    pdf.set_fill_color(*DARK)
+    pdf.set_text_color(*WHITE)
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.cell(col_desc, 8, "  DESIGNATION", fill=True)
+    pdf.cell(col_qual, 8, "QUALITE", align="C", fill=True)
+    pdf.cell(col_qty, 8, "QTE", align="C", fill=True)
+    pdf.cell(col_prix, 8, "PRIX HT", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+    # Table rows
+    for i, r in enumerate(repair_lines):
+        bg = CARD_BG if i % 2 == 1 else WHITE
+        pdf.set_fill_color(*bg)
+        ht = round(r["prix"] * 100 / (100 + tva_rate), 2)
+        label_clean = r["label"].replace("\u00e9", "e").replace("\u00e8", "e").replace("\u00e0", "a").replace("\u00ea", "e").replace("\u00f4", "o")
+        # Designation
+        pdf.set_text_color(*TEXT)
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.cell(col_desc, 8, f"  {label_clean}", fill=True)
+        # Quality badge
+        if i == 0 and type_ecran:
+            # Violet badge
+            bx = pdf.get_x()
+            by = pdf.get_y()
+            badge_w = pdf.get_string_width(type_ecran) + 6
+            badge_x = bx + (col_qual - badge_w) / 2
+            pdf.set_fill_color(*VIOLET_BG)
+            pdf.rect(badge_x, by + 1.5, badge_w, 5, "F")
+            pdf.set_xy(badge_x, by + 1.5)
+            pdf.set_font("Helvetica", "B", 6.5)
+            pdf.set_text_color(*VIOLET)
+            pdf.cell(badge_w, 5, type_ecran, align="C")
+            pdf.set_xy(bx, by)
+            pdf.set_fill_color(*bg)
+            pdf.cell(col_qual, 8, "", fill=False)
+        else:
+            pdf.cell(col_qual, 8, "", fill=True)
+        # Qty
+        pdf.set_text_color(*TEXT_MID)
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.cell(col_qty, 8, "1", align="C", fill=True)
+        # Prix HT
+        pdf.set_text_color(*TEXT)
+        pdf.set_font("Helvetica", "B", 8.5)
+        pdf.cell(col_prix, 8, f"{_fp(ht)}{euro}", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+        # Bottom line
+        pdf.set_draw_color(*CARD_BD)
+        pdf.line(LM, pdf.get_y(), LM + pw, pdf.get_y())
+
+    if not repair_lines:
+        pdf.set_fill_color(*CARD_BG)
+        pdf.set_text_color(*TEXT_LIGHT)
+        pdf.set_font("Helvetica", "I", 8.5)
+        pdf.cell(pw, 10, "Aucune prestation", align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+    # ── 6. TOTALS ──
+    pdf.ln(3)
+    tot_x = LM + pw * 0.45
+    tot_w = pw * 0.55
+    tl = tot_w * 0.55
+    tv = tot_w * 0.45
+
+    def _trow(label, value, style="normal"):
+        y = pdf.get_y()
+        if style == "ttc":
+            h = 10
+            pdf.set_fill_color(*ACCENT)
+            pdf.rect(tot_x, y, tot_w, h, "F")
+            pdf.set_xy(tot_x + 4, y + 0.5)
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.set_text_color(*WHITE)
+            pdf.cell(tl - 4, h - 1, label)
+            pdf.cell(tv, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        elif style == "reste":
+            h = 9
+            pdf.set_fill_color(*DARK)
+            pdf.rect(tot_x, y, tot_w, h, "F")
+            pdf.set_xy(tot_x + 4, y + 0.5)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(*WHITE)
+            pdf.cell(tl - 4, h - 1, label)
+            pdf.cell(tv, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        elif style == "green":
+            h = 6.5
+            pdf.set_xy(tot_x + 4, y)
+            pdf.set_font("Helvetica", "", 8.5)
+            pdf.set_text_color(*GREEN)
+            pdf.cell(tl - 4, h, label)
+            pdf.set_font("Helvetica", "B", 8.5)
+            pdf.cell(tv, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        else:
+            h = 6.5
+            pdf.set_xy(tot_x + 4, y)
+            pdf.set_font("Helvetica", "", 8.5)
+            pdf.set_text_color(*TEXT_MID)
+            pdf.cell(tl - 4, h, label)
+            pdf.set_font("Helvetica", "B", 8.5)
+            pdf.set_text_color(*TEXT)
+            pdf.cell(tv, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_draw_color(*CARD_BD)
+            pdf.line(tot_x, pdf.get_y(), tot_x + tot_w, pdf.get_y())
+
+    subtotal_ht = round(subtotal_ttc * 100 / (100 + tva_rate), 2) if subtotal_ttc > 0 else 0
+    _trow("Sous-total HT", f"{_fp(subtotal_ht)}{euro}")
+    if reduction > 0:
+        red_pct = float(t.get("reduction_pourcentage") or 0)
+        rl = f"Reduction ({red_pct:g}%)" if red_pct > 0 else "Reduction"
+        red_ht = round(reduction * 100 / (100 + tva_rate), 2)
+        _trow(rl, f"-{_fp(red_ht)}{euro}", "green")
+    _trow("Total HT", f"{_fp(total_ht)}{euro}")
+    tva_pct = f"{tva_rate:g}"
+    _trow(f"TVA ({tva_pct}%)", f"{_fp(tva_amount)}{euro}")
+    pdf.ln(1)
+    _trow("Total TTC", f"{_fp(total_ttc)}{euro}", "ttc")
+    if acompte > 0:
+        _trow("Acompte verse", f"-{_fp(acompte)}{euro}", "green")
+    if reste > 0 or acompte > 0:
+        _trow("Reste a payer", f"{_fp(max(0, reste))}{euro}", "reste")
+
+    # ── FIDELITE (recu only) ──
+    if not is_devis:
+        try:
+            active = _get_config("fidelite_active", "1")
+            if active == "1" and t.get("client_id"):
+                with get_cursor() as cur:
+                    cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (t["client_id"],))
+                    row = cur.fetchone()
+                if row:
+                    pts = int(row.get("points_fidelite") or 0)
+                    pdf.ln(5)
+                    fy = pdf.get_y()
+                    pdf.set_fill_color(245, 243, 255)
+                    pdf.set_draw_color(221, 214, 254)
+                    pdf.rect(LM, fy, pw, 12, "DF")
+                    pdf.set_xy(LM + 5, fy + 2)
+                    pdf.set_font("Helvetica", "B", 6.5)
+                    pdf.set_text_color(*VIOLET)
+                    pdf.cell(40, 3, "PROGRAMME FIDELITE")
+                    pdf.set_xy(LM + 5, fy + 6)
+                    pdf.set_font("Helvetica", "", 8.5)
+                    pdf.set_text_color(91, 33, 182)
+                    pdf.cell(pw - 10, 4, f"Vos points : {pts} pts")
+                    pdf.set_y(fy + 14)
+        except Exception:
+            pass
+
+    # ── 7. INFO COMPLEMENTAIRES — 4 mini cards ──
+    pdf.ln(4)
+    iy = pdf.get_y()
+    mc_w = (pw - 9) / 4
+    mc_h = 12
+    infos = [
+        ("Ticket", code),
+        ("Technicien", technicien),
+        ("Date depot", date_depot),
+        ("Date recup.", date_recup),
+    ]
+    for idx, (lbl, val) in enumerate(infos):
+        mx = LM + idx * (mc_w + 3)
+        pdf.set_fill_color(*CARD_BG)
+        pdf.set_draw_color(*CARD_BD)
+        pdf.rect(mx, iy, mc_w, mc_h, "DF")
+        pdf.set_xy(mx + 3, iy + 2)
+        pdf.set_font("Helvetica", "B", 5.5)
+        pdf.set_text_color(*TEXT_LIGHT)
+        pdf.cell(mc_w - 6, 3, lbl.upper())
+        pdf.set_xy(mx + 3, iy + 6)
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.set_text_color(*TEXT)
+        # Truncate if too wide
+        if pdf.get_string_width(val) > mc_w - 6:
+            while pdf.get_string_width(val + "..") > mc_w - 6 and len(val) > 3:
+                val = val[:-1]
+            val += ".."
+        pdf.cell(mc_w - 6, 4, val)
+    pdf.set_y(iy + mc_h + 4)
+
+    # ── 8. CONDITIONS ──
+    cy = pdf.get_y()
+    if is_devis:
+        cond = "Devis valable 30 jours. Klikphone ne peut etre tenu responsable de la perte de donnees. Un acompte de 30% est demande a la validation du devis."
+    else:
+        cond = "Garantie pieces et main d'oeuvre : 6 mois. Tout materiel non recupere sous 3 mois sera considere comme abandonne. Klikphone ne peut etre tenu responsable de la perte de donnees."
+
+    # Estimate condition box height
+    cond_w = pw - 8
+    pdf.set_font("Helvetica", "", 7)
+    nb_lines = max(1, len(cond) // 90 + 1)
+    cond_h = 8 + nb_lines * 3.5
+
+    pdf.set_fill_color(*CARD_BG)
+    pdf.set_draw_color(*CARD_BD)
+    pdf.rect(LM, cy, pw, cond_h, "DF")
+    pdf.set_xy(LM + 4, cy + 2.5)
+    pdf.set_font("Helvetica", "B", 6)
+    pdf.set_text_color(*TEXT_LIGHT)
+    pdf.cell(cond_w, 3, "CONDITIONS")
+    pdf.set_xy(LM + 4, cy + 6.5)
+    pdf.set_font("Helvetica", "", 7)
+    pdf.set_text_color(*TEXT_GRAY)
+    pdf.multi_cell(cond_w, 3.5, cond)
+
+    # ── 9. FOOTER ──
+    pdf.set_auto_page_break(auto=False)
+    ft_h = 10
+    footer_y = pdf.h - ft_h
+    pdf.set_fill_color(*DARK)
+    pdf.rect(0, footer_y, pdf.w, ft_h, "F")
+    # Left: SIRET
+    pdf.set_xy(LM, footer_y + 3)
     pdf.set_font("Helvetica", "", 6.5)
-    pdf.set_text_color(220, 210, 255)
-    pdf.cell(pw, 3.5, "SIRET 81396114100013  |  TVA Intra. FR03813961141  |  www.klikphone.com", align="C")
+    pdf.set_text_color(*TEXT_GRAY)
+    pdf.cell(pw * 0.6, 4, "SIRET : 81396114100013 . TVA non applicable, art. 293B du CGI")
+    # Right: TkS26
+    pdf.set_xy(LM + pw * 0.4, footer_y + 3)
+    pdf.cell(pw * 0.6, 4, "Propulse par TkS26 - une solution Klik&Dev", align="R")
 
     return bytes(pdf.output())
-
 
 def generate_pdf(ticket_id: int, doc_type: str) -> tuple:
     """Génère un PDF A4 pour un ticket. Retourne (pdf_bytes, filename)."""
