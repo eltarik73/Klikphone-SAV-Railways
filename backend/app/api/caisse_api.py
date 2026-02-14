@@ -106,7 +106,7 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
         if ticket_id:
             with get_cursor() as cur:
                 cur.execute("""
-                    INSERT INTO notes_tickets (ticket_id, auteur, contenu, is_important, type_note)
+                    INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
                     VALUES (%s, %s, %s, FALSE, 'caisse')
                 """, (
                     ticket_id,
