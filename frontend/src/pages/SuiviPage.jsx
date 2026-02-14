@@ -204,30 +204,53 @@ export default function SuiviPage() {
               })()}
 
               {/* Réparations */}
-              {(ticket.reparation_supp || ticket.panne_detail) && (
-                <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
-                  <div className="flex items-center gap-1.5 text-slate-600 font-semibold mb-2">
-                    <Wrench className="w-3.5 h-3.5" />
-                    Détail réparation
+              {(() => {
+                let repLines = [];
+                try {
+                  const parsed = JSON.parse(ticket.reparation_supp || '[]');
+                  if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label);
+                } catch { /* legacy */ }
+                const hasDetail = ticket.panne_detail || repLines.length > 0;
+                if (!hasDetail) return null;
+                return (
+                  <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
+                    <div className="flex items-center gap-1.5 text-slate-600 font-semibold mb-2">
+                      <Wrench className="w-3.5 h-3.5" />
+                      Détail réparation
+                    </div>
+                    {ticket.panne_detail && (
+                      <p className="text-slate-600 text-xs mb-1">{ticket.panne_detail}</p>
+                    )}
+                    {repLines.length > 0 && (
+                      <p className="text-slate-600 text-xs">{repLines.map(r => r.label).join(' + ')}</p>
+                    )}
                   </div>
-                  {ticket.panne_detail && (
-                    <p className="text-slate-600 text-xs mb-1">{ticket.panne_detail}</p>
-                  )}
-                  {ticket.reparation_supp && (
-                    <p className="text-slate-600 text-xs">Réparation supp. : {ticket.reparation_supp}</p>
-                  )}
-                </div>
-              )}
+                );
+              })()}
 
               {/* Tarification */}
               {(() => {
-                const devis = Number(ticket.devis_estime || 0);
-                const prixSupp = Number(ticket.prix_supp || 0);
+                let repLines = [];
+                try {
+                  const parsed = JSON.parse(ticket.reparation_supp || '[]');
+                  if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label);
+                } catch { /* legacy */ }
+
+                // Use parsed lines if available, fallback to legacy
+                let lines = [];
+                if (repLines.length > 0) {
+                  lines = repLines.map(r => ({ label: r.label, prix: Number(r.prix || 0) }));
+                } else {
+                  const devis = Number(ticket.devis_estime || 0);
+                  if (devis > 0) lines.push({ label: ticket.panne || 'Réparation', prix: devis });
+                  const prixSupp = Number(ticket.prix_supp || 0);
+                  if (ticket.reparation_supp && prixSupp > 0) lines.push({ label: ticket.reparation_supp, prix: prixSupp });
+                }
+                const subtotal = lines.reduce((s, l) => s + l.prix, 0);
+                if (subtotal <= 0) return null;
                 const acompte = Number(ticket.acompte || 0);
                 const redPct = Number(ticket.reduction_pourcentage || 0);
                 const redMnt = Number(ticket.reduction_montant || 0);
-                const subtotal = devis + prixSupp;
-                if (subtotal <= 0) return null;
                 const reduction = redPct > 0 ? subtotal * (redPct / 100) : redMnt;
                 const total = Math.max(0, subtotal - reduction);
                 const reste = total - acompte;
@@ -238,16 +261,12 @@ export default function SuiviPage() {
                       Tarification
                     </div>
                     <div className="space-y-1">
-                      <div className="flex justify-between text-slate-700">
-                        <span>{ticket.panne}</span>
-                        <span className="font-medium">{formatPrix(devis)}</span>
-                      </div>
-                      {ticket.reparation_supp && prixSupp > 0 && (
-                        <div className="flex justify-between text-slate-600 text-xs">
-                          <span>{ticket.reparation_supp}</span>
-                          <span>{formatPrix(prixSupp)}</span>
+                      {lines.map((l, i) => (
+                        <div key={i} className="flex justify-between text-slate-700">
+                          <span>{l.label}</span>
+                          <span className="font-medium">{formatPrix(l.prix)}</span>
                         </div>
-                      )}
+                      ))}
                       {reduction > 0 && (
                         <div className="flex justify-between text-emerald-600 text-xs">
                           <span>Réduction{redPct > 0 ? ` (${redPct}%)` : ''}</span>
