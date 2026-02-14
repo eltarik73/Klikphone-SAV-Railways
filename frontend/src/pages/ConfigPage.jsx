@@ -809,7 +809,7 @@ export default function ConfigPage() {
             <div className="space-y-3 mb-4">
               <div>
                 <label className="input-label">Clé API Resend</label>
-                <input value={config.RESEND_API_KEY || ''} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
+                <input value={config.RESEND_API_KEY || 're_BxiE1NX2_9qVCBVSvEAHztuFtzc8F38kr'} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
                   className="input font-mono text-xs" placeholder="re_xxxxxxxx..." />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
