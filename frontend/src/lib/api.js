@@ -182,6 +182,11 @@ class ApiClient {
   getPrintUrl(ticketId, type) {
     return `${API_URL}/api/tickets/${ticketId}/print/${type}`;
   }
+  getSharePrintUrl(ticketId, type) {
+    const path = `/api/tickets/${ticketId}/print/${type}`;
+    if (API_URL) return `${API_URL}${path}`;
+    return `${window.location.origin}${path}`;
+  }
 
   // ─── CAISSE ────────────────────────────────
   sendToCaisse(ticketId) {
@@ -200,9 +205,12 @@ class ApiClient {
     return this.post('/api/config/caisse/test');
   }
 
-  // ─── EMAIL SMTP ──────────────────────────────
+  // ─── EMAIL ──────────────────────────────
   envoyerEmail(to, subject, body) {
     return this.request('/api/email/envoyer', { method: 'POST', body: JSON.stringify({ to, subject, body }) }, 45000);
+  }
+  sendDocument(ticketId, docType, to) {
+    return this.request('/api/email/send-document', { method: 'POST', body: JSON.stringify({ ticket_id: ticketId, doc_type: docType, to }) }, 45000);
   }
   testSmtpEmail(to) {
     return this.request('/api/email/test', { method: 'POST', body: JSON.stringify({ to }) }, 45000);

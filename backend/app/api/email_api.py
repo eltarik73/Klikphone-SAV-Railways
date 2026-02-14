@@ -11,7 +11,7 @@ from email.mime.multipart import MIMEMultipart
 from email.header import Header
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_cursor
@@ -108,6 +108,39 @@ def _send_email(to: str, subject: str, body: str) -> tuple:
     return _send_smtp(to, subject, body)
 
 
+def _send_resend_html(to: str, subject: str, html: str) -> tuple:
+    """Envoie un email HTML via Resend."""
+    api_key = _get_param("RESEND_API_KEY")
+    if not api_key:
+        return False, "Clé API Resend non configurée"
+
+    from_name = _get_param("SMTP_NAME") or "Klikphone"
+    from_email = _get_param("SMTP_USER") or "onboarding@resend.dev"
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": f"{from_name} <{from_email}>",
+                    "to": [to],
+                    "subject": subject,
+                    "html": html,
+                },
+            )
+        if resp.status_code in (200, 201):
+            return True, "Email envoyé avec succès"
+        else:
+            error = resp.json().get("message", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+            return False, f"Resend erreur {resp.status_code}: {error}"
+    except Exception as e:
+        return False, f"Erreur Resend: {str(e)}"
+
+
 class EmailRequest(BaseModel):
     to: str
     subject: str = "Klikphone SAV"
@@ -118,12 +151,57 @@ class EmailTestRequest(BaseModel):
     to: str
 
 
+class SendDocumentRequest(BaseModel):
+    ticket_id: int
+    doc_type: str
+    to: str
+
+
 @router.post("/envoyer")
 async def envoyer_email(data: EmailRequest, user: dict = Depends(get_current_user)):
     """Envoie un email via Resend ou SMTP."""
     loop = asyncio.get_event_loop()
     success, message = await loop.run_in_executor(
         None, partial(_send_email, data.to, data.subject, data.body)
+    )
+    return {"status": "ok" if success else "error", "message": message}
+
+
+@router.post("/send-document")
+async def send_document(data: SendDocumentRequest, user: dict = Depends(get_current_user)):
+    """Génère le document HTML et l'envoie directement par email."""
+    from app.api.print_tickets import (
+        _get_ticket_full, _ticket_client_html, _ticket_staff_html,
+        _devis_html, _recu_html,
+    )
+
+    t = _get_ticket_full(data.ticket_id)
+    if not t:
+        raise HTTPException(404, "Ticket non trouvé")
+
+    generators = {
+        "client": _ticket_client_html,
+        "staff": _ticket_staff_html,
+        "devis": _devis_html,
+        "recu": _recu_html,
+    }
+    gen = generators.get(data.doc_type)
+    if not gen:
+        raise HTTPException(400, f"Type de document '{data.doc_type}' non supporté")
+
+    html_content = gen(t)
+    ticket_code = t.get("ticket_code", "")
+    type_labels = {
+        "client": "Reçu de dépôt",
+        "staff": "Fiche atelier",
+        "devis": "Devis",
+        "recu": "Reçu de paiement",
+    }
+    subject = f"Klikphone SAV - {type_labels.get(data.doc_type, 'Document')} {ticket_code}"
+
+    loop = asyncio.get_event_loop()
+    success, message = await loop.run_in_executor(
+        None, partial(_send_resend_html, data.to, subject, html_content)
     )
     return {"status": "ok" if success else "error", "message": message}
 

@@ -62,16 +62,18 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     window.open(printUrl, '_blank');
   };
 
+  const shareUrl = api.getSharePrintUrl(ticketId, activeType);
+
   const handleSendWhatsApp = () => {
     if (!clientTel) return;
-    const msg = `Bonjour, voici votre document ${ticketCode}: ${printUrl}`;
+    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode} :\n${shareUrl}`;
     window.open(waLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
 
   const handleSendSMS = () => {
     if (!clientTel) return;
-    const msg = `Klikphone - ${ticketCode}: ${printUrl}`;
+    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}: ${shareUrl}`;
     window.open(smsLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
@@ -80,9 +82,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     if (!clientEmail) return;
     setSending(true);
     try {
-      const subject = `Klikphone SAV - ${currentType?.label || 'Document'} ${ticketCode}`;
-      const body = `Bonjour,\n\nVeuillez trouver ci-joint votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode}.\n\nLien : ${printUrl}\n\nCordialement,\nKlikphone`;
-      const res = await api.envoyerEmail(clientEmail, subject, body);
+      const res = await api.sendDocument(ticketId, activeType, clientEmail);
       if (res.status === 'ok') {
         setSendOpen(false);
       }
