@@ -1024,14 +1024,23 @@ def _recu_a4_html(t: dict) -> str:
 def _build_pdf(t: dict, doc_type: str) -> bytes:
     """Construit un PDF A4 professionnel avec fpdf2."""
     from fpdf import FPDF
+    import tempfile
+    import urllib.request
 
-    RED = (229, 62, 46)
-    DARK = (30, 41, 59)
-    GRAY = (100, 116, 139)
-    LIGHT_BG = (248, 250, 252)
+    # ── Palette ──
+    BRAND = (124, 58, 237)       # Violet brand
+    BRAND_DARK = (91, 33, 182)   # Violet dark
+    DARK = (15, 23, 42)          # slate-900
+    MID = (51, 65, 85)           # slate-700
+    GRAY = (100, 116, 139)       # slate-500
+    LGRAY = (148, 163, 184)      # slate-400
+    BORDER = (226, 232, 240)     # slate-200
+    LIGHT = (248, 250, 252)      # slate-50
     WHITE = (255, 255, 255)
-    GREEN = (22, 163, 74)
+    GREEN = (5, 150, 105)        # emerald-600
+    RED_ACCENT = (239, 68, 68)   # red-500
 
+    # ── Data ──
     code = t.get("ticket_code", "")
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     categorie = t.get("categorie", "")
@@ -1055,216 +1064,274 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     date_depot = _fd(t.get("date_depot"))
     date_now = datetime.now().strftime("%d/%m/%Y")
     is_devis = doc_type == "devis"
+    euro = " EUR"
 
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
-    pw = pdf.w - pdf.l_margin - pdf.r_margin  # printable width
+    LM = pdf.l_margin
+    RM = pdf.r_margin
+    pw = pdf.w - LM - RM
 
-    # ── Red top bar ──
-    pdf.set_fill_color(*RED)
-    pdf.rect(0, 0, pdf.w, 6, "F")
-    pdf.set_y(10)
+    # ══════════════════════════════════════════════════════════════
+    # HEADER — Left: violet band with logo+name | Right: company info
+    # ══════════════════════════════════════════════════════════════
 
-    # ── Header: logo + company info ──
-    logo_x = pdf.l_margin
+    # Full-width violet header band
+    hdr_h = 32
+    pdf.set_fill_color(*BRAND)
+    pdf.rect(0, 0, pdf.w, hdr_h, "F")
+    # Subtle darker accent at very top
+    pdf.set_fill_color(*BRAND_DARK)
+    pdf.rect(0, 0, pdf.w, 3, "F")
+
+    # Logo (white area inset)
+    logo_y = 6
     if os.path.exists(_logo_path):
         try:
-            pdf.image(_logo_path, x=logo_x, y=12, h=18)
+            pdf.image(_logo_path, x=LM + 1, y=logo_y, h=20)
         except Exception:
             pass
 
-    pdf.set_xy(logo_x + 22, 12)
-    pdf.set_font("Helvetica", "B", 20)
-    pdf.set_text_color(*RED)
-    pdf.cell(0, 8, "KLIKPHONE", new_x="LMARGIN")
-    pdf.set_xy(logo_x + 22, 20)
-    pdf.set_font("Helvetica", "", 8)
-    pdf.set_text_color(*GRAY)
-    pdf.cell(0, 4, "Specialiste reparation telephonie", new_x="LMARGIN")
-
-    # Company info right-aligned
-    pdf.set_font("Helvetica", "", 7.5)
-    pdf.set_text_color(*GRAY)
-    info_lines = [adresse, f"Tel : {tel_boutique}", "www.klikphone.com", "SIRET : 81396114100013", "TVA : FR03813961141"]
-    for i, line in enumerate(info_lines):
-        pdf.set_xy(pdf.w - pdf.r_margin - 70, 12 + i * 4)
-        bold = i >= 3
-        pdf.set_font("Helvetica", "B" if bold else "", 7.5)
-        pdf.cell(70, 4, line, align="R")
-
-    # ── Red separator ──
-    pdf.set_y(35)
-    pdf.set_draw_color(*RED)
-    pdf.set_line_width(0.6)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.ln(8)
-
-    # ── Document title ──
-    title = "D E V I S" if is_devis else "RECU DE PAIEMENT"
+    # Company name in header
+    pdf.set_xy(LM + 26, logo_y + 2)
     pdf.set_font("Helvetica", "B", 22)
-    pdf.set_text_color(*RED)
+    pdf.set_text_color(*WHITE)
+    pdf.cell(0, 9, "KLIKPHONE")
+    pdf.set_xy(LM + 26, logo_y + 12)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 4, "Expert en réparation de smartphones et tablettes")
+
+    # Company info right side (white text on violet)
+    info_r = [adresse, f"Tél : {tel_boutique}", "www.klikphone.com"]
+    pdf.set_font("Helvetica", "", 7.5)
+    for i, line in enumerate(info_r):
+        pdf.set_xy(pdf.w - RM - 75, logo_y + 2 + i * 3.8)
+        pdf.set_text_color(230, 220, 255)
+        pdf.cell(75, 3.5, line, align="R")
+    # SIRET / TVA bold
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.set_text_color(*WHITE)
+    pdf.set_xy(pdf.w - RM - 75, logo_y + 2 + len(info_r) * 3.8)
+    pdf.cell(75, 3.5, "SIRET 81396114100013 | TVA FR03813961141", align="R")
+
+    pdf.set_y(hdr_h + 5)
+
+    # ══════════════════════════════════════════════════════════════
+    # DOCUMENT TITLE + META
+    # ══════════════════════════════════════════════════════════════
+
+    title = "DEVIS" if is_devis else "RECU DE PAIEMENT"
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_text_color(*DARK)
     pdf.cell(pw, 10, title, align="C", new_x="LMARGIN", new_y="NEXT")
 
-    # ── Meta line ──
-    pdf.set_font("Helvetica", "", 10)
-    pdf.set_text_color(*DARK)
+    # Meta line with light bg pill
     if is_devis:
-        meta = f"N. {code}  -  Date : {date_depot}"
+        meta = f"N. {code}  |  Date : {date_depot}"
     else:
-        meta = f"N. {code}  -  Date : {date_now}  -  Depot : {date_depot}"
-    pdf.cell(pw, 6, meta, align="C", new_x="LMARGIN", new_y="NEXT")
+        meta = f"N. {code}  |  Date : {date_now}  |  Dépôt : {date_depot}"
+    pdf.set_font("Helvetica", "", 9)
+    meta_w = pdf.get_string_width(meta) + 16
+    meta_x = (pdf.w - meta_w) / 2
+    meta_y = pdf.get_y()
+    pdf.set_fill_color(*LIGHT)
+    pdf.set_draw_color(*BORDER)
+    pdf.rect(meta_x, meta_y, meta_w, 7, "DF")
+    pdf.set_xy(meta_x, meta_y)
+    pdf.set_text_color(*MID)
+    pdf.cell(meta_w, 7, meta, align="C")
+    pdf.set_y(meta_y + 10)
 
-    # ── PAYE stamp for recu ──
+    # PAYE stamp for recu
     if not is_devis and is_paid:
-        pdf.ln(3)
-        pdf.set_font("Helvetica", "B", 24)
-        pdf.set_text_color(*GREEN)
-        pdf.set_draw_color(*GREEN)
-        pdf.set_line_width(1)
-        stamp_w = 55
+        stamp_w = 50
+        stamp_h = 13
         stamp_x = (pdf.w - stamp_w) / 2
         stamp_y = pdf.get_y()
-        pdf.rect(stamp_x, stamp_y, stamp_w, 14, "D")
+        pdf.set_fill_color(236, 253, 245)
+        pdf.set_draw_color(*GREEN)
+        pdf.set_line_width(0.8)
+        pdf.rect(stamp_x, stamp_y, stamp_w, stamp_h, "DF")
         pdf.set_xy(stamp_x, stamp_y + 1)
-        pdf.cell(stamp_w, 12, "P A Y E", align="C")
-        pdf.set_y(stamp_y + 18)
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_text_color(*GREEN)
+        pdf.cell(stamp_w, 11, "PAYÉ", align="C")
+        pdf.set_line_width(0.2)
+        pdf.set_y(stamp_y + stamp_h + 3)
 
-    # ── Light separator ──
-    pdf.ln(4)
-    pdf.set_draw_color(226, 232, 240)
-    pdf.set_line_width(0.3)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.ln(6)
+    # ══════════════════════════════════════════════════════════════
+    # CLIENT / APPAREIL — two columns with left violet accent
+    # ══════════════════════════════════════════════════════════════
 
-    # ── Client / Device info boxes ──
-    box_w = (pw - 6) / 2
-    box_y = pdf.get_y()
+    col_w = (pw - 8) / 2
+    col_y = pdf.get_y()
 
-    def _info_box(x, label, lines):
-        pdf.set_fill_color(*LIGHT_BG)
-        pdf.set_draw_color(226, 232, 240)
-        box_h = 6 + len(lines) * 5 + 4
-        pdf.rect(x, box_y, box_w, box_h, "DF")
-        pdf.set_xy(x + 4, box_y + 3)
+    def _card(x, y, w, label, rows):
+        """Draw an info card with violet left accent."""
+        card_h = 8 + len(rows) * 5 + 3
+        # White card bg + border
+        pdf.set_fill_color(*WHITE)
+        pdf.set_draw_color(*BORDER)
+        pdf.rect(x, y, w, card_h, "DF")
+        # Violet left accent bar
+        pdf.set_fill_color(*BRAND)
+        pdf.rect(x, y, 2.5, card_h, "F")
+        # Label
+        pdf.set_xy(x + 7, y + 3)
         pdf.set_font("Helvetica", "B", 6.5)
-        pdf.set_text_color(*RED)
-        pdf.cell(box_w - 8, 4, label.upper())
-        for i, (text, bold) in enumerate(lines):
-            pdf.set_xy(x + 4, box_y + 8 + i * 5)
-            pdf.set_font("Helvetica", "B" if bold else "", 8.5)
-            pdf.set_text_color(*DARK)
-            pdf.cell(box_w - 8, 4, text)
-        return box_h
+        pdf.set_text_color(*BRAND)
+        pdf.cell(w - 12, 4, label.upper())
+        # Rows
+        for i, (txt, is_bold) in enumerate(rows):
+            pdf.set_xy(x + 7, y + 8 + i * 5)
+            pdf.set_font("Helvetica", "B" if is_bold else "", 9)
+            pdf.set_text_color(*DARK if is_bold else MID)
+            pdf.cell(w - 12, 4.5, txt)
+        return card_h
 
-    client_lines = []
+    cl = []
     if client_societe:
-        client_lines.append((client_societe, True))
-    client_lines.append((client_nom, True))
-    client_lines.append((f"Tel : {client_tel}", False))
+        cl.append((client_societe, True))
+    cl.append((client_nom, True))
+    cl.append((f"Tél : {client_tel}", False))
     if client_email:
-        client_lines.append((f"Email : {client_email}", False))
+        cl.append((f"Email : {client_email}", False))
 
-    device_lines = [(appareil, True)]
+    dl = [(appareil, True)]
     if categorie:
-        device_lines.append((f"Categorie : {categorie}", False))
-    device_lines.append((f"Panne : {panne[:60]}", False))
+        dl.append((f"Catégorie : {categorie}", False))
+    panne_txt = panne if len(panne) <= 55 else panne[:52] + "..."
+    dl.append((f"Panne : {panne_txt}", False))
 
-    h1 = _info_box(pdf.l_margin, "Client", client_lines)
-    h2 = _info_box(pdf.l_margin + box_w + 6, "Appareil", device_lines)
-    pdf.set_y(box_y + max(h1, h2) + 8)
+    h1 = _card(LM, col_y, col_w, "Client", cl)
+    h2 = _card(LM + col_w + 8, col_y, col_w, "Appareil", dl)
+    pdf.set_y(col_y + max(h1, h2) + 5)
 
-    # ── Section title: repair lines ──
-    pdf.set_font("Helvetica", "B", 7)
-    pdf.set_text_color(*RED)
-    pdf.cell(pw, 5, "DETAIL DES REPARATIONS" if is_devis else "DETAIL DES PRESTATIONS", new_x="LMARGIN", new_y="NEXT")
+    # ══════════════════════════════════════════════════════════════
+    # REPAIR TABLE
+    # ══════════════════════════════════════════════════════════════
+
+    # Section label
+    section = "DÉTAIL DES RÉPARATIONS" if is_devis else "DÉTAIL DES PRESTATIONS"
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*BRAND)
+    pdf.cell(pw, 5, section, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
-    # ── Repair table ──
-    col_desc_w = pw - 40
-    col_price_w = 40
-    # Header row
-    pdf.set_fill_color(*DARK)
+    col_d = pw * 0.65
+    col_p = pw * 0.35
+
+    # Table header
+    th_y = pdf.get_y()
+    pdf.set_fill_color(*BRAND)
     pdf.set_text_color(*WHITE)
-    pdf.set_font("Helvetica", "B", 7.5)
-    pdf.cell(col_desc_w, 8, "  Description", fill=True)
-    pdf.cell(col_price_w, 8, "Prix TTC", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
-    # Data rows
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.cell(col_d, 9, "   Description", fill=True)
+    pdf.cell(col_p, 9, "Montant TTC   ", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+
+    # Table rows
     if repair_lines:
         for i, r in enumerate(repair_lines):
-            if i % 2 == 1:
-                pdf.set_fill_color(*LIGHT_BG)
-            else:
-                pdf.set_fill_color(*WHITE)
+            bg = LIGHT if i % 2 == 0 else WHITE
+            pdf.set_fill_color(*bg)
+            pdf.set_draw_color(*BORDER)
+            row_y = pdf.get_y()
             pdf.set_text_color(*DARK)
-            pdf.set_font("Helvetica", "", 9)
-            pdf.cell(col_desc_w, 8, f"  {r['label']}", fill=True)
-            pdf.cell(col_price_w, 8, f"{_fp(r['prix'])} EUR", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.cell(col_d, 9, f"   {r['label']}", fill=True)
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(*MID)
+            pdf.cell(col_p, 9, f"{_fp(r['prix'])}{euro}   ", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+            # Bottom border
+            pdf.set_draw_color(*BORDER)
+            pdf.line(LM, pdf.get_y(), LM + pw, pdf.get_y())
     else:
-        pdf.set_fill_color(*WHITE)
-        pdf.set_text_color(*GRAY)
+        pdf.set_fill_color(*LIGHT)
+        pdf.set_text_color(*LGRAY)
         pdf.set_font("Helvetica", "I", 9)
-        pdf.cell(pw, 8, "Aucune ligne de reparation", align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(pw, 12, "Aucune prestation", align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
 
-    # ── Totals ──
-    pdf.ln(1)
-    tot_label_w = pw - 50
-    tot_val_w = 50
+    # ══════════════════════════════════════════════════════════════
+    # TOTALS — right-aligned block
+    # ══════════════════════════════════════════════════════════════
 
-    def _total_row(label, value, style="normal"):
+    pdf.ln(4)
+    # Totals area: shift to right side
+    tot_x = LM + pw * 0.4
+    tot_w = pw * 0.6
+    tot_lbl = tot_w * 0.55
+    tot_val = tot_w * 0.45
+
+    def _trow(label, value, style="normal"):
+        x = tot_x
         if style == "total":
-            pdf.set_fill_color(*RED)
-            pdf.set_text_color(*WHITE)
+            h = 11
+            pdf.set_fill_color(*BRAND)
+            pdf.rect(x, pdf.get_y(), tot_w, h, "F")
+            pdf.set_xy(x + 4, pdf.get_y() + 0.5)
             pdf.set_font("Helvetica", "B", 11)
-            h = 10
+            pdf.set_text_color(*WHITE)
+            pdf.cell(tot_lbl - 4, h - 1, label)
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(tot_val, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
         elif style == "reste":
+            h = 10
             pdf.set_fill_color(*DARK)
-            pdf.set_text_color(*WHITE)
+            pdf.rect(x, pdf.get_y(), tot_w, h, "F")
+            pdf.set_xy(x + 4, pdf.get_y() + 0.5)
             pdf.set_font("Helvetica", "B", 10)
-            h = 9
-        elif style == "acompte":
-            pdf.set_fill_color(*WHITE)
-            pdf.set_text_color(*GREEN)
-            pdf.set_font("Helvetica", "I", 9)
-            h = 7
-        elif style == "reduction":
-            pdf.set_fill_color(*WHITE)
-            pdf.set_text_color(*RED)
-            pdf.set_font("Helvetica", "", 9)
-            h = 7
-        else:
-            pdf.set_fill_color(*WHITE)
-            pdf.set_text_color(*GRAY if "label" != "" else DARK)
-            pdf.set_font("Helvetica", "", 9)
-            h = 7
-        pdf.cell(tot_label_w, h, label, align="R", fill=True)
-        if style in ("total", "reste"):
-            pdf.set_font("Helvetica", "B", 11 if style == "total" else 10)
-        else:
-            pdf.set_font("Helvetica", "B" if style == "normal" else ("I" if style == "acompte" else ""), 9)
-            pdf.set_text_color(*DARK if style == "normal" else (GREEN if style == "acompte" else RED))
-        if style in ("total", "reste"):
             pdf.set_text_color(*WHITE)
-        pdf.cell(tot_val_w, h, value, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(tot_lbl - 4, h - 1, label)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.cell(tot_val, h - 1, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        elif style == "acompte":
+            h = 7
+            pdf.set_xy(x + 4, pdf.get_y())
+            pdf.set_font("Helvetica", "I", 9)
+            pdf.set_text_color(*GREEN)
+            pdf.cell(tot_lbl - 4, h, label)
+            pdf.set_font("Helvetica", "BI", 9)
+            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        elif style == "reduction":
+            h = 7
+            pdf.set_xy(x + 4, pdf.get_y())
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(*RED_ACCENT)
+            pdf.cell(tot_lbl - 4, h, label)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
+        else:
+            h = 7
+            pdf.set_xy(x + 4, pdf.get_y())
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(*GRAY)
+            pdf.cell(tot_lbl - 4, h, label)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(*DARK)
+            pdf.cell(tot_val, h, value, align="R", new_x="LMARGIN", new_y="NEXT")
+            # Light bottom line
+            pdf.set_draw_color(*BORDER)
+            pdf.line(x, pdf.get_y(), x + tot_w, pdf.get_y())
 
-    _total_row("Sous-total TTC", f"{_fp(subtotal)} EUR")
+    _trow("Sous-total TTC", f"{_fp(subtotal)}{euro}")
     if reduction > 0:
-        _total_row("Reduction", f"-{_fp(reduction)} EUR", "reduction")
-    # Separator
-    pdf.set_draw_color(203, 213, 225)
-    pdf.line(pdf.l_margin + tot_label_w - 20, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    _total_row("Total HT", f"{_fp(total_ht)} EUR")
-    tva_label = f"TVA ({_fp(tva_rate).replace(',00', '')}%)"
-    _total_row(tva_label, f"{_fp(tva_amount)} EUR")
-    _total_row("TOTAL TTC", f"{_fp(total_ttc)} EUR", "total")
+        _trow("Réduction", f"-{_fp(reduction)}{euro}", "reduction")
+    _trow("Total HT", f"{_fp(total_ht)}{euro}")
+    tva_pct = _fp(tva_rate).replace(",00", "")
+    _trow(f"TVA ({tva_pct}%)", f"{_fp(tva_amount)}{euro}")
+    pdf.ln(1)
+    _trow("TOTAL TTC", f"{_fp(total_ttc)}{euro}", "total")
     if acompte > 0:
-        _total_row("Acompte verse", f"-{_fp(acompte)} EUR", "acompte")
-    if not is_devis and reste > 0:
-        _total_row("RESTE A PAYER", f"{_fp(reste)} EUR", "reste")
-    if is_devis and acompte > 0:
-        _total_row("RESTE A PAYER", f"{_fp(reste)} EUR", "reste")
+        _trow("Acompte versé", f"-{_fp(acompte)}{euro}", "acompte")
+    if reste > 0:
+        _trow("RESTE À PAYER", f"{_fp(reste)}{euro}", "reste")
 
-    # ── Fidelite for recu ──
+    # ══════════════════════════════════════════════════════════════
+    # FIDELITE (recu only)
+    # ══════════════════════════════════════════════════════════════
+
     if not is_devis:
         try:
             active = _get_config("fidelite_active", "1")
@@ -1274,81 +1341,100 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
                     row = cur.fetchone()
                 if row:
                     pts = int(row.get("points_fidelite") or 0)
-                    pdf.ln(6)
-                    pdf.set_fill_color(254, 252, 232)
-                    pdf.set_draw_color(253, 230, 138)
-                    pdf.set_text_color(161, 98, 7)
+                    pdf.ln(8)
+                    fy = pdf.get_y()
+                    pdf.set_fill_color(245, 243, 255)
+                    pdf.set_draw_color(196, 181, 253)
+                    pdf.rect(LM, fy, pw, 14, "DF")
+                    pdf.set_fill_color(*BRAND)
+                    pdf.rect(LM, fy, 2.5, 14, "F")
+                    pdf.set_xy(LM + 7, fy + 2)
                     pdf.set_font("Helvetica", "B", 7)
-                    y0 = pdf.get_y()
-                    pdf.rect(pdf.l_margin, y0, pw, 14, "DF")
-                    pdf.set_xy(pdf.l_margin + 4, y0 + 2)
-                    pdf.cell(pw - 8, 4, "PROGRAMME FIDELITE")
-                    pdf.set_xy(pdf.l_margin + 4, y0 + 7)
-                    pdf.set_font("Helvetica", "", 8.5)
-                    pdf.set_text_color(120, 53, 15)
-                    pdf.cell(pw - 8, 4, f"Vos points : {pts} pts")
-                    pdf.set_y(y0 + 16)
+                    pdf.set_text_color(*BRAND_DARK)
+                    pdf.cell(40, 4, "PROGRAMME FIDÉLITÉ")
+                    pdf.set_xy(LM + 7, fy + 7)
+                    pdf.set_font("Helvetica", "", 9)
+                    pdf.set_text_color(91, 33, 182)
+                    pdf.cell(pw - 12, 4, f"Vos points : {pts} pts")
+                    pdf.set_y(fy + 16)
         except Exception:
             pass
 
-    # ── Conditions + QR ──
-    pdf.ln(8)
-    cond_y = pdf.get_y()
-    pdf.set_font("Helvetica", "B", 7.5)
-    pdf.set_text_color(*DARK)
-    pdf.set_xy(pdf.l_margin, cond_y)
-    pdf.cell(pw * 0.65, 4, "Conditions :", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 7)
-    pdf.set_text_color(*GRAY)
-    if is_devis:
-        cond_text = "Ce devis est valable 30 jours a compter de sa date d'emission.\nToute reparation acceptee engage le client au paiement du montant indique.\nLes pieces remplacees restent la propriete de Klikphone sauf demande contraire."
-    else:
-        cond_text = "Garantie pieces et main d'oeuvre : 6 mois a compter de la date de reparation.\nLa garantie ne couvre pas les dommages causes par l'usure, les chocs ou l'oxydation.\nLes pieces remplacees restent la propriete de Klikphone sauf demande contraire."
-    pdf.multi_cell(pw * 0.65, 3.5, cond_text)
+    # ══════════════════════════════════════════════════════════════
+    # CONDITIONS + QR CODE + SIGNATURE
+    # ══════════════════════════════════════════════════════════════
 
-    # QR code (right side)
+    pdf.ln(6)
+    cond_y = pdf.get_y()
+
+    # QR code (positioned first so conditions wrap around it)
+    qr_ok = False
     try:
         qr_url = _qr_url(code)
-        import urllib.request
-        import tempfile
         req = urllib.request.Request(qr_url)
         with urllib.request.urlopen(req, timeout=5) as resp:
             qr_data = resp.read()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp.write(qr_data)
             tmp_path = tmp.name
-        pdf.image(tmp_path, x=pdf.w - pdf.r_margin - 25, y=cond_y, w=25)
+        qr_size = 28
+        qr_x = pdf.w - RM - qr_size
+        pdf.image(tmp_path, x=qr_x, y=cond_y, w=qr_size)
         os.unlink(tmp_path)
+        pdf.set_xy(qr_x, cond_y + qr_size + 1)
+        pdf.set_font("Helvetica", "", 6)
+        pdf.set_text_color(*LGRAY)
+        pdf.cell(qr_size, 3, "Suivi en ligne", align="C")
+        qr_ok = True
     except Exception:
         pass
 
+    cond_w = pw * 0.62 if qr_ok else pw * 0.8
+    pdf.set_xy(LM, cond_y)
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*DARK)
+    pdf.cell(cond_w, 5, "Conditions", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 7.5)
+    pdf.set_text_color(*GRAY)
+    if is_devis:
+        cond = "Ce devis est valable 30 jours à compter de sa date d'émission. Toute réparation acceptée engage le client au paiement du montant indiqué. Les pièces remplacées restent la propriété de Klikphone sauf demande contraire."
+    else:
+        cond = "Garantie pièces et main d'oeuvre : 6 mois à compter de la date de réparation. La garantie ne couvre pas les dommages causés par l'usure, les chocs ou l'oxydation. Les pièces remplacées restent la propriété de Klikphone sauf demande contraire."
+    pdf.multi_cell(cond_w, 3.8, cond)
+
+    # Signature box (devis only)
     if is_devis:
         pdf.ln(6)
+        sig_y = pdf.get_y()
         pdf.set_font("Helvetica", "", 7.5)
         pdf.set_text_color(*GRAY)
-        pdf.cell(pw * 0.5, 4, "Signature du client (bon pour accord) :", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_draw_color(203, 213, 225)
-        pdf.set_dash_pattern(dash=2, gap=1.5)
-        sig_y = pdf.get_y() + 1
-        pdf.rect(pdf.l_margin, sig_y, pw * 0.45, 20, "D")
+        pdf.cell(cond_w, 4, "Signature du client (bon pour accord) :", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+        box_y = pdf.get_y()
+        pdf.set_draw_color(*BORDER)
+        pdf.set_dash_pattern(dash=1.5, gap=1.5)
+        pdf.rect(LM, box_y, pw * 0.42, 22, "D")
         pdf.set_dash_pattern()
-        pdf.set_y(sig_y + 22)
+        pdf.set_y(box_y + 24)
 
-    # ── Footer bar ──
-    pdf.ln(4)
-    footer_y = pdf.get_y()
-    pdf.set_fill_color(241, 245, 249)
-    pdf.set_draw_color(*RED)
-    pdf.set_line_width(0.5)
-    pdf.line(pdf.l_margin, footer_y, pdf.w - pdf.r_margin, footer_y)
-    pdf.set_line_width(0.2)
-    pdf.rect(pdf.l_margin, footer_y + 0.5, pw, 14, "F")
-    pdf.set_xy(pdf.l_margin, footer_y + 2)
+    # ══════════════════════════════════════════════════════════════
+    # FOOTER — Violet band fixed at page bottom
+    # ══════════════════════════════════════════════════════════════
+
+    pdf.set_auto_page_break(auto=False)
+    ft_h = 11
+    footer_y = pdf.h - ft_h
+    pdf.set_fill_color(*BRAND)
+    pdf.rect(0, footer_y, pdf.w, ft_h, "F")
+    pdf.set_fill_color(*BRAND_DARK)
+    pdf.rect(0, footer_y + ft_h - 1.5, pdf.w, 1.5, "F")
+    pdf.set_xy(LM, footer_y + 1)
     pdf.set_font("Helvetica", "B", 7)
-    pdf.set_text_color(*GRAY)
-    pdf.cell(pw, 4, "Klikphone  -  " + adresse, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "", 7)
-    pdf.cell(pw, 4, f"SIRET : 81396114100013  |  TVA Intra. : FR03813961141  |  Tel : {tel_boutique}  |  www.klikphone.com", align="C")
+    pdf.set_text_color(*WHITE)
+    pdf.cell(pw, 4, f"Klikphone  -  {adresse}  -  {tel_boutique}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 6.5)
+    pdf.set_text_color(220, 210, 255)
+    pdf.cell(pw, 3.5, "SIRET 81396114100013  |  TVA Intra. FR03813961141  |  www.klikphone.com", align="C")
 
     return bytes(pdf.output())
 
