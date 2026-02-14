@@ -1,5 +1,5 @@
 """
-API Email — envoi SMTP réel.
+API Email — envoi via Resend (HTTP) ou SMTP fallback.
 """
 
 import asyncio
@@ -9,10 +9,9 @@ from functools import partial
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
-from email.utils import formataddr
 
+import httpx
 from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.database import get_cursor
@@ -28,15 +27,48 @@ def _get_param(key: str) -> str:
     return row["valeur"] if row else ""
 
 
+def _send_resend(to: str, subject: str, body: str) -> tuple:
+    """Envoie un email via l'API HTTP Resend."""
+    api_key = _get_param("RESEND_API_KEY")
+    if not api_key:
+        return False, "Clé API Resend non configurée"
+
+    from_name = _get_param("SMTP_NAME") or "Klikphone"
+    from_email = _get_param("SMTP_USER") or "onboarding@resend.dev"
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": f"{from_name} <{from_email}>",
+                    "to": [to],
+                    "subject": subject,
+                    "text": body,
+                },
+            )
+        if resp.status_code in (200, 201):
+            return True, "Email envoyé avec succès"
+        else:
+            error = resp.json().get("message", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+            return False, f"Resend erreur {resp.status_code}: {error}"
+    except Exception as e:
+        return False, f"Erreur Resend: {str(e)}"
+
+
 def _send_smtp(to: str, subject: str, body: str) -> tuple:
-    """Envoie un email via SMTP. Essaie SSL 465 d'abord, puis STARTTLS 587 en fallback."""
+    """Envoie un email via SMTP. Essaie SSL 465 puis STARTTLS 587."""
     smtp_host = _get_param("SMTP_HOST") or "ex4.mail.ovh.net"
     smtp_user = _get_param("SMTP_USER") or "contact@klikphone.com"
     smtp_pass = _get_param("SMTP_PASSWORD") or "73000Kliks"
     smtp_name = _get_param("SMTP_NAME") or "Klikphone"
 
     if not smtp_user or not smtp_pass:
-        return False, "SMTP non configuré (email ou mot de passe manquant)"
+        return False, "SMTP non configuré"
 
     msg = MIMEMultipart()
     msg["From"] = f"{smtp_name} <{smtp_user}>"
@@ -44,16 +76,14 @@ def _send_smtp(to: str, subject: str, body: str) -> tuple:
     msg["Subject"] = Header(subject, "utf-8")
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
-    # Try SSL on port 465 first (works on Railway)
     try:
         context = ssl.create_default_context()
         server = smtplib.SMTP_SSL(smtp_host, 465, context=context, timeout=15)
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
-        return True, "Email envoyé avec succès"
+        return True, "Email envoyé (SMTP)"
     except Exception as e465:
-        # Fallback: STARTTLS on port 587
         try:
             server = smtplib.SMTP(smtp_host, 587, timeout=15)
             server.ehlo()
@@ -62,9 +92,20 @@ def _send_smtp(to: str, subject: str, body: str) -> tuple:
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
             server.quit()
-            return True, "Email envoyé avec succès (587)"
+            return True, "Email envoyé (SMTP 587)"
         except Exception as e587:
-            return False, f"465: {str(e465)} | 587: {str(e587)}"
+            return False, f"SMTP 465: {e465} | 587: {e587}"
+
+
+def _send_email(to: str, subject: str, body: str) -> tuple:
+    """Essaie Resend d'abord, puis SMTP en fallback."""
+    resend_key = _get_param("RESEND_API_KEY")
+    if resend_key:
+        ok, msg = _send_resend(to, subject, body)
+        if ok:
+            return ok, msg
+        # Si Resend échoue, tenter SMTP
+    return _send_smtp(to, subject, body)
 
 
 class EmailRequest(BaseModel):
@@ -79,10 +120,10 @@ class EmailTestRequest(BaseModel):
 
 @router.post("/envoyer")
 async def envoyer_email(data: EmailRequest, user: dict = Depends(get_current_user)):
-    """Envoie un email via SMTP."""
+    """Envoie un email via Resend ou SMTP."""
     loop = asyncio.get_event_loop()
     success, message = await loop.run_in_executor(
-        None, partial(_send_smtp, data.to, data.subject, data.body)
+        None, partial(_send_email, data.to, data.subject, data.body)
     )
     return {"status": "ok" if success else "error", "message": message}
 
@@ -93,10 +134,10 @@ async def test_email(data: EmailTestRequest, user: dict = Depends(get_current_us
     loop = asyncio.get_event_loop()
     success, message = await loop.run_in_executor(
         None, partial(
-            _send_smtp,
+            _send_email,
             data.to,
-            "Klikphone SAV - Test SMTP",
-            "Ceci est un email de test depuis Klikphone SAV.\n\nSi vous recevez ce message, la configuration SMTP est fonctionnelle !"
+            "Klikphone SAV - Test email",
+            "Ceci est un email de test depuis Klikphone SAV.\n\nSi vous recevez ce message, la configuration email est fonctionnelle !"
         )
     )
     return {"status": "ok" if success else "error", "message": message}

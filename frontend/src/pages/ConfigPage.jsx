@@ -798,30 +798,50 @@ export default function ConfigPage() {
 
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <AtSign className="w-4 h-4 text-brand-600" /> Email / SMTP
+              <AtSign className="w-4 h-4 text-brand-600" /> Email
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+            <div className="p-3 bg-brand-50 border border-brand-100 rounded-lg mb-4">
+              <p className="text-xs font-semibold text-brand-700 mb-1">Resend (recommandé)</p>
+              <p className="text-[10px] text-brand-600">Créez un compte gratuit sur resend.com, récupérez votre clé API. 100 emails/jour gratuits.</p>
+            </div>
+
+            <div className="space-y-3 mb-4">
               <div>
-                <label className="input-label">Serveur SMTP</label>
-                <input value={config.SMTP_HOST || ''} onChange={e => updateConfig('SMTP_HOST', e.target.value)} className="input" placeholder="smtp.gmail.com" />
+                <label className="input-label">Clé API Resend</label>
+                <input value={config.RESEND_API_KEY || ''} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
+                  className="input font-mono text-xs" placeholder="re_xxxxxxxx..." />
               </div>
-              <div>
-                <label className="input-label">Port</label>
-                <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
-              </div>
-              <div>
-                <label className="input-label">Email expéditeur</label>
-                <input value={config.SMTP_USER || ''} onChange={e => updateConfig('SMTP_USER', e.target.value)} className="input" placeholder="contact@klikphone.com" />
-              </div>
-              <div>
-                <label className="input-label">Mot de passe / App password</label>
-                <input type="password" value={config.SMTP_PASSWORD || ''} onChange={e => updateConfig('SMTP_PASSWORD', e.target.value)} className="input" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="input-label">Nom affiché</label>
-                <input value={config.SMTP_NAME || ''} onChange={e => updateConfig('SMTP_NAME', e.target.value)} className="input" placeholder="Klikphone SAV" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="input-label">Email expéditeur</label>
+                  <input value={config.SMTP_USER || ''} onChange={e => updateConfig('SMTP_USER', e.target.value)} className="input" placeholder="contact@klikphone.com" />
+                  <p className="text-[10px] text-slate-400 mt-0.5">Doit correspondre au domaine vérifié sur Resend</p>
+                </div>
+                <div>
+                  <label className="input-label">Nom affiché</label>
+                  <input value={config.SMTP_NAME || ''} onChange={e => updateConfig('SMTP_NAME', e.target.value)} className="input" placeholder="Klikphone" />
+                </div>
               </div>
             </div>
+
+            <details className="group">
+              <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600 mb-3">SMTP avancé (fallback si Resend non configuré)</summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                <div>
+                  <label className="input-label">Serveur SMTP</label>
+                  <input value={config.SMTP_HOST || ''} onChange={e => updateConfig('SMTP_HOST', e.target.value)} className="input" placeholder="ex4.mail.ovh.net" />
+                </div>
+                <div>
+                  <label className="input-label">Port</label>
+                  <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="input-label">Mot de passe SMTP</label>
+                  <input type="password" value={config.SMTP_PASSWORD || ''} onChange={e => updateConfig('SMTP_PASSWORD', e.target.value)} className="input" />
+                </div>
+              </div>
+            </details>
 
             <div className="mt-4 pt-4 border-t border-slate-100">
               <label className="input-label mb-1">Envoyer un email de test</label>
