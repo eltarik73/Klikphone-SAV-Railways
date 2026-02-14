@@ -330,6 +330,24 @@ class ApiClient {
   chatTeamUnreadTotal(user) {
     return this.get(`/api/chat/team/unread/total?user=${encodeURIComponent(user)}`);
   }
+
+  // ─── TARIFS ────────────────────────────────
+  getTarifs(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.marque) qs.set('marque', params.marque);
+    const s = qs.toString();
+    return this.get(`/api/tarifs${s ? '?' + s : ''}`);
+  }
+  getTarifsStats() {
+    return this.get('/api/tarifs/stats');
+  }
+  importTarifs(items) {
+    return this.request('/api/tarifs/import', { method: 'POST', body: JSON.stringify({ items }) });
+  }
+  clearTarifs() {
+    return this.request('/api/tarifs/clear', { method: 'DELETE' });
+  }
 }
 
 export const api = new ApiClient();

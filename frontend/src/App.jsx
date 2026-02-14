@@ -18,6 +18,7 @@ const CommandesPage = lazy(() => import('./pages/CommandesPage'));
 const AttestationPage = lazy(() => import('./pages/AttestationPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const TarifsPage = lazy(() => import('./pages/TarifsPage'));
 const DepotPage = lazy(() => import('./pages/DepotPage'));
 
 function ProtectedRoute({ children, allowedTargets }) {
@@ -84,6 +85,7 @@ function AppRoutes() {
         <Route path="/accueil/commandes" element={<P targets={['accueil']}><CommandesPage /></P>} />
         <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
         <Route path="/accueil/config" element={<P targets={['accueil']}><ConfigPage /></P>} />
+        <Route path="/accueil/tarifs" element={<P targets={['accueil']}><TarifsPage /></P>} />
         <Route path="/accueil/admin" element={<P targets={['accueil']}><AdminPage /></P>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
@@ -92,6 +94,7 @@ function AppRoutes() {
         <Route path="/tech/commandes" element={<P targets={['tech']}><CommandesPage /></P>} />
         <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
         <Route path="/tech/config" element={<P targets={['tech']}><ConfigPage /></P>} />
+        <Route path="/tech/tarifs" element={<P targets={['tech']}><TarifsPage /></P>} />
         <Route path="/tech/admin" element={<P targets={['tech']}><AdminPage /></P>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

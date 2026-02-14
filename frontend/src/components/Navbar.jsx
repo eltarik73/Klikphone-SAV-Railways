@@ -5,7 +5,7 @@ import api from '../lib/api';
 import {
   LogOut, LayoutDashboard, Plus, Users, Package, FileText,
   Settings, Menu, X, Search, Shield, PanelLeftClose, PanelLeftOpen,
-  RefreshCw,
+  RefreshCw, Tag,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -45,6 +45,7 @@ export default function Navbar() {
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
+    { path: `${basePath}/tarifs`, label: 'Tarifs', icon: Tag },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];
