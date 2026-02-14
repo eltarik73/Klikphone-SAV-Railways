@@ -173,6 +173,18 @@ class ApiClient {
   sendToCaisse(ticketId) {
     return this.post(`/api/caisse/send?ticket_id=${ticketId}`);
   }
+  envoyerCaisse(data) {
+    return this.post('/api/caisse/envoyer', data);
+  }
+  getCaisseConfig() {
+    return this.get('/api/config/caisse');
+  }
+  saveCaisseConfig(data) {
+    return this.put('/api/config/caisse', data);
+  }
+  testCaisseConnexion() {
+    return this.post('/api/config/caisse/test');
+  }
 
   // ─── ATTESTATION ───────────────────────────
   generateAttestation(data) {

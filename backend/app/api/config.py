@@ -195,6 +195,76 @@ async def save_message_templates(data: dict, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+CAISSE_DEFAULTS = {
+    "CAISSE_ENABLED": "1",
+    "CAISSE_LOGIN": "klikphone",
+    "CAISSE_PASSWORD": "caramail",
+    "CAISSE_APIKEY": "f4594b29685f15d9a755acbfde6571fc16a4c932",
+    "CAISSE_SHOPID": "38373",
+    "CAISSE_CB_ID": "528273",
+    "CAISSE_ESP_ID": "528275",
+    "CAISSE_ID": "49343",
+    "CAISSE_USER_ID": "42867",
+}
+
+CAISSE_KEYS = list(CAISSE_DEFAULTS.keys())
+
+
+@router.get("/caisse")
+async def get_caisse_config(user: dict = Depends(get_current_user)):
+    """Récupère la config caisse enregistreuse."""
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT cle, valeur FROM params WHERE cle = ANY(%s)",
+            (CAISSE_KEYS,),
+        )
+        rows = cur.fetchall()
+    existing = {row["cle"]: row["valeur"] for row in rows}
+    return {k: existing.get(k, CAISSE_DEFAULTS.get(k, "")) for k in CAISSE_KEYS}
+
+
+@router.put("/caisse")
+async def save_caisse_config(data: dict, user: dict = Depends(get_current_user)):
+    """Sauvegarde la config caisse enregistreuse."""
+    with get_cursor() as cur:
+        for key, value in data.items():
+            if key in CAISSE_KEYS:
+                cur.execute("""
+                    INSERT INTO params (cle, valeur) VALUES (%s, %s)
+                    ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+                """, (key, str(value)))
+    return {"ok": True}
+
+
+@router.post("/caisse/test")
+async def test_caisse_connexion(user: dict = Depends(get_current_user)):
+    """Teste la connexion à caisse.enregistreuse.fr."""
+    import httpx
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT cle, valeur FROM params WHERE cle = ANY(%s)",
+            (CAISSE_KEYS,),
+        )
+        rows = cur.fetchall()
+    existing = {row["cle"]: row["valeur"] for row in rows}
+    shopid = existing.get("CAISSE_SHOPID", CAISSE_DEFAULTS["CAISSE_SHOPID"])
+    apikey = existing.get("CAISSE_APIKEY", CAISSE_DEFAULTS["CAISSE_APIKEY"])
+
+    if not shopid or not apikey:
+        return {"status": "error", "message": "SHOPID ou APIKEY manquant"}
+
+    try:
+        url = f"https://caisse.enregistreuse.fr/workers/webapp.php?idboutique={shopid}&key={apikey}"
+        with httpx.Client(timeout=10) as client:
+            response = client.get(url)
+        if response.status_code == 200:
+            return {"status": "ok", "message": "Connexion réussie"}
+        else:
+            return {"status": "error", "message": f"Erreur HTTP {response.status_code}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 @router.get("/{cle}")
 async def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé."""

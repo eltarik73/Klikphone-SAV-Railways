@@ -134,6 +134,9 @@ export default function TicketDetailPage() {
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  // Caisse
+  const [caisseEnabled, setCaisseEnabled] = useState(false);
+
   const parseRepairLines = (ticket) => {
     try {
       if (ticket.reparation_supp && ticket.reparation_supp.startsWith('[')) {
@@ -219,6 +222,9 @@ export default function TicketDetailPage() {
       const tvaParam = arr.find(p => p.cle === 'tva');
       if (tvaParam) setTvaRate(parseFloat(tvaParam.valeur) || 0);
     }).catch(() => {});
+    api.getCaisseConfig()
+      .then(cfg => setCaisseEnabled(cfg.CAISSE_ENABLED === '1'))
+      .catch(() => setCaisseEnabled(false));
   }, []);
 
   // ─── Layout persistence & handlers ──────────────────────────────
@@ -496,11 +502,29 @@ export default function TicketDetailPage() {
   };
 
   const handleSendCaisse = async () => {
+    const t = ticket;
+    if (!t) return;
+    const lines = repairLines.filter(l => l.label);
+    const desc = `Réparation ${t.marque || ''} ${t.modele || t.modele_autre || ''} - ${lines.map(l => l.label).join(' + ')}`.trim();
     try {
-      await api.sendToCaisse(id);
-      toast.success('Envoyé en caisse');
+      const res = await api.envoyerCaisse({
+        ticket_id: t.id,
+        ticket_code: t.ticket_code,
+        nom: t.client_nom || '',
+        prenom: t.client_prenom || '',
+        telephone: t.client_tel || '',
+        email: t.client_email || '',
+        description: desc,
+        montant: totalTTC,
+      });
+      if (res.result === 'OK') {
+        toast.success(res.message || 'Vente envoyée en caisse');
+        loadTicket();
+      } else {
+        toast.error(res.message || 'Erreur caisse');
+      }
     } catch (err) {
-      toast.error('Erreur envoi en caisse');
+      toast.error(err.message || 'Erreur envoi en caisse');
     }
   };
 
@@ -1197,9 +1221,11 @@ export default function TicketDetailPage() {
                     }`}>
                     <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{t.paye ? 'Payé ✓' : 'Marquer payé'}
                   </button>
-                  <button onClick={handleSendCaisse} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200 hover:bg-slate-200">
-                    <Zap className="w-3.5 h-3.5 inline mr-1" />Envoyer en caisse
-                  </button>
+                  {caisseEnabled && (
+                    <button onClick={handleSendCaisse} className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">
+                      <Zap className="w-3.5 h-3.5 inline mr-1" />Envoyer en caisse
+                    </button>
+                  )}
                   <button onClick={openAccordModal} className="px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
                     <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Accord client
                   </button>

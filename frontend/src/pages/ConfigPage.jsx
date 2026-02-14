@@ -8,6 +8,7 @@ import {
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
   Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
+  Zap, CreditCard,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -51,6 +52,11 @@ export default function ConfigPage() {
   // PIN change
   const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
   const [pinChanging, setPinChanging] = useState(false);
+
+  // Caisse
+  const [caisseConfig, setCaisseConfig] = useState({});
+  const [caisseSaving, setCaisseSaving] = useState(false);
+  const [caisseTesting, setCaisseTesting] = useState(false);
 
   // Track unsaved config changes
   const initialConfigRef = useRef({});
@@ -115,6 +121,9 @@ export default function ConfigPage() {
 
   useEffect(() => {
     if (activeTab === 'catalog') loadCatalog();
+    if (activeTab === 'caisse') {
+      api.getCaisseConfig().then(setCaisseConfig).catch(() => {});
+    }
     if (activeTab === 'messages') {
       api.getMessageTemplates().then(data => {
         if (data && data.length > 0) setMsgTemplates(data);
@@ -324,6 +333,7 @@ export default function ConfigPage() {
     { id: 'messages', label: 'Messages', icon: MessageCircle },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'fidelite', label: 'Fidélité & Jeu', icon: Star },
+    { id: 'caisse', label: 'Caisse', icon: CreditCard },
     { id: 'security', label: 'Sécurité', icon: Shield },
     { id: 'appearance', label: 'Apparence', icon: Monitor },
     { id: 'backup', label: 'Sauvegarde', icon: Database },
@@ -416,7 +426,7 @@ export default function ConfigPage() {
           </div>
 
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Impression & Caisse</h2>
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Impression</h2>
             <div className="space-y-4">
               <div>
                 <label className="input-label">Mentions légales (bas de ticket)</label>
@@ -427,21 +437,6 @@ export default function ConfigPage() {
                 <label className="input-label">Message personnalisé (ticket client)</label>
                 <input value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
                   className="input" placeholder="Merci de votre confiance !" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="input-label">URL API Caisse</label>
-                  <input value={config.caisse_url || ''} onChange={e => updateConfig('caisse_url', e.target.value)}
-                    className="input font-mono text-xs" placeholder="https://app.caisse-enregistreuse.fr/api/..." />
-                </div>
-                <div>
-                  <label className="input-label">Token API Caisse</label>
-                  <input type="password" value={config.caisse_token || ''} onChange={e => updateConfig('caisse_token', e.target.value)} className="input" />
-                </div>
-                <div>
-                  <label className="input-label">ID Boutique</label>
-                  <input value={config.caisse_shop_id || ''} onChange={e => updateConfig('caisse_shop_id', e.target.value)} className="input font-mono" />
-                </div>
               </div>
             </div>
           </div>
@@ -917,6 +912,100 @@ export default function ConfigPage() {
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Enregistrer
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Caisse tab ═══ */}
+      {activeTab === 'caisse' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h3 className="font-bold text-sm text-slate-800 mb-4 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-brand-600" /> Caisse Enregistreuse
+            </h3>
+
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input type="checkbox" checked={caisseConfig.CAISSE_ENABLED === '1'}
+                onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ENABLED: e.target.checked ? '1' : '0' }))}
+                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500 w-5 h-5" />
+              <span className="text-sm font-semibold text-slate-700">Activer l'intégration Caisse Enregistreuse</span>
+            </label>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="input-label">Email de connexion</label>
+                <input value={caisseConfig.CAISSE_LOGIN || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_LOGIN: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">Token API (APIKEY)</label>
+                <input value={caisseConfig.CAISSE_APIKEY || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_APIKEY: e.target.value }))} className="input font-mono text-xs" />
+              </div>
+              <div>
+                <label className="input-label">Mot de passe</label>
+                <input type="password" value={caisseConfig.CAISSE_PASSWORD || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_PASSWORD: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="input-label">ID Boutique (SHOPID)</label>
+                <input value={caisseConfig.CAISSE_SHOPID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_SHOPID: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">ID Carte bancaire</label>
+                <input value={caisseConfig.CAISSE_CB_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_CB_ID: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">ID Espèces</label>
+                <input value={caisseConfig.CAISSE_ESP_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ESP_ID: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">ID Caisse (GENERALE)</label>
+                <input value={caisseConfig.CAISSE_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ID: e.target.value }))} className="input font-mono" />
+              </div>
+              <div>
+                <label className="input-label">ID Utilisateur</label>
+                <input value={caisseConfig.CAISSE_USER_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_USER_ID: e.target.value }))} className="input font-mono" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={async () => {
+                  setCaisseTesting(true);
+                  try {
+                    await api.saveCaisseConfig(caisseConfig);
+                    const res = await api.testCaisseConnexion();
+                    if (res.status === 'ok') toast.success(res.message || 'Connexion réussie');
+                    else toast.error(res.message || 'Erreur connexion');
+                  } catch (err) {
+                    toast.error(err.message || 'Erreur test connexion');
+                  } finally {
+                    setCaisseTesting(false);
+                  }
+                }}
+                disabled={caisseTesting}
+                className="btn-secondary"
+              >
+                {caisseTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                Tester la connexion
+              </button>
+              <button
+                onClick={async () => {
+                  setCaisseSaving(true);
+                  try {
+                    await api.saveCaisseConfig(caisseConfig);
+                    toast.success('Configuration caisse enregistrée');
+                  } catch (err) {
+                    toast.error('Erreur sauvegarde');
+                  } finally {
+                    setCaisseSaving(false);
+                  }
+                }}
+                disabled={caisseSaving}
+                className="btn-primary"
+              >
+                {caisseSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Enregistrer
+              </button>
+            </div>
           </div>
         </div>
       )}
