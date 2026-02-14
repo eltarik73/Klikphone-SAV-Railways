@@ -3,6 +3,7 @@ API Email — envoi via Resend (HTTP) ou SMTP fallback.
 """
 
 import asyncio
+import base64
 import ssl
 import smtplib
 from functools import partial
@@ -167,29 +168,52 @@ async def envoyer_email(data: EmailRequest, user: dict = Depends(get_current_use
     return {"status": "ok" if success else "error", "message": message}
 
 
+def _send_resend_pdf(to: str, subject: str, body_html: str, pdf_bytes: bytes, filename: str) -> tuple:
+    """Envoie un email avec un PDF en pièce jointe via Resend."""
+    api_key = _get_param("RESEND_API_KEY")
+    if not api_key:
+        return False, "Clé API Resend non configurée"
+
+    from_name = _get_param("SMTP_NAME") or "Klikphone"
+    from_email = _get_param("SMTP_USER") or "onboarding@resend.dev"
+    pdf_b64 = base64.b64encode(pdf_bytes).decode()
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": f"{from_name} <{from_email}>",
+                    "to": [to],
+                    "subject": subject,
+                    "html": body_html,
+                    "attachments": [
+                        {"filename": filename, "content": pdf_b64}
+                    ],
+                },
+            )
+        if resp.status_code in (200, 201):
+            return True, "Email envoyé avec PDF en pièce jointe"
+        else:
+            error = resp.json().get("message", resp.text) if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+            return False, f"Resend erreur {resp.status_code}: {error}"
+    except Exception as e:
+        return False, f"Erreur Resend: {str(e)}"
+
+
 @router.post("/send-document")
 async def send_document(data: SendDocumentRequest, user: dict = Depends(get_current_user)):
-    """Génère le document HTML et l'envoie directement par email."""
-    from app.api.print_tickets import (
-        _get_ticket_full, _ticket_client_html, _ticket_staff_html,
-        _devis_html, _recu_html,
-    )
+    """Génère le document PDF A4 et l'envoie par email en pièce jointe."""
+    from app.api.print_tickets import _get_ticket_full
 
     t = _get_ticket_full(data.ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
 
-    generators = {
-        "client": _ticket_client_html,
-        "staff": _ticket_staff_html,
-        "devis": _devis_html,
-        "recu": _recu_html,
-    }
-    gen = generators.get(data.doc_type)
-    if not gen:
-        raise HTTPException(400, f"Type de document '{data.doc_type}' non supporté")
-
-    html_content = gen(t)
     ticket_code = t.get("ticket_code", "")
     type_labels = {
         "client": "Reçu de dépôt",
@@ -197,8 +221,43 @@ async def send_document(data: SendDocumentRequest, user: dict = Depends(get_curr
         "devis": "Devis",
         "recu": "Reçu de paiement",
     }
-    subject = f"Klikphone SAV - {type_labels.get(data.doc_type, 'Document')} {ticket_code}"
+    doc_label = type_labels.get(data.doc_type, "Document")
+    subject = f"Klikphone SAV - {doc_label} {ticket_code}"
 
+    # Pour devis et recu : PDF A4 en pièce jointe
+    if data.doc_type in ("devis", "recu"):
+        from app.api.pdf_documents import generate_pdf
+        pdf_bytes, filename = generate_pdf(data.ticket_id, data.doc_type)
+        if not pdf_bytes:
+            raise HTTPException(500, "Erreur lors de la génération du PDF")
+
+        body_html = f"""<div style="font-family:Helvetica,Arial,sans-serif;color:#334155;max-width:480px">
+<p>Bonjour,</p>
+<p>Veuillez trouver ci-joint votre <b>{doc_label.lower()}</b> pour le ticket <b>{ticket_code}</b>.</p>
+<p>N'hésitez pas à nous contacter pour toute question.</p>
+<p style="margin-top:20px">Cordialement,<br><b>Klikphone</b><br>
+<span style="font-size:12px;color:#94a3b8">79 Place Saint Léger, 73000 Chambéry — 04 79 60 89 22</span></p>
+</div>"""
+
+        loop = asyncio.get_event_loop()
+        success, message = await loop.run_in_executor(
+            None, partial(_send_resend_pdf, data.to, subject, body_html, pdf_bytes, filename)
+        )
+        return {"status": "ok" if success else "error", "message": message}
+
+    # Pour client et staff : HTML inline (80mm thermique)
+    from app.api.print_tickets import (
+        _ticket_client_html, _ticket_staff_html,
+    )
+    generators = {
+        "client": _ticket_client_html,
+        "staff": _ticket_staff_html,
+    }
+    gen = generators.get(data.doc_type)
+    if not gen:
+        raise HTTPException(400, f"Type de document '{data.doc_type}' non supporté")
+
+    html_content = gen(t)
     loop = asyncio.get_event_loop()
     success, message = await loop.run_in_executor(
         None, partial(_send_resend_html, data.to, subject, html_content)

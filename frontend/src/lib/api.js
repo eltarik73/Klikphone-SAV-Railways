@@ -182,8 +182,16 @@ class ApiClient {
   getPrintUrl(ticketId, type) {
     return `${API_URL}/api/tickets/${ticketId}/print/${type}`;
   }
+  getPdfUrl(ticketId, type) {
+    return `${API_URL}/api/tickets/${ticketId}/pdf/${type}`;
+  }
   getSharePrintUrl(ticketId, type) {
     const path = `/api/tickets/${ticketId}/print/${type}`;
+    if (API_URL) return `${API_URL}${path}`;
+    return `${window.location.origin}${path}`;
+  }
+  getSharePdfUrl(ticketId, type) {
+    const path = `/api/tickets/${ticketId}/pdf/${type}`;
     if (API_URL) return `${API_URL}${path}`;
     return `${window.location.origin}${path}`;
   }

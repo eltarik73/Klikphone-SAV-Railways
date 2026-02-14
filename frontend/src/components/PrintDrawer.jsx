@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown } from 'lucide-react';
+import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown, Download } from 'lucide-react';
 import api from '../lib/api';
 import { waLink, smsLink } from '../lib/utils';
 
@@ -11,6 +11,8 @@ const PRINT_TYPES = [
   { type: 'recu', label: 'Reçu', desc: 'Reçu de paiement', icon: Receipt },
 ];
 
+const PDF_TYPES = new Set(['devis', 'recu']);
+
 export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clientTel, clientEmail }) {
   const [activeType, setActiveType] = useState('client');
   const iframeRef = useRef(null);
@@ -21,6 +23,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
 
   const printUrl = api.getPrintUrl(ticketId, activeType);
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
+  const hasPdf = PDF_TYPES.has(activeType);
 
   useEffect(() => {
     if (open) {
@@ -40,7 +43,6 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
       const html = await res.text();
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
-        // Popup blocked — fallback to new tab
         window.open(printUrl, '_blank');
         return;
       }
@@ -51,7 +53,6 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
         printWindow.print();
       }, 300);
     } catch {
-      // Fallback — open in new tab
       window.open(printUrl, '_blank');
     } finally {
       setPrinting(false);
@@ -62,18 +63,28 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     window.open(printUrl, '_blank');
   };
 
-  const shareUrl = api.getSharePrintUrl(ticketId, activeType);
+  const handleOpenPdf = () => {
+    window.open(api.getPdfUrl(ticketId, activeType), '_blank');
+  };
+
+  // Share URLs — PDF for devis/recu, print HTML for others
+  const getShareUrl = () => {
+    if (hasPdf) return api.getSharePdfUrl(ticketId, activeType);
+    return api.getSharePrintUrl(ticketId, activeType);
+  };
 
   const handleSendWhatsApp = () => {
     if (!clientTel) return;
-    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode} :\n${shareUrl}`;
+    const url = getShareUrl();
+    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode} :\n${url}`;
     window.open(waLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
 
   const handleSendSMS = () => {
     if (!clientTel) return;
-    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}: ${shareUrl}`;
+    const url = getShareUrl();
+    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}: ${url}`;
     window.open(smsLink(clientTel, msg), '_blank');
     setSendOpen(false);
   };
@@ -137,7 +148,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
               {label}
               <span className={`text-[9px] px-1 py-0.5 rounded ${
                 activeType === type ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
-              }`}>80mm</span>
+              }`}>{PDF_TYPES.has(type) ? 'A4' : '80mm'}</span>
             </button>
           ))}
         </div>
@@ -147,7 +158,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
           {/* Format indicator */}
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
             <span className="text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm bg-slate-800 text-white">
-              THERMIQUE 80mm
+              {hasPdf ? 'PDF A4' : 'THERMIQUE 80mm'}
             </span>
           </div>
 
@@ -161,12 +172,12 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
             </div>
           )}
 
-          {/* Iframe container — thermal centered */}
+          {/* Iframe container */}
           <div className="h-full overflow-auto flex justify-center pt-4 pb-8">
-            <div className="w-[320px] bg-white shadow-xl rounded-lg overflow-hidden shrink-0">
+            <div className={`bg-white shadow-xl rounded-lg overflow-hidden shrink-0 ${hasPdf ? 'w-[480px]' : 'w-[320px]'}`}>
               <iframe
                 ref={iframeRef}
-                src={printUrl}
+                src={hasPdf ? api.getPdfUrl(ticketId, activeType) : printUrl}
                 className="w-full h-full border-0"
                 style={{ minHeight: '600px' }}
                 title={`Aperçu ${currentType?.label}`}
@@ -179,14 +190,26 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
         {/* Footer actions */}
         <div className="px-5 py-4 border-t border-slate-100 bg-white shrink-0">
           <div className="flex items-center gap-2">
+            {/* Print button (thermal) */}
             <button
               onClick={handlePrint}
               disabled={printing}
-              className="btn-primary flex-1 justify-center shadow-lg shadow-brand-600/20"
+              className={`flex-1 justify-center ${hasPdf ? 'btn-ghost border border-slate-200' : 'btn-primary shadow-lg shadow-brand-600/20'}`}
             >
               <Printer className="w-4 h-4" />
-              {printing ? 'Ouverture...' : 'Imprimer'}
+              {printing ? 'Ouverture...' : 'Imprimer 80mm'}
             </button>
+
+            {/* PDF A4 button — only for devis/recu */}
+            {hasPdf && (
+              <button
+                onClick={handleOpenPdf}
+                className="btn-primary flex-1 justify-center shadow-lg shadow-brand-600/20"
+              >
+                <Download className="w-4 h-4" />
+                PDF A4
+              </button>
+            )}
 
             {/* Send dropdown */}
             <div className="relative">
@@ -221,7 +244,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
                     <Mail className="w-4 h-4 text-red-500" />
-                    {sending ? 'Envoi...' : 'Email'}
+                    {sending ? 'Envoi...' : hasPdf ? 'Email (PDF)' : 'Email'}
                   </button>
                 </div>
               )}
@@ -236,7 +259,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
             </button>
           </div>
           <p className="text-[10px] text-slate-400 text-center mt-2">
-            Format optimisé pour imprimante thermique 80mm
+            {hasPdf ? 'Document PDF format A4 professionnel' : 'Format optimisé pour imprimante thermique 80mm'}
           </p>
         </div>
       </div>
