@@ -2,6 +2,9 @@
 API Notifications — messages prédéfinis, WhatsApp, SMS, Email.
 """
 
+import asyncio
+from functools import partial
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -123,7 +126,10 @@ async def send_email_notification(
     if not row or not row["email"]:
         raise HTTPException(400, "Pas d'adresse email")
 
-    success, msg = envoyer_email(row["email"], sujet, message)
+    loop = asyncio.get_event_loop()
+    success, msg = await loop.run_in_executor(
+        None, partial(envoyer_email, row["email"], sujet, message)
+    )
 
     if success:
         with get_cursor() as cur:

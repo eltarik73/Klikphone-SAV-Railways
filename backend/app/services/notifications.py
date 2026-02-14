@@ -172,19 +172,19 @@ def notif_deconnexion(utilisateur: str):
 
 def envoyer_email(destinataire: str, sujet: str, message: str, html_content: str = None):
     """Envoie un email via SMTP avec option HTML."""
-    smtp_host = _get_param("SMTP_HOST")
-    smtp_port = _get_param("SMTP_PORT") or "587"
-    smtp_user = _get_param("SMTP_USER")
-    smtp_pass = _get_param("SMTP_PASS")
-    smtp_from = _get_param("SMTP_FROM")
-    smtp_from_name = _get_param("SMTP_FROM_NAME") or "Klikphone"
+    smtp_host = _get_param("smtp_host")
+    smtp_port = _get_param("smtp_port") or "587"
+    smtp_user = _get_param("smtp_user")
+    smtp_pass = _get_param("smtp_password")
+    smtp_from = _get_param("smtp_from") or smtp_user
+    smtp_from_name = _get_param("smtp_from_name") or "Klikphone"
 
     if not smtp_host or not smtp_user or not smtp_pass:
         return False, "Configuration SMTP incomplète"
 
     try:
         msg = MIMEMultipart("alternative")
-        msg["From"] = formataddr((str(Header(smtp_from_name, "utf-8")), smtp_from or smtp_user))
+        msg["From"] = formataddr((str(Header(smtp_from_name, "utf-8")), smtp_from))
         msg["To"] = destinataire
         msg["Subject"] = Header(sujet, "utf-8")
 
@@ -192,32 +192,36 @@ def envoyer_email(destinataire: str, sujet: str, message: str, html_content: str
         if html_content:
             msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-        server = smtplib.SMTP(smtp_host, int(smtp_port))
+        server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=10)
         server.starttls()
         server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_from or smtp_user, destinataire, msg.as_bytes())
+        server.sendmail(smtp_from, destinataire, msg.as_bytes())
         server.quit()
 
         return True, "Email envoyé avec succès"
+    except smtplib.SMTPException as e:
+        return False, f"Erreur SMTP: {e}"
+    except TimeoutError:
+        return False, "Timeout connexion SMTP"
     except Exception as e:
         return False, f"Erreur d'envoi: {e}"
 
 
 def envoyer_email_avec_pdf(destinataire: str, sujet: str, message: str, pdf_bytes: bytes, filename: str = "document.pdf"):
     """Envoie un email avec une pièce jointe PDF."""
-    smtp_host = _get_param("SMTP_HOST")
-    smtp_port = _get_param("SMTP_PORT") or "587"
-    smtp_user = _get_param("SMTP_USER")
-    smtp_pass = _get_param("SMTP_PASS")
-    smtp_from = _get_param("SMTP_FROM")
-    smtp_from_name = _get_param("SMTP_FROM_NAME") or "Klikphone"
+    smtp_host = _get_param("smtp_host")
+    smtp_port = _get_param("smtp_port") or "587"
+    smtp_user = _get_param("smtp_user")
+    smtp_pass = _get_param("smtp_password")
+    smtp_from = _get_param("smtp_from") or smtp_user
+    smtp_from_name = _get_param("smtp_from_name") or "Klikphone"
 
     if not smtp_host or not smtp_user or not smtp_pass:
         return False, "Configuration SMTP incomplète"
 
     try:
         msg = MIMEMultipart()
-        msg["From"] = formataddr((str(Header(smtp_from_name, "utf-8")), smtp_from or smtp_user))
+        msg["From"] = formataddr((str(Header(smtp_from_name, "utf-8")), smtp_from))
         msg["To"] = destinataire
         msg["Subject"] = Header(sujet, "utf-8")
         msg.attach(MIMEText(message, "plain", "utf-8"))
@@ -226,13 +230,17 @@ def envoyer_email_avec_pdf(destinataire: str, sujet: str, message: str, pdf_byte
         pdf_part.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(pdf_part)
 
-        server = smtplib.SMTP(smtp_host, int(smtp_port))
+        server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=10)
         server.starttls()
         server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_from or smtp_user, destinataire, msg.as_bytes())
+        server.sendmail(smtp_from, destinataire, msg.as_bytes())
         server.quit()
 
         return True, "Email avec PDF envoyé"
+    except smtplib.SMTPException as e:
+        return False, f"Erreur SMTP: {e}"
+    except TimeoutError:
+        return False, "Timeout connexion SMTP"
     except Exception as e:
         return False, f"Erreur: {e}"
 
