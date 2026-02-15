@@ -1,71 +1,73 @@
 """
 Scraper LCD-Phone.com — récupère les téléphones en stock avec prix B2B.
-Site PrestaShop, nécessite login pro.
+Utilise Selenium (Chrome headless) pour gérer le rendu JavaScript.
 """
 
 import os
 import re
 import time
+import shutil
 import logging
-from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 
 from app.database import get_cursor
 
-# Lazy imports pour éviter crash si beautifulsoup4 pas installé
-try:
-    import httpx
-    from bs4 import BeautifulSoup
-    _HAS_DEPS = True
-except ImportError:
-    _HAS_DEPS = False
-
 logger = logging.getLogger(__name__)
 
-LCDPHONE_BASE_URL = "https://lcd-phone.com"
-LCDPHONE_LOGIN_URL = f"{LCDPHONE_BASE_URL}/fr/connexion"
+# ─── CONFIG ─────────────────────────────────────────
+LCDPHONE_BASE = "https://lcd-phone.com"
+LCDPHONE_LOGIN_URL = f"{LCDPHONE_BASE}/fr/connexion"
 
-CATEGORIES = {
-    "iphone_occasion": {
-        "url": f"{LCDPHONE_BASE_URL}/fr/3171-iphone-occasion",
-        "type_produit": "reconditionné",
-        "marque_forcee": "Apple",
-    },
-    "android_occasion": {
-        "url": f"{LCDPHONE_BASE_URL}/fr/3172-android-occasion",
-        "type_produit": "reconditionné",
-        "marque_forcee": None,
-    },
-    "telephone_neuf": {
-        "url": f"{LCDPHONE_BASE_URL}/fr/860-telephone-neuf",
-        "type_produit": "neuf",
-        "marque_forcee": None,
-    },
-}
+CATEGORIES = [
+    {"url": f"{LCDPHONE_BASE}/fr/3171-iphone-occasion", "type_produit": "occasion", "marque_forcee": "Apple"},
+    {"url": f"{LCDPHONE_BASE}/fr/3172-android-occasion", "type_produit": "occasion", "marque_forcee": None},
+    {"url": f"{LCDPHONE_BASE}/fr/860-telephone-neuf", "type_produit": "neuf", "marque_forcee": None},
+    {"url": f"{LCDPHONE_BASE}/fr/859-telephone-occasion", "type_produit": "occasion", "marque_forcee": None},
+]
 
+# Lazy import check
+_HAS_SELENIUM = False
+try:
+    from selenium import webdriver
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    _HAS_SELENIUM = True
+except ImportError:
+    pass
+
+
+# ─── HELPERS ────────────────────────────────────────
 
 def calculer_prix_vente(prix_fournisseur: float, marque: str, type_produit: str) -> tuple:
-    if type_produit == "reconditionné":
+    """Calcule le prix de vente avec marge selon le type."""
+    if type_produit == "occasion":
         marge = 80.0
-    elif marque.lower() in ("apple", "iphone"):
+    elif marque and marque.lower() in ("apple", "iphone"):
         marge = 50.0
     else:
         marge = 60.0
-    return prix_fournisseur + marge, marge
+    return round(prix_fournisseur + marge, 2), marge
 
 
-def detecter_marque(nom_produit: str) -> str:
-    nom_lower = nom_produit.lower()
-    marques = {
+def detecter_marque(nom: str) -> str:
+    """Détecte la marque depuis le nom du produit."""
+    nom_lower = nom.lower()
+    mapping = {
         "iphone": "Apple", "apple": "Apple",
         "samsung": "Samsung", "galaxy": "Samsung",
         "xiaomi": "Xiaomi", "redmi": "Xiaomi", "poco": "Xiaomi",
         "google": "Google", "pixel": "Google",
         "huawei": "Huawei", "honor": "Honor",
         "oppo": "Oppo", "oneplus": "OnePlus",
-        "motorola": "Motorola", "nothing": "Nothing", "realme": "Realme",
+        "motorola": "Motorola", "nothing": "Nothing",
+        "realme": "Realme", "alcatel": "Alcatel",
+        "sony": "Sony", "nokia": "Nokia",
+        "blackview": "Blackview", "wiko": "Wiko",
     }
-    for keyword, marque in marques.items():
+    for keyword, marque in mapping.items():
         if keyword in nom_lower:
             return marque
     return "Autre"
@@ -78,13 +80,24 @@ def extraire_stockage(nom: str) -> Optional[str]:
     return None
 
 
+def extraire_grade(nom: str) -> Optional[str]:
+    m = re.search(r'Grade\s*(A\+?B?|AB|B|C|D)', nom, re.IGNORECASE)
+    if m:
+        return f"Grade {m.group(1).upper()}"
+    if re.search(r'\bneuf\b|\bblister\b|\bASIS\+?\b', nom, re.IGNORECASE):
+        return "Neuf"
+    return None
+
+
 def extraire_couleur(nom: str) -> Optional[str]:
     couleurs = [
         "Titane Noir", "Titane Naturel", "Titane Bleu", "Titane Blanc", "Titane Désert",
         "Lumière Stellaire", "Noir", "Blanc", "Bleu", "Rouge", "Vert", "Rose",
         "Violet", "Or", "Argent", "Gris", "Crème", "Sable", "Lavande", "Minuit",
+        "Corail", "Jaune", "Marine", "Phantom Black", "Phantom Green",
+        "Gris Sidéral", "Gris Titane", "Bleu Marine",
         "Black", "White", "Blue", "Red", "Green", "Pink", "Purple",
-        "Gold", "Silver", "Grey", "Phantom", "Starlight", "Midnight",
+        "Gold", "Silver", "Grey", "Starlight", "Midnight",
     ]
     for c in couleurs:
         if c.lower() in nom.lower():
@@ -92,251 +105,312 @@ def extraire_couleur(nom: str) -> Optional[str]:
     return None
 
 
-def extraire_grade(nom: str) -> Optional[str]:
-    m = re.search(r'Grade\s*([A-C]\+?)', nom, re.IGNORECASE)
-    if m:
-        return f"Grade {m.group(1).upper()}"
-    if "neuf" in nom.lower() or "blister" in nom.lower():
-        return "Neuf"
-    return None
-
-
 def extraire_modele(nom: str, marque: str) -> str:
+    """Nettoie le nom pour extraire juste le modèle."""
     modele = nom
     patterns = [
         r'\d+\s*(Go|GB|To|TB)',
-        r'Grade\s*[A-C]\+?',
+        r'Grade\s*[A-D]+\+?',
         r'avec\s+[Bb]oîte.*',
         r'sans\s+accessoires?',
+        r'ASIS\+?',
         r'\s{2,}',
     ]
     for p in patterns:
         modele = re.sub(p, ' ', modele, flags=re.IGNORECASE)
+
     couleurs_rm = [
         "Titane Noir", "Titane Naturel", "Titane Bleu", "Titane Blanc",
         "Titane Désert", "Noir", "Blanc", "Bleu", "Rouge", "Vert",
         "Rose", "Violet", "Or", "Argent", "Gris", "Crème", "Sable",
-        "Phantom", "Lavande", "Minuit", "Lumière Stellaire",
+        "Phantom", "Lavande", "Minuit", "Lumière Stellaire", "Corail",
+        "Jaune", "Marine",
     ]
     for c in couleurs_rm:
         modele = re.sub(re.escape(c), '', modele, flags=re.IGNORECASE)
-    return modele.strip().strip('-').strip()
+    return re.sub(r'\s+', ' ', modele).strip(' -–')
 
 
-def _create_client():
-    """Crée un client HTTP avec headers navigateur."""
-    return httpx.Client(
-        timeout=30,
-        follow_redirects=True,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-        },
-    )
+# ─── SELENIUM DRIVER ────────────────────────────────
+
+def _find_chrome_binary() -> Optional[str]:
+    """Trouve le binaire Chrome/Chromium sur le système."""
+    candidates = [
+        "chromium-browser", "chromium", "google-chrome-stable",
+        "google-chrome", "chrome",
+    ]
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    # Chercher dans les chemins Nix courants
+    nix_paths = [
+        "/nix/store/*/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+        "/usr/bin/google-chrome",
+    ]
+    import glob
+    for pattern in nix_paths:
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+    return None
 
 
-def login_lcdphone():
-    """Se connecte à LCD-Phone et retourne un client httpx authentifié."""
+def _find_chromedriver() -> Optional[str]:
+    """Trouve chromedriver sur le système."""
+    path = shutil.which("chromedriver")
+    if path:
+        return path
+    import glob
+    for pattern in ["/nix/store/*/bin/chromedriver"]:
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+    return None
+
+
+def create_driver():
+    """Crée un driver Chrome headless."""
+    if not _HAS_SELENIUM:
+        raise RuntimeError("selenium non installé: pip install selenium")
+
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    # Trouver Chrome/Chromium
+    chrome_bin = _find_chrome_binary()
+    if chrome_bin:
+        options.binary_location = chrome_bin
+        logger.info(f"Chrome trouvé: {chrome_bin}")
+
+    # Trouver chromedriver
+    chromedriver_path = _find_chromedriver()
+
+    try:
+        if chromedriver_path:
+            service = Service(executable_path=chromedriver_path)
+            logger.info(f"Chromedriver trouvé: {chromedriver_path}")
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            driver = webdriver.Chrome(options=options)
+    except Exception as e:
+        logger.error(f"Erreur création driver Chrome: {e}")
+        raise RuntimeError(f"Impossible de lancer Chrome: {e}")
+
+    driver.implicitly_wait(10)
+    driver.set_page_load_timeout(30)
+    return driver
+
+
+# ─── LOGIN ──────────────────────────────────────────
+
+def login_selenium(driver) -> tuple:
+    """Se connecte à LCD-Phone. Retourne (success, error_msg)."""
     email = os.getenv("LCDPHONE_EMAIL")
     password = os.getenv("LCDPHONE_PASSWORD")
+
     if not email or not password:
-        logger.error("LCDPHONE_EMAIL ou LCDPHONE_PASSWORD non configuré")
-        return None, "LCDPHONE_EMAIL ou LCDPHONE_PASSWORD non configuré"
+        return False, "LCDPHONE_EMAIL ou LCDPHONE_PASSWORD non configuré"
 
-    client = _create_client()
     try:
-        # Charger la page de login
-        login_page = client.get(LCDPHONE_LOGIN_URL)
-        soup = BeautifulSoup(login_page.text, 'html.parser')
+        driver.get(LCDPHONE_LOGIN_URL)
+        time.sleep(2)
 
-        # Chercher le formulaire de login
-        form = soup.find('form', id='login-form') or soup.find('form', {'class': 'login-form'})
-        if not form:
-            # Chercher tout formulaire avec un champ email
-            forms = soup.find_all('form')
-            for f in forms:
-                if f.find('input', {'name': 'email'}) or f.find('input', {'type': 'email'}):
-                    form = f
-                    break
+        # Accepter les cookies si popup
+        try:
+            cookie_btn = driver.find_element(By.CSS_SELECTOR,
+                "[class*='cookie'] button, .accept-cookie, #accept-cookie, .cc-btn")
+            cookie_btn.click()
+            time.sleep(1)
+        except Exception:
+            pass
 
-        # Token CSRF
-        token_input = soup.find('input', {'name': 'token'})
-        token = token_input['value'] if token_input else ''
-
-        # Envoyer le login
-        login_data = {
-            'email': email,
-            'password': password,
-            'back': 'my-account',
-            'submitLogin': '1',
-        }
-        if token:
-            login_data['token'] = token
-
-        resp = client.post(LCDPHONE_LOGIN_URL, data=login_data)
-
-        # Vérifier si on est connecté en cherchant des indices
-        resp_text = resp.text
-        url_str = str(resp.url)
-
-        # Signes positifs de connexion
-        is_logged = (
-            'mon-compte' in url_str
-            or 'my-account' in url_str
-            or 'Déconnexion' in resp_text
-            or 'logout' in resp_text.lower()
-            or 'sign out' in resp_text.lower()
+        # Remplir le formulaire
+        email_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input[name='email'], input[type='email']"))
         )
+        email_input.clear()
+        email_input.send_keys(email)
 
-        # Signes négatifs
-        login_failed = (
-            'Erreur d\'authentification' in resp_text
-            or 'Authentication failed' in resp_text
-            or 'Identifiants invalides' in resp_text
-            or 'Invalid credentials' in resp_text
-        )
+        password_input = driver.find_element(By.CSS_SELECTOR, "input[name='password'], input[type='password']")
+        password_input.clear()
+        password_input.send_keys(password)
 
-        if login_failed:
-            client.close()
-            return None, "Identifiants LCD-Phone invalides"
+        # Cliquer sur le bouton submit
+        submit_btn = driver.find_element(By.CSS_SELECTOR,
+            "button[type='submit'], #submit-login, input[name='submitLogin']")
+        submit_btn.click()
+        time.sleep(3)
 
-        if is_logged or resp.status_code == 200:
-            # Vérifier en accédant à une page protégée
-            test = client.get(f"{LCDPHONE_BASE_URL}/fr/mon-compte")
-            if 'connexion' in str(test.url).lower() and 'mon-compte' not in str(test.url):
-                client.close()
-                return None, "Login semble OK mais redirection vers connexion"
-            logger.info("Connexion LCD-Phone réussie")
-            return client, None
-        else:
-            client.close()
-            return None, f"Échec connexion (status {resp.status_code})"
+        # Vérifier la connexion
+        current_url = driver.current_url
+        page_src = driver.page_source
+
+        if any(w in current_url for w in ['mon-compte', 'my-account']):
+            logger.info("Connexion LCD-Phone réussie (redirect mon-compte)")
+            return True, None
+
+        if any(w in page_src for w in ['Déconnexion', 'logout', 'sign out', 'Mon compte']):
+            logger.info("Connexion LCD-Phone réussie (Déconnexion trouvé)")
+            return True, None
+
+        # Vérifier erreurs
+        if any(w in page_src for w in ["Erreur d'authentification", "Authentication failed", "Identifiants invalides"]):
+            return False, "Identifiants LCD-Phone invalides"
+
+        # Test en accédant à mon-compte
+        driver.get(f"{LCDPHONE_BASE}/fr/mon-compte")
+        time.sleep(2)
+        if 'connexion' in driver.current_url.lower() and 'mon-compte' not in driver.current_url:
+            return False, "Login semble OK mais redirigé vers connexion"
+
+        logger.info(f"Connexion LCD-Phone (URL: {driver.current_url})")
+        return True, None
 
     except Exception as e:
-        client.close()
-        return None, f"Erreur connexion: {str(e)}"
+        return False, f"Erreur connexion: {str(e)}"
 
 
-def scraper_categorie(client, cat_config: dict) -> tuple:
+# ─── SCRAPER UNE CATÉGORIE ──────────────────────────
+
+def scraper_categorie_selenium(driver, cat: dict) -> tuple:
     """Scrape une catégorie. Retourne (produits, debug_info)."""
     produits = []
-    debug = {"pages": 0, "cards_found": 0, "cards_skipped_stock": 0, "cards_no_name": 0, "cards_no_price": 0, "errors": []}
+    debug = {
+        "pages": 0, "cards_found": 0, "cards_parsed": 0,
+        "cards_skipped_stock": 0, "cards_no_name": 0,
+        "cards_no_price": 0, "errors": [],
+    }
     page = 1
-    max_pages = 20  # sécurité
+    max_pages = 20
 
     while page <= max_pages:
-        url = f"{cat_config['url']}?page={page}"
+        url = f"{cat['url']}?page={page}"
         logger.info(f"Scraping page {page}: {url}")
         debug["pages"] = page
-        try:
-            resp = client.get(url)
-            soup = BeautifulSoup(resp.text, 'html.parser')
 
-            # Essayer plusieurs sélecteurs pour trouver les produits
-            cards = soup.select('.product-miniature')
-            if not cards:
-                cards = soup.select('article.product-miniature')
-            if not cards:
-                cards = soup.select('.products article')
-            if not cards:
-                cards = soup.select('.product_list .ajax_block_product')
-            if not cards:
-                cards = soup.select('[data-id-product]')
-            if not cards:
-                # Dernier recours: chercher tous les éléments avec un lien produit
-                cards = soup.select('.products > div, .products > article, .products > li')
+        try:
+            driver.get(url)
+            time.sleep(3)
+
+            # Scroll pour déclencher le lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+            driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(1)
+
+            # Chercher les cartes produit
+            cards = driver.find_elements(By.CSS_SELECTOR,
+                ".product-miniature, article.product-miniature, "
+                ".products .product, [data-id-product]"
+            )
 
             if not cards:
                 if page == 1:
-                    # Sauver un extrait du HTML pour debug
-                    body = soup.find('body')
-                    if body:
-                        debug["html_sample"] = str(body)[:2000]
-                    debug["errors"].append(f"Aucune carte produit trouvée sur page 1. Classes trouvées: {[c.get('class') for c in soup.select('div[class]')[:10]]}")
+                    debug["errors"].append("Aucun produit trouvé page 1")
+                    # Sauvegarder un extrait du titre pour debug
+                    debug["page_title"] = driver.title
                 break
 
             debug["cards_found"] += len(cards)
 
             for card in cards:
                 try:
-                    # Nom du produit — essayer plusieurs sélecteurs
-                    name_el = (
-                        card.select_one('.product-title a')
-                        or card.select_one('.product-name a')
-                        or card.select_one('h5 a, h4 a, h3 a, h2 a')
-                        or card.select_one('a.product-thumbnail')
-                        or card.select_one('a[href*="/fr/"]')
-                    )
-                    if not name_el:
+                    # ── Nom et lien ──
+                    try:
+                        name_el = card.find_element(By.CSS_SELECTOR,
+                            ".product-title a, .product-name a, h2 a, h3 a, h5 a")
+                    except Exception:
                         debug["cards_no_name"] += 1
                         continue
-                    nom = name_el.get_text(strip=True) or name_el.get('title', '')
-                    product_url = name_el.get('href', '')
-                    if not nom and product_url:
-                        # Essayer le titre du lien
-                        nom = name_el.get('title', '') or product_url.split('/')[-1].replace('-', ' ')
+
+                    nom = name_el.text.strip()
+                    if not nom:
+                        nom = name_el.get_attribute("title") or ""
+                    product_url = name_el.get_attribute("href") or ""
+
                     if not nom:
                         debug["cards_no_name"] += 1
                         continue
 
-                    # Prix — essayer plusieurs sélecteurs
-                    price_el = (
-                        card.select_one('.product-price-and-shipping .price')
-                        or card.select_one('.product-price .price')
-                        or card.select_one('.price')
-                        or card.select_one('[itemprop="price"]')
-                        or card.select_one('.product-price')
-                    )
-                    prix_fournisseur = None
-                    if price_el:
-                        # Essayer l'attribut content d'abord (plus fiable)
-                        prix_content = price_el.get('content', '')
-                        if prix_content:
-                            try:
-                                prix_fournisseur = float(prix_content)
-                            except ValueError:
-                                pass
-
-                        if prix_fournisseur is None:
-                            prix_text = price_el.get_text(strip=True).replace('\xa0', '').replace(' ', '').replace('€', '')
-                            prix_match = re.search(r'([\d]+[,.][\d]+)', prix_text)
-                            if prix_match:
-                                prix_fournisseur = float(prix_match.group(1).replace(',', '.'))
-
-                    if prix_fournisseur is None:
+                    # ── Prix ──
+                    try:
+                        price_el = card.find_element(By.CSS_SELECTOR,
+                            ".product-price-and-shipping .price, .product-price .price, "
+                            ".price, [itemprop='price']")
+                        prix_text = price_el.text.strip()
+                    except Exception:
                         debug["cards_no_price"] += 1
                         continue
 
-                    # Stock — ne PAS filtrer trop agressivement, on prend tout ce qu'on trouve
-                    stock_qty = 1  # défaut: en stock si on le voit sur la page
-                    stock_el = card.select_one('.product-availability, .availability, .stock-quantity')
-                    if stock_el:
-                        stock_text = stock_el.get_text(strip=True)
-                        stock_match = re.search(r'(\d+)', stock_text)
-                        if stock_match:
-                            stock_qty = int(stock_match.group(1))
+                    # Parser le prix (format: "199,90 €" ou "1 299,00 €")
+                    prix_clean = prix_text.replace('\xa0', '').replace(' ', '').replace('€', '')
+                    prix_match = re.search(r'([\d]+[,.][\d]+)', prix_clean)
+                    if not prix_match:
+                        debug["cards_no_price"] += 1
+                        continue
+                    prix_fournisseur = float(prix_match.group(1).replace(',', '.'))
+
+                    # ── Stock ──
+                    stock_qty = 0
+                    try:
+                        stock_el = card.find_element(By.CSS_SELECTOR,
+                            ".product-availability, .availability, .stock-quantity, .stock")
+                        stock_text = stock_el.text.strip()
+
+                        # Rupture de stock → skip
                         if any(w in stock_text.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
                             debug["cards_skipped_stock"] += 1
                             continue
 
-                    # Extraire les infos depuis le nom du produit
-                    marque = cat_config.get('marque_forcee') or detecter_marque(nom)
-                    stockage = extraire_stockage(nom)
-                    couleur = extraire_couleur(nom)
-                    grade = extraire_grade(nom) or ("Neuf" if cat_config['type_produit'] == "neuf" else None)
-                    modele = extraire_modele(nom, marque)
-                    type_produit = cat_config['type_produit']
-                    prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
+                        stock_match = re.search(r'(\d+)', stock_text)
+                        if stock_match:
+                            stock_qty = int(stock_match.group(1))
+                        elif 'en stock' in stock_text.lower():
+                            stock_qty = 1
+                    except Exception:
+                        # Pas d'élément stock visible → on considère en stock si sur la page
+                        stock_qty = 1
 
-                    # Image depuis le listing
-                    img_el = card.select_one('img.thumbnail, img[src*="phone"], img[data-src], img')
+                    # Si stock explicitement 0, skip
+                    if stock_qty == 0:
+                        debug["cards_skipped_stock"] += 1
+                        continue
+
+                    # ── Image ──
                     image_url = ""
-                    if img_el:
-                        image_url = img_el.get('data-full-size-image-url', '') or img_el.get('src', '') or img_el.get('data-src', '')
+                    try:
+                        img_el = card.find_element(By.CSS_SELECTOR, "img")
+                        image_url = (img_el.get_attribute("data-full-size-image-url")
+                                     or img_el.get_attribute("src")
+                                     or img_el.get_attribute("data-src") or "")
+                    except Exception:
+                        pass
 
-                    # Référence (data attribute)
-                    ref = card.get('data-id-product', '') or ''
+                    # ── Référence ──
+                    ref = ""
+                    try:
+                        ref = card.get_attribute("data-id-product") or ""
+                    except Exception:
+                        pass
+
+                    # ── Parser les infos depuis le nom ──
+                    marque = cat.get("marque_forcee") or detecter_marque(nom)
+                    stockage = extraire_stockage(nom)
+                    grade = extraire_grade(nom) or ("Neuf" if cat["type_produit"] == "neuf" else None)
+                    couleur = extraire_couleur(nom)
+                    modele = extraire_modele(nom, marque)
+                    type_produit = cat["type_produit"]
+                    prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
 
                     produits.append({
                         "marque": marque,
@@ -355,216 +429,206 @@ def scraper_categorie(client, cat_config: dict) -> tuple:
                         "image_url": image_url,
                         "source_url": product_url,
                     })
-                    logger.info(f"  + {marque} {modele} {stockage} — {prix_vente}€")
+                    debug["cards_parsed"] += 1
+                    logger.info(f"  + {marque} {modele} {stockage} {grade} — {prix_vente}€")
+
                 except Exception as e:
-                    debug["errors"].append(f"Erreur parsing: {str(e)}")
+                    debug["errors"].append(f"Erreur parsing carte: {str(e)[:100]}")
                     continue
 
-            # Pagination
-            next_link = (
-                soup.select_one('a[rel="next"]')
-                or soup.select_one('.pagination .next a')
-                or soup.select_one('li.next a')
-                or soup.select_one('a.next')
-            )
-            if not next_link:
+            # Page suivante ?
+            try:
+                next_btn = driver.find_element(By.CSS_SELECTOR,
+                    "a.next, .pagination .next a, li.next a, a[rel='next']")
+                if next_btn and next_btn.is_displayed():
+                    page += 1
+                else:
+                    break
+            except Exception:
                 break
-            page += 1
 
         except Exception as e:
-            debug["errors"].append(f"Erreur page {page}: {str(e)}")
+            debug["errors"].append(f"Erreur page {page}: {str(e)[:200]}")
             break
 
     return produits, debug
 
 
+# ─── PROBE (DIAGNOSTIC) ────────────────────────────
+
 def probe_lcdphone() -> dict:
-    """Diagnostic complet: login, recherche de catégories, test search."""
-    if not _HAS_DEPS:
-        return {"success": False, "error": "beautifulsoup4 ou httpx non installé"}
+    """Diagnostic : teste login + affiche les produits trouvés par catégorie."""
+    if not _HAS_SELENIUM:
+        return {"success": False, "error": "selenium non installé: pip install selenium"}
 
-    result = {"login": None, "search_results": {}, "category_discovery": [], "all_links": []}
-
-    client, login_error = login_lcdphone()
-    if not client:
-        return {"success": False, "error": login_error or "Échec login"}
-
-    result["login"] = "OK"
-
+    driver = None
     try:
-        # 1) Utiliser la recherche du site pour trouver des téléphones
-        for query in ["iPhone 15", "Samsung Galaxy", "smartphone"]:
-            search_url = f"{LCDPHONE_BASE_URL}/fr/recherche?s={query.replace(' ', '+')}"
-            resp = client.get(search_url)
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            cards = soup.select('article.product-miniature')
-            products = []
-            for card in cards[:5]:
-                name_el = card.select_one('.product-name a, .product-name')
-                price_el = card.select_one('.price')
-                name = (name_el.get_text(strip=True) if name_el else '') or (name_el.get('title', '') if name_el else '')
-                href = name_el.get('href', '') if name_el else ''
-                price = price_el.get_text(strip=True) if price_el else ''
-                products.append({"name": name, "price": price, "url": href})
-            result["search_results"][query] = {
-                "total_found": len(cards),
-                "products": products,
+        driver = create_driver()
+        ok, err = login_selenium(driver)
+        if not ok:
+            return {"success": False, "error": err or "Échec login"}
+
+        results = {}
+        for cat in CATEGORIES:
+            driver.get(cat["url"])
+            time.sleep(3)
+
+            # Scroll pour lazy loading
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+
+            cards = driver.find_elements(By.CSS_SELECTOR,
+                ".product-miniature, article.product-miniature")
+
+            samples = []
+            for card in cards[:8]:
+                try:
+                    name_el = card.find_element(By.CSS_SELECTOR,
+                        ".product-title a, .product-name a, h2 a")
+                    name = name_el.text.strip() or name_el.get_attribute("title") or ""
+                    price = ""
+                    try:
+                        price_el = card.find_element(By.CSS_SELECTOR, ".price")
+                        price = price_el.text.strip()
+                    except Exception:
+                        pass
+                    if name:
+                        samples.append(f"{name} — {price}")
+                except Exception:
+                    pass
+
+            results[cat["url"]] = {
+                "type": cat["type_produit"],
+                "total_cards": len(cards),
+                "page_title": driver.title,
+                "samples": samples,
             }
-            time.sleep(0.3)
 
-        # 2) Récupérer TOUS les liens uniques de la page d'accueil
-        home = client.get(f"{LCDPHONE_BASE_URL}/fr/")
-        soup_home = BeautifulSoup(home.text, 'html.parser')
-        all_links = []
-        seen = set()
-        for a in soup_home.select('a[href]'):
-            href = a.get('href', '')
-            text = a.get_text(strip=True)
-            if href not in seen and 'lcd-phone.com' in href and len(text) < 80:
-                seen.add(href)
-                all_links.append({"text": text, "url": href})
-        result["all_links"] = all_links[:80]
+        return {"success": True, "login": "OK", "categories": results}
 
-        # 3) Essayer des URLs de catégories courantes PrestaShop
-        test_slugs = [
-            "smartphones", "smartphone", "telephones", "telephone",
-            "iphone", "iphone-occasion", "iphone-reconditionne",
-            "android", "android-occasion", "android-reconditionne",
-            "telephone-occasion", "telephone-reconditionne",
-            "smartphone-occasion", "smartphone-reconditionne",
-            "telephone-neuf", "smartphone-neuf",
-        ]
-        category_tests = {}
-        for slug in test_slugs:
-            url = f"{LCDPHONE_BASE_URL}/fr/{slug}"
-            try:
-                resp = client.get(url)
-                final = str(resp.url)
-                # Si redirigé vers la home, c'est un 404 silencieux
-                is_home = final.rstrip('/') == f"{LCDPHONE_BASE_URL}/fr"
-                soup = BeautifulSoup(resp.text, 'html.parser')
-                title = soup.title.string.strip() if soup.title and soup.title.string else ''
-                cards = soup.select('article.product-miniature')
-                first_name = ''
-                if cards:
-                    ne = cards[0].select_one('.product-name a, .product-name')
-                    if ne:
-                        first_name = ne.get_text(strip=True)
-                category_tests[slug] = {
-                    "status": resp.status_code,
-                    "final_url": final,
-                    "is_home_redirect": is_home,
-                    "title": title,
-                    "nb_products": len(cards),
-                    "first_product": first_name,
-                }
-            except Exception:
-                category_tests[slug] = {"error": True}
-            time.sleep(0.2)
-        result["category_discovery"] = category_tests
-
-        # 4) Chercher dans les liens ceux qui contiennent phone/smartphone/occasion
-        phone_links = [l for l in all_links if any(
-            w in (l["text"].lower() + " " + l["url"].lower())
-            for w in ["phone", "smartphone", "téléphone", "telephone", "iphone",
-                       "samsung", "occasion", "reconditionn", "android"]
-        )]
-        result["phone_links"] = phone_links
-
+    except Exception as e:
+        return {"success": False, "error": str(e)}
     finally:
-        client.close()
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
 
-    result["success"] = True
-    return result
 
+# ─── SYNC PRINCIPALE ────────────────────────────────
 
 def sync_telephones_lcdphone() -> dict:
     """Login + scrape toutes les catégories + upsert en BDD."""
-    if not _HAS_DEPS:
-        return {"success": False, "error": "Dépendances manquantes: pip install beautifulsoup4 httpx"}
+    if not _HAS_SELENIUM:
+        return {"success": False, "error": "selenium non installé: pip install selenium"}
 
-    client, login_error = login_lcdphone()
-    if not client:
-        return {"success": False, "error": login_error or "Échec connexion LCD-Phone"}
-
-    all_produits = []
-    all_debug = {}
+    driver = None
     try:
-        for cat_name, cat_config in CATEGORIES.items():
-            logger.info(f"Scraping catégorie: {cat_name}")
-            produits, debug = scraper_categorie(client, cat_config)
-            logger.info(f"  -> {len(produits)} produits")
+        logger.info("Démarrage sync LCD-Phone (Selenium)")
+        driver = create_driver()
+
+        ok, err = login_selenium(driver)
+        if not ok:
+            return {"success": False, "error": err or "Échec connexion LCD-Phone"}
+
+        all_produits = []
+        all_debug = {}
+
+        for cat in CATEGORIES:
+            cat_label = cat["url"].split("/")[-1]
+            logger.info(f"Catégorie: {cat_label}")
+            produits, debug = scraper_categorie_selenium(driver, cat)
+            logger.info(f"  -> {len(produits)} produits en stock")
             all_produits.extend(produits)
-            all_debug[cat_name] = {
+            all_debug[cat_label] = {
                 "count": len(produits),
                 "pages": debug["pages"],
                 "cards_found": debug["cards_found"],
+                "cards_parsed": debug["cards_parsed"],
                 "cards_skipped_stock": debug["cards_skipped_stock"],
                 "cards_no_name": debug["cards_no_name"],
                 "cards_no_price": debug["cards_no_price"],
                 "errors": debug["errors"][:5],
             }
-    finally:
-        client.close()
 
-    if not all_produits:
-        return {
-            "success": True,
-            "total": 0, "inserted": 0, "updated": 0,
-            "message": "Aucun produit trouvé",
-            "debug": all_debug,
-        }
+        logger.info(f"Total: {len(all_produits)} produits")
 
-    inserted = 0
-    updated = 0
+        if not all_produits:
+            return {
+                "success": True,
+                "total": 0, "inserted": 0, "updated": 0,
+                "message": "Aucun produit trouvé",
+                "debug": all_debug,
+            }
 
-    try:
-        with get_cursor() as cur:
-            cur.execute("UPDATE telephones_catalogue SET actif = FALSE, updated_at = NOW()")
+        # Upsert en BDD
+        inserted = 0
+        updated = 0
 
-            for p in all_produits:
-                if p["reference_fournisseur"]:
-                    cur.execute("SELECT id FROM telephones_catalogue WHERE reference_fournisseur = %s", (p["reference_fournisseur"],))
-                else:
-                    cur.execute(
-                        "SELECT id FROM telephones_catalogue WHERE marque = %s AND modele = %s AND COALESCE(stockage,'') = COALESCE(%s,'') AND COALESCE(grade,'') = COALESCE(%s,'')",
-                        (p["marque"], p["modele"], p["stockage"], p["grade"]),
-                    )
-                existing = cur.fetchone()
+        try:
+            with get_cursor() as cur:
+                # Marquer tous inactifs
+                cur.execute("UPDATE telephones_catalogue SET actif = FALSE, updated_at = NOW()")
 
-                if existing:
-                    cur.execute("""
-                        UPDATE telephones_catalogue SET
-                            prix_fournisseur=%s, prix_vente=%s, marge_appliquee=%s,
-                            stock_fournisseur=%s, en_stock=%s, image_url=%s, source_url=%s,
-                            actif=TRUE, derniere_sync=NOW(), updated_at=NOW()
-                        WHERE id=%s
-                    """, (p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
-                          p["stock_fournisseur"], p["en_stock"], p["image_url"], p["source_url"],
-                          existing["id"]))
-                    updated += 1
-                else:
-                    cur.execute("""
-                        INSERT INTO telephones_catalogue
-                        (marque, modele, stockage, couleur, grade, type_produit,
-                         prix_fournisseur, prix_vente, marge_appliquee,
-                         stock_fournisseur, en_stock, reference_fournisseur,
-                         das, garantie_mois, image_url, source_url, actif)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,12,%s,%s,TRUE)
-                    """, (p["marque"], p["modele"], p["stockage"], p["couleur"],
-                          p["grade"], p["type_produit"],
-                          p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
-                          p["stock_fournisseur"], p["en_stock"], p["reference_fournisseur"],
-                          p["das"], p["image_url"], p["source_url"]))
-                    inserted += 1
+                for p in all_produits:
+                    if p["reference_fournisseur"]:
+                        cur.execute(
+                            "SELECT id FROM telephones_catalogue WHERE reference_fournisseur = %s",
+                            (p["reference_fournisseur"],))
+                    else:
+                        cur.execute(
+                            "SELECT id FROM telephones_catalogue WHERE marque = %s AND modele = %s "
+                            "AND COALESCE(stockage,'') = COALESCE(%s,'') AND COALESCE(grade,'') = COALESCE(%s,'')",
+                            (p["marque"], p["modele"], p["stockage"], p["grade"]))
+                    existing = cur.fetchone()
 
-        return {
-            "success": True,
-            "total": len(all_produits),
-            "inserted": inserted,
-            "updated": updated,
-            "debug": all_debug,
-        }
+                    if existing:
+                        cur.execute("""
+                            UPDATE telephones_catalogue SET
+                                prix_fournisseur=%s, prix_vente=%s, marge_appliquee=%s,
+                                stock_fournisseur=%s, en_stock=TRUE,
+                                image_url=%s, source_url=%s,
+                                couleur=COALESCE(%s, couleur),
+                                grade=COALESCE(%s, grade),
+                                actif=TRUE, derniere_sync=NOW(), updated_at=NOW()
+                            WHERE id=%s
+                        """, (p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
+                              p["stock_fournisseur"], p["image_url"], p["source_url"],
+                              p["couleur"], p["grade"], existing["id"]))
+                        updated += 1
+                    else:
+                        cur.execute("""
+                            INSERT INTO telephones_catalogue
+                            (marque, modele, stockage, couleur, grade, type_produit,
+                             prix_fournisseur, prix_vente, marge_appliquee,
+                             stock_fournisseur, en_stock, reference_fournisseur,
+                             das, garantie_mois, image_url, source_url, actif)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,12,%s,%s,TRUE)
+                        """, (p["marque"], p["modele"], p["stockage"], p["couleur"],
+                              p["grade"], p["type_produit"],
+                              p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
+                              p["stock_fournisseur"], p["reference_fournisseur"],
+                              p["das"], p["image_url"], p["source_url"]))
+                        inserted += 1
+
+            return {
+                "success": True,
+                "total": len(all_produits),
+                "inserted": inserted,
+                "updated": updated,
+                "debug": all_debug,
+            }
+        except Exception as e:
+            logger.error(f"Erreur BDD: {e}")
+            return {"success": False, "error": str(e), "debug": all_debug}
+
     except Exception as e:
-        logger.error(f"Erreur BDD: {e}")
-        return {"success": False, "error": str(e), "debug": all_debug}
+        logger.error(f"Erreur sync: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
