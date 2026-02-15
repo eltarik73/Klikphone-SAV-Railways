@@ -348,7 +348,7 @@ async def avis_stats():
 
 
 @router.post("/avis/sync")
-async def sync_avis(user: dict = Depends(get_current_user)):
+async def sync_avis():
     """Synchronise les avis depuis Google My Business. Si pas configuré, insère des avis de démo."""
     _ensure_tables()
 
@@ -447,7 +447,7 @@ async def sync_avis(user: dict = Depends(get_current_user)):
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
-async def generer_reponse_avis(avis_id: int, user: dict = Depends(get_current_user)):
+async def generer_reponse_avis(avis_id: int):
     """Génère une suggestion de réponse IA pour un avis Google."""
     _ensure_tables()
 
