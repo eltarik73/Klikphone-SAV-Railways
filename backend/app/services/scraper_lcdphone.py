@@ -135,40 +135,39 @@ def extraire_modele(nom: str, marque: str) -> str:
 
 def _find_chrome_binary() -> Optional[str]:
     """Trouve le binaire Chrome/Chromium sur le système."""
+    # Env var en priorité (set par Dockerfile)
+    env_bin = os.getenv("CHROME_BIN") or os.getenv("GOOGLE_CHROME_BIN")
+    if env_bin and os.path.isfile(env_bin):
+        return env_bin
+
     candidates = [
-        "chromium-browser", "chromium", "google-chrome-stable",
-        "google-chrome", "chrome",
+        "/usr/bin/chromium", "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome",
     ]
-    for name in candidates:
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+
+    # Fallback: PATH lookup
+    for name in ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"]:
         path = shutil.which(name)
         if path:
             return path
-    # Chercher dans les chemins Nix courants
-    nix_paths = [
-        "/nix/store/*/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/usr/bin/google-chrome",
-    ]
-    import glob
-    for pattern in nix_paths:
-        matches = glob.glob(pattern)
-        if matches:
-            return matches[0]
     return None
 
 
 def _find_chromedriver() -> Optional[str]:
     """Trouve chromedriver sur le système."""
-    path = shutil.which("chromedriver")
-    if path:
-        return path
-    import glob
-    for pattern in ["/nix/store/*/bin/chromedriver"]:
-        matches = glob.glob(pattern)
-        if matches:
-            return matches[0]
-    return None
+    env_path = os.getenv("CHROMEDRIVER_PATH")
+    if env_path and os.path.isfile(env_path):
+        return env_path
+
+    candidates = ["/usr/bin/chromedriver", "/usr/lib/chromium/chromedriver"]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+
+    return shutil.which("chromedriver")
 
 
 def create_driver():
