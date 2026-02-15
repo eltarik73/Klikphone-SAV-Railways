@@ -405,7 +405,7 @@ async def sync_avis():  # temp no auth for testing
         data = resp.json()
 
     if data.get("status") != "OK":
-        raise HTTPException(502, f"Erreur Google Places API: {data.get('status')} — {data.get('error_message', '')}")
+        raise HTTPException(502, f"Erreur Google Places API: {data.get('status')} — {data.get('error_message', '')} [place_id used: '{place_id}', len={len(place_id)}]")
 
     result = data.get("result", {})
     reviews = result.get("reviews", [])
