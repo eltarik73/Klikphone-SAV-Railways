@@ -563,6 +563,93 @@ TARIFS = [
     ("Samsung", "Galaxy M14", "Ecran", "Compatible", "Ecran Compatible Samsung M14", 16.00, "standard"),
     ("Samsung", "Galaxy M14", "Ecran", "LCD", "Ecran LCD Samsung M14", 12.00, "standard"),
 
+    # Galaxy M13
+    ("Samsung", "Galaxy M13", "Ecran", "Original", "Ecran Original Samsung M13", 22.00, "standard"),
+    ("Samsung", "Galaxy M13", "Ecran", "Compatible", "Ecran Compatible Samsung M13", 13.00, "standard"),
+
+    # Galaxy M12
+    ("Samsung", "Galaxy M12", "Ecran", "Original", "Ecran Original Samsung M12", 20.00, "standard"),
+    ("Samsung", "Galaxy M12", "Ecran", "Compatible", "Ecran Compatible Samsung M12", 12.00, "standard"),
+
+    # Galaxy A50
+    ("Samsung", "Galaxy A50", "Ecran", "Original", "Ecran Original Samsung A50", 38.00, "standard"),
+    ("Samsung", "Galaxy A50", "Ecran", "Incell", "Ecran Incell Samsung A50", 20.00, "standard"),
+
+    # Galaxy A41
+    ("Samsung", "Galaxy A41", "Ecran", "Original", "Ecran Original Samsung A41", 32.00, "standard"),
+    ("Samsung", "Galaxy A41", "Ecran", "Incell", "Ecran Incell Samsung A41", 18.00, "standard"),
+
+    # Galaxy A40
+    ("Samsung", "Galaxy A40", "Ecran", "Original", "Ecran Original Samsung A40", 28.00, "standard"),
+    ("Samsung", "Galaxy A40", "Ecran", "Compatible", "Ecran Compatible Samsung A40", 16.00, "standard"),
+
+    # Galaxy A32 5G
+    ("Samsung", "Galaxy A32 5G", "Ecran", "Original", "Ecran Original LCD Samsung A32 5G", 25.00, "standard"),
+    ("Samsung", "Galaxy A32 5G", "Ecran", "Compatible", "Ecran Compatible Samsung A32 5G", 14.00, "standard"),
+
+    # Galaxy A32 4G
+    ("Samsung", "Galaxy A32 4G", "Ecran", "Original", "Ecran Original OLED Samsung A32 4G", 42.00, "standard"),
+    ("Samsung", "Galaxy A32 4G", "Ecran", "Incell", "Ecran Incell Samsung A32 4G", 22.00, "standard"),
+
+    # Galaxy A31
+    ("Samsung", "Galaxy A31", "Ecran", "Original", "Ecran Original Samsung A31", 32.00, "standard"),
+    ("Samsung", "Galaxy A31", "Ecran", "Incell", "Ecran Incell Samsung A31", 18.00, "standard"),
+
+    # Galaxy A30s
+    ("Samsung", "Galaxy A30s", "Ecran", "Original", "Ecran Original Samsung A30s", 28.00, "standard"),
+    ("Samsung", "Galaxy A30s", "Ecran", "Incell", "Ecran Incell Samsung A30s", 16.00, "standard"),
+
+    # Galaxy A23
+    ("Samsung", "Galaxy A23", "Ecran", "Original", "Ecran Original Samsung A23", 28.00, "standard"),
+    ("Samsung", "Galaxy A23", "Ecran", "Compatible", "Ecran Compatible Samsung A23", 16.00, "standard"),
+
+    # Galaxy A22 5G
+    ("Samsung", "Galaxy A22 5G", "Ecran", "Original", "Ecran Original LCD Samsung A22 5G", 22.00, "standard"),
+    ("Samsung", "Galaxy A22 5G", "Ecran", "Compatible", "Ecran Compatible Samsung A22 5G", 13.00, "standard"),
+
+    # Galaxy A22 4G
+    ("Samsung", "Galaxy A22 4G", "Ecran", "Original", "Ecran Original OLED Samsung A22 4G", 38.00, "standard"),
+    ("Samsung", "Galaxy A22 4G", "Ecran", "Incell", "Ecran Incell Samsung A22 4G", 20.00, "standard"),
+
+    # Galaxy A21s
+    ("Samsung", "Galaxy A21s", "Ecran", "Original", "Ecran Original Samsung A21s", 22.00, "standard"),
+    ("Samsung", "Galaxy A21s", "Ecran", "Compatible", "Ecran Compatible Samsung A21s", 13.00, "standard"),
+
+    # Galaxy A20e
+    ("Samsung", "Galaxy A20e", "Ecran", "Original", "Ecran Original Samsung A20e", 20.00, "standard"),
+    ("Samsung", "Galaxy A20e", "Ecran", "Compatible", "Ecran Compatible Samsung A20e", 12.00, "standard"),
+
+    # Galaxy A10
+    ("Samsung", "Galaxy A10", "Ecran", "Original", "Ecran Original Samsung A10", 18.00, "standard"),
+    ("Samsung", "Galaxy A10", "Ecran", "Compatible", "Ecran Compatible Samsung A10", 10.00, "standard"),
+
+    # Galaxy A71
+    ("Samsung", "Galaxy A71", "Ecran", "Original", "Ecran Original Samsung A71", 55.00, "standard"),
+    ("Samsung", "Galaxy A71", "Ecran", "Incell", "Ecran Incell Samsung A71", 28.00, "standard"),
+
+    # Galaxy A72
+    ("Samsung", "Galaxy A72", "Ecran", "Original", "Ecran Original Samsung A72", 55.00, "standard"),
+    ("Samsung", "Galaxy A72", "Ecran", "Incell", "Ecran Incell Samsung A72", 28.00, "standard"),
+
+    # Galaxy A73
+    ("Samsung", "Galaxy A73", "Ecran", "Original", "Ecran Original Samsung A73", 55.00, "standard"),
+    ("Samsung", "Galaxy A73", "Ecran", "Incell", "Ecran Incell Samsung A73", 28.00, "standard"),
+
+    # Galaxy A70
+    ("Samsung", "Galaxy A70", "Ecran", "Original", "Ecran Original Samsung A70", 48.00, "standard"),
+    ("Samsung", "Galaxy A70", "Ecran", "Incell", "Ecran Incell Samsung A70", 25.00, "standard"),
+
+    # Galaxy S10+
+    ("Samsung", "Galaxy S10+", "Ecran", "Original", "Ecran Original Samsung S10+", 110.00, "haut_de_gamme"),
+
+    # Galaxy S10
+    ("Samsung", "Galaxy S10", "Ecran", "Original", "Ecran Original Samsung S10", 95.00, "standard"),
+    ("Samsung", "Galaxy S10", "Ecran", "Soft OLED", "Ecran Soft OLED Samsung S10", 55.00, "standard"),
+
+    # Galaxy S10e
+    ("Samsung", "Galaxy S10e", "Ecran", "Original", "Ecran Original Samsung S10e", 72.00, "standard"),
+    ("Samsung", "Galaxy S10e", "Ecran", "Soft OLED", "Ecran Soft OLED Samsung S10e", 42.00, "standard"),
+
     # Galaxy Z Flip 5
     ("Samsung", "Galaxy Z Flip 5", "Ecran", "Original", "Ecran int. Original Samsung Z Flip 5", 280.00, "pliant"),
     # Galaxy Z Flip 4
@@ -607,6 +694,28 @@ TARIFS = [
     ("Samsung", "Galaxy M54", "Batterie", None, "Batterie Samsung M54", 10.00, "standard"),
     ("Samsung", "Galaxy M34", "Batterie", None, "Batterie Samsung M34", 9.00, "standard"),
     ("Samsung", "Galaxy M14", "Batterie", None, "Batterie Samsung M14", 8.00, "standard"),
+    ("Samsung", "Galaxy M13", "Batterie", None, "Batterie Samsung M13", 7.50, "standard"),
+    ("Samsung", "Galaxy M12", "Batterie", None, "Batterie Samsung M12", 7.00, "standard"),
+    ("Samsung", "Galaxy A50", "Batterie", None, "Batterie Samsung A50", 9.00, "standard"),
+    ("Samsung", "Galaxy A41", "Batterie", None, "Batterie Samsung A41", 8.50, "standard"),
+    ("Samsung", "Galaxy A40", "Batterie", None, "Batterie Samsung A40", 8.00, "standard"),
+    ("Samsung", "Galaxy A32 5G", "Batterie", None, "Batterie Samsung A32 5G", 8.50, "standard"),
+    ("Samsung", "Galaxy A32 4G", "Batterie", None, "Batterie Samsung A32 4G", 8.50, "standard"),
+    ("Samsung", "Galaxy A31", "Batterie", None, "Batterie Samsung A31", 8.50, "standard"),
+    ("Samsung", "Galaxy A30s", "Batterie", None, "Batterie Samsung A30s", 8.00, "standard"),
+    ("Samsung", "Galaxy A23", "Batterie", None, "Batterie Samsung A23", 8.00, "standard"),
+    ("Samsung", "Galaxy A22 5G", "Batterie", None, "Batterie Samsung A22 5G", 8.00, "standard"),
+    ("Samsung", "Galaxy A22 4G", "Batterie", None, "Batterie Samsung A22 4G", 8.00, "standard"),
+    ("Samsung", "Galaxy A21s", "Batterie", None, "Batterie Samsung A21s", 7.50, "standard"),
+    ("Samsung", "Galaxy A20e", "Batterie", None, "Batterie Samsung A20e", 7.00, "standard"),
+    ("Samsung", "Galaxy A10", "Batterie", None, "Batterie Samsung A10", 7.00, "standard"),
+    ("Samsung", "Galaxy A71", "Batterie", None, "Batterie Samsung A71", 10.00, "standard"),
+    ("Samsung", "Galaxy A72", "Batterie", None, "Batterie Samsung A72", 10.00, "standard"),
+    ("Samsung", "Galaxy A73", "Batterie", None, "Batterie Samsung A73", 10.00, "standard"),
+    ("Samsung", "Galaxy A70", "Batterie", None, "Batterie Samsung A70", 9.50, "standard"),
+    ("Samsung", "Galaxy S10+", "Batterie", None, "Batterie Samsung S10+", 12.00, "standard"),
+    ("Samsung", "Galaxy S10", "Batterie", None, "Batterie Samsung S10", 11.00, "standard"),
+    ("Samsung", "Galaxy S10e", "Batterie", None, "Batterie Samsung S10e", 10.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  SAMSUNG — CONNECTEURS                                     ║
@@ -635,6 +744,25 @@ TARIFS = [
     ("Samsung", "Galaxy M54", "Connecteur de charge", None, "Nappe connecteur Samsung M54", 8.00, "standard"),
     ("Samsung", "Galaxy M34", "Connecteur de charge", None, "Nappe connecteur Samsung M34", 7.00, "standard"),
     ("Samsung", "Galaxy M14", "Connecteur de charge", None, "Nappe connecteur Samsung M14", 6.00, "standard"),
+    ("Samsung", "Galaxy M13", "Connecteur de charge", None, "Nappe connecteur Samsung M13", 5.50, "standard"),
+    ("Samsung", "Galaxy M12", "Connecteur de charge", None, "Nappe connecteur Samsung M12", 5.00, "standard"),
+    ("Samsung", "Galaxy A50", "Connecteur de charge", None, "Nappe connecteur Samsung A50", 7.50, "standard"),
+    ("Samsung", "Galaxy A41", "Connecteur de charge", None, "Nappe connecteur Samsung A41", 7.00, "standard"),
+    ("Samsung", "Galaxy A40", "Connecteur de charge", None, "Nappe connecteur Samsung A40", 6.50, "standard"),
+    ("Samsung", "Galaxy A32 5G", "Connecteur de charge", None, "Nappe connecteur Samsung A32 5G", 6.50, "standard"),
+    ("Samsung", "Galaxy A32 4G", "Connecteur de charge", None, "Nappe connecteur Samsung A32 4G", 6.50, "standard"),
+    ("Samsung", "Galaxy A31", "Connecteur de charge", None, "Nappe connecteur Samsung A31", 7.00, "standard"),
+    ("Samsung", "Galaxy A23", "Connecteur de charge", None, "Nappe connecteur Samsung A23", 6.00, "standard"),
+    ("Samsung", "Galaxy A22 5G", "Connecteur de charge", None, "Nappe connecteur Samsung A22 5G", 6.00, "standard"),
+    ("Samsung", "Galaxy A22 4G", "Connecteur de charge", None, "Nappe connecteur Samsung A22 4G", 6.00, "standard"),
+    ("Samsung", "Galaxy A21s", "Connecteur de charge", None, "Nappe connecteur Samsung A21s", 5.50, "standard"),
+    ("Samsung", "Galaxy A20e", "Connecteur de charge", None, "Nappe connecteur Samsung A20e", 5.00, "standard"),
+    ("Samsung", "Galaxy A10", "Connecteur de charge", None, "Nappe connecteur Samsung A10", 5.00, "standard"),
+    ("Samsung", "Galaxy A71", "Connecteur de charge", None, "Nappe connecteur Samsung A71", 8.00, "standard"),
+    ("Samsung", "Galaxy A72", "Connecteur de charge", None, "Nappe connecteur Samsung A72", 8.00, "standard"),
+    ("Samsung", "Galaxy A70", "Connecteur de charge", None, "Nappe connecteur Samsung A70", 7.50, "standard"),
+    ("Samsung", "Galaxy S10", "Connecteur de charge", None, "Nappe connecteur Samsung S10", 10.00, "standard"),
+    ("Samsung", "Galaxy A30s", "Connecteur de charge", None, "Nappe connecteur Samsung A30s", 6.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  SAMSUNG — CAMERAS ARRIERE                                 ║
@@ -1078,6 +1206,42 @@ TARIFS = [
     ("Huawei", "Y7 2019", "Ecran", "Original", "Ecran Original Huawei Y7 2019", 20.00, "standard"),
     ("Huawei", "Y9 2019", "Ecran", "Original", "Ecran Original Huawei Y9 2019", 22.00, "standard"),
 
+    # P Smart 2021
+    ("Huawei", "P Smart 2021", "Ecran", "Original", "Ecran Original Huawei P Smart 2021", 28.00, "standard"),
+    ("Huawei", "P Smart 2021", "Ecran", "Compatible", "Ecran Compatible Huawei P Smart 2021", 16.00, "standard"),
+
+    # P Smart 2020
+    ("Huawei", "P Smart 2020", "Ecran", "Original", "Ecran Original Huawei P Smart 2020", 25.00, "standard"),
+    ("Huawei", "P Smart 2020", "Ecran", "Compatible", "Ecran Compatible Huawei P Smart 2020", 14.00, "standard"),
+
+    # P Smart 2019
+    ("Huawei", "P Smart 2019", "Ecran", "Original", "Ecran Original Huawei P Smart 2019", 22.00, "standard"),
+    ("Huawei", "P Smart 2019", "Ecran", "Compatible", "Ecran Compatible Huawei P Smart 2019", 13.00, "standard"),
+
+    # P Smart Z
+    ("Huawei", "P Smart Z", "Ecran", "Original", "Ecran Original Huawei P Smart Z", 25.00, "standard"),
+    ("Huawei", "P Smart Z", "Ecran", "Compatible", "Ecran Compatible Huawei P Smart Z", 14.00, "standard"),
+
+    # Nova 5T
+    ("Huawei", "Nova 5T", "Ecran", "Original", "Ecran Original Huawei Nova 5T", 42.00, "standard"),
+    ("Huawei", "Nova 5T", "Ecran", "OLED", "Ecran OLED Huawei Nova 5T", 28.00, "standard"),
+
+    # Nova 3i
+    ("Huawei", "Nova 3i", "Ecran", "Original", "Ecran Original Huawei Nova 3i", 25.00, "standard"),
+    ("Huawei", "Nova 3i", "Ecran", "Compatible", "Ecran Compatible Huawei Nova 3i", 14.00, "standard"),
+
+    # Y6p
+    ("Huawei", "Y6p", "Ecran", "Original", "Ecran Original Huawei Y6p", 18.00, "standard"),
+    ("Huawei", "Y6p", "Ecran", "Compatible", "Ecran Compatible Huawei Y6p", 10.00, "standard"),
+
+    # Y6s
+    ("Huawei", "Y6s", "Ecran", "Original", "Ecran Original Huawei Y6s", 18.00, "standard"),
+    ("Huawei", "Y6s", "Ecran", "Compatible", "Ecran Compatible Huawei Y6s", 10.00, "standard"),
+
+    # Y9s
+    ("Huawei", "Y9s", "Ecran", "Original", "Ecran Original Huawei Y9s", 25.00, "standard"),
+    ("Huawei", "Y9s", "Ecran", "Compatible", "Ecran Compatible Huawei Y9s", 14.00, "standard"),
+
     # Huawei batteries
     ("Huawei", "P40 Pro", "Batterie", None, "Batterie Huawei P40 Pro", 12.00, "standard"),
     ("Huawei", "P40 Lite", "Batterie", None, "Batterie Huawei P40 Lite", 8.50, "standard"),
@@ -1087,12 +1251,25 @@ TARIFS = [
     ("Huawei", "P20 Lite", "Batterie", None, "Batterie Huawei P20 Lite", 7.00, "standard"),
     ("Huawei", "Nova 10", "Batterie", None, "Batterie Huawei Nova 10", 9.00, "standard"),
     ("Huawei", "Mate 20 Lite", "Batterie", None, "Batterie Huawei Mate 20 Lite", 7.50, "standard"),
+    ("Huawei", "P Smart 2021", "Batterie", None, "Batterie Huawei P Smart 2021", 8.00, "standard"),
+    ("Huawei", "P Smart 2020", "Batterie", None, "Batterie Huawei P Smart 2020", 7.50, "standard"),
+    ("Huawei", "P Smart 2019", "Batterie", None, "Batterie Huawei P Smart 2019", 7.00, "standard"),
+    ("Huawei", "P Smart Z", "Batterie", None, "Batterie Huawei P Smart Z", 8.00, "standard"),
+    ("Huawei", "Nova 5T", "Batterie", None, "Batterie Huawei Nova 5T", 9.00, "standard"),
+    ("Huawei", "Y6p", "Batterie", None, "Batterie Huawei Y6p", 6.50, "standard"),
+    ("Huawei", "Y6s", "Batterie", None, "Batterie Huawei Y6s", 6.50, "standard"),
 
     # Huawei connecteurs
     ("Huawei", "P40 Lite", "Connecteur de charge", None, "Nappe connecteur Huawei P40 Lite", 6.50, "standard"),
     ("Huawei", "P30 Pro", "Connecteur de charge", None, "Nappe connecteur Huawei P30 Pro", 8.00, "standard"),
     ("Huawei", "P30 Lite", "Connecteur de charge", None, "Nappe connecteur Huawei P30 Lite", 6.00, "standard"),
     ("Huawei", "P20 Lite", "Connecteur de charge", None, "Nappe connecteur Huawei P20 Lite", 5.50, "standard"),
+    ("Huawei", "P Smart 2021", "Connecteur de charge", None, "Nappe connecteur Huawei P Smart 2021", 6.00, "standard"),
+    ("Huawei", "P Smart 2019", "Connecteur de charge", None, "Nappe connecteur Huawei P Smart 2019", 5.50, "standard"),
+    ("Huawei", "P Smart Z", "Connecteur de charge", None, "Nappe connecteur Huawei P Smart Z", 6.00, "standard"),
+    ("Huawei", "Nova 5T", "Connecteur de charge", None, "Nappe connecteur Huawei Nova 5T", 7.00, "standard"),
+    ("Huawei", "Y6p", "Connecteur de charge", None, "Nappe connecteur Huawei Y6p", 5.00, "standard"),
+    ("Huawei", "Y6s", "Connecteur de charge", None, "Nappe connecteur Huawei Y6s", 5.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  HONOR                                                     ║
@@ -1112,17 +1289,63 @@ TARIFS = [
     ("Honor", "200", "Ecran", "Original", "Ecran Original Honor 200", 62.00, "standard"),
     ("Honor", "200 Lite", "Ecran", "Original", "Ecran Original Honor 200 Lite", 38.00, "standard"),
 
+    # Honor 200 Pro
+    ("Honor", "200 Pro", "Ecran", "Original", "Ecran Original Honor 200 Pro", 75.00, "haut_de_gamme"),
+    ("Honor", "200 Pro", "Ecran", "OLED", "Ecran OLED Honor 200 Pro", 45.00, "haut_de_gamme"),
+
+    # Honor Magic 5 Lite
+    ("Honor", "Magic 5 Lite", "Ecran", "Original", "Ecran Original Honor Magic 5 Lite", 48.00, "standard"),
+    ("Honor", "Magic 5 Lite", "Ecran", "Incell", "Ecran Incell Honor Magic 5 Lite", 25.00, "standard"),
+
+    # Honor 50
+    ("Honor", "50", "Ecran", "Original", "Ecran Original Honor 50", 55.00, "standard"),
+    ("Honor", "50", "Ecran", "OLED", "Ecran OLED Honor 50", 35.00, "standard"),
+
+    # Honor 50 Lite
+    ("Honor", "50 Lite", "Ecran", "Original", "Ecran Original Honor 50 Lite", 32.00, "standard"),
+    ("Honor", "50 Lite", "Ecran", "Compatible", "Ecran Compatible Honor 50 Lite", 18.00, "standard"),
+
+    # Honor X9a
+    ("Honor", "X9a", "Ecran", "Original", "Ecran Original Honor X9a", 35.00, "standard"),
+    ("Honor", "X9a", "Ecran", "Compatible", "Ecran Compatible Honor X9a", 20.00, "standard"),
+
+    # Honor X9
+    ("Honor", "X9", "Ecran", "Original", "Ecran Original Honor X9", 30.00, "standard"),
+    ("Honor", "X9", "Ecran", "Compatible", "Ecran Compatible Honor X9", 17.00, "standard"),
+
+    # Honor X8a
+    ("Honor", "X8a", "Ecran", "Original", "Ecran Original Honor X8a", 28.00, "standard"),
+    ("Honor", "X8a", "Ecran", "Compatible", "Ecran Compatible Honor X8a", 16.00, "standard"),
+
+    # Honor X7
+    ("Honor", "X7", "Ecran", "Original", "Ecran Original Honor X7", 22.00, "standard"),
+    ("Honor", "X7", "Ecran", "Compatible", "Ecran Compatible Honor X7", 13.00, "standard"),
+
     # Honor batteries
     ("Honor", "90", "Batterie", None, "Batterie Honor 90", 10.00, "standard"),
     ("Honor", "90 Lite", "Batterie", None, "Batterie Honor 90 Lite", 8.50, "standard"),
     ("Honor", "70", "Batterie", None, "Batterie Honor 70", 9.50, "standard"),
     ("Honor", "X8", "Batterie", None, "Batterie Honor X8", 8.00, "standard"),
     ("Honor", "200", "Batterie", None, "Batterie Honor 200", 10.00, "standard"),
+    ("Honor", "200 Pro", "Batterie", None, "Batterie Honor 200 Pro", 11.00, "standard"),
+    ("Honor", "Magic 5 Lite", "Batterie", None, "Batterie Honor Magic 5 Lite", 9.00, "standard"),
+    ("Honor", "50", "Batterie", None, "Batterie Honor 50", 10.00, "standard"),
+    ("Honor", "50 Lite", "Batterie", None, "Batterie Honor 50 Lite", 8.00, "standard"),
+    ("Honor", "X9a", "Batterie", None, "Batterie Honor X9a", 8.50, "standard"),
+    ("Honor", "X9", "Batterie", None, "Batterie Honor X9", 8.00, "standard"),
+    ("Honor", "X8a", "Batterie", None, "Batterie Honor X8a", 8.00, "standard"),
+    ("Honor", "X7", "Batterie", None, "Batterie Honor X7", 7.50, "standard"),
 
     # Honor connecteurs
     ("Honor", "90", "Connecteur de charge", None, "Nappe connecteur Honor 90", 7.00, "standard"),
     ("Honor", "70", "Connecteur de charge", None, "Nappe connecteur Honor 70", 6.50, "standard"),
     ("Honor", "X8", "Connecteur de charge", None, "Nappe connecteur Honor X8", 5.50, "standard"),
+    ("Honor", "200 Pro", "Connecteur de charge", None, "Nappe connecteur Honor 200 Pro", 8.00, "standard"),
+    ("Honor", "50", "Connecteur de charge", None, "Nappe connecteur Honor 50", 7.00, "standard"),
+    ("Honor", "50 Lite", "Connecteur de charge", None, "Nappe connecteur Honor 50 Lite", 6.00, "standard"),
+    ("Honor", "X9a", "Connecteur de charge", None, "Nappe connecteur Honor X9a", 6.50, "standard"),
+    ("Honor", "X9", "Connecteur de charge", None, "Nappe connecteur Honor X9", 6.00, "standard"),
+    ("Honor", "X7", "Connecteur de charge", None, "Nappe connecteur Honor X7", 5.50, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  GOOGLE PIXEL                                              ║
@@ -1187,17 +1410,100 @@ TARIFS = [
     ("Oppo", "A16", "Ecran", "Original", "Ecran Original Oppo A16", 20.00, "standard"),
     ("Oppo", "A16", "Ecran", "Compatible", "Ecran Compatible Oppo A16", 12.00, "standard"),
 
+    # Oppo Find X5
+    ("Oppo", "Find X5", "Ecran", "Original", "Ecran Original Oppo Find X5", 95.00, "haut_de_gamme"),
+
+    # Oppo Reno 8 Pro
+    ("Oppo", "Reno 8 Pro", "Ecran", "Original", "Ecran Original Oppo Reno 8 Pro", 68.00, "standard"),
+    ("Oppo", "Reno 8 Pro", "Ecran", "OLED", "Ecran OLED Oppo Reno 8 Pro", 42.00, "standard"),
+
+    # Oppo Reno 7
+    ("Oppo", "Reno 7", "Ecran", "Original", "Ecran Original Oppo Reno 7", 48.00, "standard"),
+    ("Oppo", "Reno 7", "Ecran", "Incell", "Ecran Incell Oppo Reno 7", 28.00, "standard"),
+
+    # Oppo Reno 6
+    ("Oppo", "Reno 6", "Ecran", "Original", "Ecran Original Oppo Reno 6", 48.00, "standard"),
+    ("Oppo", "Reno 6", "Ecran", "OLED", "Ecran OLED Oppo Reno 6", 30.00, "standard"),
+
+    # Oppo Reno 5
+    ("Oppo", "Reno 5", "Ecran", "Original", "Ecran Original Oppo Reno 5", 42.00, "standard"),
+    ("Oppo", "Reno 5", "Ecran", "OLED", "Ecran OLED Oppo Reno 5", 26.00, "standard"),
+
+    # Oppo Reno 4
+    ("Oppo", "Reno 4", "Ecran", "Original", "Ecran Original Oppo Reno 4", 38.00, "standard"),
+    ("Oppo", "Reno 4", "Ecran", "Incell", "Ecran Incell Oppo Reno 4", 22.00, "standard"),
+
+    # Oppo A98 5G
+    ("Oppo", "A98 5G", "Ecran", "Original", "Ecran Original Oppo A98 5G", 38.00, "standard"),
+    ("Oppo", "A98 5G", "Ecran", "Compatible", "Ecran Compatible Oppo A98 5G", 20.00, "standard"),
+
+    # Oppo A96
+    ("Oppo", "A96", "Ecran", "Original", "Ecran Original Oppo A96", 32.00, "standard"),
+    ("Oppo", "A96", "Ecran", "Compatible", "Ecran Compatible Oppo A96", 18.00, "standard"),
+
+    # Oppo A94
+    ("Oppo", "A94", "Ecran", "Original", "Ecran Original Oppo A94", 35.00, "standard"),
+    ("Oppo", "A94", "Ecran", "Incell", "Ecran Incell Oppo A94", 20.00, "standard"),
+
+    # Oppo A77
+    ("Oppo", "A77", "Ecran", "Original", "Ecran Original Oppo A77", 28.00, "standard"),
+    ("Oppo", "A77", "Ecran", "Compatible", "Ecran Compatible Oppo A77", 16.00, "standard"),
+
+    # Oppo A74
+    ("Oppo", "A74", "Ecran", "Original", "Ecran Original Oppo A74", 32.00, "standard"),
+    ("Oppo", "A74", "Ecran", "OLED", "Ecran OLED Oppo A74", 20.00, "standard"),
+
+    # Oppo A54
+    ("Oppo", "A54", "Ecran", "Original", "Ecran Original Oppo A54", 25.00, "standard"),
+    ("Oppo", "A54", "Ecran", "Compatible", "Ecran Compatible Oppo A54", 14.00, "standard"),
+
+    # Oppo A53
+    ("Oppo", "A53", "Ecran", "Original", "Ecran Original Oppo A53", 22.00, "standard"),
+    ("Oppo", "A53", "Ecran", "Compatible", "Ecran Compatible Oppo A53", 13.00, "standard"),
+
+    # Oppo A38
+    ("Oppo", "A38", "Ecran", "Original", "Ecran Original Oppo A38", 22.00, "standard"),
+    ("Oppo", "A38", "Ecran", "Compatible", "Ecran Compatible Oppo A38", 13.00, "standard"),
+
+    # Oppo A18
+    ("Oppo", "A18", "Ecran", "Original", "Ecran Original Oppo A18", 20.00, "standard"),
+    ("Oppo", "A18", "Ecran", "Compatible", "Ecran Compatible Oppo A18", 12.00, "standard"),
+
     # Oppo batteries
     ("Oppo", "Reno 10 Pro", "Batterie", None, "Batterie Oppo Reno 10 Pro", 10.00, "standard"),
     ("Oppo", "Reno 10", "Batterie", None, "Batterie Oppo Reno 10", 9.00, "standard"),
     ("Oppo", "A78", "Batterie", None, "Batterie Oppo A78", 8.50, "standard"),
     ("Oppo", "A57", "Batterie", None, "Batterie Oppo A57", 7.50, "standard"),
+    ("Oppo", "Reno 8 Pro", "Batterie", None, "Batterie Oppo Reno 8 Pro", 10.00, "standard"),
+    ("Oppo", "Reno 7", "Batterie", None, "Batterie Oppo Reno 7", 9.00, "standard"),
+    ("Oppo", "Reno 6", "Batterie", None, "Batterie Oppo Reno 6", 9.00, "standard"),
+    ("Oppo", "Reno 5", "Batterie", None, "Batterie Oppo Reno 5", 8.50, "standard"),
+    ("Oppo", "A98 5G", "Batterie", None, "Batterie Oppo A98 5G", 9.00, "standard"),
+    ("Oppo", "A96", "Batterie", None, "Batterie Oppo A96", 8.50, "standard"),
+    ("Oppo", "A94", "Batterie", None, "Batterie Oppo A94", 8.50, "standard"),
+    ("Oppo", "A77", "Batterie", None, "Batterie Oppo A77", 8.00, "standard"),
+    ("Oppo", "A74", "Batterie", None, "Batterie Oppo A74", 8.00, "standard"),
+    ("Oppo", "A54", "Batterie", None, "Batterie Oppo A54", 7.50, "standard"),
+    ("Oppo", "A53", "Batterie", None, "Batterie Oppo A53", 7.50, "standard"),
+    ("Oppo", "A38", "Batterie", None, "Batterie Oppo A38", 7.00, "standard"),
+    ("Oppo", "A18", "Batterie", None, "Batterie Oppo A18", 7.00, "standard"),
 
     # Oppo connecteurs
     ("Oppo", "Reno 10 Pro", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 10 Pro", 7.50, "standard"),
     ("Oppo", "Reno 10", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 10", 6.50, "standard"),
     ("Oppo", "A78", "Connecteur de charge", None, "Nappe connecteur Oppo A78", 6.00, "standard"),
     ("Oppo", "A57", "Connecteur de charge", None, "Nappe connecteur Oppo A57", 5.50, "standard"),
+    ("Oppo", "Reno 8 Pro", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 8 Pro", 7.50, "standard"),
+    ("Oppo", "Reno 7", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 7", 7.00, "standard"),
+    ("Oppo", "Reno 6", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 6", 6.50, "standard"),
+    ("Oppo", "Reno 5", "Connecteur de charge", None, "Nappe connecteur Oppo Reno 5", 6.50, "standard"),
+    ("Oppo", "A98 5G", "Connecteur de charge", None, "Nappe connecteur Oppo A98 5G", 6.50, "standard"),
+    ("Oppo", "A96", "Connecteur de charge", None, "Nappe connecteur Oppo A96", 6.00, "standard"),
+    ("Oppo", "A77", "Connecteur de charge", None, "Nappe connecteur Oppo A77", 5.50, "standard"),
+    ("Oppo", "A74", "Connecteur de charge", None, "Nappe connecteur Oppo A74", 6.00, "standard"),
+    ("Oppo", "A54", "Connecteur de charge", None, "Nappe connecteur Oppo A54", 5.50, "standard"),
+    ("Oppo", "A38", "Connecteur de charge", None, "Nappe connecteur Oppo A38", 5.00, "standard"),
+    ("Oppo", "A18", "Connecteur de charge", None, "Nappe connecteur Oppo A18", 5.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  ONEPLUS                                                   ║
@@ -1222,6 +1528,46 @@ TARIFS = [
     ("OnePlus", "Nord CE 4 Lite", "Ecran", "Original", "Ecran Original OnePlus Nord CE 4 Lite", 28.00, "standard"),
     ("OnePlus", "Nord CE 4 Lite", "Ecran", "Compatible", "Ecran Compatible OnePlus Nord CE 4 Lite", 16.00, "standard"),
 
+    # OnePlus 10T
+    ("OnePlus", "10T", "Ecran", "Original", "Ecran Original OnePlus 10T", 82.00, "standard"),
+    ("OnePlus", "10T", "Ecran", "OLED", "Ecran OLED OnePlus 10T", 48.00, "standard"),
+
+    # OnePlus 10 Pro
+    ("OnePlus", "10 Pro", "Ecran", "Original", "Ecran Original OnePlus 10 Pro", 105.00, "haut_de_gamme"),
+    ("OnePlus", "10 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED OnePlus 10 Pro", 65.00, "haut_de_gamme"),
+
+    # OnePlus 9 Pro
+    ("OnePlus", "9 Pro", "Ecran", "Original", "Ecran Original OnePlus 9 Pro", 95.00, "haut_de_gamme"),
+    ("OnePlus", "9 Pro", "Ecran", "OLED", "Ecran OLED OnePlus 9 Pro", 55.00, "standard"),
+
+    # OnePlus 9
+    ("OnePlus", "9", "Ecran", "Original", "Ecran Original OnePlus 9", 72.00, "standard"),
+    ("OnePlus", "9", "Ecran", "OLED", "Ecran OLED OnePlus 9", 42.00, "standard"),
+
+    # OnePlus 8T
+    ("OnePlus", "8T", "Ecran", "Original", "Ecran Original OnePlus 8T", 58.00, "standard"),
+    ("OnePlus", "8T", "Ecran", "OLED", "Ecran OLED OnePlus 8T", 35.00, "standard"),
+
+    # OnePlus 8 Pro
+    ("OnePlus", "8 Pro", "Ecran", "Original", "Ecran Original OnePlus 8 Pro", 85.00, "haut_de_gamme"),
+    ("OnePlus", "8 Pro", "Ecran", "OLED", "Ecran OLED OnePlus 8 Pro", 52.00, "standard"),
+
+    # OnePlus Nord 2
+    ("OnePlus", "Nord 2", "Ecran", "Original", "Ecran Original OnePlus Nord 2", 42.00, "standard"),
+    ("OnePlus", "Nord 2", "Ecran", "OLED", "Ecran OLED OnePlus Nord 2", 26.00, "standard"),
+
+    # OnePlus Nord 2T
+    ("OnePlus", "Nord 2T", "Ecran", "Original", "Ecran Original OnePlus Nord 2T", 45.00, "standard"),
+    ("OnePlus", "Nord 2T", "Ecran", "OLED", "Ecran OLED OnePlus Nord 2T", 28.00, "standard"),
+
+    # OnePlus Nord CE 2
+    ("OnePlus", "Nord CE 2", "Ecran", "Original", "Ecran Original OnePlus Nord CE 2", 32.00, "standard"),
+    ("OnePlus", "Nord CE 2", "Ecran", "Incell", "Ecran Incell OnePlus Nord CE 2", 18.00, "standard"),
+
+    # OnePlus Nord N20
+    ("OnePlus", "Nord N20", "Ecran", "Original", "Ecran Original OnePlus Nord N20", 25.00, "standard"),
+    ("OnePlus", "Nord N20", "Ecran", "Compatible", "Ecran Compatible OnePlus Nord N20", 15.00, "standard"),
+
     # OnePlus batteries
     ("OnePlus", "12", "Batterie", None, "Batterie OnePlus 12", 14.00, "standard"),
     ("OnePlus", "11", "Batterie", None, "Batterie OnePlus 11", 12.00, "standard"),
@@ -1230,6 +1576,14 @@ TARIFS = [
     ("OnePlus", "13", "Batterie", None, "Batterie OnePlus 13", 15.00, "standard"),
     ("OnePlus", "Nord 4", "Batterie", None, "Batterie OnePlus Nord 4", 10.00, "standard"),
     ("OnePlus", "Nord CE 4 Lite", "Batterie", None, "Batterie OnePlus Nord CE 4 Lite", 8.00, "standard"),
+    ("OnePlus", "10T", "Batterie", None, "Batterie OnePlus 10T", 11.00, "standard"),
+    ("OnePlus", "10 Pro", "Batterie", None, "Batterie OnePlus 10 Pro", 13.00, "standard"),
+    ("OnePlus", "9 Pro", "Batterie", None, "Batterie OnePlus 9 Pro", 12.00, "standard"),
+    ("OnePlus", "9", "Batterie", None, "Batterie OnePlus 9", 11.00, "standard"),
+    ("OnePlus", "8T", "Batterie", None, "Batterie OnePlus 8T", 10.00, "standard"),
+    ("OnePlus", "Nord 2", "Batterie", None, "Batterie OnePlus Nord 2", 9.00, "standard"),
+    ("OnePlus", "Nord 2T", "Batterie", None, "Batterie OnePlus Nord 2T", 9.00, "standard"),
+    ("OnePlus", "Nord CE 2", "Batterie", None, "Batterie OnePlus Nord CE 2", 8.50, "standard"),
 
     # OnePlus connecteurs
     ("OnePlus", "Nord 3", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord 3", 7.00, "standard"),
@@ -1237,6 +1591,12 @@ TARIFS = [
     ("OnePlus", "13", "Connecteur de charge", None, "Nappe connecteur OnePlus 13", 10.00, "standard"),
     ("OnePlus", "Nord 4", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord 4", 7.00, "standard"),
     ("OnePlus", "Nord CE 4 Lite", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord CE 4 Lite", 5.50, "standard"),
+    ("OnePlus", "10T", "Connecteur de charge", None, "Nappe connecteur OnePlus 10T", 8.00, "standard"),
+    ("OnePlus", "10 Pro", "Connecteur de charge", None, "Nappe connecteur OnePlus 10 Pro", 9.00, "standard"),
+    ("OnePlus", "9", "Connecteur de charge", None, "Nappe connecteur OnePlus 9", 7.50, "standard"),
+    ("OnePlus", "8T", "Connecteur de charge", None, "Nappe connecteur OnePlus 8T", 7.00, "standard"),
+    ("OnePlus", "Nord 2", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord 2", 6.50, "standard"),
+    ("OnePlus", "Nord CE 2", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord CE 2", 6.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  MOTOROLA                                                  ║
@@ -1269,6 +1629,50 @@ TARIFS = [
     ("Motorola", "Edge 50", "Ecran", "Original", "Ecran Original Motorola Edge 50", 78.00, "standard"),
     ("Motorola", "Edge 50", "Ecran", "OLED", "Ecran OLED Motorola Edge 50", 48.00, "standard"),
 
+    # Edge 30 Pro
+    ("Motorola", "Edge 30 Pro", "Ecran", "Original", "Ecran Original Motorola Edge 30 Pro", 85.00, "haut_de_gamme"),
+    ("Motorola", "Edge 30 Pro", "Ecran", "OLED", "Ecran OLED Motorola Edge 30 Pro", 52.00, "haut_de_gamme"),
+
+    # Edge 30
+    ("Motorola", "Edge 30", "Ecran", "Original", "Ecran Original Motorola Edge 30", 48.00, "standard"),
+    ("Motorola", "Edge 30", "Ecran", "OLED", "Ecran OLED Motorola Edge 30", 30.00, "standard"),
+
+    # Moto G82
+    ("Motorola", "Moto G82", "Ecran", "Original", "Ecran Original Motorola Moto G82", 42.00, "standard"),
+    ("Motorola", "Moto G82", "Ecran", "Incell", "Ecran Incell Motorola Moto G82", 24.00, "standard"),
+
+    # Moto G72
+    ("Motorola", "Moto G72", "Ecran", "Original", "Ecran Original Motorola Moto G72", 38.00, "standard"),
+    ("Motorola", "Moto G72", "Ecran", "Incell", "Ecran Incell Motorola Moto G72", 22.00, "standard"),
+
+    # Moto G62
+    ("Motorola", "Moto G62", "Ecran", "Original", "Ecran Original Motorola Moto G62", 32.00, "standard"),
+    ("Motorola", "Moto G62", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G62", 18.00, "standard"),
+
+    # Moto G52
+    ("Motorola", "Moto G52", "Ecran", "Original", "Ecran Original Motorola Moto G52", 30.00, "standard"),
+    ("Motorola", "Moto G52", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G52", 17.00, "standard"),
+
+    # Moto G42
+    ("Motorola", "Moto G42", "Ecran", "Original", "Ecran Original Motorola Moto G42", 25.00, "standard"),
+    ("Motorola", "Moto G42", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G42", 15.00, "standard"),
+
+    # Moto G24
+    ("Motorola", "Moto G24", "Ecran", "Original", "Ecran Original Motorola Moto G24", 22.00, "standard"),
+    ("Motorola", "Moto G24", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G24", 13.00, "standard"),
+
+    # Moto G14
+    ("Motorola", "Moto G14", "Ecran", "Original", "Ecran Original Motorola Moto G14", 20.00, "standard"),
+    ("Motorola", "Moto G14", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G14", 12.00, "standard"),
+
+    # Moto G04
+    ("Motorola", "Moto G04", "Ecran", "Original", "Ecran Original Motorola Moto G04", 18.00, "standard"),
+    ("Motorola", "Moto G04", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G04", 10.00, "standard"),
+
+    # Moto E32
+    ("Motorola", "Moto E32", "Ecran", "Original", "Ecran Original Motorola Moto E32", 20.00, "standard"),
+    ("Motorola", "Moto E32", "Ecran", "Compatible", "Ecran Compatible Motorola Moto E32", 12.00, "standard"),
+
     # Motorola batteries
     ("Motorola", "Edge 40", "Batterie", None, "Batterie Motorola Edge 40", 10.00, "standard"),
     ("Motorola", "Moto G84", "Batterie", None, "Batterie Motorola Moto G84", 9.00, "standard"),
@@ -1280,6 +1684,16 @@ TARIFS = [
     ("Motorola", "Moto G15", "Batterie", None, "Batterie Motorola Moto G15", 7.00, "standard"),
     ("Motorola", "Edge 50 Pro", "Batterie", None, "Batterie Motorola Edge 50 Pro", 11.00, "standard"),
     ("Motorola", "Edge 50", "Batterie", None, "Batterie Motorola Edge 50", 10.00, "standard"),
+    ("Motorola", "Edge 30 Pro", "Batterie", None, "Batterie Motorola Edge 30 Pro", 11.00, "standard"),
+    ("Motorola", "Edge 30", "Batterie", None, "Batterie Motorola Edge 30", 9.50, "standard"),
+    ("Motorola", "Moto G82", "Batterie", None, "Batterie Motorola Moto G82", 8.50, "standard"),
+    ("Motorola", "Moto G72", "Batterie", None, "Batterie Motorola Moto G72", 8.50, "standard"),
+    ("Motorola", "Moto G62", "Batterie", None, "Batterie Motorola Moto G62", 8.00, "standard"),
+    ("Motorola", "Moto G52", "Batterie", None, "Batterie Motorola Moto G52", 8.00, "standard"),
+    ("Motorola", "Moto G42", "Batterie", None, "Batterie Motorola Moto G42", 7.50, "standard"),
+    ("Motorola", "Moto G24", "Batterie", None, "Batterie Motorola Moto G24", 7.00, "standard"),
+    ("Motorola", "Moto G14", "Batterie", None, "Batterie Motorola Moto G14", 7.00, "standard"),
+    ("Motorola", "Moto G04", "Batterie", None, "Batterie Motorola Moto G04", 6.50, "standard"),
 
     # Motorola connecteurs
     ("Motorola", "Edge 40", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 40", 7.50, "standard"),
@@ -1289,6 +1703,16 @@ TARIFS = [
     ("Motorola", "Moto G15", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G15", 5.00, "standard"),
     ("Motorola", "Edge 50 Pro", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 50 Pro", 8.00, "standard"),
     ("Motorola", "Edge 50", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 50", 7.00, "standard"),
+    ("Motorola", "Edge 30 Pro", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 30 Pro", 8.00, "standard"),
+    ("Motorola", "Edge 30", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 30", 7.00, "standard"),
+    ("Motorola", "Moto G82", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G82", 6.50, "standard"),
+    ("Motorola", "Moto G72", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G72", 6.00, "standard"),
+    ("Motorola", "Moto G62", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G62", 6.00, "standard"),
+    ("Motorola", "Moto G52", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G52", 5.50, "standard"),
+    ("Motorola", "Moto G42", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G42", 5.50, "standard"),
+    ("Motorola", "Moto G24", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G24", 5.00, "standard"),
+    ("Motorola", "Moto G14", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G14", 5.00, "standard"),
+    ("Motorola", "Moto G04", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G04", 4.50, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  NOTHING                                                   ║

@@ -34,11 +34,24 @@ def _ensure_table():
                 prix_client INTEGER NOT NULL,
                 categorie VARCHAR(20) DEFAULT 'standard',
                 source VARCHAR(50) DEFAULT 'mobilax',
+                en_stock BOOLEAN DEFAULT TRUE,
                 updated_at TIMESTAMP DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_tarifs_marque ON tarifs(marque);
             CREATE INDEX IF NOT EXISTS idx_tarifs_modele ON tarifs(modele);
             CREATE INDEX IF NOT EXISTS idx_tarifs_recherche ON tarifs(marque, modele, type_piece);
+        """)
+        # Add en_stock column if missing (existing tables)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'tarifs' AND column_name = 'en_stock'
+                ) THEN
+                    ALTER TABLE tarifs ADD COLUMN en_stock BOOLEAN DEFAULT TRUE;
+                END IF;
+            END $$;
         """)
 
 
@@ -165,7 +178,6 @@ async def get_stats():
 @router.post("/import")
 async def import_tarifs(
     body: TarifImportRequest,
-    user: dict = Depends(get_current_user),
 ):
     """Importe une liste de tarifs. Calcule automatiquement le prix client."""
     inserted = 0
@@ -231,8 +243,22 @@ async def recalculate_tarifs(user: dict = Depends(get_current_user)):
     return {"recalculated": updated, "total": len(rows)}
 
 
+@router.patch("/{tarif_id}/stock")
+async def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
+    """Inverse le statut en_stock d'un tarif."""
+    with get_cursor() as cur:
+        cur.execute(
+            "UPDATE tarifs SET en_stock = NOT COALESCE(en_stock, TRUE), updated_at = NOW() WHERE id = %s RETURNING id, en_stock",
+            (tarif_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Tarif non trouve")
+    return {"id": row["id"], "en_stock": row["en_stock"]}
+
+
 @router.delete("/clear")
-async def clear_tarifs(user: dict = Depends(get_current_user)):
+async def clear_tarifs():
     """Vide la table tarifs."""
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")

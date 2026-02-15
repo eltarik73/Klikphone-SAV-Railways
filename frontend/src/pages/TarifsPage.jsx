@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones } from 'lucide-react';
+import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones, PackageX } from 'lucide-react';
 import api from '../lib/api';
 
 // ─── Constantes ──────────────────────────────────
@@ -119,6 +119,15 @@ export default function TarifsPage() {
     }
   }
 
+  async function handleToggleStock(id) {
+    try {
+      const res = await api.toggleTarifStock(id);
+      setTarifs(prev => prev.map(t => t.id === id ? { ...t, en_stock: res.en_stock } : t));
+    } catch (e) {
+      console.error('Erreur toggle stock:', e);
+    }
+  }
+
   // Filter
   const filtered = useMemo(() => {
     let result = tarifs;
@@ -193,6 +202,24 @@ export default function TarifsPage() {
     });
   }
 
+  // Stock badge component
+  function StockBadge({ tarif }) {
+    const inStock = tarif.en_stock !== false;
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); handleToggleStock(tarif.id); }}
+        className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md transition-all cursor-pointer ${
+          inStock
+            ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+            : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'
+        }`}
+        title={inStock ? 'En stock — cliquer pour marquer en rupture' : 'Rupture — cliquer pour remettre en stock'}
+      >
+        {inStock ? 'En stock' : 'Rupture'}
+      </button>
+    );
+  }
+
   // Get summary for a model row
   function getModelSummary(items) {
     const screenItems = items.filter(t => {
@@ -220,6 +247,8 @@ export default function TarifsPage() {
       otherByType[key].push(t);
     }
 
+    const outOfStock = items.filter(t => t.en_stock === false).length;
+
     return {
       qualityCount,
       screenItems,
@@ -227,6 +256,7 @@ export default function TarifsPage() {
       connecteur: getPrice('connect'),
       camera: getPrice('cam'),
       otherByType,
+      outOfStock,
     };
   }
 
@@ -410,6 +440,11 @@ export default function TarifsPage() {
                                   {summary.qualityCount} qualite{summary.qualityCount > 1 ? 's' : ''} {isModelOpen ? '\u25BC' : '\u25B6'}
                                 </span>
                               )}
+                              {summary.outOfStock > 0 && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-200 font-bold whitespace-nowrap">
+                                  {summary.outOfStock} rupture{summary.outOfStock > 1 ? 's' : ''}
+                                </span>
+                              )}
                             </div>
 
                             {/* Desktop: colored price badges */}
@@ -438,12 +473,13 @@ export default function TarifsPage() {
                                     const Icon = getPieceIcon(type);
                                     return (
                                       <div key={type}
-                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs"
-                                        style={{ background: pc.bg, borderColor: pc.border }}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${pieces[0].en_stock === false ? 'opacity-50' : ''}`}
+                                        style={{ background: pc.bg, borderColor: pieces[0].en_stock === false ? '#fca5a5' : pc.border }}
                                       >
                                         <Icon className="w-3 h-3" style={{ color: pc.color }} />
                                         <span className="font-medium" style={{ color: pc.color }}>{type}</span>
                                         <span className="font-bold" style={{ color: pc.color }}>{formatPrice(pieces[0].prix_client)}</span>
+                                        {pieces[0].en_stock === false && <span className="text-[8px] text-red-500 font-bold">RUPTURE</span>}
                                       </div>
                                     );
                                   })}
@@ -463,14 +499,17 @@ export default function TarifsPage() {
                                       return (
                                         <div
                                           key={i}
-                                          className="rounded-xl border-2 p-3 transition-all hover:shadow-md hover:scale-[1.02]"
-                                          style={{ background: qc.bg, borderColor: qc.border }}
+                                          className={`rounded-xl border-2 p-3 transition-all hover:shadow-md hover:scale-[1.02] ${t.en_stock === false ? 'opacity-50' : ''}`}
+                                          style={{ background: qc.bg, borderColor: t.en_stock === false ? '#fca5a5' : qc.border }}
                                         >
-                                          <div className="flex items-center gap-1.5 mb-2">
-                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} />
-                                            <span className="text-[11px] font-bold" style={{ color: qc.color }}>
-                                              {t.qualite || 'Standard'}
-                                            </span>
+                                          <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} />
+                                              <span className="text-[11px] font-bold" style={{ color: qc.color }}>
+                                                {t.qualite || 'Standard'}
+                                              </span>
+                                            </div>
+                                            <StockBadge tarif={t} />
                                           </div>
                                           <div className="text-2xl font-extrabold leading-none" style={{ color: qc.color }}>
                                             {formatPrice(t.prix_client)}
@@ -501,12 +540,15 @@ export default function TarifsPage() {
                                       return pieces.map((t, i) => (
                                         <div
                                           key={`${type}-${i}`}
-                                          className="rounded-xl border-2 p-3 hover:shadow-md transition-all hover:scale-[1.02]"
-                                          style={{ background: pc.bg, borderColor: pc.border }}
+                                          className={`rounded-xl border-2 p-3 hover:shadow-md transition-all hover:scale-[1.02] ${t.en_stock === false ? 'opacity-50' : ''}`}
+                                          style={{ background: pc.bg, borderColor: t.en_stock === false ? '#fca5a5' : pc.border }}
                                         >
-                                          <div className="flex items-center gap-1.5 mb-2">
-                                            <Icon className="w-3.5 h-3.5" style={{ color: pc.color }} />
-                                            <span className="text-[10px] font-bold uppercase" style={{ color: pc.color }}>{type}</span>
+                                          <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-1.5">
+                                              <Icon className="w-3.5 h-3.5" style={{ color: pc.color }} />
+                                              <span className="text-[10px] font-bold uppercase" style={{ color: pc.color }}>{type}</span>
+                                            </div>
+                                            <StockBadge tarif={t} />
                                           </div>
                                           <div className="text-lg font-extrabold" style={{ color: pc.color }}>
                                             {formatPrice(t.prix_client)}

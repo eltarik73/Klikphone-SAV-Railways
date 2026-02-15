@@ -348,6 +348,9 @@ class ApiClient {
   clearTarifs() {
     return this.request('/api/tarifs/clear', { method: 'DELETE' });
   }
+  toggleTarifStock(id) {
+    return this.request(`/api/tarifs/${id}/stock`, { method: 'PATCH' });
+  }
 }
 
 export const api = new ApiClient();
