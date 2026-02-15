@@ -399,7 +399,8 @@ class ApiClient {
   }
   getTelephoneStats() { return this.get('/api/telephones/stats'); }
   getTelephoneMarques() { return this.get('/api/telephones/marques'); }
-  syncTelephones() { return this.request('/api/telephones/sync', { method: 'POST' }, 300000); }
+  syncTelephones() { return this.request('/api/telephones/sync', { method: 'POST' }, 30000); }
+  getSyncStatus() { return this.get('/api/telephones/sync-status'); }
 }
 
 export const api = new ApiClient();

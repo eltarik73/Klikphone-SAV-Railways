@@ -33,7 +33,7 @@ const GRADE_COLORS = {
 const SORT_OPTIONS = [
   { value: 'prix_asc', label: 'Prix croissant' },
   { value: 'prix_desc', label: 'Prix decroissant' },
-  { value: 'marque_az', label: 'Marque A-Z' },
+  { value: 'marque', label: 'Marque A-Z' },
   { value: 'nouveautes', label: 'Nouveautes' },
 ];
 
@@ -300,6 +300,18 @@ export default function TarifsTelephonesPage() {
     setSyncing(true);
     try {
       await api.syncTelephones();
+      // Poll sync-status until done
+      let attempts = 0;
+      while (attempts < 120) { // max ~10 min
+        await new Promise(r => setTimeout(r, 5000));
+        attempts++;
+        try {
+          const status = await api.getSyncStatus();
+          if (!status.running) {
+            break;
+          }
+        } catch { break; }
+      }
       await Promise.all([fetchStats(), fetchPhones()]);
     } catch (err) {
       console.error('Erreur sync telephones:', err);
@@ -334,8 +346,8 @@ export default function TarifsTelephonesPage() {
 
   const typePills = [
     { value: '', label: 'Tous' },
-    { value: 'Neuf', label: 'Neufs' },
-    { value: 'Reconditionne', label: 'Reconditionnes' },
+    { value: 'neuf', label: 'Neufs' },
+    { value: 'occasion', label: 'Occasion' },
   ];
 
   const currentSort = SORT_OPTIONS.find(o => o.value === sortBy) || SORT_OPTIONS[0];

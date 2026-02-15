@@ -90,7 +90,7 @@ def _run_sync_background():
 
 
 @router.post("/sync")
-async def sync_catalogue(background_tasks: BackgroundTasks):
+async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Lance la synchronisation avec LCD-Phone en arrière-plan."""
     global _sync_status
     _ensure_table()
@@ -117,7 +117,7 @@ async def sync_catalogue(background_tasks: BackgroundTasks):
 
 
 @router.get("/sync-status")
-async def sync_status():
+async def sync_status(user: dict = Depends(get_current_user)):
     """Vérifie l'état de la synchronisation."""
     return {
         "running": _sync_status["running"],
@@ -128,7 +128,7 @@ async def sync_status():
 
 
 @router.get("/probe")
-async def probe_lcdphone_endpoint():
+async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
     """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
     from app.services.scraper_lcdphone import probe_lcdphone
     return probe_lcdphone()
