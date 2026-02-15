@@ -80,6 +80,13 @@ async def sync_catalogue(user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=500, detail=result.get("error", "Erreur sync"))
 
 
+@router.get("/probe")
+async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
+    """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
+    from app.services.scraper_lcdphone import probe_lcdphone
+    return probe_lcdphone()
+
+
 @router.get("/catalogue")
 async def liste_telephones(
     marque: Optional[str] = None,

@@ -123,133 +123,220 @@ def extraire_modele(nom: str, marque: str) -> str:
     return modele.strip().strip('-').strip()
 
 
+def _create_client():
+    """Crée un client HTTP avec headers navigateur."""
+    return httpx.Client(
+        timeout=30,
+        follow_redirects=True,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        },
+    )
+
+
 def login_lcdphone():
     """Se connecte à LCD-Phone et retourne un client httpx authentifié."""
     email = os.getenv("LCDPHONE_EMAIL")
     password = os.getenv("LCDPHONE_PASSWORD")
     if not email or not password:
         logger.error("LCDPHONE_EMAIL ou LCDPHONE_PASSWORD non configuré")
-        return None
+        return None, "LCDPHONE_EMAIL ou LCDPHONE_PASSWORD non configuré"
 
-    client = httpx.Client(
-        timeout=20,
-        follow_redirects=True,
-        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
-    )
+    client = _create_client()
     try:
+        # Charger la page de login
         login_page = client.get(LCDPHONE_LOGIN_URL)
         soup = BeautifulSoup(login_page.text, 'html.parser')
+
+        # Chercher le formulaire de login
+        form = soup.find('form', id='login-form') or soup.find('form', {'class': 'login-form'})
+        if not form:
+            # Chercher tout formulaire avec un champ email
+            forms = soup.find_all('form')
+            for f in forms:
+                if f.find('input', {'name': 'email'}) or f.find('input', {'type': 'email'}):
+                    form = f
+                    break
+
+        # Token CSRF
         token_input = soup.find('input', {'name': 'token'})
         token = token_input['value'] if token_input else ''
 
-        resp = client.post(LCDPHONE_LOGIN_URL, data={
+        # Envoyer le login
+        login_data = {
             'email': email,
             'password': password,
             'back': 'my-account',
             'submitLogin': '1',
-            'token': token,
-        })
+        }
+        if token:
+            login_data['token'] = token
 
-        if 'mon-compte' in str(resp.url) or 'my-account' in str(resp.url) or resp.status_code == 200:
-            logger.info("Connexion LCD-Phone réussie")
-            return client
-        else:
-            logger.error("Échec connexion LCD-Phone")
+        resp = client.post(LCDPHONE_LOGIN_URL, data=login_data)
+
+        # Vérifier si on est connecté en cherchant des indices
+        resp_text = resp.text
+        url_str = str(resp.url)
+
+        # Signes positifs de connexion
+        is_logged = (
+            'mon-compte' in url_str
+            or 'my-account' in url_str
+            or 'Déconnexion' in resp_text
+            or 'logout' in resp_text.lower()
+            or 'sign out' in resp_text.lower()
+        )
+
+        # Signes négatifs
+        login_failed = (
+            'Erreur d\'authentification' in resp_text
+            or 'Authentication failed' in resp_text
+            or 'Identifiants invalides' in resp_text
+            or 'Invalid credentials' in resp_text
+        )
+
+        if login_failed:
             client.close()
-            return None
+            return None, "Identifiants LCD-Phone invalides"
+
+        if is_logged or resp.status_code == 200:
+            # Vérifier en accédant à une page protégée
+            test = client.get(f"{LCDPHONE_BASE_URL}/fr/mon-compte")
+            if 'connexion' in str(test.url).lower() and 'mon-compte' not in str(test.url):
+                client.close()
+                return None, "Login semble OK mais redirection vers connexion"
+            logger.info("Connexion LCD-Phone réussie")
+            return client, None
+        else:
+            client.close()
+            return None, f"Échec connexion (status {resp.status_code})"
+
     except Exception as e:
-        logger.error(f"Erreur connexion LCD-Phone: {e}")
         client.close()
-        return None
+        return None, f"Erreur connexion: {str(e)}"
 
 
-def scraper_categorie(client, cat_config: dict) -> list:
+def scraper_categorie(client, cat_config: dict) -> tuple:
+    """Scrape une catégorie. Retourne (produits, debug_info)."""
     produits = []
+    debug = {"pages": 0, "cards_found": 0, "cards_skipped_stock": 0, "cards_no_name": 0, "cards_no_price": 0, "errors": []}
     page = 1
+    max_pages = 20  # sécurité
 
-    while True:
+    while page <= max_pages:
         url = f"{cat_config['url']}?page={page}"
         logger.info(f"Scraping page {page}: {url}")
+        debug["pages"] = page
         try:
             resp = client.get(url)
             soup = BeautifulSoup(resp.text, 'html.parser')
 
-            cards = (
-                soup.select('.product-miniature')
-                or soup.select('article.product-miniature')
-                or soup.select('.products .product')
-                or soup.select('.product_list > li')
-            )
+            # Essayer plusieurs sélecteurs pour trouver les produits
+            cards = soup.select('.product-miniature')
             if not cards:
+                cards = soup.select('article.product-miniature')
+            if not cards:
+                cards = soup.select('.products article')
+            if not cards:
+                cards = soup.select('.product_list .ajax_block_product')
+            if not cards:
+                cards = soup.select('[data-id-product]')
+            if not cards:
+                # Dernier recours: chercher tous les éléments avec un lien produit
+                cards = soup.select('.products > div, .products > article, .products > li')
+
+            if not cards:
+                if page == 1:
+                    # Sauver un extrait du HTML pour debug
+                    body = soup.find('body')
+                    if body:
+                        debug["html_sample"] = str(body)[:2000]
+                    debug["errors"].append(f"Aucune carte produit trouvée sur page 1. Classes trouvées: {[c.get('class') for c in soup.select('div[class]')[:10]]}")
                 break
+
+            debug["cards_found"] += len(cards)
 
             for card in cards:
                 try:
-                    # Stock check
-                    stock_el = card.select_one('.product-availability, .availability, .stock')
-                    stock_text = stock_el.get_text(strip=True) if stock_el else ""
-                    stock_match = re.search(r'(\d+)\s*[Ee]n\s*stock', stock_text)
-                    stock_qty = int(stock_match.group(1)) if stock_match else 0
-                    if stock_qty == 0 and "en stock" not in stock_text.lower():
-                        continue
-
-                    # Name + URL
-                    name_el = card.select_one('.product-title a, .product_name a, h2 a, .product-name a')
+                    # Nom du produit — essayer plusieurs sélecteurs
+                    name_el = (
+                        card.select_one('.product-title a')
+                        or card.select_one('.product-name a')
+                        or card.select_one('h5 a, h4 a, h3 a, h2 a')
+                        or card.select_one('a.product-thumbnail')
+                        or card.select_one('a[href*="/fr/"]')
+                    )
                     if not name_el:
+                        debug["cards_no_name"] += 1
                         continue
-                    nom = name_el.get_text(strip=True)
+                    nom = name_el.get_text(strip=True) or name_el.get('title', '')
                     product_url = name_el.get('href', '')
-
-                    # Price
-                    price_el = card.select_one('.product-price, .price, [itemprop="price"]')
-                    if not price_el:
+                    if not nom and product_url:
+                        # Essayer le titre du lien
+                        nom = name_el.get('title', '') or product_url.split('/')[-1].replace('-', ' ')
+                    if not nom:
+                        debug["cards_no_name"] += 1
                         continue
-                    prix_text = price_el.get_text(strip=True).replace('\xa0', '').replace(' ', '')
-                    prix_match = re.search(r'([\d]+[,.][\d]+)', prix_text)
-                    if not prix_match:
+
+                    # Prix — essayer plusieurs sélecteurs
+                    price_el = (
+                        card.select_one('.product-price-and-shipping .price')
+                        or card.select_one('.product-price .price')
+                        or card.select_one('.price')
+                        or card.select_one('[itemprop="price"]')
+                        or card.select_one('.product-price')
+                    )
+                    prix_fournisseur = None
+                    if price_el:
+                        # Essayer l'attribut content d'abord (plus fiable)
+                        prix_content = price_el.get('content', '')
+                        if prix_content:
+                            try:
+                                prix_fournisseur = float(prix_content)
+                            except ValueError:
+                                pass
+
+                        if prix_fournisseur is None:
+                            prix_text = price_el.get_text(strip=True).replace('\xa0', '').replace(' ', '').replace('€', '')
+                            prix_match = re.search(r'([\d]+[,.][\d]+)', prix_text)
+                            if prix_match:
+                                prix_fournisseur = float(prix_match.group(1).replace(',', '.'))
+
+                    if prix_fournisseur is None:
+                        debug["cards_no_price"] += 1
                         continue
-                    prix_fournisseur = float(prix_match.group(1).replace(',', '.'))
 
-                    # Product page details
-                    fiche_marque = fiche_grade = fiche_stockage = fiche_couleur = fiche_das = fiche_image = None
-                    fiche_ref = ""
+                    # Stock — ne PAS filtrer trop agressivement, on prend tout ce qu'on trouve
+                    stock_qty = 1  # défaut: en stock si on le voit sur la page
+                    stock_el = card.select_one('.product-availability, .availability, .stock-quantity')
+                    if stock_el:
+                        stock_text = stock_el.get_text(strip=True)
+                        stock_match = re.search(r'(\d+)', stock_text)
+                        if stock_match:
+                            stock_qty = int(stock_match.group(1))
+                        if any(w in stock_text.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
+                            debug["cards_skipped_stock"] += 1
+                            continue
 
-                    if product_url:
-                        time.sleep(0.5)
-                        try:
-                            fiche = client.get(product_url)
-                            fs = BeautifulSoup(fiche.text, 'html.parser')
-                            features = fs.select('.product-features li, .data-sheet tr, .product-information .feature-value')
-                            for feat in features:
-                                ft = feat.get_text(strip=True).lower()
-                                val_el = feat.select_one('span:last-child, td:last-child, .value')
-                                val = val_el.get_text(strip=True) if val_el else ""
-                                if 'marque' in ft or 'fabricant' in ft:
-                                    fiche_marque = val
-                                if 'grade' in ft or 'état' in ft:
-                                    fiche_grade = val
-                                if 'stockage' in ft or 'capacité' in ft or 'mémoire' in ft:
-                                    fiche_stockage = val
-                                if 'couleur' in ft or 'color' in ft:
-                                    fiche_couleur = val
-                                if 'das' in ft:
-                                    fiche_das = val
-                            ref_el = fs.select_one('.product-reference span, [itemprop="sku"]')
-                            if ref_el:
-                                fiche_ref = ref_el.get_text(strip=True)
-                            img_el = fs.select_one('.product-cover img, .product-image img, #content img.js-qv-product-cover')
-                            if img_el:
-                                fiche_image = img_el.get('src', '') or img_el.get('data-src', '')
-                        except Exception as e:
-                            logger.warning(f"Erreur fiche {product_url}: {e}")
-
-                    marque = fiche_marque or cat_config.get('marque_forcee') or detecter_marque(nom)
-                    stockage = fiche_stockage or extraire_stockage(nom)
-                    couleur = fiche_couleur or extraire_couleur(nom)
-                    grade = fiche_grade or extraire_grade(nom) or ("Neuf" if cat_config['type_produit'] == "neuf" else None)
+                    # Extraire les infos depuis le nom du produit
+                    marque = cat_config.get('marque_forcee') or detecter_marque(nom)
+                    stockage = extraire_stockage(nom)
+                    couleur = extraire_couleur(nom)
+                    grade = extraire_grade(nom) or ("Neuf" if cat_config['type_produit'] == "neuf" else None)
                     modele = extraire_modele(nom, marque)
                     type_produit = cat_config['type_produit']
                     prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
+
+                    # Image depuis le listing
+                    img_el = card.select_one('img.thumbnail, img[src*="phone"], img[data-src], img')
+                    image_url = ""
+                    if img_el:
+                        image_url = img_el.get('data-full-size-image-url', '') or img_el.get('src', '') or img_el.get('data-src', '')
+
+                    # Référence (data attribute)
+                    ref = card.get('data-id-product', '') or ''
 
                     produits.append({
                         "marque": marque,
@@ -263,47 +350,123 @@ def scraper_categorie(client, cat_config: dict) -> list:
                         "marge_appliquee": marge,
                         "stock_fournisseur": stock_qty,
                         "en_stock": True,
-                        "reference_fournisseur": fiche_ref,
-                        "das": fiche_das,
-                        "image_url": fiche_image or "",
+                        "reference_fournisseur": ref,
+                        "das": None,
+                        "image_url": image_url,
                         "source_url": product_url,
                     })
                     logger.info(f"  + {marque} {modele} {stockage} — {prix_vente}€")
                 except Exception as e:
-                    logger.warning(f"Erreur parsing produit: {e}")
+                    debug["errors"].append(f"Erreur parsing: {str(e)}")
                     continue
 
-            next_page = soup.select_one('a.next, .pagination .next a, li.next a')
-            if not next_page:
+            # Pagination
+            next_link = (
+                soup.select_one('a[rel="next"]')
+                or soup.select_one('.pagination .next a')
+                or soup.select_one('li.next a')
+                or soup.select_one('a.next')
+            )
+            if not next_link:
                 break
             page += 1
+
         except Exception as e:
-            logger.error(f"Erreur scraping page {page}: {e}")
+            debug["errors"].append(f"Erreur page {page}: {str(e)}")
             break
 
-    return produits
+    return produits, debug
+
+
+def probe_lcdphone() -> dict:
+    """Endpoint de diagnostic — teste le login et scrape une page pour voir la structure HTML."""
+    if not _HAS_DEPS:
+        return {"success": False, "error": "beautifulsoup4 ou httpx non installé"}
+
+    result = {"login": None, "categories": {}}
+
+    client, login_error = login_lcdphone()
+    if not client:
+        return {"success": False, "error": login_error or "Échec login"}
+
+    result["login"] = "OK"
+
+    try:
+        for cat_name, cat_config in CATEGORIES.items():
+            url = cat_config['url']
+            resp = client.get(url)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+
+            # Analyser la structure
+            cat_info = {
+                "url": url,
+                "status_code": resp.status_code,
+                "title": soup.title.string if soup.title else None,
+                "product_miniature_count": len(soup.select('.product-miniature')),
+                "article_count": len(soup.select('article')),
+                "data_id_product_count": len(soup.select('[data-id-product]')),
+                "product_name_count": len(soup.select('.product-name, .product-title')),
+                "price_count": len(soup.select('.price, .product-price')),
+                "first_product_html": None,
+                "product_names": [],
+            }
+
+            # Essayer de trouver le premier produit
+            cards = soup.select('.product-miniature') or soup.select('[data-id-product]') or soup.select('article')
+            if cards:
+                first = cards[0]
+                cat_info["first_product_html"] = str(first)[:3000]
+                # Extraire les noms
+                for card in cards[:5]:
+                    a = card.select_one('a[href]')
+                    if a:
+                        cat_info["product_names"].append(a.get_text(strip=True) or a.get('title', ''))
+
+            result["categories"][cat_name] = cat_info
+            time.sleep(0.5)
+    finally:
+        client.close()
+
+    result["success"] = True
+    return result
 
 
 def sync_telephones_lcdphone() -> dict:
     """Login + scrape toutes les catégories + upsert en BDD."""
     if not _HAS_DEPS:
         return {"success": False, "error": "Dépendances manquantes: pip install beautifulsoup4 httpx"}
-    client = login_lcdphone()
+
+    client, login_error = login_lcdphone()
     if not client:
-        return {"success": False, "error": "Échec connexion LCD-Phone. Vérifiez LCDPHONE_EMAIL et LCDPHONE_PASSWORD."}
+        return {"success": False, "error": login_error or "Échec connexion LCD-Phone"}
 
     all_produits = []
+    all_debug = {}
     try:
         for cat_name, cat_config in CATEGORIES.items():
             logger.info(f"Scraping catégorie: {cat_name}")
-            produits = scraper_categorie(client, cat_config)
+            produits, debug = scraper_categorie(client, cat_config)
             logger.info(f"  -> {len(produits)} produits")
             all_produits.extend(produits)
+            all_debug[cat_name] = {
+                "count": len(produits),
+                "pages": debug["pages"],
+                "cards_found": debug["cards_found"],
+                "cards_skipped_stock": debug["cards_skipped_stock"],
+                "cards_no_name": debug["cards_no_name"],
+                "cards_no_price": debug["cards_no_price"],
+                "errors": debug["errors"][:5],
+            }
     finally:
         client.close()
 
     if not all_produits:
-        return {"success": True, "total": 0, "inserted": 0, "updated": 0, "message": "Aucun produit en stock trouvé"}
+        return {
+            "success": True,
+            "total": 0, "inserted": 0, "updated": 0,
+            "message": "Aucun produit trouvé",
+            "debug": all_debug,
+        }
 
     inserted = 0
     updated = 0
@@ -348,7 +511,13 @@ def sync_telephones_lcdphone() -> dict:
                           p["das"], p["image_url"], p["source_url"]))
                     inserted += 1
 
-        return {"success": True, "total": len(all_produits), "inserted": inserted, "updated": updated}
+        return {
+            "success": True,
+            "total": len(all_produits),
+            "inserted": inserted,
+            "updated": updated,
+            "debug": all_debug,
+        }
     except Exception as e:
         logger.error(f"Erreur BDD: {e}")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": str(e), "debug": all_debug}
