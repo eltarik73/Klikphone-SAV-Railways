@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing
 
 
 @asynccontextmanager
@@ -80,6 +80,12 @@ async def lifespan(app: FastAPI):
         tarifs._ensure_table()
     except Exception as e:
         print(f"Warning tarifs table: {e}")
+
+    # Marketing tables
+    try:
+        marketing._ensure_tables()
+    except Exception as e:
+        print(f"Warning marketing tables: {e}")
 
     # ALTER TABLE statements (need exclusive lock — use very short timeout)
     for sql in [
@@ -150,6 +156,7 @@ app.include_router(chat.router)
 app.include_router(fidelite.router)
 app.include_router(email_api.router)
 app.include_router(tarifs.router)
+app.include_router(marketing.router)
 
 
 # --- HEALTH CHECK ---

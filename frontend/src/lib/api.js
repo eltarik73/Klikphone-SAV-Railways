@@ -354,6 +354,42 @@ class ApiClient {
   checkTarifStock() {
     return this.request('/api/tarifs/check-stock', { method: 'POST' }, 300000);
   }
+
+  // ─── MARKETING ──────────────────────────────
+  getAvisGoogle(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/marketing/avis${qs ? '?' + qs : ''}`);
+  }
+  getAvisGoogleStats() { return this.get('/api/marketing/avis/stats'); }
+  syncAvisGoogle() { return this.post('/api/marketing/avis/sync', {}); }
+  genererReponseAvis(id) { return this.post(`/api/marketing/avis/${id}/generer-reponse`, {}); }
+  publierReponseAvis(id, data) { return this.post(`/api/marketing/avis/${id}/publier-reponse`, data); }
+  updateReponseAvis(id, data) { return this.put(`/api/marketing/avis/${id}/reponse`, data); }
+
+  getMarketingPosts(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/marketing/posts${qs ? '?' + qs : ''}`);
+  }
+  createMarketingPost(data) { return this.post('/api/marketing/posts', data); }
+  updateMarketingPost(id, data) { return this.put(`/api/marketing/posts/${id}`, data); }
+  deleteMarketingPost(id) { return this.delete(`/api/marketing/posts/${id}`); }
+  publierPost(id) { return this.post(`/api/marketing/posts/${id}/publier`, {}); }
+  programmerPost(id, data) { return this.post(`/api/marketing/posts/${id}/programmer`, data); }
+  genererPost(data) { return this.request('/api/marketing/posts/generer', { method: 'POST', body: JSON.stringify(data) }, 60000); }
+
+  getCalendrierMarketing(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/marketing/calendrier${qs ? '?' + qs : ''}`);
+  }
+  createCalendrierEvent(data) { return this.post('/api/marketing/calendrier', data); }
+  updateCalendrierEvent(id, data) { return this.put(`/api/marketing/calendrier/${id}`, data); }
+  deleteCalendrierEvent(id) { return this.delete(`/api/marketing/calendrier/${id}`); }
+
+  getMarketingTemplates() { return this.get('/api/marketing/templates'); }
+  createMarketingTemplate(data) { return this.post('/api/marketing/templates', data); }
+
+  getMarketingAnalytics() { return this.get('/api/marketing/analytics/overview'); }
+  getMarketingAnalyticsPosts() { return this.get('/api/marketing/analytics/posts'); }
 }
 
 export const api = new ApiClient();
