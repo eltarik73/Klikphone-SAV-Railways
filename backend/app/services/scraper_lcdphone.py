@@ -439,125 +439,99 @@ def probe_lcdphone() -> dict:
     if not client:
         return {"success": False, "error": login_err or "Échec login"}
 
-    results = {"login": "OK", "methods": {}, "categories": {}}
+    results = {"login": "OK", "tests": {}}
 
     try:
-        # Test 1: PrestaShop API
+        cat = CATEGORIES[0]  # Test avec iphone-occasion
+        cat_id = cat["id"]
+        slug = cat["slug"]
+
+        # Test 1: PrestaShop API avec cookies de session
         try:
-            api_resp = client.get(f"{LCDPHONE_BASE}/api/", timeout=10)
-            results["methods"]["prestashop_api"] = {
+            api_resp = client.get(f"{LCDPHONE_BASE}/api/products?output_format=JSON&limit=5&filter[id_category_default]=[{cat_id}]")
+            results["tests"]["api_products"] = {
                 "status": api_resp.status_code,
-                "available": api_resp.status_code != 404,
+                "sample": api_resp.text[:500],
             }
         except Exception as e:
-            results["methods"]["prestashop_api"] = {"error": str(e)[:100]}
+            results["tests"]["api_products"] = {"error": str(e)[:200]}
 
-        # Test 2: AJAX faceted search pour chaque catégorie
-        for cat in CATEGORIES:
-            cat_label = f"{cat['id']}-{cat['slug']}"
-            cat_result = {"ajax_post": None, "ajax_get": None, "html_direct": None}
-
-            # AJAX POST
+        # Test 2: PrestaShop controller AJAX
+        ajax_endpoints = [
+            f"{LCDPHONE_BASE}/index.php?controller=category&id_category={cat_id}&ajax=1&action=productList",
+            f"{LCDPHONE_BASE}/index.php?fc=module&module=ps_facetedsearch&controller=filter&id_category={cat_id}",
+            f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}?ajax=1&action=productList",
+            f"{LCDPHONE_BASE}/fr/module/ambjolisearch/jolisearch?s=iphone&ajax=1",
+            f"{LCDPHONE_BASE}/fr/recherche?controller=search&s=iphone&ajax=1",
+        ]
+        for i, url in enumerate(ajax_endpoints):
             try:
-                ajax_resp = client.post(
-                    f"{LCDPHONE_BASE}/module/ps_facetedsearch/ps_facetedsearch-ajax",
-                    data={"id_category_layered": cat["id"], "page": 1, "resultsPerPage": 12},
-                    headers={
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "Accept": "application/json, text/javascript, */*; q=0.01",
-                    },
-                )
-                if ajax_resp.status_code == 200:
-                    try:
-                        data = ajax_resp.json()
-                        html = data.get("rendered_products", "")
-                        soup = BeautifulSoup(html, 'html.parser')
-                        cards = soup.select('.product-miniature, [data-id-product]')
-                        names = []
-                        for c in cards[:5]:
-                            ne = c.select_one('.product-title a, .product-name a')
-                            if ne:
-                                names.append(ne.get_text(strip=True))
-                        cat_result["ajax_post"] = {
-                            "status": ajax_resp.status_code,
-                            "is_json": True,
-                            "keys": list(data.keys())[:10],
-                            "nb_products": len(cards),
-                            "product_names": names,
-                            "pagination": data.get("pagination", {}),
-                        }
-                    except Exception:
-                        cat_result["ajax_post"] = {
-                            "status": ajax_resp.status_code,
-                            "is_json": False,
-                            "text_sample": ajax_resp.text[:500],
-                        }
-                else:
-                    cat_result["ajax_post"] = {"status": ajax_resp.status_code}
-            except Exception as e:
-                cat_result["ajax_post"] = {"error": str(e)[:100]}
+                resp = client.get(url, headers={
+                    "X-Requested-With": "XMLHttpRequest",
+                    "Accept": "application/json, */*",
+                })
+                is_json = False
+                json_data = None
+                try:
+                    json_data = resp.json()
+                    is_json = True
+                except Exception:
+                    pass
 
-            # AJAX GET
-            try:
-                ajax_resp2 = client.get(
-                    f"{LCDPHONE_BASE}/module/ps_facetedsearch/ps_facetedsearch-ajax"
-                    f"?id_category_layered={cat['id']}&page=1&resultsPerPage=12",
-                    headers={
-                        "X-Requested-With": "XMLHttpRequest",
-                        "Accept": "application/json, text/javascript, */*; q=0.01",
-                    },
-                )
-                if ajax_resp2.status_code == 200:
-                    try:
-                        data = ajax_resp2.json()
-                        html = data.get("rendered_products", "")
-                        soup = BeautifulSoup(html, 'html.parser')
-                        cards = soup.select('.product-miniature, [data-id-product]')
-                        names = []
-                        for c in cards[:5]:
-                            ne = c.select_one('.product-title a, .product-name a')
-                            if ne:
-                                names.append(ne.get_text(strip=True))
-                        cat_result["ajax_get"] = {
-                            "status": ajax_resp2.status_code,
-                            "is_json": True,
-                            "nb_products": len(cards),
-                            "product_names": names,
-                        }
-                    except Exception:
-                        cat_result["ajax_get"] = {
-                            "status": ajax_resp2.status_code,
-                            "is_json": False,
-                            "text_sample": ajax_resp2.text[:500],
-                        }
-                else:
-                    cat_result["ajax_get"] = {"status": ajax_resp2.status_code}
-            except Exception as e:
-                cat_result["ajax_get"] = {"error": str(e)[:100]}
-
-            # HTML direct
-            try:
-                slug = cat["slug"]
-                html_resp = client.get(f"{LCDPHONE_BASE}/fr/{cat['id']}-{slug}?page=1")
-                soup = BeautifulSoup(html_resp.text, 'html.parser')
-                cards = soup.select('article.product-miniature')
-                names = []
-                for c in cards[:5]:
-                    ne = c.select_one('.product-title a, .product-name a')
-                    if ne:
-                        names.append(ne.get_text(strip=True))
-                cat_result["html_direct"] = {
-                    "status": html_resp.status_code,
-                    "title": soup.title.string.strip() if soup.title and soup.title.string else None,
-                    "nb_products": len(cards),
-                    "product_names": names,
+                results["tests"][f"ajax_{i}"] = {
+                    "url": url,
+                    "status": resp.status_code,
+                    "is_json": is_json,
+                    "keys": list(json_data.keys())[:15] if json_data and isinstance(json_data, dict) else None,
+                    "sample": (str(json_data)[:500] if json_data else resp.text[:500]),
                 }
             except Exception as e:
-                cat_result["html_direct"] = {"error": str(e)[:100]}
+                results["tests"][f"ajax_{i}"] = {"url": url, "error": str(e)[:200]}
 
-            results["categories"][cat_label] = cat_result
-            time.sleep(0.3)
+        # Test 3: Vérifier la page HTML pour du JSON embarqué
+        try:
+            page_resp = client.get(f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}")
+            page_html = page_resp.text
+
+            # Chercher des scripts contenant des données JSON de produits
+            soup = BeautifulSoup(page_html, 'html.parser')
+            scripts = soup.find_all('script')
+            json_scripts = []
+            for script in scripts:
+                text = script.string or ''
+                if any(w in text for w in ['products', 'productList', 'id_product', 'product_name']):
+                    json_scripts.append(text[:300])
+            results["tests"]["embedded_json"] = {
+                "total_scripts": len(scripts),
+                "product_scripts": len(json_scripts),
+                "samples": json_scripts[:3],
+            }
+
+            # Chercher des data-attributes avec JSON
+            data_elements = soup.select('[data-products], [data-product-list]')
+            if data_elements:
+                results["tests"]["data_attributes"] = [
+                    {attr: el.get(attr, '')[:300] for attr in el.attrs if attr.startswith('data-')}
+                    for el in data_elements[:3]
+                ]
+
+            # Chercher les subcategories
+            subcats = soup.select('.subcategories a, .subcategory a, .category-sub-menu a')
+            if subcats:
+                results["tests"]["subcategories"] = [
+                    {"text": a.get_text(strip=True), "url": a.get('href', '')}
+                    for a in subcats[:10]
+                ]
+
+            # Vérifier si la catégorie a un layout spécial ou est vide
+            main_content = soup.select_one('#content, .page-content, main')
+            if main_content:
+                # Chercher un message "aucun produit"
+                text = main_content.get_text(strip=True)[:500]
+                results["tests"]["page_content_sample"] = text
+
+        except Exception as e:
+            results["tests"]["html_analysis"] = {"error": str(e)[:200]}
 
     finally:
         client.close()
