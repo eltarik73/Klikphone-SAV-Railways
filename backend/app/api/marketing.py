@@ -876,15 +876,29 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
 
     # Instagram exige au moins une image
     has_instagram = any(p["platform"] == "instagram" for p in platforms_payload)
+    skipped_instagram = False
     if has_instagram and not image_url:
-        # Séparer : publier sur les autres plateformes sans image, bloquer Instagram
         non_ig = [p for p in platforms_payload if p["platform"] != "instagram"]
         if non_ig:
-            platforms_payload = non_ig  # publier sur LinkedIn etc. sans image
+            platforms_payload = non_ig
+            skipped_instagram = True
         else:
+            # Pas d'image et seul Instagram ciblé → fallback sur tous les autres comptes actifs
+            for acc in accounts:
+                if acc.get("isActive") and acc.get("platform") != "instagram" and acc.get("platform") in _PLATFORM_MAP.values():
+                    platforms_payload.append({
+                        "platform": acc["platform"],
+                        "accountId": acc["_id"],
+                    })
+            # Retirer Instagram du payload
+            platforms_payload = [p for p in platforms_payload if p["platform"] != "instagram"]
+            skipped_instagram = True
+
+        if not platforms_payload:
             raise HTTPException(
                 400,
-                "Instagram exige une image. Ajoutez une image_url au post avant de publier sur Instagram."
+                "Instagram exige une image et aucun autre réseau n'est connecté. "
+                "Ajoutez une image_url au post ou connectez LinkedIn/Facebook sur https://app.getlate.dev"
             )
 
     late_body = {
@@ -931,6 +945,8 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
     result = _row_to_dict(row)
     result["late_response"] = late_result
     result["platforms_published"] = [p["platform"] for p in platforms_payload]
+    if skipped_instagram:
+        result["warning"] = "Instagram ignoré (image requise). Publié sur les autres réseaux."
     return result
 
 

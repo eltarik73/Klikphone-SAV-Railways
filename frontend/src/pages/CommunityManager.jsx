@@ -229,11 +229,11 @@ export default function CommunityManager() {
     try {
       const result = await api.publierPost(id);
       const platforms = result.platforms_published || [];
-      setPublishResult({
-        success: true,
-        message: `Publié sur ${platforms.join(', ') || 'les réseaux'}`,
-        platforms,
-      });
+      const warning = result.warning || '';
+      const msg = warning
+        ? `${warning} (${platforms.join(', ')})`
+        : `Publié sur ${platforms.join(', ') || 'les réseaux'}`;
+      setPublishResult({ success: true, message: msg, platforms });
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
