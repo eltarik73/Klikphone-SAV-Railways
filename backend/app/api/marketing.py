@@ -479,6 +479,7 @@ async def generer_reponse_avis(avis_id: int):  # temp no auth for testing
     )
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
+    print(f"[MARKETING] API key present: {bool(api_key)}, key starts: {api_key[:12] if api_key else 'None'}...")
 
     if api_key:
         try:
@@ -491,10 +492,12 @@ async def generer_reponse_avis(avis_id: int):  # temp no auth for testing
                 messages=[{"role": "user", "content": user_message}],
             )
             suggestion = message.content[0].text
+            print(f"[MARKETING] Claude AI response OK, length={len(suggestion)}")
         except Exception as e:
-            print(f"Erreur API Anthropic: {e}")
+            print(f"[MARKETING] Erreur API Anthropic: {e}")
             suggestion = _fallback_reponse_avis(prenom, note, texte)
     else:
+        print("[MARKETING] No API key, using fallback")
         suggestion = _fallback_reponse_avis(prenom, note, texte)
 
     # Sauvegarder la suggestion
