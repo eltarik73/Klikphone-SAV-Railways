@@ -379,11 +379,11 @@ def scraper_categorie(client, cat_config: dict) -> tuple:
 
 
 def probe_lcdphone() -> dict:
-    """Endpoint de diagnostic — teste le login et découvre la structure du site."""
+    """Diagnostic complet: login, recherche de catégories, test search."""
     if not _HAS_DEPS:
         return {"success": False, "error": "beautifulsoup4 ou httpx non installé"}
 
-    result = {"login": None, "navigation": [], "categories_test": {}}
+    result = {"login": None, "search_results": {}, "category_discovery": [], "all_links": []}
 
     client, login_error = login_lcdphone()
     if not client:
@@ -392,78 +392,85 @@ def probe_lcdphone() -> dict:
     result["login"] = "OK"
 
     try:
-        # 1) Découvrir la navigation du site
+        # 1) Utiliser la recherche du site pour trouver des téléphones
+        for query in ["iPhone 15", "Samsung Galaxy", "smartphone"]:
+            search_url = f"{LCDPHONE_BASE_URL}/fr/recherche?s={query.replace(' ', '+')}"
+            resp = client.get(search_url)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            cards = soup.select('article.product-miniature')
+            products = []
+            for card in cards[:5]:
+                name_el = card.select_one('.product-name a, .product-name')
+                price_el = card.select_one('.price')
+                name = (name_el.get_text(strip=True) if name_el else '') or (name_el.get('title', '') if name_el else '')
+                href = name_el.get('href', '') if name_el else ''
+                price = price_el.get_text(strip=True) if price_el else ''
+                products.append({"name": name, "price": price, "url": href})
+            result["search_results"][query] = {
+                "total_found": len(cards),
+                "products": products,
+            }
+            time.sleep(0.3)
+
+        # 2) Récupérer TOUS les liens uniques de la page d'accueil
         home = client.get(f"{LCDPHONE_BASE_URL}/fr/")
         soup_home = BeautifulSoup(home.text, 'html.parser')
-
-        # Chercher les liens de navigation/menu
-        nav_links = []
-        for selector in [
-            '#_desktop_top_menu a', '.top-menu a', '#top-menu a',
-            '.menu a', 'nav a', '.category-top-menu a',
-            '#header a[href*="/fr/"]', '.header a[href*="/fr/"]',
-        ]:
-            links = soup_home.select(selector)
-            if links:
-                for a in links:
-                    href = a.get('href', '')
-                    text = a.get_text(strip=True)
-                    if href and '/fr/' in href and text and len(text) < 60:
-                        nav_links.append({"text": text, "url": href})
-                if nav_links:
-                    break
-
-        # Si rien trouvé, essayer tous les liens avec /fr/ et un numéro de catégorie
-        if not nav_links:
-            for a in soup_home.select('a[href*="/fr/"]'):
-                href = a.get('href', '')
-                text = a.get_text(strip=True)
-                if re.search(r'/fr/\d+-', href) and text and len(text) < 60:
-                    nav_links.append({"text": text, "url": href})
-
-        # Deduplicate
+        all_links = []
         seen = set()
-        unique_links = []
-        for link in nav_links:
-            if link["url"] not in seen:
-                seen.add(link["url"])
-                unique_links.append(link)
-        result["navigation"] = unique_links[:50]
+        for a in soup_home.select('a[href]'):
+            href = a.get('href', '')
+            text = a.get_text(strip=True)
+            if href not in seen and 'lcd-phone.com' in href and len(text) < 80:
+                seen.add(href)
+                all_links.append({"text": text, "url": href})
+        result["all_links"] = all_links[:80]
 
-        # 2) Chercher des liens contenant "phone", "smartphone", "telephone", "iphone", "occasion"
-        phone_links = [l for l in unique_links if any(
-            w in l["text"].lower() or w in l["url"].lower()
-            for w in ["phone", "smartphone", "téléphone", "telephone", "iphone", "occasion", "reconditionn", "neuf"]
+        # 3) Essayer des URLs de catégories courantes PrestaShop
+        test_slugs = [
+            "smartphones", "smartphone", "telephones", "telephone",
+            "iphone", "iphone-occasion", "iphone-reconditionne",
+            "android", "android-occasion", "android-reconditionne",
+            "telephone-occasion", "telephone-reconditionne",
+            "smartphone-occasion", "smartphone-reconditionne",
+            "telephone-neuf", "smartphone-neuf",
+        ]
+        category_tests = {}
+        for slug in test_slugs:
+            url = f"{LCDPHONE_BASE_URL}/fr/{slug}"
+            try:
+                resp = client.get(url)
+                final = str(resp.url)
+                # Si redirigé vers la home, c'est un 404 silencieux
+                is_home = final.rstrip('/') == f"{LCDPHONE_BASE_URL}/fr"
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                title = soup.title.string.strip() if soup.title and soup.title.string else ''
+                cards = soup.select('article.product-miniature')
+                first_name = ''
+                if cards:
+                    ne = cards[0].select_one('.product-name a, .product-name')
+                    if ne:
+                        first_name = ne.get_text(strip=True)
+                category_tests[slug] = {
+                    "status": resp.status_code,
+                    "final_url": final,
+                    "is_home_redirect": is_home,
+                    "title": title,
+                    "nb_products": len(cards),
+                    "first_product": first_name,
+                }
+            except Exception:
+                category_tests[slug] = {"error": True}
+            time.sleep(0.2)
+        result["category_discovery"] = category_tests
+
+        # 4) Chercher dans les liens ceux qui contiennent phone/smartphone/occasion
+        phone_links = [l for l in all_links if any(
+            w in (l["text"].lower() + " " + l["url"].lower())
+            for w in ["phone", "smartphone", "téléphone", "telephone", "iphone",
+                       "samsung", "occasion", "reconditionn", "android"]
         )]
         result["phone_links"] = phone_links
 
-        # 3) Tester les catégories actuelles + les phone_links trouvés
-        test_urls = {}
-        for cat_name, cat_config in CATEGORIES.items():
-            test_urls[cat_name] = cat_config['url']
-        for i, pl in enumerate(phone_links[:5]):
-            test_urls[f"discovered_{i}"] = pl["url"]
-
-        for name, url in test_urls.items():
-            resp = client.get(url)
-            soup = BeautifulSoup(resp.text, 'html.parser')
-
-            cards = soup.select('article.product-miniature')
-            product_names = []
-            for card in cards[:8]:
-                name_el = card.select_one('.product-name a, .product-name')
-                if name_el:
-                    product_names.append(name_el.get_text(strip=True) or name_el.get('title', ''))
-
-            result["categories_test"][name] = {
-                "url": url,
-                "final_url": str(resp.url),
-                "status": resp.status_code,
-                "title": soup.title.string.strip() if soup.title and soup.title.string else None,
-                "nb_products": len(cards),
-                "product_names": product_names,
-            }
-            time.sleep(0.3)
     finally:
         client.close()
 
