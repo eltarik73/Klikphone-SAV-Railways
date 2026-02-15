@@ -202,7 +202,7 @@ async def import_tarifs(
 
 
 @router.post("/recalculate")
-async def recalculate_tarifs():
+async def recalculate_tarifs(user: dict = Depends(get_current_user)):
     """Recalcule tous les prix_client a partir de prix_fournisseur_ht."""
     updated = 0
     with get_cursor() as cur:
