@@ -342,6 +342,7 @@ async def list_apple_devices(user: dict = Depends(get_current_user)):
 @router.post("/apple-devices/import")
 async def import_apple_devices(
     body: AppleDeviceImportRequest,
+    user: dict = Depends(get_current_user),
 ):
     """Importe iPad/MacBook avec calcul automatique des prix de vente."""
     inserted = 0
@@ -383,7 +384,7 @@ async def import_apple_devices(
 
 
 @router.delete("/apple-devices/clear")
-async def clear_apple_devices():
+async def clear_apple_devices(user: dict = Depends(get_current_user)):
     """Vide la table tarifs_apple_devices."""
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs_apple_devices RESTART IDENTITY")
