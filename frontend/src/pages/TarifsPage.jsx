@@ -4,18 +4,36 @@ import api from '../lib/api';
 
 // ─── Constantes ──────────────────────────────────
 const BRAND_CONFIG = {
-  Apple:    { bg: '#18181b', text: '#fff', emoji: '\uD83C\uDF4E' },
-  Samsung:  { bg: '#2563eb', text: '#fff', emoji: '\uD83D\uDCF1' },
-  Xiaomi:   { bg: '#ea580c', text: '#fff', emoji: '\uD83D\uDD36' },
-  Huawei:   { bg: '#dc2626', text: '#fff', emoji: '\uD83D\uDD34' },
-  Honor:    { bg: '#6d28d9', text: '#fff', emoji: '\uD83D\uDFE3' },
-  Google:   { bg: '#16a34a', text: '#fff', emoji: '\uD83D\uDFE2' },
-  Oppo:     { bg: '#059669', text: '#fff', emoji: '\uD83D\uDFE9' },
-  OnePlus:  { bg: '#dc2626', text: '#fff', emoji: '\uD83D\uDD3A' },
-  Motorola: { bg: '#0891b2', text: '#fff', emoji: '\u24C2\uFE0F' },
-  Nothing:  { bg: '#18181b', text: '#fff', emoji: '\u26AB' },
+  Apple:    { bg: '#18181b', text: '#fff', logo: 'apple' },
+  Samsung:  { bg: '#2563eb', text: '#fff', logo: 'samsung' },
+  Xiaomi:   { bg: '#ea580c', text: '#fff', logo: 'xiaomi' },
+  Huawei:   { bg: '#dc2626', text: '#fff', logo: 'huawei' },
+  Honor:    { bg: '#6d28d9', text: '#fff', logo: 'honor' },
+  Google:   { bg: '#16a34a', text: '#fff', logo: 'google' },
+  Oppo:     { bg: '#059669', text: '#fff', logo: 'oppo' },
+  OnePlus:  { bg: '#dc2626', text: '#fff', logo: 'oneplus' },
+  Motorola: { bg: '#0891b2', text: '#fff', logo: 'motorola' },
+  Nothing:  { bg: '#18181b', text: '#fff', logo: 'nothing' },
 };
-const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', emoji: '\uD83D\uDCF1' };
+const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', logo: null };
+
+function BrandLogo({ slug, size = 18 }) {
+  const [error, setError] = useState(false);
+  if (!slug || error) {
+    return <Smartphone className="w-[18px] h-[18px] opacity-70" />;
+  }
+  return (
+    <img
+      src={`https://cdn.simpleicons.org/${slug}/ffffff`}
+      alt=""
+      width={size}
+      height={size}
+      className="shrink-0"
+      style={{ filter: 'brightness(1)', minWidth: size }}
+      onError={() => setError(true)}
+    />
+  );
+}
 
 const QUALITY_COLORS = {
   'Original':       { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
@@ -292,7 +310,7 @@ export default function TarifsPage() {
                     {isBrandOpen
                       ? <ChevronDown className="w-4 h-4 opacity-70" />
                       : <ChevronRight className="w-4 h-4 opacity-70" />}
-                    <span className="text-base">{bc.emoji}</span>
+                    <BrandLogo slug={bc.logo} />
                     <span className="font-bold text-sm tracking-wide">{brand}</span>
                   </div>
                   <span className="text-xs opacity-75 font-medium">
