@@ -859,10 +859,16 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
                 })
 
     if not platforms_payload:
+        # Debug : montrer exactement ce que Late a renvoyé
+        debug_profiles = [
+            {k: v for k, v in p.items() if k in ("_id", "id", "platform", "provider", "identifier", "username", "name", "type", "socialPlatform")}
+            for p in (profiles if isinstance(profiles, list) else [])
+        ]
         raise HTTPException(
             400,
-            f"Aucun compte '{plateforme}' connecté sur Late. "
-            "Connectez vos réseaux sociaux sur https://app.getlate.dev"
+            f"Aucun compte '{plateforme}' (mapped to '{target_platform}') trouvé sur Late. "
+            f"Profils détectés ({len(profiles)}): {json.dumps(debug_profiles, default=str)[:800]}. "
+            "Connectez vos réseaux sur https://app.getlate.dev"
         )
 
     # 3. Créer et publier le post via Late
