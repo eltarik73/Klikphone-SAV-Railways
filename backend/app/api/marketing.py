@@ -486,7 +486,7 @@ async def generer_reponse_avis(avis_id: int):  # temp no auth for testing
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
-                model="claude-sonnet-4-5-20250514",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=300,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
@@ -796,7 +796,7 @@ async def generer_post(body: PostGenerer, user: dict = Depends(get_current_user)
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
-                model="claude-sonnet-4-5-20250514",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=500,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
@@ -1216,3 +1216,15 @@ async def analytics_posts():
         rows = cur.fetchall()
 
     return [_row_to_dict(r) for r in rows]
+
+
+# ─── TEMP DIAGNOSTIC (à supprimer) ──────────────────────
+@router.get("/debug-env")
+async def debug_env():
+    """Temp: check if ANTHROPIC_API_KEY is set."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    return {
+        "has_key": bool(api_key),
+        "key_preview": f"{api_key[:8]}...{api_key[-4:]}" if api_key else None,
+        "anthropic_installed": bool(__import__("importlib").util.find_spec("anthropic")),
+    }
