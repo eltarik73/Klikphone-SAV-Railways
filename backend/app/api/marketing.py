@@ -347,86 +347,98 @@ async def avis_stats():
     }
 
 
+@router.get("/avis/search-place")
+async def search_place(query: str = Query(..., description="Nom de la boutique + ville")):
+    """Recherche un Place ID Google à partir du nom de la boutique."""
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        raise HTTPException(400, "GOOGLE_PLACES_API_KEY non configurée. Ajoutez-la dans les variables d'environnement Railway.")
+
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+            params={
+                "input": query,
+                "inputtype": "textquery",
+                "fields": "place_id,name,formatted_address,rating,user_ratings_total",
+                "key": api_key,
+            },
+        )
+        data = resp.json()
+
+    if data.get("status") != "OK" or not data.get("candidates"):
+        return {"candidates": [], "message": f"Aucun résultat pour '{query}'. Status: {data.get('status')}"}
+
+    return {"candidates": data["candidates"]}
+
+
 @router.post("/avis/sync")
 async def sync_avis(user: dict = Depends(get_current_user)):
-    """Synchronise les avis depuis Google My Business. Si pas configuré, insère des avis de démo."""
+    """Synchronise les avis depuis Google Places API. Nécessite GOOGLE_PLACES_API_KEY + GOOGLE_PLACE_ID."""
     _ensure_tables()
 
-    gmb_account = os.getenv("GOOGLE_GMB_ACCOUNT_ID")
-    gmb_location = os.getenv("GOOGLE_GMB_LOCATION_ID")
-    gmb_token = os.getenv("GOOGLE_GMB_ACCESS_TOKEN")
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    place_id = os.getenv("GOOGLE_PLACE_ID")
 
-    if gmb_account and gmb_location and gmb_token:
-        # En production : appeler l'API Google My Business
-        # Pour l'instant on retourne un stub
-        return {"synced": 0, "message": "Google My Business API non implémentée"}
+    if not api_key or not place_id:
+        raise HTTPException(
+            400,
+            "Configuration manquante. Ajoutez GOOGLE_PLACES_API_KEY et GOOGLE_PLACE_ID "
+            "dans les variables d'environnement Railway. "
+            "Pour trouver votre Place ID, utilisez GET /api/marketing/avis/search-place?query=Klikphone+Chambéry"
+        )
 
-    # Mode démo : insérer des avis réalistes
-    fake_reviews = [
-        {
-            "google_review_id": "demo_avis_001",
-            "auteur": "Marie Dupont",
-            "note": 5,
-            "texte": "Excellent service ! Mon iPhone 14 avait l'écran complètement fissuré, ils l'ont réparé en moins de 2 heures. Le prix était raisonnable et le travail impeccable. Je recommande vivement Klikphone !",
-            "date_avis": "2025-01-15 14:30:00",
-            "repondu": True,
-            "reponse_texte": "Merci beaucoup Marie pour votre retour ! Nous sommes ravis que la réparation de votre iPhone 14 vous ait satisfaite. À bientôt chez Klikphone ! L'équipe Klikphone",
-            "reponse_date": "2025-01-15 18:00:00",
-            "reponse_par": "Manager",
-        },
-        {
-            "google_review_id": "demo_avis_002",
-            "auteur": "Thomas Bernard",
-            "note": 4,
-            "texte": "Bonne réparation de mon Samsung Galaxy S23. Le technicien était compétent et sympathique. Seul bémol : un peu d'attente à l'accueil. Mais le résultat est top !",
-            "date_avis": "2025-01-20 10:15:00",
-            "repondu": False,
-            "reponse_texte": None,
-            "reponse_date": None,
-            "reponse_par": None,
-        },
-        {
-            "google_review_id": "demo_avis_003",
-            "auteur": "Sophie Martin",
-            "note": 5,
-            "texte": "J'ai fait changer la batterie de mon iPhone 12 et c'est comme neuf ! Rapide, efficace et pas cher. L'équipe est très accueillante. Merci Klikphone !",
-            "date_avis": "2025-02-01 16:45:00",
-            "repondu": True,
-            "reponse_texte": "Merci Sophie ! Ravie que votre iPhone 12 soit comme neuf. N'hésitez pas à revenir si besoin. L'équipe Klikphone",
-            "reponse_date": "2025-02-01 19:30:00",
-            "reponse_par": "Manager",
-        },
-        {
-            "google_review_id": "demo_avis_004",
-            "auteur": "Lucas Petit",
-            "note": 3,
-            "texte": "La réparation de mon écran Xiaomi a pris plus de temps que prévu (3 jours au lieu de 1). Le résultat est correct mais la communication aurait pu être meilleure pendant l'attente.",
-            "date_avis": "2025-02-10 09:00:00",
-            "repondu": False,
-            "reponse_texte": None,
-            "reponse_date": None,
-            "reponse_par": None,
-        },
-        {
-            "google_review_id": "demo_avis_005",
-            "auteur": "Camille Leroy",
-            "note": 5,
-            "texte": "Super boutique au centre de Chambéry ! Mon Huawei P30 avait un problème de connecteur de charge, réparé en 45 minutes. Prix très correct. Je reviendrai sans hésiter.",
-            "date_avis": "2025-02-14 11:20:00",
-            "repondu": False,
-            "reponse_texte": None,
-            "reponse_date": None,
-            "reponse_par": None,
-        },
-    ]
+    # Appeler Google Places API pour récupérer les avis
+    import httpx
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={
+                "place_id": place_id,
+                "fields": "reviews,rating,user_ratings_total,name",
+                "reviews_sort": "newest",
+                "language": "fr",
+                "key": api_key,
+            },
+        )
+        data = resp.json()
+
+    if data.get("status") != "OK":
+        raise HTTPException(502, f"Erreur Google Places API: {data.get('status')} — {data.get('error_message', '')}")
+
+    result = data.get("result", {})
+    reviews = result.get("reviews", [])
+
+    if not reviews:
+        return {"synced": 0, "total_google": result.get("user_ratings_total", 0), "message": "Aucun avis retourné par Google"}
 
     synced = 0
     with get_cursor() as cur:
-        for review in fake_reviews:
-            # Upsert : ne pas insérer si déjà présent
+        for review in reviews:
+            author = review.get("author_name", "Anonyme")
+            rating = review.get("rating", 5)
+            text = review.get("text", "")
+            timestamp = review.get("time", 0)
+            # Créer un ID unique à partir de l'auteur + timestamp
+            review_id = f"google_{author.replace(' ', '_').lower()}_{timestamp}"
+
+            # Convertir le timestamp unix en datetime
+            from datetime import datetime as dt
+            date_avis = dt.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
+
+            # Vérifier si cet avis existe déjà (par google_review_id ou par auteur+date)
             cur.execute(
                 "SELECT id FROM avis_google WHERE google_review_id = %s",
-                (review["google_review_id"],),
+                (review_id,),
+            )
+            if cur.fetchone():
+                continue
+
+            # Vérifier aussi par auteur + note (pour éviter les doublons des anciens avis démo)
+            cur.execute(
+                "SELECT id FROM avis_google WHERE auteur = %s AND note = %s AND texte = %s",
+                (author, rating, text),
             )
             if cur.fetchone():
                 continue
@@ -435,15 +447,16 @@ async def sync_avis(user: dict = Depends(get_current_user)):
                 INSERT INTO avis_google
                     (google_review_id, auteur, note, texte, date_avis,
                      repondu, reponse_texte, reponse_date, reponse_par)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                review["google_review_id"], review["auteur"], review["note"],
-                review["texte"], review["date_avis"], review["repondu"],
-                review["reponse_texte"], review["reponse_date"], review["reponse_par"],
-            ))
+                VALUES (%s, %s, %s, %s, %s, FALSE, NULL, NULL, NULL)
+            """, (review_id, author, rating, text, date_avis))
             synced += 1
 
-    return {"synced": synced}
+    return {
+        "synced": synced,
+        "total_reviews_found": len(reviews),
+        "note_google": result.get("rating"),
+        "total_avis_google": result.get("user_ratings_total"),
+    }
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
