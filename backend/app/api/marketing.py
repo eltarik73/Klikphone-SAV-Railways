@@ -374,7 +374,7 @@ async def search_place(query: str = Query(..., description="Nom de la boutique +
 
 
 @router.post("/avis/sync")
-async def sync_avis():  # temp no auth for testing
+async def sync_avis(user: dict = Depends(get_current_user)):
     """Synchronise les avis depuis Google Places API. Nécessite GOOGLE_PLACES_API_KEY + GOOGLE_PLACE_ID."""
     _ensure_tables()
 
@@ -488,6 +488,15 @@ async def sync_avis():  # temp no auth for testing
         "note_google": result.get("rating"),
         "total_avis_google": result.get("user_ratings_total"),
     }
+
+
+@router.delete("/avis/cleanup-demo")
+async def cleanup_demo_avis():
+    """Supprime les avis de démo (google_review_id commençant par 'demo_'). Temporaire."""
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM avis_google WHERE google_review_id LIKE 'demo_%'")
+        deleted = cur.rowcount
+    return {"deleted": deleted}
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
