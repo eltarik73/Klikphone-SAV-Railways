@@ -871,12 +871,30 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
             f"Aucun compte actif '{plateforme}' trouvé. Comptes détectés: {found}"
         )
 
-    # 3. Publier via POST /api/v1/posts
+    # 3. Construire le body Late
+    image_url = post_dict.get("image_url")
+
+    # Instagram exige au moins une image
+    has_instagram = any(p["platform"] == "instagram" for p in platforms_payload)
+    if has_instagram and not image_url:
+        # Séparer : publier sur les autres plateformes sans image, bloquer Instagram
+        non_ig = [p for p in platforms_payload if p["platform"] != "instagram"]
+        if non_ig:
+            platforms_payload = non_ig  # publier sur LinkedIn etc. sans image
+        else:
+            raise HTTPException(
+                400,
+                "Instagram exige une image. Ajoutez une image_url au post avant de publier sur Instagram."
+            )
+
     late_body = {
         "content": full_text,
         "platforms": platforms_payload,
         "publishNow": True,
     }
+
+    if image_url:
+        late_body["mediaItems"] = [{"type": "image", "url": image_url}]
 
     async with httpx.AsyncClient(timeout=30) as client:
         late_resp = await client.post(
