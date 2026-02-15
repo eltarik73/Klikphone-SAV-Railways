@@ -19,7 +19,7 @@ from app.database import get_cursor
 from app.api.auth import get_current_user
 
 
-def _require_admin_marketing(user: dict = Depends(_require_admin_marketing)):
+def _require_admin_marketing(user: dict = Depends(get_current_user)):
     """Dependency: admin required for marketing actions."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
