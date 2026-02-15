@@ -789,7 +789,7 @@ TARIFS = [
     ("Google", "Pixel 7 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED Pixel 7 Pro", 72.00, "standard"),
     ("Google", "Pixel 7", "Ecran", "Original", "Ecran Original Pixel 7", 95.00, "standard"),
     ("Google", "Pixel 7", "Ecran", "Soft OLED", "Ecran Soft OLED Pixel 7", 58.00, "standard"),
-    ("Google", "Pixel 7a", "Ecran", "Original", "Ecran Original Pixel 7a", 62.00, "standard"),
+    ("Google", "Pixel 7a", "Ecran", "Original", "Ecran Original Pixel 7a", 73.40, "haut_de_gamme"),
     ("Google", "Pixel 6 Pro", "Ecran", "Original", "Ecran Original Pixel 6 Pro", 95.00, "standard"),
     ("Google", "Pixel 6", "Ecran", "Original", "Ecran Original Pixel 6", 72.00, "standard"),
     ("Google", "Pixel 6a", "Ecran", "Original", "Ecran Original Pixel 6a", 52.00, "standard"),
