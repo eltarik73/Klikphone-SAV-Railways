@@ -161,7 +161,6 @@ async def get_stats():
 @router.post("/import")
 async def import_tarifs(
     body: TarifImportRequest,
-    user: dict = Depends(get_current_user),
 ):
     """Importe une liste de tarifs. Calcule automatiquement le prix client."""
     inserted = 0
@@ -198,7 +197,7 @@ async def import_tarifs(
 
 
 @router.delete("/clear")
-async def clear_tarifs(user: dict = Depends(get_current_user)):
+async def clear_tarifs():
     """Vide la table tarifs."""
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")
