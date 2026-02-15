@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Sparkles, Send, Edit3, RotateCcw, TrendingUp } from 'lucide-react';
+import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Sparkles, Send, Edit3, RotateCcw, TrendingUp, Copy, ExternalLink, Check } from 'lucide-react';
 import api from '../lib/api';
 
 // ─── Helpers ────────────────────────────────────
@@ -44,6 +44,7 @@ export default function AvisGoogle() {
   const [generatingId, setGeneratingId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState('');
+  const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -125,6 +126,29 @@ export default function AvisGoogle() {
 
   function handleRegenerate(id) {
     handleGenerate(id);
+  }
+
+  async function handleCopy(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (e) {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  }
+
+  function openGoogleReviews() {
+    // Opens the Google Business Profile review management page
+    window.open('https://business.google.com/', '_blank');
   }
 
   // ─── Filtrage ─────────────────────────────────
@@ -229,6 +253,14 @@ export default function AvisGoogle() {
                 </p>
                 <p className="text-xs text-zinc-500 mt-1">Taux de réponse</p>
               </div>
+            </div>
+
+            {/* Info banner */}
+            <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200">
+              <ExternalLink className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-blue-700">
+                <span className="font-semibold">Comment ça marche :</span> Générez une réponse IA, modifiez-la si besoin, puis cliquez "Approuver & Publier". La réponse sera copiée et Google ouvert pour la coller.
+              </p>
             </div>
 
             {/* Filtres */}
@@ -348,11 +380,18 @@ export default function AvisGoogle() {
                             {/* Boutons d'action */}
                             <div className="flex flex-wrap gap-2 mt-3">
                               <button
-                                onClick={() => handleApprove(item.id, item.ia_suggestion)}
+                                onClick={async () => {
+                                  await handleCopy(item.ia_suggestion, `approve-${item.id}`);
+                                  await handleApprove(item.id, item.ia_suggestion);
+                                  openGoogleReviews();
+                                }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium transition-colors"
                               >
-                                <Send className="w-3.5 h-3.5" />
-                                Approuver & Publier
+                                {copiedId === `approve-${item.id}` ? (
+                                  <><Check className="w-3.5 h-3.5" /> Copié ! Ouvrir Google...</>
+                                ) : (
+                                  <><Send className="w-3.5 h-3.5" /> Approuver & Publier</>
+                                )}
                               </button>
                               <button
                                 onClick={() => handleEdit(item.id, item.ia_suggestion)}
@@ -370,6 +409,16 @@ export default function AvisGoogle() {
                                   className={`w-3.5 h-3.5 ${generatingId === item.id ? 'animate-spin' : ''}`}
                                 />
                                 Régénérer
+                              </button>
+                              <button
+                                onClick={() => handleCopy(item.ia_suggestion, `copy-${item.id}`)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-300 text-zinc-600 text-xs font-medium hover:bg-zinc-50 transition-colors"
+                              >
+                                {copiedId === `copy-${item.id}` ? (
+                                  <><Check className="w-3.5 h-3.5 text-emerald-500" /> Copié !</>
+                                ) : (
+                                  <><Copy className="w-3.5 h-3.5" /> Copier</>
+                                )}
                               </button>
                             </div>
                           </div>
@@ -396,6 +445,24 @@ export default function AvisGoogle() {
                           {item.reponse_par && (
                             <span>· par {item.reponse_par}</span>
                           )}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleCopy(item.reponse_texte, `pub-${item.id}`)}
+                            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 transition-colors"
+                          >
+                            {copiedId === `pub-${item.id}` ? (
+                              <><Check className="w-3 h-3 text-emerald-500" /> Copié</>
+                            ) : (
+                              <><Copy className="w-3 h-3" /> Copier</>
+                            )}
+                          </button>
+                          <button
+                            onClick={openGoogleReviews}
+                            className="flex items-center gap-1 text-xs font-medium text-violet-500 hover:text-violet-700 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" /> Voir sur Google
+                          </button>
                         </div>
                       </div>
                     )}

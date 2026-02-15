@@ -1176,17 +1176,13 @@ async def analytics_overview():
     total_likes = int(posts_stats["total_likes"])
     total_commentaires = int(posts_stats["total_commentaires"])
 
-    portee_totale = total_vues if total_vues > 0 else 1250
-    interactions = total_likes + total_commentaires if (total_likes + total_commentaires) > 0 else 340
-    nouveaux_abonnes = 28
-
     return {
-        "portee_totale": portee_totale,
-        "interactions": interactions,
-        "nouveaux_abonnes": nouveaux_abonnes,
-        "trend_portee": 12.5,
-        "trend_interactions": 8.3,
-        "trend_abonnes": 5.7,
+        "portee_totale": total_vues,
+        "interactions": total_likes + total_commentaires,
+        "nouveaux_abonnes": 0,
+        "portee_trend": 0,
+        "interactions_trend": 0,
+        "abonnes_trend": 0,
         "posts_publies": posts_stats["posts_publies"],
         "posts_programmes": posts_stats["posts_programmes"],
         "posts_brouillons": posts_stats["posts_brouillons"],

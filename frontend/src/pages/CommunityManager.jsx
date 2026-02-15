@@ -3,7 +3,8 @@ import {
   FileText, Sparkles, Calendar, LayoutGrid, BarChart3,
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
-  TrendingUp, Users, MousePointerClick, Megaphone
+  TrendingUp, Users, MousePointerClick, Megaphone,
+  Copy, Check, ExternalLink, Share2, X
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -104,6 +105,8 @@ export default function CommunityManager() {
   const [programmingId, setProgrammingId] = useState(null);
   const [programDate, setProgramDate] = useState('');
   const [programHeure, setProgramHeure] = useState('10:00');
+  const [copiedId, setCopiedId] = useState(null);
+  const [shareModal, setShareModal] = useState(null); // post object when showing share modal
 
   // ─── Loaders ────────────────────────────────────────────
 
@@ -217,7 +220,13 @@ export default function CommunityManager() {
 
   const handlePublish = async (id) => {
     try {
-      await api.publierPost(id);
+      const result = await api.publierPost(id);
+      const post = result || posts.find(p => p.id === id);
+      if (post) {
+        const fullText = getFullPostText(post);
+        await copyToClipboard(fullText, `pub-${id}`);
+        setShareModal(post);
+      }
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
@@ -233,6 +242,9 @@ export default function CommunityManager() {
       if (created && created.id) {
         await api.publierPost(created.id);
       }
+      const fullText = getFullPostText(post);
+      await copyToClipboard(fullText, 'gen-publish');
+      setShareModal({ ...post, plateforme: post.plateforme || genPlateforme });
       setGeneratedPost(null);
       setGenContexte('');
       loadPosts();
@@ -297,6 +309,55 @@ export default function CommunityManager() {
     setGenContexte(template.contenu || template.description || '');
     setGeneratedPost(null);
   };
+
+  // ─── Clipboard & Share ──────────────────────────────────
+
+  async function copyToClipboard(text, id) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
+  }
+
+  function getFullPostText(post) {
+    let text = post.contenu || '';
+    const tags = Array.isArray(post.hashtags) ? post.hashtags : [];
+    if (tags.length > 0) {
+      text += '\n\n' + tags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ');
+    }
+    return text;
+  }
+
+  function getShareUrl(platform, text) {
+    const encoded = encodeURIComponent(text);
+    switch (platform) {
+      case 'facebook':
+        return `https://www.facebook.com/sharer/sharer.php?quote=${encoded}`;
+      case 'linkedin':
+        return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent('https://klikphone.fr')}&summary=${encoded}`;
+      case 'instagram':
+        return 'https://www.instagram.com/'; // Instagram doesn't support pre-filled posts via URL
+      case 'google':
+        return 'https://business.google.com/posts/'; // Google Business Profile posts
+      default:
+        return '#';
+    }
+  }
+
+  function openSharePlatform(platform, text) {
+    const url = getShareUrl(platform, text);
+    window.open(url, '_blank');
+  }
 
   // ─── Calendar navigation ───────────────────────────────
 
@@ -409,6 +470,14 @@ export default function CommunityManager() {
                 </select>
               </div>
 
+              {/* Info workflow */}
+              <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200">
+                <Share2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-blue-700">
+                  <span className="font-semibold">Publication :</span> Quand vous publiez un post, le contenu est copié automatiquement et vous pouvez le coller directement sur la plateforme choisie.
+                </p>
+              </div>
+
               {/* Posts list */}
               {loading ? (
                 <Spinner />
@@ -466,6 +535,17 @@ export default function CommunityManager() {
                           )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => copyToClipboard(getFullPostText(post), `post-${post.id}`)}
+                            className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+                            title="Copier"
+                          >
+                            {copiedId === `post-${post.id}` ? (
+                              <Check className="w-4 h-4 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
                           <button
                             className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
                             title="Voir"
@@ -641,7 +721,7 @@ export default function CommunityManager() {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => handleSaveDraft(generatedPost)}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 transition-colors"
@@ -655,6 +735,16 @@ export default function CommunityManager() {
                     >
                       <Send className="w-4 h-4" />
                       Publier maintenant
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(getFullPostText(generatedPost), 'gen-copy')}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border-2 border-slate-200 text-zinc-600 text-sm font-medium hover:bg-zinc-50 transition-colors"
+                    >
+                      {copiedId === 'gen-copy' ? (
+                        <><Check className="w-4 h-4 text-emerald-500" /> Copié !</>
+                      ) : (
+                        <><Copy className="w-4 h-4" /> Copier</>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1126,6 +1216,76 @@ export default function CommunityManager() {
           </div>
         )}
       </div>
+
+      {/* ─── SHARE MODAL ────────────────────────────── */}
+      {shareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Share2 className="w-5 h-5 text-violet-600" />
+                <h3 className="font-bold text-zinc-900">Publier sur les réseaux</h3>
+              </div>
+              <button
+                onClick={() => setShareModal(null)}
+                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content preview */}
+            <div className="px-5 py-4">
+              <div className="bg-zinc-50 rounded-xl p-3 mb-4 max-h-32 overflow-y-auto">
+                <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4">
+                  {shareModal.contenu}
+                </p>
+              </div>
+
+              <p className="text-xs text-emerald-600 font-medium mb-4 flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" />
+                Contenu copié dans le presse-papier !
+              </p>
+
+              {/* Platform buttons */}
+              <div className="space-y-2">
+                {[
+                  { id: 'facebook', icon: Facebook, label: 'Publier sur Facebook', color: 'bg-blue-600 hover:bg-blue-700' },
+                  { id: 'instagram', icon: Instagram, label: 'Ouvrir Instagram', color: 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600' },
+                  { id: 'google', icon: Globe, label: 'Publier sur Google', color: 'bg-emerald-600 hover:bg-emerald-700' },
+                  { id: 'linkedin', icon: Linkedin, label: 'Publier sur LinkedIn', color: 'bg-sky-700 hover:bg-sky-800' },
+                ].map(({ id, icon: Icon, label, color }) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      openSharePlatform(id, getFullPostText(shareModal));
+                      setShareModal(null);
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white text-sm font-semibold transition-all ${color}`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    {label}
+                    <ExternalLink className="w-4 h-4 ml-auto opacity-60" />
+                  </button>
+                ))}
+              </div>
+
+              {/* Copy again button */}
+              <button
+                onClick={() => copyToClipboard(getFullPostText(shareModal), 'modal-copy')}
+                className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-slate-200 text-zinc-700 text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                {copiedId === 'modal-copy' ? (
+                  <><Check className="w-4 h-4 text-emerald-500" /> Copié !</>
+                ) : (
+                  <><Copy className="w-4 h-4" /> Copier à nouveau</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
