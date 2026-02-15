@@ -89,6 +89,7 @@ export default function CommunityManager() {
   const [generatedPost, setGeneratedPost] = useState(null);
   const [genImageUrl, setGenImageUrl] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
 
   // Calendar
   const [events, setEvents] = useState([]);
@@ -211,6 +212,7 @@ export default function CommunityManager() {
     const contexte = generatedPost?.contenu || genContexte;
     if (!contexte.trim()) return;
     setGeneratingImage(true);
+    setImageLoading(true);
     try {
       const data = await api.genererImage({ contexte, style: 'professional' });
       if (data.image_url) {
@@ -218,6 +220,7 @@ export default function CommunityManager() {
       }
     } catch (err) {
       console.error('Erreur génération image:', err);
+      setImageLoading(false);
     } finally {
       setGeneratingImage(false);
     }
@@ -743,32 +746,42 @@ export default function CommunityManager() {
                     </div>
                   ) : (
                     <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                      {/* Loading placeholder */}
+                      {imageLoading && (
+                        <div className="w-full h-40 flex flex-col items-center justify-center gap-2 bg-violet-50">
+                          <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+                          <span className="text-xs text-violet-600 font-medium">Chargement de l'image...</span>
+                        </div>
+                      )}
                       <img
                         src={genImageUrl}
                         alt="Aperçu"
-                        className="w-full h-40 object-cover"
-                        onError={(e) => { e.target.parentNode.classList.add('h-20'); e.target.style.display = 'none'; }}
+                        className={`w-full h-40 object-cover ${imageLoading ? 'hidden' : ''}`}
+                        onLoad={() => setImageLoading(false)}
+                        onError={(e) => { setImageLoading(false); e.target.src = ''; e.target.className = 'hidden'; }}
                       />
-                      <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                        <button
-                          onClick={handleGenerateImage}
-                          disabled={generatingImage}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-zinc-700 text-xs font-semibold hover:bg-white transition-colors"
-                        >
-                          {generatingImage ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Sparkles className="w-3.5 h-3.5" />
-                          )}
-                          Régénérer
-                        </button>
-                        <button
-                          onClick={() => setGenImageUrl('')}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-red-600 text-xs font-semibold hover:bg-white transition-colors"
-                        >
-                          <Trash className="w-3.5 h-3.5" /> Supprimer
-                        </button>
-                      </div>
+                      {!imageLoading && (
+                        <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                          <button
+                            onClick={handleGenerateImage}
+                            disabled={generatingImage}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-zinc-700 text-xs font-semibold hover:bg-white transition-colors"
+                          >
+                            {generatingImage ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-3.5 h-3.5" />
+                            )}
+                            Régénérer
+                          </button>
+                          <button
+                            onClick={() => { setGenImageUrl(''); setImageLoading(false); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-red-600 text-xs font-semibold hover:bg-white transition-colors"
+                          >
+                            <Trash className="w-3.5 h-3.5" /> Supprimer
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -808,8 +821,19 @@ export default function CommunityManager() {
                   </p>
 
                   {genImageUrl && (
-                    <div className="mb-3 rounded-xl overflow-hidden border border-slate-200">
-                      <img src={genImageUrl} alt="Image du post" className="w-full h-40 object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                    <div className="mb-3 rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                      {imageLoading && (
+                        <div className="w-full h-32 flex items-center justify-center bg-violet-50">
+                          <Loader2 className="w-5 h-5 animate-spin text-violet-500" />
+                        </div>
+                      )}
+                      <img
+                        src={genImageUrl}
+                        alt="Image du post"
+                        className={`w-full h-32 object-cover ${imageLoading ? 'hidden' : ''}`}
+                        onLoad={() => setImageLoading(false)}
+                        onError={(e) => { setImageLoading(false); e.target.className = 'hidden'; }}
+                      />
                     </div>
                   )}
 

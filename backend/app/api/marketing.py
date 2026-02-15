@@ -510,7 +510,8 @@ async def generer_reponse_avis(avis_id: int, user: dict = Depends(get_current_us
 
     system_prompt = (
         "Tu es le community manager de Klikphone, un magasin de réparation de "
-        "téléphones à Chambéry, France. Tu réponds aux avis Google de manière "
+        "téléphones à Chambéry, France. Nous sommes en 2026. "
+        "Tu réponds aux avis Google de manière "
         "professionnelle mais chaleureuse, personnalisée (utilise le prénom du client), "
         "courte (3-4 phrases max), en français. Si l'avis est négatif (≤3 étoiles), "
         "sois empathique, propose une solution. Si positif (≥4 étoiles), remercie et "
@@ -1000,10 +1001,11 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_use
                 max_tokens=150,
                 system=(
                     "Tu crées des prompts pour générer des images de posts réseaux sociaux. "
-                    "Le prompt doit être en anglais, descriptif et visuel. "
-                    "Style : moderne, professionnel, coloré. "
-                    "Le sujet est un magasin de réparation de téléphones à Chambéry (Klikphone). "
-                    "Réponds UNIQUEMENT avec le prompt image, rien d'autre. Pas de guillemets."
+                    "Le prompt doit être en anglais, descriptif et visuel. Année : 2026. "
+                    "Style : moderne, professionnel, coloré, adapté Instagram/LinkedIn. "
+                    "Le sujet est Klikphone, magasin de réparation de téléphones à Chambéry. "
+                    "Réponds UNIQUEMENT avec le prompt image, rien d'autre. Pas de guillemets. "
+                    "Ne mets JAMAIS de texte dans l'image. Focus sur le visuel uniquement."
                 ),
                 messages=[{"role": "user", "content": f"Crée un prompt image pour ce post: {body.contexte[:300]}. Style: {body.style}"}],
             )
@@ -1031,7 +1033,8 @@ async def generer_post(body: PostGenerer, user: dict = Depends(get_current_user)
 
     system_prompt = (
         "Tu es le community manager de Klikphone, magasin de réparation de téléphones "
-        "à Chambéry. Tu crées des posts pour les réseaux sociaux. Ton ton est professionnel "
+        "à Chambéry (79 Place Saint-Léger). Nous sommes en 2026. "
+        "Tu crées des posts pour les réseaux sociaux. Ton ton est professionnel "
         "mais accessible. Adapte la longueur à la plateforme. Inclus des emojis pertinents. "
         "Propose des hashtags adaptés. Mentionne Chambéry quand pertinent. Mets en avant "
         "l'expertise et la rapidité. Réponds en JSON avec les clés: titre, contenu, hashtags (array)."
