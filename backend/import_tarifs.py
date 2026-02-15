@@ -658,128 +658,400 @@ TARIFS = [
     ("Samsung", "Galaxy S21", "Vitre arriere", None, "Vitre arriere Samsung S21", 9.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
-    # ║  XIAOMI — ECRANS                                           ║
+    # ║  XIAOMI — ECRANS (Gamme principale)                        ║
     # ╚══════════════════════════════════════════════════════════════╝
+
+    # Xiaomi 14 Ultra
     ("Xiaomi", "14 Ultra", "Ecran", "Original", "Ecran Original Xiaomi 14 Ultra", 180.00, "haut_de_gamme"),
-    ("Xiaomi", "14", "Ecran", "Original", "Ecran Original Xiaomi 14", 95.00, "haut_de_gamme"),
-    ("Xiaomi", "13T Pro", "Ecran", "Original", "Ecran Original Xiaomi 13T Pro", 85.00, "standard"),
-    ("Xiaomi", "13T", "Ecran", "Original", "Ecran Original Xiaomi 13T", 68.00, "standard"),
-    ("Xiaomi", "13T", "Ecran", "Incell", "Ecran Incell Xiaomi 13T", 35.00, "standard"),
-
-    ("Xiaomi", "Redmi Note 13 Pro+", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 13 Pro+", 72.00, "standard"),
-    ("Xiaomi", "Redmi Note 13 Pro+", "Ecran", "OLED", "Ecran OLED Xiaomi Redmi Note 13 Pro+", 42.00, "standard"),
-    ("Xiaomi", "Redmi Note 13 Pro", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 13 Pro", 62.00, "standard"),
-    ("Xiaomi", "Redmi Note 13 Pro", "Ecran", "Incell", "Ecran Incell Xiaomi Redmi Note 13 Pro", 30.00, "standard"),
-    ("Xiaomi", "Redmi Note 13", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 13", 45.00, "standard"),
-    ("Xiaomi", "Redmi Note 13", "Ecran", "Incell", "Ecran Incell Xiaomi Redmi Note 13", 22.00, "standard"),
-
-    ("Xiaomi", "Redmi Note 12 Pro+", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 12 Pro+", 62.00, "standard"),
-    ("Xiaomi", "Redmi Note 12 Pro", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 12 Pro", 55.00, "standard"),
-    ("Xiaomi", "Redmi Note 12 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Redmi Note 12 Pro", 38.00, "standard"),
-    ("Xiaomi", "Redmi Note 12", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 12", 38.00, "standard"),
-    ("Xiaomi", "Redmi Note 12", "Ecran", "Incell", "Ecran Incell Xiaomi Redmi Note 12", 20.00, "standard"),
-
-    ("Xiaomi", "Redmi Note 11 Pro", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 11 Pro", 48.00, "standard"),
-    ("Xiaomi", "Redmi Note 11 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Redmi Note 11 Pro", 32.00, "standard"),
-    ("Xiaomi", "Redmi Note 11", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 11", 32.00, "standard"),
-    ("Xiaomi", "Redmi Note 11", "Ecran", "Incell", "Ecran Incell Xiaomi Redmi Note 11", 18.00, "standard"),
-    ("Xiaomi", "Redmi Note 11S", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 11S", 42.00, "standard"),
-    ("Xiaomi", "Redmi Note 11S", "Ecran", "OLED", "Ecran OLED Xiaomi Redmi Note 11S", 28.00, "standard"),
-
-    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 10 Pro", 42.00, "standard"),
-    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Redmi Note 10 Pro", 28.00, "standard"),
-    ("Xiaomi", "Redmi Note 10", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 10", 28.00, "standard"),
-    ("Xiaomi", "Redmi Note 10", "Ecran", "Incell", "Ecran Incell Xiaomi Redmi Note 10", 16.00, "standard"),
-    ("Xiaomi", "Redmi Note 10S", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 10S", 38.00, "standard"),
-
-    ("Xiaomi", "Redmi Note 9 Pro", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 9 Pro", 32.00, "standard"),
-    ("Xiaomi", "Redmi Note 9 Pro", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi Note 9 Pro", 18.00, "standard"),
-    ("Xiaomi", "Redmi Note 9", "Ecran", "Original", "Ecran Original Xiaomi Redmi Note 9", 25.00, "standard"),
-
-    ("Xiaomi", "Redmi 13C", "Ecran", "Original", "Ecran Original Xiaomi Redmi 13C", 25.00, "standard"),
-    ("Xiaomi", "Redmi 13C", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi 13C", 14.00, "standard"),
-    ("Xiaomi", "Redmi 12", "Ecran", "Original", "Ecran Original Xiaomi Redmi 12", 28.00, "standard"),
-    ("Xiaomi", "Redmi 12", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi 12", 16.00, "standard"),
-
-    ("Xiaomi", "Poco X6 Pro", "Ecran", "Original", "Ecran Original Xiaomi Poco X6 Pro", 58.00, "standard"),
-    ("Xiaomi", "Poco X6 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Poco X6 Pro", 35.00, "standard"),
-    ("Xiaomi", "Poco X5 Pro", "Ecran", "Original", "Ecran Original Xiaomi Poco X5 Pro", 48.00, "standard"),
-    ("Xiaomi", "Poco X5 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Poco X5 Pro", 30.00, "standard"),
-    ("Xiaomi", "Poco X3 Pro", "Ecran", "Original", "Ecran Original Xiaomi Poco X3 Pro", 35.00, "standard"),
-    ("Xiaomi", "Poco X3 Pro", "Ecran", "Compatible", "Ecran Compatible Xiaomi Poco X3 Pro", 20.00, "standard"),
-    ("Xiaomi", "Poco F5", "Ecran", "Original", "Ecran Original Xiaomi Poco F5", 55.00, "standard"),
-    ("Xiaomi", "Poco F5", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F5", 35.00, "standard"),
-    ("Xiaomi", "Poco M5", "Ecran", "Original", "Ecran Original Xiaomi Poco M5", 25.00, "standard"),
-
     # Xiaomi 14 Pro
     ("Xiaomi", "14 Pro", "Ecran", "Original", "Ecran Original Xiaomi 14 Pro", 155.00, "haut_de_gamme"),
+    # Xiaomi 14
+    ("Xiaomi", "14", "Ecran", "Original", "Ecran Original Xiaomi 14", 95.00, "haut_de_gamme"),
+    # Xiaomi 13T Pro
+    ("Xiaomi", "13T Pro", "Ecran", "Original", "Ecran Original Xiaomi 13T Pro", 85.00, "standard"),
+    # Xiaomi 13T
+    ("Xiaomi", "13T", "Ecran", "Original", "Ecran Original Xiaomi 13T", 68.00, "standard"),
+    ("Xiaomi", "13T", "Ecran", "Incell", "Ecran Incell Xiaomi 13T", 35.00, "standard"),
+    # Xiaomi 13 Pro
+    ("Xiaomi", "13 Pro", "Ecran", "Original", "Ecran Original Xiaomi 13 Pro", 125.00, "haut_de_gamme"),
+    # Xiaomi 13
+    ("Xiaomi", "13", "Ecran", "Original", "Ecran Original Xiaomi 13", 80.00, "standard"),
+    ("Xiaomi", "13", "Ecran", "OLED", "Ecran OLED Xiaomi 13", 48.00, "standard"),
+    # Xiaomi 13 Lite
+    ("Xiaomi", "13 Lite", "Ecran", "Original", "Ecran Original Xiaomi 13 Lite", 45.00, "standard"),
+    ("Xiaomi", "13 Lite", "Ecran", "Incell", "Ecran Incell Xiaomi 13 Lite", 25.00, "standard"),
+    # Xiaomi 12T Pro
+    ("Xiaomi", "12T Pro", "Ecran", "Original", "Ecran Original Xiaomi 12T Pro", 72.00, "standard"),
+    ("Xiaomi", "12T Pro", "Ecran", "OLED", "Ecran OLED Xiaomi 12T Pro", 42.00, "standard"),
+    # Xiaomi 12T
+    ("Xiaomi", "12T", "Ecran", "Original", "Ecran Original Xiaomi 12T", 55.00, "standard"),
+    ("Xiaomi", "12T", "Ecran", "Incell", "Ecran Incell Xiaomi 12T", 30.00, "standard"),
+    # Xiaomi 12 Pro
+    ("Xiaomi", "12 Pro", "Ecran", "Original", "Ecran Original Xiaomi 12 Pro", 95.00, "haut_de_gamme"),
+    # Xiaomi 12
+    ("Xiaomi", "12", "Ecran", "Original", "Ecran Original Xiaomi 12", 58.00, "standard"),
+    ("Xiaomi", "12", "Ecran", "OLED", "Ecran OLED Xiaomi 12", 35.00, "standard"),
+    # Xiaomi 12 Lite
+    ("Xiaomi", "12 Lite", "Ecran", "Original", "Ecran Original Xiaomi 12 Lite", 42.00, "standard"),
+    ("Xiaomi", "12 Lite", "Ecran", "Incell", "Ecran Incell Xiaomi 12 Lite", 24.00, "standard"),
+    # Xiaomi 11T Pro
+    ("Xiaomi", "11T Pro", "Ecran", "Original", "Ecran Original Xiaomi 11T Pro", 62.00, "standard"),
+    ("Xiaomi", "11T Pro", "Ecran", "OLED", "Ecran OLED Xiaomi 11T Pro", 38.00, "standard"),
+    # Xiaomi 11T
+    ("Xiaomi", "11T", "Ecran", "Original", "Ecran Original Xiaomi 11T", 48.00, "standard"),
+    ("Xiaomi", "11T", "Ecran", "Incell", "Ecran Incell Xiaomi 11T", 28.00, "standard"),
+    # Xiaomi 11 Lite 5G NE
+    ("Xiaomi", "11 Lite 5G NE", "Ecran", "Original", "Ecran Original Xiaomi 11 Lite 5G NE", 42.00, "standard"),
+    ("Xiaomi", "11 Lite 5G NE", "Ecran", "OLED", "Ecran OLED Xiaomi 11 Lite 5G NE", 28.00, "standard"),
+    # Mi 11
+    ("Xiaomi", "Mi 11", "Ecran", "Original", "Ecran Original Xiaomi Mi 11", 85.00, "haut_de_gamme"),
+    # Mi 11 Lite 5G
+    ("Xiaomi", "Mi 11 Lite 5G", "Ecran", "Original", "Ecran Original Xiaomi Mi 11 Lite 5G", 42.00, "standard"),
+    ("Xiaomi", "Mi 11 Lite 5G", "Ecran", "OLED", "Ecran OLED Xiaomi Mi 11 Lite 5G", 28.00, "standard"),
+    # Mi 11 Lite 4G
+    ("Xiaomi", "Mi 11 Lite 4G", "Ecran", "Original", "Ecran Original Xiaomi Mi 11 Lite 4G", 38.00, "standard"),
+    ("Xiaomi", "Mi 11 Lite 4G", "Ecran", "Incell", "Ecran Incell Xiaomi Mi 11 Lite 4G", 22.00, "standard"),
+    # Mi 10T Pro
+    ("Xiaomi", "Mi 10T Pro", "Ecran", "Original", "Ecran Original Xiaomi Mi 10T Pro", 48.00, "standard"),
+    ("Xiaomi", "Mi 10T Pro", "Ecran", "Incell", "Ecran Incell Xiaomi Mi 10T Pro", 28.00, "standard"),
+    # Mi 10T Lite
+    ("Xiaomi", "Mi 10T Lite", "Ecran", "Original", "Ecran Original Xiaomi Mi 10T Lite", 28.00, "standard"),
+    ("Xiaomi", "Mi 10T Lite", "Ecran", "Compatible", "Ecran Compatible Xiaomi Mi 10T Lite", 16.00, "standard"),
 
-    # Poco F6 Pro
-    ("Xiaomi", "Poco F6 Pro", "Ecran", "Original", "Ecran Original Xiaomi Poco F6 Pro", 85.00, "haut_de_gamme"),
-    ("Xiaomi", "Poco F6 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F6 Pro", 52.00, "haut_de_gamme"),
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi Note 13 (4G / 5G)                   ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi Note 13 Pro+ 5G (OLED)
+    ("Xiaomi", "Redmi Note 13 Pro+ 5G", "Ecran", "Original", "Ecran Original Redmi Note 13 Pro+ 5G", 72.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro+ 5G", "Ecran", "OLED", "Ecran OLED Redmi Note 13 Pro+ 5G", 42.00, "standard"),
+    # Redmi Note 13 Pro 5G (OLED)
+    ("Xiaomi", "Redmi Note 13 Pro 5G", "Ecran", "Original", "Ecran Original Redmi Note 13 Pro 5G", 62.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro 5G", "Ecran", "Incell", "Ecran Incell Redmi Note 13 Pro 5G", 30.00, "standard"),
+    # Redmi Note 13 Pro 4G (AMOLED, nappe differente)
+    ("Xiaomi", "Redmi Note 13 Pro 4G", "Ecran", "Original", "Ecran Original Redmi Note 13 Pro 4G", 55.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro 4G", "Ecran", "Incell", "Ecran Incell Redmi Note 13 Pro 4G", 28.00, "standard"),
+    # Redmi Note 13 5G (AMOLED)
+    ("Xiaomi", "Redmi Note 13 5G", "Ecran", "Original", "Ecran Original Redmi Note 13 5G", 45.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 5G", "Ecran", "Incell", "Ecran Incell Redmi Note 13 5G", 22.00, "standard"),
+    # Redmi Note 13 4G (IPS LCD)
+    ("Xiaomi", "Redmi Note 13 4G", "Ecran", "Original", "Ecran Original Redmi Note 13 4G", 25.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 4G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 13 4G", 15.00, "standard"),
 
-    # Poco F6
-    ("Xiaomi", "Poco F6", "Ecran", "Original", "Ecran Original Xiaomi Poco F6", 68.00, "standard"),
-    ("Xiaomi", "Poco F6", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F6", 40.00, "standard"),
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi Note 12 (4G / 5G)                   ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi Note 12 Pro+ 5G (OLED)
+    ("Xiaomi", "Redmi Note 12 Pro+ 5G", "Ecran", "Original", "Ecran Original Redmi Note 12 Pro+ 5G", 62.00, "standard"),
+    # Redmi Note 12 Pro 5G (OLED)
+    ("Xiaomi", "Redmi Note 12 Pro 5G", "Ecran", "Original", "Ecran Original Redmi Note 12 Pro 5G", 55.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 5G", "Ecran", "OLED", "Ecran OLED Redmi Note 12 Pro 5G", 38.00, "standard"),
+    # Redmi Note 12 Pro 4G (OLED, nappe differente)
+    ("Xiaomi", "Redmi Note 12 Pro 4G", "Ecran", "Original", "Ecran Original Redmi Note 12 Pro 4G", 48.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 4G", "Ecran", "OLED", "Ecran OLED Redmi Note 12 Pro 4G", 32.00, "standard"),
+    # Redmi Note 12 5G (OLED)
+    ("Xiaomi", "Redmi Note 12 5G", "Ecran", "Original", "Ecran Original Redmi Note 12 5G", 38.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 5G", "Ecran", "Incell", "Ecran Incell Redmi Note 12 5G", 20.00, "standard"),
+    # Redmi Note 12 4G (IPS LCD)
+    ("Xiaomi", "Redmi Note 12 4G", "Ecran", "Original", "Ecran Original Redmi Note 12 4G", 22.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 4G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 12 4G", 14.00, "standard"),
 
-    # Redmi A3
-    ("Xiaomi", "Redmi A3", "Ecran", "Original", "Ecran Original Xiaomi Redmi A3", 18.00, "standard"),
-    ("Xiaomi", "Redmi A3", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi A3", 10.00, "standard"),
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi Note 11 (4G / 5G)                   ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi Note 11 Pro 5G (LCD !)
+    ("Xiaomi", "Redmi Note 11 Pro 5G", "Ecran", "Original", "Ecran Original Redmi Note 11 Pro 5G", 35.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 11 Pro 5G", 20.00, "standard"),
+    # Redmi Note 11 Pro 4G (AMOLED)
+    ("Xiaomi", "Redmi Note 11 Pro 4G", "Ecran", "Original", "Ecran Original Redmi Note 11 Pro 4G", 48.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 4G", "Ecran", "OLED", "Ecran OLED Redmi Note 11 Pro 4G", 32.00, "standard"),
+    # Redmi Note 11S (AMOLED)
+    ("Xiaomi", "Redmi Note 11S", "Ecran", "Original", "Ecran Original Redmi Note 11S", 42.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S", "Ecran", "OLED", "Ecran OLED Redmi Note 11S", 28.00, "standard"),
+    # Redmi Note 11S 5G (LCD)
+    ("Xiaomi", "Redmi Note 11S 5G", "Ecran", "Original", "Ecran Original Redmi Note 11S 5G", 28.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 11S 5G", 16.00, "standard"),
+    # Redmi Note 11 4G (AMOLED)
+    ("Xiaomi", "Redmi Note 11 4G", "Ecran", "Original", "Ecran Original Redmi Note 11 4G", 32.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 4G", "Ecran", "Incell", "Ecran Incell Redmi Note 11 4G", 18.00, "standard"),
+    # Redmi Note 11 5G (IPS LCD)
+    ("Xiaomi", "Redmi Note 11 5G", "Ecran", "Original", "Ecran Original Redmi Note 11 5G", 25.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 11 5G", 15.00, "standard"),
 
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi Note 10 (4G / 5G)                   ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi Note 10 Pro (AMOLED, 4G uniquement)
+    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "Original", "Ecran Original Redmi Note 10 Pro", 42.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "OLED", "Ecran OLED Redmi Note 10 Pro", 28.00, "standard"),
+    # Redmi Note 10S (AMOLED, 4G uniquement)
+    ("Xiaomi", "Redmi Note 10S", "Ecran", "Original", "Ecran Original Redmi Note 10S", 38.00, "standard"),
+    ("Xiaomi", "Redmi Note 10S", "Ecran", "OLED", "Ecran OLED Redmi Note 10S", 26.00, "standard"),
+    # Redmi Note 10 4G (AMOLED)
+    ("Xiaomi", "Redmi Note 10 4G", "Ecran", "Original", "Ecran Original Redmi Note 10 4G", 28.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 4G", "Ecran", "Incell", "Ecran Incell Redmi Note 10 4G", 16.00, "standard"),
+    # Redmi Note 10 5G (IPS LCD)
+    ("Xiaomi", "Redmi Note 10 5G", "Ecran", "Original", "Ecran Original Redmi Note 10 5G", 22.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 10 5G", 14.00, "standard"),
+
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi Note 9 / 8                          ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi Note 9 Pro
+    ("Xiaomi", "Redmi Note 9 Pro", "Ecran", "Original", "Ecran Original Redmi Note 9 Pro", 32.00, "standard"),
+    ("Xiaomi", "Redmi Note 9 Pro", "Ecran", "Compatible", "Ecran Compatible Redmi Note 9 Pro", 18.00, "standard"),
+    # Redmi Note 9S
+    ("Xiaomi", "Redmi Note 9S", "Ecran", "Original", "Ecran Original Redmi Note 9S", 30.00, "standard"),
+    ("Xiaomi", "Redmi Note 9S", "Ecran", "Compatible", "Ecran Compatible Redmi Note 9S", 17.00, "standard"),
+    # Redmi Note 9 4G
+    ("Xiaomi", "Redmi Note 9", "Ecran", "Original", "Ecran Original Redmi Note 9", 25.00, "standard"),
+    ("Xiaomi", "Redmi Note 9", "Ecran", "Compatible", "Ecran Compatible Redmi Note 9", 15.00, "standard"),
+    # Redmi Note 9T 5G
+    ("Xiaomi", "Redmi Note 9T 5G", "Ecran", "Original", "Ecran Original Redmi Note 9T 5G", 28.00, "standard"),
+    ("Xiaomi", "Redmi Note 9T 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 9T 5G", 16.00, "standard"),
+    # Redmi Note 8 Pro
+    ("Xiaomi", "Redmi Note 8 Pro", "Ecran", "Original", "Ecran Original Redmi Note 8 Pro", 25.00, "standard"),
+    ("Xiaomi", "Redmi Note 8 Pro", "Ecran", "Compatible", "Ecran Compatible Redmi Note 8 Pro", 15.00, "standard"),
+    # Redmi Note 8
+    ("Xiaomi", "Redmi Note 8", "Ecran", "Original", "Ecran Original Redmi Note 8", 22.00, "standard"),
+    ("Xiaomi", "Redmi Note 8", "Ecran", "Compatible", "Ecran Compatible Redmi Note 8", 13.00, "standard"),
+    # Redmi Note 8T
+    ("Xiaomi", "Redmi Note 8T", "Ecran", "Original", "Ecran Original Redmi Note 8T", 22.00, "standard"),
+    ("Xiaomi", "Redmi Note 8T", "Ecran", "Compatible", "Ecran Compatible Redmi Note 8T", 13.00, "standard"),
+
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Redmi (hors Note)                         ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Redmi 13
+    ("Xiaomi", "Redmi 13", "Ecran", "Original", "Ecran Original Redmi 13", 28.00, "standard"),
+    ("Xiaomi", "Redmi 13", "Ecran", "Compatible", "Ecran Compatible Redmi 13", 16.00, "standard"),
+    # Redmi 13C
+    ("Xiaomi", "Redmi 13C", "Ecran", "Original", "Ecran Original Redmi 13C", 25.00, "standard"),
+    ("Xiaomi", "Redmi 13C", "Ecran", "Compatible", "Ecran Compatible Redmi 13C", 14.00, "standard"),
+    ("Xiaomi", "Redmi 13C", "Ecran", "LCD", "Ecran LCD Redmi 13C", 10.00, "standard"),
+    # Redmi 12
+    ("Xiaomi", "Redmi 12", "Ecran", "Original", "Ecran Original Redmi 12", 28.00, "standard"),
+    ("Xiaomi", "Redmi 12", "Ecran", "Compatible", "Ecran Compatible Redmi 12", 16.00, "standard"),
+    ("Xiaomi", "Redmi 12", "Ecran", "LCD", "Ecran LCD Redmi 12", 12.00, "standard"),
+    # Redmi 12C
+    ("Xiaomi", "Redmi 12C", "Ecran", "Original", "Ecran Original Redmi 12C", 22.00, "standard"),
+    ("Xiaomi", "Redmi 12C", "Ecran", "Compatible", "Ecran Compatible Redmi 12C", 13.00, "standard"),
+    # Redmi 10
+    ("Xiaomi", "Redmi 10", "Ecran", "Original", "Ecran Original Redmi 10", 25.00, "standard"),
+    ("Xiaomi", "Redmi 10", "Ecran", "Compatible", "Ecran Compatible Redmi 10", 14.00, "standard"),
+    # Redmi 10C
+    ("Xiaomi", "Redmi 10C", "Ecran", "Original", "Ecran Original Redmi 10C", 22.00, "standard"),
+    ("Xiaomi", "Redmi 10C", "Ecran", "Compatible", "Ecran Compatible Redmi 10C", 13.00, "standard"),
+    # Redmi 9
+    ("Xiaomi", "Redmi 9", "Ecran", "Original", "Ecran Original Redmi 9", 22.00, "standard"),
+    ("Xiaomi", "Redmi 9", "Ecran", "Compatible", "Ecran Compatible Redmi 9", 12.00, "standard"),
+    # Redmi 9A
+    ("Xiaomi", "Redmi 9A", "Ecran", "Original", "Ecran Original Redmi 9A", 18.00, "standard"),
+    ("Xiaomi", "Redmi 9A", "Ecran", "Compatible", "Ecran Compatible Redmi 9A", 10.00, "standard"),
+    # Redmi 9C
+    ("Xiaomi", "Redmi 9C", "Ecran", "Original", "Ecran Original Redmi 9C", 18.00, "standard"),
+    ("Xiaomi", "Redmi 9C", "Ecran", "Compatible", "Ecran Compatible Redmi 9C", 10.00, "standard"),
+    # Redmi 9T
+    ("Xiaomi", "Redmi 9T", "Ecran", "Original", "Ecran Original Redmi 9T", 22.00, "standard"),
+    ("Xiaomi", "Redmi 9T", "Ecran", "Compatible", "Ecran Compatible Redmi 9T", 13.00, "standard"),
+    # Redmi A1
+    ("Xiaomi", "Redmi A1", "Ecran", "Original", "Ecran Original Redmi A1", 15.00, "standard"),
+    ("Xiaomi", "Redmi A1", "Ecran", "Compatible", "Ecran Compatible Redmi A1", 9.00, "standard"),
     # Redmi A2
-    ("Xiaomi", "Redmi A2", "Ecran", "Original", "Ecran Original Xiaomi Redmi A2", 16.00, "standard"),
-    ("Xiaomi", "Redmi A2", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi A2", 9.00, "standard"),
+    ("Xiaomi", "Redmi A2", "Ecran", "Original", "Ecran Original Redmi A2", 16.00, "standard"),
+    ("Xiaomi", "Redmi A2", "Ecran", "Compatible", "Ecran Compatible Redmi A2", 9.00, "standard"),
+    # Redmi A3
+    ("Xiaomi", "Redmi A3", "Ecran", "Original", "Ecran Original Redmi A3", 18.00, "standard"),
+    ("Xiaomi", "Redmi A3", "Ecran", "Compatible", "Ecran Compatible Redmi A3", 10.00, "standard"),
 
-    # LCD for Xiaomi budget
-    ("Xiaomi", "Redmi 13C", "Ecran", "LCD", "Ecran LCD Xiaomi Redmi 13C", 10.00, "standard"),
-    ("Xiaomi", "Redmi 12", "Ecran", "LCD", "Ecran LCD Xiaomi Redmi 12", 12.00, "standard"),
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  XIAOMI — ECRANS Poco                                      ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    # Poco F6 Pro
+    ("Xiaomi", "Poco F6 Pro", "Ecran", "Original", "Ecran Original Poco F6 Pro", 85.00, "haut_de_gamme"),
+    ("Xiaomi", "Poco F6 Pro", "Ecran", "OLED", "Ecran OLED Poco F6 Pro", 52.00, "haut_de_gamme"),
+    # Poco F6
+    ("Xiaomi", "Poco F6", "Ecran", "Original", "Ecran Original Poco F6", 68.00, "standard"),
+    ("Xiaomi", "Poco F6", "Ecran", "OLED", "Ecran OLED Poco F6", 40.00, "standard"),
+    # Poco F5
+    ("Xiaomi", "Poco F5", "Ecran", "Original", "Ecran Original Poco F5", 55.00, "standard"),
+    ("Xiaomi", "Poco F5", "Ecran", "OLED", "Ecran OLED Poco F5", 35.00, "standard"),
+    # Poco F4
+    ("Xiaomi", "Poco F4", "Ecran", "Original", "Ecran Original Poco F4", 48.00, "standard"),
+    ("Xiaomi", "Poco F4", "Ecran", "OLED", "Ecran OLED Poco F4", 30.00, "standard"),
+    # Poco F3
+    ("Xiaomi", "Poco F3", "Ecran", "Original", "Ecran Original Poco F3", 42.00, "standard"),
+    ("Xiaomi", "Poco F3", "Ecran", "OLED", "Ecran OLED Poco F3", 28.00, "standard"),
+    # Poco X6 Pro 5G
+    ("Xiaomi", "Poco X6 Pro 5G", "Ecran", "Original", "Ecran Original Poco X6 Pro 5G", 58.00, "standard"),
+    ("Xiaomi", "Poco X6 Pro 5G", "Ecran", "OLED", "Ecran OLED Poco X6 Pro 5G", 35.00, "standard"),
+    # Poco X5 Pro 5G
+    ("Xiaomi", "Poco X5 Pro 5G", "Ecran", "Original", "Ecran Original Poco X5 Pro 5G", 48.00, "standard"),
+    ("Xiaomi", "Poco X5 Pro 5G", "Ecran", "OLED", "Ecran OLED Poco X5 Pro 5G", 30.00, "standard"),
+    # Poco X4 Pro 5G
+    ("Xiaomi", "Poco X4 Pro 5G", "Ecran", "Original", "Ecran Original Poco X4 Pro 5G", 38.00, "standard"),
+    ("Xiaomi", "Poco X4 Pro 5G", "Ecran", "OLED", "Ecran OLED Poco X4 Pro 5G", 25.00, "standard"),
+    # Poco X3 Pro
+    ("Xiaomi", "Poco X3 Pro", "Ecran", "Original", "Ecran Original Poco X3 Pro", 35.00, "standard"),
+    ("Xiaomi", "Poco X3 Pro", "Ecran", "Compatible", "Ecran Compatible Poco X3 Pro", 20.00, "standard"),
+    # Poco X3 NFC
+    ("Xiaomi", "Poco X3 NFC", "Ecran", "Original", "Ecran Original Poco X3 NFC", 32.00, "standard"),
+    ("Xiaomi", "Poco X3 NFC", "Ecran", "Compatible", "Ecran Compatible Poco X3 NFC", 18.00, "standard"),
+    # Poco M5
+    ("Xiaomi", "Poco M5", "Ecran", "Original", "Ecran Original Poco M5", 25.00, "standard"),
+    ("Xiaomi", "Poco M5", "Ecran", "Compatible", "Ecran Compatible Poco M5", 15.00, "standard"),
+    # Poco M4 Pro 5G
+    ("Xiaomi", "Poco M4 Pro 5G", "Ecran", "Original", "Ecran Original Poco M4 Pro 5G", 28.00, "standard"),
+    ("Xiaomi", "Poco M4 Pro 5G", "Ecran", "Compatible", "Ecran Compatible Poco M4 Pro 5G", 16.00, "standard"),
+    # Poco M3 Pro 5G
+    ("Xiaomi", "Poco M3 Pro 5G", "Ecran", "Original", "Ecran Original Poco M3 Pro 5G", 25.00, "standard"),
+    ("Xiaomi", "Poco M3 Pro 5G", "Ecran", "Compatible", "Ecran Compatible Poco M3 Pro 5G", 14.00, "standard"),
+    # Poco M3
+    ("Xiaomi", "Poco M3", "Ecran", "Original", "Ecran Original Poco M3", 22.00, "standard"),
+    ("Xiaomi", "Poco M3", "Ecran", "Compatible", "Ecran Compatible Poco M3", 13.00, "standard"),
+    # Poco C65
+    ("Xiaomi", "Poco C65", "Ecran", "Original", "Ecran Original Poco C65", 18.00, "standard"),
+    ("Xiaomi", "Poco C65", "Ecran", "Compatible", "Ecran Compatible Poco C65", 11.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  XIAOMI — BATTERIES                                        ║
     # ╚══════════════════════════════════════════════════════════════╝
+    # Gamme principale
+    ("Xiaomi", "14 Ultra", "Batterie", None, "Batterie Xiaomi 14 Ultra", 14.00, "standard"),
+    ("Xiaomi", "14 Pro", "Batterie", None, "Batterie Xiaomi 14 Pro", 13.00, "standard"),
     ("Xiaomi", "14", "Batterie", None, "Batterie Xiaomi 14", 12.00, "standard"),
     ("Xiaomi", "13T Pro", "Batterie", None, "Batterie Xiaomi 13T Pro", 11.00, "standard"),
     ("Xiaomi", "13T", "Batterie", None, "Batterie Xiaomi 13T", 10.50, "standard"),
-    ("Xiaomi", "Redmi Note 13 Pro+", "Batterie", None, "Batterie Xiaomi Redmi Note 13 Pro+", 10.50, "standard"),
-    ("Xiaomi", "Redmi Note 13 Pro", "Batterie", None, "Batterie Xiaomi Redmi Note 13 Pro", 10.00, "standard"),
-    ("Xiaomi", "Redmi Note 13", "Batterie", None, "Batterie Xiaomi Redmi Note 13", 9.00, "standard"),
-    ("Xiaomi", "Redmi Note 12 Pro", "Batterie", None, "Batterie Xiaomi Redmi Note 12 Pro", 9.50, "standard"),
-    ("Xiaomi", "Redmi Note 12", "Batterie", None, "Batterie Xiaomi Redmi Note 12", 8.50, "standard"),
-    ("Xiaomi", "Redmi Note 11 Pro", "Batterie", None, "Batterie Xiaomi Redmi Note 11 Pro", 9.00, "standard"),
-    ("Xiaomi", "Redmi Note 11", "Batterie", None, "Batterie Xiaomi Redmi Note 11", 8.00, "standard"),
-    ("Xiaomi", "Redmi Note 11S", "Batterie", None, "Batterie Xiaomi Redmi Note 11S", 8.50, "standard"),
-    ("Xiaomi", "Redmi Note 10 Pro", "Batterie", None, "Batterie Xiaomi Redmi Note 10 Pro", 8.50, "standard"),
-    ("Xiaomi", "Redmi Note 10", "Batterie", None, "Batterie Xiaomi Redmi Note 10", 7.50, "standard"),
-    ("Xiaomi", "Redmi Note 9 Pro", "Batterie", None, "Batterie Xiaomi Redmi Note 9 Pro", 8.00, "standard"),
-    ("Xiaomi", "Redmi 13C", "Batterie", None, "Batterie Xiaomi Redmi 13C", 7.50, "standard"),
-    ("Xiaomi", "Redmi 12", "Batterie", None, "Batterie Xiaomi Redmi 12", 7.50, "standard"),
-    ("Xiaomi", "Poco X6 Pro", "Batterie", None, "Batterie Xiaomi Poco X6 Pro", 10.00, "standard"),
-    ("Xiaomi", "Poco X5 Pro", "Batterie", None, "Batterie Xiaomi Poco X5 Pro", 9.00, "standard"),
-    ("Xiaomi", "Poco X3 Pro", "Batterie", None, "Batterie Xiaomi Poco X3 Pro", 8.50, "standard"),
-    ("Xiaomi", "14 Pro", "Batterie", None, "Batterie Xiaomi 14 Pro", 13.00, "standard"),
-    ("Xiaomi", "Poco F6 Pro", "Batterie", None, "Batterie Xiaomi Poco F6 Pro", 11.00, "standard"),
-    ("Xiaomi", "Poco F6", "Batterie", None, "Batterie Xiaomi Poco F6", 10.00, "standard"),
-    ("Xiaomi", "Redmi A3", "Batterie", None, "Batterie Xiaomi Redmi A3", 7.00, "standard"),
-    ("Xiaomi", "Redmi A2", "Batterie", None, "Batterie Xiaomi Redmi A2", 7.00, "standard"),
+    ("Xiaomi", "13 Pro", "Batterie", None, "Batterie Xiaomi 13 Pro", 12.00, "standard"),
+    ("Xiaomi", "13", "Batterie", None, "Batterie Xiaomi 13", 11.00, "standard"),
+    ("Xiaomi", "13 Lite", "Batterie", None, "Batterie Xiaomi 13 Lite", 9.50, "standard"),
+    ("Xiaomi", "12T Pro", "Batterie", None, "Batterie Xiaomi 12T Pro", 10.50, "standard"),
+    ("Xiaomi", "12T", "Batterie", None, "Batterie Xiaomi 12T", 9.50, "standard"),
+    ("Xiaomi", "12", "Batterie", None, "Batterie Xiaomi 12", 10.00, "standard"),
+    ("Xiaomi", "12 Lite", "Batterie", None, "Batterie Xiaomi 12 Lite", 9.00, "standard"),
+    ("Xiaomi", "11T Pro", "Batterie", None, "Batterie Xiaomi 11T Pro", 10.00, "standard"),
+    ("Xiaomi", "11T", "Batterie", None, "Batterie Xiaomi 11T", 9.00, "standard"),
+    ("Xiaomi", "11 Lite 5G NE", "Batterie", None, "Batterie Xiaomi 11 Lite 5G NE", 8.50, "standard"),
+    ("Xiaomi", "Mi 11", "Batterie", None, "Batterie Xiaomi Mi 11", 10.00, "standard"),
+    ("Xiaomi", "Mi 11 Lite 5G", "Batterie", None, "Batterie Xiaomi Mi 11 Lite 5G", 8.50, "standard"),
+    ("Xiaomi", "Mi 11 Lite 4G", "Batterie", None, "Batterie Xiaomi Mi 11 Lite 4G", 8.00, "standard"),
+    ("Xiaomi", "Mi 10T Pro", "Batterie", None, "Batterie Xiaomi Mi 10T Pro", 9.00, "standard"),
+    ("Xiaomi", "Mi 10T Lite", "Batterie", None, "Batterie Xiaomi Mi 10T Lite", 8.00, "standard"),
+    # Redmi Note
+    ("Xiaomi", "Redmi Note 13 Pro+ 5G", "Batterie", None, "Batterie Redmi Note 13 Pro+ 5G", 10.50, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro 5G", "Batterie", None, "Batterie Redmi Note 13 Pro 5G", 10.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro 4G", "Batterie", None, "Batterie Redmi Note 13 Pro 4G", 10.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 5G", "Batterie", None, "Batterie Redmi Note 13 5G", 9.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 4G", "Batterie", None, "Batterie Redmi Note 13 4G", 9.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 5G", "Batterie", None, "Batterie Redmi Note 12 Pro 5G", 9.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 4G", "Batterie", None, "Batterie Redmi Note 12 Pro 4G", 9.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 5G", "Batterie", None, "Batterie Redmi Note 12 5G", 8.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 4G", "Batterie", None, "Batterie Redmi Note 12 4G", 8.50, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 5G", "Batterie", None, "Batterie Redmi Note 11 Pro 5G", 9.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 4G", "Batterie", None, "Batterie Redmi Note 11 Pro 4G", 9.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S", "Batterie", None, "Batterie Redmi Note 11S", 8.50, "standard"),
+    ("Xiaomi", "Redmi Note 11 4G", "Batterie", None, "Batterie Redmi Note 11 4G", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 5G", "Batterie", None, "Batterie Redmi Note 11 5G", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 Pro", "Batterie", None, "Batterie Redmi Note 10 Pro", 8.50, "standard"),
+    ("Xiaomi", "Redmi Note 10S", "Batterie", None, "Batterie Redmi Note 10S", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 4G", "Batterie", None, "Batterie Redmi Note 10 4G", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 10 5G", "Batterie", None, "Batterie Redmi Note 10 5G", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 9 Pro", "Batterie", None, "Batterie Redmi Note 9 Pro", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 9S", "Batterie", None, "Batterie Redmi Note 9S", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 9", "Batterie", None, "Batterie Redmi Note 9", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 9T 5G", "Batterie", None, "Batterie Redmi Note 9T 5G", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 8 Pro", "Batterie", None, "Batterie Redmi Note 8 Pro", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 8", "Batterie", None, "Batterie Redmi Note 8", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 8T", "Batterie", None, "Batterie Redmi Note 8T", 7.00, "standard"),
+    # Redmi
+    ("Xiaomi", "Redmi 13", "Batterie", None, "Batterie Redmi 13", 7.50, "standard"),
+    ("Xiaomi", "Redmi 13C", "Batterie", None, "Batterie Redmi 13C", 7.50, "standard"),
+    ("Xiaomi", "Redmi 12", "Batterie", None, "Batterie Redmi 12", 7.50, "standard"),
+    ("Xiaomi", "Redmi 12C", "Batterie", None, "Batterie Redmi 12C", 7.00, "standard"),
+    ("Xiaomi", "Redmi 10", "Batterie", None, "Batterie Redmi 10", 7.50, "standard"),
+    ("Xiaomi", "Redmi 10C", "Batterie", None, "Batterie Redmi 10C", 7.00, "standard"),
+    ("Xiaomi", "Redmi 9", "Batterie", None, "Batterie Redmi 9", 7.00, "standard"),
+    ("Xiaomi", "Redmi 9A", "Batterie", None, "Batterie Redmi 9A", 6.50, "standard"),
+    ("Xiaomi", "Redmi 9C", "Batterie", None, "Batterie Redmi 9C", 6.50, "standard"),
+    ("Xiaomi", "Redmi 9T", "Batterie", None, "Batterie Redmi 9T", 7.00, "standard"),
+    ("Xiaomi", "Redmi A1", "Batterie", None, "Batterie Redmi A1", 6.50, "standard"),
+    ("Xiaomi", "Redmi A2", "Batterie", None, "Batterie Redmi A2", 7.00, "standard"),
+    ("Xiaomi", "Redmi A3", "Batterie", None, "Batterie Redmi A3", 7.00, "standard"),
+    # Poco
+    ("Xiaomi", "Poco F6 Pro", "Batterie", None, "Batterie Poco F6 Pro", 11.00, "standard"),
+    ("Xiaomi", "Poco F6", "Batterie", None, "Batterie Poco F6", 10.00, "standard"),
+    ("Xiaomi", "Poco F5", "Batterie", None, "Batterie Poco F5", 9.50, "standard"),
+    ("Xiaomi", "Poco F4", "Batterie", None, "Batterie Poco F4", 9.00, "standard"),
+    ("Xiaomi", "Poco F3", "Batterie", None, "Batterie Poco F3", 8.50, "standard"),
+    ("Xiaomi", "Poco X6 Pro 5G", "Batterie", None, "Batterie Poco X6 Pro 5G", 10.00, "standard"),
+    ("Xiaomi", "Poco X5 Pro 5G", "Batterie", None, "Batterie Poco X5 Pro 5G", 9.00, "standard"),
+    ("Xiaomi", "Poco X4 Pro 5G", "Batterie", None, "Batterie Poco X4 Pro 5G", 8.50, "standard"),
+    ("Xiaomi", "Poco X3 Pro", "Batterie", None, "Batterie Poco X3 Pro", 8.50, "standard"),
+    ("Xiaomi", "Poco X3 NFC", "Batterie", None, "Batterie Poco X3 NFC", 8.00, "standard"),
+    ("Xiaomi", "Poco M5", "Batterie", None, "Batterie Poco M5", 7.50, "standard"),
+    ("Xiaomi", "Poco M4 Pro 5G", "Batterie", None, "Batterie Poco M4 Pro 5G", 7.50, "standard"),
+    ("Xiaomi", "Poco M3", "Batterie", None, "Batterie Poco M3", 7.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
-    # ║  XIAOMI — CONNECTEURS                                      ║
+    # ║  XIAOMI — CONNECTEURS DE CHARGE                            ║
     # ╚══════════════════════════════════════════════════════════════╝
-    ("Xiaomi", "Redmi Note 13 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 13 Pro", 8.00, "standard"),
-    ("Xiaomi", "Redmi Note 13", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 13", 7.00, "standard"),
-    ("Xiaomi", "Redmi Note 12 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 12 Pro", 7.50, "standard"),
-    ("Xiaomi", "Redmi Note 12", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 12", 6.50, "standard"),
-    ("Xiaomi", "Redmi Note 11 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 11 Pro", 7.00, "standard"),
-    ("Xiaomi", "Redmi Note 11", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 11", 6.50, "standard"),
-    ("Xiaomi", "Redmi Note 10 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 10 Pro", 6.50, "standard"),
-    ("Xiaomi", "Redmi Note 9 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi Note 9 Pro", 6.00, "standard"),
-    ("Xiaomi", "Poco X6 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X6 Pro", 8.00, "standard"),
-    ("Xiaomi", "Poco X5 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X5 Pro", 7.00, "standard"),
-    ("Xiaomi", "Poco X3 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X3 Pro", 6.00, "standard"),
-    ("Xiaomi", "Poco F6 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco F6 Pro", 8.00, "standard"),
-    ("Xiaomi", "Poco F6", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco F6", 7.50, "standard"),
-    ("Xiaomi", "Redmi A3", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi A3", 5.00, "standard"),
-    ("Xiaomi", "Redmi A2", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi A2", 5.00, "standard"),
+    # Gamme principale
+    ("Xiaomi", "13T Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi 13T Pro", 8.50, "standard"),
+    ("Xiaomi", "13T", "Connecteur de charge", None, "Nappe connecteur Xiaomi 13T", 8.00, "standard"),
+    ("Xiaomi", "12T Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi 12T Pro", 8.00, "standard"),
+    ("Xiaomi", "12T", "Connecteur de charge", None, "Nappe connecteur Xiaomi 12T", 7.50, "standard"),
+    ("Xiaomi", "11T Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi 11T Pro", 7.50, "standard"),
+    ("Xiaomi", "11T", "Connecteur de charge", None, "Nappe connecteur Xiaomi 11T", 7.00, "standard"),
+    ("Xiaomi", "Mi 11 Lite 5G", "Connecteur de charge", None, "Nappe connecteur Xiaomi Mi 11 Lite 5G", 6.50, "standard"),
+    ("Xiaomi", "Mi 11 Lite 4G", "Connecteur de charge", None, "Nappe connecteur Xiaomi Mi 11 Lite 4G", 6.50, "standard"),
+    ("Xiaomi", "Mi 10T Lite", "Connecteur de charge", None, "Nappe connecteur Xiaomi Mi 10T Lite", 6.00, "standard"),
+    # Redmi Note
+    ("Xiaomi", "Redmi Note 13 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 13 Pro 5G", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 Pro 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 13 Pro 4G", 8.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 5G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 13 5G", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 13 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 13 4G", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 12 Pro 5G", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 Pro 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 12 Pro 4G", 7.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 5G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 12 5G", 6.50, "standard"),
+    ("Xiaomi", "Redmi Note 12 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 12 4G", 6.50, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 11 Pro 5G", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 11 Pro 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 11 Pro 4G", 7.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S", "Connecteur de charge", None, "Nappe connecteur Redmi Note 11S", 6.50, "standard"),
+    ("Xiaomi", "Redmi Note 11 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 11 4G", 6.50, "standard"),
+    ("Xiaomi", "Redmi Note 10 Pro", "Connecteur de charge", None, "Nappe connecteur Redmi Note 10 Pro", 6.50, "standard"),
+    ("Xiaomi", "Redmi Note 10S", "Connecteur de charge", None, "Nappe connecteur Redmi Note 10S", 6.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 4G", "Connecteur de charge", None, "Nappe connecteur Redmi Note 10 4G", 6.00, "standard"),
+    ("Xiaomi", "Redmi Note 9 Pro", "Connecteur de charge", None, "Nappe connecteur Redmi Note 9 Pro", 6.00, "standard"),
+    ("Xiaomi", "Redmi Note 9S", "Connecteur de charge", None, "Nappe connecteur Redmi Note 9S", 6.00, "standard"),
+    ("Xiaomi", "Redmi Note 9", "Connecteur de charge", None, "Nappe connecteur Redmi Note 9", 5.50, "standard"),
+    ("Xiaomi", "Redmi Note 8 Pro", "Connecteur de charge", None, "Nappe connecteur Redmi Note 8 Pro", 5.50, "standard"),
+    ("Xiaomi", "Redmi Note 8", "Connecteur de charge", None, "Nappe connecteur Redmi Note 8", 5.00, "standard"),
+    ("Xiaomi", "Redmi Note 8T", "Connecteur de charge", None, "Nappe connecteur Redmi Note 8T", 5.00, "standard"),
+    # Redmi
+    ("Xiaomi", "Redmi 13C", "Connecteur de charge", None, "Nappe connecteur Redmi 13C", 5.50, "standard"),
+    ("Xiaomi", "Redmi 12", "Connecteur de charge", None, "Nappe connecteur Redmi 12", 5.50, "standard"),
+    ("Xiaomi", "Redmi 12C", "Connecteur de charge", None, "Nappe connecteur Redmi 12C", 5.00, "standard"),
+    ("Xiaomi", "Redmi 10", "Connecteur de charge", None, "Nappe connecteur Redmi 10", 5.50, "standard"),
+    ("Xiaomi", "Redmi 10C", "Connecteur de charge", None, "Nappe connecteur Redmi 10C", 5.00, "standard"),
+    ("Xiaomi", "Redmi 9", "Connecteur de charge", None, "Nappe connecteur Redmi 9", 5.00, "standard"),
+    ("Xiaomi", "Redmi 9A", "Connecteur de charge", None, "Nappe connecteur Redmi 9A", 4.50, "standard"),
+    ("Xiaomi", "Redmi 9C", "Connecteur de charge", None, "Nappe connecteur Redmi 9C", 4.50, "standard"),
+    ("Xiaomi", "Redmi A1", "Connecteur de charge", None, "Nappe connecteur Redmi A1", 4.50, "standard"),
+    ("Xiaomi", "Redmi A2", "Connecteur de charge", None, "Nappe connecteur Redmi A2", 5.00, "standard"),
+    ("Xiaomi", "Redmi A3", "Connecteur de charge", None, "Nappe connecteur Redmi A3", 5.00, "standard"),
+    # Poco
+    ("Xiaomi", "Poco F6 Pro", "Connecteur de charge", None, "Nappe connecteur Poco F6 Pro", 8.00, "standard"),
+    ("Xiaomi", "Poco F6", "Connecteur de charge", None, "Nappe connecteur Poco F6", 7.50, "standard"),
+    ("Xiaomi", "Poco F5", "Connecteur de charge", None, "Nappe connecteur Poco F5", 7.00, "standard"),
+    ("Xiaomi", "Poco F4", "Connecteur de charge", None, "Nappe connecteur Poco F4", 6.50, "standard"),
+    ("Xiaomi", "Poco F3", "Connecteur de charge", None, "Nappe connecteur Poco F3", 6.00, "standard"),
+    ("Xiaomi", "Poco X6 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Poco X6 Pro 5G", 8.00, "standard"),
+    ("Xiaomi", "Poco X5 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Poco X5 Pro 5G", 7.00, "standard"),
+    ("Xiaomi", "Poco X4 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Poco X4 Pro 5G", 6.50, "standard"),
+    ("Xiaomi", "Poco X3 Pro", "Connecteur de charge", None, "Nappe connecteur Poco X3 Pro", 6.00, "standard"),
+    ("Xiaomi", "Poco X3 NFC", "Connecteur de charge", None, "Nappe connecteur Poco X3 NFC", 5.50, "standard"),
+    ("Xiaomi", "Poco M5", "Connecteur de charge", None, "Nappe connecteur Poco M5", 5.50, "standard"),
+    ("Xiaomi", "Poco M4 Pro 5G", "Connecteur de charge", None, "Nappe connecteur Poco M4 Pro 5G", 5.50, "standard"),
+    ("Xiaomi", "Poco M3", "Connecteur de charge", None, "Nappe connecteur Poco M3", 5.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  HUAWEI — ECRANS                                           ║
