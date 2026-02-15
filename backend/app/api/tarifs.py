@@ -205,7 +205,9 @@ async def list_tarifs(
     if conditions:
         where = "WHERE " + " AND ".join(conditions)
 
-    query = f"SELECT * FROM tarifs {where} ORDER BY marque, modele, type_piece, qualite"
+    query = f"""SELECT id, marque, modele, type_piece, qualite, nom_fournisseur,
+        prix_fournisseur_ht, prix_client, categorie, source, en_stock, updated_at
+        FROM tarifs {where} ORDER BY marque, modele, type_piece, qualite"""
 
     with get_cursor() as cur:
         cur.execute(query, params)
@@ -249,6 +251,8 @@ async def import_tarifs(
     user: dict = Depends(get_current_user),
 ):
     """Importe une liste de tarifs. Calcule automatiquement le prix client."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     inserted = 0
 
     with get_cursor() as cur:
@@ -287,6 +291,8 @@ async def import_tarifs(
 @router.post("/recalculate")
 async def recalculate_tarifs(user: dict = Depends(get_current_user)):
     """Recalcule tous les prix_client a partir de prix_fournisseur_ht."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     updated = 0
     with get_cursor() as cur:
         cur.execute("SELECT id, prix_fournisseur_ht, type_piece, categorie FROM tarifs")
@@ -331,6 +337,8 @@ async def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
 @router.delete("/clear")
 async def clear_tarifs(user: dict = Depends(get_current_user)):
     """Vide la table tarifs."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")
     _cache.clear()
@@ -357,7 +365,9 @@ async def list_apple_devices(user: dict = Depends(get_current_user)):
     """Liste iPad/MacBook. Prix HT masques si non-admin (target != accueil)."""
     with get_cursor() as cur:
         cur.execute(
-            "SELECT * FROM tarifs_apple_devices WHERE actif = TRUE ORDER BY categorie, modele"
+            """SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht,
+               ecran_prix_vente, batterie_prix_vente, actif, updated_at
+               FROM tarifs_apple_devices WHERE actif = TRUE ORDER BY categorie, modele"""
         )
         rows = [dict(r) for r in cur.fetchall()]
 
@@ -376,6 +386,8 @@ async def import_apple_devices(
     user: dict = Depends(get_current_user),
 ):
     """Importe iPad/MacBook avec calcul automatique des prix de vente."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     inserted = 0
     with get_cursor() as cur:
         for item in body.items:
@@ -417,6 +429,8 @@ async def import_apple_devices(
 @router.delete("/apple-devices/clear")
 async def clear_apple_devices(user: dict = Depends(get_current_user)):
     """Vide la table tarifs_apple_devices."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs_apple_devices RESTART IDENTITY")
     return {"status": "ok"}

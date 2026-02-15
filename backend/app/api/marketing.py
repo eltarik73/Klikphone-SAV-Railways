@@ -18,6 +18,13 @@ from pydantic import BaseModel
 from app.database import get_cursor
 from app.api.auth import get_current_user
 
+
+def _require_admin_marketing(user: dict = Depends(_require_admin_marketing)):
+    """Dependency: admin required for marketing actions."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
+    return user
+
 router = APIRouter(prefix="/api/marketing", tags=["marketing"])
 
 
@@ -374,7 +381,7 @@ async def search_place(query: str = Query(..., description="Nom de la boutique +
 
 
 @router.post("/avis/sync")
-async def sync_avis(user: dict = Depends(get_current_user)):
+async def sync_avis(user: dict = Depends(_require_admin_marketing)):
     """Synchronise les avis depuis Google Places API. Nécessite GOOGLE_PLACES_API_KEY + GOOGLE_PLACE_ID."""
     _ensure_tables()
 
@@ -491,7 +498,7 @@ async def sync_avis(user: dict = Depends(get_current_user)):
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
-async def generer_reponse_avis(avis_id: int, user: dict = Depends(get_current_user)):
+async def generer_reponse_avis(avis_id: int, user: dict = Depends(_require_admin_marketing)):
     """Génère une suggestion de réponse IA pour un avis Google."""
     _ensure_tables()
 
@@ -575,7 +582,7 @@ def _fallback_reponse_avis(prenom: str, note: int, texte: str) -> str:
 async def publier_reponse_avis(
     avis_id: int,
     body: AvisReponsePublier,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Publie une réponse à un avis Google (stub : marque comme répondu en BDD)."""
     _ensure_tables()
@@ -604,7 +611,7 @@ async def publier_reponse_avis(
 async def update_reponse_avis(
     avis_id: int,
     body: AvisReponsePublier,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Met à jour manuellement la réponse d'un avis."""
     _ensure_tables()
@@ -669,7 +676,7 @@ async def list_posts(
 
 
 @router.post("/posts")
-async def create_post(body: PostCreate, user: dict = Depends(get_current_user)):
+async def create_post(body: PostCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un nouveau post marketing."""
     _ensure_tables()
     utilisateur = user.get("sub", "Inconnu")
@@ -694,7 +701,7 @@ async def create_post(body: PostCreate, user: dict = Depends(get_current_user)):
 async def update_post(
     post_id: int,
     body: PostUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Met à jour un post marketing."""
     _ensure_tables()
@@ -745,7 +752,7 @@ async def update_post(
 
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
+async def delete_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
     """Supprime un post (uniquement si brouillon)."""
     _ensure_tables()
 
@@ -763,7 +770,7 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/late/accounts")
-async def list_late_accounts(user: dict = Depends(get_current_user)):
+async def list_late_accounts(user: dict = Depends(_require_admin_marketing)):
     """Liste les comptes sociaux connectés sur Late."""
     late_key = os.getenv("LATE_API_KEY")
     if not late_key:
@@ -804,7 +811,7 @@ _PLATFORM_MAP = {
 
 
 @router.post("/posts/{post_id}/publier")
-async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
+async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
     """Publie un post via Late API sur les réseaux sociaux connectés."""
     _ensure_tables()
 
@@ -955,7 +962,7 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
 async def programmer_post(
     post_id: int,
     body: PostProgrammer,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Programme la publication d'un post à une date donnée."""
     _ensure_tables()
@@ -1114,7 +1121,7 @@ async def _generate_with_horde(prompt: str) -> bytes:
 
 
 @router.post("/posts/generer-image")
-async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_user)):
+async def generer_image(body: ImageGenerer, user: dict = Depends(_require_admin_marketing)):
     """Génère une image IA à partir d'une description.
 
     1. Claude optimise le prompt FR → EN pour la génération d'image
@@ -1189,7 +1196,7 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_use
 
 
 @router.post("/posts/generer")
-async def generer_post(body: PostGenerer, user: dict = Depends(get_current_user)):
+async def generer_post(body: PostGenerer, user: dict = Depends(_require_admin_marketing)):
     """Génère un post avec Claude AI."""
     _ensure_tables()
 
@@ -1366,7 +1373,7 @@ async def list_calendrier(
 
 
 @router.post("/calendrier")
-async def create_calendrier(body: CalendrierCreate, user: dict = Depends(get_current_user)):
+async def create_calendrier(body: CalendrierCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un événement dans le calendrier marketing."""
     _ensure_tables()
 
@@ -1391,7 +1398,7 @@ async def create_calendrier(body: CalendrierCreate, user: dict = Depends(get_cur
 async def update_calendrier(
     event_id: int,
     body: CalendrierUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Met à jour un événement du calendrier."""
     _ensure_tables()
@@ -1449,7 +1456,7 @@ async def update_calendrier(
 
 
 @router.delete("/calendrier/{event_id}")
-async def delete_calendrier(event_id: int, user: dict = Depends(get_current_user)):
+async def delete_calendrier(event_id: int, user: dict = Depends(_require_admin_marketing)):
     """Supprime un événement du calendrier."""
     _ensure_tables()
 
@@ -1482,7 +1489,7 @@ async def list_templates():
 
 
 @router.post("/templates")
-async def create_template(body: TemplateCreate, user: dict = Depends(get_current_user)):
+async def create_template(body: TemplateCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un nouveau template marketing."""
     _ensure_tables()
 
@@ -1507,7 +1514,7 @@ async def create_template(body: TemplateCreate, user: dict = Depends(get_current
 async def update_template(
     template_id: int,
     body: TemplateUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Met à jour un template marketing."""
     _ensure_tables()

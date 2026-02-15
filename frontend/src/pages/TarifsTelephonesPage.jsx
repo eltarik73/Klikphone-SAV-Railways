@@ -54,7 +54,7 @@ function formatDate(dateStr) {
 
 function formatPrice(price) {
   if (price == null) return '';
-  return Number(price).toFixed(2).replace('.', ',') + ' \u20ac';
+  return Number(price).toFixed(2).replace('.', ',') + ' €';
 }
 
 function getGradeStyle(grade) {
@@ -179,7 +179,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
 
         {/* Storage + Color */}
         <p className="text-xs text-slate-400 mb-3">
-          {[phone.stockage, phone.couleur].filter(Boolean).join(' \u00b7 ') || '\u00a0'}
+          {[phone.stockage, phone.couleur].filter(Boolean).join(' · ') || ''}
         </p>
 
         {/* Price */}
@@ -689,10 +689,10 @@ export default function TarifsTelephonesPage() {
             {/* Count */}
             <p className="text-xs text-slate-500">
               {totalItems} telephone{totalItems > 1 ? 's' : ''}
-              {totalPages > 1 ? ` \u00b7 Page ${currentPage}/${totalPages}` : ''}
-              {stats?.nb_marques ? ` \u00b7 ${stats.nb_marques} marques` : ''}
+              {totalPages > 1 ? ` · Page ${currentPage}/${totalPages}` : ''}
+              {stats?.nb_marques ? ` · ${stats.nb_marques} marques` : ''}
               {stats?.prix_min != null && stats?.prix_max != null
-                ? ` \u00b7 ${formatPrice(stats.prix_min)} \u2192 ${formatPrice(stats.prix_max)}`
+                ? ` · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}`
                 : ''}
             </p>
           </div>

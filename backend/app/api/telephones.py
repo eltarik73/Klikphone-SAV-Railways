@@ -120,6 +120,8 @@ def _run_sync_background():
 @router.post("/sync")
 async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Lance la synchronisation avec LCD-Phone en arrière-plan."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
     global _sync_status
     _ensure_table()
 

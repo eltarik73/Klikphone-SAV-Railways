@@ -120,7 +120,7 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
       const res = await api.sendDocument(ticketId, activeType, clientEmail);
       if (res.status === 'ok') {
         setSendOpen(false);
-        setToast({ type: 'success', message: `Email envoy\u00e9 avec succ\u00e8s \u00e0 ${clientEmail}` });
+        setToast({ type: 'success', message: `Email envoyé avec succès à ${clientEmail}` });
       } else {
         setToast({ type: 'error', message: res.detail || "Erreur lors de l'envoi de l'email" });
       }

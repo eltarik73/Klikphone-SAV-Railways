@@ -25,7 +25,7 @@ function BrandLogo({ slug, size = 18 }) {
   if (!slug || error) return <Smartphone className="w-[18px] h-[18px] opacity-70" />;
   return (
     <img src={`https://cdn.simpleicons.org/${slug}/ffffff`} alt="" width={size} height={size}
-      className="shrink-0" style={{ filter: 'brightness(1)', minWidth: size }} onError={() => setError(true)} />
+      className="shrink-0" style={{ filter: 'brightness(1)', minWidth: size }} loading="lazy" onError={() => setError(true)} />
   );
 }
 
@@ -65,7 +65,7 @@ function getPieceTypeColor(type) {
   for (const [key, val] of Object.entries(PIECE_TYPE_COLORS)) { if (t.includes(key)) return val; }
   return DEFAULT_PIECE_TYPE;
 }
-function formatPrice(n) { if (n == null) return null; return `${n}\u00a0\u20ac`; }
+function formatPrice(n) { if (n == null) return null; return `${n} €`; }
 
 // ─── iPhone series helpers ──────────────────────
 const SERIES_ORDER = ['17', '16', '15', '14', '13', '12', '11', 'SE', 'X/XS/XR', '8', '7'];
@@ -359,7 +359,7 @@ export default function TarifsPage() {
                         <div className="text-2xl font-extrabold leading-none" style={{ color: qc.color }}>{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
                           <div className="text-[10px] mt-1.5 opacity-50" style={{ color: qc.color }}>
-                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'\u20ac'} HT
+                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'€'} HT
                           </div>
                         )}
                       </div>
@@ -390,7 +390,7 @@ export default function TarifsPage() {
                         <div className="text-lg font-extrabold" style={{ color: pc.color }}>{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
                           <div className="text-[10px] mt-1 opacity-60" style={{ color: pc.color }}>
-                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'\u20ac'} HT
+                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'€'} HT
                           </div>
                         )}
                       </div>
@@ -492,7 +492,7 @@ export default function TarifsPage() {
               <div>
                 <h1 className="text-lg font-bold text-zinc-900">Grille Tarifaire</h1>
                 <p className="text-xs text-zinc-500">
-                  {stats ? `${stats.modeles} modeles \u00b7 ${stats.marques} marques \u00b7 ${formatPrice(stats.prix_min)} \u2192 ${formatPrice(stats.prix_max)}` : 'Chargement...'}
+                  {stats ? `${stats.modeles} modeles · ${stats.marques} marques · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}` : 'Chargement...'}
                 </p>
               </div>
             </div>
@@ -532,7 +532,7 @@ export default function TarifsPage() {
                 <div className="text-emerald-800">
                   <span className="font-semibold">{stockResult.models_found}</span> modeles trouves sur Mobilax
                   {' / '}<span className="font-semibold">{stockResult.models_checked}</span> verifies
-                  {' \u2014 '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
+                  {' — '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
                   {stockResult.now_rupture > 0 && <span className="text-red-600 font-semibold ml-2">({stockResult.now_rupture} ruptures)</span>}
                   {stockResult.now_in_stock > 0 && <span className="text-emerald-600 font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>}
                 </div>
@@ -676,7 +676,7 @@ export default function TarifsPage() {
       {!loading && totalModels > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center text-xs text-zinc-400 space-y-1">
-            <p>{totalModels} mod{'\u00e8'}le{totalModels > 1 ? 's' : ''} {'\u00b7'} {grouped.length} marque{grouped.length > 1 ? 's' : ''} {'\u00b7'} Source : Mobilax</p>
+            <p>{totalModels} mod{'è'}le{totalModels > 1 ? 's' : ''} {'·'} {grouped.length} marque{grouped.length > 1 ? 's' : ''} {'·'} Source : Mobilax</p>
           </div>
         </div>
       )}

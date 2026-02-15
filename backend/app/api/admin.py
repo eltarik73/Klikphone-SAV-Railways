@@ -7,25 +7,20 @@ répartition marques/pannes, évolution CA, temps réparation, conversion, top c
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..database import get_cursor
+from .auth import get_current_user
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-# ============================================================
-# SCHEMAS
-# ============================================================
-class AdminLoginRequest(BaseModel):
-    identifiant: str
-    password: str
-
-
-class AdminLoginResponse(BaseModel):
-    success: bool
-    token: str
+def _require_admin(user: dict = Depends(get_current_user)):
+    """Dependency: vérifie que l'utilisateur est admin."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
+    return user
 
 
 # ============================================================
@@ -54,23 +49,13 @@ def _resolve_dates(date_start, date_end):
 
 
 # ============================================================
-# 1. LOGIN ADMIN
-# ============================================================
-@router.post("/login", response_model=AdminLoginResponse)
-async def admin_login(data: AdminLoginRequest):
-    """Connexion administrateur avec identifiants hardcodés."""
-    if data.identifiant == "admin" and data.password == "caramail":
-        return AdminLoginResponse(success=True, token="admin-session")
-    raise HTTPException(status_code=401, detail="Identifiants incorrects")
-
-
-# ============================================================
 # 2. STATS OVERVIEW (6 KPI cards)
 # ============================================================
 @router.get("/stats/overview")
 async def get_stats_overview(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Vue d'ensemble : CA jour/mois, CA potentiel, réparations jour/mois, ticket moyen.
@@ -130,7 +115,7 @@ async def get_stats_overview(
 
 # Keep old /stats endpoint for backward compat
 @router.get("/stats")
-async def get_stats_legacy(period: Optional[str] = Query(None, regex="^(7d|30d|90d|12m)$")):
+async def get_stats_legacy(period: Optional[str] = Query(None, regex="^(7d|30d|90d|12m)$"), user: dict = Depends(_require_admin)):
     return await get_stats_overview()
 
 
@@ -142,6 +127,7 @@ async def get_reparations_par_tech(
     days: int = Query(7, ge=1, le=365),
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Réparations par technicien par jour pour barres empilées.
@@ -212,6 +198,7 @@ async def get_reparations_par_tech(
 async def get_affluence_heure(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Nombre moyen de dépôts par heure.
@@ -264,6 +251,7 @@ JOURS_SEMAINE = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "D
 async def get_affluence_jour(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Nombre moyen de dépôts par jour de la semaine.
@@ -313,6 +301,7 @@ async def get_affluence_jour(
 async def get_repartition_marques(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """Top 8 marques + Autres avec pourcentages."""
     with get_cursor() as cur:
@@ -367,6 +356,7 @@ async def get_repartition_marques(
 async def get_repartition_pannes(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """Top 10 types de panne les plus fréquents."""
     with get_cursor() as cur:
@@ -399,6 +389,7 @@ async def get_repartition_pannes(
 async def get_evolution_ca(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Évolution mensuelle sur 12 mois :
@@ -460,6 +451,7 @@ async def get_evolution_ca(
 async def get_temps_reparation(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Temps moyen entre dépôt et clôture par type de panne.
@@ -501,6 +493,7 @@ async def get_temps_reparation(
 async def get_taux_conversion(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """
     Taux de conversion : devis envoyés vs acceptés.
@@ -555,6 +548,7 @@ async def get_taux_conversion(
 async def get_top_clients(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin),
 ):
     """Top 10 clients par nombre de réparations + CA total."""
     with get_cursor() as cur:
@@ -602,6 +596,7 @@ async def get_reparations_legacy(
     period: str = Query("30d", regex="^(7d|30d|90d|12m)$"),
     marque: Optional[str] = None,
     tech: Optional[str] = None,
+    user: dict = Depends(_require_admin),
 ):
     """Legacy: données de réparations pour les graphiques."""
     days = {"7d": 7, "30d": 30, "90d": 90, "12m": 365}.get(period, 30)
@@ -677,7 +672,7 @@ async def get_reparations_legacy(
 
 
 @router.get("/flux-clients")
-async def get_flux_clients_legacy():
+async def get_flux_clients_legacy(user: dict = Depends(_require_admin)):
     """Legacy: flux de dépôts clients."""
     with get_cursor() as cur:
         cur.execute("""
@@ -710,7 +705,7 @@ async def get_flux_clients_legacy():
 
 
 @router.get("/performance-tech")
-async def get_performance_tech():
+async def get_performance_tech(user: dict = Depends(_require_admin)):
     """Legacy: performance par technicien."""
     with get_cursor() as cur:
         cur.execute("""
@@ -740,6 +735,7 @@ async def get_performance_tech():
 async def get_evolution_legacy(
     metric: str = Query("ca", regex="^(ca|flux)$"),
     period: str = Query("12m", regex="^(6m|12m)$"),
+    user: dict = Depends(_require_admin),
 ):
     """Legacy: courbes d'évolution mensuelles."""
     months = {"6m": 6, "12m": 12}.get(period, 12)
