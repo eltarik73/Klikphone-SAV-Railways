@@ -207,7 +207,11 @@ export default function CommunityManager() {
   const handleSaveDraft = async (post) => {
     try {
       await api.createMarketingPost({
-        ...post,
+        titre: post.titre || `Post ${genType}`,
+        contenu: post.contenu || '',
+        plateforme: post.plateforme || genPlateforme,
+        type_contenu: post.type_contenu || genType,
+        hashtags: post.hashtags || [],
         statut: 'brouillon',
       });
       setGeneratedPost(null);
@@ -235,21 +239,27 @@ export default function CommunityManager() {
 
   const handlePublishGenerated = async (post) => {
     try {
-      const created = await api.createMarketingPost({
-        ...post,
+      const postData = {
+        titre: post.titre || `Post ${genType}`,
+        contenu: post.contenu || '',
+        plateforme: post.plateforme || genPlateforme,
+        type_contenu: post.type_contenu || genType,
+        hashtags: post.hashtags || [],
         statut: 'brouillon',
-      });
+      };
+      const created = await api.createMarketingPost(postData);
       if (created && created.id) {
         await api.publierPost(created.id);
       }
       const fullText = getFullPostText(post);
       await copyToClipboard(fullText, 'gen-publish');
-      setShareModal({ ...post, plateforme: post.plateforme || genPlateforme });
+      setShareModal({ ...post, plateforme: postData.plateforme });
       setGeneratedPost(null);
       setGenContexte('');
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
+      alert('Erreur lors de la publication. Vérifiez la console.');
     }
   };
 
