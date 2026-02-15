@@ -490,15 +490,6 @@ async def sync_avis(user: dict = Depends(get_current_user)):
     }
 
 
-@router.delete("/avis/cleanup-demo")
-async def cleanup_demo_avis():
-    """Supprime les avis de démo (google_review_id commençant par 'demo_'). Temporaire."""
-    with get_cursor() as cur:
-        cur.execute("DELETE FROM avis_google WHERE google_review_id LIKE 'demo_%'")
-        deleted = cur.rowcount
-    return {"deleted": deleted}
-
-
 @router.post("/avis/{avis_id}/generer-reponse")
 async def generer_reponse_avis(avis_id: int, user: dict = Depends(get_current_user)):
     """Génère une suggestion de réponse IA pour un avis Google."""
