@@ -288,7 +288,7 @@ export default function TarifsPage() {
         style={{ background: color.bg, color: color.color, borderColor: color.border }}
       >
         <Icon className="w-3 h-3" />
-        {value}\u00a0\u20ac
+        {formatPrice(value)}
       </span>
     );
   }
@@ -302,7 +302,7 @@ export default function TarifsPage() {
         style={{ background: color.bg, color: color.color }}
       >
         <Icon className="w-2.5 h-2.5" />
-        {value}\u20ac
+        {formatPrice(value)}
       </span>
     );
   }
@@ -569,7 +569,7 @@ export default function TarifsPage() {
                                           </div>
                                           {t.prix_fournisseur_ht != null && (
                                             <div className="text-[10px] mt-1.5 opacity-50" style={{ color: qc.color }}>
-                                              Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0\u20ac HT
+                                              {'Achat : '}{Number(t.prix_fournisseur_ht).toFixed(2)}{' \u20ac HT'}
                                             </div>
                                           )}
                                         </div>
@@ -608,7 +608,7 @@ export default function TarifsPage() {
                                           </div>
                                           {t.prix_fournisseur_ht != null && (
                                             <div className="text-[10px] mt-1 opacity-60" style={{ color: pc.color }}>
-                                              Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0\u20ac HT
+                                              {'Achat : '}{Number(t.prix_fournisseur_ht).toFixed(2)}{' \u20ac HT'}
                                             </div>
                                           )}
                                         </div>
@@ -634,7 +634,7 @@ export default function TarifsPage() {
       {!loading && totalModels > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="text-center text-xs text-zinc-400 space-y-1">
-            <p>{totalModels} modele{totalModels > 1 ? 's' : ''} \u00b7 {grouped.length} marque{grouped.length > 1 ? 's' : ''} \u00b7 Source : Mobilax</p>
+            <p>{totalModels} {`mod\u00e8le${totalModels > 1 ? 's' : ''}`} {'\u00b7'} {grouped.length} {`marque${grouped.length > 1 ? 's' : ''}`} {'\u00b7'} Source : Mobilax</p>
           </div>
         </div>
       )}
