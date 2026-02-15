@@ -4,7 +4,7 @@ import {
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
   TrendingUp, Users, MousePointerClick, Megaphone,
-  Copy, Check, Share2, X, Loader2
+  Copy, Check, Share2, X, Loader2, ImagePlus, Trash
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -87,6 +87,7 @@ export default function CommunityManager() {
   const [genContexte, setGenContexte] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generatedPost, setGeneratedPost] = useState(null);
+  const [genImageUrl, setGenImageUrl] = useState('');
 
   // Calendar
   const [events, setEvents] = useState([]);
@@ -213,10 +214,12 @@ export default function CommunityManager() {
         plateforme: post.plateforme || genPlateforme,
         type_contenu: post.type_contenu || genType,
         hashtags: post.hashtags || [],
+        image_url: genImageUrl || null,
         statut: 'brouillon',
       });
       setGeneratedPost(null);
       setGenContexte('');
+      setGenImageUrl('');
       loadPosts();
     } catch (err) {
       console.error('Erreur sauvegarde:', err);
@@ -255,20 +258,22 @@ export default function CommunityManager() {
         plateforme: post.plateforme || genPlateforme,
         type_contenu: post.type_contenu || genType,
         hashtags: post.hashtags || [],
+        image_url: genImageUrl || null,
         statut: 'brouillon',
       };
       const created = await api.createMarketingPost(postData);
       if (created && created.id) {
         const result = await api.publierPost(created.id);
         const platforms = result.platforms_published || [];
-        setPublishResult({
-          success: true,
-          message: `Publié sur ${platforms.join(', ') || 'les réseaux'}`,
-          platforms,
-        });
+        const warning = result.warning || '';
+        const msg = warning
+          ? `${warning} (${platforms.join(', ')})`
+          : `Publié sur ${platforms.join(', ') || 'les réseaux'}`;
+        setPublishResult({ success: true, message: msg, platforms });
       }
       setGeneratedPost(null);
       setGenContexte('');
+      setGenImageUrl('');
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
@@ -513,7 +518,12 @@ export default function CommunityManager() {
                         <StatusBadge statut={post.statut} />
                       </div>
 
-                      {/* Content preview */}
+                      {/* Image + Content preview */}
+                      {post.image_url && (
+                        <div className="mb-2 rounded-lg overflow-hidden border border-slate-100">
+                          <img src={post.image_url} alt="" className="w-full h-28 object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                        </div>
+                      )}
                       {post.contenu && (
                         <p className="text-sm text-zinc-600 line-clamp-2 mb-3">{post.contenu}</p>
                       )}
@@ -687,6 +697,40 @@ export default function CommunityManager() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 resize-none mb-4 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
                 />
 
+                {/* Image URL */}
+                <label className="block text-xs font-semibold text-zinc-600 mb-2">
+                  Image <span className="text-zinc-400 font-normal">(obligatoire pour Instagram)</span>
+                </label>
+                <div className="mb-4">
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={genImageUrl}
+                      onChange={(e) => setGenImageUrl(e.target.value)}
+                      placeholder="https://exemple.com/image.jpg"
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                    />
+                    {genImageUrl && (
+                      <button
+                        onClick={() => setGenImageUrl('')}
+                        className="p-2 rounded-xl border border-slate-200 hover:bg-red-50 hover:border-red-200 text-zinc-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  {genImageUrl && (
+                    <div className="mt-2 relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                      <img
+                        src={genImageUrl}
+                        alt="Aperçu"
+                        className="w-full h-32 object-cover"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Generate button */}
                 <button
                   onClick={handleGenerate}
@@ -720,6 +764,12 @@ export default function CommunityManager() {
                   <p className="text-sm text-zinc-600 mb-3 whitespace-pre-wrap">
                     {generatedPost.contenu}
                   </p>
+
+                  {genImageUrl && (
+                    <div className="mb-3 rounded-xl overflow-hidden border border-slate-200">
+                      <img src={genImageUrl} alt="Image du post" className="w-full h-40 object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                    </div>
+                  )}
 
                   {generatedPost.hashtags && generatedPost.hashtags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-4">
