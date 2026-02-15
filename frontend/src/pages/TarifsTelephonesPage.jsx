@@ -5,6 +5,7 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../lib/api';
+import { useAuth } from '../hooks/useAuth';
 
 // ─── Constantes ──────────────────────────────────
 
@@ -228,6 +229,9 @@ function ToggleSwitch({ checked, onChange, label }) {
 // ─── Main Component ──────────────────────────────
 
 export default function TarifsTelephonesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   // Data state
   const [phones, setPhones] = useState([]);
   const [stats, setStats] = useState(null);
@@ -395,23 +399,25 @@ export default function TarifsTelephonesPage() {
               </p>
             </div>
 
-            {/* Sync button */}
+            {/* Sync button — admin only */}
             <div className="flex flex-col items-end shrink-0">
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60 shadow-lg"
-                style={{
-                  background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-                }}
-              >
-                {syncing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-4 h-4" />
-                )}
-                {syncing ? 'Synchronisation...' : 'Synchroniser'}
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60 shadow-lg"
+                  style={{
+                    background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                  }}
+                >
+                  {syncing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4" />
+                  )}
+                  {syncing ? 'Synchronisation...' : 'Synchroniser'}
+                </button>
+              )}
               {stats?.derniere_sync && (
                 <p className="text-[11px] text-slate-500 mt-1.5">
                   Derniere sync : {formatDate(stats.derniere_sync)}
@@ -622,7 +628,7 @@ export default function TarifsTelephonesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {phones.map((phone, idx) => (
+              {phones.filter(p => p.modele && p.modele.trim() && p.prix_vente && p.prix_vente > 0 && p.marque && p.marque.trim()).map((phone, idx) => (
                 <PhoneCard key={phone.id || idx} phone={phone} />
               ))}
             </div>

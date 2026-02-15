@@ -92,7 +92,7 @@ function iPhoneModelSort(a, b) {
 // ─── Composant principal ─────────────────────────
 export default function TarifsPage() {
   const { user } = useAuth();
-  const isAdmin = user?.target === 'accueil';
+  const isAdmin = user?.role === 'admin';
 
   const [tarifs, setTarifs] = useState([]);
   const [stats, setStats] = useState(null);
@@ -214,7 +214,23 @@ export default function TarifsPage() {
   useEffect(() => { if (brandFilter !== 'Toutes') setExpandedBrands(new Set([brandFilter])); }, [brandFilter]);
 
   function toggleBrand(brand) {
-    setExpandedBrands(prev => { const n = new Set(prev); n.has(brand) ? n.delete(brand) : n.add(brand); return n; });
+    setExpandedBrands(prev => {
+      const n = new Set(prev);
+      if (n.has(brand)) {
+        n.delete(brand);
+      } else {
+        n.add(brand);
+        // Auto-expand first iPhone series when opening Apple
+        if (brand === 'Apple' && appleIPhoneSeries.length > 0) {
+          setExpandedSeries(sp => {
+            const ns = new Set(sp);
+            ns.add(`apple-serie-${appleIPhoneSeries[0].serie}`);
+            return ns;
+          });
+        }
+      }
+      return n;
+    });
   }
   function toggleModel(key) {
     setExpandedModels(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
@@ -390,63 +406,70 @@ export default function TarifsPage() {
   }
 
   // ─── Device table for iPad/MacBook ────
-  function DeviceSection({ devices, label, icon: SIcon, color, formulaText }) {
+  function DeviceSection({ devices, label, icon: SIcon, color, formulaText, sectionKey }) {
     if (!devices.length && !isAdmin) return null;
+    const isOpen = expandedSeries.has(sectionKey);
     return (
       <div>
-        {/* Section header */}
-        <div className="px-5 py-2.5 border-b flex items-center justify-between"
+        {/* Collapsible section header */}
+        <button onClick={() => toggleSerie(sectionKey)}
+          className="w-full px-5 py-2.5 border-b flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90"
           style={{ background: color.bg, borderColor: color.border }}>
           <div className="flex items-center gap-2">
+            {isOpen ? <ChevronDown className="w-3.5 h-3.5" style={{ color: color.text }} /> : <ChevronRight className="w-3.5 h-3.5" style={{ color: color.text }} />}
             <SIcon className="w-4 h-4" style={{ color: color.text }} />
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: color.text }}>{label}</span>
             <span className="text-[10px] font-medium opacity-60" style={{ color: color.text }}>({devices.length})</span>
           </div>
-        </div>
+        </button>
 
-        {/* Formula banner — admin only */}
-        {isAdmin && formulaText && (
-          <div className="px-5 py-2 border-b" style={{ background: color.formulaBg, borderColor: color.border }}>
-            <span className="text-[13px] font-semibold" style={{ color: color.formulaText }}>
-              {'\uD83E\uDDEE'} {formulaText}
-            </span>
-          </div>
-        )}
-
-        {devices.length === 0 ? (
-          <div className="px-5 py-6 text-center text-xs text-zinc-400">Aucun tarif {label} pour le moment</div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {/* Table header */}
-            <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-50 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
-              <div className="flex-1 pl-2">Modele</div>
-              <div className="w-32 text-center">Ecran</div>
-              {showHT && isAdmin && <div className="w-28 text-center">Ecran HT</div>}
-              <div className="w-32 text-center">Batterie</div>
-              {showHT && isAdmin && <div className="w-28 text-center">Batterie HT</div>}
-            </div>
-            {devices.map((d, i) => (
-              <div key={d.id || i} className={`flex flex-col sm:flex-row items-start sm:items-center px-5 py-3 gap-2 sm:gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'}`}>
-                <div className="flex-1 pl-2 font-semibold text-[13px] text-zinc-900">{d.modele}</div>
-                <div className="w-32 text-center">
-                  {d.ecran_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
-                </div>
-                {showHT && isAdmin && (
-                  <div className="w-28 text-center text-[11px] text-red-400 font-medium">
-                    {d.ecran_prix_ht != null ? `${Number(d.ecran_prix_ht).toFixed(2)} \u20ac HT` : '-'}
-                  </div>
-                )}
-                <div className="w-32 text-center">
-                  {d.batterie_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
-                </div>
-                {showHT && isAdmin && (
-                  <div className="w-28 text-center text-[11px] text-red-400 font-medium">
-                    {d.batterie_prix_ht != null ? `${Number(d.batterie_prix_ht).toFixed(2)} \u20ac HT` : '-'}
-                  </div>
-                )}
+        {isOpen && (
+          <>
+            {/* Formula banner — admin only */}
+            {isAdmin && formulaText && (
+              <div className="px-5 py-2 border-b" style={{ background: color.formulaBg, borderColor: color.border }}>
+                <span className="text-[13px] font-semibold" style={{ color: color.formulaText }}>
+                  {'\uD83E\uDDEE'} {formulaText}
+                </span>
               </div>
-            ))}
-          </div>
+            )}
+
+            {devices.length === 0 ? (
+              <div className="px-5 py-6 text-center text-xs text-zinc-400">Aucun tarif {label} pour le moment</div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {/* Table header */}
+                <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-50 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                  <div className="flex-1 pl-2">Modele</div>
+                  <div className="w-32 text-center">Ecran</div>
+                  {showHT && isAdmin && <div className="w-28 text-center">Ecran HT</div>}
+                  <div className="w-32 text-center">Batterie</div>
+                  {showHT && isAdmin && <div className="w-28 text-center">Batterie HT</div>}
+                </div>
+                {devices.map((d, i) => (
+                  <div key={d.id || i} className={`flex flex-col sm:flex-row items-start sm:items-center px-5 py-3 gap-2 sm:gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'}`}>
+                    <div className="flex-1 pl-2 font-semibold text-[13px] text-zinc-900">{d.modele}</div>
+                    <div className="w-32 text-center">
+                      {d.ecran_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
+                    </div>
+                    {showHT && isAdmin && (
+                      <div className="w-28 text-center text-[11px] text-red-400 font-medium">
+                        {d.ecran_prix_ht != null ? `${Number(d.ecran_prix_ht).toFixed(2)} € HT` : '-'}
+                      </div>
+                    )}
+                    <div className="w-32 text-center">
+                      {d.batterie_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
+                    </div>
+                    {showHT && isAdmin && (
+                      <div className="w-28 text-center text-[11px] text-red-400 font-medium">
+                        {d.batterie_prix_ht != null ? `${Number(d.batterie_prix_ht).toFixed(2)} € HT` : '-'}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -487,11 +510,13 @@ export default function TarifsPage() {
                   <span className="hidden sm:inline">{showHT ? 'Prix HT visibles' : 'Prix HT masques'}</span>
                 </button>
               )}
-              <button onClick={handleCheckStock} disabled={checkingStock || updating}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-                <PackageX className={`w-4 h-4 ${checkingStock ? 'animate-pulse' : ''}`} />
-                <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
-              </button>
+              {isAdmin && (
+                <button onClick={handleCheckStock} disabled={checkingStock || updating}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
+                  <PackageX className={`w-4 h-4 ${checkingStock ? 'animate-pulse' : ''}`} />
+                  <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
+                </button>
+              )}
               <button onClick={async () => { setUpdating(true); await loadData(); setUpdating(false); }}
                 disabled={updating || checkingStock}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
@@ -620,13 +645,13 @@ export default function TarifsPage() {
                       <ModelRow key={model} brand="Apple" model={model} items={items} idx={idx} />
                     ))}
 
-                    {/* ── iPad section ── */}
+                    {/* ── iPad section (collapsible, closed by default) ── */}
                     <DeviceSection devices={iPadDevices} label="iPad" icon={Tablet} color={IPAD_COLOR}
-                      formulaText="Formule : (Prix piece HT \u00d7 1.2) + 110\u20ac de main d'oeuvre" />
+                      formulaText="Formule : (Prix pièce HT × 1.2) + 110€ de main d'œuvre" sectionKey="apple-ipad" />
 
-                    {/* ── MacBook section ── */}
+                    {/* ── MacBook section (collapsible, closed by default) ── */}
                     <DeviceSection devices={macBookDevices} label="MacBook" icon={Laptop} color={MACBOOK_COLOR}
-                      formulaText="Formule : (Prix piece HT \u00d7 1.2) + 120\u20ac de main d'oeuvre" />
+                      formulaText="Formule : (Prix pièce HT × 1.2) + 120€ de main d'œuvre" sectionKey="apple-macbook" />
                   </div>
                 )}
 

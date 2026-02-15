@@ -44,6 +44,7 @@ export default function Navbar() {
   if (!user) return null;
 
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
+  const isAdmin = user.role === 'admin';
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
@@ -192,84 +193,88 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Marketing section */}
-          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-            {!collapsed ? (
-              <button
-                onClick={() => {
-                  const next = !marketingOpen;
-                  setMarketingOpen(next);
-                  localStorage.setItem('kp_marketing_open', next ? '1' : '0');
-                }}
-                className="w-full flex items-center justify-between px-3 mb-2 group"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-400 flex items-center gap-1.5">
-                  <Rocket className="w-3 h-3" />
-                  Marketing
-                </span>
-                <ChevronDown className={`w-3 h-3 text-brand-400 transition-transform duration-200 ${marketingOpen ? 'rotate-180' : ''}`} />
-              </button>
-            ) : (
-              <div className="flex justify-center mb-1">
-                <Rocket className="w-4 h-4 text-brand-400" />
-              </div>
-            )}
-            {(marketingOpen || collapsed) && (
-              <>
-                <button onClick={() => handleNav(`${basePath}/avis-google`)}
-                  title={collapsed ? 'Avis Google' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/avis-google`)
-                      ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
+          {/* Marketing section — admin only */}
+          {isAdmin && (
+            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+              {!collapsed ? (
+                <button
+                  onClick={() => {
+                    const next = !marketingOpen;
+                    setMarketingOpen(next);
+                    localStorage.setItem('kp_marketing_open', next ? '1' : '0');
+                  }}
+                  className="w-full flex items-center justify-between px-3 mb-2 group"
                 >
-                  <Star className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/avis-google`) ? 'text-brand-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Avis Google</span>}
-                  {!collapsed && avisNonRepondus > 0 && (
-                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      {avisNonRepondus}
-                    </span>
-                  )}
-                  {collapsed && avisNonRepondus > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                      {avisNonRepondus > 9 ? '9+' : avisNonRepondus}
-                    </span>
-                  )}
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-400 flex items-center gap-1.5">
+                    <Rocket className="w-3 h-3" />
+                    Marketing
+                  </span>
+                  <ChevronDown className={`w-3 h-3 text-brand-400 transition-transform duration-200 ${marketingOpen ? 'rotate-180' : ''}`} />
                 </button>
-                <button onClick={() => handleNav(`${basePath}/community`)}
-                  title={collapsed ? 'Community Manager' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/community`)
-                      ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Megaphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/community`) ? 'text-brand-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Community Manager</span>}
-                </button>
-              </>
-            )}
-          </div>
+              ) : (
+                <div className="flex justify-center mb-1">
+                  <Rocket className="w-4 h-4 text-brand-400" />
+                </div>
+              )}
+              {(marketingOpen || collapsed) && (
+                <>
+                  <button onClick={() => handleNav(`${basePath}/avis-google`)}
+                    title={collapsed ? 'Avis Google' : undefined}
+                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                      ${isActive(`${basePath}/avis-google`)
+                        ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                      }`}
+                  >
+                    <Star className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/avis-google`) ? 'text-brand-400' : ''}`} />
+                    {!collapsed && <span className="flex-1 text-left">Avis Google</span>}
+                    {!collapsed && avisNonRepondus > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                        {avisNonRepondus}
+                      </span>
+                    )}
+                    {collapsed && avisNonRepondus > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {avisNonRepondus > 9 ? '9+' : avisNonRepondus}
+                      </span>
+                    )}
+                  </button>
+                  <button onClick={() => handleNav(`${basePath}/community`)}
+                    title={collapsed ? 'Community Manager' : undefined}
+                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                      ${isActive(`${basePath}/community`)
+                        ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                      }`}
+                  >
+                    <Megaphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/community`) ? 'text-brand-400' : ''}`} />
+                    {!collapsed && <span className="flex-1 text-left">Community Manager</span>}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
-          {/* Admin separator */}
-          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-            {!collapsed && <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Administration</p>}
-            <button onClick={() => handleNav(`${basePath}/admin`)}
-              title={collapsed ? 'Admin' : undefined}
-              className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                ${location.pathname.includes('/admin')
-                  ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                }`}
-            >
-              <Shield className={`w-[18px] h-[18px] shrink-0 ${location.pathname.includes('/admin') ? 'text-amber-400' : 'text-amber-500/60'}`} />
-              {!collapsed && <span>Admin</span>}
-            </button>
-          </div>
+          {/* Admin separator — admin only */}
+          {isAdmin && (
+            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+              {!collapsed && <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Administration</p>}
+              <button onClick={() => handleNav(`${basePath}/admin`)}
+                title={collapsed ? 'Admin' : undefined}
+                className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                  ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                  ${location.pathname.includes('/admin')
+                    ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                  }`}
+              >
+                <Shield className={`w-[18px] h-[18px] shrink-0 ${location.pathname.includes('/admin') ? 'text-amber-400' : 'text-amber-500/60'}`} />
+                {!collapsed && <span>Admin</span>}
+              </button>
+            </div>
+          )}
         </nav>
 
         {/* Collapse toggle (desktop only) */}

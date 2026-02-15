@@ -183,7 +183,7 @@ async def liste_telephones(
     """Liste des téléphones avec filtres et pagination."""
     _ensure_table()
     with get_cursor() as cur:
-        where = "actif = TRUE"
+        where = "actif = TRUE AND modele IS NOT NULL AND modele != '' AND prix_vente IS NOT NULL AND prix_vente > 0 AND marque IS NOT NULL AND marque != ''"
         params = []
         if marque:
             where += " AND marque = %s"

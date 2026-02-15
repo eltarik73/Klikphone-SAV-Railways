@@ -213,7 +213,7 @@ async def list_tarifs(
 
     results = [dict(r) for r in rows]
 
-    is_admin = user.get("target") == "accueil"
+    is_admin = user.get("role") == "admin"
     if not is_admin:
         for r in results:
             r.pop("prix_fournisseur_ht", None)
@@ -361,7 +361,7 @@ async def list_apple_devices(user: dict = Depends(get_current_user)):
         )
         rows = [dict(r) for r in cur.fetchall()]
 
-    is_admin = user.get("target") == "accueil"
+    is_admin = user.get("role") == "admin"
     if not is_admin:
         for r in rows:
             r.pop("ecran_prix_ht", None)

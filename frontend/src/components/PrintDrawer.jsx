@@ -11,6 +11,7 @@ const PRINT_TYPES = [
   { type: 'recu', label: 'Reçu', desc: 'Reçu de paiement', icon: Receipt },
 ];
 
+// Devis/Recu support both thermal and PDF — default is thermal like all others
 const PDF_TYPES = new Set(['devis', 'recu']);
 
 export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clientTel, clientEmail }) {
@@ -21,15 +22,18 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
   const [sendOpen, setSendOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState(null);
+  const [useA4, setUseA4] = useState(false);
 
   const printUrl = api.getPrintUrl(ticketId, activeType);
   const currentType = PRINT_TYPES.find(p => p.type === activeType);
-  const hasPdf = PDF_TYPES.has(activeType);
+  const canPdf = PDF_TYPES.has(activeType);
+  const hasPdf = canPdf && useA4;
 
   // Reset to thermal tab each time drawer opens
   useEffect(() => {
     if (open) {
       setActiveType('client');
+      setUseA4(false);
       setToast(null);
       document.body.style.overflow = 'hidden';
     } else {
@@ -38,10 +42,15 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
     return () => { document.body.style.overflow = ''; };
   }, [open]);
 
-  // Reload iframe when tab changes
+  // Reload iframe when tab changes — reset to thermal
+  useEffect(() => {
+    if (open) { setIframeLoading(true); setUseA4(false); }
+  }, [activeType]);
+
+  // Reload iframe when format changes
   useEffect(() => {
     if (open) setIframeLoading(true);
-  }, [activeType]);
+  }, [useA4]);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -166,18 +175,26 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
               {label}
               <span className={`text-[9px] px-1 py-0.5 rounded ${
                 activeType === type ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
-              }`}>{PDF_TYPES.has(type) ? 'A4' : '80mm'}</span>
+              }`}>{(activeType === type && useA4 && PDF_TYPES.has(type)) ? 'A4' : '80mm'}</span>
             </button>
           ))}
         </div>
 
         {/* Preview area */}
         <div className="flex-1 relative bg-slate-100 overflow-hidden">
-          {/* Format indicator */}
+          {/* Format indicator + toggle */}
           <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
             <span className="text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm bg-slate-800 text-white">
               {hasPdf ? 'PDF A4' : 'THERMIQUE 80mm'}
             </span>
+            {canPdf && (
+              <button
+                onClick={() => { setUseA4(!useA4); setIframeLoading(true); }}
+                className={`text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm transition-colors ${useA4 ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
+              >
+                {useA4 ? 'Passer en 80mm' : 'Passer en A4'}
+              </button>
+            )}
           </div>
 
           {/* Loading */}
@@ -218,11 +235,11 @@ export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clien
               {printing ? 'Ouverture...' : 'Imprimer 80mm'}
             </button>
 
-            {/* PDF A4 button — only for devis/recu */}
-            {hasPdf && (
+            {/* PDF A4 button — for devis/recu when in A4 mode */}
+            {canPdf && (
               <button
                 onClick={handleOpenPdf}
-                className="btn-primary flex-1 justify-center shadow-lg shadow-brand-600/20"
+                className={`${hasPdf ? 'btn-primary shadow-lg shadow-brand-600/20' : 'btn-ghost border border-slate-200'} flex-1 justify-center`}
               >
                 <Download className="w-4 h-4" />
                 PDF A4
