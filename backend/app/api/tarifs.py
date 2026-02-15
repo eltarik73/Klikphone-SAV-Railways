@@ -428,6 +428,7 @@ def _match_stock(type_piece: str, qualite: str, products: list):
 async def check_stock_mobilax(user: dict = Depends(get_current_user)):
     """Scrape Mobilax category pages to check stock for all tarifs."""
     import httpx
+    import asyncio
 
     with get_cursor() as cur:
         cur.execute("SELECT id, marque, modele, type_piece, qualite, en_stock FROM tarifs")
@@ -449,13 +450,11 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
         "now_rupture": 0,
     }
 
-    client = httpx.Client(
+    async with httpx.AsyncClient(
         headers=_MOBILAX_HEADERS,
-        timeout=8,
+        timeout=10,
         follow_redirects=True,
-    )
-
-    try:
+    ) as client:
         for (marque, modele), model_tarifs in models.items():
             urls = _mobilax_urls(marque, modele)
             if not urls:
@@ -464,7 +463,7 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
             html = None
             for url in urls:
                 try:
-                    resp = client.get(url)
+                    resp = await client.get(url)
                     if resp.status_code == 200 and len(resp.text) > 1000:
                         html = resp.text
                         break
@@ -499,8 +498,6 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
                         else:
                             results["now_rupture"] += 1
 
-            time.sleep(0.3)
-    finally:
-        client.close()
+            await asyncio.sleep(0.3)
 
     return results

@@ -352,7 +352,7 @@ class ApiClient {
     return this.request(`/api/tarifs/${id}/stock`, { method: 'PATCH' });
   }
   checkTarifStock() {
-    return this.request('/api/tarifs/check-stock', { method: 'POST' });
+    return this.request('/api/tarifs/check-stock', { method: 'POST' }, 300000);
   }
 }
 
