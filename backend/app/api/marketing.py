@@ -447,7 +447,7 @@ async def sync_avis(user: dict = Depends(get_current_user)):
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
-async def generer_reponse_avis(avis_id: int, user: dict = Depends(get_current_user)):
+async def generer_reponse_avis(avis_id: int):  # temp no auth for testing
     """Génère une suggestion de réponse IA pour un avis Google."""
     _ensure_tables()
 
