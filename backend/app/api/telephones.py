@@ -90,7 +90,7 @@ def _run_sync_background():
 
 
 @router.post("/sync")
-async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+async def sync_catalogue(background_tasks: BackgroundTasks):
     """Lance la synchronisation avec LCD-Phone en arrière-plan."""
     global _sync_status
     _ensure_table()
@@ -117,7 +117,7 @@ async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends
 
 
 @router.get("/sync-status")
-async def sync_status(user: dict = Depends(get_current_user)):
+async def sync_status():
     """Vérifie l'état de la synchronisation."""
     return {
         "running": _sync_status["running"],

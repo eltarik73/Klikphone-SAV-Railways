@@ -36,25 +36,56 @@ except ImportError:
 
 
 # Marques autorisées (on ne garde que celles-ci)
-MARQUES_AUTORISEES = {"Apple", "Samsung", "Xiaomi"}
+MARQUES_AUTORISEES = {"Apple", "Samsung", "Xiaomi", "Google"}
 
 # Mots-clés d'exclusion dans le nom du produit
 EXCLUSION_KEYWORDS = [
     "factice", "dummy", "maquette", "exposition",
     "ipod", "i-pod",
+    "c2buy",
 ]
+
+
+def _is_old_iphone(nom: str) -> bool:
+    """Retourne True si c'est un iPhone 8 ou inférieur (à exclure).
+    On garde à partir du X (X, XR, XS, 11, 12, 13, 14, 15, 16, 17, SE 2/3).
+    """
+    nom_lower = nom.lower()
+    if 'iphone' not in nom_lower:
+        return False
+    m = re.search(r'iphone\s+(\d+|x|xr|xs|se)', nom_lower)
+    if not m:
+        return False
+    model = m.group(1)
+    # Modèles numériques : 8 et en dessous → exclure
+    if model.isdigit() and int(model) <= 8:
+        return True
+    # iPhone SE 1ère gen (sans 2/3/2020/2022 après) → exclure
+    if model == 'se':
+        after = nom_lower[m.end():]
+        if not re.search(r'\b(2|3|2020|2022|2nd|3rd)\b', after):
+            return True
+    return False
 
 
 # ─── HELPERS ────────────────────────────────────────
 
 def calculer_prix_vente(prix_fournisseur: float, marque: str, type_produit: str) -> tuple:
+    """Calcul du prix de vente:
+    - Occasion toute marque : fournisseur + 80€
+    - Neuf Apple : (fournisseur × 1.2) + 50€
+    - Neuf autre marque : (fournisseur × 1.2) + 60€
+    """
     if type_produit == "occasion":
+        prix_vente = prix_fournisseur + 80.0
         marge = 80.0
     elif marque and marque.lower() in ("apple", "iphone"):
-        marge = 50.0
+        prix_vente = (prix_fournisseur * 1.2) + 50.0
+        marge = prix_vente - prix_fournisseur
     else:
-        marge = 60.0
-    return round(prix_fournisseur + marge, 2), marge
+        prix_vente = (prix_fournisseur * 1.2) + 60.0
+        marge = prix_vente - prix_fournisseur
+    return round(prix_vente, 2), round(marge, 2)
 
 
 def detecter_marque(nom: str) -> str:
@@ -253,9 +284,14 @@ def _scrape_category_ajax(client, cat: dict) -> tuple:
                     if not nom:
                         continue
 
-                    # Exclure factice, iPod, etc.
+                    # Exclure factice, iPod, c2buy, etc.
                     nom_lower = nom.lower()
                     if any(kw in nom_lower for kw in EXCLUSION_KEYWORDS):
+                        debug["cards_skipped_excluded"] += 1
+                        continue
+
+                    # Exclure les vieux iPhones (8 et en dessous)
+                    if _is_old_iphone(nom):
                         debug["cards_skipped_excluded"] += 1
                         continue
 
