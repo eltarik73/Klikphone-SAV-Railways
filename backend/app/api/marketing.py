@@ -983,46 +983,110 @@ class ImageGenerer(BaseModel):
     style: Optional[str] = "professional"
 
 
+# Stockage en mémoire des images générées (clé = id, valeur = bytes JPEG)
+_generated_images: dict = {}
+
+
+@router.get("/images/{image_id}.jpg")
+async def serve_generated_image(image_id: str):
+    """Sert une image générée stockée en mémoire."""
+    from fastapi.responses import Response
+    img_data = _generated_images.get(image_id)
+    if not img_data:
+        raise HTTPException(404, "Image non trouvée ou expirée")
+    return Response(content=img_data, media_type="image/jpeg")
+
+
 @router.post("/posts/generer-image")
 async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_user)):
-    """Génère une image via Pollinations.ai avec un prompt créé par Claude."""
-    import urllib.parse
-    import random
+    """Génère une image via Together AI (FLUX.1-schnell-Free) avec un prompt créé par Claude."""
+    import uuid
+    import base64
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    seed = random.randint(1, 999999)
-
-    if api_key:
+    # 1. Créer le prompt image avec Claude
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key:
         try:
             import anthropic
-            client = anthropic.Anthropic(api_key=api_key)
+            client = anthropic.Anthropic(api_key=anthropic_key)
             message = client.messages.create(
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=150,
                 system=(
                     "Tu crées des prompts pour générer des images de posts réseaux sociaux. "
                     "Le prompt doit être en anglais, descriptif et visuel. Année : 2026. "
-                    "Style : moderne, professionnel, coloré, adapté Instagram/LinkedIn. "
+                    "Style : moderne, professionnel, coloré, format carré Instagram 1:1. "
                     "Le sujet est Klikphone, magasin de réparation de téléphones à Chambéry. "
                     "Réponds UNIQUEMENT avec le prompt image, rien d'autre. Pas de guillemets. "
-                    "Ne mets JAMAIS de texte dans l'image. Focus sur le visuel uniquement."
+                    "Ne mets JAMAIS de texte/mots dans l'image. Focus sur le visuel uniquement."
                 ),
                 messages=[{"role": "user", "content": f"Crée un prompt image pour ce post: {body.contexte[:300]}. Style: {body.style}"}],
             )
             prompt = message.content[0].text.strip().strip('"')
         except Exception as e:
             print(f"Erreur Claude image prompt: {e}")
-            prompt = f"Professional social media post about phone repair shop, modern colorful design, {body.style} style"
+            prompt = f"Professional photo of a modern phone repair shop with purple branding, clean workspace with smartphones, {body.style} style, square format"
     else:
-        prompt = f"Professional social media post about phone repair shop, modern colorful design, {body.style} style"
+        prompt = f"Professional photo of a modern phone repair shop with purple branding, clean workspace with smartphones, {body.style} style, square format"
 
-    encoded = urllib.parse.quote(prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&seed={seed}&nologo=true"
+    # 2. Générer l'image avec Together AI
+    together_key = os.getenv("TOGETHER_API_KEY")
+    if not together_key:
+        raise HTTPException(
+            400,
+            "TOGETHER_API_KEY non configurée. "
+            "Créez un compte gratuit sur https://together.ai et ajoutez la clé dans Railway."
+        )
+
+    import httpx
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.together.xyz/v1/images/generations",
+            headers={
+                "Authorization": f"Bearer {together_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "black-forest-labs/FLUX.1-schnell-Free",
+                "prompt": prompt,
+                "width": 1024,
+                "height": 1024,
+                "n": 1,
+                "response_format": "b64_json",
+            },
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Erreur Together AI ({resp.status_code}): {resp.text[:300]}")
+
+    result = resp.json()
+    b64_data = result.get("data", [{}])[0].get("b64_json", "")
+    if not b64_data:
+        raise HTTPException(502, "Together AI n'a pas retourné d'image")
+
+    # 3. Stocker l'image et retourner l'URL
+    img_bytes = base64.b64decode(b64_data)
+    image_id = str(uuid.uuid4())[:12]
+    _generated_images[image_id] = img_bytes
+
+    # Nettoyer les anciennes images (garder max 50)
+    if len(_generated_images) > 50:
+        oldest = list(_generated_images.keys())[0]
+        del _generated_images[oldest]
+
+    # Construire l'URL publique
+    # On utilise l'URL du backend Railway
+    base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+    if base_url and not base_url.startswith("http"):
+        base_url = f"https://{base_url}"
+    if not base_url:
+        base_url = "https://klikphone-sav-v2-production.up.railway.app"
+
+    image_url = f"{base_url}/api/marketing/images/{image_id}.jpg"
 
     return {
         "image_url": image_url,
         "prompt": prompt,
-        "seed": seed,
     }
 
 
