@@ -24,6 +24,20 @@ const AvisGooglePage = lazy(() => import('./pages/AvisGoogle'));
 const CommunityManagerPage = lazy(() => import('./pages/CommunityManager'));
 const TarifsTelephonesPage = lazy(() => import('./pages/TarifsTelephonesPage'));
 
+// Preload frequent pages after initial render
+const preloadPages = () => {
+  import('./pages/DashboardPage');
+  import('./pages/TarifsPage');
+  import('./pages/ClientsPage');
+};
+if (typeof window !== 'undefined') {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(preloadPages);
+  } else {
+    setTimeout(preloadPages, 2000);
+  }
+}
+
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(

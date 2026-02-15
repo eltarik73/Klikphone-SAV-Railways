@@ -268,7 +268,15 @@ export default function DashboardPage() {
 
       {/* KPI Grid — 5 cards cliquables */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-        {kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter }, i) => (
+        {!kpi && loading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="card p-4 animate-pulse">
+              <div className="w-9 h-9 rounded-lg bg-slate-100 mb-3" />
+              <div className="h-7 w-12 bg-slate-100 rounded mb-1" />
+              <div className="h-3 w-20 bg-slate-100 rounded" />
+            </div>
+          ))
+        ) : kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter }, i) => (
           <button key={label}
             onClick={() => handleKpiClick(filter, i)}
             className={`card p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 animate-in text-left
@@ -386,9 +394,18 @@ export default function DashboardPage() {
         </div>
 
         {loading && tickets.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Chargement...</p>
+          <div className="divide-y divide-slate-100/80">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="px-5 py-3.5 animate-pulse flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full bg-slate-100 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-32 bg-slate-100 rounded" />
+                  <div className="h-3 w-48 bg-slate-100 rounded" />
+                </div>
+                <div className="hidden lg:block h-6 w-20 bg-slate-100 rounded-lg" />
+                <div className="hidden lg:block h-6 w-28 bg-slate-100 rounded-lg" />
+              </div>
+            ))}
           </div>
         ) : displayedTickets.length === 0 ? (
           <div className="py-16 text-center">

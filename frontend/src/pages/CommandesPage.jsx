@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -17,7 +17,9 @@ export default function CommandesPage() {
   const [parts, setParts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
+  const searchTimer = useRef(null);
   const [showForm, setShowForm] = useState(false);
   const [editingPart, setEditingPart] = useState(null);
   const [form, setForm] = useState({
@@ -25,11 +27,18 @@ export default function CommandesPage() {
     prix: '', ticket_code: '', statut: 'En attente', notes: '',
   });
 
+  // Debounced search (300ms)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [search]);
+
   const loadParts = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
-      if (search) params.search = search;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatut) params.statut = filterStatut;
       const data = await api.getParts(params);
       setParts(data);
@@ -38,7 +47,7 @@ export default function CommandesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, filterStatut]);
+  }, [debouncedSearch, filterStatut]);
 
   useEffect(() => { loadParts(); }, [loadParts]);
 

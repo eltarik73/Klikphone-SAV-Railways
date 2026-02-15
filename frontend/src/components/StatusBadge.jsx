@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { getStatusConfig } from '../lib/utils';
 
-export default function StatusBadge({ statut, size = 'default' }) {
+export default memo(function StatusBadge({ statut, size = 'default' }) {
   const config = getStatusConfig(statut);
   const sizeClasses = size === 'lg'
     ? 'px-3.5 py-1.5 text-sm'
@@ -12,4 +13,4 @@ export default function StatusBadge({ statut, size = 'default' }) {
       {statut}
     </span>
   );
-}
+});

@@ -547,7 +547,7 @@ export default function CommunityManager() {
                       {/* Image + Content preview */}
                       {post.image_url && (
                         <div className="mb-2 rounded-lg overflow-hidden border border-slate-100">
-                          <img src={post.image_url} alt="" className="w-full h-28 object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                          <img src={post.image_url} alt="" className="w-full h-28 object-cover" loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
                         </div>
                       )}
                       {post.contenu && (

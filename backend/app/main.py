@@ -115,6 +115,25 @@ async def lifespan(app: FastAPI):
                 cur.execute(sql)
         except Exception as e:
             print(f"Warning ALTER TABLE: {e}")
+    # Performance indexes (CREATE INDEX IF NOT EXISTS is safe to run every startup)
+    for sql in [
+        "CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_statut ON tickets(statut)",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_date_depot ON tickets(date_depot DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_clients_telephone ON clients(telephone)",
+        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_ticket_id ON notes_tickets(ticket_id)",
+        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_id ON commandes_pieces(ticket_id)",
+        "CREATE INDEX IF NOT EXISTS idx_historique_ticket_id ON historique(ticket_id)",
+        "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_client ON fidelite_historique(client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_ticket ON fidelite_historique(ticket_id)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at DESC)",
+    ]:
+        try:
+            with get_cursor() as cur:
+                cur.execute(sql)
+        except Exception as e:
+            print(f"Warning CREATE INDEX: {e}")
+
     yield
     close_pool()
 

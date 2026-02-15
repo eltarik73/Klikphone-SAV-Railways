@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones, PackageX, Tablet, Laptop, Lock, Unlock } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
@@ -20,14 +20,14 @@ const BRAND_CONFIG = {
 };
 const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', logo: null };
 
-function BrandLogo({ slug, size = 18 }) {
+const BrandLogo = memo(function BrandLogo({ slug, size = 18 }) {
   const [error, setError] = useState(false);
   if (!slug || error) return <Smartphone className="w-[18px] h-[18px] opacity-70" />;
   return (
     <img src={`https://cdn.simpleicons.org/${slug}/ffffff`} alt="" width={size} height={size}
       className="shrink-0" style={{ filter: 'brightness(1)', minWidth: size }} loading="lazy" onError={() => setError(true)} />
   );
-}
+});
 
 const QUALITY_COLORS = {
   'Original':       { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
@@ -99,6 +99,8 @@ export default function TarifsPage() {
   const [appleDevices, setAppleDevices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const searchTimer = useRef(null);
   const [brandFilter, setBrandFilter] = useState('Toutes');
   const [expandedBrands, setExpandedBrands] = useState(new Set());
   const [expandedModels, setExpandedModels] = useState(new Set());
@@ -109,6 +111,13 @@ export default function TarifsPage() {
   const [showHT, setShowHT] = useState(false);
 
   useEffect(() => { loadData(); }, []);
+
+  // Debounced search (300ms)
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [search]);
 
   async function loadData() {
     setLoading(true);
@@ -146,15 +155,15 @@ export default function TarifsPage() {
   const filtered = useMemo(() => {
     let result = tarifs;
     if (brandFilter !== 'Toutes') result = result.filter(t => t.marque === brandFilter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
       result = result.filter(t =>
         (t.marque || '').toLowerCase().includes(q) || (t.modele || '').toLowerCase().includes(q) ||
         (t.type_piece || '').toLowerCase().includes(q) || (t.qualite || '').toLowerCase().includes(q)
       );
     }
     return result;
-  }, [tarifs, brandFilter, search]);
+  }, [tarifs, brandFilter, debouncedSearch]);
 
   const grouped = useMemo(() => {
     const byBrand = {};
