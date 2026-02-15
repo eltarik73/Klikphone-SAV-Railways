@@ -10,10 +10,15 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-import httpx
-from bs4 import BeautifulSoup
-
 from app.database import get_cursor
+
+# Lazy imports pour éviter crash si beautifulsoup4 pas installé
+try:
+    import httpx
+    from bs4 import BeautifulSoup
+    _HAS_DEPS = True
+except ImportError:
+    _HAS_DEPS = False
 
 logger = logging.getLogger(__name__)
 
@@ -281,6 +286,8 @@ def scraper_categorie(client, cat_config: dict) -> list:
 
 def sync_telephones_lcdphone() -> dict:
     """Login + scrape toutes les catégories + upsert en BDD."""
+    if not _HAS_DEPS:
+        return {"success": False, "error": "Dépendances manquantes: pip install beautifulsoup4 httpx"}
     client = login_lcdphone()
     if not client:
         return {"success": False, "error": "Échec connexion LCD-Phone. Vérifiez LCDPHONE_EMAIL et LCDPHONE_PASSWORD."}
