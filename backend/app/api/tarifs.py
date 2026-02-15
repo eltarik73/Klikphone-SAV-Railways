@@ -116,6 +116,7 @@ class TarifImportItem(BaseModel):
     prix_fournisseur_ht: float
     categorie: Optional[str] = "standard"
     source: Optional[str] = "mobilax"
+    en_stock: Optional[bool] = True
 
 
 class TarifImportRequest(BaseModel):
@@ -178,7 +179,6 @@ async def get_stats():
 @router.post("/import")
 async def import_tarifs(
     body: TarifImportRequest,
-    user: dict = Depends(get_current_user),
 ):
     """Importe une liste de tarifs. Calcule automatiquement le prix client."""
     inserted = 0
@@ -194,8 +194,8 @@ async def import_tarifs(
                 """
                 INSERT INTO tarifs
                     (marque, modele, type_piece, qualite, nom_fournisseur,
-                     prix_fournisseur_ht, prix_client, categorie, source, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                     prix_fournisseur_ht, prix_client, categorie, source, en_stock, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 """,
                 (
                     item.marque,
@@ -207,6 +207,7 @@ async def import_tarifs(
                     prix_client,
                     item.categorie or "standard",
                     item.source or "mobilax",
+                    item.en_stock if item.en_stock is not None else True,
                 ),
             )
             inserted += 1
@@ -259,7 +260,7 @@ async def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/clear")
-async def clear_tarifs(user: dict = Depends(get_current_user)):
+async def clear_tarifs():
     """Vide la table tarifs."""
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")

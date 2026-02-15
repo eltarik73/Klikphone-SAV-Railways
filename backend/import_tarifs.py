@@ -893,10 +893,10 @@ TARIFS = [
     ("Xiaomi", "Redmi Note 11 Pro 4G", "Ecran", "Original", "Ecran Original Redmi Note 11 Pro 4G", 48.00, "standard"),
     ("Xiaomi", "Redmi Note 11 Pro 4G", "Ecran", "OLED", "Ecran OLED Redmi Note 11 Pro 4G", 32.00, "standard"),
     # Redmi Note 11S (AMOLED)
-    ("Xiaomi", "Redmi Note 11S", "Ecran", "Original", "Ecran Original Redmi Note 11S", 42.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S", "Ecran", "Original", "Ecran Original Redmi Note 11S", 42.00, "standard", False),
     ("Xiaomi", "Redmi Note 11S", "Ecran", "OLED", "Ecran OLED Redmi Note 11S", 28.00, "standard"),
     # Redmi Note 11S 5G (LCD)
-    ("Xiaomi", "Redmi Note 11S 5G", "Ecran", "Original", "Ecran Original Redmi Note 11S 5G", 28.00, "standard"),
+    ("Xiaomi", "Redmi Note 11S 5G", "Ecran", "Original", "Ecran Original Redmi Note 11S 5G", 28.00, "standard", False),
     ("Xiaomi", "Redmi Note 11S 5G", "Ecran", "Compatible", "Ecran Compatible Redmi Note 11S 5G", 16.00, "standard"),
     # Redmi Note 11 4G (AMOLED)
     ("Xiaomi", "Redmi Note 11 4G", "Ecran", "Original", "Ecran Original Redmi Note 11 4G", 32.00, "standard"),
@@ -909,7 +909,7 @@ TARIFS = [
     # ║  XIAOMI — ECRANS Redmi Note 10 (4G / 5G)                   ║
     # ╚══════════════════════════════════════════════════════════════╝
     # Redmi Note 10 Pro (AMOLED, 4G uniquement)
-    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "Original", "Ecran Original Redmi Note 10 Pro", 42.00, "standard"),
+    ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "Original", "Ecran Original Redmi Note 10 Pro", 42.00, "standard", False),
     ("Xiaomi", "Redmi Note 10 Pro", "Ecran", "OLED", "Ecran OLED Redmi Note 10 Pro", 28.00, "standard"),
     # Redmi Note 10S (AMOLED, 4G uniquement)
     ("Xiaomi", "Redmi Note 10S", "Ecran", "Original", "Ecran Original Redmi Note 10S", 38.00, "standard"),
@@ -1189,7 +1189,7 @@ TARIFS = [
     ("Huawei", "P40 Lite", "Ecran", "Compatible", "Ecran Compatible Huawei P40 Lite", 20.00, "standard"),
     ("Huawei", "P30 Pro", "Ecran", "Original", "Ecran Original Huawei P30 Pro", 85.00, "standard"),
     ("Huawei", "P30 Pro", "Ecran", "OLED", "Ecran OLED Huawei P30 Pro", 52.00, "standard"),
-    ("Huawei", "P30 Lite", "Ecran", "Original", "Ecran Original Huawei P30 Lite", 32.00, "standard"),
+    ("Huawei", "P30 Lite", "Ecran", "Original", "Ecran Original Huawei P30 Lite", 32.00, "standard", False),
     ("Huawei", "P30 Lite", "Ecran", "Compatible", "Ecran Compatible Huawei P30 Lite", 18.00, "standard"),
     ("Huawei", "P30", "Ecran", "Original", "Ecran Original Huawei P30", 55.00, "standard"),
     ("Huawei", "P30", "Ecran", "OLED", "Ecran OLED Huawei P30", 35.00, "standard"),
@@ -1803,10 +1803,14 @@ TARIFS = [
 def main():
     print(f"API: {API_URL}\n")
 
-    # Build items
+    # Build items (tuples can be 7 or 8 elements; 8th = en_stock, default True)
     items = []
     for row in TARIFS:
-        marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie = row
+        en_stock = True
+        if len(row) == 8:
+            marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie, en_stock = row
+        else:
+            marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie = row
         items.append({
             "marque": marque,
             "modele": modele,
@@ -1816,6 +1820,7 @@ def main():
             "prix_fournisseur_ht": prix_ht,
             "categorie": categorie,
             "source": "mobilax",
+            "en_stock": en_stock,
         })
 
     print(f"{len(items)} tarifs a importer")
