@@ -88,6 +88,7 @@ export default function CommunityManager() {
   const [generating, setGenerating] = useState(false);
   const [generatedPost, setGeneratedPost] = useState(null);
   const [genImageUrl, setGenImageUrl] = useState('');
+  const [generatingImage, setGeneratingImage] = useState(false);
 
   // Calendar
   const [events, setEvents] = useState([]);
@@ -203,6 +204,22 @@ export default function CommunityManager() {
       console.error('Erreur génération:', err);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    const contexte = generatedPost?.contenu || genContexte;
+    if (!contexte.trim()) return;
+    setGeneratingImage(true);
+    try {
+      const data = await api.genererImage({ contexte, style: 'professional' });
+      if (data.image_url) {
+        setGenImageUrl(data.image_url);
+      }
+    } catch (err) {
+      console.error('Erreur génération image:', err);
+    } finally {
+      setGeneratingImage(false);
     }
   };
 
@@ -697,36 +714,61 @@ export default function CommunityManager() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 resize-none mb-4 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
                 />
 
-                {/* Image URL */}
+                {/* Image */}
                 <label className="block text-xs font-semibold text-zinc-600 mb-2">
                   Image <span className="text-zinc-400 font-normal">(obligatoire pour Instagram)</span>
                 </label>
                 <div className="mb-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={genImageUrl}
-                      onChange={(e) => setGenImageUrl(e.target.value)}
-                      placeholder="https://exemple.com/image.jpg"
-                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
-                    />
-                    {genImageUrl && (
+                  {!genImageUrl ? (
+                    <div className="flex gap-2">
                       <button
-                        onClick={() => setGenImageUrl('')}
-                        className="p-2 rounded-xl border border-slate-200 hover:bg-red-50 hover:border-red-200 text-zinc-400 hover:text-red-500 transition-colors"
+                        onClick={handleGenerateImage}
+                        disabled={generatingImage || (!genContexte.trim() && !generatedPost)}
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 text-violet-600 text-sm font-semibold hover:bg-violet-100 disabled:opacity-50 transition-colors"
                       >
-                        <Trash className="w-4 h-4" />
+                        {generatingImage ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
+                        ) : (
+                          <><ImagePlus className="w-4 h-4" /> Générer une image IA</>
+                        )}
                       </button>
-                    )}
-                  </div>
-                  {genImageUrl && (
-                    <div className="mt-2 relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                      <span className="flex items-center text-xs text-zinc-400">ou</span>
+                      <input
+                        type="url"
+                        value={genImageUrl}
+                        onChange={(e) => setGenImageUrl(e.target.value)}
+                        placeholder="Coller une URL"
+                        className="w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                      />
+                    </div>
+                  ) : (
+                    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
                       <img
                         src={genImageUrl}
                         alt="Aperçu"
-                        className="w-full h-32 object-cover"
-                        onError={(e) => { e.target.style.display = 'none'; }}
+                        className="w-full h-40 object-cover"
+                        onError={(e) => { e.target.parentNode.classList.add('h-20'); e.target.style.display = 'none'; }}
                       />
+                      <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                        <button
+                          onClick={handleGenerateImage}
+                          disabled={generatingImage}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-zinc-700 text-xs font-semibold hover:bg-white transition-colors"
+                        >
+                          {generatingImage ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5" />
+                          )}
+                          Régénérer
+                        </button>
+                        <button
+                          onClick={() => setGenImageUrl('')}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-red-600 text-xs font-semibold hover:bg-white transition-colors"
+                        >
+                          <Trash className="w-3.5 h-3.5" /> Supprimer
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

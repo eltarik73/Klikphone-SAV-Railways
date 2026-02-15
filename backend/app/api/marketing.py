@@ -977,6 +977,53 @@ async def programmer_post(
     return _row_to_dict(row)
 
 
+class ImageGenerer(BaseModel):
+    contexte: str
+    style: Optional[str] = "professional"
+
+
+@router.post("/posts/generer-image")
+async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_user)):
+    """Génère une image via Pollinations.ai avec un prompt créé par Claude."""
+    import urllib.parse
+    import random
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    seed = random.randint(1, 999999)
+
+    if api_key:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-5-20250929",
+                max_tokens=150,
+                system=(
+                    "Tu crées des prompts pour générer des images de posts réseaux sociaux. "
+                    "Le prompt doit être en anglais, descriptif et visuel. "
+                    "Style : moderne, professionnel, coloré. "
+                    "Le sujet est un magasin de réparation de téléphones à Chambéry (Klikphone). "
+                    "Réponds UNIQUEMENT avec le prompt image, rien d'autre. Pas de guillemets."
+                ),
+                messages=[{"role": "user", "content": f"Crée un prompt image pour ce post: {body.contexte[:300]}. Style: {body.style}"}],
+            )
+            prompt = message.content[0].text.strip().strip('"')
+        except Exception as e:
+            print(f"Erreur Claude image prompt: {e}")
+            prompt = f"Professional social media post about phone repair shop, modern colorful design, {body.style} style"
+    else:
+        prompt = f"Professional social media post about phone repair shop, modern colorful design, {body.style} style"
+
+    encoded = urllib.parse.quote(prompt)
+    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=1080&height=1080&seed={seed}&nologo=true"
+
+    return {
+        "image_url": image_url,
+        "prompt": prompt,
+        "seed": seed,
+    }
+
+
 @router.post("/posts/generer")
 async def generer_post(body: PostGenerer, user: dict = Depends(get_current_user)):
     """Génère un post avec Claude AI."""
