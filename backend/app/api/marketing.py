@@ -761,9 +761,9 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
     return {"status": "ok", "deleted": post_id}
 
 
-@router.get("/late/profiles")
-async def list_late_profiles(user: dict = Depends(get_current_user)):
-    """Liste les comptes connectés sur Late."""
+@router.get("/late/accounts")
+async def list_late_accounts(user: dict = Depends(get_current_user)):
+    """Liste les comptes sociaux connectés sur Late."""
     late_key = os.getenv("LATE_API_KEY")
     if not late_key:
         raise HTTPException(400, "LATE_API_KEY non configurée")
@@ -771,7 +771,7 @@ async def list_late_profiles(user: dict = Depends(get_current_user)):
     import httpx
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
-            "https://getlate.dev/api/v1/profiles",
+            "https://getlate.dev/api/v1/core/accounts",
             headers={"Authorization": f"Bearer {late_key}"},
         )
     if resp.status_code != 200:
@@ -819,55 +819,72 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
         raise HTTPException(400, "LATE_API_KEY non configurée. Ajoutez-la dans les variables Railway.")
 
     import httpx
+    late_headers = {"Authorization": f"Bearer {late_key}"}
 
-    # Récupérer les profils connectés pour trouver les accountId
+    # Récupérer les comptes sociaux connectés
     async with httpx.AsyncClient(timeout=15) as client:
-        profiles_resp = await client.get(
-            "https://getlate.dev/api/v1/profiles",
-            headers={"Authorization": f"Bearer {late_key}"},
+        accounts_resp = await client.get(
+            "https://getlate.dev/api/v1/core/accounts",
+            headers=late_headers,
         )
-    if profiles_resp.status_code != 200:
-        raise HTTPException(502, f"Impossible de récupérer les profils Late: {profiles_resp.text[:300]}")
+    if accounts_resp.status_code != 200:
+        raise HTTPException(502, f"Impossible de récupérer les comptes Late: {accounts_resp.text[:300]}")
 
-    profiles = profiles_resp.json()
-    if not isinstance(profiles, list):
-        profiles = profiles.get("data", profiles.get("profiles", []))
+    accounts_data = accounts_resp.json()
+    # Late peut renvoyer une liste ou un objet avec clé "data"/"accounts"
+    if isinstance(accounts_data, list):
+        accounts = accounts_data
+    else:
+        accounts = accounts_data.get("data", accounts_data.get("accounts", accounts_data.get("items", [])))
 
     # Mapper la plateforme du post vers les comptes Late connectés
     target_platform = _PLATFORM_MAP.get(plateforme, plateforme)
     platforms_payload = []
 
-    for profile in profiles:
-        # Late peut renvoyer la plateforme dans "platform" ou "provider"
-        prof_platform = profile.get("platform", profile.get("provider", ""))
-        prof_id = profile.get("_id", profile.get("id", ""))
-        if prof_platform == target_platform and prof_id:
+    # Chercher dans tous les champs possibles
+    for acc in accounts:
+        acc_platform = (
+            acc.get("platform")
+            or acc.get("provider")
+            or acc.get("socialPlatform")
+            or acc.get("type")
+            or ""
+        ).lower()
+        acc_id = acc.get("_id") or acc.get("id") or ""
+
+        if acc_platform == target_platform and acc_id:
             platforms_payload.append({
                 "platform": target_platform,
-                "accountId": prof_id,
+                "accountId": acc_id,
             })
 
+    # Si pas trouvé pour la plateforme ciblée, publier sur TOUS les comptes connectés
     if not platforms_payload:
-        # Publier sur TOUS les comptes connectés si la plateforme ciblée n'est pas trouvée
-        for profile in profiles:
-            prof_platform = profile.get("platform", profile.get("provider", ""))
-            prof_id = profile.get("_id", profile.get("id", ""))
-            if prof_id and prof_platform in _PLATFORM_MAP.values():
+        for acc in accounts:
+            acc_platform = (
+                acc.get("platform")
+                or acc.get("provider")
+                or acc.get("socialPlatform")
+                or acc.get("type")
+                or ""
+            ).lower()
+            acc_id = acc.get("_id") or acc.get("id") or ""
+            if acc_id and acc_platform in _PLATFORM_MAP.values():
                 platforms_payload.append({
-                    "platform": prof_platform,
-                    "accountId": prof_id,
+                    "platform": acc_platform,
+                    "accountId": acc_id,
                 })
 
     if not platforms_payload:
-        # Debug : montrer exactement ce que Late a renvoyé
-        debug_profiles = [
-            {k: v for k, v in p.items() if k in ("_id", "id", "platform", "provider", "identifier", "username", "name", "type", "socialPlatform")}
-            for p in (profiles if isinstance(profiles, list) else [])
+        # Debug : montrer les clés de chaque compte pour diagnostiquer
+        debug_accounts = [
+            {k: v for k, v in a.items() if not isinstance(v, (dict, list))}
+            for a in (accounts[:5] if isinstance(accounts, list) else [])
         ]
         raise HTTPException(
             400,
-            f"Aucun compte '{plateforme}' (mapped to '{target_platform}') trouvé sur Late. "
-            f"Profils détectés ({len(profiles)}): {json.dumps(debug_profiles, default=str)[:800]}. "
+            f"Aucun compte '{plateforme}' trouvé. "
+            f"Comptes Late ({len(accounts)}): {json.dumps(debug_accounts, default=str)[:800]}. "
             "Connectez vos réseaux sur https://app.getlate.dev"
         )
 
@@ -880,7 +897,7 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
 
     async with httpx.AsyncClient(timeout=30) as client:
         late_resp = await client.post(
-            "https://getlate.dev/api/v1/posts",
+            "https://getlate.dev/api/v1/core/posts",
             headers={
                 "Authorization": f"Bearer {late_key}",
                 "Content-Type": "application/json",
