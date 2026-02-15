@@ -193,237 +193,129 @@ def login_lcdphone():
 
 def _scrape_category_ajax(client, cat: dict) -> tuple:
     """
-    Scrape via l'AJAX faceted search de PrestaShop.
-    PrestaShop charge les produits via:
-    /module/ps_facetedsearch/ps_facetedsearch-ajax?id_category_layered=XXX&...
+    Scrape via l'endpoint AJAX PrestaShop: ?ajax=1&action=productList
+    Retourne directement les produits en JSON.
     """
     produits = []
     debug = {
-        "pages": 0, "method": None, "cards_found": 0, "cards_parsed": 0,
-        "cards_skipped_stock": 0, "cards_no_name": 0, "cards_no_price": 0,
-        "errors": [],
+        "pages": 0, "total_items": 0, "cards_parsed": 0,
+        "cards_skipped_stock": 0, "errors": [],
     }
 
     cat_id = cat["id"]
+    slug = cat["slug"]
     page = 1
-    max_pages = 30
+    results_per_page = 36
 
-    while page <= max_pages:
+    while True:
         debug["pages"] = page
-        html_content = None
+        url = (f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}"
+               f"?ajax=1&action=productList&resultsPerPage={results_per_page}"
+               f"&page={page}&order=product.name.asc")
 
-        # Méthode 1: AJAX faceted search (ce que le JS fait)
-        ajax_url = f"{LCDPHONE_BASE}/module/ps_facetedsearch/ps_facetedsearch-ajax"
         try:
-            ajax_resp = client.post(ajax_url, data={
-                "id_category_layered": cat_id,
-                "page": page,
-                "resultsPerPage": 36,
-                "order": "product.name.asc",
-            }, headers={
+            resp = client.get(url, headers={
                 "X-Requested-With": "XMLHttpRequest",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Accept": "application/json, */*",
             })
 
-            if ajax_resp.status_code == 200:
-                try:
-                    data = ajax_resp.json()
-                    html_content = data.get("rendered_products", "")
-                    if html_content:
-                        debug["method"] = "ajax_faceted"
-                        logger.info(f"  AJAX faceted OK, page {page}")
-                except Exception:
-                    pass
-        except Exception as e:
-            debug["errors"].append(f"AJAX faceted error: {str(e)[:100]}")
-
-        # Méthode 2: AJAX faceted avec GET
-        if not html_content:
-            try:
-                ajax_url2 = (
-                    f"{LCDPHONE_BASE}/module/ps_facetedsearch/ps_facetedsearch-ajax"
-                    f"?id_category_layered={cat_id}&page={page}"
-                    f"&resultsPerPage=36&order=product.name.asc"
-                )
-                ajax_resp2 = client.get(ajax_url2, headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                })
-                if ajax_resp2.status_code == 200:
-                    try:
-                        data = ajax_resp2.json()
-                        html_content = data.get("rendered_products", "")
-                        if html_content:
-                            debug["method"] = "ajax_faceted_get"
-                            logger.info(f"  AJAX faceted GET OK, page {page}")
-                    except Exception:
-                        pass
-            except Exception as e:
-                debug["errors"].append(f"AJAX GET error: {str(e)[:100]}")
-
-        # Méthode 3: URL directe avec paramètres AJAX
-        if not html_content:
-            try:
-                slug = cat.get("slug", "")
-                page_url = f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}?page={page}&resultsPerPage=36&order=product.name.asc"
-                page_resp = client.get(page_url, headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                })
-                if page_resp.status_code == 200:
-                    try:
-                        data = page_resp.json()
-                        html_content = data.get("rendered_products", "")
-                        if html_content:
-                            debug["method"] = "ajax_category_url"
-                    except Exception:
-                        # Pas du JSON, c'est du HTML direct
-                        html_content = page_resp.text
-                        debug["method"] = "html_direct"
-            except Exception as e:
-                debug["errors"].append(f"Direct URL error: {str(e)[:100]}")
-
-        # Méthode 4: URL directe standard (fallback)
-        if not html_content:
-            try:
-                slug = cat.get("slug", "")
-                page_url = f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}?page={page}"
-                page_resp = client.get(page_url)
-                if page_resp.status_code == 200:
-                    html_content = page_resp.text
-                    debug["method"] = debug.get("method") or "html_fallback"
-            except Exception as e:
-                debug["errors"].append(f"HTML fallback error: {str(e)[:100]}")
+            if resp.status_code != 200:
+                debug["errors"].append(f"Page {page}: status {resp.status_code}")
                 break
 
-        if not html_content:
-            debug["errors"].append(f"No content page {page}")
-            break
+            data = resp.json()
+            products_json = data.get("products", [])
+            pagination = data.get("pagination", {})
 
-        # Parser le HTML des produits
-        soup = BeautifulSoup(html_content, 'html.parser')
-        cards = soup.select('article.product-miniature, .product-miniature, [data-id-product]')
-
-        if not cards:
             if page == 1:
-                debug["errors"].append("No product cards found")
-                debug["html_sample"] = html_content[:1500]
-            break
+                debug["total_items"] = pagination.get("total_items", 0)
 
-        debug["cards_found"] += len(cards)
-        page_products = 0
+            if not products_json:
+                break
 
-        for card in cards:
-            try:
-                # Nom
-                name_el = (
-                    card.select_one('.product-title a')
-                    or card.select_one('.product-name a')
-                    or card.select_one('h2 a, h3 a, h5 a')
-                )
-                if not name_el:
-                    debug["cards_no_name"] += 1
-                    continue
+            for p in products_json:
+                try:
+                    if not isinstance(p, dict):
+                        continue
 
-                nom = name_el.get_text(strip=True) or name_el.get('title', '')
-                product_url = name_el.get('href', '')
-                if not nom:
-                    debug["cards_no_name"] += 1
-                    continue
+                    nom = p.get("name", "")
+                    if not nom:
+                        continue
 
-                # Prix
-                price_el = (
-                    card.select_one('.product-price-and-shipping .price')
-                    or card.select_one('.price')
-                    or card.select_one('[itemprop="price"]')
-                )
-                if not price_el:
-                    debug["cards_no_price"] += 1
-                    continue
+                    # Prix — utiliser price_amount (numérique)
+                    prix_fournisseur = p.get("price_amount")
+                    if prix_fournisseur is None:
+                        # Fallback: parser le prix formaté
+                        prix_text = str(p.get("price", "")).replace('\xa0', '').replace(' ', '').replace('€', '')
+                        m = re.search(r'([\d]+[,.][\d]+)', prix_text)
+                        if m:
+                            prix_fournisseur = float(m.group(1).replace(',', '.'))
+                    if prix_fournisseur is None or prix_fournisseur <= 0:
+                        continue
 
-                prix_content = price_el.get('content', '')
-                prix_fournisseur = None
-                if prix_content:
-                    try:
-                        prix_fournisseur = float(prix_content)
-                    except ValueError:
-                        pass
-                if prix_fournisseur is None:
-                    prix_text = price_el.get_text(strip=True).replace('\xa0', '').replace(' ', '').replace('€', '')
-                    m = re.search(r'([\d]+[,.][\d]+)', prix_text)
-                    if m:
-                        prix_fournisseur = float(m.group(1).replace(',', '.'))
-                if prix_fournisseur is None:
-                    debug["cards_no_price"] += 1
-                    continue
+                    prix_fournisseur = float(prix_fournisseur)
 
-                # Stock
-                stock_qty = 1
-                stock_el = card.select_one('.product-availability, .availability, .stock-quantity')
-                if stock_el:
-                    stock_text = stock_el.get_text(strip=True)
-                    if any(w in stock_text.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
+                    # Stock — vérifier availability
+                    availability = p.get("availability_message", "")
+                    if any(w in availability.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
                         debug["cards_skipped_stock"] += 1
                         continue
-                    sm = re.search(r'(\d+)', stock_text)
-                    if sm:
-                        stock_qty = int(sm.group(1))
 
-                # Image
-                img_el = card.select_one('img')
-                image_url = ""
-                if img_el:
-                    image_url = img_el.get('data-full-size-image-url', '') or img_el.get('src', '') or img_el.get('data-src', '')
+                    stock_qty = p.get("quantity", 1) or 1
 
-                # Ref
-                ref = card.get('data-id-product', '') or ''
+                    # Image
+                    image_url = ""
+                    cover = p.get("cover", {})
+                    if isinstance(cover, dict):
+                        image_url = cover.get("large", {}).get("url", "") or cover.get("medium", {}).get("url", "") or cover.get("url", "")
 
-                # Parse info from name
-                marque = cat.get("marque_forcee") or detecter_marque(nom)
-                stockage = extraire_stockage(nom)
-                grade = extraire_grade(nom) or ("Neuf" if cat["type_produit"] == "neuf" else None)
-                couleur = extraire_couleur(nom)
-                modele = extraire_modele(nom, marque)
-                type_produit = cat["type_produit"]
-                prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
+                    # URL du produit
+                    product_url = p.get("url", "")
 
-                produits.append({
-                    "marque": marque,
-                    "modele": modele,
-                    "stockage": stockage,
-                    "couleur": couleur,
-                    "grade": grade,
-                    "type_produit": type_produit,
-                    "prix_fournisseur": prix_fournisseur,
-                    "prix_vente": prix_vente,
-                    "marge_appliquee": marge,
-                    "stock_fournisseur": stock_qty,
-                    "en_stock": True,
-                    "reference_fournisseur": ref,
-                    "das": None,
-                    "image_url": image_url,
-                    "source_url": product_url,
-                })
-                debug["cards_parsed"] += 1
-                page_products += 1
+                    # Référence
+                    ref = str(p.get("id_product", ""))
 
-            except Exception as e:
-                debug["errors"].append(f"Parse error: {str(e)[:100]}")
+                    # Parser les infos depuis le nom
+                    marque = cat.get("marque_forcee") or detecter_marque(nom)
+                    stockage = extraire_stockage(nom)
+                    grade = extraire_grade(nom) or ("Neuf" if cat["type_produit"] == "neuf" else None)
+                    couleur = extraire_couleur(nom)
+                    modele = extraire_modele(nom, marque)
+                    type_produit = cat["type_produit"]
+                    prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
 
-        # Si aucun nouveau produit, on a fini
-        if page_products == 0:
+                    produits.append({
+                        "marque": marque,
+                        "modele": modele,
+                        "stockage": stockage,
+                        "couleur": couleur,
+                        "grade": grade,
+                        "type_produit": type_produit,
+                        "prix_fournisseur": prix_fournisseur,
+                        "prix_vente": prix_vente,
+                        "marge_appliquee": marge,
+                        "stock_fournisseur": stock_qty,
+                        "en_stock": True,
+                        "reference_fournisseur": ref,
+                        "das": None,
+                        "image_url": image_url,
+                        "source_url": product_url,
+                    })
+                    debug["cards_parsed"] += 1
+
+                except Exception as e:
+                    debug["errors"].append(f"Parse error: {str(e)[:100]}")
+
+            # Pagination
+            total_pages = pagination.get("pages_count", 1)
+            if page >= total_pages:
+                break
+            page += 1
+            time.sleep(0.3)
+
+        except Exception as e:
+            debug["errors"].append(f"Page {page}: {str(e)[:200]}")
             break
-
-        # Pagination: vérifier s'il y a une page suivante
-        next_link = soup.select_one('a[rel="next"], .pagination .next a, li.next a, a.next')
-        if not next_link:
-            # Pour les réponses AJAX, on continue tant qu'on trouve des produits
-            if debug["method"] and "ajax" in debug["method"]:
-                page += 1
-                continue
-            break
-        page += 1
-        time.sleep(0.5)
 
     return produits, debug
 
@@ -527,9 +419,8 @@ def sync_telephones_lcdphone() -> dict:
             all_produits.extend(produits)
             all_debug[cat_label] = {
                 "count": len(produits),
-                "method": debug.get("method"),
                 "pages": debug["pages"],
-                "cards_found": debug["cards_found"],
+                "total_items": debug["total_items"],
                 "cards_parsed": debug["cards_parsed"],
                 "cards_skipped_stock": debug["cards_skipped_stock"],
                 "errors": debug["errors"][:5],

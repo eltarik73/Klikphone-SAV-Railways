@@ -81,7 +81,7 @@ async def sync_catalogue(user: dict = Depends(get_current_user)):
 
 
 @router.get("/probe")
-async def probe_lcdphone_endpoint():
+async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
     """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
     from app.services.scraper_lcdphone import probe_lcdphone
     return probe_lcdphone()
@@ -139,7 +139,7 @@ async def stats_catalogue(user: dict = Depends(get_current_user)):
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE en_stock = TRUE) as en_stock,
                 COUNT(*) FILTER (WHERE type_produit = 'neuf') as neufs,
-                COUNT(*) FILTER (WHERE type_produit = 'reconditionné') as reconditionnes,
+                COUNT(*) FILTER (WHERE type_produit = 'occasion') as reconditionnes,
                 COUNT(DISTINCT marque) as nb_marques,
                 MIN(prix_vente) as prix_min,
                 MAX(prix_vente) as prix_max,
