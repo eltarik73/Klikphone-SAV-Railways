@@ -1000,17 +1000,28 @@ def _store_image(img_bytes: bytes) -> str:
         base_url = f"https://{base_url}"
     if not base_url:
         base_url = "https://klikphone-sav-v2-production.up.railway.app"
-    return f"{base_url}/api/marketing/images/{image_id}.png"
+    # Extension selon le format
+    ext = "webp" if img_bytes[:4] == b"RIFF" else "png" if img_bytes[:8] == b"\x89PNG\r\n\x1a\n" else "jpg"
+    return f"{base_url}/api/marketing/images/{image_id}.{ext}"
 
 
-@router.get("/images/{image_id}.png")
+@router.get("/images/{image_id}")
 async def serve_generated_image(image_id: str):
     """Sert une image générée stockée en mémoire."""
     from fastapi.responses import Response
-    img_data = _generated_images.get(image_id)
+    # Accepte image_id avec ou sans extension
+    clean_id = image_id.rsplit(".", 1)[0] if "." in image_id else image_id
+    img_data = _generated_images.get(clean_id)
     if not img_data:
         raise HTTPException(404, "Image non trouvée ou expirée")
-    return Response(content=img_data, media_type="image/png")
+    # Détecter le format
+    if img_data[:4] == b"RIFF":
+        media = "image/webp"
+    elif img_data[:8] == b"\x89PNG\r\n\x1a\n":
+        media = "image/png"
+    else:
+        media = "image/jpeg"
+    return Response(content=img_data, media_type=media)
 
 
 async def _generate_with_together(prompt: str) -> bytes:
@@ -1144,25 +1155,25 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_use
         except Exception:
             pass
 
-    # Étape 2 : Générer l'image (Together AI → AI Horde fallback)
+    # Étape 2 : Générer l'image (AI Horde gratuit → Together AI si dispo)
     img_bytes = None
     provider = None
     errors = []
 
-    # Essayer Together AI d'abord
+    # Essayer AI Horde d'abord (gratuit, fiable)
     try:
-        img_bytes = await _generate_with_together(en_prompt)
-        provider = "together"
+        img_bytes = await _generate_with_horde(en_prompt)
+        provider = "horde"
     except Exception as e:
-        errors.append(f"Together AI: {e}")
+        errors.append(f"AI Horde: {e}")
 
-    # Fallback AI Horde
+    # Fallback Together AI si clé configurée
     if not img_bytes:
         try:
-            img_bytes = await _generate_with_horde(en_prompt)
-            provider = "horde"
+            img_bytes = await _generate_with_together(en_prompt)
+            provider = "together"
         except Exception as e:
-            errors.append(f"AI Horde: {e}")
+            errors.append(f"Together AI: {e}")
 
     if not img_bytes:
         raise HTTPException(
