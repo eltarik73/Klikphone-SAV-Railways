@@ -354,6 +354,12 @@ class ApiClient {
   checkTarifStock() {
     return this.request('/api/tarifs/check-stock', { method: 'POST' }, 300000);
   }
+  getAppleDevices() {
+    return this.get('/api/tarifs/apple-devices');
+  }
+  importAppleDevices(items) {
+    return this.request('/api/tarifs/apple-devices/import', { method: 'POST', body: JSON.stringify({ items }) });
+  }
 
   // ─── MARKETING ──────────────────────────────
   getAvisGoogle(params = {}) {

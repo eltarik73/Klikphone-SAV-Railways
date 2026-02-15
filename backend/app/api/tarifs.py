@@ -56,6 +56,22 @@ def _ensure_table():
                 END IF;
             END $$;
         """)
+        # Table iPad / MacBook
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tarifs_apple_devices (
+                id SERIAL PRIMARY KEY,
+                categorie VARCHAR(20) NOT NULL,
+                modele VARCHAR(255) NOT NULL,
+                ecran_prix_ht DECIMAL(10,2),
+                batterie_prix_ht DECIMAL(10,2),
+                ecran_prix_vente INTEGER,
+                batterie_prix_vente INTEGER,
+                actif BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS idx_apple_devices_cat ON tarifs_apple_devices(categorie);
+        """)
 
 
 # NOTE: _ensure_table() is called from main.py lifespan, not here
@@ -106,6 +122,16 @@ def calcul_prix_client(prix_ht: float, type_piece: str, categorie: str) -> int:
     return arrondi_9_superieur(raw)
 
 
+def calc_prix_ipad(prix_ht: float) -> int:
+    """iPad : (HT x 1.2) + 110, arrondi en 9."""
+    return arrondi_9_superieur(prix_ht * 1.2 + 110)
+
+
+def calc_prix_macbook(prix_ht: float) -> int:
+    """MacBook : (HT x 1.2) + 120, arrondi en 9."""
+    return arrondi_9_superieur(prix_ht * 1.2 + 120)
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -134,8 +160,9 @@ class TarifImportRequest(BaseModel):
 async def list_tarifs(
     q: Optional[str] = Query(None, description="Recherche sur marque ou modele"),
     marque: Optional[str] = Query(None, description="Filtre exact sur marque"),
+    user: dict = Depends(get_current_user),
 ):
-    """Liste les tarifs avec filtres optionnels."""
+    """Liste les tarifs avec filtres optionnels. HT masque si non-admin."""
     conditions = []
     params = []
 
@@ -158,7 +185,14 @@ async def list_tarifs(
         cur.execute(query, params)
         rows = cur.fetchall()
 
-    return [dict(r) for r in rows]
+    results = [dict(r) for r in rows]
+
+    is_admin = user.get("target") == "accueil"
+    if not is_admin:
+        for r in results:
+            r.pop("prix_fournisseur_ht", None)
+
+    return results
 
 
 @router.get("/stats")
@@ -269,6 +303,91 @@ async def clear_tarifs(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")
 
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Apple Devices (iPad / MacBook)
+# ---------------------------------------------------------------------------
+
+class AppleDeviceImportItem(BaseModel):
+    categorie: str  # 'ipad' ou 'macbook'
+    modele: str
+    ecran_prix_ht: Optional[float] = None
+    batterie_prix_ht: Optional[float] = None
+
+
+class AppleDeviceImportRequest(BaseModel):
+    items: List[AppleDeviceImportItem]
+
+
+@router.get("/apple-devices")
+async def list_apple_devices(user: dict = Depends(get_current_user)):
+    """Liste iPad/MacBook. Prix HT masques si non-admin (target != accueil)."""
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT * FROM tarifs_apple_devices WHERE actif = TRUE ORDER BY categorie, modele"
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+
+    is_admin = user.get("target") == "accueil"
+    if not is_admin:
+        for r in rows:
+            r.pop("ecran_prix_ht", None)
+            r.pop("batterie_prix_ht", None)
+
+    return rows
+
+
+@router.post("/apple-devices/import")
+async def import_apple_devices(
+    body: AppleDeviceImportRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Importe iPad/MacBook avec calcul automatique des prix de vente."""
+    inserted = 0
+    with get_cursor() as cur:
+        for item in body.items:
+            calc = calc_prix_ipad if item.categorie == "ipad" else calc_prix_macbook
+            ecran_vente = calc(item.ecran_prix_ht) if item.ecran_prix_ht else None
+            batterie_vente = calc(item.batterie_prix_ht) if item.batterie_prix_ht else None
+
+            # Upsert par categorie + modele
+            cur.execute(
+                "SELECT id FROM tarifs_apple_devices WHERE categorie = %s AND modele = %s",
+                (item.categorie, item.modele),
+            )
+            existing = cur.fetchone()
+            if existing:
+                cur.execute("""
+                    UPDATE tarifs_apple_devices SET
+                        ecran_prix_ht = COALESCE(%s, ecran_prix_ht),
+                        batterie_prix_ht = COALESCE(%s, batterie_prix_ht),
+                        ecran_prix_vente = COALESCE(%s, ecran_prix_vente),
+                        batterie_prix_vente = COALESCE(%s, batterie_prix_vente),
+                        actif = TRUE, updated_at = NOW()
+                    WHERE id = %s
+                """, (item.ecran_prix_ht, item.batterie_prix_ht,
+                      ecran_vente, batterie_vente, existing["id"]))
+            else:
+                cur.execute("""
+                    INSERT INTO tarifs_apple_devices
+                        (categorie, modele, ecran_prix_ht, batterie_prix_ht,
+                         ecran_prix_vente, batterie_prix_vente)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (item.categorie, item.modele,
+                      item.ecran_prix_ht, item.batterie_prix_ht,
+                      ecran_vente, batterie_vente))
+            inserted += 1
+
+    return {"imported": inserted}
+
+
+@router.delete("/apple-devices/clear")
+async def clear_apple_devices(user: dict = Depends(get_current_user)):
+    """Vide la table tarifs_apple_devices."""
+    with get_cursor() as cur:
+        cur.execute("TRUNCATE TABLE tarifs_apple_devices RESTART IDENTITY")
     return {"status": "ok"}
 
 
