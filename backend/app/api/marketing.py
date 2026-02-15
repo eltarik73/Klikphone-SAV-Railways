@@ -379,33 +379,64 @@ async def sync_avis():  # temp no auth for testing
     _ensure_tables()
 
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
-    place_id = os.getenv("GOOGLE_PLACE_ID")
+    place_id = os.getenv("GOOGLE_PLACE_ID", "").strip()
 
-    if not api_key or not place_id:
+    if not api_key:
         raise HTTPException(
             400,
-            "Configuration manquante. Ajoutez GOOGLE_PLACES_API_KEY et GOOGLE_PLACE_ID "
-            "dans les variables d'environnement Railway. "
-            "Pour trouver votre Place ID, utilisez GET /api/marketing/avis/search-place?query=Klikphone+Chambéry"
+            "GOOGLE_PLACES_API_KEY non configurée dans les variables d'environnement Railway."
         )
 
-    # Appeler Google Places API pour récupérer les avis
     import httpx
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(
-            "https://maps.googleapis.com/maps/api/place/details/json",
-            params={
-                "place_id": place_id,
-                "fields": "reviews,rating,user_ratings_total,name",
-                "reviews_sort": "newest",
-                "language": "fr",
-                "key": api_key,
-            },
-        )
-        data = resp.json()
+
+    # Si pas de Place ID ou Place ID invalide, chercher automatiquement
+    async def _fetch_details(pid):
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(
+                "https://maps.googleapis.com/maps/api/place/details/json",
+                params={
+                    "place_id": pid,
+                    "fields": "reviews,rating,user_ratings_total,name",
+                    "reviews_sort": "newest",
+                    "language": "fr",
+                    "key": api_key,
+                },
+            )
+            return resp.json()
+
+    async def _search_place_id():
+        """Recherche automatique du Place ID via Find Place API."""
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                params={
+                    "input": "Klikphone Chambéry",
+                    "inputtype": "textquery",
+                    "fields": "place_id",
+                    "key": api_key,
+                },
+            )
+            result = resp.json()
+        if result.get("status") == "OK" and result.get("candidates"):
+            return result["candidates"][0]["place_id"]
+        return None
+
+    data = None
+    # Essai 1 : avec le Place ID configuré
+    if place_id:
+        data = await _fetch_details(place_id)
+
+    # Si NOT_FOUND ou pas de Place ID, recherche automatique
+    if not place_id or (data and data.get("status") == "NOT_FOUND"):
+        fresh_pid = await _search_place_id()
+        if fresh_pid:
+            place_id = fresh_pid
+            data = await _fetch_details(place_id)
+        elif not place_id:
+            raise HTTPException(400, "GOOGLE_PLACE_ID non configuré et recherche automatique échouée.")
 
     if data.get("status") != "OK":
-        raise HTTPException(502, f"Erreur Google Places API: {data.get('status')} — {data.get('error_message', '')} [place_id used: '{place_id}', len={len(place_id)}]")
+        raise HTTPException(502, f"Erreur Google Places API: {data.get('status')} — {data.get('error_message', '')}")
 
     result = data.get("result", {})
     reviews = result.get("reviews", [])
