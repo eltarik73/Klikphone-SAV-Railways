@@ -379,11 +379,11 @@ def scraper_categorie(client, cat_config: dict) -> tuple:
 
 
 def probe_lcdphone() -> dict:
-    """Endpoint de diagnostic — teste le login et scrape une page pour voir la structure HTML."""
+    """Endpoint de diagnostic — teste le login et découvre la structure du site."""
     if not _HAS_DEPS:
         return {"success": False, "error": "beautifulsoup4 ou httpx non installé"}
 
-    result = {"login": None, "categories": {}}
+    result = {"login": None, "navigation": [], "categories_test": {}}
 
     client, login_error = login_lcdphone()
     if not client:
@@ -392,38 +392,78 @@ def probe_lcdphone() -> dict:
     result["login"] = "OK"
 
     try:
+        # 1) Découvrir la navigation du site
+        home = client.get(f"{LCDPHONE_BASE_URL}/fr/")
+        soup_home = BeautifulSoup(home.text, 'html.parser')
+
+        # Chercher les liens de navigation/menu
+        nav_links = []
+        for selector in [
+            '#_desktop_top_menu a', '.top-menu a', '#top-menu a',
+            '.menu a', 'nav a', '.category-top-menu a',
+            '#header a[href*="/fr/"]', '.header a[href*="/fr/"]',
+        ]:
+            links = soup_home.select(selector)
+            if links:
+                for a in links:
+                    href = a.get('href', '')
+                    text = a.get_text(strip=True)
+                    if href and '/fr/' in href and text and len(text) < 60:
+                        nav_links.append({"text": text, "url": href})
+                if nav_links:
+                    break
+
+        # Si rien trouvé, essayer tous les liens avec /fr/ et un numéro de catégorie
+        if not nav_links:
+            for a in soup_home.select('a[href*="/fr/"]'):
+                href = a.get('href', '')
+                text = a.get_text(strip=True)
+                if re.search(r'/fr/\d+-', href) and text and len(text) < 60:
+                    nav_links.append({"text": text, "url": href})
+
+        # Deduplicate
+        seen = set()
+        unique_links = []
+        for link in nav_links:
+            if link["url"] not in seen:
+                seen.add(link["url"])
+                unique_links.append(link)
+        result["navigation"] = unique_links[:50]
+
+        # 2) Chercher des liens contenant "phone", "smartphone", "telephone", "iphone", "occasion"
+        phone_links = [l for l in unique_links if any(
+            w in l["text"].lower() or w in l["url"].lower()
+            for w in ["phone", "smartphone", "téléphone", "telephone", "iphone", "occasion", "reconditionn", "neuf"]
+        )]
+        result["phone_links"] = phone_links
+
+        # 3) Tester les catégories actuelles + les phone_links trouvés
+        test_urls = {}
         for cat_name, cat_config in CATEGORIES.items():
-            url = cat_config['url']
+            test_urls[cat_name] = cat_config['url']
+        for i, pl in enumerate(phone_links[:5]):
+            test_urls[f"discovered_{i}"] = pl["url"]
+
+        for name, url in test_urls.items():
             resp = client.get(url)
             soup = BeautifulSoup(resp.text, 'html.parser')
 
-            # Analyser la structure
-            cat_info = {
+            cards = soup.select('article.product-miniature')
+            product_names = []
+            for card in cards[:8]:
+                name_el = card.select_one('.product-name a, .product-name')
+                if name_el:
+                    product_names.append(name_el.get_text(strip=True) or name_el.get('title', ''))
+
+            result["categories_test"][name] = {
                 "url": url,
-                "status_code": resp.status_code,
-                "title": soup.title.string if soup.title else None,
-                "product_miniature_count": len(soup.select('.product-miniature')),
-                "article_count": len(soup.select('article')),
-                "data_id_product_count": len(soup.select('[data-id-product]')),
-                "product_name_count": len(soup.select('.product-name, .product-title')),
-                "price_count": len(soup.select('.price, .product-price')),
-                "first_product_html": None,
-                "product_names": [],
+                "final_url": str(resp.url),
+                "status": resp.status_code,
+                "title": soup.title.string.strip() if soup.title and soup.title.string else None,
+                "nb_products": len(cards),
+                "product_names": product_names,
             }
-
-            # Essayer de trouver le premier produit
-            cards = soup.select('.product-miniature') or soup.select('[data-id-product]') or soup.select('article')
-            if cards:
-                first = cards[0]
-                cat_info["first_product_html"] = str(first)[:3000]
-                # Extraire les noms
-                for card in cards[:5]:
-                    a = card.select_one('a[href]')
-                    if a:
-                        cat_info["product_names"].append(a.get_text(strip=True) or a.get('title', ''))
-
-            result["categories"][cat_name] = cat_info
-            time.sleep(0.5)
+            time.sleep(0.3)
     finally:
         client.close()
 
