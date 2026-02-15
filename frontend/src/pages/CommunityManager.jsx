@@ -4,7 +4,7 @@ import {
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
   TrendingUp, Users, MousePointerClick, Megaphone,
-  Copy, Check, ExternalLink, Share2, X
+  Copy, Check, Share2, X, Loader2
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -106,7 +106,8 @@ export default function CommunityManager() {
   const [programDate, setProgramDate] = useState('');
   const [programHeure, setProgramHeure] = useState('10:00');
   const [copiedId, setCopiedId] = useState(null);
-  const [shareModal, setShareModal] = useState(null); // post object when showing share modal
+  const [publishResult, setPublishResult] = useState(null); // {success, message, platforms}
+  const [publishing, setPublishing] = useState(null); // post id being published
 
   // ─── Loaders ────────────────────────────────────────────
 
@@ -223,21 +224,30 @@ export default function CommunityManager() {
   };
 
   const handlePublish = async (id) => {
+    setPublishing(id);
+    setPublishResult(null);
     try {
       const result = await api.publierPost(id);
-      const post = result || posts.find(p => p.id === id);
-      if (post) {
-        const fullText = getFullPostText(post);
-        await copyToClipboard(fullText, `pub-${id}`);
-        setShareModal(post);
-      }
+      const platforms = result.platforms_published || [];
+      setPublishResult({
+        success: true,
+        message: `Publié sur ${platforms.join(', ') || 'les réseaux'}`,
+        platforms,
+      });
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
+      const msg = err?.message || 'Erreur lors de la publication';
+      setPublishResult({ success: false, message: msg });
+    } finally {
+      setPublishing(null);
+      setTimeout(() => setPublishResult(null), 6000);
     }
   };
 
   const handlePublishGenerated = async (post) => {
+    setPublishing('gen');
+    setPublishResult(null);
     try {
       const postData = {
         titre: post.titre || `Post ${genType}`,
@@ -249,17 +259,24 @@ export default function CommunityManager() {
       };
       const created = await api.createMarketingPost(postData);
       if (created && created.id) {
-        await api.publierPost(created.id);
+        const result = await api.publierPost(created.id);
+        const platforms = result.platforms_published || [];
+        setPublishResult({
+          success: true,
+          message: `Publié sur ${platforms.join(', ') || 'les réseaux'}`,
+          platforms,
+        });
       }
-      const fullText = getFullPostText(post);
-      await copyToClipboard(fullText, 'gen-publish');
-      setShareModal({ ...post, plateforme: postData.plateforme });
       setGeneratedPost(null);
       setGenContexte('');
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
-      alert('Erreur lors de la publication. Vérifiez la console.');
+      const msg = err?.message || 'Erreur lors de la publication';
+      setPublishResult({ success: false, message: msg });
+    } finally {
+      setPublishing(null);
+      setTimeout(() => setPublishResult(null), 6000);
     }
   };
 
@@ -348,26 +365,7 @@ export default function CommunityManager() {
     return text;
   }
 
-  function getShareUrl(platform, text) {
-    const encoded = encodeURIComponent(text);
-    switch (platform) {
-      case 'facebook':
-        return `https://www.facebook.com/sharer/sharer.php?quote=${encoded}`;
-      case 'linkedin':
-        return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent('https://klikphone.fr')}&summary=${encoded}`;
-      case 'instagram':
-        return 'https://www.instagram.com/'; // Instagram doesn't support pre-filled posts via URL
-      case 'google':
-        return 'https://business.google.com/posts/'; // Google Business Profile posts
-      default:
-        return '#';
-    }
-  }
-
-  function openSharePlatform(platform, text) {
-    const url = getShareUrl(platform, text);
-    window.open(url, '_blank');
-  }
+  // Publication passe par Late API côté backend — plus besoin de window.open
 
   // ─── Calendar navigation ───────────────────────────────
 
@@ -585,9 +583,14 @@ export default function CommunityManager() {
                         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
                           <button
                             onClick={() => handlePublish(post.id)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors"
+                            disabled={publishing === post.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50"
                           >
-                            <Send className="w-3.5 h-3.5" /> Publier
+                            {publishing === post.id ? (
+                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Publication...</>
+                            ) : (
+                              <><Send className="w-3.5 h-3.5" /> Publier via Late</>
+                            )}
                           </button>
                           {programmingId === post.id ? (
                             <div className="flex items-center gap-2 flex-1">
@@ -741,10 +744,14 @@ export default function CommunityManager() {
                     </button>
                     <button
                       onClick={() => handlePublishGenerated(generatedPost)}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors"
+                      disabled={publishing === 'gen'}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
                     >
-                      <Send className="w-4 h-4" />
-                      Publier maintenant
+                      {publishing === 'gen' ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Publication...</>
+                      ) : (
+                        <><Send className="w-4 h-4" /> Publier maintenant</>
+                      )}
                     </button>
                     <button
                       onClick={() => copyToClipboard(getFullPostText(generatedPost), 'gen-copy')}
@@ -1227,73 +1234,25 @@ export default function CommunityManager() {
         )}
       </div>
 
-      {/* ─── SHARE MODAL ────────────────────────────── */}
-      {shareModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Share2 className="w-5 h-5 text-violet-600" />
-                <h3 className="font-bold text-zinc-900">Publier sur les réseaux</h3>
-              </div>
-              <button
-                onClick={() => setShareModal(null)}
-                className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content preview */}
-            <div className="px-5 py-4">
-              <div className="bg-zinc-50 rounded-xl p-3 mb-4 max-h-32 overflow-y-auto">
-                <p className="text-sm text-zinc-600 whitespace-pre-wrap line-clamp-4">
-                  {shareModal.contenu}
-                </p>
-              </div>
-
-              <p className="text-xs text-emerald-600 font-medium mb-4 flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5" />
-                Contenu copié dans le presse-papier !
-              </p>
-
-              {/* Platform buttons */}
-              <div className="space-y-2">
-                {[
-                  { id: 'facebook', icon: Facebook, label: 'Publier sur Facebook', color: 'bg-blue-600 hover:bg-blue-700' },
-                  { id: 'instagram', icon: Instagram, label: 'Ouvrir Instagram', color: 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600' },
-                  { id: 'google', icon: Globe, label: 'Publier sur Google', color: 'bg-emerald-600 hover:bg-emerald-700' },
-                  { id: 'linkedin', icon: Linkedin, label: 'Publier sur LinkedIn', color: 'bg-sky-700 hover:bg-sky-800' },
-                ].map(({ id, icon: Icon, label, color }) => (
-                  <button
-                    key={id}
-                    onClick={() => {
-                      openSharePlatform(id, getFullPostText(shareModal));
-                      setShareModal(null);
-                    }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white text-sm font-semibold transition-all ${color}`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    {label}
-                    <ExternalLink className="w-4 h-4 ml-auto opacity-60" />
-                  </button>
-                ))}
-              </div>
-
-              {/* Copy again button */}
-              <button
-                onClick={() => copyToClipboard(getFullPostText(shareModal), 'modal-copy')}
-                className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-slate-200 text-zinc-700 text-sm font-medium hover:bg-zinc-50 transition-colors"
-              >
-                {copiedId === 'modal-copy' ? (
-                  <><Check className="w-4 h-4 text-emerald-500" /> Copié !</>
-                ) : (
-                  <><Copy className="w-4 h-4" /> Copier à nouveau</>
-                )}
-              </button>
-            </div>
-          </div>
+      {/* ─── TOAST PUBLICATION ────────────────────────── */}
+      {publishResult && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-sm font-semibold transition-all animate-in ${
+          publishResult.success
+            ? 'bg-emerald-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}>
+          {publishResult.success ? (
+            <Check className="w-5 h-5 flex-shrink-0" />
+          ) : (
+            <X className="w-5 h-5 flex-shrink-0" />
+          )}
+          <span>{publishResult.message}</span>
+          <button
+            onClick={() => setPublishResult(null)}
+            className="ml-2 p-1 rounded-lg hover:bg-white/20 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

@@ -761,27 +761,153 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
     return {"status": "ok", "deleted": post_id}
 
 
+@router.get("/late/profiles")
+async def list_late_profiles(user: dict = Depends(get_current_user)):
+    """Liste les comptes connectés sur Late."""
+    late_key = os.getenv("LATE_API_KEY")
+    if not late_key:
+        raise HTTPException(400, "LATE_API_KEY non configurée")
+
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://getlate.dev/api/v1/profiles",
+            headers={"Authorization": f"Bearer {late_key}"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Late API erreur: {resp.status_code} — {resp.text[:300]}")
+    return resp.json()
+
+
+# Mapping plateforme interne → nom Late
+_PLATFORM_MAP = {
+    "instagram": "instagram",
+    "linkedin": "linkedin",
+    "facebook": "facebook",
+    "google": "google-business",
+    "twitter": "twitter",
+    "tiktok": "tiktok",
+}
+
+
 @router.post("/posts/{post_id}/publier")
 async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
-    """Publie un post (stub : met à jour le statut en BDD)."""
+    """Publie un post via Late API sur les réseaux sociaux connectés."""
     _ensure_tables()
 
+    # 1. Récupérer le post depuis la BDD
     with get_cursor() as cur:
-        cur.execute("SELECT id FROM posts_marketing WHERE id = %s", (post_id,))
-        if not cur.fetchone():
-            raise HTTPException(404, "Post non trouvé")
+        cur.execute("SELECT * FROM posts_marketing WHERE id = %s", (post_id,))
+        post = cur.fetchone()
+    if not post:
+        raise HTTPException(404, "Post non trouvé")
 
+    post_dict = _row_to_dict(post)
+    contenu = post_dict.get("contenu", "")
+    hashtags = post_dict.get("hashtags") or []
+    plateforme = post_dict.get("plateforme", "instagram")
+
+    # Construire le texte complet avec hashtags
+    full_text = contenu
+    if hashtags:
+        tags_str = " ".join(t if t.startswith("#") else f"#{t}" for t in hashtags)
+        full_text += "\n\n" + tags_str
+
+    # 2. Appeler Late API
+    late_key = os.getenv("LATE_API_KEY")
+    if not late_key:
+        raise HTTPException(400, "LATE_API_KEY non configurée. Ajoutez-la dans les variables Railway.")
+
+    import httpx
+
+    # Récupérer les profils connectés pour trouver les accountId
+    async with httpx.AsyncClient(timeout=15) as client:
+        profiles_resp = await client.get(
+            "https://getlate.dev/api/v1/profiles",
+            headers={"Authorization": f"Bearer {late_key}"},
+        )
+    if profiles_resp.status_code != 200:
+        raise HTTPException(502, f"Impossible de récupérer les profils Late: {profiles_resp.text[:300]}")
+
+    profiles = profiles_resp.json()
+    if not isinstance(profiles, list):
+        profiles = profiles.get("data", profiles.get("profiles", []))
+
+    # Mapper la plateforme du post vers les comptes Late connectés
+    target_platform = _PLATFORM_MAP.get(plateforme, plateforme)
+    platforms_payload = []
+
+    for profile in profiles:
+        # Late peut renvoyer la plateforme dans "platform" ou "provider"
+        prof_platform = profile.get("platform", profile.get("provider", ""))
+        prof_id = profile.get("_id", profile.get("id", ""))
+        if prof_platform == target_platform and prof_id:
+            platforms_payload.append({
+                "platform": target_platform,
+                "accountId": prof_id,
+            })
+
+    if not platforms_payload:
+        # Publier sur TOUS les comptes connectés si la plateforme ciblée n'est pas trouvée
+        for profile in profiles:
+            prof_platform = profile.get("platform", profile.get("provider", ""))
+            prof_id = profile.get("_id", profile.get("id", ""))
+            if prof_id and prof_platform in _PLATFORM_MAP.values():
+                platforms_payload.append({
+                    "platform": prof_platform,
+                    "accountId": prof_id,
+                })
+
+    if not platforms_payload:
+        raise HTTPException(
+            400,
+            f"Aucun compte '{plateforme}' connecté sur Late. "
+            "Connectez vos réseaux sociaux sur https://app.getlate.dev"
+        )
+
+    # 3. Créer et publier le post via Late
+    late_body = {
+        "content": full_text,
+        "platforms": platforms_payload,
+        "publishNow": True,
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        late_resp = await client.post(
+            "https://getlate.dev/api/v1/posts",
+            headers={
+                "Authorization": f"Bearer {late_key}",
+                "Content-Type": "application/json",
+            },
+            json=late_body,
+        )
+
+    if late_resp.status_code not in (200, 201):
+        raise HTTPException(
+            502,
+            f"Erreur Late API ({late_resp.status_code}): {late_resp.text[:500]}"
+        )
+
+    late_result = late_resp.json()
+    external_id = late_result.get("id", late_result.get("postId", ""))
+
+    # 4. Mettre à jour le statut en BDD
+    with get_cursor() as cur:
         cur.execute("""
             UPDATE posts_marketing
             SET statut = 'publié',
                 date_publication = NOW(),
+                external_post_id = %s,
                 updated_at = NOW()
             WHERE id = %s
             RETURNING *
-        """, (post_id,))
+        """, (str(external_id), post_id))
         row = cur.fetchone()
 
-    return _row_to_dict(row)
+    result = _row_to_dict(row)
+    result["late_response"] = late_result
+    result["platforms_published"] = [p["platform"] for p in platforms_payload]
+    return result
 
 
 @router.post("/posts/{post_id}/programmer")
