@@ -3,9 +3,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
 import {
-  LogOut, LayoutDashboard, Plus, Users, Package, FileText,
+  LogOut, LayoutDashboard, Users, Package, FileText,
   Settings, Menu, X, Search, Shield, PanelLeftClose, PanelLeftOpen,
-  RefreshCw, Tag, Rocket, Star, Megaphone, ChevronDown,
+  RefreshCw, Tag, Rocket, Star, Megaphone, ChevronDown, Wrench, Smartphone,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -16,6 +16,7 @@ export default function Navbar() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('kp_sidebar_collapsed') === '1');
   const [pendingCount, setPendingCount] = useState(0);
   const [marketingOpen, setMarketingOpen] = useState(() => localStorage.getItem('kp_marketing_open') === '1');
+  const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
 
   useEffect(() => {
@@ -46,11 +47,9 @@ export default function Navbar() {
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
-    { path: '/client', label: '+ Nouveau', icon: Plus },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
-    { path: `${basePath}/tarifs`, label: 'Tarifs', icon: Tag },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];
@@ -140,6 +139,58 @@ export default function Navbar() {
               )}
             </button>
           ))}
+
+          {/* Tarifs section */}
+          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+            {!collapsed ? (
+              <button
+                onClick={() => {
+                  const next = !tarifsOpen;
+                  setTarifsOpen(next);
+                  localStorage.setItem('kp_tarifs_open', next ? '1' : '0');
+                }}
+                className="w-full flex items-center justify-between px-3 mb-2 group"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#F59E0B' }}>
+                  <Tag className="w-3 h-3" />
+                  Tarifs
+                </span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${tarifsOpen ? 'rotate-180' : ''}`} style={{ color: '#F59E0B' }} />
+              </button>
+            ) : (
+              <div className="flex justify-center mb-1">
+                <Tag className="w-4 h-4" style={{ color: '#F59E0B' }} />
+              </div>
+            )}
+            {(tarifsOpen || collapsed) && (
+              <>
+                <button onClick={() => handleNav(`${basePath}/tarifs`)}
+                  title={collapsed ? 'Réparations' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/tarifs`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <Wrench className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Réparations</span>}
+                </button>
+                <button onClick={() => handleNav(`${basePath}/tarifs-telephones`)}
+                  title={collapsed ? 'Téléphones' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/tarifs-telephones`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-telephones`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Téléphones</span>}
+                </button>
+              </>
+            )}
+          </div>
 
           {/* Marketing section */}
           <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>

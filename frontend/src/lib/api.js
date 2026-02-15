@@ -391,6 +391,15 @@ class ApiClient {
 
   getMarketingAnalytics() { return this.get('/api/marketing/analytics/overview'); }
   getMarketingAnalyticsPosts() { return this.get('/api/marketing/analytics/posts'); }
+
+  // ─── TELEPHONES ─────────────────────────────
+  getTelephonesCatalogue(params = {}) {
+    const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''))).toString();
+    return this.get(`/api/telephones/catalogue${qs ? '?' + qs : ''}`);
+  }
+  getTelephoneStats() { return this.get('/api/telephones/stats'); }
+  getTelephoneMarques() { return this.get('/api/telephones/marques'); }
+  syncTelephones() { return this.request('/api/telephones/sync', { method: 'POST' }, 300000); }
 }
 
 export const api = new ApiClient();
