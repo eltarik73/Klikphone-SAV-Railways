@@ -4,6 +4,9 @@ Calcul automatique des prix clients a partir des prix fournisseur HT.
 """
 
 import math
+import re
+import time
+import logging
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -267,3 +270,237 @@ async def clear_tarifs(user: dict = Depends(get_current_user)):
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")
 
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Stock checker — scrape Mobilax pages to verify en_stock
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+
+_MOBILAX_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml",
+    "Accept-Language": "fr-FR,fr;q=0.9",
+}
+
+
+def _slugify(text: str) -> str:
+    """Convert text to URL slug."""
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+
+def _mobilax_urls(marque: str, modele: str) -> list:
+    """Generate possible Mobilax category page URLs for a model."""
+    brand = marque.lower()
+    slug = _slugify(modele)
+    urls = []
+
+    if brand == "apple":
+        urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/apple/iphone/{slug}")
+        urls.append(f"https://www.mobilax.fr/marques/apple/telephonie/iphone/{slug}")
+    elif brand == "samsung":
+        if "galaxy-a" in slug:
+            urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-a/{slug}")
+        elif "galaxy-s" in slug:
+            urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-s/{slug}")
+        elif "galaxy-z" in slug:
+            urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-z/{slug}")
+        elif "galaxy-m" in slug:
+            urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-m/{slug}")
+    elif brand == "xiaomi":
+        if "redmi-note" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/xiaomi/telephonie/redmi-note-series/{slug}")
+        elif "redmi" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/xiaomi/telephonie/redmi-series/{slug}")
+        elif "poco" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/xiaomi/telephonie/poco-series/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/xiaomi/telephonie/mi-series/{slug}")
+    elif brand == "huawei":
+        if any(slug.startswith(p) for p in ("p-smart", "p30", "p40", "p50", "p20")):
+            urls.append(f"https://www.mobilax.fr/marques/huawei/telephonie/series-p/{slug}")
+        elif slug.startswith("nova"):
+            urls.append(f"https://www.mobilax.fr/marques/huawei/telephonie/series-nova/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/huawei/telephonie/series-y/{slug}")
+    elif brand == "honor":
+        if slug.startswith("x"):
+            urls.append(f"https://www.mobilax.fr/marques/honor/telephonie/series-x/{slug}")
+        elif "magic" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/honor/telephonie/series-magic/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/honor/telephonie/series-70-90-200/{slug}")
+    elif brand == "oneplus":
+        if "nord" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/oneplus/telephonie/series-nord/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/oneplus/telephonie/series-9-10-11-12-13/{slug}")
+    elif brand == "oppo":
+        if slug.startswith("find"):
+            urls.append(f"https://www.mobilax.fr/marques/oppo/telephonie/series-find/{slug}")
+        elif slug.startswith("reno"):
+            urls.append(f"https://www.mobilax.fr/marques/oppo/telephonie/series-reno/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/oppo/telephonie/series-a/{slug}")
+    elif brand == "google":
+        urls.append(f"https://www.mobilax.fr/marques/google/telephonie/pixel/{slug}")
+    elif brand == "motorola":
+        if "edge" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/motorola/telephonie/edge/{slug}")
+        elif "moto-e" in slug:
+            urls.append(f"https://www.mobilax.fr/marques/motorola/telephonie/moto-e/{slug}")
+        else:
+            urls.append(f"https://www.mobilax.fr/marques/motorola/telephonie/moto-g/{slug}")
+
+    return urls
+
+
+def _extract_products(html: str) -> list:
+    """Extract products with quantity from Mobilax HTML."""
+    products = []
+    seen = set()
+    text = html.replace('\\"', '"').replace('\\/', '/')
+
+    for m in re.finditer(r'"id":(\d+),"name":"([^"]+)"', text):
+        pid = m.group(1)
+        name = m.group(2)
+        if pid in seen or name in ('Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'):
+            continue
+        rest = text[m.start():m.start() + 2000]
+        qty_match = re.search(r'"quantity":(\d+)', rest)
+        if qty_match:
+            seen.add(pid)
+            products.append({"name": name, "quantity": int(qty_match.group(1))})
+
+    return products
+
+
+def _match_stock(type_piece: str, qualite: str, products: list):
+    """Match our tarif to Mobilax products. Returns True/False/None."""
+    tp = (type_piece or "").lower()
+    qual = (qualite or "").lower()
+    matched = []
+
+    for p in products:
+        n = p["name"].lower()
+
+        if "ecran" in tp or "cran" in tp:
+            if "ecran" not in n and "cran" not in n:
+                continue
+            if qual == "original" and "original" in n and "pulled" not in n:
+                matched.append(p)
+            elif qual == "reconditionnee" and ("pulled" in n or "refurb" in n):
+                matched.append(p)
+            elif qual == "soft oled" and "soft oled" in n:
+                matched.append(p)
+            elif qual == "oled" and "oled" in n and "original" not in n and "soft" not in n:
+                matched.append(p)
+            elif qual == "incell" and "incell" in n:
+                matched.append(p)
+            elif qual in ("compatible", "lcd") and "oem" in n:
+                matched.append(p)
+        elif "batterie" in tp:
+            if "batterie" in n:
+                matched.append(p)
+        elif "connecteur" in tp:
+            if "connecteur" in n:
+                matched.append(p)
+        elif "camera" in tp or "cam" in tp:
+            if "cam" in n and "principale" in n:
+                matched.append(p)
+        elif "haut-parleur" in tp or "haut parleur" in tp:
+            if "haut-parleur" in n or "haut parleur" in n:
+                matched.append(p)
+        elif "ecouteur" in tp or "couteur" in tp:
+            if "couteur" in n:
+                matched.append(p)
+        elif "vitre" in tp:
+            if "vitre" in n or "cache" in n:
+                matched.append(p)
+
+    if not matched:
+        return None
+    return any(p["quantity"] > 0 for p in matched)
+
+
+@router.post("/check-stock")
+async def check_stock_mobilax(user: dict = Depends(get_current_user)):
+    """Scrape Mobilax category pages to check stock for all tarifs."""
+    import httpx
+
+    with get_cursor() as cur:
+        cur.execute("SELECT id, marque, modele, type_piece, qualite, en_stock FROM tarifs")
+        all_tarifs = [dict(r) for r in cur.fetchall()]
+
+    # Group by model
+    models = {}
+    for t in all_tarifs:
+        key = (t["marque"], t["modele"])
+        models.setdefault(key, []).append(t)
+
+    results = {
+        "models_total": len(models),
+        "models_checked": 0,
+        "models_found": 0,
+        "tarifs_checked": 0,
+        "tarifs_updated": 0,
+        "now_in_stock": 0,
+        "now_rupture": 0,
+    }
+
+    client = httpx.Client(
+        headers=_MOBILAX_HEADERS,
+        timeout=8,
+        follow_redirects=True,
+    )
+
+    try:
+        for (marque, modele), model_tarifs in models.items():
+            urls = _mobilax_urls(marque, modele)
+            if not urls:
+                continue
+
+            html = None
+            for url in urls:
+                try:
+                    resp = client.get(url)
+                    if resp.status_code == 200 and len(resp.text) > 1000:
+                        html = resp.text
+                        break
+                except Exception:
+                    continue
+
+            results["models_checked"] += 1
+
+            if not html:
+                continue
+
+            products = _extract_products(html)
+            if not products:
+                continue
+
+            results["models_found"] += 1
+
+            for tarif in model_tarifs:
+                stock = _match_stock(tarif["type_piece"], tarif["qualite"], products)
+                if stock is not None:
+                    results["tarifs_checked"] += 1
+                    old_stock = tarif["en_stock"] if tarif["en_stock"] is not None else True
+                    if stock != old_stock:
+                        with get_cursor() as cur:
+                            cur.execute(
+                                "UPDATE tarifs SET en_stock = %s, updated_at = NOW() WHERE id = %s",
+                                (stock, tarif["id"]),
+                            )
+                        results["tarifs_updated"] += 1
+                        if stock:
+                            results["now_in_stock"] += 1
+                        else:
+                            results["now_rupture"] += 1
+
+            time.sleep(0.3)
+    finally:
+        client.close()
+
+    return results

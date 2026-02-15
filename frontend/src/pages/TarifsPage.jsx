@@ -103,6 +103,8 @@ export default function TarifsPage() {
   const [expandedBrands, setExpandedBrands] = useState(new Set());
   const [expandedModels, setExpandedModels] = useState(new Set());
   const [updating, setUpdating] = useState(false);
+  const [checkingStock, setCheckingStock] = useState(false);
+  const [stockResult, setStockResult] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -125,6 +127,21 @@ export default function TarifsPage() {
       setTarifs(prev => prev.map(t => t.id === id ? { ...t, en_stock: res.en_stock } : t));
     } catch (e) {
       console.error('Erreur toggle stock:', e);
+    }
+  }
+
+  async function handleCheckStock() {
+    setCheckingStock(true);
+    setStockResult(null);
+    try {
+      const res = await api.checkTarifStock();
+      setStockResult(res);
+      await loadData();
+    } catch (e) {
+      console.error('Erreur check stock:', e);
+      setStockResult({ error: true });
+    } finally {
+      setCheckingStock(false);
     }
   }
 
@@ -313,19 +330,55 @@ export default function TarifsPage() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={async () => {
-                setUpdating(true);
-                await loadData();
-                setUpdating(false);
-              }}
-              disabled={updating}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${updating ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{updating ? 'Chargement...' : 'Actualiser'}</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCheckStock}
+                disabled={checkingStock || updating}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <PackageX className={`w-4 h-4 ${checkingStock ? 'animate-pulse' : ''}`} />
+                <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
+              </button>
+              <button
+                onClick={async () => {
+                  setUpdating(true);
+                  await loadData();
+                  setUpdating(false);
+                }}
+                disabled={updating || checkingStock}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${updating ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{updating ? 'Chargement...' : 'Actualiser'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* Stock check result banner */}
+          {stockResult && !stockResult.error && (
+            <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
+              <div className="flex items-center justify-between">
+                <div className="text-emerald-800">
+                  <span className="font-semibold">{stockResult.models_found}</span> modeles trouves sur Mobilax
+                  {' / '}<span className="font-semibold">{stockResult.models_checked}</span> verifies
+                  {' \u2014 '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
+                  {stockResult.now_rupture > 0 && (
+                    <span className="text-red-600 font-semibold ml-2">({stockResult.now_rupture} ruptures)</span>
+                  )}
+                  {stockResult.now_in_stock > 0 && (
+                    <span className="text-emerald-600 font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>
+                  )}
+                </div>
+                <button onClick={() => setStockResult(null)} className="text-emerald-400 hover:text-emerald-600 text-xs">&times;</button>
+              </div>
+            </div>
+          )}
+          {stockResult?.error && (
+            <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              Erreur lors de la verification du stock.
+              <button onClick={() => setStockResult(null)} className="ml-2 text-red-400 hover:text-red-600 text-xs">&times;</button>
+            </div>
+          )}
 
           {/* Search + brand filters */}
           <div className="mt-4 flex flex-col sm:flex-row gap-3">

@@ -351,6 +351,9 @@ class ApiClient {
   toggleTarifStock(id) {
     return this.request(`/api/tarifs/${id}/stock`, { method: 'PATCH' });
   }
+  checkTarifStock() {
+    return this.request('/api/tarifs/check-stock', { method: 'POST' });
+  }
 }
 
 export const api = new ApiClient();
