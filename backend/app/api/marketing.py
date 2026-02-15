@@ -979,12 +979,110 @@ async def programmer_post(
 
 
 class ImageGenerer(BaseModel):
-    contexte: str
-    style: Optional[str] = "professional"
+    titre: Optional[str] = None
+    contenu: Optional[str] = None
+    hashtags: Optional[List[str]] = None
+    style: Optional[str] = "violet"  # violet, bleu, vert, orange, sombre
 
 
 # Stockage en mémoire des images générées (clé = id, valeur = bytes JPEG)
 _generated_images: dict = {}
+
+
+def _generate_branded_image(titre: str, contenu: str, hashtags: list, style: str) -> bytes:
+    """Génère une image brandée Klikphone 1080x1080 avec Pillow."""
+    from PIL import Image, ImageDraw, ImageFont
+    import io
+    import textwrap
+
+    W, H = 1080, 1080
+
+    # Palettes de couleurs
+    palettes = {
+        "violet": {"bg1": (124, 58, 237), "bg2": (79, 70, 229), "accent": (167, 139, 250), "text": (255, 255, 255)},
+        "bleu": {"bg1": (37, 99, 235), "bg2": (29, 78, 216), "accent": (96, 165, 250), "text": (255, 255, 255)},
+        "vert": {"bg1": (4, 120, 87), "bg2": (6, 95, 70), "accent": (52, 211, 153), "text": (255, 255, 255)},
+        "orange": {"bg1": (234, 88, 12), "bg2": (194, 65, 12), "accent": (251, 191, 36), "text": (255, 255, 255)},
+        "sombre": {"bg1": (30, 30, 40), "bg2": (15, 15, 25), "accent": (167, 139, 250), "text": (255, 255, 255)},
+    }
+    pal = palettes.get(style, palettes["violet"])
+
+    img = Image.new("RGB", (W, H))
+    draw = ImageDraw.Draw(img)
+
+    # Gradient background
+    for y in range(H):
+        r = int(pal["bg1"][0] + (pal["bg2"][0] - pal["bg1"][0]) * y / H)
+        g = int(pal["bg1"][1] + (pal["bg2"][1] - pal["bg1"][1]) * y / H)
+        b = int(pal["bg1"][2] + (pal["bg2"][2] - pal["bg1"][2]) * y / H)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # Cercles décoratifs (couleur accent mélangée avec bg pour effet semi-transparent)
+    ca = tuple(int(a * 0.3 + b * 0.7) for a, b in zip(pal["accent"], pal["bg1"]))
+    draw.ellipse([W - 300, -150, W + 150, 300], fill=ca)
+    draw.ellipse([-100, H - 250, 250, H + 100], fill=ca)
+
+    # Polices (fallback système)
+    def get_font(size, bold=False):
+        paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+        ]
+        for p in paths:
+            try:
+                return ImageFont.truetype(p, size)
+            except (OSError, IOError):
+                continue
+        return ImageFont.load_default()
+
+    font_title = get_font(64, bold=True)
+    font_body = get_font(36)
+    font_tag = get_font(28)
+    font_brand = get_font(32, bold=True)
+
+    y_pos = 120
+
+    # Barre accent en haut
+    draw.rectangle([80, y_pos - 20, 200, y_pos - 10], fill=pal["accent"])
+    y_pos += 20
+
+    # Titre
+    if titre:
+        wrapped = textwrap.wrap(titre, width=22)
+        for line in wrapped[:3]:
+            draw.text((90, y_pos), line, fill=pal["text"], font=font_title)
+            y_pos += 78
+        y_pos += 30
+
+    # Contenu
+    if contenu:
+        wrapped = textwrap.wrap(contenu, width=38)
+        for line in wrapped[:8]:
+            draw.text((90, y_pos), line, fill=(*pal["text"][:3],), font=font_body)
+            y_pos += 48
+        if len(wrapped) > 8:
+            draw.text((90, y_pos), "...", fill=pal["text"], font=font_body)
+            y_pos += 48
+        y_pos += 20
+
+    # Hashtags
+    if hashtags:
+        tags_text = " ".join(f"#{t}" if not t.startswith("#") else t for t in hashtags[:5])
+        wrapped = textwrap.wrap(tags_text, width=45)
+        for line in wrapped[:2]:
+            draw.text((90, y_pos), line, fill=pal["accent"], font=font_tag)
+            y_pos += 38
+
+    # Footer branding (fond sombre semi-transparent simulé)
+    draw.rectangle([0, H - 100, W, H], fill=(20, 20, 30))
+    draw.text((90, H - 75), "KLIKPHONE", fill=pal["accent"], font=font_brand)
+    draw.text((310, H - 70), "Chambéry — Réparation smartphones", fill=(200, 200, 200), font=font_tag)
+
+    # Export JPEG
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
 
 
 @router.get("/images/{image_id}.jpg")
@@ -999,83 +1097,26 @@ async def serve_generated_image(image_id: str):
 
 @router.post("/posts/generer-image")
 async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_user)):
-    """Génère une image via Together AI (FLUX.1-schnell-Free) avec un prompt créé par Claude."""
+    """Génère une image brandée Klikphone avec titre + contenu personnalisés."""
     import uuid
-    import base64
 
-    # 1. Créer le prompt image avec Claude
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-    if anthropic_key:
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=anthropic_key)
-            message = client.messages.create(
-                model="claude-sonnet-4-5-20250929",
-                max_tokens=150,
-                system=(
-                    "Tu crées des prompts pour générer des images de posts réseaux sociaux. "
-                    "Le prompt doit être en anglais, descriptif et visuel. Année : 2026. "
-                    "Style : moderne, professionnel, coloré, format carré Instagram 1:1. "
-                    "Le sujet est Klikphone, magasin de réparation de téléphones à Chambéry. "
-                    "Réponds UNIQUEMENT avec le prompt image, rien d'autre. Pas de guillemets. "
-                    "Ne mets JAMAIS de texte/mots dans l'image. Focus sur le visuel uniquement."
-                ),
-                messages=[{"role": "user", "content": f"Crée un prompt image pour ce post: {body.contexte[:300]}. Style: {body.style}"}],
-            )
-            prompt = message.content[0].text.strip().strip('"')
-        except Exception as e:
-            print(f"Erreur Claude image prompt: {e}")
-            prompt = f"Professional photo of a modern phone repair shop with purple branding, clean workspace with smartphones, {body.style} style, square format"
-    else:
-        prompt = f"Professional photo of a modern phone repair shop with purple branding, clean workspace with smartphones, {body.style} style, square format"
+    titre = body.titre or ""
+    contenu = body.contenu or ""
+    hashtags = body.hashtags or []
+    style = body.style or "violet"
 
-    # 2. Générer l'image avec Together AI
-    together_key = os.getenv("TOGETHER_API_KEY")
-    if not together_key:
-        raise HTTPException(
-            400,
-            "TOGETHER_API_KEY non configurée. "
-            "Créez un compte gratuit sur https://together.ai et ajoutez la clé dans Railway."
-        )
+    # Générer l'image
+    img_bytes = _generate_branded_image(titre, contenu, hashtags, style)
 
-    import httpx
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            "https://api.together.xyz/v1/images/generations",
-            headers={
-                "Authorization": f"Bearer {together_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": "black-forest-labs/FLUX.1-schnell-Free",
-                "prompt": prompt,
-                "width": 1024,
-                "height": 1024,
-                "n": 1,
-                "response_format": "b64_json",
-            },
-        )
-
-    if resp.status_code != 200:
-        raise HTTPException(502, f"Erreur Together AI ({resp.status_code}): {resp.text[:300]}")
-
-    result = resp.json()
-    b64_data = result.get("data", [{}])[0].get("b64_json", "")
-    if not b64_data:
-        raise HTTPException(502, "Together AI n'a pas retourné d'image")
-
-    # 3. Stocker l'image et retourner l'URL
-    img_bytes = base64.b64decode(b64_data)
+    # Stocker
     image_id = str(uuid.uuid4())[:12]
     _generated_images[image_id] = img_bytes
 
-    # Nettoyer les anciennes images (garder max 50)
+    # Nettoyer les anciennes (garder max 50)
     if len(_generated_images) > 50:
         oldest = list(_generated_images.keys())[0]
         del _generated_images[oldest]
 
-    # Construire l'URL publique
-    # On utilise l'URL du backend Railway
     base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
     if base_url and not base_url.startswith("http"):
         base_url = f"https://{base_url}"
@@ -1084,10 +1125,7 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_use
 
     image_url = f"{base_url}/api/marketing/images/{image_id}.jpg"
 
-    return {
-        "image_url": image_url,
-        "prompt": prompt,
-    }
+    return {"image_url": image_url}
 
 
 @router.post("/posts/generer")

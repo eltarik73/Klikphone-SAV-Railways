@@ -90,6 +90,7 @@ export default function CommunityManager() {
   const [genImageUrl, setGenImageUrl] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
+  const [genImageStyle, setGenImageStyle] = useState('violet');
 
   // Calendar
   const [events, setEvents] = useState([]);
@@ -209,12 +210,14 @@ export default function CommunityManager() {
   };
 
   const handleGenerateImage = async () => {
-    const contexte = generatedPost?.contenu || genContexte;
-    if (!contexte.trim()) return;
+    const titre = generatedPost?.titre || '';
+    const contenu = generatedPost?.contenu || genContexte;
+    if (!contenu.trim() && !titre.trim()) return;
+    const hashtags = generatedPost?.hashtags || [];
     setGeneratingImage(true);
     setImageLoading(true);
     try {
-      const data = await api.genererImage({ contexte, style: 'professional' });
+      const data = await api.genererImage({ titre, contenu, hashtags, style: genImageStyle });
       if (data.image_url) {
         setGenImageUrl(data.image_url);
       }
@@ -723,26 +726,46 @@ export default function CommunityManager() {
                 </label>
                 <div className="mb-4">
                   {!genImageUrl ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleGenerateImage}
-                        disabled={generatingImage || (!genContexte.trim() && !generatedPost)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 text-violet-600 text-sm font-semibold hover:bg-violet-100 disabled:opacity-50 transition-colors"
-                      >
-                        {generatingImage ? (
-                          <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
-                        ) : (
-                          <><ImagePlus className="w-4 h-4" /> Générer une image IA</>
-                        )}
-                      </button>
-                      <span className="flex items-center text-xs text-zinc-400">ou</span>
-                      <input
-                        type="url"
-                        value={genImageUrl}
-                        onChange={(e) => setGenImageUrl(e.target.value)}
-                        placeholder="Coller une URL"
-                        className="w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
-                      />
+                    <div className="space-y-2">
+                      {/* Style color picker */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-zinc-500 font-medium">Style :</span>
+                        {[
+                          { id: 'violet', color: 'bg-violet-500', label: 'Violet' },
+                          { id: 'bleu', color: 'bg-blue-500', label: 'Bleu' },
+                          { id: 'vert', color: 'bg-emerald-600', label: 'Vert' },
+                          { id: 'orange', color: 'bg-orange-500', label: 'Orange' },
+                          { id: 'sombre', color: 'bg-zinc-800', label: 'Sombre' },
+                        ].map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setGenImageStyle(s.id)}
+                            title={s.label}
+                            className={`w-6 h-6 rounded-full ${s.color} transition-all ${genImageStyle === s.id ? 'ring-2 ring-offset-2 ring-violet-500 scale-110' : 'opacity-60 hover:opacity-100'}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleGenerateImage}
+                          disabled={generatingImage || (!genContexte.trim() && !generatedPost)}
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 text-violet-600 text-sm font-semibold hover:bg-violet-100 disabled:opacity-50 transition-colors"
+                        >
+                          {generatingImage ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
+                          ) : (
+                            <><ImagePlus className="w-4 h-4" /> Générer une image</>
+                          )}
+                        </button>
+                        <span className="flex items-center text-xs text-zinc-400">ou</span>
+                        <input
+                          type="url"
+                          value={genImageUrl}
+                          onChange={(e) => setGenImageUrl(e.target.value)}
+                          placeholder="Coller une URL"
+                          className="w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
