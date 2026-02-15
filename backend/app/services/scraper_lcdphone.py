@@ -35,6 +35,16 @@ except ImportError:
     pass
 
 
+# Marques autorisées (on ne garde que celles-ci)
+MARQUES_AUTORISEES = {"Apple", "Samsung", "Xiaomi"}
+
+# Mots-clés d'exclusion dans le nom du produit
+EXCLUSION_KEYWORDS = [
+    "factice", "dummy", "maquette", "exposition",
+    "ipod", "i-pod",
+]
+
+
 # ─── HELPERS ────────────────────────────────────────
 
 def calculer_prix_vente(prix_fournisseur: float, marque: str, type_produit: str) -> tuple:
@@ -199,7 +209,8 @@ def _scrape_category_ajax(client, cat: dict) -> tuple:
     produits = []
     debug = {
         "pages": 0, "total_items": 0, "cards_parsed": 0,
-        "cards_skipped_stock": 0, "errors": [],
+        "cards_skipped_stock": 0, "cards_skipped_brand": 0,
+        "cards_skipped_excluded": 0, "errors": [],
     }
 
     cat_id = cat["id"]
@@ -242,6 +253,18 @@ def _scrape_category_ajax(client, cat: dict) -> tuple:
                     if not nom:
                         continue
 
+                    # Exclure factice, iPod, etc.
+                    nom_lower = nom.lower()
+                    if any(kw in nom_lower for kw in EXCLUSION_KEYWORDS):
+                        debug["cards_skipped_excluded"] += 1
+                        continue
+
+                    # Filtrer par marque autorisée
+                    marque_detected = cat.get("marque_forcee") or detecter_marque(nom)
+                    if marque_detected not in MARQUES_AUTORISEES:
+                        debug["cards_skipped_brand"] += 1
+                        continue
+
                     # Prix — utiliser price_amount (numérique)
                     prix_fournisseur = p.get("price_amount")
                     if prix_fournisseur is None:
@@ -276,7 +299,7 @@ def _scrape_category_ajax(client, cat: dict) -> tuple:
                     ref = str(p.get("id_product", ""))
 
                     # Parser les infos depuis le nom
-                    marque = cat.get("marque_forcee") or detecter_marque(nom)
+                    marque = marque_detected
                     stockage = extraire_stockage(nom)
                     grade = extraire_grade(nom) or ("Neuf" if cat["type_produit"] == "neuf" else None)
                     couleur = extraire_couleur(nom)
@@ -423,6 +446,8 @@ def sync_telephones_lcdphone() -> dict:
                 "total_items": debug["total_items"],
                 "cards_parsed": debug["cards_parsed"],
                 "cards_skipped_stock": debug["cards_skipped_stock"],
+                "cards_skipped_brand": debug["cards_skipped_brand"],
+                "cards_skipped_excluded": debug["cards_skipped_excluded"],
                 "errors": debug["errors"][:5],
             }
     finally:
