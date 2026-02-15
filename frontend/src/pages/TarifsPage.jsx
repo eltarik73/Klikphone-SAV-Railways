@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package } from 'lucide-react';
+import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones } from 'lucide-react';
 import api from '../lib/api';
 
 // ─── Constantes ──────────────────────────────────
@@ -14,6 +14,8 @@ const BRAND_CONFIG = {
   OnePlus:  { bg: '#dc2626', text: '#fff', logo: 'oneplus' },
   Motorola: { bg: '#0891b2', text: '#fff', logo: 'motorola' },
   Nothing:  { bg: '#18181b', text: '#fff', logo: 'nothing' },
+  Realme:   { bg: '#d97706', text: '#fff', logo: 'realme' },
+  Vivo:     { bg: '#1d4ed8', text: '#fff', logo: 'vivo' },
 };
 const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', logo: null };
 
@@ -41,12 +43,12 @@ const QUALITY_COLORS = {
   'OLED':           { color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
   'Incell':         { color: '#b45309', bg: '#fffbeb', border: '#fcd34d' },
   'LCD':            { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' },
-  'Reconditionnée': { color: '#0e7490', bg: '#ecfeff', border: '#67e8f9' },
+  'Reconditionnee': { color: '#0e7490', bg: '#ecfeff', border: '#67e8f9' },
   'Compatible':     { color: '#be123c', bg: '#fff1f2', border: '#fda4af' },
 };
 const DEFAULT_QUALITY = { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' };
 
-const BRAND_ORDER = ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Honor', 'Google', 'Oppo', 'OnePlus', 'Motorola', 'Nothing'];
+const BRAND_ORDER = ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Honor', 'Google', 'Oppo', 'OnePlus', 'Motorola', 'Nothing', 'Realme', 'Vivo'];
 const BRAND_FILTERS = ['Toutes', ...BRAND_ORDER];
 
 const PIECE_ICONS = {
@@ -54,7 +56,21 @@ const PIECE_ICONS = {
   batterie: Battery,
   connecteur: Plug,
   camera: Camera,
+  vitre: Package,
+  'haut-parleur': Volume2,
+  ecouteur: Headphones,
 };
+
+const PIECE_TYPE_COLORS = {
+  batterie:               { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
+  'connecteur de charge': { color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
+  'camera arriere':       { color: '#b45309', bg: '#fffbeb', border: '#fcd34d' },
+  'vitre arriere':        { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'haut-parleur':         { color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' },
+  'ecouteur interne':     { color: '#be185d', bg: '#fdf2f8', border: '#f9a8d4' },
+  'vitre camera arriere': { color: '#4338ca', bg: '#eef2ff', border: '#a5b4fc' },
+};
+const DEFAULT_PIECE_TYPE = { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' };
 
 function getPieceIcon(type) {
   const t = (type || '').toLowerCase();
@@ -64,9 +80,17 @@ function getPieceIcon(type) {
   return Package;
 }
 
+function getPieceTypeColor(type) {
+  const t = (type || '').toLowerCase();
+  for (const [key, val] of Object.entries(PIECE_TYPE_COLORS)) {
+    if (t.includes(key)) return val;
+  }
+  return DEFAULT_PIECE_TYPE;
+}
+
 function formatPrice(n) {
-  if (n == null) return '—';
-  return `${n}\u00a0€`;
+  if (n == null) return null;
+  return `${n}\u00a0\u20ac`;
 }
 
 // ─── Composant principal ─────────────────────────
@@ -113,7 +137,7 @@ export default function TarifsPage() {
     return result;
   }, [tarifs, brandFilter, search]);
 
-  // Group: brand → model → items
+  // Group: brand -> model -> items
   const grouped = useMemo(() => {
     const byBrand = {};
     for (const t of filtered) {
@@ -169,11 +193,11 @@ export default function TarifsPage() {
     });
   }
 
-  // Get summary for a model row (batteries, connecteurs, cameras — no screens)
+  // Get summary for a model row
   function getModelSummary(items) {
     const screenItems = items.filter(t => {
       const tp = (t.type_piece || '').toLowerCase();
-      return tp.includes('ecran') || tp.includes('écran');
+      return tp.includes('ecran') || tp.includes('ecran');
     });
     const qualityCount = new Set(screenItems.map(t => t.qualite).filter(Boolean)).size;
 
@@ -181,16 +205,14 @@ export default function TarifsPage() {
       const matching = items.filter(t => (t.type_piece || '').toLowerCase().includes(keyword));
       if (!matching.length) return null;
       const prices = matching.map(t => t.prix_client);
-      const min = Math.min(...prices);
-      return formatPrice(min);
+      return Math.min(...prices);
     };
 
-    // Also collect all non-screen piece types
+    // Non-screen piece types grouped
     const otherItems = items.filter(t => {
       const tp = (t.type_piece || '').toLowerCase();
-      return !tp.includes('ecran') && !tp.includes('écran');
+      return !tp.includes('ecran');
     });
-    // Group by type
     const otherByType = {};
     for (const t of otherItems) {
       const key = t.type_piece;
@@ -209,6 +231,38 @@ export default function TarifsPage() {
   }
 
   const totalModels = grouped.reduce((sum, g) => sum + g.models.length, 0);
+
+  // Mini badge for price in model row
+  function PriceBadge({ value, icon: Icon, color }) {
+    if (value == null) return null;
+    return (
+      <span
+        className="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg font-semibold border"
+        style={{ background: color.bg, color: color.color, borderColor: color.border }}
+      >
+        <Icon className="w-3 h-3" />
+        {value}\u00a0\u20ac
+      </span>
+    );
+  }
+
+  // Mobile mini badge
+  function PriceBadgeMobile({ value, icon: Icon, color }) {
+    if (value == null) return null;
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-md font-bold"
+        style={{ background: color.bg, color: color.color }}
+      >
+        <Icon className="w-2.5 h-2.5" />
+        {value}\u20ac
+      </span>
+    );
+  }
+
+  const COLOR_BATT = PIECE_TYPE_COLORS['batterie'];
+  const COLOR_CONN = PIECE_TYPE_COLORS['connecteur de charge'];
+  const COLOR_CAM  = PIECE_TYPE_COLORS['camera arriere'];
 
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
@@ -300,7 +354,7 @@ export default function TarifsPage() {
 
             return (
               <div key={brand} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                {/* ═══ NIVEAU 1 : Header marque (clic = ouvrir/fermer) ═══ */}
+                {/* NIVEAU 1 : Header marque */}
                 <button
                   onClick={() => toggleBrand(brand)}
                   className="w-full px-5 py-3.5 flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90"
@@ -318,15 +372,13 @@ export default function TarifsPage() {
                   </span>
                 </button>
 
-                {/* Liste modeles (visible si marque ouverte) */}
+                {/* Liste modeles */}
                 {isBrandOpen && (
                   <div>
                     {/* Table header (desktop) */}
                     <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
                       <div className="flex-1 pl-7">Modele</div>
-                      <div className="w-20 text-right">Batterie</div>
-                      <div className="w-20 text-right">Connect.</div>
-                      <div className="w-20 text-right">Camera</div>
+                      <div className="text-right pr-1">Pieces disponibles</div>
                     </div>
 
                     {models.map(({ model, items }, idx) => {
@@ -336,7 +388,7 @@ export default function TarifsPage() {
 
                       return (
                         <div key={model}>
-                          {/* ═══ NIVEAU 2 : Ligne modele (clic = ouvrir/fermer ecrans) ═══ */}
+                          {/* NIVEAU 2 : Ligne modele */}
                           <button
                             onClick={() => toggleModel(modelKey)}
                             className={`w-full flex items-center px-5 py-3 text-left transition-colors
@@ -360,42 +412,43 @@ export default function TarifsPage() {
                               )}
                             </div>
 
-                            {/* Price columns (desktop) */}
-                            <div className="hidden sm:flex items-center shrink-0">
-                              <span className="w-20 text-right text-xs text-zinc-700 font-medium">
-                                {summary.batterie || '—'}
-                              </span>
-                              <span className="w-20 text-right text-xs text-zinc-700 font-medium">
-                                {summary.connecteur || '—'}
-                              </span>
-                              <span className="w-20 text-right text-xs text-zinc-700 font-medium">
-                                {summary.camera || '—'}
-                              </span>
+                            {/* Desktop: colored price badges */}
+                            <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                              <PriceBadge value={summary.batterie} icon={Battery} color={COLOR_BATT} />
+                              <PriceBadge value={summary.connecteur} icon={Plug} color={COLOR_CONN} />
+                              <PriceBadge value={summary.camera} icon={Camera} color={COLOR_CAM} />
                             </div>
 
-                            {/* Mobile: price pills */}
-                            <div className="flex sm:hidden items-center gap-1.5 shrink-0 ml-2">
-                              {summary.batterie && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
-                                  {summary.batterie}
-                                </span>
-                              )}
+                            {/* Mobile: colored price mini-badges */}
+                            <div className="flex sm:hidden items-center gap-1 shrink-0 ml-2">
+                              <PriceBadgeMobile value={summary.batterie} icon={Battery} color={COLOR_BATT} />
+                              <PriceBadgeMobile value={summary.connecteur} icon={Plug} color={COLOR_CONN} />
+                              <PriceBadgeMobile value={summary.camera} icon={Camera} color={COLOR_CAM} />
                             </div>
                           </button>
 
-                          {/* ═══ Contenu deplie : cartes qualite ecran + autres pieces ═══ */}
+                          {/* Contenu deplie : cartes qualite ecran + autres pieces */}
                           {isModelOpen && (
                             <div className="px-5 py-4 bg-violet-50/30 border-t border-violet-100/50">
-                              {/* Mobile: prix batterie/connecteur/camera */}
-                              <div className="sm:hidden flex flex-wrap gap-2 mb-4">
-                                {Object.entries(summary.otherByType).map(([type, pieces]) => (
-                                  <div key={type} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-xs">
-                                    {(() => { const I = getPieceIcon(type); return <I className="w-3 h-3 text-zinc-500" />; })()}
-                                    <span className="text-zinc-500">{type}</span>
-                                    <span className="font-bold text-zinc-900">{formatPrice(pieces[0].prix_client)}</span>
-                                  </div>
-                                ))}
-                              </div>
+                              {/* Mobile: all other pieces as colored chips */}
+                              {Object.keys(summary.otherByType).length > 0 && (
+                                <div className="sm:hidden flex flex-wrap gap-2 mb-4">
+                                  {Object.entries(summary.otherByType).map(([type, pieces]) => {
+                                    const pc = getPieceTypeColor(type);
+                                    const Icon = getPieceIcon(type);
+                                    return (
+                                      <div key={type}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs"
+                                        style={{ background: pc.bg, borderColor: pc.border }}
+                                      >
+                                        <Icon className="w-3 h-3" style={{ color: pc.color }} />
+                                        <span className="font-medium" style={{ color: pc.color }}>{type}</span>
+                                        <span className="font-bold" style={{ color: pc.color }}>{formatPrice(pieces[0].prix_client)}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
 
                               {/* Cartes qualite ecran */}
                               {summary.screenItems.length > 0 && (
@@ -413,30 +466,18 @@ export default function TarifsPage() {
                                           className="rounded-xl border-2 p-3 transition-all hover:shadow-md hover:scale-[1.02]"
                                           style={{ background: qc.bg, borderColor: qc.border }}
                                         >
-                                          {/* Dot + quality name */}
                                           <div className="flex items-center gap-1.5 mb-2">
-                                            <span
-                                              className="w-2 h-2 rounded-full shrink-0"
-                                              style={{ background: qc.color }}
-                                            />
-                                            <span
-                                              className="text-[11px] font-bold"
-                                              style={{ color: qc.color }}
-                                            >
+                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} />
+                                            <span className="text-[11px] font-bold" style={{ color: qc.color }}>
                                               {t.qualite || 'Standard'}
                                             </span>
                                           </div>
-                                          {/* Price */}
-                                          <div
-                                            className="text-2xl font-extrabold leading-none"
-                                            style={{ color: qc.color }}
-                                          >
+                                          <div className="text-2xl font-extrabold leading-none" style={{ color: qc.color }}>
                                             {formatPrice(t.prix_client)}
                                           </div>
-                                          {/* Supplier price */}
                                           {t.prix_fournisseur_ht != null && (
                                             <div className="text-[10px] mt-1.5 opacity-50" style={{ color: qc.color }}>
-                                              Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0€ HT
+                                              Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0\u20ac HT
                                             </div>
                                           )}
                                         </div>
@@ -446,33 +487,38 @@ export default function TarifsPage() {
                                 </div>
                               )}
 
-                              {/* Autres pieces (desktop detail) */}
+                              {/* Autres pieces (desktop) - cartes colorees */}
                               {Object.keys(summary.otherByType).length > 0 && (
                                 <div className="hidden sm:block mt-4">
                                   <div className="flex items-center gap-2 mb-3">
-                                    <Package className="w-4 h-4 text-zinc-400" />
+                                    <Package className="w-4 h-4 text-indigo-400" />
                                     <span className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wide">Autres pieces</span>
                                   </div>
                                   <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
-                                    {Object.entries(summary.otherByType).map(([type, pieces]) =>
-                                      pieces.map((t, i) => {
-                                        const Icon = getPieceIcon(type);
-                                        return (
-                                          <div key={`${type}-${i}`} className="rounded-xl border border-slate-200 bg-white p-3 hover:shadow-md transition-all">
-                                            <div className="flex items-center gap-1.5 mb-2">
-                                              <Icon className="w-3.5 h-3.5 text-zinc-400" />
-                                              <span className="text-[10px] font-semibold text-zinc-500 uppercase">{type}</span>
-                                            </div>
-                                            <div className="text-lg font-bold text-zinc-900">{formatPrice(t.prix_client)}</div>
-                                            {t.prix_fournisseur_ht != null && (
-                                              <div className="text-[10px] text-zinc-400 mt-1">
-                                                Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0€ HT
-                                              </div>
-                                            )}
+                                    {Object.entries(summary.otherByType).map(([type, pieces]) => {
+                                      const pc = getPieceTypeColor(type);
+                                      const Icon = getPieceIcon(type);
+                                      return pieces.map((t, i) => (
+                                        <div
+                                          key={`${type}-${i}`}
+                                          className="rounded-xl border-2 p-3 hover:shadow-md transition-all hover:scale-[1.02]"
+                                          style={{ background: pc.bg, borderColor: pc.border }}
+                                        >
+                                          <div className="flex items-center gap-1.5 mb-2">
+                                            <Icon className="w-3.5 h-3.5" style={{ color: pc.color }} />
+                                            <span className="text-[10px] font-bold uppercase" style={{ color: pc.color }}>{type}</span>
                                           </div>
-                                        );
-                                      })
-                                    )}
+                                          <div className="text-lg font-extrabold" style={{ color: pc.color }}>
+                                            {formatPrice(t.prix_client)}
+                                          </div>
+                                          {t.prix_fournisseur_ht != null && (
+                                            <div className="text-[10px] mt-1 opacity-60" style={{ color: pc.color }}>
+                                              Achat : {Number(t.prix_fournisseur_ht).toFixed(2)}\u00a0\u20ac HT
+                                            </div>
+                                          )}
+                                        </div>
+                                      ));
+                                    })}
                                   </div>
                                 </div>
                               )}

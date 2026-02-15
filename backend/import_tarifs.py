@@ -44,12 +44,14 @@ TARIFS = [
 
     # iPhone 15 Pro Max
     ("Apple", "iPhone 15 Pro Max", "Ecran", "Original", "Ecran Original iPhone 15 Pro Max", 280.00, "haut_de_gamme"),
+    ("Apple", "iPhone 15 Pro Max", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 15 Pro Max", 220.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro Max", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 15 Pro Max", 170.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro Max", "Ecran", "OLED", "Ecran Hard OLED iPhone 15 Pro Max", 135.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro Max", "Ecran", "Incell", "Ecran Incell iPhone 15 Pro Max", 95.00, "haut_de_gamme"),
 
     # iPhone 15 Pro
     ("Apple", "iPhone 15 Pro", "Ecran", "Original", "Ecran Original iPhone 15 Pro", 250.00, "haut_de_gamme"),
+    ("Apple", "iPhone 15 Pro", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 15 Pro", 195.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 15 Pro", 145.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro", "Ecran", "OLED", "Ecran Hard OLED iPhone 15 Pro", 110.00, "haut_de_gamme"),
     ("Apple", "iPhone 15 Pro", "Ecran", "Incell", "Ecran Incell iPhone 15 Pro", 80.00, "haut_de_gamme"),
@@ -66,12 +68,14 @@ TARIFS = [
 
     # iPhone 14 Pro Max
     ("Apple", "iPhone 14 Pro Max", "Ecran", "Original", "Ecran Original iPhone 14 Pro Max", 240.00, "haut_de_gamme"),
+    ("Apple", "iPhone 14 Pro Max", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 14 Pro Max", 185.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro Max", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 14 Pro Max", 135.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro Max", "Ecran", "OLED", "Ecran Hard OLED iPhone 14 Pro Max", 105.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro Max", "Ecran", "Incell", "Ecran Incell iPhone 14 Pro Max", 75.00, "haut_de_gamme"),
 
     # iPhone 14 Pro
     ("Apple", "iPhone 14 Pro", "Ecran", "Original", "Ecran Original iPhone 14 Pro", 210.00, "haut_de_gamme"),
+    ("Apple", "iPhone 14 Pro", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 14 Pro", 165.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 14 Pro", 115.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro", "Ecran", "OLED", "Ecran Hard OLED iPhone 14 Pro", 90.00, "haut_de_gamme"),
     ("Apple", "iPhone 14 Pro", "Ecran", "Incell", "Ecran Incell iPhone 14 Pro", 65.00, "haut_de_gamme"),
@@ -88,12 +92,14 @@ TARIFS = [
 
     # iPhone 13 Pro Max
     ("Apple", "iPhone 13 Pro Max", "Ecran", "Original", "Ecran Original iPhone 13 Pro Max", 195.00, "haut_de_gamme"),
+    ("Apple", "iPhone 13 Pro Max", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 13 Pro Max", 150.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro Max", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 13 Pro Max", 110.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro Max", "Ecran", "OLED", "Ecran Hard OLED iPhone 13 Pro Max", 85.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro Max", "Ecran", "Incell", "Ecran Incell iPhone 13 Pro Max", 60.00, "haut_de_gamme"),
 
     # iPhone 13 Pro
     ("Apple", "iPhone 13 Pro", "Ecran", "Original", "Ecran Original iPhone 13 Pro", 175.00, "haut_de_gamme"),
+    ("Apple", "iPhone 13 Pro", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 13 Pro", 135.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 13 Pro", 95.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro", "Ecran", "OLED", "Ecran Hard OLED iPhone 13 Pro", 72.00, "haut_de_gamme"),
     ("Apple", "iPhone 13 Pro", "Ecran", "Incell", "Ecran Incell iPhone 13 Pro", 52.00, "haut_de_gamme"),
@@ -110,12 +116,14 @@ TARIFS = [
 
     # iPhone 12 Pro Max
     ("Apple", "iPhone 12 Pro Max", "Ecran", "Original", "Ecran Original iPhone 12 Pro Max", 150.00, "haut_de_gamme"),
+    ("Apple", "iPhone 12 Pro Max", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 12 Pro Max", 115.00, "haut_de_gamme"),
     ("Apple", "iPhone 12 Pro Max", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 12 Pro Max", 80.00, "standard"),
     ("Apple", "iPhone 12 Pro Max", "Ecran", "OLED", "Ecran Hard OLED iPhone 12 Pro Max", 62.00, "standard"),
     ("Apple", "iPhone 12 Pro Max", "Ecran", "Incell", "Ecran Incell iPhone 12 Pro Max", 42.00, "standard"),
 
     # iPhone 12 / 12 Pro (meme ecran)
     ("Apple", "iPhone 12 / 12 Pro", "Ecran", "Original", "Ecran Original iPhone 12/12 Pro", 125.00, "standard"),
+    ("Apple", "iPhone 12 / 12 Pro", "Ecran", "Reconditionnee", "Ecran Reconditionne iPhone 12/12 Pro", 95.00, "standard"),
     ("Apple", "iPhone 12 / 12 Pro", "Ecran", "Soft OLED", "Ecran Soft OLED iPhone 12/12 Pro", 65.00, "standard"),
     ("Apple", "iPhone 12 / 12 Pro", "Ecran", "OLED", "Ecran Hard OLED iPhone 12/12 Pro", 50.00, "standard"),
     ("Apple", "iPhone 12 / 12 Pro", "Ecran", "Incell", "Ecran Incell iPhone 12/12 Pro", 35.00, "standard"),
@@ -510,22 +518,50 @@ TARIFS = [
     # Galaxy A15
     ("Samsung", "Galaxy A15", "Ecran", "Original", "Ecran Original Samsung A15", 32.00, "standard"),
     ("Samsung", "Galaxy A15", "Ecran", "Compatible", "Ecran Compatible Samsung A15", 18.00, "standard"),
+    ("Samsung", "Galaxy A15", "Ecran", "LCD", "Ecran LCD Samsung A15", 14.00, "standard"),
 
     # Galaxy A14
     ("Samsung", "Galaxy A14", "Ecran", "Original", "Ecran Original Samsung A14", 28.00, "standard"),
     ("Samsung", "Galaxy A14", "Ecran", "Compatible", "Ecran Compatible Samsung A14", 16.00, "standard"),
+    ("Samsung", "Galaxy A14", "Ecran", "LCD", "Ecran LCD Samsung A14", 12.00, "standard"),
 
     # Galaxy A13
     ("Samsung", "Galaxy A13", "Ecran", "Original", "Ecran Original Samsung A13", 26.00, "standard"),
     ("Samsung", "Galaxy A13", "Ecran", "Compatible", "Ecran Compatible Samsung A13", 15.00, "standard"),
+    ("Samsung", "Galaxy A13", "Ecran", "LCD", "Ecran LCD Samsung A13", 11.00, "standard"),
 
     # Galaxy A12
     ("Samsung", "Galaxy A12", "Ecran", "Original", "Ecran Original Samsung A12", 25.00, "standard"),
     ("Samsung", "Galaxy A12", "Ecran", "Compatible", "Ecran Compatible Samsung A12", 14.00, "standard"),
+    ("Samsung", "Galaxy A12", "Ecran", "LCD", "Ecran LCD Samsung A12", 10.00, "standard"),
 
     # Galaxy A05s
     ("Samsung", "Galaxy A05s", "Ecran", "Original", "Ecran Original Samsung A05s", 22.00, "standard"),
     ("Samsung", "Galaxy A05s", "Ecran", "Compatible", "Ecran Compatible Samsung A05s", 13.00, "standard"),
+    ("Samsung", "Galaxy A05s", "Ecran", "LCD", "Ecran LCD Samsung A05s", 10.00, "standard"),
+
+    # Galaxy A06
+    ("Samsung", "Galaxy A06", "Ecran", "Original", "Ecran Original Samsung A06", 22.00, "standard"),
+    ("Samsung", "Galaxy A06", "Ecran", "Compatible", "Ecran Compatible Samsung A06", 13.00, "standard"),
+    ("Samsung", "Galaxy A06", "Ecran", "LCD", "Ecran LCD Samsung A06", 10.00, "standard"),
+
+    # Galaxy A05
+    ("Samsung", "Galaxy A05", "Ecran", "Original", "Ecran Original Samsung A05", 20.00, "standard"),
+    ("Samsung", "Galaxy A05", "Ecran", "Compatible", "Ecran Compatible Samsung A05", 12.00, "standard"),
+    ("Samsung", "Galaxy A05", "Ecran", "LCD", "Ecran LCD Samsung A05", 9.00, "standard"),
+
+    # Galaxy M54
+    ("Samsung", "Galaxy M54", "Ecran", "Original", "Ecran Original Samsung M54", 52.00, "standard"),
+    ("Samsung", "Galaxy M54", "Ecran", "Incell", "Ecran Incell Samsung M54", 28.00, "standard"),
+
+    # Galaxy M34
+    ("Samsung", "Galaxy M34", "Ecran", "Original", "Ecran Original Samsung M34", 42.00, "standard"),
+    ("Samsung", "Galaxy M34", "Ecran", "Incell", "Ecran Incell Samsung M34", 22.00, "standard"),
+
+    # Galaxy M14
+    ("Samsung", "Galaxy M14", "Ecran", "Original", "Ecran Original Samsung M14", 28.00, "standard"),
+    ("Samsung", "Galaxy M14", "Ecran", "Compatible", "Ecran Compatible Samsung M14", 16.00, "standard"),
+    ("Samsung", "Galaxy M14", "Ecran", "LCD", "Ecran LCD Samsung M14", 12.00, "standard"),
 
     # Galaxy Z Flip 5
     ("Samsung", "Galaxy Z Flip 5", "Ecran", "Original", "Ecran int. Original Samsung Z Flip 5", 280.00, "pliant"),
@@ -566,6 +602,11 @@ TARIFS = [
     ("Samsung", "Galaxy A14", "Batterie", None, "Batterie Samsung A14", 8.00, "standard"),
     ("Samsung", "Galaxy A13", "Batterie", None, "Batterie Samsung A13", 8.00, "standard"),
     ("Samsung", "Galaxy A12", "Batterie", None, "Batterie Samsung A12", 7.50, "standard"),
+    ("Samsung", "Galaxy A06", "Batterie", None, "Batterie Samsung A06", 7.50, "standard"),
+    ("Samsung", "Galaxy A05", "Batterie", None, "Batterie Samsung A05", 7.00, "standard"),
+    ("Samsung", "Galaxy M54", "Batterie", None, "Batterie Samsung M54", 10.00, "standard"),
+    ("Samsung", "Galaxy M34", "Batterie", None, "Batterie Samsung M34", 9.00, "standard"),
+    ("Samsung", "Galaxy M14", "Batterie", None, "Batterie Samsung M14", 8.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  SAMSUNG — CONNECTEURS                                     ║
@@ -589,6 +630,11 @@ TARIFS = [
     ("Samsung", "Galaxy A14", "Connecteur de charge", None, "Nappe connecteur Samsung A14", 6.00, "standard"),
     ("Samsung", "Galaxy A13", "Connecteur de charge", None, "Nappe connecteur Samsung A13", 6.00, "standard"),
     ("Samsung", "Galaxy A12", "Connecteur de charge", None, "Nappe connecteur Samsung A12", 5.50, "standard"),
+    ("Samsung", "Galaxy A06", "Connecteur de charge", None, "Nappe connecteur Samsung A06", 5.50, "standard"),
+    ("Samsung", "Galaxy A05", "Connecteur de charge", None, "Nappe connecteur Samsung A05", 5.00, "standard"),
+    ("Samsung", "Galaxy M54", "Connecteur de charge", None, "Nappe connecteur Samsung M54", 8.00, "standard"),
+    ("Samsung", "Galaxy M34", "Connecteur de charge", None, "Nappe connecteur Samsung M34", 7.00, "standard"),
+    ("Samsung", "Galaxy M14", "Connecteur de charge", None, "Nappe connecteur Samsung M14", 6.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  SAMSUNG — CAMERAS ARRIERE                                 ║
@@ -665,6 +711,29 @@ TARIFS = [
     ("Xiaomi", "Poco F5", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F5", 35.00, "standard"),
     ("Xiaomi", "Poco M5", "Ecran", "Original", "Ecran Original Xiaomi Poco M5", 25.00, "standard"),
 
+    # Xiaomi 14 Pro
+    ("Xiaomi", "14 Pro", "Ecran", "Original", "Ecran Original Xiaomi 14 Pro", 155.00, "haut_de_gamme"),
+
+    # Poco F6 Pro
+    ("Xiaomi", "Poco F6 Pro", "Ecran", "Original", "Ecran Original Xiaomi Poco F6 Pro", 85.00, "haut_de_gamme"),
+    ("Xiaomi", "Poco F6 Pro", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F6 Pro", 52.00, "haut_de_gamme"),
+
+    # Poco F6
+    ("Xiaomi", "Poco F6", "Ecran", "Original", "Ecran Original Xiaomi Poco F6", 68.00, "standard"),
+    ("Xiaomi", "Poco F6", "Ecran", "OLED", "Ecran OLED Xiaomi Poco F6", 40.00, "standard"),
+
+    # Redmi A3
+    ("Xiaomi", "Redmi A3", "Ecran", "Original", "Ecran Original Xiaomi Redmi A3", 18.00, "standard"),
+    ("Xiaomi", "Redmi A3", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi A3", 10.00, "standard"),
+
+    # Redmi A2
+    ("Xiaomi", "Redmi A2", "Ecran", "Original", "Ecran Original Xiaomi Redmi A2", 16.00, "standard"),
+    ("Xiaomi", "Redmi A2", "Ecran", "Compatible", "Ecran Compatible Xiaomi Redmi A2", 9.00, "standard"),
+
+    # LCD for Xiaomi budget
+    ("Xiaomi", "Redmi 13C", "Ecran", "LCD", "Ecran LCD Xiaomi Redmi 13C", 10.00, "standard"),
+    ("Xiaomi", "Redmi 12", "Ecran", "LCD", "Ecran LCD Xiaomi Redmi 12", 12.00, "standard"),
+
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  XIAOMI — BATTERIES                                        ║
     # ╚══════════════════════════════════════════════════════════════╝
@@ -687,6 +756,11 @@ TARIFS = [
     ("Xiaomi", "Poco X6 Pro", "Batterie", None, "Batterie Xiaomi Poco X6 Pro", 10.00, "standard"),
     ("Xiaomi", "Poco X5 Pro", "Batterie", None, "Batterie Xiaomi Poco X5 Pro", 9.00, "standard"),
     ("Xiaomi", "Poco X3 Pro", "Batterie", None, "Batterie Xiaomi Poco X3 Pro", 8.50, "standard"),
+    ("Xiaomi", "14 Pro", "Batterie", None, "Batterie Xiaomi 14 Pro", 13.00, "standard"),
+    ("Xiaomi", "Poco F6 Pro", "Batterie", None, "Batterie Xiaomi Poco F6 Pro", 11.00, "standard"),
+    ("Xiaomi", "Poco F6", "Batterie", None, "Batterie Xiaomi Poco F6", 10.00, "standard"),
+    ("Xiaomi", "Redmi A3", "Batterie", None, "Batterie Xiaomi Redmi A3", 7.00, "standard"),
+    ("Xiaomi", "Redmi A2", "Batterie", None, "Batterie Xiaomi Redmi A2", 7.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  XIAOMI — CONNECTEURS                                      ║
@@ -702,6 +776,10 @@ TARIFS = [
     ("Xiaomi", "Poco X6 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X6 Pro", 8.00, "standard"),
     ("Xiaomi", "Poco X5 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X5 Pro", 7.00, "standard"),
     ("Xiaomi", "Poco X3 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco X3 Pro", 6.00, "standard"),
+    ("Xiaomi", "Poco F6 Pro", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco F6 Pro", 8.00, "standard"),
+    ("Xiaomi", "Poco F6", "Connecteur de charge", None, "Nappe connecteur Xiaomi Poco F6", 7.50, "standard"),
+    ("Xiaomi", "Redmi A3", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi A3", 5.00, "standard"),
+    ("Xiaomi", "Redmi A2", "Connecteur de charge", None, "Nappe connecteur Xiaomi Redmi A2", 5.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  HUAWEI — ECRANS                                           ║
@@ -794,6 +872,12 @@ TARIFS = [
     ("Google", "Pixel 6", "Ecran", "Original", "Ecran Original Pixel 6", 72.00, "standard"),
     ("Google", "Pixel 6a", "Ecran", "Original", "Ecran Original Pixel 6a", 52.00, "standard"),
 
+    # Pixel 9a
+    ("Google", "Pixel 9a", "Ecran", "Original", "Ecran Original Pixel 9a", 85.00, "standard"),
+
+    # Pixel Fold
+    ("Google", "Pixel Fold", "Ecran", "Original", "Ecran int. Original Pixel Fold", 350.00, "pliant"),
+
     # Google batteries
     ("Google", "Pixel 9 Pro", "Batterie", None, "Batterie Pixel 9 Pro", 16.00, "standard"),
     ("Google", "Pixel 9", "Batterie", None, "Batterie Pixel 9", 14.00, "standard"),
@@ -803,12 +887,14 @@ TARIFS = [
     ("Google", "Pixel 7", "Batterie", None, "Batterie Pixel 7", 11.00, "standard"),
     ("Google", "Pixel 6 Pro", "Batterie", None, "Batterie Pixel 6 Pro", 11.00, "standard"),
     ("Google", "Pixel 6", "Batterie", None, "Batterie Pixel 6", 10.00, "standard"),
+    ("Google", "Pixel 9a", "Batterie", None, "Batterie Pixel 9a", 12.00, "standard"),
 
     # Google connecteurs
     ("Google", "Pixel 8 Pro", "Connecteur de charge", None, "Nappe connecteur Pixel 8 Pro", 12.00, "standard"),
     ("Google", "Pixel 8", "Connecteur de charge", None, "Nappe connecteur Pixel 8", 10.00, "standard"),
     ("Google", "Pixel 7 Pro", "Connecteur de charge", None, "Nappe connecteur Pixel 7 Pro", 10.00, "standard"),
     ("Google", "Pixel 7", "Connecteur de charge", None, "Nappe connecteur Pixel 7", 9.00, "standard"),
+    ("Google", "Pixel 9a", "Connecteur de charge", None, "Nappe connecteur Pixel 9a", 9.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  OPPO                                                      ║
@@ -853,15 +939,32 @@ TARIFS = [
     ("OnePlus", "Nord CE 2 Lite", "Ecran", "Original", "Ecran Original OnePlus Nord CE 2 Lite", 25.00, "standard"),
     ("OnePlus", "Nord N20 SE", "Ecran", "Original", "Ecran Original OnePlus Nord N20 SE", 22.00, "standard"),
 
+    # OnePlus 13
+    ("OnePlus", "13", "Ecran", "Original", "Ecran Original OnePlus 13", 165.00, "haut_de_gamme"),
+
+    # OnePlus Nord 4
+    ("OnePlus", "Nord 4", "Ecran", "Original", "Ecran Original OnePlus Nord 4", 62.00, "standard"),
+    ("OnePlus", "Nord 4", "Ecran", "OLED", "Ecran OLED OnePlus Nord 4", 38.00, "standard"),
+
+    # OnePlus Nord CE 4 Lite
+    ("OnePlus", "Nord CE 4 Lite", "Ecran", "Original", "Ecran Original OnePlus Nord CE 4 Lite", 28.00, "standard"),
+    ("OnePlus", "Nord CE 4 Lite", "Ecran", "Compatible", "Ecran Compatible OnePlus Nord CE 4 Lite", 16.00, "standard"),
+
     # OnePlus batteries
     ("OnePlus", "12", "Batterie", None, "Batterie OnePlus 12", 14.00, "standard"),
     ("OnePlus", "11", "Batterie", None, "Batterie OnePlus 11", 12.00, "standard"),
     ("OnePlus", "Nord 3", "Batterie", None, "Batterie OnePlus Nord 3", 10.00, "standard"),
     ("OnePlus", "Nord CE 3 Lite", "Batterie", None, "Batterie OnePlus Nord CE 3 Lite", 8.50, "standard"),
+    ("OnePlus", "13", "Batterie", None, "Batterie OnePlus 13", 15.00, "standard"),
+    ("OnePlus", "Nord 4", "Batterie", None, "Batterie OnePlus Nord 4", 10.00, "standard"),
+    ("OnePlus", "Nord CE 4 Lite", "Batterie", None, "Batterie OnePlus Nord CE 4 Lite", 8.00, "standard"),
 
     # OnePlus connecteurs
     ("OnePlus", "Nord 3", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord 3", 7.00, "standard"),
     ("OnePlus", "Nord CE 3 Lite", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord CE 3 Lite", 6.00, "standard"),
+    ("OnePlus", "13", "Connecteur de charge", None, "Nappe connecteur OnePlus 13", 10.00, "standard"),
+    ("OnePlus", "Nord 4", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord 4", 7.00, "standard"),
+    ("OnePlus", "Nord CE 4 Lite", "Connecteur de charge", None, "Nappe connecteur OnePlus Nord CE 4 Lite", 5.50, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  MOTOROLA                                                  ║
@@ -882,6 +985,18 @@ TARIFS = [
     ("Motorola", "Moto G13", "Ecran", "Original", "Ecran Original Motorola Moto G13", 22.00, "standard"),
     ("Motorola", "Moto E22", "Ecran", "Original", "Ecran Original Motorola Moto E22", 18.00, "standard"),
 
+    # Moto G15
+    ("Motorola", "Moto G15", "Ecran", "Original", "Ecran Original Motorola Moto G15", 22.00, "standard"),
+    ("Motorola", "Moto G15", "Ecran", "Compatible", "Ecran Compatible Motorola Moto G15", 14.00, "standard"),
+
+    # Edge 50 Pro
+    ("Motorola", "Edge 50 Pro", "Ecran", "Original", "Ecran Original Motorola Edge 50 Pro", 105.00, "haut_de_gamme"),
+    ("Motorola", "Edge 50 Pro", "Ecran", "OLED", "Ecran OLED Motorola Edge 50 Pro", 62.00, "haut_de_gamme"),
+
+    # Edge 50
+    ("Motorola", "Edge 50", "Ecran", "Original", "Ecran Original Motorola Edge 50", 78.00, "standard"),
+    ("Motorola", "Edge 50", "Ecran", "OLED", "Ecran OLED Motorola Edge 50", 48.00, "standard"),
+
     # Motorola batteries
     ("Motorola", "Edge 40", "Batterie", None, "Batterie Motorola Edge 40", 10.00, "standard"),
     ("Motorola", "Moto G84", "Batterie", None, "Batterie Motorola Moto G84", 9.00, "standard"),
@@ -890,12 +1005,18 @@ TARIFS = [
     ("Motorola", "Moto G34", "Batterie", None, "Batterie Motorola Moto G34", 7.50, "standard"),
     ("Motorola", "Moto G23", "Batterie", None, "Batterie Motorola Moto G23", 7.50, "standard"),
     ("Motorola", "Moto G13", "Batterie", None, "Batterie Motorola Moto G13", 7.00, "standard"),
+    ("Motorola", "Moto G15", "Batterie", None, "Batterie Motorola Moto G15", 7.00, "standard"),
+    ("Motorola", "Edge 50 Pro", "Batterie", None, "Batterie Motorola Edge 50 Pro", 11.00, "standard"),
+    ("Motorola", "Edge 50", "Batterie", None, "Batterie Motorola Edge 50", 10.00, "standard"),
 
     # Motorola connecteurs
     ("Motorola", "Edge 40", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 40", 7.50, "standard"),
     ("Motorola", "Moto G84", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G84", 6.50, "standard"),
     ("Motorola", "Moto G73", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G73", 6.00, "standard"),
     ("Motorola", "Moto G54", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G54", 5.50, "standard"),
+    ("Motorola", "Moto G15", "Connecteur de charge", None, "Nappe connecteur Motorola Moto G15", 5.00, "standard"),
+    ("Motorola", "Edge 50 Pro", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 50 Pro", 8.00, "standard"),
+    ("Motorola", "Edge 50", "Connecteur de charge", None, "Nappe connecteur Motorola Edge 50", 7.00, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  NOTHING                                                   ║
@@ -906,9 +1027,65 @@ TARIFS = [
     ("Nothing", "Phone (1)", "Ecran", "OLED", "Ecran OLED Nothing Phone 1", 35.00, "standard"),
     ("Nothing", "Phone (2a)", "Ecran", "Original", "Ecran Original Nothing Phone 2a", 52.00, "standard"),
 
+    # Nothing Phone (2a) Plus
+    ("Nothing", "Phone (2a) Plus", "Ecran", "Original", "Ecran Original Nothing Phone 2a Plus", 58.00, "standard"),
+    ("Nothing", "Phone (2a) Plus", "Ecran", "OLED", "Ecran OLED Nothing Phone 2a Plus", 35.00, "standard"),
+
     # Nothing batteries
     ("Nothing", "Phone (2)", "Batterie", None, "Batterie Nothing Phone 2", 10.00, "standard"),
     ("Nothing", "Phone (1)", "Batterie", None, "Batterie Nothing Phone 1", 9.00, "standard"),
+    ("Nothing", "Phone (2a)", "Batterie", None, "Batterie Nothing Phone 2a", 9.00, "standard"),
+    ("Nothing", "Phone (2a) Plus", "Batterie", None, "Batterie Nothing Phone 2a Plus", 9.50, "standard"),
+
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  REALME                                                    ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    ("Realme", "GT 5", "Ecran", "Original", "Ecran Original Realme GT 5", 82.00, "haut_de_gamme"),
+    ("Realme", "GT 5", "Ecran", "OLED", "Ecran OLED Realme GT 5", 48.00, "haut_de_gamme"),
+    ("Realme", "12 Pro+", "Ecran", "Original", "Ecran Original Realme 12 Pro+", 65.00, "standard"),
+    ("Realme", "12 Pro+", "Ecran", "OLED", "Ecran OLED Realme 12 Pro+", 38.00, "standard"),
+    ("Realme", "11", "Ecran", "Original", "Ecran Original Realme 11", 42.00, "standard"),
+    ("Realme", "11", "Ecran", "Incell", "Ecran Incell Realme 11", 24.00, "standard"),
+    ("Realme", "C55", "Ecran", "Original", "Ecran Original Realme C55", 25.00, "standard"),
+    ("Realme", "C55", "Ecran", "Compatible", "Ecran Compatible Realme C55", 14.00, "standard"),
+    ("Realme", "C53", "Ecran", "Original", "Ecran Original Realme C53", 22.00, "standard"),
+    ("Realme", "C53", "Ecran", "Compatible", "Ecran Compatible Realme C53", 13.00, "standard"),
+
+    # Realme batteries
+    ("Realme", "GT 5", "Batterie", None, "Batterie Realme GT 5", 11.00, "standard"),
+    ("Realme", "12 Pro+", "Batterie", None, "Batterie Realme 12 Pro+", 10.00, "standard"),
+    ("Realme", "11", "Batterie", None, "Batterie Realme 11", 9.00, "standard"),
+    ("Realme", "C55", "Batterie", None, "Batterie Realme C55", 7.50, "standard"),
+    ("Realme", "C53", "Batterie", None, "Batterie Realme C53", 7.50, "standard"),
+
+    # Realme connecteurs
+    ("Realme", "GT 5", "Connecteur de charge", None, "Nappe connecteur Realme GT 5", 8.00, "standard"),
+    ("Realme", "12 Pro+", "Connecteur de charge", None, "Nappe connecteur Realme 12 Pro+", 7.00, "standard"),
+    ("Realme", "11", "Connecteur de charge", None, "Nappe connecteur Realme 11", 6.00, "standard"),
+    ("Realme", "C55", "Connecteur de charge", None, "Nappe connecteur Realme C55", 5.50, "standard"),
+
+    # ╔══════════════════════════════════════════════════════════════╗
+    # ║  VIVO                                                      ║
+    # ╚══════════════════════════════════════════════════════════════╝
+    ("Vivo", "X100", "Ecran", "Original", "Ecran Original Vivo X100", 105.00, "haut_de_gamme"),
+    ("Vivo", "X100", "Ecran", "OLED", "Ecran OLED Vivo X100", 62.00, "haut_de_gamme"),
+    ("Vivo", "V30", "Ecran", "Original", "Ecran Original Vivo V30", 68.00, "standard"),
+    ("Vivo", "V30", "Ecran", "OLED", "Ecran OLED Vivo V30", 40.00, "standard"),
+    ("Vivo", "Y36", "Ecran", "Original", "Ecran Original Vivo Y36", 28.00, "standard"),
+    ("Vivo", "Y36", "Ecran", "Compatible", "Ecran Compatible Vivo Y36", 16.00, "standard"),
+    ("Vivo", "Y17s", "Ecran", "Original", "Ecran Original Vivo Y17s", 22.00, "standard"),
+    ("Vivo", "Y17s", "Ecran", "Compatible", "Ecran Compatible Vivo Y17s", 13.00, "standard"),
+
+    # Vivo batteries
+    ("Vivo", "X100", "Batterie", None, "Batterie Vivo X100", 12.00, "standard"),
+    ("Vivo", "V30", "Batterie", None, "Batterie Vivo V30", 10.00, "standard"),
+    ("Vivo", "Y36", "Batterie", None, "Batterie Vivo Y36", 8.00, "standard"),
+    ("Vivo", "Y17s", "Batterie", None, "Batterie Vivo Y17s", 7.50, "standard"),
+
+    # Vivo connecteurs
+    ("Vivo", "X100", "Connecteur de charge", None, "Nappe connecteur Vivo X100", 8.50, "standard"),
+    ("Vivo", "V30", "Connecteur de charge", None, "Nappe connecteur Vivo V30", 7.00, "standard"),
+    ("Vivo", "Y36", "Connecteur de charge", None, "Nappe connecteur Vivo Y36", 5.50, "standard"),
 
     # ╔══════════════════════════════════════════════════════════════╗
     # ║  SAMSUNG TABLETTES                                         ║
