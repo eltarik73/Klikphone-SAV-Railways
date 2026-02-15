@@ -762,7 +762,7 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/late/accounts")
-async def list_late_accounts(user: dict = Depends(get_current_user)):
+async def list_late_accounts():
     """Liste les comptes sociaux connectés sur Late — teste plusieurs endpoints."""
     late_key = os.getenv("LATE_API_KEY")
     if not late_key:
