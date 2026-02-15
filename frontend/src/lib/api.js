@@ -376,7 +376,7 @@ class ApiClient {
   publierPost(id) { return this.post(`/api/marketing/posts/${id}/publier`, {}); }
   programmerPost(id, data) { return this.post(`/api/marketing/posts/${id}/programmer`, data); }
   genererPost(data) { return this.request('/api/marketing/posts/generer', { method: 'POST', body: JSON.stringify(data) }, 60000); }
-  genererImage(data) { return this.post('/api/marketing/posts/generer-image', data); }
+  genererImage(data) { return this.request('/api/marketing/posts/generer-image', { method: 'POST', body: JSON.stringify(data) }, 180000); }
 
   getCalendrierMarketing(params = {}) {
     const qs = new URLSearchParams(params).toString();

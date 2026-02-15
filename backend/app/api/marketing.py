@@ -979,153 +979,202 @@ async def programmer_post(
 
 
 class ImageGenerer(BaseModel):
-    titre: Optional[str] = None
-    contenu: Optional[str] = None
-    hashtags: Optional[List[str]] = None
-    style: Optional[str] = "violet"  # violet, bleu, vert, orange, sombre
+    prompt: str  # Description de l'image souhaitée
 
 
-# Stockage en mémoire des images générées (clé = id, valeur = bytes JPEG)
+# Stockage en mémoire des images générées (id → bytes JPEG/PNG)
 _generated_images: dict = {}
 
 
-def _generate_branded_image(titre: str, contenu: str, hashtags: list, style: str) -> bytes:
-    """Génère une image brandée Klikphone 1080x1080 avec Pillow."""
-    from PIL import Image, ImageDraw, ImageFont
-    import io
-    import textwrap
-
-    W, H = 1080, 1080
-
-    # Palettes de couleurs
-    palettes = {
-        "violet": {"bg1": (124, 58, 237), "bg2": (79, 70, 229), "accent": (167, 139, 250), "text": (255, 255, 255)},
-        "bleu": {"bg1": (37, 99, 235), "bg2": (29, 78, 216), "accent": (96, 165, 250), "text": (255, 255, 255)},
-        "vert": {"bg1": (4, 120, 87), "bg2": (6, 95, 70), "accent": (52, 211, 153), "text": (255, 255, 255)},
-        "orange": {"bg1": (234, 88, 12), "bg2": (194, 65, 12), "accent": (251, 191, 36), "text": (255, 255, 255)},
-        "sombre": {"bg1": (30, 30, 40), "bg2": (15, 15, 25), "accent": (167, 139, 250), "text": (255, 255, 255)},
-    }
-    pal = palettes.get(style, palettes["violet"])
-
-    img = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(img)
-
-    # Gradient background
-    for y in range(H):
-        r = int(pal["bg1"][0] + (pal["bg2"][0] - pal["bg1"][0]) * y / H)
-        g = int(pal["bg1"][1] + (pal["bg2"][1] - pal["bg1"][1]) * y / H)
-        b = int(pal["bg1"][2] + (pal["bg2"][2] - pal["bg1"][2]) * y / H)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
-
-    # Cercles décoratifs (couleur accent mélangée avec bg pour effet semi-transparent)
-    ca = tuple(int(a * 0.3 + b * 0.7) for a, b in zip(pal["accent"], pal["bg1"]))
-    draw.ellipse([W - 300, -150, W + 150, 300], fill=ca)
-    draw.ellipse([-100, H - 250, 250, H + 100], fill=ca)
-
-    # Polices (fallback système)
-    def get_font(size, bold=False):
-        paths = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-        ]
-        for p in paths:
-            try:
-                return ImageFont.truetype(p, size)
-            except (OSError, IOError):
-                continue
-        return ImageFont.load_default()
-
-    font_title = get_font(64, bold=True)
-    font_body = get_font(36)
-    font_tag = get_font(28)
-    font_brand = get_font(32, bold=True)
-
-    y_pos = 120
-
-    # Barre accent en haut
-    draw.rectangle([80, y_pos - 20, 200, y_pos - 10], fill=pal["accent"])
-    y_pos += 20
-
-    # Titre
-    if titre:
-        wrapped = textwrap.wrap(titre, width=22)
-        for line in wrapped[:3]:
-            draw.text((90, y_pos), line, fill=pal["text"], font=font_title)
-            y_pos += 78
-        y_pos += 30
-
-    # Contenu
-    if contenu:
-        wrapped = textwrap.wrap(contenu, width=38)
-        for line in wrapped[:8]:
-            draw.text((90, y_pos), line, fill=(*pal["text"][:3],), font=font_body)
-            y_pos += 48
-        if len(wrapped) > 8:
-            draw.text((90, y_pos), "...", fill=pal["text"], font=font_body)
-            y_pos += 48
-        y_pos += 20
-
-    # Hashtags
-    if hashtags:
-        tags_text = " ".join(f"#{t}" if not t.startswith("#") else t for t in hashtags[:5])
-        wrapped = textwrap.wrap(tags_text, width=45)
-        for line in wrapped[:2]:
-            draw.text((90, y_pos), line, fill=pal["accent"], font=font_tag)
-            y_pos += 38
-
-    # Footer branding (fond sombre semi-transparent simulé)
-    draw.rectangle([0, H - 100, W, H], fill=(20, 20, 30))
-    draw.text((90, H - 75), "KLIKPHONE", fill=pal["accent"], font=font_brand)
-    draw.text((310, H - 70), "Chambéry — Réparation smartphones", fill=(200, 200, 200), font=font_tag)
-
-    # Export JPEG
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=92)
-    return buf.getvalue()
+def _store_image(img_bytes: bytes) -> str:
+    """Stocke une image en mémoire et retourne l'URL publique."""
+    import uuid
+    image_id = str(uuid.uuid4())[:12]
+    _generated_images[image_id] = img_bytes
+    # Garder max 50 images en mémoire
+    if len(_generated_images) > 50:
+        oldest = list(_generated_images.keys())[0]
+        del _generated_images[oldest]
+    base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+    if base_url and not base_url.startswith("http"):
+        base_url = f"https://{base_url}"
+    if not base_url:
+        base_url = "https://klikphone-sav-v2-production.up.railway.app"
+    return f"{base_url}/api/marketing/images/{image_id}.png"
 
 
-@router.get("/images/{image_id}.jpg")
+@router.get("/images/{image_id}.png")
 async def serve_generated_image(image_id: str):
     """Sert une image générée stockée en mémoire."""
     from fastapi.responses import Response
     img_data = _generated_images.get(image_id)
     if not img_data:
         raise HTTPException(404, "Image non trouvée ou expirée")
-    return Response(content=img_data, media_type="image/jpeg")
+    return Response(content=img_data, media_type="image/png")
+
+
+async def _generate_with_together(prompt: str) -> bytes:
+    """Génère une image via Together AI (FLUX.1-schnell-Free)."""
+    import httpx
+    import base64
+    together_key = os.getenv("TOGETHER_API_KEY")
+    if not together_key:
+        raise ValueError("TOGETHER_API_KEY non configurée")
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.together.xyz/v1/images/generations",
+            headers={"Authorization": f"Bearer {together_key}"},
+            json={
+                "model": "black-forest-labs/FLUX.1-schnell-Free",
+                "prompt": prompt,
+                "width": 1024,
+                "height": 1024,
+                "steps": 4,
+                "n": 1,
+                "response_format": "b64_json",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        b64 = data["data"][0]["b64_json"]
+        return base64.b64decode(b64)
+
+
+async def _generate_with_horde(prompt: str) -> bytes:
+    """Génère une image via AI Horde (gratuit, pas de clé API)."""
+    import httpx
+    import base64
+    import asyncio
+    headers = {"apikey": "0000000000", "Content-Type": "application/json"}
+    payload = {
+        "prompt": prompt,
+        "params": {
+            "width": 1024,
+            "height": 1024,
+            "steps": 25,
+            "cfg_scale": 7,
+            "sampler_name": "k_euler",
+        },
+        "models": ["AlbedoBase XL (SDXL)"],
+        "nsfw": False,
+        "r2": True,
+    }
+    async with httpx.AsyncClient(timeout=180) as client:
+        # Soumettre le job
+        resp = await client.post(
+            "https://aihorde.net/api/v2/generate/async",
+            headers=headers,
+            json=payload,
+        )
+        resp.raise_for_status()
+        job_id = resp.json()["id"]
+
+        # Polling (max 120s)
+        for _ in range(60):
+            await asyncio.sleep(3)
+            check = await client.get(
+                f"https://aihorde.net/api/v2/generate/check/{job_id}",
+                headers=headers,
+            )
+            check_data = check.json()
+            if check_data.get("done"):
+                break
+        else:
+            raise TimeoutError("AI Horde: timeout après 180s")
+
+        # Récupérer le résultat
+        status = await client.get(
+            f"https://aihorde.net/api/v2/generate/status/{job_id}",
+            headers=headers,
+        )
+        status_data = status.json()
+        generations = status_data.get("generations", [])
+        if not generations:
+            raise ValueError("AI Horde: aucune image générée")
+
+        gen = generations[0]
+        # L'image peut être une URL (R2) ou du base64
+        if gen.get("img", "").startswith("http"):
+            img_resp = await client.get(gen["img"])
+            img_resp.raise_for_status()
+            return img_resp.content
+        else:
+            return base64.b64decode(gen["img"])
 
 
 @router.post("/posts/generer-image")
 async def generer_image(body: ImageGenerer, user: dict = Depends(get_current_user)):
-    """Génère une image brandée Klikphone avec titre + contenu personnalisés."""
-    import uuid
+    """Génère une image IA à partir d'une description.
 
-    titre = body.titre or ""
-    contenu = body.contenu or ""
-    hashtags = body.hashtags or []
-    style = body.style or "violet"
+    1. Claude optimise le prompt FR → EN pour la génération d'image
+    2. Together AI (FLUX.1, si clé configurée) ou AI Horde (gratuit, fallback)
+    3. Stocke l'image et retourne l'URL publique
+    """
+    user_prompt = body.prompt.strip()
+    if not user_prompt:
+        raise HTTPException(400, "Prompt requis")
 
-    # Générer l'image
-    img_bytes = _generate_branded_image(titre, contenu, hashtags, style)
+    # Étape 1 : Optimiser le prompt avec Claude
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    en_prompt = user_prompt  # fallback
+    if api_key:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            resp = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=300,
+                messages=[{"role": "user", "content": user_prompt}],
+                system=(
+                    "You are an expert image prompt engineer for AI image generation (Flux/SDXL). "
+                    "The user describes an image they want in French. Generate a detailed English prompt "
+                    "that will produce a stunning, professional, photorealistic image. "
+                    "The image is for Instagram/LinkedIn social media (1080x1080 square). "
+                    "Context: Klikphone is a smartphone repair shop in Chambéry, France. "
+                    "Rules:\n"
+                    "- Output ONLY the English prompt, nothing else\n"
+                    "- Be very descriptive: lighting, composition, colors, style\n"
+                    "- Make it photorealistic and professional\n"
+                    "- Include 'professional product photography', 'studio lighting', '4K' when relevant\n"
+                    "- If the user mentions phones/iPhones/Samsung, describe them realistically\n"
+                    "- Keep the prompt under 150 words"
+                ),
+            )
+            en_prompt = resp.content[0].text.strip()
+        except Exception:
+            pass
 
-    # Stocker
-    image_id = str(uuid.uuid4())[:12]
-    _generated_images[image_id] = img_bytes
+    # Étape 2 : Générer l'image (Together AI → AI Horde fallback)
+    img_bytes = None
+    provider = None
+    errors = []
 
-    # Nettoyer les anciennes (garder max 50)
-    if len(_generated_images) > 50:
-        oldest = list(_generated_images.keys())[0]
-        del _generated_images[oldest]
+    # Essayer Together AI d'abord
+    try:
+        img_bytes = await _generate_with_together(en_prompt)
+        provider = "together"
+    except Exception as e:
+        errors.append(f"Together AI: {e}")
 
-    base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
-    if base_url and not base_url.startswith("http"):
-        base_url = f"https://{base_url}"
-    if not base_url:
-        base_url = "https://klikphone-sav-v2-production.up.railway.app"
+    # Fallback AI Horde
+    if not img_bytes:
+        try:
+            img_bytes = await _generate_with_horde(en_prompt)
+            provider = "horde"
+        except Exception as e:
+            errors.append(f"AI Horde: {e}")
 
-    image_url = f"{base_url}/api/marketing/images/{image_id}.jpg"
+    if not img_bytes:
+        raise HTTPException(
+            500,
+            f"Impossible de générer l'image. Erreurs: {'; '.join(errors)}. "
+            "Astuce: ajoutez TOGETHER_API_KEY (gratuit sur together.ai) pour de meilleurs résultats."
+        )
 
-    return {"image_url": image_url}
+    # Étape 3 : Stocker et retourner l'URL
+    image_url = _store_image(img_bytes)
+
+    return {"image_url": image_url, "prompt_used": en_prompt, "provider": provider}
 
 
 @router.post("/posts/generer")

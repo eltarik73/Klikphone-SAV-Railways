@@ -90,7 +90,7 @@ export default function CommunityManager() {
   const [genImageUrl, setGenImageUrl] = useState('');
   const [generatingImage, setGeneratingImage] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
-  const [genImageStyle, setGenImageStyle] = useState('violet');
+  const [genImagePrompt, setGenImagePrompt] = useState('');
 
   // Calendar
   const [events, setEvents] = useState([]);
@@ -210,16 +210,17 @@ export default function CommunityManager() {
   };
 
   const handleGenerateImage = async () => {
-    const titre = generatedPost?.titre || '';
-    const contenu = generatedPost?.contenu || genContexte;
-    if (!contenu.trim() && !titre.trim()) return;
-    const hashtags = generatedPost?.hashtags || [];
+    const prompt = genImagePrompt.trim();
+    if (!prompt) return;
     setGeneratingImage(true);
     setImageLoading(true);
+    setGenImageUrl('');
     try {
-      const data = await api.genererImage({ titre, contenu, hashtags, style: genImageStyle });
+      const data = await api.genererImage({ prompt });
       if (data.image_url) {
         setGenImageUrl(data.image_url);
+      } else {
+        setImageLoading(false);
       }
     } catch (err) {
       console.error('Erreur génération image:', err);
@@ -243,6 +244,7 @@ export default function CommunityManager() {
       setGeneratedPost(null);
       setGenContexte('');
       setGenImageUrl('');
+      setGenImagePrompt('');
       loadPosts();
     } catch (err) {
       console.error('Erreur sauvegarde:', err);
@@ -297,6 +299,7 @@ export default function CommunityManager() {
       setGeneratedPost(null);
       setGenContexte('');
       setGenImageUrl('');
+      setGenImagePrompt('');
       loadPosts();
     } catch (err) {
       console.error('Erreur publication:', err);
@@ -727,43 +730,32 @@ export default function CommunityManager() {
                 <div className="mb-4">
                   {!genImageUrl ? (
                     <div className="space-y-2">
-                      {/* Style color picker */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-zinc-500 font-medium">Style :</span>
-                        {[
-                          { id: 'violet', color: 'bg-violet-500', label: 'Violet' },
-                          { id: 'bleu', color: 'bg-blue-500', label: 'Bleu' },
-                          { id: 'vert', color: 'bg-emerald-600', label: 'Vert' },
-                          { id: 'orange', color: 'bg-orange-500', label: 'Orange' },
-                          { id: 'sombre', color: 'bg-zinc-800', label: 'Sombre' },
-                        ].map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => setGenImageStyle(s.id)}
-                            title={s.label}
-                            className={`w-6 h-6 rounded-full ${s.color} transition-all ${genImageStyle === s.id ? 'ring-2 ring-offset-2 ring-violet-500 scale-110' : 'opacity-60 hover:opacity-100'}`}
-                          />
-                        ))}
-                      </div>
+                      {/* Prompt image dédié */}
+                      <textarea
+                        value={genImagePrompt}
+                        onChange={(e) => setGenImagePrompt(e.target.value)}
+                        placeholder="Décrivez l'image souhaitée... Ex: iPhone 15 Pro posé sur un bureau en bois avec des outils de réparation"
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                      />
                       <div className="flex gap-2">
                         <button
                           onClick={handleGenerateImage}
-                          disabled={generatingImage || (!genContexte.trim() && !generatedPost)}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 text-violet-600 text-sm font-semibold hover:bg-violet-100 disabled:opacity-50 transition-colors"
+                          disabled={generatingImage || !genImagePrompt.trim()}
+                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-semibold hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
                         >
                           {generatingImage ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Génération IA...</>
                           ) : (
-                            <><ImagePlus className="w-4 h-4" /> Générer une image</>
+                            <><ImagePlus className="w-4 h-4" /> Générer l'image</>
                           )}
                         </button>
                         <span className="flex items-center text-xs text-zinc-400">ou</span>
                         <input
                           type="url"
-                          value={genImageUrl}
-                          onChange={(e) => setGenImageUrl(e.target.value)}
-                          placeholder="Coller une URL"
-                          className="w-40 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                          onChange={(e) => { setGenImageUrl(e.target.value); setImageLoading(true); }}
+                          placeholder="Coller URL Midjourney"
+                          className="w-44 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
                         />
                       </div>
                     </div>
@@ -771,15 +763,16 @@ export default function CommunityManager() {
                     <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
                       {/* Loading placeholder */}
                       {imageLoading && (
-                        <div className="w-full h-40 flex flex-col items-center justify-center gap-2 bg-violet-50">
-                          <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
-                          <span className="text-xs text-violet-600 font-medium">Chargement de l'image...</span>
+                        <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-violet-50 to-indigo-50">
+                          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+                          <span className="text-xs text-violet-600 font-medium">Génération en cours...</span>
+                          <span className="text-[10px] text-zinc-400">Peut prendre 10-30 secondes</span>
                         </div>
                       )}
                       <img
                         src={genImageUrl}
                         alt="Aperçu"
-                        className={`w-full h-40 object-cover ${imageLoading ? 'hidden' : ''}`}
+                        className={`w-full h-52 object-cover ${imageLoading ? 'hidden' : ''}`}
                         onLoad={() => setImageLoading(false)}
                         onError={(e) => { setImageLoading(false); e.target.src = ''; e.target.className = 'hidden'; }}
                       />
@@ -787,7 +780,7 @@ export default function CommunityManager() {
                         <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-gradient-to-t from-black/60 to-transparent">
                           <button
                             onClick={handleGenerateImage}
-                            disabled={generatingImage}
+                            disabled={generatingImage || !genImagePrompt.trim()}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-zinc-700 text-xs font-semibold hover:bg-white transition-colors"
                           >
                             {generatingImage ? (
@@ -801,7 +794,7 @@ export default function CommunityManager() {
                             onClick={() => { setGenImageUrl(''); setImageLoading(false); }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-red-600 text-xs font-semibold hover:bg-white transition-colors"
                           >
-                            <Trash className="w-3.5 h-3.5" /> Supprimer
+                            <Trash className="w-3.5 h-3.5" /> Changer
                           </button>
                         </div>
                       )}
