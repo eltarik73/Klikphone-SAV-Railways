@@ -50,11 +50,15 @@ def _ensure_table():
 # ---------------------------------------------------------------------------
 
 def arrondi_9_superieur(prix: float) -> int:
-    """Arrondit au 9 superieur.
+    """Arrondit au 9 superieur (plus petit entier finissant par 9 >= prix).
 
-    Exemples : 61->69, 72->79, 83->89, 91->99, 101->109, 145->149.
+    Exemples : 61->69, 72->79, 83->89, 90->99, 91->99, 101->109, 145->149.
     """
-    return int(math.ceil(prix / 10) * 10 - 1)
+    dizaine = int(prix) // 10
+    candidat = dizaine * 10 + 9
+    if candidat >= prix:
+        return candidat
+    return candidat + 10
 
 
 def calcul_prix_client(prix_ht: float, type_piece: str, categorie: str) -> int:
@@ -195,6 +199,36 @@ async def import_tarifs(
             inserted += 1
 
     return {"inserted": inserted}
+
+
+@router.post("/recalculate")
+async def recalculate_tarifs():
+    """Recalcule tous les prix_client a partir de prix_fournisseur_ht."""
+    updated = 0
+    with get_cursor() as cur:
+        cur.execute("SELECT id, prix_fournisseur_ht, type_piece, categorie FROM tarifs")
+        rows = cur.fetchall()
+        for row in rows:
+            old_prix = None
+            cur2_query = "SELECT prix_client FROM tarifs WHERE id = %s"
+            cur.execute(cur2_query, (row["id"],))
+            old_row = cur.fetchone()
+            if old_row:
+                old_prix = old_row["prix_client"]
+
+            new_prix = calcul_prix_client(
+                float(row["prix_fournisseur_ht"]),
+                row["type_piece"],
+                row["categorie"] or "standard",
+            )
+            if old_prix != new_prix:
+                cur.execute(
+                    "UPDATE tarifs SET prix_client = %s, updated_at = NOW() WHERE id = %s",
+                    (new_prix, row["id"]),
+                )
+                updated += 1
+
+    return {"recalculated": updated, "total": len(rows)}
 
 
 @router.delete("/clear")
