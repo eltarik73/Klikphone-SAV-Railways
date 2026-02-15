@@ -4,18 +4,22 @@ Scraping LCD-Phone.com pour les prix fournisseur + marge automatique.
 """
 
 import os
+import threading
+import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/telephones", tags=["telephones"])
+logger = logging.getLogger(__name__)
 
 _table_checked = False
+_sync_status = {"running": False, "last_result": None, "started_at": None}
 
 
 def _ensure_table():
@@ -69,15 +73,58 @@ def _row_to_dict(row):
     return d
 
 
+def _run_sync_background():
+    """Execute sync in background thread."""
+    global _sync_status
+    try:
+        from app.services.scraper_lcdphone import sync_telephones_lcdphone
+        result = sync_telephones_lcdphone()
+        _sync_status["last_result"] = result
+        _sync_status["finished_at"] = datetime.utcnow().isoformat()
+    except Exception as e:
+        logger.error(f"Background sync error: {e}")
+        _sync_status["last_result"] = {"success": False, "error": str(e)}
+        _sync_status["finished_at"] = datetime.utcnow().isoformat()
+    finally:
+        _sync_status["running"] = False
+
+
 @router.post("/sync")
-async def sync_catalogue():
-    """Lance la synchronisation avec LCD-Phone."""
+async def sync_catalogue(background_tasks: BackgroundTasks):
+    """Lance la synchronisation avec LCD-Phone en arrière-plan."""
+    global _sync_status
     _ensure_table()
-    from app.services.scraper_lcdphone import sync_telephones_lcdphone
-    result = sync_telephones_lcdphone()
-    if result.get("success"):
-        return result
-    raise HTTPException(status_code=500, detail=result.get("error", "Erreur sync"))
+
+    if _sync_status["running"]:
+        return {
+            "message": "Sync déjà en cours",
+            "started_at": _sync_status.get("started_at"),
+        }
+
+    _sync_status = {
+        "running": True,
+        "last_result": None,
+        "started_at": datetime.utcnow().isoformat(),
+        "finished_at": None,
+    }
+
+    background_tasks.add_task(_run_sync_background)
+
+    return {
+        "message": "Sync lancée en arrière-plan",
+        "started_at": _sync_status["started_at"],
+    }
+
+
+@router.get("/sync-status")
+async def sync_status():
+    """Vérifie l'état de la synchronisation."""
+    return {
+        "running": _sync_status["running"],
+        "started_at": _sync_status.get("started_at"),
+        "finished_at": _sync_status.get("finished_at"),
+        "last_result": _sync_status.get("last_result"),
+    }
 
 
 @router.get("/probe")
