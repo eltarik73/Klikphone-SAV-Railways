@@ -762,49 +762,33 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/late/accounts")
-async def list_late_accounts():
-    """Liste les comptes sociaux connectés sur Late — teste plusieurs endpoints."""
+async def list_late_accounts(user: dict = Depends(get_current_user)):
+    """Liste les comptes sociaux connectés sur Late."""
     late_key = os.getenv("LATE_API_KEY")
     if not late_key:
         raise HTTPException(400, "LATE_API_KEY non configurée")
 
     import httpx
-    base = "https://getlate.dev/api/v1"
-    headers = {"Authorization": f"Bearer {late_key}"}
-
-    # Tester plusieurs chemins possibles
-    paths = [
-        "/accounts",
-        "/social-accounts",
-        "/channels",
-        "/profiles/accounts",
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://getlate.dev/api/v1/accounts",
+            headers={"Authorization": f"Bearer {late_key}"},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Late API erreur: {resp.status_code} — {resp.text[:300]}")
+    data = resp.json()
+    accounts = data.get("accounts", [])
+    return [
+        {
+            "id": a["_id"],
+            "platform": a.get("platform"),
+            "username": a.get("username"),
+            "displayName": a.get("displayName"),
+            "isActive": a.get("isActive"),
+            "profilePicture": a.get("profilePicture"),
+        }
+        for a in accounts
     ]
-
-    # D'abord récupérer le profile ID pour tester les sous-chemins
-    results = {}
-    async with httpx.AsyncClient(timeout=10) as client:
-        # Récupérer profils pour avoir le profile_id
-        prof_resp = await client.get(f"{base}/profiles", headers=headers)
-        prof_data = prof_resp.json() if prof_resp.status_code == 200 else []
-        if isinstance(prof_data, list) and prof_data:
-            pid = prof_data[0].get("_id", "")
-            if pid:
-                paths.append(f"/profiles/{pid}/accounts")
-                paths.append(f"/profiles/{pid}/social-accounts")
-                paths.append(f"/profiles/{pid}/channels")
-
-        for path in paths:
-            try:
-                r = await client.get(f"{base}{path}", headers=headers)
-                ct = r.headers.get("content-type", "")
-                if "json" in ct:
-                    results[path] = {"status": r.status_code, "data": r.json()}
-                else:
-                    results[path] = {"status": r.status_code, "type": ct[:50]}
-            except Exception as e:
-                results[path] = {"error": str(e)[:100]}
-
-    return {"tested_paths": results, "profile": prof_data}
 
 
 # Mapping plateforme interne → nom Late
@@ -849,74 +833,45 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
     import httpx
     late_headers = {"Authorization": f"Bearer {late_key}"}
 
-    # Récupérer les comptes sociaux connectés
+    # Récupérer les comptes sociaux connectés via GET /api/v1/accounts
     async with httpx.AsyncClient(timeout=15) as client:
         accounts_resp = await client.get(
-            "https://getlate.dev/api/v1/core/accounts",
+            "https://getlate.dev/api/v1/accounts",
             headers=late_headers,
         )
     if accounts_resp.status_code != 200:
         raise HTTPException(502, f"Impossible de récupérer les comptes Late: {accounts_resp.text[:300]}")
 
-    accounts_data = accounts_resp.json()
-    # Late peut renvoyer une liste ou un objet avec clé "data"/"accounts"
-    if isinstance(accounts_data, list):
-        accounts = accounts_data
-    else:
-        accounts = accounts_data.get("data", accounts_data.get("accounts", accounts_data.get("items", [])))
+    accounts = accounts_resp.json().get("accounts", [])
 
     # Mapper la plateforme du post vers les comptes Late connectés
     target_platform = _PLATFORM_MAP.get(plateforme, plateforme)
     platforms_payload = []
 
-    # Chercher dans tous les champs possibles
     for acc in accounts:
-        acc_platform = (
-            acc.get("platform")
-            or acc.get("provider")
-            or acc.get("socialPlatform")
-            or acc.get("type")
-            or ""
-        ).lower()
-        acc_id = acc.get("_id") or acc.get("id") or ""
-
-        if acc_platform == target_platform and acc_id:
+        if acc.get("platform") == target_platform and acc.get("isActive"):
             platforms_payload.append({
-                "platform": target_platform,
-                "accountId": acc_id,
+                "platform": acc["platform"],
+                "accountId": acc["_id"],
             })
 
-    # Si pas trouvé pour la plateforme ciblée, publier sur TOUS les comptes connectés
+    # Si pas trouvé pour la plateforme ciblée, publier sur TOUS les comptes actifs
     if not platforms_payload:
         for acc in accounts:
-            acc_platform = (
-                acc.get("platform")
-                or acc.get("provider")
-                or acc.get("socialPlatform")
-                or acc.get("type")
-                or ""
-            ).lower()
-            acc_id = acc.get("_id") or acc.get("id") or ""
-            if acc_id and acc_platform in _PLATFORM_MAP.values():
+            if acc.get("isActive") and acc.get("platform") in _PLATFORM_MAP.values():
                 platforms_payload.append({
-                    "platform": acc_platform,
-                    "accountId": acc_id,
+                    "platform": acc["platform"],
+                    "accountId": acc["_id"],
                 })
 
     if not platforms_payload:
-        # Debug : montrer les clés de chaque compte pour diagnostiquer
-        debug_accounts = [
-            {k: v for k, v in a.items() if not isinstance(v, (dict, list))}
-            for a in (accounts[:5] if isinstance(accounts, list) else [])
-        ]
+        found = [f"{a.get('platform')}:{a.get('username')}" for a in accounts]
         raise HTTPException(
             400,
-            f"Aucun compte '{plateforme}' trouvé. "
-            f"Comptes Late ({len(accounts)}): {json.dumps(debug_accounts, default=str)[:800]}. "
-            "Connectez vos réseaux sur https://app.getlate.dev"
+            f"Aucun compte actif '{plateforme}' trouvé. Comptes détectés: {found}"
         )
 
-    # 3. Créer et publier le post via Late
+    # 3. Publier via POST /api/v1/posts
     late_body = {
         "content": full_text,
         "platforms": platforms_payload,
@@ -925,7 +880,7 @@ async def publier_post(post_id: int, user: dict = Depends(get_current_user)):
 
     async with httpx.AsyncClient(timeout=30) as client:
         late_resp = await client.post(
-            "https://getlate.dev/api/v1/core/posts",
+            "https://getlate.dev/api/v1/posts",
             headers={
                 "Authorization": f"Bearer {late_key}",
                 "Content-Type": "application/json",
