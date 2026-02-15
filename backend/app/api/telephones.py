@@ -70,7 +70,7 @@ def _row_to_dict(row):
 
 
 @router.post("/sync")
-async def sync_catalogue(user: dict = Depends(get_current_user)):
+async def sync_catalogue():
     """Lance la synchronisation avec LCD-Phone."""
     _ensure_table()
     from app.services.scraper_lcdphone import sync_telephones_lcdphone
@@ -81,7 +81,7 @@ async def sync_catalogue(user: dict = Depends(get_current_user)):
 
 
 @router.get("/probe")
-async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
+async def probe_lcdphone_endpoint():
     """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
     from app.services.scraper_lcdphone import probe_lcdphone
     return probe_lcdphone()
