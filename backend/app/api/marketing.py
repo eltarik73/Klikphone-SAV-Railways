@@ -763,20 +763,48 @@ async def delete_post(post_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/late/accounts")
 async def list_late_accounts(user: dict = Depends(get_current_user)):
-    """Liste les comptes sociaux connectés sur Late."""
+    """Liste les comptes sociaux connectés sur Late — teste plusieurs endpoints."""
     late_key = os.getenv("LATE_API_KEY")
     if not late_key:
         raise HTTPException(400, "LATE_API_KEY non configurée")
 
     import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            "https://getlate.dev/api/v1/core/accounts",
-            headers={"Authorization": f"Bearer {late_key}"},
-        )
-    if resp.status_code != 200:
-        raise HTTPException(502, f"Late API erreur: {resp.status_code} — {resp.text[:300]}")
-    return resp.json()
+    base = "https://getlate.dev/api/v1"
+    headers = {"Authorization": f"Bearer {late_key}"}
+
+    # Tester plusieurs chemins possibles
+    paths = [
+        "/accounts",
+        "/social-accounts",
+        "/channels",
+        "/profiles/accounts",
+    ]
+
+    # D'abord récupérer le profile ID pour tester les sous-chemins
+    results = {}
+    async with httpx.AsyncClient(timeout=10) as client:
+        # Récupérer profils pour avoir le profile_id
+        prof_resp = await client.get(f"{base}/profiles", headers=headers)
+        prof_data = prof_resp.json() if prof_resp.status_code == 200 else []
+        if isinstance(prof_data, list) and prof_data:
+            pid = prof_data[0].get("_id", "")
+            if pid:
+                paths.append(f"/profiles/{pid}/accounts")
+                paths.append(f"/profiles/{pid}/social-accounts")
+                paths.append(f"/profiles/{pid}/channels")
+
+        for path in paths:
+            try:
+                r = await client.get(f"{base}{path}", headers=headers)
+                ct = r.headers.get("content-type", "")
+                if "json" in ct:
+                    results[path] = {"status": r.status_code, "data": r.json()}
+                else:
+                    results[path] = {"status": r.status_code, "type": ct[:50]}
+            except Exception as e:
+                results[path] = {"error": str(e)[:100]}
+
+    return {"tested_paths": results, "profile": prof_data}
 
 
 # Mapping plateforme interne → nom Late
