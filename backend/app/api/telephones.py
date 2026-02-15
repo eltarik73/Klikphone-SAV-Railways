@@ -4,6 +4,7 @@ Scraping LCD-Phone.com pour les prix fournisseur + marge automatique.
 """
 
 import os
+import time
 import threading
 import logging
 from datetime import datetime
@@ -20,6 +21,29 @@ logger = logging.getLogger(__name__)
 
 _table_checked = False
 _sync_status = {"running": False, "last_result": None, "started_at": None}
+
+
+# ─── Simple TTL cache ────────────────────────────────
+class _Cache:
+    def __init__(self, ttl=300):
+        self._data = {}
+        self._ttl = ttl
+
+    def get(self, key):
+        entry = self._data.get(key)
+        if entry and time.time() - entry[1] < self._ttl:
+            return entry[0]
+        self._data.pop(key, None)
+        return None
+
+    def set(self, key, value):
+        self._data[key] = (value, time.time())
+
+    def clear(self):
+        self._data.clear()
+
+
+_cache = _Cache(ttl=300)  # 5 min
 
 
 def _ensure_table():
@@ -56,6 +80,9 @@ def _ensure_table():
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_marque ON telephones_catalogue(marque)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_type ON telephones_catalogue(type_produit)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_actif ON telephones_catalogue(actif)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_prix ON telephones_catalogue(prix_vente)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_stock ON telephones_catalogue(en_stock)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_sync ON telephones_catalogue(derniere_sync DESC)")
         _table_checked = True
     except Exception as e:
         print(f"Warning telephones table: {e}")
@@ -87,6 +114,7 @@ def _run_sync_background():
         _sync_status["finished_at"] = datetime.utcnow().isoformat()
     finally:
         _sync_status["running"] = False
+        _cache.clear()  # Invalidate stats/marques cache after sync
 
 
 @router.post("/sync")
@@ -134,6 +162,12 @@ async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
     return probe_lcdphone()
 
 
+_CATALOGUE_COLS = (
+    "id, marque, modele, stockage, couleur, grade, type_produit, "
+    "prix_vente, en_stock, stock_fournisseur, image_url, garantie_mois"
+)
+
+
 @router.get("/catalogue")
 async def liste_telephones(
     marque: Optional[str] = None,
@@ -142,28 +176,34 @@ async def liste_telephones(
     en_stock: Optional[bool] = None,
     search: Optional[str] = None,
     tri: Optional[str] = "marque",
+    page: int = Query(1, ge=1),
+    limit: int = Query(24, ge=1, le=100),
     user: dict = Depends(get_current_user),
 ):
-    """Liste des téléphones avec filtres."""
+    """Liste des téléphones avec filtres et pagination."""
     _ensure_table()
     with get_cursor() as cur:
-        query = "SELECT * FROM telephones_catalogue WHERE actif = TRUE"
+        where = "actif = TRUE"
         params = []
         if marque:
-            query += " AND marque = %s"
+            where += " AND marque = %s"
             params.append(marque)
         if type_produit:
-            query += " AND type_produit = %s"
+            where += " AND type_produit = %s"
             params.append(type_produit)
         if grade:
-            query += " AND grade = %s"
+            where += " AND grade = %s"
             params.append(grade)
         if en_stock is not None:
-            query += " AND en_stock = %s"
+            where += " AND en_stock = %s"
             params.append(en_stock)
         if search:
-            query += " AND (modele ILIKE %s OR marque ILIKE %s)"
+            where += " AND (modele ILIKE %s OR marque ILIKE %s)"
             params.extend([f"%{search}%", f"%{search}%"])
+
+        # Count total
+        cur.execute(f"SELECT COUNT(*) as cnt FROM telephones_catalogue WHERE {where}", params)
+        total = cur.fetchone()["cnt"]
 
         order_map = {
             "marque": "marque, modele, stockage",
@@ -171,14 +211,30 @@ async def liste_telephones(
             "prix_desc": "prix_vente DESC NULLS LAST",
             "nouveautes": "derniere_sync DESC",
         }
-        query += f" ORDER BY {order_map.get(tri, 'marque, modele')}"
-        cur.execute(query, params)
-        return [_row_to_dict(r) for r in cur.fetchall()]
+        order = order_map.get(tri, "marque, modele")
+        offset = (page - 1) * limit
+
+        cur.execute(
+            f"SELECT {_CATALOGUE_COLS} FROM telephones_catalogue WHERE {where} ORDER BY {order} LIMIT %s OFFSET %s",
+            params + [limit, offset],
+        )
+        items = [_row_to_dict(r) for r in cur.fetchall()]
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "total_pages": max(1, (total + limit - 1) // limit),
+        }
 
 
 @router.get("/stats")
 async def stats_catalogue(user: dict = Depends(get_current_user)):
-    """Statistiques du catalogue."""
+    """Statistiques du catalogue (cached 5 min)."""
+    cached = _cache.get("stats")
+    if cached:
+        return cached
     _ensure_table()
     with get_cursor() as cur:
         cur.execute("""
@@ -194,7 +250,7 @@ async def stats_catalogue(user: dict = Depends(get_current_user)):
             FROM telephones_catalogue WHERE actif = TRUE
         """)
         row = cur.fetchone()
-        return {
+        result = {
             "total": row["total"] or 0,
             "en_stock": row["en_stock"] or 0,
             "neufs": row["neufs"] or 0,
@@ -204,11 +260,16 @@ async def stats_catalogue(user: dict = Depends(get_current_user)):
             "prix_max": float(row["prix_max"]) if row["prix_max"] else 0,
             "derniere_sync": row["derniere_sync"].isoformat() if row["derniere_sync"] else None,
         }
+        _cache.set("stats", result)
+        return result
 
 
 @router.get("/marques")
 async def liste_marques(user: dict = Depends(get_current_user)):
-    """Liste des marques disponibles."""
+    """Liste des marques disponibles (cached 5 min)."""
+    cached = _cache.get("marques")
+    if cached:
+        return cached
     _ensure_table()
     with get_cursor() as cur:
         cur.execute("""
@@ -217,4 +278,6 @@ async def liste_marques(user: dict = Depends(get_current_user)):
             FROM telephones_catalogue WHERE actif = TRUE
             GROUP BY marque ORDER BY nb_modeles DESC
         """)
-        return [{"marque": r["marque"], "nb_modeles": r["nb_modeles"], "nb_en_stock": r["nb_en_stock"]} for r in cur.fetchall()]
+        result = [{"marque": r["marque"], "nb_modeles": r["nb_modeles"], "nb_en_stock": r["nb_en_stock"]} for r in cur.fetchall()]
+        _cache.set("marques", result)
+        return result

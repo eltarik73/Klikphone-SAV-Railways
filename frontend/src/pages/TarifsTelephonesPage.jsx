@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import {
   Smartphone, Search, RefreshCw, Filter, ChevronDown, Shield,
   Package, Loader2, SlidersHorizontal, Sparkles, Tag,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -114,20 +115,20 @@ function KPICard({ icon: Icon, value, label, color }) {
 
 // ─── Phone Card ──────────────────────────────────
 
-function PhoneCard({ phone }) {
+const PhoneCard = memo(function PhoneCard({ phone }) {
   const grade = phone.grade || (phone.type_produit === 'Neuf' ? 'Neuf' : null);
   const gradeStyle = getGradeStyle(grade);
   const inStock = phone.en_stock !== false && phone.en_stock !== 0;
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden transition-all hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/5 group">
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden transition-shadow duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/5 group">
       {/* Image area */}
       <div className="relative h-48 bg-slate-900 flex items-center justify-center overflow-hidden">
         {phone.image_url ? (
           <img
             src={phone.image_url}
             alt={phone.modele || 'Telephone'}
-            className="h-full w-full object-contain p-4 group-hover:scale-105 transition-transform duration-300"
+            className="h-full w-full object-contain p-4 group-hover:scale-105 transition-transform duration-200"
             loading="lazy"
             onError={(e) => {
               e.target.style.display = 'none';
@@ -200,7 +201,7 @@ function PhoneCard({ phone }) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Toggle Switch ───────────────────────────────
 
@@ -241,9 +242,15 @@ export default function TarifsTelephonesPage() {
   const [typeProduit, setTypeProduit] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [enStockOnly, setEnStockOnly] = useState(false);
+  const [enStockOnly, setEnStockOnly] = useState(true);
   const [sortBy, setSortBy] = useState('prix_asc');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const ITEMS_PER_PAGE = 24;
 
   // ─── Data fetching ─────────────────────────────
 
@@ -263,10 +270,10 @@ export default function TarifsTelephonesPage() {
     }
   }, []);
 
-  const fetchPhones = useCallback(async () => {
+  const fetchPhones = useCallback(async (page = currentPage) => {
     setLoadingPhones(true);
     try {
-      const params = {};
+      const params = { page, limit: ITEMS_PER_PAGE };
       if (selectedBrand) params.marque = selectedBrand;
       if (typeProduit) params.type_produit = typeProduit;
       if (enStockOnly) params.en_stock = true;
@@ -274,24 +281,43 @@ export default function TarifsTelephonesPage() {
       if (sortBy) params.tri = sortBy;
 
       const data = await api.getTelephonesCatalogue(params);
-      setPhones(Array.isArray(data) ? data : []);
+      if (data && data.items) {
+        setPhones(data.items);
+        setTotalPages(data.total_pages || 1);
+        setTotalItems(data.total || 0);
+      } else {
+        // Fallback for old API format
+        const arr = Array.isArray(data) ? data : [];
+        setPhones(arr);
+        setTotalPages(1);
+        setTotalItems(arr.length);
+      }
     } catch (err) {
       console.error('Erreur chargement telephones:', err);
       setPhones([]);
     } finally {
       setLoadingPhones(false);
     }
-  }, [selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
+  }, [currentPage, selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
 
   // Initial load
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
-  // Refetch phones when filters change
+  // Reset page when filters change
+  const prevFilters = useRef({ selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy });
   useEffect(() => {
-    fetchPhones();
-  }, [fetchPhones]);
+    const pf = prevFilters.current;
+    if (pf.selectedBrand !== selectedBrand || pf.typeProduit !== typeProduit ||
+        pf.enStockOnly !== enStockOnly || pf.searchQuery !== searchQuery || pf.sortBy !== sortBy) {
+      prevFilters.current = { selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy };
+      setCurrentPage(1);
+      fetchPhones(1);
+    } else {
+      fetchPhones(currentPage);
+    }
+  }, [selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy, currentPage]);
 
   // ─── Sync handler ──────────────────────────────
 
@@ -312,7 +338,8 @@ export default function TarifsTelephonesPage() {
           }
         } catch { break; }
       }
-      await Promise.all([fetchStats(), fetchPhones()]);
+      setCurrentPage(1);
+      await Promise.all([fetchStats(), fetchPhones(1)]);
     } catch (err) {
       console.error('Erreur sync telephones:', err);
     } finally {
@@ -584,8 +611,9 @@ export default function TarifsTelephonesPage() {
                   setSelectedBrand('');
                   setSearchInput('');
                   setSearchQuery('');
-                  setEnStockOnly(false);
+                  setEnStockOnly(true);
                   setSortBy('prix_asc');
+                  setCurrentPage(1);
                 }}
                 className="mt-6 px-5 py-2.5 rounded-xl border border-slate-600 text-sm text-slate-400 hover:border-slate-500 hover:text-slate-300 transition-all"
               >
@@ -601,11 +629,61 @@ export default function TarifsTelephonesPage() {
           )}
         </div>
 
-        {/* ───────── RESULTS COUNT ───────── */}
+        {/* ───────── PAGINATION + RESULTS COUNT ───────── */}
         {!loadingPhones && phones.length > 0 && (
-          <div className="mt-6 text-center">
+          <div className="mt-8 flex flex-col items-center gap-4">
+            {/* Pagination controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg bg-slate-800/70 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {/* Page numbers */}
+                {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 7) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 4) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 3) {
+                    pageNum = totalPages - 6 + i;
+                  } else {
+                    pageNum = currentPage - 3 + i;
+                  }
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${
+                        currentPage === pageNum
+                          ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+                          : 'bg-slate-800/70 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  );
+                })}
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg bg-slate-800/70 border border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Count */}
             <p className="text-xs text-slate-500">
-              {phones.length} telephone{phones.length > 1 ? 's' : ''} affiche{phones.length > 1 ? 's' : ''}
+              {totalItems} telephone{totalItems > 1 ? 's' : ''}
+              {totalPages > 1 ? ` \u00b7 Page ${currentPage}/${totalPages}` : ''}
               {stats?.nb_marques ? ` \u00b7 ${stats.nb_marques} marques` : ''}
               {stats?.prix_min != null && stats?.prix_max != null
                 ? ` \u00b7 ${formatPrice(stats.prix_min)} \u2192 ${formatPrice(stats.prix_max)}`

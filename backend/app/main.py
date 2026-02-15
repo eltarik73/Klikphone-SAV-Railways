@@ -11,6 +11,7 @@ load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
@@ -133,6 +134,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- GZIP (compress responses > 500 bytes) ---
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # --- ERROR HANDLER ---
 @app.exception_handler(Exception)

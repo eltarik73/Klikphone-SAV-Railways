@@ -400,7 +400,10 @@ class ApiClient {
 
   // ─── TELEPHONES ─────────────────────────────
   getTelephonesCatalogue(params = {}) {
-    const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''))).toString();
+    const clean = Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''));
+    if (!clean.page) clean.page = 1;
+    if (!clean.limit) clean.limit = 24;
+    const qs = new URLSearchParams(clean).toString();
     return this.get(`/api/telephones/catalogue${qs ? '?' + qs : ''}`);
   }
   getTelephoneStats() { return this.get('/api/telephones/stats'); }

@@ -19,6 +19,32 @@ router = APIRouter(prefix="/api/tarifs", tags=["tarifs"])
 
 
 # ---------------------------------------------------------------------------
+# Simple TTL cache
+# ---------------------------------------------------------------------------
+
+class _Cache:
+    def __init__(self, ttl=300):
+        self._data = {}
+        self._ttl = ttl
+
+    def get(self, key):
+        entry = self._data.get(key)
+        if entry and time.time() - entry[1] < self._ttl:
+            return entry[0]
+        self._data.pop(key, None)
+        return None
+
+    def set(self, key, value):
+        self._data[key] = (value, time.time())
+
+    def clear(self):
+        self._data.clear()
+
+
+_cache = _Cache(ttl=300)
+
+
+# ---------------------------------------------------------------------------
 # Table creation
 # ---------------------------------------------------------------------------
 
@@ -197,7 +223,10 @@ async def list_tarifs(
 
 @router.get("/stats")
 async def get_stats():
-    """Retourne des statistiques sur les tarifs."""
+    """Retourne des statistiques sur les tarifs (cached 5 min)."""
+    cached = _cache.get("tarifs_stats")
+    if cached:
+        return cached
     with get_cursor() as cur:
         cur.execute("""
             SELECT
@@ -209,8 +238,9 @@ async def get_stats():
             FROM tarifs
         """)
         row = cur.fetchone()
-
-    return dict(row)
+    result = dict(row)
+    _cache.set("tarifs_stats", result)
+    return result
 
 
 @router.post("/import")
@@ -250,6 +280,7 @@ async def import_tarifs(
             )
             inserted += 1
 
+    _cache.clear()
     return {"inserted": inserted}
 
 
@@ -302,7 +333,7 @@ async def clear_tarifs(user: dict = Depends(get_current_user)):
     """Vide la table tarifs."""
     with get_cursor() as cur:
         cur.execute("TRUNCATE TABLE tarifs RESTART IDENTITY")
-
+    _cache.clear()
     return {"status": "ok"}
 
 
