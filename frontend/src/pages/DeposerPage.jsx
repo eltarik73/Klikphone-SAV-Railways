@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Send, MapPin, Phone, Clock, Globe,
+  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle,
 } from 'lucide-react';
 
 const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
@@ -119,6 +119,36 @@ export default function DeposerPage() {
     <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
   ) : null;
 
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(createdCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}/suivi?ticket=${createdCode}`;
+    const text = `Mon numéro de suivi Klikphone : ${createdCode}\nSuivre ma réparation : ${url}`;
+    if (navigator.share) {
+      navigator.share({ title: `Klikphone - ${createdCode}`, text }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => {});
+    }
+  };
+
+  const handleWhatsAppSelf = () => {
+    const tel = form.telephone.replace(/[\s.-]/g, '');
+    const num = tel.startsWith('0') ? '33' + tel.slice(1) : tel;
+    const url = `${window.location.origin}/suivi?ticket=${createdCode}`;
+    const msg = `Klikphone - Votre numéro de suivi : ${createdCode}\nSuivez votre réparation ici : ${url}`;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   // Confirmation screen
   if (createdCode) {
     return (
@@ -131,12 +161,42 @@ export default function DeposerPage() {
             <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">
               Demande enregistrée !
             </h2>
-            <p className="text-slate-500 mb-6">Votre numéro de suivi :</p>
-            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-4 border border-brand-100">
-              <p className="text-3xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
+
+            {/* Alerte: notez ce numéro */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 flex items-center gap-2 text-left">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              <p className="text-xs font-semibold text-amber-800">
+                Conservez ce numéro ! Il vous permettra de suivre votre réparation.
+              </p>
             </div>
 
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-6 text-left">
+            {/* Code avec bouton copier */}
+            <p className="text-slate-500 text-sm mb-2">Votre numéro de suivi :</p>
+            <div className="bg-brand-50 rounded-xl py-5 px-6 mb-3 border-2 border-brand-200 relative">
+              <p className="text-4xl font-extrabold font-mono text-brand-600 tracking-wider select-all">{createdCode}</p>
+              <button
+                onClick={handleCopy}
+                className="absolute top-2 right-2 p-2 rounded-lg bg-white/80 hover:bg-white shadow-sm transition-all"
+                title="Copier"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-brand-400" />}
+              </button>
+            </div>
+            {copied && <p className="text-xs text-emerald-600 font-medium mb-2">Copié !</p>}
+
+            {/* Actions: partager / WhatsApp */}
+            <div className="flex gap-2 mb-5">
+              <button onClick={handleShare}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium transition-all">
+                <Share2 className="w-4 h-4" /> Partager
+              </button>
+              <button onClick={handleWhatsAppSelf}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-sm font-medium transition-all">
+                <MessageCircle className="w-4 h-4" /> M'envoyer par WhatsApp
+              </button>
+            </div>
+
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-5 text-left">
               <h3 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4" /> Prochaines étapes
               </h3>
@@ -150,6 +210,12 @@ export default function DeposerPage() {
             {form.email && (
               <p className="text-xs text-slate-400 mb-4">
                 Un email de confirmation a été envoyé à <strong>{form.email}</strong>
+              </p>
+            )}
+
+            {!form.email && (
+              <p className="text-xs text-slate-400 mb-4">
+                Vous pouvez retrouver votre ticket avec votre numéro de téléphone sur la page de suivi.
               </p>
             )}
 

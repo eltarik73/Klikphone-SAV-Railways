@@ -271,20 +271,23 @@ async def suivi_public(ticket_code: str):
 # ─── HELPERS EMAIL ────────────────────────────────────────────
 
 def _envoyer_email_confirmation(email: str, prenom: str, code: str, appareil: str, panne: str):
-    """Email de confirmation du pré-enregistrement."""
+    """Email de confirmation du pré-enregistrement avec HTML stylé."""
     try:
         nom_boutique = _get_param("nom_boutique") or "Klikphone"
         adresse = _get_param("adresse") or "79 Place Saint Léger, 73000 Chambéry"
         tel = _get_param("tel_boutique") or "04 79 60 89 22"
 
-        sujet = f"{nom_boutique} — Confirmation de votre pré-enregistrement {code}"
+        sujet = f"{nom_boutique} — Votre numéro de suivi {code}"
         message = f"""Bonjour {prenom},
 
 Votre demande de réparation a bien été pré-enregistrée.
 
-Ticket : {code}
+VOTRE NUMERO DE SUIVI : {code}
+
 Appareil : {appareil}
 Panne : {panne}
+
+Conservez ce numéro ! Il vous permettra de suivre votre réparation.
 
 Prochaine étape : Présentez-vous en boutique avec votre appareil.
 Votre dossier est déjà créé, l'accueil sera plus rapide.
@@ -293,7 +296,51 @@ Votre dossier est déjà créé, l'accueil sera plus rapide.
 {adresse}
 {tel}"""
 
-        envoyer_email(email, sujet, message)
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f1f5f9;">
+<div style="max-width:500px;margin:20px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <div style="background:linear-gradient(135deg,#6366F1,#7C3AED);padding:32px 24px;text-align:center;">
+    <h1 style="color:#fff;font-size:22px;margin:0;">{nom_boutique}</h1>
+    <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:8px 0 0;">Confirmation de pré-enregistrement</p>
+  </div>
+  <div style="padding:32px 24px;">
+    <p style="color:#334155;font-size:15px;margin:0 0 20px;">Bonjour <strong>{prenom}</strong>,</p>
+    <p style="color:#64748B;font-size:14px;margin:0 0 24px;">Votre demande de réparation a bien été enregistrée.</p>
+
+    <div style="background:#F5F3FF;border:2px solid #C4B5FD;border-radius:12px;padding:20px;text-align:center;margin:0 0 24px;">
+      <p style="color:#7C3AED;font-size:12px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Votre numéro de suivi</p>
+      <p style="color:#7C3AED;font-size:32px;font-weight:800;font-family:monospace;margin:0;letter-spacing:3px;">{code}</p>
+    </div>
+
+    <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 24px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="color:#94A3B8;font-size:12px;padding:4px 0;">Appareil</td><td style="color:#334155;font-size:14px;font-weight:600;text-align:right;">{appareil}</td></tr>
+        <tr><td style="color:#94A3B8;font-size:12px;padding:4px 0;">Panne</td><td style="color:#334155;font-size:14px;font-weight:600;text-align:right;">{panne}</td></tr>
+      </table>
+    </div>
+
+    <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:10px;padding:16px;margin:0 0 24px;">
+      <p style="color:#4338CA;font-size:13px;font-weight:700;margin:0 0 10px;">Prochaines étapes :</p>
+      <ol style="color:#4F46E5;font-size:13px;margin:0;padding-left:20px;">
+        <li style="margin-bottom:6px;">Notre équipe va valider votre demande</li>
+        <li style="margin-bottom:6px;">Présentez-vous en boutique avec votre appareil</li>
+        <li>Votre dossier est déjà créé — accueil rapide !</li>
+      </ol>
+    </div>
+
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:12px 16px;margin:0 0 20px;">
+      <p style="color:#92400E;font-size:12px;font-weight:600;margin:0;">Conservez bien ce numéro de suivi. Vous pouvez aussi retrouver votre ticket avec votre numéro de téléphone.</p>
+    </div>
+  </div>
+  <div style="background:#F8FAFC;padding:20px 24px;text-align:center;border-top:1px solid #E2E8F0;">
+    <p style="color:#64748B;font-size:12px;margin:0;">{nom_boutique} — {adresse}</p>
+    <p style="color:#64748B;font-size:12px;margin:4px 0 0;">Tel : {tel}</p>
+  </div>
+</div>
+</body></html>"""
+
+        envoyer_email(email, sujet, message, html_content=html)
     except Exception:
         pass
 
