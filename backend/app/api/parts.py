@@ -12,6 +12,9 @@ from app.api.auth import get_current_user
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 
 
+STATUTS_TERMINAUX = ["Reçue", "Annulée", "Récupérée par client", "Utilisée en réparation"]
+
+
 @router.get("")
 async def list_parts(
     ticket_id: Optional[int] = None,
@@ -19,14 +22,20 @@ async def list_parts(
     search: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
-    """Liste les commandes de pièces avec filtres."""
+    """Liste les commandes de pièces avec filtres.
+    statut=en_cours → only active, statut=cloturees → only terminal.
+    """
     conditions = []
     params = []
 
     if ticket_id:
         conditions.append("cp.ticket_id = %s")
         params.append(ticket_id)
-    if statut:
+    if statut == "en_cours":
+        conditions.append("cp.statut NOT IN ('Reçue','Annulée','Récupérée par client','Utilisée en réparation')")
+    elif statut == "cloturees":
+        conditions.append("cp.statut IN ('Reçue','Annulée','Récupérée par client','Utilisée en réparation')")
+    elif statut:
         conditions.append("cp.statut = %s")
         params.append(statut)
     if search:
@@ -141,8 +150,8 @@ async def update_part(
     if updates.get("statut") == "Commandée" and "date_commande" not in updates:
         updates["date_commande"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # If changing to 'Reçue', set date_reception
-    if updates.get("statut") == "Reçue" and "date_reception" not in updates:
+    # If changing to 'Reçue' or terminal statut, set date_reception
+    if updates.get("statut") in ("Reçue", "Récupérée par client", "Utilisée en réparation") and "date_reception" not in updates:
         updates["date_reception"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Resolve ticket_code to ticket_id if needed

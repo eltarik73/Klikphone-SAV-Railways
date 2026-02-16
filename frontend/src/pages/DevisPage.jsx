@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import {
   FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
   Send, CheckCircle, XCircle, ArrowRightCircle, Printer,
   Loader2, X, ChevronDown, Package, Euro, AlertTriangle,
-  BarChart3, Clock, TrendingUp,
+  BarChart3, Clock, TrendingUp, User, Phone,
 } from 'lucide-react';
 
 const STATUTS = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Converti'];
@@ -24,6 +25,7 @@ const fp = (v) => {
 
 export default function DevisPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [devisList, setDevisList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -37,16 +39,105 @@ export default function DevisPage() {
   const [form, setForm] = useState(getEmptyForm());
   const [lignes, setLignes] = useState([{ description: '', quantite: 1, prix_unitaire: 0 }]);
 
+  // Client autocomplete
+  const [clientQuery, setClientQuery] = useState('');
+  const [clientResults, setClientResults] = useState([]);
+  const [clientSearching, setClientSearching] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [showNewClientFields, setShowNewClientFields] = useState(false);
+  const clientTimer = useRef(null);
+  const clientDropdownRef = useRef(null);
+
   // Detail view
   const [viewDevis, setViewDevis] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
 
   function getEmptyForm() {
     return {
-      client_nom: '', client_prenom: '', client_tel: '', client_email: '',
+      client_id: null, client_nom: '', client_prenom: '', client_tel: '', client_email: '',
       appareil: '', description: '', tva: 20, remise: 0, notes: '', validite_jours: 30,
     };
   }
+
+  // Handle prefill from Devis Flash
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      const raw = sessionStorage.getItem('kp_devis_prefill');
+      if (raw) {
+        try {
+          const prefill = JSON.parse(raw);
+          sessionStorage.removeItem('kp_devis_prefill');
+          setEditId(null);
+          setForm(f => ({ ...getEmptyForm(), appareil: prefill.appareil || '' }));
+          if (prefill.lignes?.length) {
+            setLignes(prefill.lignes.map(l => ({
+              description: l.description || '', quantite: l.quantite || 1, prix_unitaire: l.prix_unitaire || 0,
+            })));
+          }
+          setSelectedClient(null);
+          setShowNewClientFields(false);
+          setClientQuery('');
+          setShowModal(true);
+        } catch { /* ignore */ }
+      } else {
+        openCreate();
+      }
+    }
+  }, []);
+
+  // Client search
+  useEffect(() => {
+    clearTimeout(clientTimer.current);
+    if (!clientQuery || clientQuery.length < 2) {
+      setClientResults([]);
+      setShowClientDropdown(false);
+      return;
+    }
+    clientTimer.current = setTimeout(async () => {
+      setClientSearching(true);
+      try {
+        const res = await api.getClients({ search: clientQuery, limit: 8 });
+        setClientResults(res || []);
+        setShowClientDropdown(true);
+      } catch { setClientResults([]); }
+      setClientSearching(false);
+    }, 200);
+    return () => clearTimeout(clientTimer.current);
+  }, [clientQuery]);
+
+  // Close client dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(e.target)) {
+        setShowClientDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const selectClient = (client) => {
+    setSelectedClient(client);
+    setForm(f => ({
+      ...f,
+      client_id: client.id,
+      client_nom: client.nom || '',
+      client_prenom: client.prenom || '',
+      client_tel: client.telephone || '',
+      client_email: client.email || '',
+    }));
+    setClientQuery(`${client.prenom || ''} ${client.nom || ''}`.trim());
+    setShowClientDropdown(false);
+    setShowNewClientFields(false);
+  };
+
+  const clearClient = () => {
+    setSelectedClient(null);
+    setClientQuery('');
+    setForm(f => ({ ...f, client_id: null, client_nom: '', client_prenom: '', client_tel: '', client_email: '' }));
+    setShowNewClientFields(false);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -69,6 +160,9 @@ export default function DevisPage() {
     setEditId(null);
     setForm(getEmptyForm());
     setLignes([{ description: '', quantite: 1, prix_unitaire: 0 }]);
+    setSelectedClient(null);
+    setClientQuery('');
+    setShowNewClientFields(false);
     setShowModal(true);
   };
 
@@ -77,12 +171,26 @@ export default function DevisPage() {
       const d = await api.getDevisById(id);
       setEditId(id);
       setForm({
+        client_id: d.client_id || null,
         client_nom: d.client_nom || '', client_prenom: d.client_prenom || '',
         client_tel: d.client_tel || '', client_email: d.client_email || '',
         appareil: d.appareil || '', description: d.description || '',
         tva: d.tva || 20, remise: d.remise || 0, notes: d.notes || '',
         validite_jours: d.validite_jours || 30,
       });
+      if (d.client_id && d.client) {
+        setSelectedClient(d.client);
+        setClientQuery(`${d.client.prenom || ''} ${d.client.nom || ''}`.trim());
+        setShowNewClientFields(false);
+      } else if (d.client_nom) {
+        setSelectedClient(null);
+        setClientQuery('');
+        setShowNewClientFields(true);
+      } else {
+        setSelectedClient(null);
+        setClientQuery('');
+        setShowNewClientFields(false);
+      }
       setLignes(d.lignes?.length > 0 ? d.lignes.map(l => ({
         description: l.description, quantite: l.quantite, prix_unitaire: Number(l.prix_unitaire),
       })) : [{ description: '', quantite: 1, prix_unitaire: 0 }]);
@@ -106,7 +214,7 @@ export default function DevisPage() {
   const totalTTC = useMemo(() => totalHT * (1 + (form.tva || 0) / 100), [totalHT, form.tva]);
 
   const handleSave = async () => {
-    if (!form.client_nom && !form.client_tel) return;
+    if (!form.client_nom && !form.client_tel && !form.client_id) return;
     setSaving(true);
     try {
       const validLignes = lignes.filter(l => l.description.trim());
@@ -308,28 +416,95 @@ export default function DevisPage() {
               {/* Client */}
               <div>
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Client</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="input-label">Nom *</label>
-                    <input value={form.client_nom} onChange={e => setForm(f => ({ ...f, client_nom: e.target.value }))}
-                      className="input" placeholder="Dupont" />
+
+                {/* Client selected → show info */}
+                {selectedClient ? (
+                  <div className="bg-slate-50 rounded-xl p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                      <span className="text-sm font-bold text-brand-700">
+                        {(selectedClient.prenom?.[0] || '').toUpperCase()}{(selectedClient.nom?.[0] || '').toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-slate-900">{selectedClient.prenom} {selectedClient.nom}</p>
+                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
+                        {selectedClient.telephone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {selectedClient.telephone}</span>}
+                        {selectedClient.email && <span>{selectedClient.email}</span>}
+                      </div>
+                    </div>
+                    <button onClick={clearClient} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400">
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div>
-                    <label className="input-label">Prénom</label>
-                    <input value={form.client_prenom} onChange={e => setForm(f => ({ ...f, client_prenom: e.target.value }))}
-                      className="input" placeholder="Jean" />
+                ) : !showNewClientFields ? (
+                  /* Client search */
+                  <div className="space-y-2">
+                    <div className="relative" ref={clientDropdownRef}>
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input value={clientQuery}
+                        onChange={e => setClientQuery(e.target.value)}
+                        placeholder="Nom, prénom ou téléphone..."
+                        className="input pl-9 pr-8" />
+                      {clientSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-brand-500" />}
+
+                      {showClientDropdown && clientResults.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-52 overflow-y-auto">
+                          {clientResults.map(c => (
+                            <button key={c.id} onClick={() => selectClient(c)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0">
+                              <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                                <span className="text-xs font-bold text-brand-700">
+                                  {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
+                                <p className="text-xs text-slate-400">{c.telephone || ''}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={() => setShowNewClientFields(true)}
+                      className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
+                      <Plus className="w-3.5 h-3.5" /> Nouveau client
+                    </button>
                   </div>
-                  <div>
-                    <label className="input-label">Téléphone</label>
-                    <input value={form.client_tel} onChange={e => setForm(f => ({ ...f, client_tel: e.target.value }))}
-                      className="input" placeholder="06 XX XX XX XX" />
+                ) : (
+                  /* New client fields */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-slate-400">Nouveau client</span>
+                      <button onClick={() => { setShowNewClientFields(false); clearClient(); }}
+                        className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
+                        <Search className="w-3 h-3" /> Rechercher
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="input-label">Nom *</label>
+                        <input value={form.client_nom} onChange={e => setForm(f => ({ ...f, client_nom: e.target.value }))}
+                          className="input" placeholder="Dupont" />
+                      </div>
+                      <div>
+                        <label className="input-label">Prénom</label>
+                        <input value={form.client_prenom} onChange={e => setForm(f => ({ ...f, client_prenom: e.target.value }))}
+                          className="input" placeholder="Jean" />
+                      </div>
+                      <div>
+                        <label className="input-label">Téléphone</label>
+                        <input value={form.client_tel} onChange={e => setForm(f => ({ ...f, client_tel: e.target.value }))}
+                          className="input" placeholder="06 XX XX XX XX" />
+                      </div>
+                      <div>
+                        <label className="input-label">Email</label>
+                        <input value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))}
+                          className="input" placeholder="email@exemple.com" />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="input-label">Email</label>
-                    <input value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))}
-                      className="input" placeholder="email@exemple.com" />
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Appareil */}
@@ -419,7 +594,7 @@ export default function DevisPage() {
 
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
               <button onClick={() => setShowModal(false)} className="btn-secondary">Annuler</button>
-              <button onClick={handleSave} disabled={saving || (!form.client_nom && !form.client_tel)}
+              <button onClick={handleSave} disabled={saving || (!form.client_nom && !form.client_tel && !form.client_id)}
                 className="btn-primary">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                 {editId ? 'Enregistrer' : 'Créer le devis'}
@@ -455,9 +630,28 @@ export default function DevisPage() {
               {/* Client info */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Client</p>
-                <p className="font-semibold text-slate-900">{viewDevis.client_prenom} {viewDevis.client_nom}</p>
-                <p className="text-sm text-slate-500">{viewDevis.client_tel} {viewDevis.client_email ? `— ${viewDevis.client_email}` : ''}</p>
-                {viewDevis.appareil && <p className="text-sm text-slate-600 mt-1"><b>Appareil:</b> {viewDevis.appareil}</p>}
+                {viewDevis.client ? (
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                      <span className="text-sm font-bold text-brand-700">
+                        {(viewDevis.client.prenom?.[0] || '').toUpperCase()}{(viewDevis.client.nom?.[0] || '').toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">{viewDevis.client.prenom} {viewDevis.client.nom}</p>
+                      <div className="flex items-center gap-3 text-sm text-slate-500">
+                        {viewDevis.client.telephone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {viewDevis.client.telephone}</span>}
+                        {viewDevis.client.email && <span>{viewDevis.client.email}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="font-semibold text-slate-900">{viewDevis.client_prenom} {viewDevis.client_nom}</p>
+                    <p className="text-sm text-slate-500">{viewDevis.client_tel} {viewDevis.client_email ? `— ${viewDevis.client_email}` : ''}</p>
+                  </>
+                )}
+                {viewDevis.appareil && <p className="text-sm text-slate-600 mt-2"><b>Appareil:</b> {viewDevis.appareil}</p>}
                 {viewDevis.description && <p className="text-sm text-slate-500 mt-1">{viewDevis.description}</p>}
               </div>
 

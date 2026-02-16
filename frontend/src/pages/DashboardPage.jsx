@@ -192,6 +192,12 @@ export default function DashboardPage() {
     localStorage.setItem('kp_page_size', size.toString());
   };
 
+  // SWR: Commandes en cours count
+  const { data: commandesEnCours } = useApi('commandes:en_cours:count', async () => {
+    const parts = await api.getParts({ statut: 'en_cours' });
+    return parts?.length ?? 0;
+  }, { tags: ['commandes'], ttl: 60_000 });
+
   const kpiCards = kpi ? [
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', iconBg: 'bg-brand-100' },
     { label: 'Diagnostic', value: kpi.en_attente_diagnostic, icon: Search, color: 'text-amber-600', iconBg: 'bg-amber-100', filter: 'En attente de diagnostic' },
@@ -296,6 +302,23 @@ export default function DashboardPage() {
           </button>
         ))}
       </div>
+
+      {/* Commandes en cours badge */}
+      {commandesEnCours > 0 && (
+        <button onClick={() => navigate(`${basePath}/commandes`)}
+          className="card px-4 py-3 mb-6 flex items-center gap-3 hover:shadow-md transition-all group w-full text-left">
+          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+            <Package className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">
+              {commandesEnCours} commande{commandesEnCours > 1 ? 's' : ''} de pièces en cours
+            </p>
+            <p className="text-xs text-slate-400">Cliquez pour voir le détail</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+        </button>
+      )}
 
       {/* Search & Filters */}
       <div className="card overflow-hidden mb-6">

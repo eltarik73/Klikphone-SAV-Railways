@@ -206,7 +206,7 @@ async def devis_stats(user: dict = Depends(get_current_user)):
         return cur.fetchone()
 
 
-# ─── DEVIS FLASH — SEARCH TARIFS ──────────────────────────
+# ─── DEVIS FLASH — SEARCH TARIFS (grouped by model) ──────
 
 @router.get("/flash/search")
 async def devis_flash_search(
@@ -214,17 +214,34 @@ async def devis_flash_search(
     limit: int = Query(20, le=50),
     user: Optional[dict] = None,
 ):
-    """Recherche dans tarifs pour le devis flash."""
+    """Recherche dans tarifs, résultats groupés par modèle."""
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, marque, modele, type_piece, qualite, prix_client,
-                   en_stock, nom_fournisseur as fournisseur
+            SELECT marque, modele, type_piece, qualite, prix_client, en_stock
             FROM tarifs
-            WHERE (modele ILIKE %s OR marque ILIKE %s OR type_piece ILIKE %s)
-            ORDER BY marque, modele, type_piece
-            LIMIT %s
-        """, (f"%{q}%", f"%{q}%", f"%{q}%", limit))
-        return cur.fetchall()
+            WHERE (modele ILIKE %s OR marque ILIKE %s)
+            ORDER BY marque, modele, type_piece, qualite
+        """, (f"%{q}%", f"%{q}%"))
+        rows = cur.fetchall()
+
+    models = {}
+    for r in rows:
+        key = f"{r['marque']}||{r['modele']}"
+        if key not in models:
+            models[key] = {
+                "marque": r["marque"],
+                "modele": r["modele"],
+                "reparations": [],
+            }
+        models[key]["reparations"].append({
+            "composant": r["type_piece"],
+            "qualite": r["qualite"] or None,
+            "prix_vente": float(r["prix_client"] or 0),
+            "en_stock": bool(r.get("en_stock", True)),
+        })
+
+    result = list(models.values())[:limit]
+    return result
 
 
 # ─── TELEPHONES VENTE — CRUD ──────────────────────────────
@@ -351,11 +368,22 @@ async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
         )
         lignes = cur.fetchall()
 
+        # Fetch linked client info if client_id is set
+        client_info = None
+        if devis.get("client_id"):
+            cur.execute(
+                "SELECT id, nom, prenom, telephone, email FROM clients WHERE id = %s",
+                (devis["client_id"],),
+            )
+            client_info = cur.fetchone()
+
     d = dict(devis)
     for key in ("date_creation", "date_maj", "date_acceptation", "date_refus"):
         if d.get(key) and hasattr(d[key], "isoformat"):
             d[key] = d[key].isoformat()
     d["lignes"] = [dict(l) for l in lignes]
+    if client_info:
+        d["client"] = dict(client_info)
     return d
 
 
@@ -518,6 +546,17 @@ async def print_devis(devis_id: int):
             raise HTTPException(404, "Devis non trouvé")
         cur.execute("SELECT * FROM devis_lignes WHERE devis_id = %s ORDER BY ordre", (devis_id,))
         lignes = cur.fetchall()
+
+        # Override client info from clients table if client_id is set
+        if devis.get("client_id"):
+            cur.execute("SELECT nom, prenom, telephone, email FROM clients WHERE id = %s", (devis["client_id"],))
+            c = cur.fetchone()
+            if c:
+                devis = dict(devis)
+                devis["client_nom"] = c["nom"]
+                devis["client_prenom"] = c["prenom"]
+                devis["client_tel"] = c["telephone"]
+                devis["client_email"] = c.get("email")
 
     # Shop info
     try:

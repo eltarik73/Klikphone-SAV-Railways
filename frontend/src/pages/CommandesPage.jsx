@@ -7,9 +7,11 @@ import { formatDateShort, formatPrix } from '../lib/utils';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
+  Truck, RotateCcw, Wrench, Archive,
 } from 'lucide-react';
 
-const PART_STATUTS = ['En attente', 'Commandée', 'Expédiée', 'Reçue', 'Annulée'];
+const PART_STATUTS = ['En attente', 'Commandée', 'Expédiée', 'Reçue', 'Annulée', 'Récupérée par client', 'Utilisée en réparation'];
+const STATUTS_TERMINAUX = ['Reçue', 'Annulée', 'Récupérée par client', 'Utilisée en réparation'];
 
 export default function CommandesPage() {
   const navigate = useNavigate();
@@ -17,10 +19,11 @@ export default function CommandesPage() {
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [filterStatut, setFilterStatut] = useState('');
+  const [filterTab, setFilterTab] = useState('en_cours');
   const searchTimer = useRef(null);
   const [showForm, setShowForm] = useState(false);
   const [editingPart, setEditingPart] = useState(null);
+  const [toast, setToast] = useState(null);
   const [form, setForm] = useState({
     description: '', fournisseur: '', reference: '',
     prix: '', ticket_code: '', statut: 'En attente', notes: '',
@@ -33,24 +36,42 @@ export default function CommandesPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
+  // Toast auto-hide
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const partsKey = useMemo(() => {
     const p = ['commandes'];
     if (debouncedSearch) p.push(`s:${debouncedSearch}`);
-    if (filterStatut) p.push(`f:${filterStatut}`);
+    p.push(`tab:${filterTab}`);
     return p.join(':');
-  }, [debouncedSearch, filterStatut]);
+  }, [debouncedSearch, filterTab]);
 
   const { data: partsData, loading, isRevalidating, mutate: mutateParts } = useApi(
     partsKey,
     async () => {
       const params = {};
       if (debouncedSearch) params.search = debouncedSearch;
-      if (filterStatut) params.statut = filterStatut;
+      if (filterTab === 'en_cours') params.statut = 'en_cours';
+      else if (filterTab === 'cloturees') params.statut = 'cloturees';
       return api.getParts(params);
     },
     { tags: ['commandes'], ttl: 60_000 }
   );
   const parts = partsData ?? [];
+
+  // Count for tabs (load all to get counts)
+  const { data: allPartsData } = useApi(
+    'commandes:all:counts',
+    () => api.getParts({}),
+    { tags: ['commandes'], ttl: 60_000 }
+  );
+  const allParts = allPartsData ?? [];
+  const countEnCours = allParts.filter(p => !STATUTS_TERMINAUX.includes(p.statut)).length;
+  const countCloturees = allParts.filter(p => STATUTS_TERMINAUX.includes(p.statut)).length;
 
   const resetForm = () => {
     setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '' });
@@ -66,13 +87,16 @@ export default function CommandesPage() {
       };
       if (editingPart) {
         await api.updatePart(editingPart.id, data);
+        setToast({ type: 'success', msg: 'Commande mise à jour' });
       } else {
         await api.createPart(data);
+        setToast({ type: 'success', msg: 'Commande créée' });
       }
       resetForm();
       invalidateCache('commandes');
     } catch (err) {
       console.error(err);
+      setToast({ type: 'error', msg: 'Erreur lors de la sauvegarde' });
     }
   };
 
@@ -95,17 +119,20 @@ export default function CommandesPage() {
     try {
       await api.deletePart(id);
       invalidateCache('commandes');
+      setToast({ type: 'success', msg: 'Commande supprimée' });
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleQuickStatus = async (part, newStatut) => {
+  const handleStatusChange = async (part, newStatut) => {
     try {
       await api.updatePart(part.id, { statut: newStatut });
       invalidateCache('commandes');
+      setToast({ type: 'success', msg: `Statut → ${newStatut}` });
     } catch (err) {
       console.error(err);
+      setToast({ type: 'error', msg: 'Erreur changement statut' });
     }
   };
 
@@ -125,6 +152,8 @@ export default function CommandesPage() {
       case 'Expédiée': return 'bg-purple-50 text-purple-700 ring-purple-200/80';
       case 'Reçue': return 'bg-emerald-50 text-emerald-700 ring-emerald-200/80';
       case 'Annulée': return 'bg-red-50 text-red-600 ring-red-200/80';
+      case 'Récupérée par client': return 'bg-cyan-50 text-cyan-700 ring-cyan-200/80';
+      case 'Utilisée en réparation': return 'bg-indigo-50 text-indigo-700 ring-indigo-200/80';
       default: return 'bg-slate-100 text-slate-600 ring-slate-200/80';
     }
   };
@@ -133,29 +162,46 @@ export default function CommandesPage() {
     switch (statut) {
       case 'En attente': return <Clock className="w-3 h-3" />;
       case 'Commandée': return <Package className="w-3 h-3" />;
-      case 'Expédiée': return <ExternalLink className="w-3 h-3" />;
+      case 'Expédiée': return <Truck className="w-3 h-3" />;
       case 'Reçue': return <Check className="w-3 h-3" />;
       case 'Annulée': return <X className="w-3 h-3" />;
+      case 'Récupérée par client': return <RotateCcw className="w-3 h-3" />;
+      case 'Utilisée en réparation': return <Wrench className="w-3 h-3" />;
       default: return null;
     }
   };
 
-  // Summary counts
-  const counts = {
-    total: parts.length,
-    attente: parts.filter(p => p.statut === 'En attente').length,
-    commandee: parts.filter(p => p.statut === 'Commandée').length,
-    recue: parts.filter(p => p.statut === 'Reçue').length,
+  const getStatutColor = (statut) => {
+    switch (statut) {
+      case 'En attente': return '#d97706';
+      case 'Commandée': return '#2563eb';
+      case 'Expédiée': return '#7c3aed';
+      case 'Reçue': return '#059669';
+      case 'Annulée': return '#dc2626';
+      case 'Récupérée par client': return '#0891b2';
+      case 'Utilisée en réparation': return '#4f46e5';
+      default: return '#64748b';
+    }
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[100] px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium animate-in
+          ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+          {toast.msg}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Commandes de pièces</h1>
+          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Package className="w-6 h-6 text-brand-600" /> Commandes de pièces
+          </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {counts.total} commande(s) — {counts.attente} en attente, {counts.commandee} commandée(s), {counts.recue} reçue(s)
+            {countEnCours} en cours — {countCloturees} clôturée(s)
           </p>
         </div>
         <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary">
@@ -163,7 +209,7 @@ export default function CommandesPage() {
         </button>
       </div>
 
-      {/* Search & Filters */}
+      {/* Search & Filter Tabs */}
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
@@ -175,18 +221,21 @@ export default function CommandesPage() {
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
-          <button onClick={() => setFilterStatut('')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
-              ${!filterStatut ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
-            Toutes ({counts.total})
+          <button onClick={() => setFilterTab('en_cours')}
+            className={`px-4 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5
+              ${filterTab === 'en_cours' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
+            <Clock className="w-3.5 h-3.5" /> En cours ({countEnCours})
           </button>
-          {PART_STATUTS.map(s => (
-            <button key={s} onClick={() => setFilterStatut(s)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1
-                ${filterStatut === s ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
-              {getStatutIcon(s)} {s}
-            </button>
-          ))}
+          <button onClick={() => setFilterTab('cloturees')}
+            className={`px-4 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5
+              ${filterTab === 'cloturees' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
+            <Archive className="w-3.5 h-3.5" /> Clôturées ({countCloturees})
+          </button>
+          <button onClick={() => setFilterTab('toutes')}
+            className={`px-4 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5
+              ${filterTab === 'toutes' ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
+            Toutes ({allParts.length})
+          </button>
         </div>
       </div>
 
@@ -243,7 +292,7 @@ export default function CommandesPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[1fr_130px_140px_120px_90px_120px_100px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[1fr_130px_140px_120px_90px_120px_160px_80px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <span className="table-header">Désignation</span>
           <span className="table-header">Client</span>
           <span className="table-header">Fournisseur</span>
@@ -265,13 +314,15 @@ export default function CommandesPage() {
               <Package className="w-7 h-7 text-slate-300" />
             </div>
             <p className="text-slate-500 font-medium">Aucune commande</p>
-            <p className="text-sm text-slate-400 mt-1">Créez votre première commande de pièce</p>
+            <p className="text-sm text-slate-400 mt-1">
+              {filterTab === 'en_cours' ? 'Aucune commande en cours' : filterTab === 'cloturees' ? 'Aucune commande clôturée' : 'Créez votre première commande de pièce'}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100/80">
             {parts.map((p) => (
               <div key={p.id}
-                className="lg:grid lg:grid-cols-[1fr_130px_140px_120px_90px_120px_100px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
+                className="lg:grid lg:grid-cols-[1fr_130px_140px_120px_90px_120px_160px_80px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{p.description}</p>
@@ -308,27 +359,26 @@ export default function CommandesPage() {
                     <p className="text-[10px] text-emerald-500">Reçue: {formatDateShort(p.date_reception)}</p>
                   )}
                 </div>
-                <div className="mt-2 lg:mt-0">
-                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ring-1 ${getStatutStyle(p.statut)}`}>
-                    {getStatutIcon(p.statut)} {p.statut}
-                  </span>
+                {/* Status dropdown */}
+                <div className="mt-2 lg:mt-0" onClick={e => e.stopPropagation()}>
+                  <select
+                    value={p.statut}
+                    onChange={e => handleStatusChange(p, e.target.value)}
+                    className="w-full py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
+                    style={{
+                      borderColor: getStatutColor(p.statut),
+                      color: getStatutColor(p.statut),
+                      backgroundColor: getStatutColor(p.statut) + '10',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatutColor(p.statut))}' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundPosition: 'right 4px center',
+                      backgroundSize: '14px',
+                      paddingRight: '22px',
+                    }}
+                  >
+                    {PART_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div className="hidden lg:flex justify-end gap-1">
-                  {p.statut === 'En attente' && (
-                    <button onClick={() => handleQuickStatus(p, 'Commandée')} className="btn-ghost p-1.5" title="Marquer commandée">
-                      <Check className="w-3.5 h-3.5 text-blue-500" />
-                    </button>
-                  )}
-                  {p.statut === 'Commandée' && (
-                    <button onClick={() => handleQuickStatus(p, 'Expédiée')} className="btn-ghost p-1.5" title="Marquer expédiée">
-                      <ExternalLink className="w-3.5 h-3.5 text-purple-500" />
-                    </button>
-                  )}
-                  {(p.statut === 'Commandée' || p.statut === 'Expédiée') && (
-                    <button onClick={() => handleQuickStatus(p, 'Reçue')} className="btn-ghost p-1.5" title="Marquer reçue">
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    </button>
-                  )}
                   <button onClick={() => handleEdit(p)} className="btn-ghost p-1.5" title="Modifier">
                     <Edit3 className="w-3.5 h-3.5" />
                   </button>
