@@ -302,6 +302,16 @@ class ApiClient {
   getAdminTauxConversion(p) { return this.get(`/api/admin/stats/taux-conversion${this._adminQs(p)}`); }
   getAdminTopClients(p) { return this.get(`/api/admin/stats/top-clients${this._adminQs(p)}`); }
 
+  // ─── REPORTING ───────────────────────────────
+  getReporting(params = {}) {
+    const qs = new URLSearchParams();
+    if (params.debut) qs.set('debut', params.debut);
+    if (params.fin) qs.set('fin', params.fin);
+    if (params.granularite) qs.set('granularite', params.granularite);
+    const s = qs.toString();
+    return this.get(`/api/reporting${s ? '?' + s : ''}`);
+  }
+
   // ─── MESSAGE TEMPLATES ────────────────────────
   getMessageTemplates() { return this.get('/api/config/message-templates'); }
   saveMessageTemplates(templates) { return this.put('/api/config/message-templates', { templates }); }

@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting
 
 
 @asynccontextmanager
@@ -165,6 +165,8 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_debut TIMESTAMP",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_fin TIMESTAMP",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_duree INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
     ]:
         try:
             with get_cursor() as cur:
@@ -193,6 +195,8 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_devis_lignes_devis_id ON devis_lignes(devis_id)",
         "CREATE INDEX IF NOT EXISTS idx_telephones_vente_marque ON telephones_vente(marque)",
         "CREATE INDEX IF NOT EXISTS idx_telephones_vente_stock ON telephones_vente(en_stock)",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_cree_par ON tickets(cree_par)",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_date_cloture ON tickets(date_cloture DESC)",
     ]:
         try:
             with get_cursor() as cur:
@@ -305,6 +309,7 @@ app.include_router(marketing.router)
 app.include_router(telephones.router)
 app.include_router(autocomplete.router)
 app.include_router(devis.router)
+app.include_router(reporting.router)
 
 
 # --- HEALTH CHECK ---
