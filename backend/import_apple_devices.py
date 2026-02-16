@@ -12,7 +12,7 @@ import os
 import sys
 import httpx
 
-API_URL = os.environ.get("API_URL", "https://klikphone-sav-railways-production.up.railway.app")
+API_URL = os.environ.get("API_URL", "https://klikphone-sav-v2-production.up.railway.app")
 
 # ─── DONNÉES iPad ──────────────────────────────────────────────
 # Structure: (categorie, modele, ecran_prix_ht, batterie_prix_ht)

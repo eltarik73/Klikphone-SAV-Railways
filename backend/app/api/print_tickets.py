@@ -18,7 +18,7 @@ from app.database import get_cursor
 router = APIRouter(prefix="/api/tickets", tags=["print"])
 
 # URL frontend pour les QR codes de suivi
-_FRONTEND_URL = "https://klikphone-sav-railways-production.up.railway.app"
+_FRONTEND_URL = "https://klikphone-sav-v2-production.up.railway.app"
 _LOGO_URL = f"{_FRONTEND_URL}/logo_k.png"
 
 
