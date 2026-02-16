@@ -121,6 +121,7 @@ export default function TicketDetailPage() {
 
   // Layout (DnD)
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
+  const [editMode, setEditMode] = useState(false);
 
   // Widget preferences + panels
   const [widgetPrefs, setWidgetPrefs] = useState({ timer: true, countdown: true, queue: true });
@@ -1609,11 +1610,27 @@ export default function TicketDetailPage() {
         </button>
       </div>
 
+      {/* Edit mode banner */}
+      {editMode && (
+        <div className="flex items-center justify-between p-3 mb-5 rounded-xl bg-blue-50 border-2 border-dashed border-blue-300">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-600 text-sm font-bold">Mode édition activé</span>
+            <span className="text-slate-500 text-xs">— Glisse les widgets par ⠿</span>
+          </div>
+          <button
+            onClick={() => setEditMode(false)}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
+          >
+            Terminer
+          </button>
+        </div>
+      )}
+
       {/* Content grid — drag & drop layout */}
       <DragDropContext onDragEnd={handleDragEnd}>
         <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-5">
           {['left', 'right'].map(colId => (
-            <Droppable key={colId} droppableId={colId}>
+            <Droppable key={colId} droppableId={colId} isDropDisabled={!editMode}>
               {(provided, snapshot) => (
                 <div
                   ref={provided.innerRef}
@@ -1631,27 +1648,32 @@ export default function TicketDetailPage() {
                     if (!content) return null;
 
                     return (
-                      <Draggable key={widgetId} draggableId={widgetId} index={index}>
+                      <Draggable key={widgetId} draggableId={widgetId} index={index} isDragDisabled={!editMode}>
                         {(dragProvided, dragSnapshot) => (
                           <div
                             ref={dragProvided.innerRef}
                             {...dragProvided.draggableProps}
-                            className={`group relative transition-shadow ${
+                            className={`relative transition-all ${
                               dragSnapshot.isDragging
-                                ? 'shadow-2xl shadow-brand-500/20 rotate-[1.5deg] z-50'
+                                ? 'shadow-2xl shadow-blue-500/25 rotate-[1.5deg] z-50 opacity-90'
                                 : ''
-                            }`}
+                            } ${editMode && !dragSnapshot.isDragging ? 'ring-2 ring-dashed ring-slate-200' : ''} rounded-xl`}
                           >
-                            {/* Drag handle */}
-                            <div
-                              {...dragProvided.dragHandleProps}
-                              className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-semibold shadow-lg cursor-grab active:cursor-grabbing select-none">
-                                <span className="text-[13px] leading-none">⠿</span>
-                                Déplacer
-                              </span>
-                            </div>
+                            {/* Drag handle — only in edit mode */}
+                            {editMode && (
+                              <div
+                                {...dragProvided.dragHandleProps}
+                                className="absolute -top-2.5 right-3 z-10"
+                              >
+                                <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-600 text-[16px] cursor-grab active:cursor-grabbing shadow-sm animate-wiggle select-none">
+                                  ⠿
+                                </span>
+                              </div>
+                            )}
+                            {/* Hidden handle to satisfy DnD when not in edit mode */}
+                            {!editMode && (
+                              <div {...dragProvided.dragHandleProps} className="hidden" />
+                            )}
                             {content}
                           </div>
                         )}
@@ -1695,6 +1717,8 @@ export default function TicketDetailPage() {
         onPrefsChange={savePrefs}
         layout={layout}
         onResetLayout={resetLayout}
+        editMode={editMode}
+        onToggleEditMode={() => setEditMode(m => !m)}
       />
     </div>
   );
