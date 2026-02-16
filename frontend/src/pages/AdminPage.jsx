@@ -173,10 +173,11 @@ function AdminLogin({ onLogin }) {
     setError('');
     setLoading(true);
     try {
-      const res = await api.adminLogin(identifiant, password);
-      if (res.success || res.token) {
-        const authData = { token: res.token, ts: Date.now() };
+      const res = await api.verifyAdmin(identifiant, password);
+      if (res.success) {
+        const authData = { ts: Date.now() };
         localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+        localStorage.setItem('klikphone_admin', 'true');
         onLogin(authData);
       } else {
         setError('Identifiants incorrects');
@@ -656,6 +657,8 @@ function AdminDashboard({ onLogout }) {
 // ─── Main Export ──────────────────────────────────────────
 export default function AdminPage() {
   const [auth, setAuth] = useState(() => {
+    // Skip own login if already in admin mode (from sidebar AdminLoginModal)
+    if (localStorage.getItem('klikphone_admin') === 'true') return { ts: Date.now() };
     try {
       const stored = localStorage.getItem(AUTH_KEY);
       return stored ? JSON.parse(stored) : null;
@@ -666,5 +669,5 @@ export default function AdminPage() {
     return <AdminLogin onLogin={(data) => setAuth(data)} />;
   }
 
-  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); setAuth(null); }} />;
+  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); localStorage.removeItem('klikphone_admin'); setAuth(null); }} />;
 }

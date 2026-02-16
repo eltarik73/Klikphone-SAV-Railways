@@ -17,9 +17,13 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 def _require_admin(user: dict = Depends(get_current_user)):
-    """Dependency: vérifie que l'utilisateur est admin."""
-    if user.get("role") != "admin":
+    """Dependency: vérifie que l'utilisateur est admin (lookup DB)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user.get("sub", ""),))
+        row = cur.fetchone()
+    if not row or row.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
+    user["role"] = "admin"
     return user
 
 

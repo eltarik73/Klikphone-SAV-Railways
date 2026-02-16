@@ -20,9 +20,13 @@ from app.api.auth import get_current_user
 
 
 def _require_admin_marketing(user: dict = Depends(get_current_user)):
-    """Dependency: admin required for marketing actions."""
-    if user.get("role") != "admin":
+    """Dependency: admin required for marketing actions (lookup DB)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user.get("sub", ""),))
+        row = cur.fetchone()
+    if not row or row.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
+    user["role"] = "admin"
     return user
 
 router = APIRouter(prefix="/api/marketing", tags=["marketing"])
