@@ -12,6 +12,7 @@ import RepairTimer from '../components/RepairTimer';
 import LiveCountdown from '../components/LiveCountdown';
 import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
 import {
@@ -20,7 +21,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
   Zap, Edit3, X, CheckCircle2,
-  Flag, PhoneCall, Percent, ListOrdered,
+  Flag, PhoneCall, Percent,
 } from 'lucide-react';
 
 // ─── Editable Section Component ────────────────────────────────
@@ -54,18 +55,12 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
   );
 }
 
-// ─── Layout Blocks Config ────────────────────────────────────
-const VALID_BLOCK_IDS = new Set(['client', 'device', 'dates', 'notes', 'messages', 'reparation', 'status', 'fidelite']);
-const INITIAL_BLOCKS = [
-  { id: 'client',      title: 'Client',               col: 'left',  order: 0, size: 'normal' },
-  { id: 'device',      title: 'Appareil',             col: 'left',  order: 1, size: 'normal' },
-  { id: 'dates',       title: 'Dates',                col: 'left',  order: 2, size: 'compact' },
-  { id: 'messages',    title: 'Messages',             col: 'left',  order: 3, size: 'normal' },
-  { id: 'notes',       title: 'Notes internes',       col: 'left',  order: 4, size: 'normal' },
-  { id: 'reparation',  title: 'Réparation & Tarifs',  col: 'right', order: 0, size: 'large' },
-  { id: 'status',      title: 'Statut',               col: 'right', order: 1, size: 'compact' },
-  { id: 'fidelite',    title: 'Fidélité',             col: 'right', order: 2, size: 'compact' },
-];
+// ─── Layout Config ────────────────────────────────────────────
+const DEFAULT_LAYOUT = {
+  left: ['client', 'device', 'dates', 'messages', 'notes'],
+  right: ['reparation', 'status', 'queue', 'fidelite'],
+};
+const ALL_WIDGET_IDS = new Set([...DEFAULT_LAYOUT.left, ...DEFAULT_LAYOUT.right]);
 
 export default function TicketDetailPage() {
   const { id } = useParams();
@@ -124,14 +119,11 @@ export default function TicketDetailPage() {
   // Rendu au client — payment modal
   const [showRenduModal, setShowRenduModal] = useState(false);
 
-  // Layout drag & drop
-  const [blocks, setBlocks] = useState(INITIAL_BLOCKS);
-  const [dragId, setDragId] = useState(null);
-  const [layoutEditMode, setLayoutEditMode] = useState(false);
+  // Layout (DnD)
+  const [layout, setLayout] = useState(DEFAULT_LAYOUT);
 
   // Widget preferences + panels
   const [widgetPrefs, setWidgetPrefs] = useState({ timer: true, countdown: true, queue: true });
-  const [showQueue, setShowQueue] = useState(false);
   const [showPersonnaliser, setShowPersonnaliser] = useState(false);
 
   // Commandes de pièces
@@ -243,10 +235,15 @@ export default function TicketDetailPage() {
     try {
       const saved = localStorage.getItem(`kp_layout_${user.utilisateur}`);
       if (saved) {
-        const parsed = JSON.parse(saved).filter(b => VALID_BLOCK_IDS.has(b.id));
-        const savedIds = new Set(parsed.map(b => b.id));
-        const missing = INITIAL_BLOCKS.filter(b => !savedIds.has(b.id));
-        if (parsed.length > 0) setBlocks([...parsed, ...missing]);
+        const parsed = JSON.parse(saved);
+        if (parsed.left && parsed.right) {
+          const allSaved = [...parsed.left, ...parsed.right];
+          const validLeft = parsed.left.filter(id => ALL_WIDGET_IDS.has(id));
+          const validRight = parsed.right.filter(id => ALL_WIDGET_IDS.has(id));
+          const savedSet = new Set(allSaved.filter(id => ALL_WIDGET_IDS.has(id)));
+          const missing = [...ALL_WIDGET_IDS].filter(id => !savedSet.has(id));
+          setLayout({ left: validLeft, right: [...validRight, ...missing] });
+        }
       }
     } catch {}
     try {
@@ -255,17 +252,17 @@ export default function TicketDetailPage() {
     } catch {}
   }, [user?.utilisateur]);
 
-  const saveLayout = () => {
-    if (!user?.utilisateur) return;
-    localStorage.setItem(`kp_layout_${user.utilisateur}`, JSON.stringify(blocks));
-    toast.success('Layout sauvegardé');
-    setLayoutEditMode(false);
+  const persistLayout = (newLayout) => {
+    setLayout(newLayout);
+    if (user?.utilisateur) {
+      localStorage.setItem(`kp_layout_${user.utilisateur}`, JSON.stringify(newLayout));
+    }
   };
 
   const resetLayout = () => {
     if (!user?.utilisateur) return;
     localStorage.removeItem(`kp_layout_${user.utilisateur}`);
-    setBlocks(INITIAL_BLOCKS);
+    setLayout(DEFAULT_LAYOUT);
     toast.success('Layout réinitialisé');
   };
 
@@ -276,38 +273,27 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleLayoutDrop = (targetId) => {
-    if (!dragId || dragId === targetId) return;
-    setBlocks(prev => {
-      const updated = prev.map(b => ({ ...b }));
-      const drag = updated.find(b => b.id === dragId);
-      const target = updated.find(b => b.id === targetId);
-      if (!drag || !target) return prev;
-      const tmpCol = drag.col, tmpOrder = drag.order;
-      drag.col = target.col; drag.order = target.order;
-      target.col = tmpCol; target.order = tmpOrder;
-      return updated;
-    });
-    setDragId(null);
-  };
+  const handleDragEnd = (result) => {
+    const { source, destination } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-  const cycleSize = (blockId) => {
-    setBlocks(prev => prev.map(b =>
-      b.id === blockId
-        ? { ...b, size: b.size === 'compact' ? 'normal' : b.size === 'normal' ? 'large' : 'compact' }
-        : b
-    ));
-  };
+    const sourceCol = source.droppableId;
+    const destCol = destination.droppableId;
+    const newLayout = { left: [...layout.left], right: [...layout.right] };
 
-  const moveToCol = (blockId, newCol) => {
-    setBlocks(prev => {
-      const updated = prev.map(b => ({ ...b }));
-      const block = updated.find(b => b.id === blockId);
-      if (!block) return prev;
-      block.col = newCol;
-      block.order = updated.filter(b => b.col === newCol && b.id !== blockId).length;
-      return updated;
-    });
+    if (sourceCol === destCol) {
+      const items = newLayout[sourceCol];
+      const [moved] = items.splice(source.index, 1);
+      items.splice(destination.index, 0, moved);
+    } else {
+      const sourceItems = newLayout[sourceCol];
+      const destItems = newLayout[destCol];
+      const [moved] = sourceItems.splice(source.index, 1);
+      destItems.splice(destination.index, 0, moved);
+    }
+
+    persistLayout(newLayout);
   };
 
   // ─── Save handlers ────────────────────────────────────────────
@@ -1289,53 +1275,25 @@ export default function TicketDetailPage() {
           </div>
         );
 
+      case 'queue':
+        if (!widgetPrefs.queue) return null;
+        return (
+          <RepairQueue
+            open={true}
+            onClose={() => {}}
+            currentTicketId={parseInt(id)}
+            basePath={basePath}
+            user={user}
+            inline
+          />
+        );
+
       case 'fidelite':
         return t.client_id && !isTech ? <FideliteCard clientId={t.client_id} /> : null;
 
       default:
         return null;
     }
-  };
-
-  const renderBlock = (block) => {
-    const content = renderBlockContent(block.id);
-    if (!content) return null;
-
-    if (!layoutEditMode) {
-      return <div key={block.id}>{content}</div>;
-    }
-
-    const sizeLabel = block.size === 'compact' ? 'S' : block.size === 'large' ? 'L' : 'M';
-
-    return (
-      <div
-        key={block.id}
-        draggable
-        onDragStart={() => setDragId(block.id)}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => { e.preventDefault(); handleLayoutDrop(block.id); }}
-        className={`relative group rounded-xl transition-all ${
-          dragId === block.id ? 'opacity-40 scale-[0.98]' : ''
-        } ${layoutEditMode ? 'ring-2 ring-dashed ring-slate-200 hover:ring-brand-400' : ''}`}
-      >
-        <div className="absolute -top-3 left-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-          <span className="px-2 py-0.5 bg-brand-600 text-white text-[10px] rounded-full font-medium cursor-grab active:cursor-grabbing shadow-sm">
-            ⠿ {block.title}
-          </span>
-          <button onClick={() => cycleSize(block.id)}
-            className="px-1.5 py-0.5 bg-slate-700 text-white text-[10px] rounded-full hover:bg-slate-600 shadow-sm">
-            {sizeLabel}
-          </button>
-          <button onClick={() => moveToCol(block.id, block.col === 'left' ? 'right' : 'left')}
-            className="px-1.5 py-0.5 bg-slate-700 text-white text-[10px] rounded-full hover:bg-slate-600 shadow-sm">
-            {block.col === 'left' ? '→' : '←'}
-          </button>
-        </div>
-        <div className={block.size === 'compact' ? 'max-h-52 overflow-hidden' : ''}>
-          {content}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -1649,39 +1607,64 @@ export default function TicketDetailPage() {
         >
           <Edit3 className="w-3.5 h-3.5" /> Personnaliser
         </button>
-        <button
-          onClick={() => setShowQueue(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
-        >
-          <ListOrdered className="w-3.5 h-3.5" /> File d'attente
-        </button>
-        {layoutEditMode && (
-          <>
-            <button onClick={saveLayout} className="btn-primary text-xs px-3 py-1.5">
-              <Save className="w-3.5 h-3.5" /> Sauver
-            </button>
-            <button onClick={resetLayout} className="btn-ghost text-xs px-3 py-1.5">
-              Réinitialiser
-            </button>
-          </>
-        )}
       </div>
 
-      {layoutEditMode && (
-        <div className="p-3 mb-5 rounded-lg bg-brand-50 border border-brand-200 text-xs text-brand-700">
-          Glissez-déposez les blocs pour réorganiser. Cliquez S/M/L pour changer la taille, les flèches pour déplacer entre colonnes.
-        </div>
-      )}
+      {/* Content grid — drag & drop layout */}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-5">
+          {['left', 'right'].map(colId => (
+            <Droppable key={colId} droppableId={colId}>
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className={`space-y-5 min-h-[200px] rounded-xl p-1 transition-colors duration-200 ${
+                    snapshot.isDraggingOver
+                      ? colId === 'left'
+                        ? 'bg-blue-50/40 ring-2 ring-dashed ring-blue-300'
+                        : 'bg-violet-50/40 ring-2 ring-dashed ring-violet-300'
+                      : ''
+                  }`}
+                >
+                  {layout[colId].map((widgetId, index) => {
+                    const content = renderBlockContent(widgetId);
+                    if (!content) return null;
 
-      {/* Content grid — dynamic layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-5">
-        <div className="space-y-5">
-          {blocks.filter(b => b.col === 'left').sort((a, b) => a.order - b.order).map(renderBlock)}
+                    return (
+                      <Draggable key={widgetId} draggableId={widgetId} index={index}>
+                        {(dragProvided, dragSnapshot) => (
+                          <div
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            className={`group relative transition-shadow ${
+                              dragSnapshot.isDragging
+                                ? 'shadow-2xl shadow-brand-500/20 rotate-[1.5deg] z-50'
+                                : ''
+                            }`}
+                          >
+                            {/* Drag handle */}
+                            <div
+                              {...dragProvided.dragHandleProps}
+                              className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-700 text-white text-[10px] font-semibold shadow-lg cursor-grab active:cursor-grabbing select-none">
+                                <span className="text-[13px] leading-none">⠿</span>
+                                Déplacer
+                              </span>
+                            </div>
+                            {content}
+                          </div>
+                        )}
+                      </Draggable>
+                    );
+                  })}
+                  {provided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          ))}
         </div>
-        <div className="space-y-5">
-          {blocks.filter(b => b.col === 'right').sort((a, b) => a.order - b.order).map(renderBlock)}
-        </div>
-      </div>
+      </DragDropContext>
       </div>
 
       {/* Delete link */}
@@ -1710,19 +1693,8 @@ export default function TicketDetailPage() {
         onClose={() => setShowPersonnaliser(false)}
         prefs={widgetPrefs}
         onPrefsChange={savePrefs}
-        layoutEditMode={layoutEditMode}
-        onToggleEditMode={() => setLayoutEditMode(m => !m)}
-        onSaveLayout={saveLayout}
+        layout={layout}
         onResetLayout={resetLayout}
-      />
-
-      {/* Repair queue panel */}
-      <RepairQueue
-        open={showQueue}
-        onClose={() => setShowQueue(false)}
-        currentTicketId={parseInt(id)}
-        basePath={basePath}
-        user={user}
       />
     </div>
   );

@@ -1,4 +1,16 @@
-import { X, Timer, Clock, ListOrdered, GripVertical, RotateCcw, Save, Info } from 'lucide-react';
+import { X, Timer, Clock, ListOrdered, RotateCcw, Info } from 'lucide-react';
+
+const WIDGET_META = {
+  client: { label: 'Client' },
+  device: { label: 'Appareil' },
+  dates: { label: 'Dates' },
+  reparation: { label: 'Réparation & Tarifs' },
+  status: { label: 'Statut' },
+  queue: { label: "File d'attente" },
+  messages: { label: 'Messages' },
+  notes: { label: 'Notes internes' },
+  fidelite: { label: 'Fidélité' },
+};
 
 function ToggleSwitch({ icon: Icon, label, desc, value, onChange }) {
   return (
@@ -29,9 +41,7 @@ export default function PersonnaliserPanel({
   onClose,
   prefs,
   onPrefsChange,
-  layoutEditMode,
-  onToggleEditMode,
-  onSaveLayout,
+  layout,
   onResetLayout,
 }) {
   if (!open) return null;
@@ -85,49 +95,55 @@ export default function PersonnaliserPanel({
             <ToggleSwitch
               icon={ListOrdered}
               label="File d'attente"
-              desc="Bouton pour voir les prochaines réparations"
+              desc="Widget avec les prochaines réparations"
               value={prefs.queue}
               onChange={() => handleToggle('queue')}
             />
           </div>
 
-          {/* Layout section */}
-          <div className="px-5 py-4">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-              Sections de la fiche
-            </div>
-            <button
-              onClick={() => { onToggleEditMode(); onClose(); }}
-              className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-semibold transition-colors ${
-                layoutEditMode
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200'
-                  : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
-              }`}
-            >
-              <GripVertical className="w-4 h-4" />
-              {layoutEditMode ? 'Mode édition actif' : 'Réorganiser les sections'}
-            </button>
-            <p className="text-[11px] text-slate-400 mt-2 ml-1">
-              Glissez-déposez les blocs, changez leur taille (S/M/L) et déplacez-les entre colonnes.
-            </p>
-
-            {layoutEditMode && (
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={() => { onSaveLayout(); onClose(); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition-colors"
-                >
-                  <Save className="w-3.5 h-3.5" /> Sauver
-                </button>
-                <button
-                  onClick={() => { onResetLayout(); onClose(); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" /> Réinitialiser
-                </button>
+          {/* Current layout view */}
+          {layout && (
+            <div className="px-5 py-4">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                Position des widgets
               </div>
-            )}
-          </div>
+              <p className="text-[11px] text-slate-400 mb-3">
+                Glissez les widgets directement sur la page pour les réorganiser entre colonnes.
+              </p>
+
+              {/* Left column */}
+              <div className="mb-3">
+                <div className="text-[10px] font-bold text-blue-500 mb-1.5">Colonne gauche</div>
+                <div className="space-y-1">
+                  {layout.left.map(key => (
+                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-50/50 text-xs font-medium text-slate-700">
+                      {WIDGET_META[key]?.label || key}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right column */}
+              <div className="mb-3">
+                <div className="text-[10px] font-bold text-violet-500 mb-1.5">Colonne droite</div>
+                <div className="space-y-1">
+                  {layout.right.map(key => (
+                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-50/50 text-xs font-medium text-slate-700">
+                      {WIDGET_META[key]?.label || key}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Reset button */}
+              <button
+                onClick={() => { onResetLayout(); onClose(); }}
+                className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg bg-slate-100 text-slate-600 text-xs font-semibold hover:bg-slate-200 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Réinitialiser le layout
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer note */}
