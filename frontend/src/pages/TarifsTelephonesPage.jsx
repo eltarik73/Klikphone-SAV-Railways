@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import {
   Smartphone, Search, RefreshCw, Filter, ChevronDown, Shield,
   Package, Loader2, SlidersHorizontal, Sparkles, Tag,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useApi, invalidateCache } from '../hooks/useApi';
 
 // ─── Constantes ──────────────────────────────────
 
@@ -232,14 +233,7 @@ export default function TarifsTelephonesPage() {
   const { user } = useAuth();
   const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
 
-  // Data state
-  const [phones, setPhones] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [marques, setMarques] = useState([]);
-
-  // Loading state
-  const [loadingPhones, setLoadingPhones] = useState(true);
-  const [loadingStats, setLoadingStats] = useState(true);
+  // Loading / UI state
   const [syncing, setSyncing] = useState(false);
 
   // Filter state
@@ -252,62 +246,51 @@ export default function TarifsTelephonesPage() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const ITEMS_PER_PAGE = 24;
 
-  // ─── Data fetching ─────────────────────────────
+  // ─── Data fetching via useApi ─────────────────
 
-  const fetchStats = useCallback(async () => {
-    setLoadingStats(true);
-    try {
-      const [s, m] = await Promise.all([
-        api.getTelephoneStats(),
-        api.getTelephoneMarques(),
-      ]);
-      setStats(s);
-      setMarques(m || []);
-    } catch (err) {
-      console.error('Erreur chargement stats telephones:', err);
-    } finally {
-      setLoadingStats(false);
-    }
-  }, []);
+  const { data: statsData, loading: loadingStats, isRevalidating: statsRevalidating } = useApi(
+    'telephones:stats',
+    async () => {
+      const [s, m] = await Promise.all([api.getTelephoneStats(), api.getTelephoneMarques()]);
+      return { stats: s, marques: m || [] };
+    },
+    { tags: ['telephones'], ttl: 300_000 }
+  );
+  const stats = statsData?.stats ?? null;
+  const marques = statsData?.marques ?? [];
 
-  const fetchPhones = useCallback(async (page = currentPage) => {
-    setLoadingPhones(true);
-    try {
-      const params = { page, limit: ITEMS_PER_PAGE };
+  const phonesKey = useMemo(() => {
+    const p = ['telephones:list', `p:${currentPage}`];
+    if (selectedBrand) p.push(`b:${selectedBrand}`);
+    if (typeProduit) p.push(`t:${typeProduit}`);
+    if (enStockOnly) p.push('stock');
+    if (searchQuery.trim()) p.push(`q:${searchQuery.trim()}`);
+    if (sortBy) p.push(`sort:${sortBy}`);
+    return p.join(':');
+  }, [currentPage, selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
+
+  const { data: phonesData, loading: loadingPhones } = useApi(
+    phonesKey,
+    async () => {
+      const params = { page: currentPage, limit: 24 };
       if (selectedBrand) params.marque = selectedBrand;
       if (typeProduit) params.type_produit = typeProduit;
       if (enStockOnly) params.en_stock = true;
       if (searchQuery.trim()) params.search = searchQuery.trim();
       if (sortBy) params.tri = sortBy;
-
       const data = await api.getTelephonesCatalogue(params);
       if (data && data.items) {
-        setPhones(data.items);
-        setTotalPages(data.total_pages || 1);
-        setTotalItems(data.total || 0);
-      } else {
-        // Fallback for old API format
-        const arr = Array.isArray(data) ? data : [];
-        setPhones(arr);
-        setTotalPages(1);
-        setTotalItems(arr.length);
+        return { phones: data.items, totalPages: data.total_pages || 1, totalItems: data.total || 0 };
       }
-    } catch (err) {
-      console.error('Erreur chargement telephones:', err);
-      setPhones([]);
-    } finally {
-      setLoadingPhones(false);
-    }
-  }, [currentPage, selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
-
-  // Initial load
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+      const arr = Array.isArray(data) ? data : [];
+      return { phones: arr, totalPages: 1, totalItems: arr.length };
+    },
+    { tags: ['telephones'], ttl: 300_000 }
+  );
+  const phones = phonesData?.phones ?? [];
+  const totalPages = phonesData?.totalPages ?? 1;
+  const totalItems = phonesData?.totalItems ?? 0;
 
   // Reset page when filters change
   const prevFilters = useRef({ selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy });
@@ -315,13 +298,10 @@ export default function TarifsTelephonesPage() {
     const pf = prevFilters.current;
     if (pf.selectedBrand !== selectedBrand || pf.typeProduit !== typeProduit ||
         pf.enStockOnly !== enStockOnly || pf.searchQuery !== searchQuery || pf.sortBy !== sortBy) {
-      prevFilters.current = { selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy };
       setCurrentPage(1);
-      fetchPhones(1);
-    } else {
-      fetchPhones(currentPage);
     }
-  }, [selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy, currentPage]);
+    prevFilters.current = { selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy };
+  }, [selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
 
   // ─── Sync handler ──────────────────────────────
 
@@ -343,7 +323,7 @@ export default function TarifsTelephonesPage() {
         } catch { break; }
       }
       setCurrentPage(1);
-      await Promise.all([fetchStats(), fetchPhones(1)]);
+      invalidateCache('telephones');
     } catch (err) {
       console.error('Erreur sync telephones:', err);
     } finally {

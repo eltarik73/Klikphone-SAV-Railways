@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import api from '../lib/api';
+import { useApi } from '../hooks/useApi';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -233,33 +234,17 @@ function AdminLogin({ onLogin }) {
 
 // ─── Main Dashboard ───────────────────────────────────────
 function AdminDashboard({ onLogout }) {
-  const [loading, setLoading] = useState(true);
   const [techDays, setTechDays] = useState(7);
   const [period, setPeriod] = useState('30d');
   const [customStart, setCustomStart] = useState(toISODate(new Date(Date.now() - 30 * 86400000)));
   const [customEnd, setCustomEnd] = useState(toISODate(new Date()));
 
-  // Data states
-  const [overview, setOverview] = useState(null);
-  const [repParTech, setRepParTech] = useState(null);
-  const [affluenceHeure, setAffluenceHeure] = useState([]);
-  const [affluenceJour, setAffluenceJour] = useState([]);
-  const [marques, setMarques] = useState([]);
-  const [pannes, setPannes] = useState([]);
-  const [evolutionCA, setEvolutionCA] = useState([]);
-  const [tempsRep, setTempsRep] = useState([]);
-  const [conversion, setConversion] = useState(null);
-  const [topClients, setTopClients] = useState([]);
-  const [techPerf, setTechPerf] = useState([]);
-  const [error, setError] = useState('');
+  const adminKey = useMemo(() => `admin:${period}:${customStart}:${customEnd}:${techDays}`, [period, customStart, customEnd, techDays]);
 
-  const dateRange = computeDateRange(period, customStart, customEnd);
-
-  const loadAll = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    const dr = computeDateRange(period, customStart, customEnd);
-    try {
+  const { data: adminData, loading, isRevalidating, mutate: mutateAdmin } = useApi(
+    adminKey,
+    async () => {
+      const dr = computeDateRange(period, customStart, customEnd);
       const [ov, rpt, ah, aj, mq, pn, eca, tr, tc, tcl, tp] = await Promise.all([
         api.getAdminOverview(dr).catch(() => null),
         api.getAdminReparationsParTech(techDays, dr).catch(() => null),
@@ -273,36 +258,36 @@ function AdminDashboard({ onLogout }) {
         api.getAdminTopClients(dr).catch(() => []),
         api.getAdminPerformanceTech().catch(() => []),
       ]);
-      setOverview(ov);
-      setRepParTech(rpt);
-      setAffluenceHeure(Array.isArray(ah) ? ah : []);
-      setAffluenceJour(Array.isArray(aj) ? aj : []);
-      setMarques(Array.isArray(mq) ? mq : []);
-      setPannes(Array.isArray(pn) ? pn : []);
-      setEvolutionCA(Array.isArray(eca) ? eca : []);
-      setTempsRep(Array.isArray(tr) ? tr : []);
-      setConversion(tc);
-      setTopClients(Array.isArray(tcl) ? tcl : []);
-      setTechPerf(Array.isArray(tp) ? tp : []);
-    } catch (err) {
-      setError('Erreur lors du chargement des données');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [period, customStart, customEnd, techDays]);
+      return {
+        overview: ov, repParTech: rpt,
+        affluenceHeure: Array.isArray(ah) ? ah : [],
+        affluenceJour: Array.isArray(aj) ? aj : [],
+        marques: Array.isArray(mq) ? mq : [],
+        pannes: Array.isArray(pn) ? pn : [],
+        evolutionCA: Array.isArray(eca) ? eca : [],
+        tempsRep: Array.isArray(tr) ? tr : [],
+        conversion: tc,
+        topClients: Array.isArray(tcl) ? tcl : [],
+        techPerf: Array.isArray(tp) ? tp : [],
+      };
+    },
+    { tags: ['admin'], ttl: 120_000 }
+  );
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  const overview = adminData?.overview ?? null;
+  const repParTech = adminData?.repParTech ?? null;
+  const affluenceHeure = adminData?.affluenceHeure ?? [];
+  const affluenceJour = adminData?.affluenceJour ?? [];
+  const marques = adminData?.marques ?? [];
+  const pannes = adminData?.pannes ?? [];
+  const evolutionCA = adminData?.evolutionCA ?? [];
+  const tempsRep = adminData?.tempsRep ?? [];
+  const conversion = adminData?.conversion ?? null;
+  const topClients = adminData?.topClients ?? [];
+  const techPerf = adminData?.techPerf ?? [];
+  const errorMsg = (!loading && !adminData && !isRevalidating) ? 'Erreur lors du chargement des données' : '';
 
-  // Reload only tech chart when days toggle changes
-  const handleTechDays = useCallback(async (days) => {
-    setTechDays(days);
-    try {
-      const dr = computeDateRange(period, customStart, customEnd);
-      const rpt = await api.getAdminReparationsParTech(days, dr);
-      setRepParTech(rpt);
-    } catch { /* ignore */ }
-  }, [period, customStart, customEnd]);
+  const handleTechDays = (days) => { setTechDays(days); };
 
   // ── KPI Cards ──
   const kpiCards = overview ? [
@@ -346,8 +331,8 @@ function AdminDashboard({ onLogout }) {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">{error}</div>
+        {errorMsg && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-sm text-red-400">{errorMsg}</div>
         )}
 
         {/* ═══ Section 1: KPI Cards ═══ */}

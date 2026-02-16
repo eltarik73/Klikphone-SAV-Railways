@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { formatDateShort } from '../lib/utils';
 import {
@@ -14,8 +15,6 @@ export default function ClientsPage() {
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
 
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState(null);
@@ -24,7 +23,6 @@ export default function ClientsPage() {
   const [editForm, setEditForm] = useState({});
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_clients_page_size') || '50'));
-  const [hasMore, setHasMore] = useState(true);
   const [sortField, setSortField] = useState('date_creation');
   const [sortDir, setSortDir] = useState('desc');
   const searchTimer = useRef(null);
@@ -36,22 +34,24 @@ export default function ClientsPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  const loadClients = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = { limit: pageSize, offset: page * pageSize };
-      if (debouncedSearch) params.search = debouncedSearch;
-      const data = await api.getClients(params);
-      setClients(data);
-      setHasMore(data.length === pageSize);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  const clientsKey = useMemo(() => {
+    const parts = ['clients'];
+    if (debouncedSearch) parts.push(`s:${debouncedSearch}`);
+    parts.push(`p:${page}:${pageSize}`);
+    return parts.join(':');
   }, [debouncedSearch, page, pageSize]);
 
-  useEffect(() => { loadClients(); }, [loadClients]);
+  const { data: clientsData, loading, isRevalidating, mutate: mutateClients } = useApi(
+    clientsKey,
+    async () => {
+      const params = { limit: pageSize, offset: page * pageSize };
+      if (debouncedSearch) params.search = debouncedSearch;
+      return api.getClients(params);
+    },
+    { tags: ['clients'], ttl: 60_000 }
+  );
+  const clients = clientsData ?? [];
+  const hasMore = clients.length === pageSize;
 
   const sorted = useMemo(() => [...clients].sort((a, b) => {
     let va = a[sortField], vb = b[sortField];
@@ -103,7 +103,7 @@ export default function ClientsPage() {
     try {
       await api.updateClient(selectedClient.id, editForm);
       setEditMode(false);
-      await loadClients();
+      invalidateCache('clients');
       setSelectedClient(prev => ({ ...prev, ...editForm }));
     } catch (err) {
       console.error(err);
@@ -115,7 +115,7 @@ export default function ClientsPage() {
     try {
       await api.deleteClient(id);
       setSelectedClient(null);
-      await loadClients();
+      invalidateCache('clients');
     } catch (err) {
       console.error(err);
     }

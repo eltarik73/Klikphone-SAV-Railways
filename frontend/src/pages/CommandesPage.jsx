@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { formatDateShort, formatPrix } from '../lib/utils';
 import {
@@ -14,8 +15,6 @@ export default function CommandesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
-  const [parts, setParts] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
@@ -34,22 +33,24 @@ export default function CommandesPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  const loadParts = useCallback(async () => {
-    setLoading(true);
-    try {
+  const partsKey = useMemo(() => {
+    const p = ['commandes'];
+    if (debouncedSearch) p.push(`s:${debouncedSearch}`);
+    if (filterStatut) p.push(`f:${filterStatut}`);
+    return p.join(':');
+  }, [debouncedSearch, filterStatut]);
+
+  const { data: partsData, loading, isRevalidating, mutate: mutateParts } = useApi(
+    partsKey,
+    async () => {
       const params = {};
       if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatut) params.statut = filterStatut;
-      const data = await api.getParts(params);
-      setParts(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedSearch, filterStatut]);
-
-  useEffect(() => { loadParts(); }, [loadParts]);
+      return api.getParts(params);
+    },
+    { tags: ['commandes'], ttl: 60_000 }
+  );
+  const parts = partsData ?? [];
 
   const resetForm = () => {
     setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '' });
@@ -69,7 +70,7 @@ export default function CommandesPage() {
         await api.createPart(data);
       }
       resetForm();
-      await loadParts();
+      invalidateCache('commandes');
     } catch (err) {
       console.error(err);
     }
@@ -93,7 +94,7 @@ export default function CommandesPage() {
     if (!confirm('Supprimer cette commande ?')) return;
     try {
       await api.deletePart(id);
-      await loadParts();
+      invalidateCache('commandes');
     } catch (err) {
       console.error(err);
     }
@@ -102,7 +103,7 @@ export default function CommandesPage() {
   const handleQuickStatus = async (part, newStatut) => {
     try {
       await api.updatePart(part.id, { statut: newStatut });
-      await loadParts();
+      invalidateCache('commandes');
     } catch (err) {
       console.error(err);
     }

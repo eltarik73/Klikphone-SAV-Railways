@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import api from '../lib/api';
+import { clearCache } from './useApi';
 
 const AuthContext = createContext(null);
 
@@ -65,6 +66,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     api.logout();
     localStorage.removeItem('kp_role');
+    clearCache();
     setUser(null);
   };
 

@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
 import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
@@ -15,21 +16,15 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
 
-  const [kpi, setKpi] = useState(null);
-  const [tickets, setTickets] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [activeKpi, setActiveKpi] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [techColors, setTechColors] = useState({});
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [filterTech, setFilterTech] = useState('');
-  const [teamList, setTeamList] = useState([]);
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
   const [page, setPage] = useState(0);
   const searchTimer = useRef(null);
@@ -41,42 +36,52 @@ export default function DashboardPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
+  // SWR: Dashboard data (KPI + tickets)
+  const dashKey = useMemo(() => {
+    const parts = ['dashboard'];
+    if (debouncedSearch) parts.push(`s:${debouncedSearch}`);
+    if (filterStatut) parts.push(`f:${filterStatut}`);
+    return parts.join(':');
+  }, [debouncedSearch, filterStatut]);
+
+  const { data: dashData, loading, isRevalidating, mutate } = useApi(
+    dashKey,
+    async () => {
       const params = { limit: 200 };
       if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatut) params.statut = filterStatut;
-
       const [kpiData, ticketsData] = await Promise.all([
-        api.getKPI(),
-        api.getTickets(params),
+        api.getKPI(), api.getTickets(params),
       ]);
-      setKpi(kpiData);
-      setTickets(ticketsData);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedSearch, filterStatut, refreshKey]);
+      return { kpi: kpiData, tickets: ticketsData };
+    },
+    { tags: ['dashboard', 'tickets'], ttl: 30_000 }
+  );
+  const kpi = dashData?.kpi ?? null;
+  const tickets = dashData?.tickets ?? [];
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // SWR: Team members
+  const { data: teamData } = useApi('team:active', () => api.getActiveTeam(), { tags: ['team'], ttl: 300_000 });
+  const teamList = teamData ?? [];
+  const techColors = useMemo(() => {
+    const map = {};
+    teamList.forEach(m => { if (m.couleur) map[m.nom] = m.couleur; });
+    return map;
+  }, [teamList]);
 
+  // Prefetch frequent pages on mount
   useEffect(() => {
-    api.getActiveTeam()
-      .then(members => {
-        const map = {};
-        members.forEach(m => { if (m.couleur) map[m.nom] = m.couleur; });
-        setTechColors(map);
-        setTeamList(members);
-      })
-      .catch(() => {});
+    prefetch('clients:p:0:20', () => api.getClients({ limit: 20, offset: 0 }), { tags: ['clients'], ttl: 60_000 });
+    prefetch('tarifs', () => Promise.all([api.getTarifs(), api.getTarifStats(), api.getAppleDevices()]).then(([t, s, a]) => ({ tarifs: t, stats: s, appleDevices: a })), { tags: ['tarifs'], ttl: 300_000 });
+    prefetch('config:main', () => Promise.all([api.getConfig(), api.getActiveTeam()]).then(([c, t]) => ({ config: c, team: t })), { tags: ['config', 'team'], ttl: 300_000 });
   }, []);
 
+  // Auto-refresh every 30s
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   useEffect(() => {
-    const interval = setInterval(() => setRefreshKey(k => k + 1), 30000);
-    return () => clearInterval(interval);
+    const id = setInterval(() => mutateRef.current(), 30_000);
+    return () => clearInterval(id);
   }, []);
 
   const toggleSelect = (id) => {
@@ -102,7 +107,7 @@ export default function DashboardPage() {
       await Promise.all([...selectedIds].map(id => api.changeStatus(id, statut)));
       setSelectedIds(new Set());
       setShowBulkMenu(false);
-      setRefreshKey(k => k + 1);
+      invalidateCache('tickets', 'dashboard');
     } catch (err) {
       console.error(err);
     }
@@ -111,9 +116,9 @@ export default function DashboardPage() {
   const handleInlineStatus = async (ticketId, newStatut) => {
     try {
       await api.changeStatus(ticketId, newStatut);
-      setTickets(prev => prev.map(t =>
-        t.id === ticketId ? { ...t, statut: newStatut } : t
-      ));
+      mutate(prev => prev ? {
+        ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, statut: newStatut } : t),
+      } : prev);
     } catch (err) {
       console.error(err);
     }
@@ -122,9 +127,9 @@ export default function DashboardPage() {
   const handleInlineTech = async (ticketId, newTech) => {
     try {
       await api.updateTicket(ticketId, { technicien_assigne: newTech || null });
-      setTickets(prev => prev.map(t =>
-        t.id === ticketId ? { ...t, technicien_assigne: newTech || null } : t
-      ));
+      mutate(prev => prev ? {
+        ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, technicien_assigne: newTech || null } : t),
+      } : prev);
     } catch (err) {
       console.error(err);
     }
@@ -257,8 +262,8 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setRefreshKey(k => k + 1)} className="btn-ghost p-2.5" title="Rafraîchir">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <button onClick={() => mutate()} className="btn-ghost p-2.5" title="Rafraîchir">
+            <RefreshCw className={`w-4 h-4 ${loading || isRevalidating ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => navigate('/client')} className="btn-primary">
             <Plus className="w-4 h-4" /> Nouveau ticket

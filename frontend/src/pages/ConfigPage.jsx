@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
@@ -32,7 +33,6 @@ export default function ConfigPage() {
   const { animations, setAnimations } = useSettings();
   const [config, setConfig] = useState({});
   const [team, setTeam] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
@@ -94,30 +94,28 @@ export default function ConfigPage() {
 
   const categories = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
 
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [configData, teamData] = await Promise.all([
-        api.getConfig(),
-        api.getTeam(),
-      ]);
+  const { data: configData, loading, mutate: mutateConfig } = useApi(
+    'config:main',
+    async () => {
+      const [configRaw, teamData] = await Promise.all([api.getConfig(), api.getTeam()]);
       const configMap = {};
-      if (Array.isArray(configData)) {
-        configData.forEach(c => { configMap[c.cle] = c.valeur; });
+      if (Array.isArray(configRaw)) {
+        configRaw.forEach(c => { configMap[c.cle] = c.valeur; });
       } else {
-        Object.assign(configMap, configData);
+        Object.assign(configMap, configRaw);
       }
-      setConfig(configMap);
-      initialConfigRef.current = { ...configMap };
-      setTeam(teamData);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+      return { config: configMap, team: teamData };
+    },
+    { tags: ['config', 'team'], ttl: 300_000 }
+  );
+
+  useEffect(() => {
+    if (configData) {
+      setConfig(configData.config);
+      initialConfigRef.current = { ...configData.config };
+      setTeam(configData.team);
     }
-  };
+  }, [configData]);
 
   const loadCatalog = async () => {
     try {
@@ -184,7 +182,7 @@ export default function ConfigPage() {
       resetTeamForm();
       setShowAdminCodeModal(false);
       setAdminCode('');
-      await loadData();
+      invalidateCache('config', 'team');
       toast.success(editingMember ? 'Membre mis à jour' : 'Membre créé');
     } catch (err) {
       if (err.message?.includes('Code administrateur')) {
@@ -211,7 +209,7 @@ export default function ConfigPage() {
     if (!confirm('Supprimer ce membre ?')) return;
     try {
       await api.deleteTeamMember(id);
-      await loadData();
+      invalidateCache('config', 'team');
       toast.success('Membre supprimé');
     } catch (err) {
       toast.error('Erreur suppression');
@@ -349,7 +347,7 @@ export default function ConfigPage() {
       const result = await api.importBackup(data);
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
       toast.success(`Backup restauré : ${total} enregistrements importés`);
-      await loadData();
+      invalidateCache('config', 'team');
     } catch (err) {
       toast.error(err.message || 'Erreur import backup');
     } finally {

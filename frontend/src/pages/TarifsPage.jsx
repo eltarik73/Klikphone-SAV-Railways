@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones, PackageX, Tablet, Laptop, Lock, Unlock } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useApi, invalidateCache } from '../hooks/useApi';
 
 // ─── Constantes ──────────────────────────────────
 const BRAND_CONFIG = {
@@ -94,10 +95,20 @@ export default function TarifsPage() {
   const { user } = useAuth();
   const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
 
-  const [tarifs, setTarifs] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [appleDevices, setAppleDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data: tarifsData, loading, isRevalidating, mutate: mutateTarifs } = useApi(
+    'tarifs',
+    async () => {
+      const [t, s, ad] = await Promise.all([
+        api.getTarifs(), api.getTarifsStats(), api.getAppleDevices().catch(() => []),
+      ]);
+      return { tarifs: t, stats: s, appleDevices: ad || [] };
+    },
+    { tags: ['tarifs'], ttl: 300_000 }
+  );
+  const tarifs = tarifsData?.tarifs ?? [];
+  const stats = tarifsData?.stats ?? null;
+  const appleDevices = tarifsData?.appleDevices ?? [];
+
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const searchTimer = useRef(null);
@@ -105,12 +116,9 @@ export default function TarifsPage() {
   const [expandedBrands, setExpandedBrands] = useState(new Set());
   const [expandedModels, setExpandedModels] = useState(new Set());
   const [expandedSeries, setExpandedSeries] = useState(new Set());
-  const [updating, setUpdating] = useState(false);
   const [checkingStock, setCheckingStock] = useState(false);
   const [stockResult, setStockResult] = useState(null);
   const [showHT, setShowHT] = useState(false);
-
-  useEffect(() => { loadData(); }, []);
 
   // Debounced search (300ms)
   useEffect(() => {
@@ -119,26 +127,12 @@ export default function TarifsPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [t, s, ad] = await Promise.all([
-        api.getTarifs(), api.getTarifsStats(), api.getAppleDevices().catch(() => []),
-      ]);
-      setTarifs(t);
-      setStats(s);
-      setAppleDevices(ad || []);
-    } catch (e) {
-      console.error('Erreur chargement tarifs:', e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleToggleStock(id) {
     try {
       const res = await api.toggleTarifStock(id);
-      setTarifs(prev => prev.map(t => t.id === id ? { ...t, en_stock: res.en_stock } : t));
+      mutateTarifs(prev => prev ? {
+        ...prev, tarifs: prev.tarifs.map(t => t.id === id ? { ...t, en_stock: res.en_stock } : t)
+      } : prev);
     } catch (e) { console.error('Erreur toggle stock:', e); }
   }
 
@@ -146,7 +140,7 @@ export default function TarifsPage() {
     setCheckingStock(true); setStockResult(null);
     try {
       const res = await api.checkTarifStock();
-      setStockResult(res); await loadData();
+      setStockResult(res); invalidateCache('tarifs');
     } catch (e) {
       console.error('Erreur check stock:', e); setStockResult({ error: true });
     } finally { setCheckingStock(false); }
@@ -520,17 +514,17 @@ export default function TarifsPage() {
                 </button>
               )}
               {isAdmin && (
-                <button onClick={handleCheckStock} disabled={checkingStock || updating}
+                <button onClick={handleCheckStock} disabled={checkingStock || isRevalidating}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
                   <PackageX className={`w-4 h-4 ${checkingStock ? 'animate-pulse' : ''}`} />
                   <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
                 </button>
               )}
-              <button onClick={async () => { setUpdating(true); await loadData(); setUpdating(false); }}
-                disabled={updating || checkingStock}
+              <button onClick={() => { invalidateCache('tarifs'); }}
+                disabled={isRevalidating || checkingStock}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-                <RefreshCw className={`w-4 h-4 ${updating ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{updating ? 'Chargement...' : 'Actualiser'}</span>
+                <RefreshCw className={`w-4 h-4 ${isRevalidating ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{isRevalidating ? 'Chargement...' : 'Actualiser'}</span>
               </button>
             </div>
           </div>

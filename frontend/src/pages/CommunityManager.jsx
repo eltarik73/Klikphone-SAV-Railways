@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   FileText, Sparkles, Calendar, LayoutGrid, BarChart3,
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
@@ -7,6 +7,7 @@ import {
   Copy, Check, Share2, X, Loader2, ImagePlus, Trash
 } from 'lucide-react';
 import api from '../lib/api';
+import { useApi, invalidateCache } from '../hooks/useApi';
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -75,9 +76,7 @@ export default function CommunityManager() {
   // Tabs
   const [activeTab, setActiveTab] = useState('posts');
 
-  // Posts
-  const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Post filters
   const [filterPlateforme, setFilterPlateforme] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
 
@@ -93,17 +92,9 @@ export default function CommunityManager() {
   const [genImagePrompt, setGenImagePrompt] = useState('');
 
   // Calendar
-  const [events, setEvents] = useState([]);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => new Date());
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [newEvent, setNewEvent] = useState({ titre: '', type: 'post', date: '', heure: '10:00', couleur: '#7C3AED' });
-
-  // Templates
-  const [templates, setTemplates] = useState([]);
-
-  // Analytics
-  const [analytics, setAnalytics] = useState(null);
-  const [analyticsPosts, setAnalyticsPosts] = useState([]);
 
   // Editing / Programming
   const [programmingId, setProgrammingId] = useState(null);
@@ -113,82 +104,58 @@ export default function CommunityManager() {
   const [publishResult, setPublishResult] = useState(null); // {success, message, platforms}
   const [publishing, setPublishing] = useState(null); // post id being published
 
-  // ─── Loaders ────────────────────────────────────────────
+  // ─── Data hooks ────────────────────────────────────────────
 
-  const loadPosts = async () => {
-    setLoading(true);
-    try {
+  const postsKey = activeTab === 'posts' ? `cm:posts:${filterPlateforme}:${filterStatut}` : null;
+  const { data: postsData, loading: postsLoading, mutate: mutatePosts } = useApi(
+    postsKey,
+    async () => {
       const params = {};
       if (filterPlateforme) params.plateforme = filterPlateforme;
       if (filterStatut) params.statut = filterStatut;
-      const data = await api.getMarketingPosts(params);
-      setPosts(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Erreur chargement posts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return api.getMarketingPosts(params);
+    },
+    { tags: ['marketing-posts'], ttl: 120_000 }
+  );
+  const posts = Array.isArray(postsData) ? postsData : [];
 
-  const loadCalendar = async () => {
-    setLoading(true);
-    try {
+  const calKey = activeTab === 'calendrier' ? `cm:cal:${calendarWeekStart.toISOString().split('T')[0]}` : null;
+  const { data: calData, loading: calLoading } = useApi(
+    calKey,
+    async () => {
       const days = getWeekDays(calendarWeekStart);
       const date_debut = days[0].toISOString().split('T')[0];
       const date_fin = days[6].toISOString().split('T')[0];
-      const data = await api.getCalendrierMarketing({ date_debut, date_fin });
-      setEvents(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Erreur chargement calendrier:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return api.getCalendrierMarketing({ date_debut, date_fin });
+    },
+    { tags: ['marketing-calendar'], ttl: 120_000 }
+  );
+  const events = Array.isArray(calData) ? calData : [];
 
-  const loadTemplates = async () => {
-    setLoading(true);
-    try {
-      const data = await api.getMarketingTemplates();
-      setTemplates(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Erreur chargement templates:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const tplKey = activeTab === 'templates' ? 'cm:templates' : null;
+  const { data: tplData, loading: tplLoading } = useApi(
+    tplKey,
+    () => api.getMarketingTemplates(),
+    { tags: ['marketing-templates'], ttl: 300_000 }
+  );
+  const templates = Array.isArray(tplData) ? tplData : [];
 
-  const loadAnalytics = async () => {
-    setLoading(true);
-    try {
+  const analyticsKey = activeTab === 'analytics' ? 'cm:analytics' : null;
+  const { data: analyticsData, loading: analyticsLoading } = useApi(
+    analyticsKey,
+    async () => {
       const [overview, postsData] = await Promise.all([
         api.getMarketingAnalytics(),
         api.getMarketingAnalyticsPosts(),
       ]);
-      setAnalytics(overview || null);
-      setAnalyticsPosts(Array.isArray(postsData) ? postsData : []);
-    } catch (err) {
-      console.error('Erreur chargement analytics:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { analytics: overview || null, analyticsPosts: Array.isArray(postsData) ? postsData : [] };
+    },
+    { tags: ['marketing-analytics'], ttl: 120_000 }
+  );
+  const analytics = analyticsData?.analytics ?? null;
+  const analyticsPosts = analyticsData?.analyticsPosts ?? [];
 
-  // ─── Effects ────────────────────────────────────────────
-
-  useEffect(() => {
-    if (activeTab === 'posts') loadPosts();
-    else if (activeTab === 'calendrier') loadCalendar();
-    else if (activeTab === 'templates') loadTemplates();
-    else if (activeTab === 'analytics') loadAnalytics();
-  }, [activeTab]);
-
-  useEffect(() => {
-    if (activeTab === 'posts') loadPosts();
-  }, [filterPlateforme, filterStatut]);
-
-  useEffect(() => {
-    if (activeTab === 'calendrier') loadCalendar();
-  }, [calendarWeekStart]);
+  const loading = postsLoading || calLoading || tplLoading || analyticsLoading;
 
   // ─── Handlers ───────────────────────────────────────────
 
@@ -245,7 +212,7 @@ export default function CommunityManager() {
       setGenContexte('');
       setGenImageUrl('');
       setGenImagePrompt('');
-      loadPosts();
+      invalidateCache('marketing-posts');
     } catch (err) {
       console.error('Erreur sauvegarde:', err);
     }
@@ -262,7 +229,7 @@ export default function CommunityManager() {
         ? `${warning} (${platforms.join(', ')})`
         : `Publié sur ${platforms.join(', ') || 'les réseaux'}`;
       setPublishResult({ success: true, message: msg, platforms });
-      loadPosts();
+      invalidateCache('marketing-posts');
     } catch (err) {
       console.error('Erreur publication:', err);
       const msg = err?.message || 'Erreur lors de la publication';
@@ -300,7 +267,7 @@ export default function CommunityManager() {
       setGenContexte('');
       setGenImageUrl('');
       setGenImagePrompt('');
-      loadPosts();
+      invalidateCache('marketing-posts');
     } catch (err) {
       console.error('Erreur publication:', err);
       const msg = err?.message || 'Erreur lors de la publication';
@@ -315,7 +282,7 @@ export default function CommunityManager() {
     if (!window.confirm('Supprimer ce brouillon ?')) return;
     try {
       await api.deleteMarketingPost(id);
-      loadPosts();
+      invalidateCache('marketing-posts');
     } catch (err) {
       console.error('Erreur suppression:', err);
     }
@@ -330,7 +297,7 @@ export default function CommunityManager() {
       setProgrammingId(null);
       setProgramDate('');
       setProgramHeure('10:00');
-      loadPosts();
+      invalidateCache('marketing-posts');
     } catch (err) {
       console.error('Erreur programmation:', err);
     }
@@ -345,7 +312,7 @@ export default function CommunityManager() {
       });
       setNewEvent({ titre: '', type: 'post', date: '', heure: '10:00', couleur: '#7C3AED' });
       setShowAddEvent(false);
-      loadCalendar();
+      invalidateCache('marketing-calendar');
     } catch (err) {
       console.error('Erreur ajout événement:', err);
     }
@@ -354,7 +321,7 @@ export default function CommunityManager() {
   const handleDeleteEvent = async (id) => {
     try {
       await api.deleteCalendrierEvent(id);
-      loadCalendar();
+      invalidateCache('marketing-calendar');
     } catch (err) {
       console.error('Erreur suppression événement:', err);
     }

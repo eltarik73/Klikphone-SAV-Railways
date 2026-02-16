@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Sparkles, Send, Edit3, RotateCcw, TrendingUp, Copy, ExternalLink, Check } from 'lucide-react';
 import api from '../lib/api';
+import { useApi, invalidateCache } from '../hooks/useApi';
 
 // ─── Helpers ────────────────────────────────────
 
@@ -36,9 +37,17 @@ function getInitiales(nom) {
 // ─── Composant principal ────────────────────────
 
 export default function AvisGoogle() {
-  const [avis, setAvis] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data: avisData, loading, isRevalidating, mutate: mutateAvis } = useApi(
+    'avis-google',
+    async () => {
+      const [a, s] = await Promise.all([api.getAvisGoogle(), api.getAvisGoogleStats()]);
+      return { avis: a, stats: s };
+    },
+    { tags: ['marketing'], ttl: 120_000 }
+  );
+  const avis = avisData?.avis ?? [];
+  const stats = avisData?.stats ?? null;
+
   const [filter, setFilter] = useState('all');
   const [syncing, setSyncing] = useState(false);
   const [generatingId, setGeneratingId] = useState(null);
@@ -46,31 +55,11 @@ export default function AvisGoogle() {
   const [editText, setEditText] = useState('');
   const [copiedId, setCopiedId] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [a, s] = await Promise.all([
-        api.getAvisGoogle(),
-        api.getAvisGoogleStats(),
-      ]);
-      setAvis(a);
-      setStats(s);
-    } catch (e) {
-      console.error('Erreur chargement avis:', e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleSync() {
     setSyncing(true);
     try {
       await api.syncAvisGoogle();
-      await loadData();
+      invalidateCache('marketing');
     } catch (e) {
       console.error('Erreur synchronisation:', e);
     } finally {
@@ -82,13 +71,13 @@ export default function AvisGoogle() {
     setGeneratingId(id);
     try {
       const result = await api.genererReponseAvis(id);
-      setAvis(prev =>
-        prev.map(a =>
-          a.id === id
-            ? { ...a, ia_suggestion: result.ia_suggestion || result.suggestion || result.reponse }
-            : a
+      const suggestion = result.ia_suggestion || result.suggestion || result.reponse;
+      mutateAvis(prev => prev ? {
+        ...prev,
+        avis: prev.avis.map(a =>
+          a.id === id ? { ...a, ia_suggestion: suggestion } : a
         )
-      );
+      } : prev);
     } catch (e) {
       console.error('Erreur génération IA:', e);
     } finally {
@@ -102,7 +91,7 @@ export default function AvisGoogle() {
         reponse_texte: text,
         reponse_par: localStorage.getItem('kp_user') || 'Accueil',
       });
-      await loadData();
+      invalidateCache('marketing');
     } catch (e) {
       console.error('Erreur publication:', e);
     }
@@ -118,7 +107,7 @@ export default function AvisGoogle() {
       await api.updateReponseAvis(id, { reponse_texte: editText });
       setEditingId(null);
       setEditText('');
-      await loadData();
+      invalidateCache('marketing');
     } catch (e) {
       console.error('Erreur mise à jour:', e);
     }
