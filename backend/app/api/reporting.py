@@ -486,20 +486,23 @@ def _compute_affluence(cur, debut, fin, granularite):
 # ============================================================
 def _compute_perf_accueil(cur, debut, fin):
     """Performance accueil: tickets registered per accueil user."""
-    cur.execute("""
-        SELECT
-            COALESCE(NULLIF(TRIM(cree_par), ''), 'Inconnu') AS utilisateur,
-            COUNT(*) AS tickets_enregistres,
-            COUNT(DISTINCT client_id) FILTER (WHERE client_id IS NOT NULL) AS clients_uniques
-        FROM tickets
-        WHERE date_depot IS NOT NULL
-          AND date_depot::date >= %(debut)s::date
-          AND date_depot::date <= %(fin)s::date
-          AND cree_par IS NOT NULL AND TRIM(cree_par) != ''
-        GROUP BY COALESCE(NULLIF(TRIM(cree_par), ''), 'Inconnu')
-        ORDER BY tickets_enregistres DESC
-    """, {"debut": debut, "fin": fin})
-    rows = cur.fetchall()
+    try:
+        cur.execute("""
+            SELECT
+                COALESCE(NULLIF(TRIM(cree_par), ''), 'Inconnu') AS utilisateur,
+                COUNT(*) AS tickets_enregistres,
+                COUNT(DISTINCT client_id) FILTER (WHERE client_id IS NOT NULL) AS clients_uniques
+            FROM tickets
+            WHERE date_depot IS NOT NULL
+              AND date_depot::date >= %(debut)s::date
+              AND date_depot::date <= %(fin)s::date
+              AND cree_par IS NOT NULL AND TRIM(cree_par) != ''
+            GROUP BY COALESCE(NULLIF(TRIM(cree_par), ''), 'Inconnu')
+            ORDER BY tickets_enregistres DESC
+        """, {"debut": debut, "fin": fin})
+        rows = cur.fetchall()
+    except Exception:
+        return []
 
     return [
         {
@@ -539,8 +542,11 @@ def _compute_perf_techniciens(cur, debut, fin):
     rows = cur.fetchall()
 
     # Get team colors
-    cur.execute("SELECT nom, couleur FROM equipe WHERE actif = true")
-    colors = {r["nom"]: r["couleur"] for r in cur.fetchall()}
+    try:
+        cur.execute("SELECT nom, couleur FROM membres_equipe WHERE actif = 1")
+        colors = {r["nom"]: r["couleur"] for r in cur.fetchall()}
+    except Exception:
+        colors = {}
 
     result = []
     for i, r in enumerate(rows):
