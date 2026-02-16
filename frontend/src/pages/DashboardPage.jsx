@@ -8,7 +8,7 @@ import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
-  SquareCheck, Square, X, Filter, Calendar,
+  SquareCheck, Square, X, Filter, Calendar, RotateCcw,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -463,6 +463,11 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-1">
                     {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
                     <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
+                    {t.est_retour_sav && (
+                      <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-600 text-[9px] font-bold flex items-center gap-0.5" title="Retour SAV">
+                        <RotateCcw className="w-2.5 h-2.5" /> SAV
+                      </span>
+                    )}
                   </div>
                 </div>
 

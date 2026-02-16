@@ -179,23 +179,56 @@ async def list_tickets(
 
 
 # ─── TICKET UNIQUE ─────────────────────────────────────────────
-@router.get("/{ticket_id}", response_model=TicketFull)
+@router.get("/{ticket_id}")
 async def get_ticket(ticket_id: int, user: Optional[dict] = Depends(get_optional_user)):
-    """Récupère un ticket par ID avec les infos client."""
+    """Récupère un ticket par ID avec les infos client + retour SAV enrichi."""
     with get_cursor() as cur:
         cur.execute("""
-            SELECT t.*, 
+            SELECT t.*,
                    c.nom as client_nom, c.prenom as client_prenom,
                    c.telephone as client_tel, c.email as client_email,
                    c.societe as client_societe, c.carte_camby as client_carte_camby
-            FROM tickets t 
+            FROM tickets t
             JOIN clients c ON t.client_id = c.id
             WHERE t.id = %s
         """, (ticket_id,))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Ticket non trouvé")
-    return row
+
+    result = dict(row)
+
+    # Enrichir avec info ticket original si retour SAV
+    if result.get("est_retour_sav") and result.get("ticket_original_id"):
+        try:
+            with get_cursor() as cur:
+                cur.execute("""
+                    SELECT id, ticket_code, statut, panne, marque, modele, modele_autre,
+                           date_depot, date_cloture, technicien_assigne
+                    FROM tickets WHERE id = %s
+                """, (result["ticket_original_id"],))
+                orig = cur.fetchone()
+                result["ticket_original"] = dict(orig) if orig else None
+        except Exception:
+            result["ticket_original"] = None
+    else:
+        result["ticket_original"] = None
+
+    # Lister les retours SAV liés à ce ticket (si c'est un ticket original)
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT id, ticket_code, statut, panne, date_depot
+                FROM tickets
+                WHERE ticket_original_id = %s AND est_retour_sav = true
+                ORDER BY date_depot DESC
+            """, (ticket_id,))
+            retours = cur.fetchall()
+            result["retours_sav"] = [dict(r) for r in retours] if retours else []
+    except Exception:
+        result["retours_sav"] = []
+
+    return result
 
 
 @router.get("/phone/{telephone}")
@@ -215,41 +248,55 @@ async def get_tickets_by_phone(telephone: str):
     return rows
 
 
-@router.get("/code/{ticket_code}", response_model=TicketFull)
+@router.get("/code/{ticket_code}")
 async def get_ticket_by_code(ticket_code: str):
     """Récupère un ticket par code (public — pour suivi client)."""
     with get_cursor() as cur:
         cur.execute("""
-            SELECT t.*, 
+            SELECT t.*,
                    c.nom as client_nom, c.prenom as client_prenom,
                    c.telephone as client_tel, c.email as client_email,
                    c.societe as client_societe, c.carte_camby as client_carte_camby
-            FROM tickets t 
+            FROM tickets t
             JOIN clients c ON t.client_id = c.id
             WHERE t.ticket_code = %s
         """, (ticket_code,))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Ticket non trouvé")
-    return row
+    return dict(row)
 
 
 # ─── CRÉATION ───────────────────────────────────────────────────
 @router.post("", response_model=dict)
 async def create_ticket(data: TicketCreate):
     """Crée un nouveau ticket (accessible sans auth — formulaire client)."""
+    # Si retour SAV, vérifier que le ticket original existe et appartient au même client
+    if data.est_retour_sav and data.ticket_original_id:
+        with get_cursor() as cur:
+            cur.execute(
+                "SELECT id, client_id FROM tickets WHERE id = %s",
+                (data.ticket_original_id,),
+            )
+            orig = cur.fetchone()
+            if not orig:
+                raise HTTPException(404, "Ticket original non trouvé")
+            if orig["client_id"] != data.client_id:
+                raise HTTPException(400, "Le ticket original n'appartient pas à ce client")
+
     with get_cursor() as cur:
         cur.execute("""
-            INSERT INTO tickets 
+            INSERT INTO tickets
             (client_id, categorie, marque, modele, modele_autre, imei,
-             panne, panne_detail, pin, pattern, notes_client, 
-             commande_piece, statut)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'En attente de diagnostic')
+             panne, panne_detail, pin, pattern, notes_client,
+             commande_piece, statut, est_retour_sav, ticket_original_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'En attente de diagnostic',%s,%s)
             RETURNING id
         """, (
             data.client_id, data.categorie, data.marque, data.modele,
             data.modele_autre, data.imei, data.panne, data.panne_detail,
             data.pin, data.pattern, data.notes_client, data.commande_piece,
+            data.est_retour_sav or False, data.ticket_original_id,
         ))
         row = cur.fetchone()
         tid = row["id"]

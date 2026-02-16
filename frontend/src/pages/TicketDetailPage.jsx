@@ -22,7 +22,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
   Zap, Edit3, X, CheckCircle2,
-  Flag, PhoneCall, Percent,
+  Flag, PhoneCall, Percent, RotateCcw,
 } from 'lucide-react';
 
 // ─── Editable Section Component ────────────────────────────────
@@ -140,6 +140,11 @@ export default function TicketDetailPage() {
 
   // Caisse
   const [caisseEnabled, setCaisseEnabled] = useState(false);
+
+  // Retour SAV modal
+  const [showRetourSAVModal, setShowRetourSAVModal] = useState(false);
+  const [retourSAVForm, setRetourSAVForm] = useState({ panne: '', panne_detail: '' });
+  const [creatingSAV, setCreatingSAV] = useState(false);
 
   const parseRepairLines = (ticket) => {
     try {
@@ -612,6 +617,36 @@ export default function TicketDetailPage() {
     }
   };
 
+  // ─── Retour SAV ─────────────────────────────────────────────
+  const handleCreateRetourSAV = async () => {
+    if (!retourSAVForm.panne.trim()) {
+      toast.error('Veuillez décrire la panne');
+      return;
+    }
+    setCreatingSAV(true);
+    try {
+      const result = await api.createRetourSAV(t.id, t.client_id, {
+        categorie: t.categorie || '',
+        marque: t.marque || '',
+        modele: t.modele || '',
+        modele_autre: t.modele_autre || '',
+        imei: t.imei || '',
+        panne: retourSAVForm.panne,
+        panne_detail: retourSAVForm.panne_detail,
+        pin: t.pin || '',
+        pattern: t.pattern || '',
+      });
+      toast.success(`Retour SAV créé : ${result.ticket_code}`);
+      setShowRetourSAVModal(false);
+      setRetourSAVForm({ panne: '', panne_detail: '' });
+      navigate(`${basePath}/ticket/${result.id}`);
+    } catch (err) {
+      toast.error(err.message || 'Erreur création retour SAV');
+    } finally {
+      setCreatingSAV(false);
+    }
+  };
+
   // ─── Repair Lines ─────────────────────────────────────────────
 
   const addRepairLine = () => {
@@ -740,7 +775,18 @@ export default function TicketDetailPage() {
                     </a>
                   )}
                 </div>
-                <div className="mt-4 pt-4 border-t border-slate-100">
+                {/* Retour SAV button */}
+                {!t.est_retour_sav && t.statut !== 'En attente de diagnostic' && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <button
+                      onClick={() => { setRetourSAVForm({ panne: '', panne_detail: '' }); setShowRetourSAVModal(true); }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold border border-red-200 transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Retour SAV
+                    </button>
+                  </div>
+                )}
+                <div className="mt-3 pt-3 border-t border-slate-100">
                   <p className="text-[10px] text-slate-400 text-center">Messages dans le bloc Messages ci-dessous</p>
                 </div>
               </>
@@ -1324,6 +1370,11 @@ export default function TicketDetailPage() {
                 <button onClick={handleCopyCode} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Copier le code">
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
                 </button>
+                {t.est_retour_sav && (
+                  <span className="px-2.5 py-1 rounded-full bg-red-500/20 text-red-300 text-xs font-bold flex items-center gap-1">
+                    <RotateCcw className="w-3.5 h-3.5" /> SAV
+                  </span>
+                )}
                 {t.paye && (
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Payé
@@ -1364,6 +1415,48 @@ export default function TicketDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Retour SAV banner (red) */}
+      {t.est_retour_sav && (
+        <div className="bg-red-50 border-l-4 border-red-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+              <RotateCcw className="w-4 h-4 text-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-red-800">RETOUR SAV</p>
+              <p className="text-xs text-red-600">
+                Prise en charge garantie — Montant : 0,00 €
+                {t.ticket_original && (
+                  <> — Ticket original : <button onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="font-mono font-bold underline hover:text-red-800">{t.ticket_original.ticket_code}</button> ({t.ticket_original.statut})</>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning: retours SAV sur ce ticket (yellow) */}
+      {t.retours_sav && t.retours_sav.length > 0 && (
+        <div className="bg-amber-50 border-l-4 border-amber-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
+          <div className="max-w-7xl mx-auto flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-800">{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''}</p>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {t.retours_sav.map(r => (
+                  <button key={r.id} onClick={() => navigate(`${basePath}/ticket/${r.id}`)}
+                    className="text-xs font-mono font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded-lg transition-colors">
+                    {r.ticket_code} <span className="font-normal">({r.statut})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Accord client modal */}
       {showAccordModal && (
@@ -1567,6 +1660,76 @@ export default function TicketDetailPage() {
                   className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {deleting ? 'Suppression...' : 'Supprimer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Retour SAV modal */}
+      {showRetourSAVModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowRetourSAVModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-in">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                  <RotateCcw className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Retour SAV</h3>
+                  <p className="text-sm text-slate-500">Créer un ticket lié à {t.ticket_code}</p>
+                </div>
+                <button onClick={() => setShowRetourSAVModal(false)} className="ml-auto btn-ghost p-1.5">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Recap ticket original */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Ticket original</div>
+                <div className="text-sm font-bold text-slate-800">{t.ticket_code} — {appareil}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{t.panne} {t.panne_detail ? `(${t.panne_detail})` : ''}</div>
+              </div>
+
+              <div className="space-y-3 mb-5">
+                <div>
+                  <label className="input-label">Motif du retour SAV *</label>
+                  <input
+                    value={retourSAVForm.panne}
+                    onChange={e => setRetourSAVForm(f => ({ ...f, panne: e.target.value }))}
+                    className="input"
+                    placeholder="Ex: Même panne réapparue, écran décollé..."
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="input-label">Détail</label>
+                  <textarea
+                    value={retourSAVForm.panne_detail}
+                    onChange={e => setRetourSAVForm(f => ({ ...f, panne_detail: e.target.value }))}
+                    className="input"
+                    rows={3}
+                    placeholder="Précisions complémentaires..."
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4">
+                <p className="text-xs text-red-700 font-medium">
+                  Ce ticket sera marqué comme retour SAV et lié au ticket {t.ticket_code}. Le montant sera de 0,00 € (prise en charge garantie).
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowRetourSAVModal(false)} className="btn-ghost flex-1">Annuler</button>
+                <button
+                  onClick={handleCreateRetourSAV}
+                  disabled={creatingSAV || !retourSAVForm.panne.trim()}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {creatingSAV ? 'Création...' : <><RotateCcw className="w-4 h-4" /> Créer le retour SAV</>}
                 </button>
               </div>
             </div>

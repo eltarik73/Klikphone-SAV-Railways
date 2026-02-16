@@ -75,6 +75,8 @@ class TicketCreate(BaseModel):
     pattern: Optional[str] = ""
     notes_client: Optional[str] = ""
     commande_piece: Optional[int] = 0
+    est_retour_sav: Optional[bool] = False
+    ticket_original_id: Optional[int] = None
 
 
 class TicketUpdate(BaseModel):
@@ -168,6 +170,8 @@ class TicketOut(BaseModel):
     reparation_debut: Optional[datetime] = None
     reparation_fin: Optional[datetime] = None
     reparation_duree: Optional[int] = 0
+    est_retour_sav: Optional[bool] = False
+    ticket_original_id: Optional[int] = None
 
 
 class TicketFull(TicketOut):

@@ -90,6 +90,9 @@ async def get_reporting(
         # ═══ 6. Top Modeles ═══
         top_modeles = _compute_top_modeles(cur, debut, fin)
 
+    # ═══ 7. Retours SAV ═══
+    retours_sav = _compute_retours_sav(cur, debut, fin)
+
     return {
         "kpis": kpis,
         "affluence": affluence,
@@ -97,6 +100,7 @@ async def get_reporting(
         "performance_techniciens": perf_tech,
         "top_pannes": top_pannes,
         "top_modeles": top_modeles,
+        "retours_sav": retours_sav,
         "periode": {"debut": debut, "fin": fin, "granularite": granularite},
     }
 
@@ -626,3 +630,45 @@ def _compute_top_modeles(cur, debut, fin):
         }
         for r in rows
     ]
+
+
+# ============================================================
+# Retours SAV
+# ============================================================
+def _compute_retours_sav(cur, debut, fin):
+    """Retours SAV stats for the period."""
+    try:
+        cur.execute("""
+            SELECT COUNT(*) AS total_retours
+            FROM tickets
+            WHERE est_retour_sav = true
+              AND date_depot IS NOT NULL
+              AND date_depot::date >= %(debut)s::date
+              AND date_depot::date <= %(fin)s::date
+        """, {"debut": debut, "fin": fin})
+        total = _si(cur.fetchone()["total_retours"])
+
+        # Per technicien
+        cur.execute("""
+            SELECT
+                COALESCE(orig.technicien_assigne, 'Non assigné') AS technicien,
+                COUNT(*) AS retours
+            FROM tickets t
+            JOIN tickets orig ON t.ticket_original_id = orig.id
+            WHERE t.est_retour_sav = true
+              AND t.date_depot IS NOT NULL
+              AND t.date_depot::date >= %(debut)s::date
+              AND t.date_depot::date <= %(fin)s::date
+              AND orig.technicien_assigne IS NOT NULL
+              AND orig.technicien_assigne != ''
+            GROUP BY orig.technicien_assigne
+            ORDER BY retours DESC
+        """, {"debut": debut, "fin": fin})
+        par_tech = [
+            {"technicien": r["technicien"], "retours": _si(r["retours"])}
+            for r in cur.fetchall()
+        ]
+
+        return {"total": total, "par_technicien": par_tech}
+    except Exception:
+        return {"total": 0, "par_technicien": []}

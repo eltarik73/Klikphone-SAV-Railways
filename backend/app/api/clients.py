@@ -234,12 +234,16 @@ async def delete_client(client_id: int, user: dict = Depends(get_current_user)):
 
 @router.get("/{client_id}/tickets", response_model=list)
 async def get_client_tickets(client_id: int, user: dict = Depends(get_current_user)):
-    """Récupère tous les tickets d'un client."""
+    """Récupère tous les tickets d'un client avec info retour SAV."""
     with get_cursor() as cur:
-        cur.execute(
-            "SELECT * FROM tickets WHERE client_id = %s ORDER BY date_depot DESC",
-            (client_id,),
-        )
+        cur.execute("""
+            SELECT t.*,
+                   orig.ticket_code AS ticket_original_code
+            FROM tickets t
+            LEFT JOIN tickets orig ON t.ticket_original_id = orig.id
+            WHERE t.client_id = %s
+            ORDER BY t.date_depot DESC
+        """, (client_id,))
         return cur.fetchall()
 
 

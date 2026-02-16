@@ -281,6 +281,27 @@ h2 {{
 # TICKET CLIENT
 # ═══════════════════════════════════════════════════════════════
 
+def _retour_sav_banner(t: dict) -> str:
+    """Génère un encadré rouge RETOUR SAV si applicable."""
+    if not t.get("est_retour_sav"):
+        return ""
+    orig_code = ""
+    if t.get("ticket_original_id"):
+        try:
+            with get_cursor() as cur:
+                cur.execute("SELECT ticket_code FROM tickets WHERE id = %s", (t["ticket_original_id"],))
+                row = cur.fetchone()
+                if row:
+                    orig_code = row["ticket_code"]
+        except Exception:
+            pass
+    return f"""<div style="border:3px solid #DC2626;background:#FEF2F2;padding:8px 10px;margin:8px 0;text-align:center;">
+  <div style="font-size:16px;font-weight:900;color:#DC2626;letter-spacing:2px;">RETOUR SAV</div>
+  {f'<div style="font-size:12px;font-weight:700;color:#991B1B;margin-top:2px;">Ticket original : {orig_code}</div>' if orig_code else ''}
+  <div style="font-size:10px;color:#991B1B;margin-top:2px;">Prise en charge garantie — 0,00 €</div>
+</div>"""
+
+
 def _ticket_client_html(t: dict) -> str:
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
@@ -335,6 +356,7 @@ def _ticket_client_html(t: dict) -> str:
 <div style="background:#000;color:#fff;text-align:center;padding:8px;font-size:17px;font-weight:900;letter-spacing:3px;margin-bottom:8px;">
   TICKET DE DÉPÔT
 </div>
+{_retour_sav_banner(t)}
 
 <div class="info-box center">
   <div class="highlight">{code}</div>
@@ -508,6 +530,7 @@ body {{ margin:0; padding:0; background:#fff; }}
     padding:8px;font-size:18px;font-weight:900;
     letter-spacing:3px;margin-bottom:10px;
   ">TICKET STAFF</div>
+  {_retour_sav_banner(t)}
 
   <!-- NUMÉRO + DATE -->
   <div style="border:2px solid #000;border-radius:4px;padding:10px;margin-bottom:8px;">

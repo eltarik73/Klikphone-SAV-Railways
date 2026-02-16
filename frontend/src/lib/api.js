@@ -81,6 +81,14 @@ class ApiClient {
   getTicketByCode(code) { return this.get(`/api/tickets/code/${code}`); }
   getTicketsByPhone(tel) { return this.get(`/api/tickets/phone/${encodeURIComponent(tel)}`); }
   createTicket(data) { return this.post('/api/tickets', data); }
+  createRetourSAV(ticketOriginalId, clientId, data) {
+    return this.post('/api/tickets', {
+      ...data,
+      client_id: clientId,
+      est_retour_sav: true,
+      ticket_original_id: ticketOriginalId,
+    });
+  }
   updateTicket(id, data) { return this.patch(`/api/tickets/${id}`, data); }
   changeStatus(id, statut) { return this.patch(`/api/tickets/${id}/statut`, { statut }); }
   deleteTicket(id) { return this.delete(`/api/tickets/${id}`); }
