@@ -300,6 +300,7 @@ async def list_avis(
     repondu: Optional[bool] = Query(None),
     note_min: Optional[int] = Query(None),
     note_max: Optional[int] = Query(None),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Liste tous les avis Google avec filtres optionnels."""
     _ensure_tables()
@@ -328,7 +329,7 @@ async def list_avis(
 
 
 @router.get("/avis/stats")
-async def avis_stats():
+async def avis_stats(user: dict = Depends(_require_admin_marketing)):
     """Statistiques des avis Google."""
     _ensure_tables()
     with get_cursor() as cur:
@@ -355,7 +356,7 @@ async def avis_stats():
 
 
 @router.get("/avis/search-place")
-async def search_place(query: str = Query(..., description="Nom de la boutique + ville")):
+async def search_place(query: str = Query(..., description="Nom de la boutique + ville"), user: dict = Depends(_require_admin_marketing)):
     """Recherche un Place ID Google à partir du nom de la boutique."""
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
     if not api_key:
@@ -645,6 +646,7 @@ async def list_posts(
     plateforme: Optional[str] = Query(None),
     statut: Optional[str] = Query(None),
     type_contenu: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Liste les posts marketing avec filtres optionnels."""
     _ensure_tables()
@@ -1342,6 +1344,7 @@ async def list_calendrier(
     date_debut: Optional[str] = Query(None),
     date_fin: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
+    user: dict = Depends(_require_admin_marketing),
 ):
     """Liste les événements du calendrier marketing."""
     _ensure_tables()
@@ -1475,7 +1478,7 @@ async def delete_calendrier(event_id: int, user: dict = Depends(_require_admin_m
 # ═════════════════════════════════════════════════════════
 
 @router.get("/templates")
-async def list_templates():
+async def list_templates(user: dict = Depends(_require_admin_marketing)):
     """Liste tous les templates marketing actifs."""
     _ensure_tables()
 
@@ -1573,7 +1576,7 @@ async def update_template(
 # ═════════════════════════════════════════════════════════
 
 @router.get("/analytics/overview")
-async def analytics_overview():
+async def analytics_overview(user: dict = Depends(_require_admin_marketing)):
     """Vue d'ensemble des analytics marketing."""
     _ensure_tables()
 
@@ -1622,7 +1625,7 @@ async def analytics_overview():
 
 
 @router.get("/analytics/posts")
-async def analytics_posts():
+async def analytics_posts(user: dict = Depends(_require_admin_marketing)):
     """Liste des posts publiés avec leurs métriques d'engagement."""
     _ensure_tables()
 

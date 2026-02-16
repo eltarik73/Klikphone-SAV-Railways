@@ -9,10 +9,11 @@ import random
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
 
@@ -42,7 +43,7 @@ class UtiliserRequest(BaseModel):
 # ─── CREDITER POINTS ────────────────────────────────────
 
 @router.post("/crediter")
-async def crediter_points(data: CrediterRequest):
+async def crediter_points(data: CrediterRequest, user: dict = Depends(get_current_user)):
     """Crédite les points quand un ticket est payé."""
 
     with get_cursor() as cur:
@@ -99,7 +100,7 @@ async def crediter_points(data: CrediterRequest):
 # ─── UTILISER POINTS ────────────────────────────────────
 
 @router.post("/utiliser")
-async def utiliser_points(data: UtiliserRequest):
+async def utiliser_points(data: UtiliserRequest, user: dict = Depends(get_current_user)):
     """Utilise des points pour une récompense."""
 
     with get_cursor() as cur:
@@ -139,7 +140,7 @@ async def utiliser_points(data: UtiliserRequest):
 # ─── GET FIDELITE ───────────────────────────────────────
 
 @router.get("/{client_id}")
-async def get_fidelite(client_id: int):
+async def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
     """Récupère les infos fidélité d'un client."""
 
     with get_cursor() as cur:
