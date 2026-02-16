@@ -90,13 +90,21 @@ async def create_part(data: CommandePieceCreate, user: dict = Depends(get_curren
 
     with get_cursor() as cur:
         cur.execute("""
-            INSERT INTO commandes_pieces (ticket_id, description, fournisseur, reference, prix, notes, ticket_code)
-            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+            INSERT INTO commandes_pieces (ticket_id, description, fournisseur, reference, prix, notes, ticket_code, statut)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'En attente') RETURNING id
         """, (
             ticket_id, data.description, data.fournisseur,
             data.reference, data.prix, data.notes, data.ticket_code or '',
         ))
         row = cur.fetchone()
+
+        # Auto-set ticket status to "En attente de pièce" if linked
+        if ticket_id:
+            cur.execute(
+                "UPDATE tickets SET commande_piece = 1, date_maj = %s WHERE id = %s",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
+            )
+
     return {"id": row["id"]}
 
 

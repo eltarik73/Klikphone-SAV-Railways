@@ -131,6 +131,8 @@ export default function TicketDetailPage() {
 
   // Commandes de pièces
   const [commandes, setCommandes] = useState([]);
+  const [showCommandeModal, setShowCommandeModal] = useState(false);
+  const [commandeForm, setCommandeForm] = useState({ description: '', fournisseur: '', reference: '', prix: '', notes: '' });
 
   // Delete ticket modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -368,6 +370,55 @@ export default function TicketDetailPage() {
     } catch (err) {
       toast.error('Erreur sauvegarde tarification');
     } finally { setSaving(false); }
+  };
+
+  // ─── Commande handlers ──────────────────────────────────────
+  const handleCreateCommande = async () => {
+    if (!commandeForm.description.trim()) return;
+    try {
+      await api.createPart({
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        description: commandeForm.description,
+        fournisseur: commandeForm.fournisseur,
+        reference: commandeForm.reference,
+        prix: commandeForm.prix ? parseFloat(commandeForm.prix) : null,
+        notes: commandeForm.notes,
+      });
+      setShowCommandeModal(false);
+      setCommandeForm({ description: '', fournisseur: '', reference: '', prix: '', notes: '' });
+      // Refresh commandes
+      const cmds = await api.getPartsByTicket(ticket.id);
+      setCommandes(cmds || []);
+      toast.success('Commande créée');
+    } catch (err) {
+      toast.error('Erreur création commande');
+    }
+  };
+
+  const handleCommandeStatusChange = async (cmdId, newStatut) => {
+    try {
+      await api.updatePart(cmdId, { statut: newStatut });
+      const cmds = await api.getPartsByTicket(ticket.id);
+      setCommandes(cmds || []);
+      toast.success(`Statut → ${newStatut}`);
+      // If piece received, refresh ticket too (status may change)
+      if (newStatut === 'Reçue') await loadTicket();
+    } catch {
+      toast.error('Erreur changement statut commande');
+    }
+  };
+
+  const handleDeleteCommande = async (cmdId) => {
+    if (!confirm('Supprimer cette commande ?')) return;
+    try {
+      await api.deletePart(cmdId);
+      const cmds = await api.getPartsByTicket(ticket.id);
+      setCommandes(cmds || []);
+      toast.success('Commande supprimée');
+    } catch {
+      toast.error('Erreur suppression commande');
+    }
   };
 
   const handleStatusChange = async (statut) => {
@@ -1108,6 +1159,9 @@ export default function TicketDetailPage() {
                         <input type="checkbox" checked={!!pricingForm.commande_piece} onChange={e => setPricingForm(f => ({ ...f, commande_piece: e.target.checked ? 1 : 0 }))} className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
                         <span className="text-xs font-medium text-amber-700"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
                       </label>
+                      <button onClick={() => setShowCommandeModal(true)} className="text-xs font-medium text-brand-600 hover:text-brand-800 flex items-center gap-0.5">
+                        <Plus className="w-3 h-3" /> Commander
+                      </button>
                       <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
                     </div>
                   </div>
@@ -1179,36 +1233,57 @@ export default function TicketDetailPage() {
               /* ─── View mode ─── */
               <>
                 {/* Pièces commandées */}
-                {commandes.length > 0 && (
-                  <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Package className="w-3 h-3" /> Pièce(s) commandée(s)
-                    </div>
-                    {commandes.map(cmd => (
-                      <div key={cmd.id} className="flex items-center justify-between py-1.5 border-b border-amber-100 last:border-0">
-                        <div>
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><Package className="w-3 h-3" /> Pièce(s) commandée(s) ({commandes.length})</span>
+                    <button onClick={() => setShowCommandeModal(true)} className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-0.5">
+                      <Plus className="w-3 h-3" /> Ajouter
+                    </button>
+                  </div>
+                  {commandes.length === 0 && (
+                    <p className="text-xs text-amber-600 italic py-1">Aucune commande de pièce</p>
+                  )}
+                  {commandes.map(cmd => (
+                    <div key={cmd.id} className="py-2 border-b border-amber-100 last:border-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
                           <div className="text-sm font-semibold text-slate-700">{cmd.description}</div>
+                          {cmd.reference && <div className="text-[10px] text-slate-400 font-mono">Réf: {cmd.reference}</div>}
                           {cmd.notes && <div className="text-xs text-slate-500">{cmd.notes}</div>}
                           {cmd.fournisseur && <div className="text-xs text-slate-400">Fournisseur : {cmd.fournisseur}</div>}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {cmd.prix > 0 && (
-                            <span className="text-sm font-bold">{formatPrix(cmd.prix)}</span>
+                            <span className="text-xs font-bold text-slate-700">{formatPrix(cmd.prix)}</span>
                           )}
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
-                            cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
-                            cmd.statut === 'Expédiée' ? 'bg-purple-100 text-purple-700' :
-                            cmd.statut === 'Reçue' ? 'bg-green-100 text-green-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {cmd.statut}
-                          </span>
+                          <select
+                            value={cmd.statut || 'En attente'}
+                            onChange={e => handleCommandeStatusChange(cmd.id, e.target.value)}
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border-0 cursor-pointer appearance-none pr-4 ${
+                              cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
+                              cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
+                              cmd.statut === 'Expédiée' ? 'bg-purple-100 text-purple-700' :
+                              cmd.statut === 'Reçue' ? 'bg-green-100 text-green-700' :
+                              cmd.statut === 'Utilisée en réparation' ? 'bg-indigo-100 text-indigo-700' :
+                              'bg-red-100 text-red-700'
+                            }`}
+                            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
+                          >
+                            <option value="En attente">En attente</option>
+                            <option value="Commandée">Commandée</option>
+                            <option value="Expédiée">Expédiée</option>
+                            <option value="Reçue">Reçue</option>
+                            <option value="Utilisée en réparation">Utilisée</option>
+                            <option value="Annulée">Annulée</option>
+                          </select>
+                          <button onClick={() => handleDeleteCommande(cmd.id)} className="p-0.5 text-red-400 hover:text-red-600" title="Supprimer">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  ))}
+                </div>
 
                 {/* 2. Repair lines */}
                 <div className="mb-3">
@@ -1714,6 +1789,55 @@ export default function TicketDetailPage() {
       )}
 
       {/* Retour SAV modal */}
+      {/* ─── Commande modal ─── */}
+      {showCommandeModal && (
+        <>
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={() => setShowCommandeModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 animate-in" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-amber-600" /> Commander une pièce
+                </h3>
+                <button onClick={() => setShowCommandeModal(false)} className="btn-ghost p-1.5"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="input-label">Désignation *</label>
+                  <input value={commandeForm.description} onChange={e => setCommandeForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="Ex: Écran iPhone 15 Pro Max..." autoFocus />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="input-label">Fournisseur</label>
+                    <input value={commandeForm.fournisseur} onChange={e => setCommandeForm(f => ({ ...f, fournisseur: e.target.value }))} className="input" placeholder="Mobilax, iPartsBuy..." />
+                  </div>
+                  <div>
+                    <label className="input-label">Référence</label>
+                    <input value={commandeForm.reference} onChange={e => setCommandeForm(f => ({ ...f, reference: e.target.value }))} className="input font-mono" placeholder="REF-001" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="input-label">Prix estimé (€)</label>
+                    <input type="number" step="0.01" value={commandeForm.prix} onChange={e => setCommandeForm(f => ({ ...f, prix: e.target.value }))} className="input" placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="input-label">Notes</label>
+                    <input value={commandeForm.notes} onChange={e => setCommandeForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Qualité, couleur..." />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5 pt-3 border-t border-slate-100">
+                <button onClick={() => setShowCommandeModal(false)} className="btn-ghost flex-1">Annuler</button>
+                <button onClick={handleCreateCommande} disabled={!commandeForm.description.trim()} className="btn-primary flex-1">
+                  <Package className="w-4 h-4" /> Créer la commande
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {showRetourSAVModal && (
         <>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowRetourSAVModal(false)} />
