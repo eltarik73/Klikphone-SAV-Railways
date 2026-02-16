@@ -22,7 +22,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
   Zap, Edit3, X, CheckCircle2,
-  Flag, PhoneCall, Percent, RotateCcw,
+  Flag, PhoneCall, Percent, RotateCcw, Globe,
 } from 'lucide-react';
 
 // ─── Editable Section Component ────────────────────────────────
@@ -1375,6 +1375,11 @@ export default function TicketDetailPage() {
                     <RotateCcw className="w-3.5 h-3.5" /> SAV
                   </span>
                 )}
+                {t.source === 'distance' && (
+                  <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5" /> Distance
+                  </span>
+                )}
                 {t.paye && (
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Payé
@@ -1453,6 +1458,47 @@ export default function TicketDetailPage() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dépôt à distance — validation banner */}
+      {t.statut === 'Pré-enregistré' && t.source === 'distance' && (
+        <div className="bg-indigo-50 border-l-4 border-indigo-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
+          <div className="max-w-7xl mx-auto flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+              <Globe className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-indigo-800">Dépôt à distance — En attente de validation</p>
+              <p className="text-xs text-indigo-600">Le client a pré-enregistré cet appareil en ligne</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={async () => {
+                  try {
+                    await api.validerDepot(t.id);
+                    toast.success('Dépôt validé — passage en diagnostic');
+                    loadTicket();
+                  } catch (err) { toast.error(err.message); }
+                }}
+                className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Check className="w-3.5 h-3.5" /> Valider
+              </button>
+              <button
+                onClick={() => {
+                  const motif = prompt('Motif du refus :');
+                  if (motif === null) return;
+                  api.refuserDepot(t.id, motif || 'Non précisé')
+                    .then(() => { toast.success('Dépôt refusé'); loadTicket(); })
+                    .catch(err => toast.error(err.message));
+                }}
+                className="btn-ghost text-xs px-3 py-1.5 text-red-600 hover:bg-red-50"
+              >
+                <X className="w-3.5 h-3.5" /> Refuser
+              </button>
             </div>
           </div>
         </div>

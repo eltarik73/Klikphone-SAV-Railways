@@ -33,6 +33,7 @@ def _ajouter_historique(cur, ticket_id, type_event, contenu):
         pass  # Table might not exist yet
 
 STATUTS = [
+    "Pré-enregistré",
     "En attente de diagnostic", "En attente de pièce", "Pièce reçue",
     "En attente d'accord client", "En cours de réparation",
     "Réparation terminée", "Rendu au client", "Clôturé",
@@ -40,7 +41,7 @@ STATUTS = [
 
 
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
-@router.get("/stats/kpi", response_model=KPIResponse)
+@router.get("/stats/kpi")
 async def get_kpi(user: dict = Depends(get_current_user)):
     """Récupère les KPI du dashboard."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -55,12 +56,16 @@ async def get_kpi(user: dict = Depends(get_current_user)):
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
                 COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui
+                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
         """, (today, today))
         row = cur.fetchone()
 
-    return KPIResponse(**row) if row else KPIResponse()
+    data = dict(row) if row else {}
+    pre_enregistres = data.pop("pre_enregistres", 0)
+    result = KPIResponse(**data)
+    return {**result.model_dump(), "pre_enregistres": pre_enregistres}
 
 
 # ─── FILE D'ATTENTE RÉPARATION ────────────────────────────────────
@@ -284,19 +289,22 @@ async def create_ticket(data: TicketCreate):
             if orig["client_id"] != data.client_id:
                 raise HTTPException(400, "Le ticket original n'appartient pas à ce client")
 
+    statut_initial = "Pré-enregistré" if data.source == "distance" else "En attente de diagnostic"
+
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO tickets
             (client_id, categorie, marque, modele, modele_autre, imei,
              panne, panne_detail, pin, pattern, notes_client,
-             commande_piece, statut, est_retour_sav, ticket_original_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'En attente de diagnostic',%s,%s)
+             commande_piece, statut, est_retour_sav, ticket_original_id, source)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             data.client_id, data.categorie, data.marque, data.modele,
             data.modele_autre, data.imei, data.panne, data.panne_detail,
             data.pin, data.pattern, data.notes_client, data.commande_piece,
-            data.est_retour_sav or False, data.ticket_original_id,
+            statut_initial, data.est_retour_sav or False, data.ticket_original_id,
+            data.source or "boutique",
         ))
         row = cur.fetchone()
         tid = row["id"]

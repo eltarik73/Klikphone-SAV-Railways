@@ -33,6 +33,7 @@ export function formatPrix(p) {
 }
 
 export const STATUTS = [
+  'Pré-enregistré',
   'En attente de diagnostic',
   'En attente de pièce',
   'Pièce reçue',
@@ -44,6 +45,10 @@ export const STATUTS = [
 ];
 
 const STATUS_CONFIG = {
+  'Pré-enregistré': {
+    bg: 'bg-indigo-50', text: 'text-indigo-700', ring: 'ring-indigo-200/80',
+    dot: 'bg-indigo-500', color: '#6366F1',
+  },
   'En attente de diagnostic': {
     bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200/80',
     dot: 'bg-amber-500', color: '#F59E0B',

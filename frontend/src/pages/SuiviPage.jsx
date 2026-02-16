@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
@@ -6,7 +6,7 @@ import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw } from 'lucide-react';
 import { formatPrix } from '../lib/utils';
 
 export default function SuiviPage() {
@@ -17,6 +17,8 @@ export default function SuiviPage() {
   const [commandes, setCommandes] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const pollRef = useRef(null);
 
   const isPhoneInput = (val) => /^\+?\d[\d\s.-]{5,}$/.test(val.trim());
 
@@ -58,6 +60,19 @@ export default function SuiviPage() {
       doSearch(ticketParam);
     }
   }, []);
+
+  // Auto-poll every 30s when a ticket is loaded
+  useEffect(() => {
+    if (!ticket) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const data = await api.getTicketByCode(ticket.ticket_code);
+        setTicket(data);
+        setLastRefresh(new Date());
+      } catch { /* silent */ }
+    }, 30000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [ticket?.ticket_code]);
 
   const handleSearch = (e) => {
     e?.preventDefault();
@@ -143,15 +158,39 @@ export default function SuiviPage() {
 
         {ticket && (
           <div className="space-y-5 animate-in">
+            {/* Pré-enregistré banner */}
+            {ticket.statut === 'Pré-enregistré' && (
+              <div className="card p-5 bg-indigo-50 border border-indigo-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
+                    <Globe className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-indigo-800">Demande pré-enregistrée</p>
+                    <p className="text-xs text-indigo-600 mt-0.5">
+                      Notre équipe va valider votre demande. Présentez-vous en boutique avec votre appareil.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Progress tracker */}
             <div className="card p-5">
-              <ProgressTracker statut={ticket.statut} hasPiece={ticket.commande_piece === 1} />
+              <ProgressTracker statut={ticket.statut} hasPiece={ticket.commande_piece === 1} isDistance={ticket.source === 'distance'} />
             </div>
 
             {/* Ticket card */}
             <div className="card p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold font-mono text-brand-600">{ticket.ticket_code}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold font-mono text-brand-600">{ticket.ticket_code}</h2>
+                  {ticket.source === 'distance' && (
+                    <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 text-[9px] font-bold flex items-center gap-0.5">
+                      <Globe className="w-2.5 h-2.5" /> Distance
+                    </span>
+                  )}
+                </div>
                 <StatusBadge statut={ticket.statut} />
               </div>
 
@@ -355,6 +394,15 @@ export default function SuiviPage() {
 
             {/* Jeu de grattage */}
             <ScratchCard ticketCode={ticket.ticket_code} />
+
+            {/* Auto-refresh indicator */}
+            <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
+              <RefreshCw className="w-3 h-3" />
+              <span>Mise à jour automatique toutes les 30s</span>
+              {lastRefresh && (
+                <span>— {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+              )}
+            </div>
 
             {/* Contact */}
             <div className="card p-6 text-center">

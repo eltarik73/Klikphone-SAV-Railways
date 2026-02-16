@@ -8,7 +8,7 @@ import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
-  SquareCheck, Square, X, Filter, Calendar, RotateCcw,
+  SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -240,6 +240,7 @@ export default function DashboardPage() {
 
   const filterTabs = [
     { label: 'Tous', value: '' },
+    { label: 'Pré-enregistré', value: 'Pré-enregistré' },
     { label: 'Diagnostic', value: 'En attente de diagnostic' },
     { label: 'Réparation', value: 'En cours de réparation' },
     { label: 'Accord', value: "En attente d'accord client" },
@@ -317,6 +318,23 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400">Cliquez pour voir le détail</p>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+        </button>
+      )}
+
+      {/* Pre-registration banner */}
+      {kpi?.pre_enregistres > 0 && (
+        <button onClick={() => { setFilterStatut('Pré-enregistré'); setActiveKpi(null); setShowArchived(false); }}
+          className="card px-4 py-3 mb-6 flex items-center gap-3 hover:shadow-md transition-all group w-full text-left bg-indigo-50 border border-indigo-200">
+          <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+            <Globe className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-indigo-800">
+              {kpi.pre_enregistres} dépôt{kpi.pre_enregistres > 1 ? 's' : ''} à distance en attente de validation
+            </p>
+            <p className="text-xs text-indigo-500">Cliquez pour voir et valider</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-500 transition-colors" />
         </button>
       )}
 
@@ -466,6 +484,11 @@ export default function DashboardPage() {
                     {t.est_retour_sav && (
                       <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-600 text-[9px] font-bold flex items-center gap-0.5" title="Retour SAV">
                         <RotateCcw className="w-2.5 h-2.5" /> SAV
+                      </span>
+                    )}
+                    {t.source === 'distance' && (
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 text-[9px] font-bold flex items-center gap-0.5" title="Dépôt à distance">
+                        <Globe className="w-2.5 h-2.5" /> Dist.
                       </span>
                     )}
                   </div>

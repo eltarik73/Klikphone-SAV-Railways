@@ -77,6 +77,7 @@ class TicketCreate(BaseModel):
     commande_piece: Optional[int] = 0
     est_retour_sav: Optional[bool] = False
     ticket_original_id: Optional[int] = None
+    source: Optional[str] = "boutique"
 
 
 class TicketUpdate(BaseModel):
@@ -172,6 +173,7 @@ class TicketOut(BaseModel):
     reparation_duree: Optional[int] = 0
     est_retour_sav: Optional[bool] = False
     ticket_original_id: Optional[int] = None
+    source: Optional[str] = "boutique"
 
 
 class TicketFull(TicketOut):

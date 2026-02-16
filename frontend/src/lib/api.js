@@ -462,6 +462,13 @@ class ApiClient {
   updateTelephoneVente(id, data) { return this.patch(`/api/devis/telephones-vente/${id}`, data); }
   deleteTelephoneVente(id) { return this.delete(`/api/devis/telephones-vente/${id}`); }
 
+  // ─── DEPOT DISTANCE ────────────────────────────
+  createDepotDistance(data) { return this.post('/api/depot-distance', data); }
+  validerDepot(ticketId) { return this.put(`/api/depot-distance/${ticketId}/valider`, {}); }
+  refuserDepot(ticketId, motif) { return this.put(`/api/depot-distance/${ticketId}/refuser`, { motif }); }
+  getPendingDepots() { return this.get('/api/depot-distance/pending'); }
+  getSuiviPublic(code) { return this.get(`/api/depot-distance/suivi/${encodeURIComponent(code)}`); }
+
   // ─── TELEPHONES ─────────────────────────────
   getTelephonesCatalogue(params = {}) {
     const clean = Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''));

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone } from 'lucide-react';
+import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe } from 'lucide-react';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -45,6 +45,18 @@ export default function HomePage() {
               <p className="text-sm text-brand-200 mt-0.5">Créer un ticket de réparation</p>
             </div>
             <ArrowRight className="w-5 h-5 text-brand-200 group-hover:translate-x-1 transition-transform" />
+          </button>
+
+          <button onClick={() => navigate('/deposer')}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-indigo-600/80 hover:bg-indigo-600 border border-indigo-500/30 text-white shadow-lg shadow-indigo-600/20 transition-all group hover:-translate-y-0.5">
+            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div className="flex-1 text-left">
+              <p className="font-semibold">Dépôt à distance</p>
+              <p className="text-sm text-indigo-200 mt-0.5">Pré-enregistrez votre appareil en ligne</p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-indigo-200 group-hover:translate-x-1 transition-transform" />
           </button>
 
           <button onClick={() => navigate('/suivi')}

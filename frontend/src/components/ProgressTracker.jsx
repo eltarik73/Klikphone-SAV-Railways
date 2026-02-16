@@ -1,6 +1,7 @@
-import { Search, FileText, Wrench, CheckCircle2, Package, Truck } from 'lucide-react';
+import { Search, FileText, Wrench, CheckCircle2, Package, Truck, Globe } from 'lucide-react';
 
 const STEP_COLORS = {
+  'Pré-enregistré': { color: '#6366F1', bg: '#E0E7FF' },
   Diagnostic:  { color: '#F59E0B', bg: '#FEF3C7' },
   Devis:       { color: '#3B82F6', bg: '#DBEAFE' },
   Pièce:       { color: '#F97316', bg: '#FFEDD5' },
@@ -27,6 +28,7 @@ const STEPS_PIECE = [
 ];
 
 const STATUS_TO_STEP_NORMAL = {
+  'Pré-enregistré': -1,
   'En attente de diagnostic': 0,
   'En attente de pièce': 1,
   'Pièce reçue': 1,
@@ -38,6 +40,7 @@ const STATUS_TO_STEP_NORMAL = {
 };
 
 const STATUS_TO_STEP_PIECE = {
+  'Pré-enregistré': -1,
   'En attente de diagnostic': 0,
   "En attente d'accord client": 1,
   'En attente de pièce': 2,
@@ -48,10 +51,24 @@ const STATUS_TO_STEP_PIECE = {
   'Clôturé': 5,
 };
 
-export default function ProgressTracker({ statut, hasPiece }) {
+export default function ProgressTracker({ statut, hasPiece, isDistance }) {
+  // For distance tickets with "Pré-enregistré", show a simplified tracker
+  const isPreRegistered = statut === 'Pré-enregistré';
   const steps = hasPiece ? STEPS_PIECE : STEPS_NORMAL;
   const statusMap = hasPiece ? STATUS_TO_STEP_PIECE : STATUS_TO_STEP_NORMAL;
   const currentStep = statusMap[statut] ?? -1;
+
+  if (isPreRegistered) {
+    return (
+      <div className="text-center py-2">
+        <div className="w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: '#E0E7FF' }}>
+          <Globe className="w-6 h-6" style={{ color: '#6366F1' }} />
+        </div>
+        <p className="text-sm font-bold" style={{ color: '#6366F1' }}>Pré-enregistré</p>
+        <p className="text-xs text-slate-400 mt-1">En attente de validation par l'équipe</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between w-full">

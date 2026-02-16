@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance
 
 
 @asynccontextmanager
@@ -169,6 +169,7 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS est_retour_sav BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_original_id INTEGER",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
     ]:
         try:
             with get_cursor() as cur:
@@ -201,6 +202,7 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_tickets_date_cloture ON tickets(date_cloture DESC)",
         "CREATE INDEX IF NOT EXISTS idx_tickets_retour_sav ON tickets(est_retour_sav) WHERE est_retour_sav = true",
         "CREATE INDEX IF NOT EXISTS idx_tickets_original_id ON tickets(ticket_original_id) WHERE ticket_original_id IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_tickets_source ON tickets(source)",
     ]:
         try:
             with get_cursor() as cur:
@@ -242,7 +244,10 @@ async def lifespan(app: FastAPI):
             cur.execute("""
                 INSERT INTO params (cle, valeur) VALUES
                     ('MODULE_DEVIS_VISIBLE', 'false'),
-                    ('MODULE_DEVIS_FLASH_VISIBLE', 'false')
+                    ('MODULE_DEVIS_FLASH_VISIBLE', 'false'),
+                    ('DEPOT_DISTANCE_ACTIF', 'true'),
+                    ('NOTIFICATIONS_EMAIL_ACTIF', 'true'),
+                    ('NOTIFICATIONS_STATUTS', 'Réparation terminée,En attente de pièce,En cours de réparation')
                 ON CONFLICT (cle) DO NOTHING
             """)
     except Exception as e:
@@ -314,6 +319,7 @@ app.include_router(telephones.router)
 app.include_router(autocomplete.router)
 app.include_router(devis.router)
 app.include_router(reporting.router)
+app.include_router(depot_distance.router)
 
 
 # --- HEALTH CHECK ---

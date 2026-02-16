@@ -26,6 +26,7 @@ const TarifsTelephonesPage = lazy(() => import('./pages/TarifsTelephonesPage'));
 const DevisPage = lazy(() => import('./pages/DevisPage'));
 const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
 const TelephonesVentePage = lazy(() => import('./pages/TelephonesVentePage'));
+const DeposerPage = lazy(() => import('./pages/DeposerPage'));
 
 // Preload frequent pages after initial render
 const preloadPages = () => {
@@ -112,6 +113,7 @@ function AppRoutes() {
         <Route path="/client" element={<ClientFormPage />} />
         <Route path="/depot" element={<DepotPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
+        <Route path="/deposer" element={<DeposerPage />} />
 
         <Route path="/accueil" element={<P targets={['accueil']}><DashboardPage /></P>} />
         <Route path="/accueil/ticket/:id" element={<P targets={['accueil']}><TicketDetailPage /></P>} />
