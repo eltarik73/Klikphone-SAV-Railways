@@ -8,6 +8,10 @@ import FideliteCard from '../components/FideliteCard';
 import PatternGrid from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
 import MessageComposer from '../components/MessageComposer';
+import RepairTimer from '../components/RepairTimer';
+import LiveCountdown from '../components/LiveCountdown';
+import RepairQueue from '../components/RepairQueue';
+import PersonnaliserPanel from '../components/PersonnaliserPanel';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
 import {
@@ -16,7 +20,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
   Zap, Edit3, X, CheckCircle2,
-  Flag, PhoneCall, Percent,
+  Flag, PhoneCall, Percent, ListOrdered,
 } from 'lucide-react';
 
 // ─── Editable Section Component ────────────────────────────────
@@ -124,6 +128,11 @@ export default function TicketDetailPage() {
   const [blocks, setBlocks] = useState(INITIAL_BLOCKS);
   const [dragId, setDragId] = useState(null);
   const [layoutEditMode, setLayoutEditMode] = useState(false);
+
+  // Widget preferences + panels
+  const [widgetPrefs, setWidgetPrefs] = useState({ timer: true, countdown: true, queue: true });
+  const [showQueue, setShowQueue] = useState(false);
+  const [showPersonnaliser, setShowPersonnaliser] = useState(false);
 
   // Commandes de pièces
   const [commandes, setCommandes] = useState([]);
@@ -235,11 +244,14 @@ export default function TicketDetailPage() {
       const saved = localStorage.getItem(`kp_layout_${user.utilisateur}`);
       if (saved) {
         const parsed = JSON.parse(saved).filter(b => VALID_BLOCK_IDS.has(b.id));
-        // If saved layout is missing new blocks, add them from defaults
         const savedIds = new Set(parsed.map(b => b.id));
         const missing = INITIAL_BLOCKS.filter(b => !savedIds.has(b.id));
         if (parsed.length > 0) setBlocks([...parsed, ...missing]);
       }
+    } catch {}
+    try {
+      const savedPrefs = localStorage.getItem(`kp_prefs_${user.utilisateur}`);
+      if (savedPrefs) setWidgetPrefs(p => ({ ...p, ...JSON.parse(savedPrefs) }));
     } catch {}
   }, [user?.utilisateur]);
 
@@ -255,6 +267,13 @@ export default function TicketDetailPage() {
     localStorage.removeItem(`kp_layout_${user.utilisateur}`);
     setBlocks(INITIAL_BLOCKS);
     toast.success('Layout réinitialisé');
+  };
+
+  const savePrefs = (newPrefs) => {
+    setWidgetPrefs(newPrefs);
+    if (user?.utilisateur) {
+      localStorage.setItem(`kp_prefs_${user.utilisateur}`, JSON.stringify(newPrefs));
+    }
   };
 
   const handleLayoutDrop = (targetId) => {
@@ -834,29 +853,15 @@ export default function TicketDetailPage() {
               <div className="flex justify-between items-center"><span className="text-slate-500">Dépôt</span><span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span></div>
               <div className="flex justify-between items-center"><span className="text-slate-500">Mise à jour</span><span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span></div>
               {t.date_cloture && <div className="flex justify-between items-center"><span className="text-slate-500">Clôture</span><span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span></div>}
-              {t.date_recuperation && (() => {
-                const d = new Date(t.date_recuperation);
-                const isValid = !isNaN(d.getTime());
-                const now = new Date();
-                let countdown = '';
-                if (isValid && d > now) {
-                  const diff = d - now;
-                  const days = Math.floor(diff / 86400000);
-                  const hours = Math.floor((diff % 86400000) / 3600000);
-                  countdown = days > 0 ? `dans ${days}j ${hours}h` : `dans ${hours}h`;
-                } else if (isValid && d <= now) {
-                  countdown = 'dépassée';
-                }
-                return (
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Récupération</span>
-                    <div className="text-right">
-                      <span className="font-medium text-slate-800">{isValid ? d.toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : t.date_recuperation}</span>
-                      {countdown && <span className={`ml-2 text-xs font-semibold ${d <= now ? 'text-red-500' : 'text-emerald-600'}`}>{countdown}</span>}
-                    </div>
+              {t.date_recuperation && (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Récupération</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-800">{t.date_recuperation}</span>
+                    <LiveCountdown dateStr={t.date_recuperation} visible={widgetPrefs.countdown} />
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1280,6 +1285,7 @@ export default function TicketDetailPage() {
                 </div>
               </div>
             )}
+            <RepairTimer ticket={t} visible={widgetPrefs.timer} />
           </div>
         );
 
@@ -1638,13 +1644,16 @@ export default function TicketDetailPage() {
       {/* Layout toolbar */}
       <div className="flex items-center gap-2 mb-5">
         <button
-          onClick={() => setLayoutEditMode(!layoutEditMode)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-            layoutEditMode ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
+          onClick={() => setShowPersonnaliser(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
         >
-          <Edit3 className="w-3.5 h-3.5" />
-          {layoutEditMode ? 'Mode édition' : 'Personnaliser'}
+          <Edit3 className="w-3.5 h-3.5" /> Personnaliser
+        </button>
+        <button
+          onClick={() => setShowQueue(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+        >
+          <ListOrdered className="w-3.5 h-3.5" /> File d'attente
         </button>
         {layoutEditMode && (
           <>
@@ -1693,6 +1702,27 @@ export default function TicketDetailPage() {
         ticketCode={t.ticket_code}
         clientTel={t.client_tel}
         clientEmail={t.client_email}
+      />
+
+      {/* Personnaliser panel */}
+      <PersonnaliserPanel
+        open={showPersonnaliser}
+        onClose={() => setShowPersonnaliser(false)}
+        prefs={widgetPrefs}
+        onPrefsChange={savePrefs}
+        layoutEditMode={layoutEditMode}
+        onToggleEditMode={() => setLayoutEditMode(m => !m)}
+        onSaveLayout={saveLayout}
+        onResetLayout={resetLayout}
+      />
+
+      {/* Repair queue panel */}
+      <RepairQueue
+        open={showQueue}
+        onClose={() => setShowQueue(false)}
+        currentTicketId={parseInt(id)}
+        basePath={basePath}
+        user={user}
       />
     </div>
   );

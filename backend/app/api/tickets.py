@@ -62,6 +62,61 @@ async def get_kpi(user: dict = Depends(get_current_user)):
     return KPIResponse(**row) if row else KPIResponse()
 
 
+# ─── FILE D'ATTENTE RÉPARATION ────────────────────────────────────
+@router.get("/queue/repair")
+async def get_repair_queue(
+    tech: Optional[str] = None,
+    limit: int = Query(20, le=50),
+    user: dict = Depends(get_current_user),
+):
+    """Retourne les tickets en attente de réparation, triés par priorité."""
+    with get_cursor() as cur:
+        conditions = [
+            "t.statut IN ('En attente de diagnostic', 'En attente de pièce', "
+            "'Pièce reçue', 'En attente d''accord client', 'En cours de réparation')"
+        ]
+        params = []
+
+        if tech:
+            conditions.append("t.technicien_assigne = %s")
+            params.append(tech)
+
+        where = "WHERE " + " AND ".join(conditions)
+        params.append(limit)
+
+        cur.execute(f"""
+            SELECT t.id, t.ticket_code, t.statut, t.marque, t.modele, t.panne,
+                   t.technicien_assigne, t.date_recuperation, t.date_depot,
+                   t.reparation_debut, t.reparation_duree,
+                   c.nom AS client_nom, c.prenom AS client_prenom
+            FROM tickets t
+            JOIN clients c ON t.client_id = c.id
+            {where}
+            ORDER BY
+                CASE t.statut
+                    WHEN 'En cours de réparation' THEN 1
+                    WHEN 'Pièce reçue' THEN 2
+                    WHEN 'En attente de diagnostic' THEN 3
+                    WHEN 'En attente d''accord client' THEN 4
+                    WHEN 'En attente de pièce' THEN 5
+                    ELSE 6
+                END,
+                t.date_depot ASC
+            LIMIT %s
+        """, params)
+        rows = cur.fetchall()
+
+    # Serialize datetimes
+    result = []
+    for r in rows:
+        d = dict(r)
+        for key in ("date_recuperation", "date_depot", "reparation_debut"):
+            if d.get(key) and hasattr(d[key], "isoformat"):
+                d[key] = d[key].isoformat()
+        result.append(d)
+    return result
+
+
 # ─── LISTE / RECHERCHE ─────────────────────────────────────────
 @router.get("", response_model=list[TicketFull])
 async def list_tickets(
@@ -358,6 +413,33 @@ async def change_status(
                 "UPDATE tickets SET statut=%s, date_maj=%s, historique=%s WHERE id=%s",
                 (data.statut, now, new_hist, ticket_id),
             )
+
+        # Timer auto — start/stop
+        entering_repair = data.statut == "En cours de réparation" and ancien_statut != "En cours de réparation"
+        leaving_repair = ancien_statut == "En cours de réparation" and data.statut != "En cours de réparation"
+
+        if entering_repair:
+            cur.execute(
+                "UPDATE tickets SET reparation_debut = %s, reparation_fin = NULL WHERE id = %s",
+                (now, ticket_id),
+            )
+        elif leaving_repair:
+            cur.execute(
+                "SELECT reparation_debut, reparation_duree FROM tickets WHERE id = %s",
+                (ticket_id,),
+            )
+            tr = cur.fetchone()
+            if tr and tr.get("reparation_debut"):
+                debut = tr["reparation_debut"]
+                if isinstance(debut, str):
+                    debut = datetime.strptime(debut, "%Y-%m-%d %H:%M:%S")
+                elapsed = int((datetime.now() - debut).total_seconds())
+                prev = tr.get("reparation_duree") or 0
+                cur.execute(
+                    "UPDATE tickets SET reparation_fin = %s, reparation_duree = %s WHERE id = %s",
+                    (now, prev + elapsed, ticket_id),
+                )
+
         _ajouter_historique(cur, ticket_id, 'statut', f"Statut: {ancien_statut} → {data.statut}")
 
     # Notifications Discord

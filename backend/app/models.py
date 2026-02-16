@@ -165,6 +165,9 @@ class TicketOut(BaseModel):
     telephone_pret: Optional[str] = None
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = 0
+    reparation_debut: Optional[datetime] = None
+    reparation_fin: Optional[datetime] = None
+    reparation_duree: Optional[int] = 0
 
 
 class TicketFull(TicketOut):

@@ -89,6 +89,10 @@ class ApiClient {
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
   getHistorique(id) { return this.get(`/api/tickets/${id}/historique`); }
   togglePaye(id) { return this.patch(`/api/tickets/${id}/paye`, {}); }
+  getRepairQueue(tech) {
+    const qs = tech ? `?tech=${encodeURIComponent(tech)}` : '';
+    return this.get(`/api/tickets/queue/repair${qs}`);
+  }
 
   // ─── CLIENTS ───────────────────────────────
   getClients(params = {}) {
