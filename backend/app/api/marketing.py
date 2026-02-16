@@ -1012,7 +1012,7 @@ def _store_image(img_bytes: bytes) -> str:
     if base_url and not base_url.startswith("http"):
         base_url = f"https://{base_url}"
     if not base_url:
-        base_url = "https://klikphone-sav-v2-production.up.railway.app"
+        base_url = "https://klikphone-sav-railways-production.up.railway.app"
     # Extension selon le format
     ext = "webp" if img_bytes[:4] == b"RIFF" else "png" if img_bytes[:8] == b"\x89PNG\r\n\x1a\n" else "jpg"
     return f"{base_url}/api/marketing/images/{image_id}.{ext}"

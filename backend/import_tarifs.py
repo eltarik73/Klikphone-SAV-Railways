@@ -12,7 +12,7 @@ import sys
 
 import httpx
 
-API_URL = os.environ.get("API_URL", "https://klikphone-sav-v2-production.up.railway.app")
+API_URL = os.environ.get("API_URL", "https://klikphone-sav-railways-production.up.railway.app")
 
 # ─── TARIFS FOURNISSEUR HT ───────────────────────────────────
 # Structure: (marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie)

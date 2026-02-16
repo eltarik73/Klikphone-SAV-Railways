@@ -4,7 +4,7 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || '';
-const BACKEND_URL = (API_URL || 'https://klikphone-sav-v2-production.up.railway.app').trim();
+const BACKEND_URL = (API_URL || 'https://klikphone-sav-railways-production.up.railway.app').trim();
 
 class ApiClient {
   constructor() {
