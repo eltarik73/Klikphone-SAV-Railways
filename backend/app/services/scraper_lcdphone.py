@@ -501,7 +501,13 @@ def sync_telephones_lcdphone() -> dict:
     updated = 0
 
     try:
-        with get_cursor() as cur:
+        # Transaction atomique : si une erreur survient, rollback automatique
+        # via get_db() — les données existantes restent intactes.
+        from psycopg2.extras import RealDictCursor
+        from app.database import get_db
+
+        with get_db() as conn:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("UPDATE telephones_catalogue SET actif = FALSE, updated_at = NOW()")
 
             for p in all_produits:
@@ -545,6 +551,9 @@ def sync_telephones_lcdphone() -> dict:
                           p["das"], p["image_url"], p["source_url"]))
                     inserted += 1
 
+            cur.close()
+            # conn.commit() is called automatically by get_db() on success
+
         return {
             "success": True,
             "total": len(all_produits),
@@ -553,5 +562,6 @@ def sync_telephones_lcdphone() -> dict:
             "debug": all_debug,
         }
     except Exception as e:
-        logger.error(f"Erreur BDD: {e}")
+        # get_db() does conn.rollback() on exception — data preserved
+        logger.error(f"Erreur BDD (rollback effectué): {e}")
         return {"success": False, "error": str(e), "debug": all_debug}

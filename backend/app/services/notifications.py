@@ -168,6 +168,28 @@ def notif_deconnexion(utilisateur: str):
     )
 
 
+def notif_sync_telephones(success: bool, nb_produits: int = 0, nb_marques: int = 0, error: str = None):
+    """Notification Discord pour le résultat de la sync téléphones."""
+    if success:
+        envoyer_discord_embed(
+            title="Sync téléphones terminée",
+            description="Le catalogue LCD-Phone a été synchronisé avec succès.",
+            color=DISCORD_COLORS["green"],
+            fields=[
+                {"name": "Produits", "value": str(nb_produits), "inline": True},
+                {"name": "Marques", "value": str(nb_marques), "inline": True},
+            ],
+            notif_type="sync_telephones",
+        )
+    else:
+        envoyer_discord_embed(
+            title="Sync téléphones échouée",
+            description=f"La synchronisation a échoué. **Données conservées** (rollback).\n\n`{error or 'Erreur inconnue'}`",
+            color=DISCORD_COLORS["red"],
+            notif_type="sync_telephones",
+        )
+
+
 # ─── EMAIL SMTP ─────────────────────────────────────────────────
 
 def envoyer_email(destinataire: str, sujet: str, message: str, html_content: str = None):

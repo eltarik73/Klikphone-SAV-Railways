@@ -105,13 +105,25 @@ def _run_sync_background():
     global _sync_status
     try:
         from app.services.scraper_lcdphone import sync_telephones_lcdphone
+        from app.services.notifications import notif_sync_telephones
         result = sync_telephones_lcdphone()
         _sync_status["last_result"] = result
         _sync_status["finished_at"] = datetime.utcnow().isoformat()
+
+        # Discord alert
+        if result.get("success"):
+            notif_sync_telephones(True, nb_produits=result.get("total", 0), nb_marques=result.get("marques", 0))
+        else:
+            notif_sync_telephones(False, error=result.get("error", "Erreur inconnue"))
     except Exception as e:
         logger.error(f"Background sync error: {e}")
         _sync_status["last_result"] = {"success": False, "error": str(e)}
         _sync_status["finished_at"] = datetime.utcnow().isoformat()
+        try:
+            from app.services.notifications import notif_sync_telephones
+            notif_sync_telephones(False, error=str(e))
+        except Exception:
+            pass
     finally:
         _sync_status["running"] = False
         _cache.clear()  # Invalidate stats/marques cache after sync
