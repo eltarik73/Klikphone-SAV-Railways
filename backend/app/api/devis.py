@@ -85,6 +85,11 @@ def _gen_numero(cur):
     return f"{prefix}0001"
 
 
+# ══════════════════════════════════════════════════════════════
+# STATIC ROUTES (must come BEFORE /{devis_id} to avoid conflicts)
+# ══════════════════════════════════════════════════════════════
+
+
 # ─── LIST ──────────────────────────────────────────────────
 
 @router.get("")
@@ -129,28 +134,6 @@ async def list_devis(
                 d[key] = d[key].isoformat()
         result.append(d)
     return result
-
-
-# ─── GET ONE ───────────────────────────────────────────────
-
-@router.get("/{devis_id}")
-async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
-    with get_cursor() as cur:
-        cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
-        devis = cur.fetchone()
-        if not devis:
-            raise HTTPException(404, "Devis non trouvé")
-        cur.execute(
-            "SELECT * FROM devis_lignes WHERE devis_id = %s ORDER BY ordre, id", (devis_id,)
-        )
-        lignes = cur.fetchall()
-
-    d = dict(devis)
-    for key in ("date_creation", "date_maj", "date_acceptation", "date_refus"):
-        if d.get(key) and hasattr(d[key], "isoformat"):
-            d[key] = d[key].isoformat()
-    d["lignes"] = [dict(l) for l in lignes]
-    return d
 
 
 # ─── CREATE ────────────────────────────────────────────────
@@ -201,6 +184,179 @@ async def create_devis(data: DevisCreate, user: dict = Depends(get_current_user)
             """, (devis_id, ld["description"], ld["quantite"], ld["prix_unitaire"], ld["total"], i))
 
     return {"id": devis_id, "numero": numero}
+
+
+# ─── STATS ─────────────────────────────────────────────────
+
+@router.get("/stats/overview")
+async def devis_stats(user: dict = Depends(get_current_user)):
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE statut = 'Brouillon') as brouillons,
+                COUNT(*) FILTER (WHERE statut = 'Envoyé') as envoyes,
+                COUNT(*) FILTER (WHERE statut = 'Accepté') as acceptes,
+                COUNT(*) FILTER (WHERE statut = 'Refusé') as refuses,
+                COUNT(*) FILTER (WHERE statut = 'Converti') as convertis,
+                COALESCE(SUM(total_ttc) FILTER (WHERE statut = 'Accepté'), 0) as ca_accepte,
+                COALESCE(AVG(total_ttc), 0) as panier_moyen
+            FROM devis
+        """)
+        return cur.fetchone()
+
+
+# ─── DEVIS FLASH — SEARCH TARIFS ──────────────────────────
+
+@router.get("/flash/search")
+async def devis_flash_search(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, le=50),
+    user: Optional[dict] = None,
+):
+    """Recherche dans tarifs pour le devis flash."""
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT id, marque, modele, type_piece, qualite, prix_client,
+                   en_stock, nom_fournisseur as fournisseur
+            FROM tarifs
+            WHERE (modele ILIKE %s OR marque ILIKE %s OR type_piece ILIKE %s)
+            ORDER BY marque, modele, type_piece
+            LIMIT %s
+        """, (f"%{q}%", f"%{q}%", f"%{q}%", limit))
+        return cur.fetchall()
+
+
+# ─── TELEPHONES VENTE — CRUD ──────────────────────────────
+
+@router.get("/telephones-vente")
+async def list_telephones_vente(
+    search: Optional[str] = None,
+    marque: Optional[str] = None,
+    etat: Optional[str] = None,
+    en_stock: Optional[bool] = None,
+    limit: int = Query(50, le=200),
+    offset: int = 0,
+    user: dict = Depends(get_current_user),
+):
+    conditions = []
+    params = []
+    if search:
+        conditions.append("(marque ILIKE %s OR modele ILIKE %s OR imei ILIKE %s)")
+        s = f"%{search}%"
+        params.extend([s, s, s])
+    if marque:
+        conditions.append("marque = %s")
+        params.append(marque)
+    if etat:
+        conditions.append("etat = %s")
+        params.append(etat)
+    if en_stock is not None:
+        conditions.append("en_stock = %s")
+        params.append(en_stock)
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    params.extend([limit, offset])
+
+    with get_cursor() as cur:
+        cur.execute(f"""
+            SELECT * FROM telephones_vente {where}
+            ORDER BY date_ajout DESC LIMIT %s OFFSET %s
+        """, params)
+        rows = cur.fetchall()
+
+    result = []
+    for r in rows:
+        d = dict(r)
+        if d.get("date_ajout") and hasattr(d["date_ajout"], "isoformat"):
+            d["date_ajout"] = d["date_ajout"].isoformat()
+        result.append(d)
+    return result
+
+
+@router.get("/telephones-vente/stats")
+async def telephones_vente_stats(user: dict = Depends(get_current_user)):
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE en_stock = true) as en_stock,
+                COUNT(*) FILTER (WHERE etat = 'Neuf') as neufs,
+                COUNT(*) FILTER (WHERE etat = 'Occasion') as occasions,
+                COALESCE(SUM(prix_vente) FILTER (WHERE en_stock = true), 0) as valeur_stock,
+                COUNT(DISTINCT marque) as nb_marques
+            FROM telephones_vente
+        """)
+        return cur.fetchone()
+
+
+@router.get("/telephones-vente/marques")
+async def telephones_vente_marques(user: dict = Depends(get_current_user)):
+    with get_cursor() as cur:
+        cur.execute("SELECT DISTINCT marque FROM telephones_vente ORDER BY marque")
+        return [r["marque"] for r in cur.fetchall()]
+
+
+@router.post("/telephones-vente")
+async def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
+    fields = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "notes"]
+    vals = {k: data.get(k) for k in fields if k in data}
+    if not vals.get("marque") or not vals.get("modele"):
+        raise HTTPException(400, "Marque et modèle requis")
+
+    cols = ", ".join(vals.keys())
+    placeholders = ", ".join(["%s"] * len(vals))
+    with get_cursor() as cur:
+        cur.execute(
+            f"INSERT INTO telephones_vente ({cols}) VALUES ({placeholders}) RETURNING id",
+            list(vals.values()),
+        )
+        return {"id": cur.fetchone()["id"]}
+
+
+@router.patch("/telephones-vente/{tel_id}")
+async def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(get_current_user)):
+    allowed = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "en_stock", "notes"]
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return {"ok": True}
+    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+    with get_cursor() as cur:
+        cur.execute(f"UPDATE telephones_vente SET {set_clause} WHERE id = %s", list(updates.values()) + [tel_id])
+    return {"ok": True}
+
+
+@router.delete("/telephones-vente/{tel_id}")
+async def delete_telephone_vente(tel_id: int, user: dict = Depends(get_current_user)):
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM telephones_vente WHERE id = %s", (tel_id,))
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════
+# PARAMETERIZED ROUTES (/{devis_id}) — must come AFTER static routes
+# ══════════════════════════════════════════════════════════════
+
+
+# ─── GET ONE ───────────────────────────────────────────────
+
+@router.get("/{devis_id}")
+async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
+        devis = cur.fetchone()
+        if not devis:
+            raise HTTPException(404, "Devis non trouvé")
+        cur.execute(
+            "SELECT * FROM devis_lignes WHERE devis_id = %s ORDER BY ordre, id", (devis_id,)
+        )
+        lignes = cur.fetchall()
+
+    d = dict(devis)
+    for key in ("date_creation", "date_maj", "date_acceptation", "date_refus"):
+        if d.get(key) and hasattr(d[key], "isoformat"):
+            d[key] = d[key].isoformat()
+    d["lignes"] = [dict(l) for l in lignes]
+    return d
 
 
 # ─── UPDATE ────────────────────────────────────────────────
@@ -346,152 +502,6 @@ async def duplicate_devis(devis_id: int, user: dict = Depends(get_current_user))
             """, (new_id, l["description"], l["quantite"], l["prix_unitaire"], l["total"], l["ordre"]))
 
     return {"id": new_id, "numero": numero}
-
-
-# ─── STATS ─────────────────────────────────────────────────
-
-@router.get("/stats/overview")
-async def devis_stats(user: dict = Depends(get_current_user)):
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE statut = 'Brouillon') as brouillons,
-                COUNT(*) FILTER (WHERE statut = 'Envoyé') as envoyes,
-                COUNT(*) FILTER (WHERE statut = 'Accepté') as acceptes,
-                COUNT(*) FILTER (WHERE statut = 'Refusé') as refuses,
-                COUNT(*) FILTER (WHERE statut = 'Converti') as convertis,
-                COALESCE(SUM(total_ttc) FILTER (WHERE statut = 'Accepté'), 0) as ca_accepte,
-                COALESCE(AVG(total_ttc), 0) as panier_moyen
-            FROM devis
-        """)
-        return cur.fetchone()
-
-
-# ─── DEVIS FLASH — SEARCH TARIFS ──────────────────────────
-
-@router.get("/flash/search")
-async def devis_flash_search(
-    q: str = Query(..., min_length=1),
-    limit: int = Query(20, le=50),
-    user: Optional[dict] = None,
-):
-    """Recherche dans tarifs_reparations pour le devis flash."""
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT id, marque, modele, type_piece, qualite, prix_client,
-                   en_stock, fournisseur
-            FROM tarifs_reparations
-            WHERE (modele ILIKE %s OR marque ILIKE %s OR type_piece ILIKE %s)
-            ORDER BY marque, modele, type_piece
-            LIMIT %s
-        """, (f"%{q}%", f"%{q}%", f"%{q}%", limit))
-        return cur.fetchall()
-
-
-# ─── TELEPHONES VENTE — CRUD ──────────────────────────────
-
-@router.get("/telephones-vente")
-async def list_telephones_vente(
-    search: Optional[str] = None,
-    marque: Optional[str] = None,
-    etat: Optional[str] = None,
-    en_stock: Optional[bool] = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
-    user: dict = Depends(get_current_user),
-):
-    conditions = []
-    params = []
-    if search:
-        conditions.append("(marque ILIKE %s OR modele ILIKE %s OR imei ILIKE %s)")
-        s = f"%{search}%"
-        params.extend([s, s, s])
-    if marque:
-        conditions.append("marque = %s")
-        params.append(marque)
-    if etat:
-        conditions.append("etat = %s")
-        params.append(etat)
-    if en_stock is not None:
-        conditions.append("en_stock = %s")
-        params.append(en_stock)
-    where = "WHERE " + " AND ".join(conditions) if conditions else ""
-    params.extend([limit, offset])
-
-    with get_cursor() as cur:
-        cur.execute(f"""
-            SELECT * FROM telephones_vente {where}
-            ORDER BY date_ajout DESC LIMIT %s OFFSET %s
-        """, params)
-        rows = cur.fetchall()
-
-    result = []
-    for r in rows:
-        d = dict(r)
-        if d.get("date_ajout") and hasattr(d["date_ajout"], "isoformat"):
-            d["date_ajout"] = d["date_ajout"].isoformat()
-        result.append(d)
-    return result
-
-
-@router.get("/telephones-vente/stats")
-async def telephones_vente_stats(user: dict = Depends(get_current_user)):
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE en_stock = true) as en_stock,
-                COUNT(*) FILTER (WHERE etat = 'Neuf') as neufs,
-                COUNT(*) FILTER (WHERE etat = 'Occasion') as occasions,
-                COALESCE(SUM(prix_vente) FILTER (WHERE en_stock = true), 0) as valeur_stock,
-                COUNT(DISTINCT marque) as nb_marques
-            FROM telephones_vente
-        """)
-        return cur.fetchone()
-
-
-@router.get("/telephones-vente/marques")
-async def telephones_vente_marques(user: dict = Depends(get_current_user)):
-    with get_cursor() as cur:
-        cur.execute("SELECT DISTINCT marque FROM telephones_vente ORDER BY marque")
-        return [r["marque"] for r in cur.fetchall()]
-
-
-@router.post("/telephones-vente")
-async def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
-    fields = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "notes"]
-    vals = {k: data.get(k) for k in fields if k in data}
-    if not vals.get("marque") or not vals.get("modele"):
-        raise HTTPException(400, "Marque et modèle requis")
-
-    cols = ", ".join(vals.keys())
-    placeholders = ", ".join(["%s"] * len(vals))
-    with get_cursor() as cur:
-        cur.execute(
-            f"INSERT INTO telephones_vente ({cols}) VALUES ({placeholders}) RETURNING id",
-            list(vals.values()),
-        )
-        return {"id": cur.fetchone()["id"]}
-
-
-@router.patch("/telephones-vente/{tel_id}")
-async def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(get_current_user)):
-    allowed = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "en_stock", "notes"]
-    updates = {k: v for k, v in data.items() if k in allowed}
-    if not updates:
-        return {"ok": True}
-    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-    with get_cursor() as cur:
-        cur.execute(f"UPDATE telephones_vente SET {set_clause} WHERE id = %s", list(updates.values()) + [tel_id])
-    return {"ok": True}
-
-
-@router.delete("/telephones-vente/{tel_id}")
-async def delete_telephone_vente(tel_id: int, user: dict = Depends(get_current_user)):
-    with get_cursor() as cur:
-        cur.execute("DELETE FROM telephones_vente WHERE id = %s", (tel_id,))
-    return {"ok": True}
 
 
 # ─── PRINT DEVIS ───────────────────────────────────────────

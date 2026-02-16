@@ -55,7 +55,7 @@ async def search(
         results = []
         with get_cursor() as cur:
             cur.execute(
-                """SELECT DISTINCT modele, marque FROM tarifs_reparations
+                """SELECT DISTINCT modele, marque FROM tarifs
                    WHERE LOWER(modele) LIKE LOWER(%s)
                    ORDER BY modele
                    LIMIT %s""",
@@ -74,7 +74,7 @@ async def search(
                     """SELECT terme, compteur FROM autocompletion
                        WHERE categorie='modele_custom'
                          AND LOWER(terme) LIKE LOWER(%s)
-                         AND terme NOT IN (SELECT DISTINCT modele FROM tarifs_reparations)
+                         AND terme NOT IN (SELECT DISTINCT modele FROM tarifs)
                        ORDER BY compteur DESC, derniere_utilisation DESC
                        LIMIT %s""",
                     (pattern, remaining),
