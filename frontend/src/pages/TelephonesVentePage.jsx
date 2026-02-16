@@ -236,7 +236,10 @@ export default function TelephonesVentePage() {
           <select value={filterMarque} onChange={e => setFilterMarque(e.target.value)}
             className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600">
             <option value="">Toutes marques</option>
-            {marques.map(m => <option key={m} value={m}>{m}</option>)}
+            {marques.map(m => {
+              const name = typeof m === 'string' ? m : m.marque;
+              return <option key={name} value={name}>{name}</option>;
+            })}
           </select>
           <select value={filterType} onChange={e => setFilterType(e.target.value)}
             className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600">
