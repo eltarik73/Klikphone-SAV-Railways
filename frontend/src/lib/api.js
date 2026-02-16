@@ -117,6 +117,14 @@ class ApiClient {
   deleteMarque(categorie, marque) { return this.delete(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
   deleteModele(categorie, marque, modele) { return this.delete(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`); }
 
+  // ─── AUTOCOMPLETE ───────────────────────────
+  searchAutocomplete(categorie, q, limit = 8) {
+    return this.get(`/api/autocomplete/search?categorie=${encodeURIComponent(categorie)}&q=${encodeURIComponent(q)}&limit=${limit}`);
+  }
+  learnTerm(categorie, terme) {
+    return this.post('/api/autocomplete/learn', { categorie, terme });
+  }
+
   // ─── TEAM ──────────────────────────────────
   getTeam() { return this.get('/api/team'); }
   getActiveTeam() { return this.get('/api/team/active'); }

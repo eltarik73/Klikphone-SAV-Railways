@@ -198,6 +198,12 @@ export default function ClientFormPage() {
         });
       }
 
+      // Apprentissage silencieux (l'autocomplétion ne s'affiche pas ici mais les termes sont appris)
+      const panne = isCommande ? null : (pieceACommander && pieceNom ? null : form.panne);
+      if (panne && panne !== 'Pièce à commander') api.learnTerm('panne', panne).catch(() => {});
+      if (form.panne_detail) api.learnTerm('detail_panne', form.panne_detail).catch(() => {});
+      if (form.modele_autre) api.learnTerm('modele_custom', form.modele_autre).catch(() => {});
+
       setCreatedCode(result.ticket_code);
       setStep(flow.length - 1); // go to confirmation
     } catch (err) {

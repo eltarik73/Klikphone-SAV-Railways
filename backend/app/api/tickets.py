@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import get_cursor
+from app.api.autocomplete import learn_terms
 from app.models import (
     TicketCreate, TicketUpdate, TicketOut, TicketFull,
     StatusChange, KPIResponse,
@@ -256,6 +257,9 @@ async def create_ticket(data: TicketCreate):
         code = f"KP-{tid:06d}"
         cur.execute("UPDATE tickets SET ticket_code = %s WHERE id = %s", (code, tid))
 
+    # Apprentissage autocomplétion (silencieux)
+    learn_terms({"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre})
+
     # Notification Discord (non bloquant)
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
     notif_nouveau_ticket(code, appareil, data.panne or data.panne_detail or "Réparation")
@@ -285,6 +289,9 @@ async def update_ticket(
             f"UPDATE tickets SET {set_clause} WHERE id = %s",
             values,
         )
+
+    # Apprentissage autocomplétion (silencieux)
+    learn_terms(updates)
 
     return {"ok": True}
 

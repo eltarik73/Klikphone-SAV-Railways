@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete
 
 
 @asynccontextmanager
@@ -68,6 +68,14 @@ async def lifespan(app: FastAPI):
             contenu TEXT NOT NULL,
             important BOOLEAN DEFAULT FALSE,
             date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS autocompletion (
+            id SERIAL PRIMARY KEY,
+            categorie VARCHAR(50) NOT NULL,
+            terme VARCHAR(255) NOT NULL,
+            compteur INTEGER DEFAULT 1,
+            derniere_utilisation TIMESTAMP DEFAULT NOW(),
+            UNIQUE(categorie, terme)
         )""",
     ]:
         try:
@@ -131,12 +139,48 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_ticket ON fidelite_historique(ticket_id)",
         "CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_tickets_technicien ON tickets(technicien_assigne)",
+        "CREATE INDEX IF NOT EXISTS idx_autocompletion_categorie ON autocompletion(categorie)",
+        "CREATE INDEX IF NOT EXISTS idx_autocompletion_compteur ON autocompletion(categorie, compteur DESC)",
     ]:
         try:
             with get_cursor() as cur:
                 cur.execute(sql)
         except Exception as e:
             print(f"Warning CREATE INDEX: {e}")
+
+    # Seed autocompletion — pannes courantes
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO autocompletion (categorie, terme, compteur) VALUES
+                    ('panne', 'Écran cassé', 100),
+                    ('panne', 'Batterie HS', 80),
+                    ('panne', 'Ne charge plus', 60),
+                    ('panne', 'Connecteur de charge', 45),
+                    ('panne', 'Écran qui clignote', 40),
+                    ('panne', 'Vitre arrière cassée', 35),
+                    ('panne', 'Bouton power HS', 30),
+                    ('panne', 'Caméra arrière HS', 25),
+                    ('panne', 'Désoxydation', 25),
+                    ('panne', 'Tactile ne répond plus', 22),
+                    ('panne', 'Caméra avant HS', 20),
+                    ('panne', 'Haut-parleur HS', 20),
+                    ('panne', 'Face ID HS', 20),
+                    ('panne', 'LCD tâche noire', 18),
+                    ('panne', 'Micro HS', 15),
+                    ('panne', 'Touch ID HS', 15),
+                    ('panne', 'Écouteur interne HS', 12),
+                    ('panne', 'Batterie qui gonfle', 10),
+                    ('panne', 'Wifi / Bluetooth HS', 10),
+                    ('panne', 'Nappe volume HS', 8)
+                ON CONFLICT (categorie, terme) DO NOTHING
+            """)
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES ('AFFICHER_AUTOCOMPLETION', 'true')
+                ON CONFLICT (cle) DO NOTHING
+            """)
+    except Exception as e:
+        print(f"Warning autocompletion seed: {e}")
 
     # Default admin password
     try:
@@ -201,6 +245,7 @@ app.include_router(email_api.router)
 app.include_router(tarifs.router)
 app.include_router(marketing.router)
 app.include_router(telephones.router)
+app.include_router(autocomplete.router)
 
 
 # --- HEALTH CHECK ---

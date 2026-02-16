@@ -9,7 +9,7 @@ import {
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
   Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
-  Zap, CreditCard, AtSign, Mail,
+  Zap, CreditCard, AtSign, Mail, Search,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -1196,6 +1196,32 @@ export default function ConfigPage() {
             </div>
             <p className="text-[11px] text-slate-400 mt-2 pt-3 border-t border-slate-100">
               Désactivez les animations pour améliorer la fluidité sur les appareils plus lents.
+            </p>
+
+            {/* Autocomplétion toggle */}
+            <div className="flex items-center justify-between py-3 mt-3 pt-3 border-t border-slate-100">
+              <div>
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5 text-slate-500" /> Autocomplétion intelligente
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Suggestions dans les formulaires de modification de tickets</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const newVal = config.AFFICHER_AUTOCOMPLETION === 'false' ? 'true' : 'false';
+                  setConfig(c => ({ ...c, AFFICHER_AUTOCOMPLETION: newVal }));
+                  try {
+                    await api.setParam('AFFICHER_AUTOCOMPLETION', newVal);
+                    toast.success(newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
+                  } catch { toast.error('Erreur sauvegarde'); }
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'bg-brand-600' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
+              L'apprentissage continue en arrière-plan même si l'affichage est désactivé.
             </p>
           </div>
         </div>

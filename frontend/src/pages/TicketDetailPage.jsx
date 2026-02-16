@@ -12,6 +12,7 @@ import RepairTimer from '../components/RepairTimer';
 import LiveCountdown from '../components/LiveCountdown';
 import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
+import AutocompleteField from '../components/AutocompleteField';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
@@ -126,6 +127,7 @@ export default function TicketDetailPage() {
   // Widget preferences + panels
   const [widgetPrefs, setWidgetPrefs] = useState({ timer: true, countdown: true, queue: true });
   const [showPersonnaliser, setShowPersonnaliser] = useState(false);
+  const [autocompletionEnabled, setAutocompletionEnabled] = useState(true);
 
   // Commandes de pièces
   const [commandes, setCommandes] = useState([]);
@@ -223,6 +225,8 @@ export default function TicketDetailPage() {
       const arr = Array.isArray(params) ? params : [];
       const tvaParam = arr.find(p => p.cle === 'tva');
       if (tvaParam) setTvaRate(parseFloat(tvaParam.valeur) || 0);
+      const acParam = arr.find(p => p.cle === 'AFFICHER_AUTOCOMPLETION');
+      if (acParam) setAutocompletionEnabled(acParam.valeur !== 'false');
     }).catch(() => {});
     api.getCaisseConfig()
       .then(cfg => setCaisseEnabled(cfg.CAISSE_ENABLED === '1'))
@@ -303,6 +307,9 @@ export default function TicketDetailPage() {
     setSaving(true);
     try {
       await api.updateTicket(id, deviceForm);
+      // Apprentissage silencieux
+      if (deviceForm.panne) api.learnTerm('panne', deviceForm.panne).catch(() => {});
+      if (deviceForm.panne_detail) api.learnTerm('detail_panne', deviceForm.panne_detail).catch(() => {});
       setEditingDevice(false);
       await loadTicket();
       toast.success('Appareil mis à jour');
@@ -819,9 +826,9 @@ export default function TicketDetailPage() {
               <div><label className="input-label">Catégorie</label><input value={deviceForm.categorie} onChange={e => setDeviceForm(f => ({ ...f, categorie: e.target.value }))} className="input" /></div>
               <div><label className="input-label">Marque</label><input value={deviceForm.marque} onChange={e => setDeviceForm(f => ({ ...f, marque: e.target.value }))} className="input" /></div>
               <div><label className="input-label">Modèle</label><input value={deviceForm.modele} onChange={e => setDeviceForm(f => ({ ...f, modele: e.target.value }))} className="input" /></div>
-              <div><label className="input-label">Panne</label><input value={deviceForm.panne} onChange={e => setDeviceForm(f => ({ ...f, panne: e.target.value }))} className="input" /></div>
+              <div><AutocompleteField label="Panne" categorie="panne" value={deviceForm.panne} onChange={v => setDeviceForm(f => ({ ...f, panne: v }))} onSelect={s => setDeviceForm(f => ({ ...f, panne: s.value }))} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
               <div><label className="input-label">IMEI</label><input value={deviceForm.imei} onChange={e => setDeviceForm(f => ({ ...f, imei: e.target.value }))} className="input font-mono" /></div>
-              <div><label className="input-label">Détail panne</label><input value={deviceForm.panne_detail} onChange={e => setDeviceForm(f => ({ ...f, panne_detail: e.target.value }))} className="input" /></div>
+              <div><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => setDeviceForm(f => ({ ...f, panne_detail: v }))} onSelect={s => setDeviceForm(f => ({ ...f, panne_detail: s.value }))} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>
               <div><label className="input-label">Code PIN</label><input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} /></div>
               <div><label className="input-label">Pattern</label><input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" /></div>
               <div className="col-span-2 sm:col-span-3"><label className="input-label">Note client</label><textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} /></div>
