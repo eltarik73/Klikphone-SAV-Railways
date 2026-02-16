@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import {
   Zap, Search, Wrench, Smartphone, Package, Plus, Edit3, Trash2,
@@ -199,6 +200,7 @@ export default function DevisFlashPage() {
       } else {
         await api.createTelephoneVente(telForm);
       }
+      invalidateCache('telephones');
       setShowTelForm(false);
       setEditTelId(null);
       loadTelephones();
@@ -208,11 +210,11 @@ export default function DevisFlashPage() {
 
   const handleDeleteTel = async (id) => {
     if (!confirm('Supprimer ce téléphone ?')) return;
-    try { await api.deleteTelephoneVente(id); loadTelephones(); } catch { /* ignore */ }
+    try { await api.deleteTelephoneVente(id); invalidateCache('telephones'); loadTelephones(); } catch { /* ignore */ }
   };
 
   const handleToggleStock = async (id, currentStock) => {
-    try { await api.updateTelephoneVente(id, { en_stock: !currentStock }); loadTelephones(); } catch { /* ignore */ }
+    try { await api.updateTelephoneVente(id, { en_stock: !currentStock }); invalidateCache('telephones'); loadTelephones(); } catch { /* ignore */ }
   };
 
   const openEditTel = (t) => {

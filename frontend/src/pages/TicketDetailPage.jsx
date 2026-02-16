@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import { invalidateCache } from '../hooks/useApi';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
@@ -168,8 +169,15 @@ export default function TicketDetailPage() {
   const loadTicket = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getTicket(id);
+      // Parallel: ticket + commandes + notes
+      const [data, cmds, notes] = await Promise.all([
+        api.getTicket(id),
+        api.getPartsByTicket(id).catch(() => []),
+        api.getNotes(id).catch(() => []),
+      ]);
       setTicket(data);
+      setCommandes(cmds || []);
+      setPrivateNotes(notes || []);
       setDeviceForm({
         categorie: data.categorie || '',
         marque: data.marque || '',
@@ -201,13 +209,7 @@ export default function TicketDetailPage() {
         commande_piece: data.commande_piece || 0,
       });
       setRepairLines(parseRepairLines(data));
-      // Show attention flag from dedicated field, notes, or important private notes
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
-      // Load commandes for this ticket
-      try {
-        const cmds = await api.getPartsByTicket(data.id);
-        setCommandes(cmds || []);
-      } catch { setCommandes([]); }
     } catch (err) {
       console.error(err);
     } finally {
@@ -224,20 +226,21 @@ export default function TicketDetailPage() {
     } catch { setPrivateNotes([]); }
   }, [id]);
 
-  useEffect(() => { loadNotes(); }, [loadNotes]);
-
+  // Config + team + caisse loaded in parallel on mount
   useEffect(() => {
-    api.getActiveTeam().then(setTeamMembers).catch(() => {});
-    api.getConfig().then(params => {
+    Promise.all([
+      api.getActiveTeam().catch(() => []),
+      api.getConfig().catch(() => []),
+      api.getCaisseConfig().catch(() => ({})),
+    ]).then(([team, params, caisseCfg]) => {
+      setTeamMembers(team || []);
       const arr = Array.isArray(params) ? params : [];
       const tvaParam = arr.find(p => p.cle === 'tva');
       if (tvaParam) setTvaRate(parseFloat(tvaParam.valeur) || 0);
       const acParam = arr.find(p => p.cle === 'AFFICHER_AUTOCOMPLETION');
       if (acParam) setAutocompletionEnabled(acParam.valeur !== 'false');
-    }).catch(() => {});
-    api.getCaisseConfig()
-      .then(cfg => setCaisseEnabled(cfg.CAISSE_ENABLED === '1'))
-      .catch(() => setCaisseEnabled(false));
+      setCaisseEnabled(caisseCfg?.CAISSE_ENABLED === '1');
+    });
   }, []);
 
   // ─── Layout persistence & handlers ──────────────────────────────
@@ -314,6 +317,7 @@ export default function TicketDetailPage() {
     setSaving(true);
     try {
       await api.updateTicket(id, deviceForm);
+      invalidateCache('tickets');
       // Apprentissage silencieux
       if (deviceForm.panne) api.learnTerm('panne', deviceForm.panne).catch(() => {});
       if (deviceForm.panne_detail) api.learnTerm('detail_panne', deviceForm.panne_detail).catch(() => {});
@@ -329,6 +333,7 @@ export default function TicketDetailPage() {
     setSaving(true);
     try {
       await api.updateClient(ticket.client_id, clientForm);
+      invalidateCache('clients', 'tickets');
       setEditingClient(false);
       await loadTicket();
       toast.success('Client mis à jour');
@@ -364,6 +369,7 @@ export default function TicketDetailPage() {
         prix_supp: totalRepairs,
       };
       await api.updateTicket(id, updates);
+      invalidateCache('tickets');
       setEditingPricing(false);
       await loadTicket();
       toast.success('Tarification mise à jour');
@@ -385,9 +391,9 @@ export default function TicketDetailPage() {
         prix: commandeForm.prix ? parseFloat(commandeForm.prix) : null,
         notes: commandeForm.notes,
       });
+      invalidateCache('commandes');
       setShowCommandeModal(false);
       setCommandeForm({ description: '', fournisseur: '', reference: '', prix: '', notes: '' });
-      // Refresh commandes
       const cmds = await api.getPartsByTicket(ticket.id);
       setCommandes(cmds || []);
       toast.success('Commande créée');
@@ -399,6 +405,7 @@ export default function TicketDetailPage() {
   const handleCommandeStatusChange = async (cmdId, newStatut) => {
     try {
       await api.updatePart(cmdId, { statut: newStatut });
+      invalidateCache('commandes');
       const cmds = await api.getPartsByTicket(ticket.id);
       setCommandes(cmds || []);
       toast.success(`Statut → ${newStatut}`);
@@ -413,6 +420,7 @@ export default function TicketDetailPage() {
     if (!confirm('Supprimer cette commande ?')) return;
     try {
       await api.deletePart(cmdId);
+      invalidateCache('commandes');
       const cmds = await api.getPartsByTicket(ticket.id);
       setCommandes(cmds || []);
       toast.success('Commande supprimée');
@@ -435,6 +443,7 @@ export default function TicketDetailPage() {
     }
     try {
       await api.changeStatus(id, statut);
+      invalidateCache('tickets');
       await loadTicket();
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
@@ -458,6 +467,7 @@ export default function TicketDetailPage() {
       await api.updateTicket(id, { paye: 1 });
       await api.changeStatus(id, 'Rendu au client');
       await api.changeStatus(id, 'Clôturé');
+      invalidateCache('tickets');
       setShowRenduModal(false);
       await loadTicket();
       toast.success('Ticket clôturé');
@@ -469,6 +479,7 @@ export default function TicketDetailPage() {
   const handleRenduNonPaye = async () => {
     try {
       await api.changeStatus(id, 'Rendu au client');
+      invalidateCache('tickets');
       setShowRenduModal(false);
       await loadTicket();
       toast.success('Attention : ticket non payé');

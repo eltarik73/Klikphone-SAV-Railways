@@ -206,6 +206,12 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_tickets_retour_sav ON tickets(est_retour_sav) WHERE est_retour_sav = true",
         "CREATE INDEX IF NOT EXISTS idx_tickets_original_id ON tickets(ticket_original_id) WHERE ticket_original_id IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS idx_tickets_source ON tickets(source)",
+        # Performance indexes — ticket_code lookups, commandes, clients
+        "CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code)",
+        "CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)",
+        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_code ON commandes_pieces(ticket_code)",
+        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_statut ON commandes_pieces(statut)",
+        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type ON notes_tickets(ticket_id, type_note)",
     ]:
         try:
             with get_cursor() as cur:

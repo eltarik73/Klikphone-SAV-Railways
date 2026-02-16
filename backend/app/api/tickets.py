@@ -167,11 +167,14 @@ async def list_tickets(
                c.nom as client_nom, c.prenom as client_prenom,
                c.telephone as client_tel, c.email as client_email,
                c.societe as client_societe, c.carte_camby as client_carte_camby,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
+               (n_wa.ticket_id IS NOT NULL) as msg_whatsapp,
+               (n_sm.ticket_id IS NOT NULL) as msg_sms,
+               (n_em.ticket_id IS NOT NULL) as msg_email
         FROM tickets t
         JOIN clients c ON t.client_id = c.id
+        LEFT JOIN LATERAL (SELECT ticket_id FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp' LIMIT 1) n_wa ON true
+        LEFT JOIN LATERAL (SELECT ticket_id FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms' LIMIT 1) n_sm ON true
+        LEFT JOIN LATERAL (SELECT ticket_id FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email' LIMIT 1) n_em ON true
         {where}
         ORDER BY t.date_depot DESC
         LIMIT %s OFFSET %s

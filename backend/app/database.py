@@ -29,9 +29,13 @@ def get_pool():
 
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=2,
-            maxconn=10,
+            maxconn=20,
             dsn=database_url,
             connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
     return _pool
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useSearchParams } from 'react-router-dom';
+import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import {
   FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
@@ -224,6 +225,7 @@ export default function DevisPage() {
       } else {
         await api.createDevis(payload);
       }
+      invalidateCache('devis');
       setShowModal(false);
       loadData();
     } catch (e) {
@@ -236,6 +238,7 @@ export default function DevisPage() {
     if (!confirm('Supprimer ce devis ?')) return;
     try {
       await api.deleteDevis(id);
+      invalidateCache('devis');
       loadData();
     } catch { /* ignore */ }
   };
@@ -243,6 +246,7 @@ export default function DevisPage() {
   const handleStatusChange = async (id, statut) => {
     try {
       await api.updateDevis(id, { statut });
+      invalidateCache('devis');
       loadData();
       if (showDetail && viewDevis?.id === id) {
         setViewDevis(v => ({ ...v, statut }));
@@ -255,6 +259,7 @@ export default function DevisPage() {
     try {
       const res = await api.convertDevisToTicket(id);
       alert(`Ticket créé: ${res.ticket_code}`);
+      invalidateCache('devis', 'tickets');
       loadData();
       setShowDetail(false);
     } catch (e) {
@@ -265,6 +270,7 @@ export default function DevisPage() {
   const handleDuplicate = async (id) => {
     try {
       await api.duplicateDevis(id);
+      invalidateCache('devis');
       loadData();
     } catch { /* ignore */ }
   };
