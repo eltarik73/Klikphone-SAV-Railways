@@ -7,7 +7,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, PanelLeftOpen,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -298,6 +298,18 @@ export default function Navbar() {
                 >
                   <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-telephones`) ? 'text-amber-400' : ''}`} />
                   {!collapsed && <span className="flex-1 text-left">Téléphones</span>}
+                </button>
+                <button onClick={() => handleNav(`${basePath}/telephones-vente`)}
+                  title={collapsed ? 'Mes téléphones' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/telephones-vente`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <ShoppingBag className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/telephones-vente`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Mes téléphones</span>}
                 </button>
               </>
             )}
