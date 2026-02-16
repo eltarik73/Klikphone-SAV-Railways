@@ -44,8 +44,10 @@ export default function DeposerPage() {
   useEffect(() => {
     if (form.categorie && form.marque && form.marque !== 'Autre') {
       api.getModeles(form.categorie, form.marque).then(setModeles).catch(() => setModeles([]));
-      setForm(f => ({ ...f, modele: '', modele_autre: '' }));
+    } else {
+      setModeles([]);
     }
+    setForm(f => ({ ...f, modele: '', modele_autre: '' }));
   }, [form.marque]);
 
   const updateForm = (field, value) => {
@@ -64,7 +66,7 @@ export default function DeposerPage() {
     if (step === 1) {
       if (!form.categorie) errs.categorie = 'La catégorie est requise';
       if (!form.marque) errs.marque = 'La marque est requise';
-      if ((form.marque === 'Autre' || form.modele === 'Autre') && !form.modele_autre.trim()) {
+      if (form.marque === 'Autre' && !form.modele_autre.trim()) {
         errs.modele_autre = 'Veuillez préciser le modèle';
       }
     }
@@ -77,7 +79,7 @@ export default function DeposerPage() {
 
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
-    if (step === 1) return form.categorie && form.marque && (form.marque !== 'Autre' && form.modele !== 'Autre' || form.modele_autre.trim());
+    if (step === 1) return form.categorie && form.marque && (form.marque !== 'Autre' || form.modele_autre.trim());
     if (step === 2) return form.panne;
     return true;
   };
@@ -92,8 +94,8 @@ export default function DeposerPage() {
         email: form.email,
         categorie: form.categorie,
         marque: form.marque,
-        modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
-        modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
+        modele: form.marque === 'Autre' ? '' : form.modele,
+        modele_autre: form.marque === 'Autre' ? form.modele_autre : '',
         panne: form.panne,
         panne_detail: form.panne_detail,
         notes_client: form.notes_client,
@@ -358,18 +360,26 @@ export default function DeposerPage() {
               </div>
             )}
 
-            {form.marque && form.marque !== 'Autre' && modeles.length > 0 && (
+            {form.marque && form.marque !== 'Autre' && (
               <div>
                 <label className="input-label">Modèle</label>
-                <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
-                  <option value="">Sélectionner...</option>
-                  {modeles.map(m => <option key={m} value={m}>{m}</option>)}
-                  <option value="Autre">Autre</option>
-                </select>
+                <input
+                  type="text"
+                  list="modeles-list"
+                  value={form.modele}
+                  onChange={e => updateForm('modele', e.target.value)}
+                  className="input"
+                  placeholder={`Ex: ${form.marque === 'Apple' ? 'iPhone 14 Pro' : form.marque === 'Samsung' ? 'Galaxy S24' : 'Tapez le modèle...'}`}
+                  autoComplete="off"
+                />
+                <datalist id="modeles-list">
+                  {modeles.filter(m => m !== 'Autre').map(m => <option key={m} value={m} />)}
+                </datalist>
+                <p className="text-xs text-slate-400 mt-1">Tapez pour chercher ou saisissez librement</p>
               </div>
             )}
 
-            {(form.marque === 'Autre' || form.modele === 'Autre') && (
+            {form.marque === 'Autre' && (
               <div>
                 <label className="input-label">Préciser marque / modèle *</label>
                 <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}

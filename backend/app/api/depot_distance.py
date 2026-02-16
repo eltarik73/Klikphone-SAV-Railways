@@ -5,7 +5,7 @@ API Dépôt à Distance — pré-enregistrement public + validation/refus par ac
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import get_cursor
@@ -40,7 +40,7 @@ class RefusMotif(BaseModel):
 # ─── PUBLIC: Créer un pré-enregistrement ─────────────────────
 
 @router.post("")
-async def creer_depot_distance(data: DepotDistanceRequest):
+async def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     """Pré-enregistre un appareil à distance (public, pas d'auth)."""
     # Vérifier si le module est actif
     actif = _get_param("DEPOT_DISTANCE_ACTIF")
@@ -56,7 +56,6 @@ async def creer_depot_distance(data: DepotDistanceRequest):
         existing = cur.fetchone()
         if existing:
             client_id = existing["id"]
-            # Mettre à jour les infos si fournies
             cur.execute("""
                 UPDATE clients SET
                     nom = COALESCE(NULLIF(%s, ''), nom),
@@ -90,11 +89,12 @@ async def creer_depot_distance(data: DepotDistanceRequest):
         code = f"KP-{tid:06d}"
         cur.execute("UPDATE tickets SET ticket_code = %s WHERE id = %s", (code, tid))
 
-    # Notification Discord
+    # Notifications en arrière-plan (ne bloque pas la réponse)
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
-    envoyer_discord_embed(
+    bg.add_task(
+        envoyer_discord_embed,
         title="Nouveau dépôt à distance",
-        description=f"Un client a pré-enregistré un appareil à distance",
+        description="Un client a pré-enregistré un appareil à distance",
         color=DISCORD_COLORS["purple"],
         fields=[
             {"name": "Ticket", "value": code, "inline": True},
@@ -105,10 +105,11 @@ async def creer_depot_distance(data: DepotDistanceRequest):
         ],
         notif_type="depot_distance",
     )
-
-    # Email de confirmation au client
     if data.email:
-        _envoyer_email_confirmation(data.email, data.prenom or data.nom, code, appareil, data.panne)
+        bg.add_task(
+            _envoyer_email_confirmation,
+            data.email, data.prenom or data.nom, code, appareil, data.panne,
+        )
 
     return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré"}
 
