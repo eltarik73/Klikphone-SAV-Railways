@@ -1340,12 +1340,19 @@ export default function TicketDetailPage() {
                   <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte versé</span><span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span></div>
                 </div>
 
-                {/* 5. Reste à payer */}
+                {/* 5. Reste à payer / Payé */}
                 {reste > 0 && (
-                  <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200">
-                    <span className="font-extrabold text-emerald-700 text-[15px]">RESTE À PAYER</span>
-                    <span className="font-extrabold text-emerald-700 text-[15px]">{formatPrix(reste)}</span>
-                  </div>
+                  t.paye ? (
+                    <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-100 to-green-100 border border-emerald-300">
+                      <span className="font-extrabold text-emerald-700 text-[15px]">PAYÉ</span>
+                      <span className="font-extrabold text-emerald-700 text-[15px]">{formatPrix(reste)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
+                      <span className="font-extrabold text-red-600 text-[15px]">RESTE À PAYER</span>
+                      <span className="font-extrabold text-red-600 text-[15px]">{formatPrix(reste)}</span>
+                    </div>
+                  )
                 )}
 
                 {/* 6. Action buttons */}
