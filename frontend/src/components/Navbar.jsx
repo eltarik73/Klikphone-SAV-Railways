@@ -7,7 +7,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, PanelLeftOpen,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings,
+  Lock, Unlock, BarChart3, Settings, Zap,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -20,6 +20,9 @@ export default function Navbar() {
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
+  const [moduleDevis, setModuleDevis] = useState(false);
+  const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
+  const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
 
   // Admin mode state
   const [isAdminMode, setIsAdminMode] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
@@ -38,6 +41,13 @@ export default function Navbar() {
     };
     fetchKpi();
     const interval = setInterval(fetchKpi, 30000);
+    // Load module visibility
+    api.getConfig().then(cfg => {
+      const map = {};
+      (Array.isArray(cfg) ? cfg : []).forEach(p => { map[p.cle] = p.valeur; });
+      setModuleDevis(map.MODULE_DEVIS_VISIBLE === 'true');
+      setModuleDevisFlash(map.MODULE_DEVIS_FLASH_VISIBLE === 'true');
+    }).catch(() => {});
     return () => clearInterval(interval);
   }, [user]);
 
@@ -182,6 +192,64 @@ export default function Navbar() {
               )}
             </button>
           ))}
+
+          {/* ─── Devis section (conditional) ─── */}
+          {(moduleDevis || moduleDevisFlash) && (
+            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+              {!collapsed ? (
+                <button
+                  onClick={() => {
+                    const next = !devisOpen;
+                    setDevisOpen(next);
+                    localStorage.setItem('kp_devis_open', next ? '1' : '0');
+                  }}
+                  className="w-full flex items-center justify-between px-3 mb-2 group"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#7C3AED' }}>
+                    <FileText className="w-3 h-3" />
+                    Devis
+                  </span>
+                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${devisOpen ? 'rotate-180' : ''}`} style={{ color: '#7C3AED' }} />
+                </button>
+              ) : (
+                <div className="flex justify-center mb-1">
+                  <FileText className="w-4 h-4" style={{ color: '#7C3AED' }} />
+                </div>
+              )}
+              {(devisOpen || collapsed) && (
+                <>
+                  {moduleDevis && (
+                    <button onClick={() => handleNav(`${basePath}/devis`)}
+                      title={collapsed ? 'Devis' : undefined}
+                      className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                        ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                        ${isActive(`${basePath}/devis`)
+                          ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                        }`}
+                    >
+                      <FileText className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/devis`) ? 'text-brand-400' : ''}`} />
+                      {!collapsed && <span className="flex-1 text-left">Devis</span>}
+                    </button>
+                  )}
+                  {moduleDevisFlash && (
+                    <button onClick={() => handleNav(`${basePath}/devis-flash`)}
+                      title={collapsed ? 'Devis Flash' : undefined}
+                      className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                        ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                        ${isActive(`${basePath}/devis-flash`)
+                          ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                        }`}
+                    >
+                      <Zap className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/devis-flash`) ? 'text-amber-400' : ''}`} />
+                      {!collapsed && <span className="flex-1 text-left">Devis Flash</span>}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* ─── Tarifs section ─── */}
           <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>

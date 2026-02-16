@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis
 
 
 @asynccontextmanager
@@ -76,6 +76,52 @@ async def lifespan(app: FastAPI):
             compteur INTEGER DEFAULT 1,
             derniere_utilisation TIMESTAMP DEFAULT NOW(),
             UNIQUE(categorie, terme)
+        )""",
+        """CREATE TABLE IF NOT EXISTS devis (
+            id SERIAL PRIMARY KEY,
+            numero TEXT UNIQUE,
+            client_id INTEGER REFERENCES clients(id),
+            client_nom TEXT,
+            client_prenom TEXT,
+            client_tel TEXT,
+            client_email TEXT,
+            appareil TEXT,
+            description TEXT,
+            statut TEXT DEFAULT 'Brouillon',
+            total_ht DECIMAL(10,2) DEFAULT 0,
+            tva DECIMAL(5,2) DEFAULT 20,
+            total_ttc DECIMAL(10,2) DEFAULT 0,
+            remise DECIMAL(10,2) DEFAULT 0,
+            notes TEXT,
+            validite_jours INTEGER DEFAULT 30,
+            date_creation TIMESTAMP DEFAULT NOW(),
+            date_maj TIMESTAMP DEFAULT NOW(),
+            date_acceptation TIMESTAMP,
+            date_refus TIMESTAMP,
+            ticket_id INTEGER
+        )""",
+        """CREATE TABLE IF NOT EXISTS devis_lignes (
+            id SERIAL PRIMARY KEY,
+            devis_id INTEGER REFERENCES devis(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            quantite INTEGER DEFAULT 1,
+            prix_unitaire DECIMAL(10,2) DEFAULT 0,
+            total DECIMAL(10,2) DEFAULT 0,
+            ordre INTEGER DEFAULT 0
+        )""",
+        """CREATE TABLE IF NOT EXISTS telephones_vente (
+            id SERIAL PRIMARY KEY,
+            marque TEXT NOT NULL,
+            modele TEXT NOT NULL,
+            capacite TEXT,
+            couleur TEXT,
+            etat TEXT DEFAULT 'Occasion',
+            prix_achat DECIMAL(10,2) DEFAULT 0,
+            prix_vente DECIMAL(10,2) DEFAULT 0,
+            imei TEXT,
+            en_stock BOOLEAN DEFAULT TRUE,
+            notes TEXT,
+            date_ajout TIMESTAMP DEFAULT NOW()
         )""",
     ]:
         try:
@@ -141,6 +187,12 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_tickets_technicien ON tickets(technicien_assigne)",
         "CREATE INDEX IF NOT EXISTS idx_autocompletion_categorie ON autocompletion(categorie)",
         "CREATE INDEX IF NOT EXISTS idx_autocompletion_compteur ON autocompletion(categorie, compteur DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_devis_client_id ON devis(client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_devis_statut ON devis(statut)",
+        "CREATE INDEX IF NOT EXISTS idx_devis_date ON devis(date_creation DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_devis_lignes_devis_id ON devis_lignes(devis_id)",
+        "CREATE INDEX IF NOT EXISTS idx_telephones_vente_marque ON telephones_vente(marque)",
+        "CREATE INDEX IF NOT EXISTS idx_telephones_vente_stock ON telephones_vente(en_stock)",
     ]:
         try:
             with get_cursor() as cur:
@@ -177,6 +229,12 @@ async def lifespan(app: FastAPI):
             """)
             cur.execute("""
                 INSERT INTO params (cle, valeur) VALUES ('AFFICHER_AUTOCOMPLETION', 'true')
+                ON CONFLICT (cle) DO NOTHING
+            """)
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES
+                    ('MODULE_DEVIS_VISIBLE', 'false'),
+                    ('MODULE_DEVIS_FLASH_VISIBLE', 'false')
                 ON CONFLICT (cle) DO NOTHING
             """)
     except Exception as e:
@@ -246,6 +304,7 @@ app.include_router(tarifs.router)
 app.include_router(marketing.router)
 app.include_router(telephones.router)
 app.include_router(autocomplete.router)
+app.include_router(devis.router)
 
 
 # --- HEALTH CHECK ---

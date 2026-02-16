@@ -416,6 +416,34 @@ class ApiClient {
   getMarketingAnalytics() { return this.get('/api/marketing/analytics/overview'); }
   getMarketingAnalyticsPosts() { return this.get('/api/marketing/analytics/posts'); }
 
+  // ─── DEVIS ──────────────────────────────────
+  getDevis(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/devis${qs ? '?' + qs : ''}`);
+  }
+  getDevisById(id) { return this.get(`/api/devis/${id}`); }
+  createDevis(data) { return this.post('/api/devis', data); }
+  updateDevis(id, data) { return this.patch(`/api/devis/${id}`, data); }
+  deleteDevis(id) { return this.delete(`/api/devis/${id}`); }
+  convertDevisToTicket(id) { return this.post(`/api/devis/${id}/convert`); }
+  duplicateDevis(id) { return this.post(`/api/devis/${id}/duplicate`); }
+  getDevisStats() { return this.get('/api/devis/stats/overview'); }
+  getDevisPrintUrl(id) { return `${API_URL}/api/devis/${id}/print`; }
+  devisFlashSearch(q, limit = 20) {
+    return this.get(`/api/devis/flash/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+  }
+
+  // ─── TELEPHONES VENTE ───────────────────────
+  getTelephonesVente(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/devis/telephones-vente${qs ? '?' + qs : ''}`);
+  }
+  getTelephonesVenteStats() { return this.get('/api/devis/telephones-vente/stats'); }
+  getTelephonesVenteMarques() { return this.get('/api/devis/telephones-vente/marques'); }
+  createTelephoneVente(data) { return this.post('/api/devis/telephones-vente', data); }
+  updateTelephoneVente(id, data) { return this.patch(`/api/devis/telephones-vente/${id}`, data); }
+  deleteTelephoneVente(id) { return this.delete(`/api/devis/telephones-vente/${id}`); }
+
   // ─── TELEPHONES ─────────────────────────────
   getTelephonesCatalogue(params = {}) {
     const clean = Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''));

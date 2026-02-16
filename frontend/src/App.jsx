@@ -23,6 +23,8 @@ const DepotPage = lazy(() => import('./pages/DepotPage'));
 const AvisGooglePage = lazy(() => import('./pages/AvisGoogle'));
 const CommunityManagerPage = lazy(() => import('./pages/CommunityManager'));
 const TarifsTelephonesPage = lazy(() => import('./pages/TarifsTelephonesPage'));
+const DevisPage = lazy(() => import('./pages/DevisPage'));
+const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
 
 // Preload frequent pages after initial render
 const preloadPages = () => {
@@ -117,6 +119,8 @@ function AppRoutes() {
         <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
         <Route path="/accueil/tarifs" element={<P targets={['accueil']}><TarifsPage /></P>} />
         <Route path="/accueil/tarifs-telephones" element={<P targets={['accueil']}><TarifsTelephonesPage /></P>} />
+        <Route path="/accueil/devis" element={<P targets={['accueil']}><DevisPage /></P>} />
+        <Route path="/accueil/devis-flash" element={<P targets={['accueil']}><DevisFlashPage /></P>} />
         <Route path="/accueil/config" element={<AG targets={['accueil']}><ConfigPage /></AG>} />
         <Route path="/accueil/avis-google" element={<AG targets={['accueil']}><AvisGooglePage /></AG>} />
         <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
@@ -129,6 +133,8 @@ function AppRoutes() {
         <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
         <Route path="/tech/tarifs" element={<P targets={['tech']}><TarifsPage /></P>} />
         <Route path="/tech/tarifs-telephones" element={<P targets={['tech']}><TarifsTelephonesPage /></P>} />
+        <Route path="/tech/devis" element={<P targets={['tech']}><DevisPage /></P>} />
+        <Route path="/tech/devis-flash" element={<P targets={['tech']}><DevisFlashPage /></P>} />
         <Route path="/tech/config" element={<AG targets={['tech']}><ConfigPage /></AG>} />
         <Route path="/tech/avis-google" element={<AG targets={['tech']}><AvisGooglePage /></AG>} />
         <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />

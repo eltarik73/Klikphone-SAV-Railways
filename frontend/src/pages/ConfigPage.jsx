@@ -9,7 +9,7 @@ import {
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
   Database, Download, Upload, Shield, Palette, Star,
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
-  Zap, CreditCard, AtSign, Mail, Search,
+  Zap, CreditCard, AtSign, Mail, Search, FileText, Package,
 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
@@ -364,6 +364,7 @@ export default function ConfigPage() {
     { id: 'fidelite', label: 'Fidélité', icon: Star },
     { id: 'caisse', label: 'Caisse', icon: CreditCard },
     { id: 'security', label: 'Sécurité', icon: Shield },
+    { id: 'modules', label: 'Modules', icon: Package },
     { id: 'appearance', label: 'Apparence', icon: Monitor },
     { id: 'backup', label: 'Sauvegarde', icon: Database },
   ];
@@ -1173,6 +1174,66 @@ export default function ConfigPage() {
                 Changer le mot de passe
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modules tab ═══ */}
+      {activeTab === 'modules' && (
+        <div className="space-y-5">
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-4">Modules optionnels</h2>
+            <p className="text-xs text-slate-400 mb-4">Activez ou désactivez les modules pour afficher les pages correspondantes dans le menu latéral.</p>
+
+            {/* Module Devis */}
+            <div className="flex items-center justify-between py-3 border-t border-slate-100">
+              <div>
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-brand-500" /> Module Devis
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Gestion complète des devis clients avec statuts, impression et conversion en ticket</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const newVal = config.MODULE_DEVIS_VISIBLE === 'true' ? 'false' : 'true';
+                  setConfig(c => ({ ...c, MODULE_DEVIS_VISIBLE: newVal }));
+                  try {
+                    await api.setParam('MODULE_DEVIS_VISIBLE', newVal);
+                    toast.success(newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
+                  } catch { toast.error('Erreur sauvegarde'); }
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            {/* Module Devis Flash */}
+            <div className="flex items-center justify-between py-3 border-t border-slate-100">
+              <div>
+                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" /> Module Devis Flash
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">Consultation rapide des prix de réparation et catalogue de téléphones en vente</p>
+              </div>
+              <button
+                onClick={async () => {
+                  const newVal = config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'false' : 'true';
+                  setConfig(c => ({ ...c, MODULE_DEVIS_FLASH_VISIBLE: newVal }));
+                  try {
+                    await api.setParam('MODULE_DEVIS_FLASH_VISIBLE', newVal);
+                    toast.success(newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
+                  } catch { toast.error('Erreur sauvegarde'); }
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'bg-amber-500' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-4 pt-3 border-t border-slate-100">
+              Rechargez la page après activation pour voir les changements dans le menu.
+            </p>
           </div>
         </div>
       )}
