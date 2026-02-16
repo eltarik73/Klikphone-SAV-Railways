@@ -34,9 +34,11 @@ export function prefetch(key, fetcher, opts = {}) {
   const { tags = [], ttl = 60000 } = opts;
   const c = _cache.get(key);
   if (c && !c.stale && Date.now() - c.ts < c.ttl) return;
-  fetcher().then(data => {
-    _cache.set(key, { data, ts: Date.now(), tags, ttl, stale: false });
-  }).catch(() => {});
+  try {
+    fetcher().then(data => {
+      _cache.set(key, { data, ts: Date.now(), tags, ttl, stale: false });
+    }).catch(() => {});
+  } catch { /* ignore sync errors */ }
 }
 
 /**

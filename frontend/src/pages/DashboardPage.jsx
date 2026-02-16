@@ -72,7 +72,7 @@ export default function DashboardPage() {
   // Prefetch frequent pages on mount
   useEffect(() => {
     prefetch('clients:p:0:20', () => api.getClients({ limit: 20, offset: 0 }), { tags: ['clients'], ttl: 60_000 });
-    prefetch('tarifs', () => Promise.all([api.getTarifs(), api.getTarifStats(), api.getAppleDevices()]).then(([t, s, a]) => ({ tarifs: t, stats: s, appleDevices: a })), { tags: ['tarifs'], ttl: 300_000 });
+    prefetch('tarifs', () => Promise.all([api.getTarifs(), api.getTarifsStats(), api.getAppleDevices()]).then(([t, s, a]) => ({ tarifs: t, stats: s, appleDevices: a })), { tags: ['tarifs'], ttl: 300_000 });
     prefetch('config:main', () => Promise.all([api.getConfig(), api.getActiveTeam()]).then(([c, t]) => ({ config: c, team: t })), { tags: ['config', 'team'], ttl: 300_000 });
   }, []);
 
