@@ -4,10 +4,20 @@ export function cn(...classes) {
   return clsx(...classes);
 }
 
+// Parse backend datetime (naive UTC) → ensure UTC interpretation
+function parseUTC(d) {
+  if (!d) return null;
+  const s = String(d);
+  // Already has timezone info → parse as-is
+  if (s.endsWith('Z') || s.includes('+')) return new Date(s);
+  // Naive datetime from backend (UTC) → append Z
+  return new Date(s + 'Z');
+}
+
 export function formatDate(d) {
   if (!d) return '—';
   try {
-    const date = new Date(d);
+    const date = parseUTC(d);
     return date.toLocaleDateString('fr-FR', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
@@ -20,7 +30,7 @@ export function formatDate(d) {
 export function formatDateShort(d) {
   if (!d) return '—';
   try {
-    const date = new Date(d);
+    const date = parseUTC(d);
     return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   } catch {
     return d;

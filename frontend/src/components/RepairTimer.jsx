@@ -13,7 +13,9 @@ export default function RepairTimer({ ticket, visible }) {
 
   useEffect(() => {
     if (!isRepairing || !ticket.reparation_debut) return;
-    const start = new Date(ticket.reparation_debut).getTime();
+    // Ensure UTC parsing: backend sends ISO without timezone suffix
+    const raw = ticket.reparation_debut;
+    const start = new Date(raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z').getTime();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
     tick();
     const id = setInterval(tick, 1000);
