@@ -241,6 +241,12 @@ class ApiClient {
   adminLogin(identifiant, password) {
     return this.post('/api/admin/login', { identifiant, password });
   }
+  verifyAdmin(login, password) {
+    return this.post('/api/admin/verify', { login, password });
+  }
+  changeAdminPassword(old_password, new_password) {
+    return this.post('/api/admin/change-password', { old_password, new_password });
+  }
   getAdminStats(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return this.get(`/api/admin/stats${qs ? '?' + qs : ''}`);

@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
+import AdminLoginModal from './AdminLoginModal';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
-  Settings, Menu, X, Search, Shield, PanelLeftClose, PanelLeftOpen,
-  RefreshCw, Tag, Rocket, Star, Megaphone, ChevronDown, Wrench, Smartphone,
+  Menu, X, Search, PanelLeftClose, PanelLeftOpen,
+  RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
+  Lock, Unlock, BarChart3, Settings,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -15,9 +17,14 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('kp_sidebar_collapsed') === '1');
   const [pendingCount, setPendingCount] = useState(0);
-  const [marketingOpen, setMarketingOpen] = useState(() => localStorage.getItem('kp_marketing_open') === '1');
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
+  const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
+
+  // Admin mode state
+  const [isAdminMode, setIsAdminMode] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [pendingAdminPath, setPendingAdminPath] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -44,22 +51,57 @@ export default function Navbar() {
   if (!user) return null;
 
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
-  const isAdmin = user.role === 'admin';
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
-    { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
     { path: '/suivi', label: 'Suivi client', icon: Search },
+  ];
+
+  const adminItems = [
+    { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
+    { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
+    { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
+    { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
   ];
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
+  const adminPages = ['/admin', '/avis-google', '/community', '/config'];
+  const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
+
   const handleNav = (path) => {
     navigate(path);
     setMobileOpen(false);
+  };
+
+  const handleAdminNav = (path) => {
+    if (isAdminMode) {
+      handleNav(path);
+    } else {
+      setPendingAdminPath(path);
+      setShowAdminModal(true);
+    }
+  };
+
+  const handleAdminSuccess = () => {
+    setIsAdminMode(true);
+    setShowAdminModal(false);
+    if (pendingAdminPath) {
+      navigate(pendingAdminPath);
+      setMobileOpen(false);
+      setPendingAdminPath(null);
+    }
+  };
+
+  const lockAdmin = () => {
+    localStorage.removeItem('klikphone_admin');
+    setIsAdminMode(false);
+    if (isOnAdminPage) {
+      navigate(basePath, { replace: true });
+    }
   };
 
   const handleSwitchUser = () => {
@@ -141,7 +183,7 @@ export default function Navbar() {
             </button>
           ))}
 
-          {/* Tarifs section */}
+          {/* ─── Tarifs section ─── */}
           <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
             {!collapsed ? (
               <button
@@ -193,88 +235,57 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Marketing section — admin only */}
-          {isAdmin && (
-            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-              {!collapsed ? (
-                <button
-                  onClick={() => {
-                    const next = !marketingOpen;
-                    setMarketingOpen(next);
-                    localStorage.setItem('kp_marketing_open', next ? '1' : '0');
-                  }}
-                  className="w-full flex items-center justify-between px-3 mb-2 group"
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-400 flex items-center gap-1.5">
-                    <Rocket className="w-3 h-3" />
-                    Marketing
-                  </span>
-                  <ChevronDown className={`w-3 h-3 text-brand-400 transition-transform duration-200 ${marketingOpen ? 'rotate-180' : ''}`} />
-                </button>
-              ) : (
-                <div className="flex justify-center mb-1">
-                  <Rocket className="w-4 h-4 text-brand-400" />
-                </div>
-              )}
-              {(marketingOpen || collapsed) && (
-                <>
-                  <button onClick={() => handleNav(`${basePath}/avis-google`)}
-                    title={collapsed ? 'Avis Google' : undefined}
-                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                      ${isActive(`${basePath}/avis-google`)
-                        ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                      }`}
-                  >
-                    <Star className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/avis-google`) ? 'text-brand-400' : ''}`} />
-                    {!collapsed && <span className="flex-1 text-left">Avis Google</span>}
-                    {!collapsed && avisNonRepondus > 0 && (
-                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                        {avisNonRepondus}
-                      </span>
-                    )}
-                    {collapsed && avisNonRepondus > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {avisNonRepondus > 9 ? '9+' : avisNonRepondus}
-                      </span>
-                    )}
-                  </button>
-                  <button onClick={() => handleNav(`${basePath}/community`)}
-                    title={collapsed ? 'Community Manager' : undefined}
-                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                      ${isActive(`${basePath}/community`)
-                        ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                      }`}
-                  >
-                    <Megaphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/community`) ? 'text-brand-400' : ''}`} />
-                    {!collapsed && <span className="flex-1 text-left">Community Manager</span>}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Admin separator — admin only */}
-          {isAdmin && (
-            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-              {!collapsed && <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Administration</p>}
-              <button onClick={() => handleNav(`${basePath}/admin`)}
-                title={collapsed ? 'Admin' : undefined}
-                className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                  ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                  ${location.pathname.includes('/admin')
-                    ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                  }`}
+          {/* ─── Administration section ─── */}
+          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+            {!collapsed ? (
+              <button
+                onClick={() => {
+                  const next = !adminOpen;
+                  setAdminOpen(next);
+                  localStorage.setItem('kp_admin_open', next ? '1' : '0');
+                }}
+                className="w-full flex items-center justify-between px-3 mb-2 group"
               >
-                <Shield className={`w-[18px] h-[18px] shrink-0 ${location.pathname.includes('/admin') ? 'text-amber-400' : 'text-amber-500/60'}`} />
-                {!collapsed && <span>Admin</span>}
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#EF4444' }}>
+                  <Lock className="w-3 h-3" />
+                  Administration
+                </span>
+                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${adminOpen ? 'rotate-180' : ''}`} style={{ color: '#EF4444' }} />
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex justify-center mb-1">
+                <Lock className="w-4 h-4" style={{ color: '#EF4444' }} />
+              </div>
+            )}
+            {(adminOpen || collapsed) && (
+              <>
+                {adminItems.map(({ path, label, icon: Icon, badge }) => (
+                  <button key={path} onClick={() => handleAdminNav(path)}
+                    title={collapsed ? label : undefined}
+                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                      ${isActive(path)
+                        ? `bg-red-500/20 text-red-300 ${collapsed ? '' : 'border-l-2 border-red-400 pl-[10px]'}`
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                      }`}
+                  >
+                    <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive(path) ? 'text-red-400' : ''}`} />
+                    {!collapsed && <span className="flex-1 text-left">{label}</span>}
+                    {!collapsed && badge > 0 && (
+                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                        {badge}
+                      </span>
+                    )}
+                    {collapsed && badge > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                        {badge > 9 ? '9+' : badge}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
         </nav>
 
         {/* Collapse toggle (desktop only) */}
@@ -287,6 +298,31 @@ export default function Navbar() {
             {!collapsed && <span>Réduire</span>}
           </button>
         </div>
+
+        {/* Admin mode badge */}
+        {isAdminMode && !collapsed && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            margin: '0 8px 4px', padding: '6px 10px',
+            background: '#EF444415', borderRadius: 8,
+          }}>
+            <Unlock style={{ width: 12, height: 12, color: '#EF4444' }} />
+            <span style={{ color: '#EF4444', fontSize: 11, fontWeight: 600, flex: 1 }}>Mode Admin</span>
+            <button onClick={lockAdmin} style={{
+              background: 'none', border: 'none', color: '#64748B',
+              fontSize: 10, cursor: 'pointer', textDecoration: 'underline',
+              padding: 0,
+            }}>Verrouiller</button>
+          </div>
+        )}
+        {isAdminMode && collapsed && (
+          <div className="flex justify-center px-2 pb-1">
+            <button onClick={lockAdmin} title="Verrouiller admin"
+              className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+              <Unlock style={{ width: 14, height: 14, color: '#EF4444' }} />
+            </button>
+          </div>
+        )}
 
         {/* User section */}
         <div className="px-2 py-3 border-t border-white/[0.06] shrink-0">
@@ -350,6 +386,13 @@ export default function Navbar() {
           </div>
         )}
       </aside>
+
+      {/* Admin login modal */}
+      <AdminLoginModal
+        open={showAdminModal}
+        onClose={() => { setShowAdminModal(false); setPendingAdminPath(null); }}
+        onSuccess={handleAdminSuccess}
+      />
     </>
   );
 }

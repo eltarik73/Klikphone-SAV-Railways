@@ -134,6 +134,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Warning CREATE INDEX: {e}")
 
+    # Default admin password
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', 'caramail')
+                ON CONFLICT (cle) DO NOTHING
+            """)
+    except Exception as e:
+        print(f"Warning ADMIN_PASSWORD default: {e}")
+
     yield
     close_pool()
 

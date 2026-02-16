@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { SettingsProvider } from './hooks/useSettings';
 import Navbar from './components/Navbar';
@@ -74,14 +74,19 @@ function ProtectedRoute({ children, allowedTargets }) {
 
 const P = ({ children, targets }) => <ProtectedRoute allowedTargets={targets}>{children}</ProtectedRoute>;
 
-function AdminRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (!user || user.role !== 'admin') return <Navigate to={`/${user?.target || ''}`} replace />;
+function AdminGuard({ children }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  useEffect(() => {
+    if (localStorage.getItem('klikphone_admin') !== 'true') {
+      navigate(`/${user?.target || 'accueil'}`, { replace: true });
+    }
+  }, []);
+  if (localStorage.getItem('klikphone_admin') !== 'true') return null;
   return children;
 }
 
-const A = ({ children, targets }) => <P targets={targets}><AdminRoute>{children}</AdminRoute></P>;
+const AG = ({ children, targets }) => <P targets={targets}><AdminGuard>{children}</AdminGuard></P>;
 
 function ChatOverlay() {
   const { user } = useAuth();
@@ -110,24 +115,24 @@ function AppRoutes() {
         <Route path="/accueil/clients" element={<P targets={['accueil']}><ClientsPage /></P>} />
         <Route path="/accueil/commandes" element={<P targets={['accueil']}><CommandesPage /></P>} />
         <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
-        <Route path="/accueil/config" element={<P targets={['accueil']}><ConfigPage /></P>} />
         <Route path="/accueil/tarifs" element={<P targets={['accueil']}><TarifsPage /></P>} />
         <Route path="/accueil/tarifs-telephones" element={<P targets={['accueil']}><TarifsTelephonesPage /></P>} />
-        <Route path="/accueil/avis-google" element={<A targets={['accueil']}><AvisGooglePage /></A>} />
-        <Route path="/accueil/community" element={<A targets={['accueil']}><CommunityManagerPage /></A>} />
-        <Route path="/accueil/admin" element={<A targets={['accueil']}><AdminPage /></A>} />
+        <Route path="/accueil/config" element={<AG targets={['accueil']}><ConfigPage /></AG>} />
+        <Route path="/accueil/avis-google" element={<AG targets={['accueil']}><AvisGooglePage /></AG>} />
+        <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
+        <Route path="/accueil/admin" element={<AG targets={['accueil']}><AdminPage /></AG>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
         <Route path="/tech/ticket/:id" element={<P targets={['tech']}><TicketDetailPage /></P>} />
         <Route path="/tech/clients" element={<P targets={['tech']}><ClientsPage /></P>} />
         <Route path="/tech/commandes" element={<P targets={['tech']}><CommandesPage /></P>} />
         <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
-        <Route path="/tech/config" element={<P targets={['tech']}><ConfigPage /></P>} />
         <Route path="/tech/tarifs" element={<P targets={['tech']}><TarifsPage /></P>} />
         <Route path="/tech/tarifs-telephones" element={<P targets={['tech']}><TarifsTelephonesPage /></P>} />
-        <Route path="/tech/avis-google" element={<A targets={['tech']}><AvisGooglePage /></A>} />
-        <Route path="/tech/community" element={<A targets={['tech']}><CommunityManagerPage /></A>} />
-        <Route path="/tech/admin" element={<A targets={['tech']}><AdminPage /></A>} />
+        <Route path="/tech/config" element={<AG targets={['tech']}><ConfigPage /></AG>} />
+        <Route path="/tech/avis-google" element={<AG targets={['tech']}><AvisGooglePage /></AG>} />
+        <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />
+        <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

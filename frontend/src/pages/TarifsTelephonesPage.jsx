@@ -230,7 +230,7 @@ function ToggleSwitch({ checked, onChange, label }) {
 
 export default function TarifsTelephonesPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
 
   // Data state
   const [phones, setPhones] = useState([]);

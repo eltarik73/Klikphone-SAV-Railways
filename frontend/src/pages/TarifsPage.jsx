@@ -92,7 +92,7 @@ function iPhoneModelSort(a, b) {
 // ─── Composant principal ─────────────────────────
 export default function TarifsPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
 
   const [tarifs, setTarifs] = useState([]);
   const [stats, setStats] = useState(null);

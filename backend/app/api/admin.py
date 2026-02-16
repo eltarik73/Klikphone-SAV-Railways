@@ -24,6 +24,55 @@ def _require_admin(user: dict = Depends(get_current_user)):
 
 
 # ============================================================
+# ADMIN VERIFY / CHANGE PASSWORD
+# ============================================================
+@router.post("/verify")
+async def verify_admin(data: dict, user: dict = Depends(get_current_user)):
+    """Vérifie les identifiants admin (login + mot de passe stocké en BDD)."""
+    login = data.get("login", "")
+    password = data.get("password", "")
+
+    if login != "admin":
+        raise HTTPException(401, "Identifiants incorrects")
+
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
+        row = cur.fetchone()
+    stored = row["valeur"] if row else "caramail"
+
+    if password != stored:
+        raise HTTPException(401, "Identifiants incorrects")
+
+    return {"success": True}
+
+
+@router.post("/change-password")
+async def change_admin_password(data: dict, user: dict = Depends(get_current_user)):
+    """Change le mot de passe admin."""
+    old_password = data.get("old_password", "")
+    new_password = data.get("new_password", "")
+
+    if not new_password or len(new_password) < 4:
+        raise HTTPException(400, "Le nouveau mot de passe doit faire au moins 4 caractères")
+
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
+        row = cur.fetchone()
+    stored = row["valeur"] if row else "caramail"
+
+    if old_password != stored:
+        raise HTTPException(401, "Mot de passe actuel incorrect")
+
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', %s)
+            ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+        """, (new_password,))
+
+    return {"success": True, "message": "Mot de passe modifié"}
+
+
+# ============================================================
 # HELPERS
 # ============================================================
 def _safe_float(val):

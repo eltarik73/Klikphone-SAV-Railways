@@ -53,6 +53,11 @@ export default function ConfigPage() {
   const [pinForm, setPinForm] = useState({ target: 'accueil', old_pin: '', new_pin: '' });
   const [pinChanging, setPinChanging] = useState(false);
 
+  // Admin password change
+  const [adminPwdForm, setAdminPwdForm] = useState({ old_password: '', new_password: '', confirm: '' });
+  const [adminPwdChanging, setAdminPwdChanging] = useState(false);
+  const [adminPwdError, setAdminPwdError] = useState('');
+
   // Caisse
   const [caisseConfig, setCaisseConfig] = useState({});
   const [caisseSaving, setCaisseSaving] = useState(false);
@@ -224,6 +229,28 @@ export default function ConfigPage() {
       toast.error(err.message || 'Erreur changement PIN');
     } finally {
       setPinChanging(false);
+    }
+  };
+
+  const handleChangeAdminPassword = async () => {
+    setAdminPwdError('');
+    if (adminPwdForm.new_password !== adminPwdForm.confirm) {
+      setAdminPwdError('Les mots de passe ne correspondent pas');
+      return;
+    }
+    if (adminPwdForm.new_password.length < 4) {
+      setAdminPwdError('Le mot de passe doit faire au moins 4 caractères');
+      return;
+    }
+    setAdminPwdChanging(true);
+    try {
+      await api.changeAdminPassword(adminPwdForm.old_password, adminPwdForm.new_password);
+      setAdminPwdForm({ old_password: '', new_password: '', confirm: '' });
+      toast.success('Mot de passe admin modifié');
+    } catch (err) {
+      setAdminPwdError(err.message || 'Erreur');
+    } finally {
+      setAdminPwdChanging(false);
     }
   };
 
@@ -1104,6 +1131,48 @@ export default function ConfigPage() {
                 className="btn-primary">
                 {pinChanging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
                 Changer le PIN
+              </button>
+            </div>
+          </div>
+
+          {/* Admin password */}
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-red-500" />
+              Mot de passe administrateur
+            </h2>
+            <p className="text-xs text-slate-500 mb-4">
+              Ce mot de passe protège l'accès à la section Administration (Reporting, Avis, Community, Config).
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="input-label">Ancien mot de passe</label>
+                <input type="password" value={adminPwdForm.old_password}
+                  onChange={e => { setAdminPwdForm(f => ({ ...f, old_password: e.target.value })); setAdminPwdError(''); }}
+                  className="input" placeholder="••••••••" />
+              </div>
+              <div>
+                <label className="input-label">Nouveau mot de passe</label>
+                <input type="password" value={adminPwdForm.new_password}
+                  onChange={e => { setAdminPwdForm(f => ({ ...f, new_password: e.target.value })); setAdminPwdError(''); }}
+                  className="input" placeholder="••••••••" />
+              </div>
+              <div>
+                <label className="input-label">Confirmer</label>
+                <input type="password" value={adminPwdForm.confirm}
+                  onChange={e => { setAdminPwdForm(f => ({ ...f, confirm: e.target.value })); setAdminPwdError(''); }}
+                  className="input" placeholder="••••••••" />
+              </div>
+            </div>
+            {adminPwdError && (
+              <p className="text-xs text-red-500 mt-2">{adminPwdError}</p>
+            )}
+            <div className="flex justify-end mt-4">
+              <button onClick={handleChangeAdminPassword}
+                disabled={adminPwdChanging || !adminPwdForm.old_password || !adminPwdForm.new_password || !adminPwdForm.confirm}
+                className="btn-primary">
+                {adminPwdChanging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                Changer le mot de passe
               </button>
             </div>
           </div>
