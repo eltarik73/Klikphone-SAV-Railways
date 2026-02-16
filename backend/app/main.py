@@ -9,10 +9,13 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 load_dotenv()
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance
@@ -340,10 +343,45 @@ async def health_db():
 
 
 
-@app.get("/")
-async def root():
-    return {
-        "service": "Klikphone SAV API",
-        "version": "2.0.0",
-        "docs": "/docs",
-    }
+# --- STATIC FRONTEND (SPA) ---
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+if STATIC_DIR.exists():
+    # Serve /assets/* (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
+
+    # Serve known static files at root (logo, manifest, sw.js, etc.)
+    @app.get("/logo_k.png")
+    @app.get("/tampon_klikphone.png")
+    @app.get("/manifest.json")
+    @app.get("/sw.js")
+    async def static_root_files(request: Request):
+        fname = request.url.path.lstrip("/")
+        fpath = STATIC_DIR / fname
+        if fpath.exists():
+            return FileResponse(str(fpath))
+        return JSONResponse({"detail": "Not found"}, 404)
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(str(STATIC_DIR / "index.html"))
+
+    # SPA catch-all: any path not matched by API routers → serve index.html
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        # Don't serve index.html for API paths or docs
+        if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json", "health", "health/db"):
+            return JSONResponse({"detail": "Not found"}, 404)
+        # Check if it's a real static file
+        file_path = STATIC_DIR / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(STATIC_DIR / "index.html"))
+else:
+    @app.get("/")
+    async def root():
+        return {
+            "service": "Klikphone SAV API",
+            "version": "2.1.0",
+            "docs": "/docs",
+        }
