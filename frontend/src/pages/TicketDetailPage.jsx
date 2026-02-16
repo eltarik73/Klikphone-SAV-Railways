@@ -120,6 +120,8 @@ export default function TicketDetailPage() {
 
   // Rendu au client — payment modal
   const [showRenduModal, setShowRenduModal] = useState(false);
+  // Confirmation paiement modal
+  const [showPayeModal, setShowPayeModal] = useState(false);
 
   // Layout (DnD)
   const [layout, setLayout] = useState(DEFAULT_LAYOUT);
@@ -560,8 +562,9 @@ export default function TicketDetailPage() {
   const handleTogglePaye = async () => {
     try {
       const result = await api.togglePaye(id);
+      invalidateCache('tickets');
+      setShowPayeModal(false);
       await loadTicket();
-
       toast.success(result.paye ? 'Marqué payé' : 'Marqué non payé');
     } catch (err) {
       toast.error('Erreur toggle payé');
@@ -1347,7 +1350,13 @@ export default function TicketDetailPage() {
 
                 {/* 6. Action buttons */}
                 <div className="flex gap-2 mt-3 flex-wrap">
-                  <button onClick={handleTogglePaye}
+                  <button onClick={() => {
+                      if (t.paye) {
+                        if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
+                      } else {
+                        setShowPayeModal(true);
+                      }
+                    }}
                     className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
                       t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                     }`}>
@@ -1742,6 +1751,44 @@ export default function TicketDetailPage() {
                   <X className="w-4 h-4" /> Non, pas payé
                 </button>
                 <button onClick={() => setShowRenduModal(false)}
+                  className="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-1">
+                  <ArrowLeft className="w-3.5 h-3.5" /> Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Confirmation paiement modal */}
+      {showPayeModal && (
+        <>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowPayeModal(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Confirmer le paiement</h3>
+                  <p className="text-sm text-slate-500">Le client a-t-il bien réglé ?</p>
+                </div>
+              </div>
+
+              {reste > 0 && (
+                <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl mb-5 text-center">
+                  <p className="text-xs text-emerald-600 font-medium mb-1">Reste à payer</p>
+                  <p className="text-2xl font-extrabold text-emerald-700">{formatPrix(reste)}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <button onClick={handleTogglePaye}
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" /> Oui, confirmer le paiement
+                </button>
+                <button onClick={() => setShowPayeModal(false)}
                   className="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-1">
                   <ArrowLeft className="w-3.5 h-3.5" /> Annuler
                 </button>
