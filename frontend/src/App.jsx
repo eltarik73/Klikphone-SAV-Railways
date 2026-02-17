@@ -1,10 +1,12 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { SettingsProvider } from './hooks/useSettings';
 import Navbar from './components/Navbar';
+import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ChatWidget from './components/ChatWidget';
+import { ShieldX, ArrowLeft, RefreshCw, Home } from 'lucide-react';
 
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -42,6 +44,73 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// ─── Access Denied page (replaces blank page) ──────────────
+function AccessDenied() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 max-w-sm w-full p-8 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-5">
+          <ShieldX className="w-7 h-7 text-amber-500" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 mb-2">Accès restreint</h2>
+        <p className="text-sm text-slate-500 mb-6">
+          Cette page nécessite les droits administrateur. Veuillez vous connecter en tant qu'admin depuis le menu.
+        </p>
+        <div className="space-y-2">
+          <button onClick={() => navigate(basePath, { replace: true })}
+            className="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+            <Home className="w-4 h-4" /> Retour au dashboard
+          </button>
+          <button onClick={() => navigate(-1)}
+            className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-2">
+            <ArrowLeft className="w-4 h-4" /> Page précédente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Floating back button (webapp mode) ─────────────────────
+function FloatingBackButton() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [isWebapp] = useState(() =>
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true
+  );
+
+  if (!user) return null;
+
+  // Don't show on dashboard (root pages)
+  const basePath = user.target === 'tech' ? '/tech' : '/accueil';
+  const isDashboard = location.pathname === basePath || location.pathname === basePath + '/';
+  if (isDashboard) return null;
+
+  // Only show on mobile or in webapp mode
+  return (
+    <button
+      onClick={() => {
+        if (window.history.length > 1) {
+          navigate(-1);
+        } else {
+          navigate(basePath, { replace: true });
+        }
+      }}
+      className={`fixed bottom-4 left-4 z-30 w-11 h-11 rounded-full bg-slate-900/80 backdrop-blur-sm text-white shadow-lg flex items-center justify-center active:scale-90 transition-transform ${isWebapp ? '' : 'lg:hidden'}`}
+      aria-label="Retour"
+    >
+      <ArrowLeft className="w-5 h-5" />
+    </button>
+  );
+}
+
+// ─── Protected Route ────────────────────────────────────────
 function ProtectedRoute({ children, allowedTargets }) {
   const { user, loading } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -70,8 +139,11 @@ function ProtectedRoute({ children, allowedTargets }) {
     <div className="min-h-screen bg-slate-50">
       <Navbar />
       <main className={`pt-14 lg:pt-0 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}>
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
       </main>
+      <FloatingBackButton />
     </div>
   );
 }
@@ -79,14 +151,10 @@ function ProtectedRoute({ children, allowedTargets }) {
 const P = ({ children, targets }) => <ProtectedRoute allowedTargets={targets}>{children}</ProtectedRoute>;
 
 function AdminGuard({ children }) {
-  const navigate = useNavigate();
   const { user } = useAuth();
-  useEffect(() => {
-    if (localStorage.getItem('klikphone_admin') !== 'true') {
-      navigate(`/${user?.target || 'accueil'}`, { replace: true });
-    }
-  }, []);
-  if (localStorage.getItem('klikphone_admin') !== 'true') return null;
+  if (localStorage.getItem('klikphone_admin') !== 'true') {
+    return <AccessDenied />;
+  }
   return children;
 }
 
@@ -158,7 +226,9 @@ export default function App() {
       <SettingsProvider>
         <AuthProvider>
           <ToastProvider>
-            <AppRoutes />
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
           </ToastProvider>
         </AuthProvider>
       </SettingsProvider>
