@@ -421,7 +421,7 @@ export default function DashboardPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[28px_72px_1fr_120px_1fr_100px_150px_72px_80px_72px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden lg:grid grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <button onClick={toggleSelectAll} className="flex items-center justify-center">
             {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
               ? <SquareCheck className="w-4 h-4 text-brand-600" />
@@ -465,7 +465,7 @@ export default function DashboardPage() {
           <div className="divide-y divide-slate-100/80">
             {displayedTickets.map((t) => (
               <div key={t.id}
-                className="lg:grid lg:grid-cols-[28px_72px_1fr_120px_1fr_100px_150px_72px_80px_72px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
+                className="lg:grid lg:grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
               >
                 {/* Checkbox */}
                 <div className="hidden lg:flex items-center justify-center">
@@ -503,17 +503,17 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate">
+                      <p className="text-sm font-semibold text-slate-800 truncate" title={`${t.client_prenom || ''} ${t.client_nom || ''}`.trim()}>
                         {t.client_prenom || ''} {t.client_nom || ''}
                       </p>
-                      <p className="text-[11px] text-slate-400 font-mono truncate">{t.client_tel || ''}</p>
+                      <p className="text-[11px] text-slate-400 font-mono truncate" title={t.client_tel || ''}>{t.client_tel || ''}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Appareil */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <p className="text-xs text-slate-700 font-medium truncate">{t.marque} {t.modele || t.modele_autre}</p>
+                  <p className="text-xs text-slate-700 font-medium truncate" title={`${t.marque || ''} ${t.modele || t.modele_autre || ''}`.trim()}>{t.marque} {t.modele || t.modele_autre}</p>
                   {isTech && (t.pin || t.pattern) && (
                     <div className="flex items-center gap-2 mt-0.5">
                       {t.pin && (
@@ -532,7 +532,14 @@ export default function DashboardPage() {
 
                 {/* Panne */}
                 <div className="hidden lg:block cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  {t.commande_piece === 1 ? (
+                  {t.commande_piece === 1 && !t.panne && (() => {
+                    let reps = [];
+                    try {
+                      const parsed = JSON.parse(t.reparation_supp || '[]');
+                      if (Array.isArray(parsed)) reps = parsed.filter(r => r.label).map(r => r.label);
+                    } catch { /* ignore */ }
+                    return reps.length === 0;
+                  })() ? (
                     <p className="text-xs text-amber-600 font-medium truncate flex items-center gap-1">
                       <Package className="w-3 h-3 shrink-0" /> Pièce à commander
                     </p>
@@ -544,8 +551,9 @@ export default function DashboardPage() {
                     } catch { /* ignore */ }
                     if (reps.length === 0 && t.panne) reps = [t.panne];
                     return (
-                      <p className="text-xs text-slate-600 truncate" title={reps.join(' + ')}>
-                        {reps.join(' + ') || '—'}
+                      <p className="text-xs text-slate-600 truncate flex items-center gap-1" title={reps.join(' + ')}>
+                        {t.commande_piece === 1 && <Package className="w-3 h-3 shrink-0 text-amber-500" />}
+                        <span className="truncate">{reps.join(' + ') || '—'}</span>
                       </p>
                     );
                   })()}
@@ -630,7 +638,14 @@ export default function DashboardPage() {
                 {/* Prix */}
                 <div className="hidden lg:block text-right cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   {(t.devis_estime || t.tarif_final) ? (
-                    <p className="text-xs font-semibold text-slate-800">{formatPrix(t.tarif_final || t.devis_estime)}</p>
+                    <>
+                      <p className={`text-xs font-semibold ${t.paye ? 'text-emerald-600' : 'text-slate-800'}`}>
+                        {formatPrix(t.tarif_final || t.devis_estime)}
+                      </p>
+                      {t.paye ? (
+                        <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">PAYÉ</span>
+                      ) : null}
+                    </>
                   ) : (
                     <p className="text-xs text-slate-300">—</p>
                   )}

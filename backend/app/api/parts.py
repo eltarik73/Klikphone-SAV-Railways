@@ -12,7 +12,7 @@ from app.api.auth import get_current_user
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 
 
-STATUTS_TERMINAUX = ["Reçue", "Annulée", "Récupérée par client", "Utilisée en réparation"]
+STATUTS_TERMINAUX = ["Donné au client", "Clôturé"]
 
 
 @router.get("")
@@ -32,9 +32,9 @@ async def list_parts(
         conditions.append("cp.ticket_id = %s")
         params.append(ticket_id)
     if statut == "en_cours":
-        conditions.append("cp.statut NOT IN ('Reçue','Annulée','Récupérée par client','Utilisée en réparation')")
+        conditions.append("cp.statut NOT IN ('Donné au client','Clôturé')")
     elif statut == "cloturees":
-        conditions.append("cp.statut IN ('Reçue','Annulée','Récupérée par client','Utilisée en réparation')")
+        conditions.append("cp.statut IN ('Donné au client','Clôturé')")
     elif statut:
         conditions.append("cp.statut = %s")
         params.append(statut)
@@ -52,6 +52,7 @@ async def list_parts(
         cur.execute(
             f"""SELECT cp.*, t.ticket_code as linked_ticket_code,
                        t.marque, t.modele, t.modele_autre,
+                       t.panne, t.panne_detail,
                        c.nom as client_nom, c.prenom as client_prenom, c.telephone as client_tel
                 FROM commandes_pieces cp
                 LEFT JOIN tickets t ON t.id = cp.ticket_id
@@ -158,8 +159,8 @@ async def update_part(
     if updates.get("statut") == "Commandée" and "date_commande" not in updates:
         updates["date_commande"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # If changing to 'Reçue' or terminal statut, set date_reception
-    if updates.get("statut") in ("Reçue", "Récupérée par client", "Utilisée en réparation") and "date_reception" not in updates:
+    # If changing to 'Reçu' or terminal statut, set date_reception
+    if updates.get("statut") in ("Reçu", "Donné au client", "Clôturé") and "date_reception" not in updates:
         updates["date_reception"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Resolve ticket_code to ticket_id if needed
@@ -176,14 +177,21 @@ async def update_part(
     with get_cursor() as cur:
         cur.execute(f"UPDATE commandes_pieces SET {set_clause} WHERE id = %s", values)
 
-        # Auto-sync: if commande becomes "Reçue", update ticket status to "Pièce reçue"
-        if updates.get("statut") == "Reçue":
-            cur.execute("SELECT ticket_id FROM commandes_pieces WHERE id = %s", (commande_id,))
+        # Auto-sync: if commande becomes "Reçu", update ticket status to "Pièce reçue"
+        if updates.get("statut") == "Reçu":
+            cur.execute("SELECT ticket_id, description FROM commandes_pieces WHERE id = %s", (commande_id,))
             row = cur.fetchone()
             if row and row["ticket_id"]:
+                now = datetime.now()
                 cur.execute(
                     "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
-                    (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
+                    (now.strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
+                )
+                # Append history entry on ticket
+                history_entry = f"[{now.strftime('%d/%m %H:%M')}] Pièce \"{row['description']}\" reçue"
+                cur.execute(
+                    "UPDATE tickets SET historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
+                    (history_entry, row["ticket_id"]),
                 )
 
     return {"ok": True}
