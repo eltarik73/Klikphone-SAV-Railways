@@ -3,7 +3,8 @@ API Config — gestion des paramètres boutique (table params).
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -98,11 +99,19 @@ async def export_backup(user: dict = Depends(get_current_user)):
     """Exporte toute la BDD au format JSON pour backup."""
     tables = {}
     with get_cursor() as cur:
-        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles", "historique", "chat_messages"]:
+        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]:
             try:
                 cur.execute(f"SELECT * FROM {table}")
                 rows = cur.fetchall()
-                tables[table] = [{k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in row.items()} for row in rows]
+                def serialize(v):
+                    if isinstance(v, (datetime, date)):
+                        return v.isoformat()
+                    if isinstance(v, Decimal):
+                        return float(v)
+                    if isinstance(v, timedelta):
+                        return v.total_seconds()
+                    return v
+                tables[table] = [{k: serialize(v) for k, v in row.items()} for row in rows]
             except Exception:
                 tables[table] = []
 
@@ -120,7 +129,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
         raise HTTPException(400, "Format de backup invalide (pas de clé 'tables')")
 
     # Ordre d'import : tables parentes d'abord
-    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces", "historique", "chat_messages"]
+    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]
     counts = {}
 
     with get_cursor() as cur:
@@ -143,7 +152,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             counts[table] = len(rows)
 
         # Reset sequences
-        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces", "historique", "chat_messages"]:
+        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]:
             try:
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table}")
             except Exception:
