@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
@@ -18,7 +18,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
 import {
-  ArrowLeft, Phone, Mail, MessageCircle, Send, Save, Trash2,
+  ArrowLeft, Phone, Mail, MessageCircle, Send, Trash2,
   ChevronDown, Plus, Minus, User, Wrench, Package,
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar,
@@ -26,8 +26,16 @@ import {
   Flag, PhoneCall, Percent, RotateCcw, Globe,
 } from 'lucide-react';
 
+// ─── Auto-save status indicator ────────────────────────────────
+function AutoSaveIndicator({ status }) {
+  if (status === 'saving') return <span className="flex items-center gap-1 text-[11px] text-amber-600 font-medium"><div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" /> Enregistrement...</span>;
+  if (status === 'saved') return <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium"><Check className="w-3 h-3" /> Enregistré</span>;
+  if (status === 'error') return <span className="flex items-center gap-1 text-[11px] text-red-500 font-medium"><AlertTriangle className="w-3 h-3" /> Erreur</span>;
+  return null;
+}
+
 // ─── Editable Section Component ────────────────────────────────
-function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit, onSave, onCancel, children, viewContent }) {
+function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit, onCancel, children, viewContent, autoSaveStatus }) {
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-4">
@@ -36,16 +44,12 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
             <Icon className={`w-4 h-4 ${iconColor}`} />
           </div>
           <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+          {editing && <AutoSaveIndicator status={autoSaveStatus} />}
         </div>
         {editing ? (
-          <div className="flex items-center gap-1.5">
-            <button onClick={onCancel} className="btn-ghost text-xs px-2.5 py-1.5">
-              <X className="w-3.5 h-3.5" /> Annuler
-            </button>
-            <button onClick={onSave} className="btn-primary text-xs px-2.5 py-1.5">
-              <Save className="w-3.5 h-3.5" /> Sauver
-            </button>
-          </div>
+          <button onClick={onCancel} className="btn-ghost text-xs px-2.5 py-1.5">
+            <X className="w-3.5 h-3.5" /> Fermer
+          </button>
         ) : (
           <button onClick={onEdit} className="btn-ghost p-1.5" title="Modifier">
             <Edit3 className="w-3.5 h-3.5" />
@@ -150,6 +154,14 @@ export default function TicketDetailPage() {
   const [showRetourSAVModal, setShowRetourSAVModal] = useState(false);
   const [retourSAVForm, setRetourSAVForm] = useState({ panne: '', panne_detail: '' });
   const [creatingSAV, setCreatingSAV] = useState(false);
+
+  // Auto-save debounce
+  const [autoSaveDevice, setAutoSaveDevice] = useState(null); // null | 'saving' | 'saved' | 'error'
+  const [autoSaveClient, setAutoSaveClient] = useState(null);
+  const [autoSavePricing, setAutoSavePricing] = useState(null);
+  const deviceTimerRef = useRef(null);
+  const clientTimerRef = useRef(null);
+  const pricingTimerRef = useRef(null);
 
   const parseRepairLines = (ticket) => {
     try {
@@ -313,58 +325,55 @@ export default function TicketDetailPage() {
     persistLayout(newLayout);
   };
 
-  // ─── Save handlers ────────────────────────────────────────────
+  // ─── Auto-save helpers ─────────────────────────────────────────
 
-  const handleSaveDevice = async () => {
-    setSaving(true);
+  const doSaveDevice = useCallback(async (formData) => {
+    setAutoSaveDevice('saving');
     try {
-      await api.updateTicket(id, deviceForm);
+      await api.updateTicket(id, formData);
       invalidateCache('tickets');
-      // Apprentissage silencieux
-      if (deviceForm.panne) api.learnTerm('panne', deviceForm.panne).catch(() => {});
-      if (deviceForm.panne_detail) api.learnTerm('detail_panne', deviceForm.panne_detail).catch(() => {});
-      setEditingDevice(false);
-      await loadTicket();
-      toast.success('Appareil mis à jour');
-    } catch (err) {
-      toast.error('Erreur sauvegarde appareil');
-    } finally { setSaving(false); }
-  };
+      if (formData.panne) api.learnTerm('panne', formData.panne).catch(() => {});
+      if (formData.panne_detail) api.learnTerm('detail_panne', formData.panne_detail).catch(() => {});
+      setAutoSaveDevice('saved');
+      // Refresh ticket data silently
+      const data = await api.getTicket(id);
+      setTicket(data);
+      setTimeout(() => setAutoSaveDevice(null), 2000);
+    } catch {
+      setAutoSaveDevice('error');
+      setTimeout(() => setAutoSaveDevice(null), 3000);
+    }
+  }, [id]);
 
-  const handleSaveClient = async () => {
-    setSaving(true);
+  const doSaveClient = useCallback(async (formData, clientId) => {
+    setAutoSaveClient('saving');
     try {
-      await api.updateClient(ticket.client_id, clientForm);
+      await api.updateClient(clientId, formData);
       invalidateCache('clients', 'tickets');
-      setEditingClient(false);
-      await loadTicket();
-      toast.success('Client mis à jour');
-    } catch (err) {
-      toast.error('Erreur sauvegarde client');
-    } finally { setSaving(false); }
-  };
+      setAutoSaveClient('saved');
+      const data = await api.getTicket(id);
+      setTicket(data);
+      setTimeout(() => setAutoSaveClient(null), 2000);
+    } catch {
+      setAutoSaveClient('error');
+      setTimeout(() => setAutoSaveClient(null), 3000);
+    }
+  }, [id]);
 
-  const handleSavePricing = async () => {
-    setSaving(true);
+  const doSavePricing = useCallback(async (formData, lines) => {
+    setAutoSavePricing('saving');
     try {
-      // Calculate totals from repair lines
-      const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
-      const reparationsJson = JSON.stringify(repairLines.filter(l => l.label));
-
-      // Calculate reduction
-      let reductionAmount = parseFloat(pricingForm.reduction_montant) || 0;
-      const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
-      if (reductionPct > 0) {
-        reductionAmount = totalRepairs * (reductionPct / 100);
-      }
-
-      const finalPrice = parseFloat(pricingForm.tarif_final) || (totalRepairs - reductionAmount) || null;
-
+      const totalRepairs = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+      const reparationsJson = JSON.stringify(lines.filter(l => l.label));
+      let reductionAmount = parseFloat(formData.reduction_montant) || 0;
+      const reductionPct = parseFloat(formData.reduction_pourcentage) || 0;
+      if (reductionPct > 0) reductionAmount = totalRepairs * (reductionPct / 100);
+      const finalPrice = parseFloat(formData.tarif_final) || (totalRepairs - reductionAmount) || null;
       const updates = {
-        ...pricingForm,
-        devis_estime: parseFloat(pricingForm.devis_estime) || null,
+        ...formData,
+        devis_estime: parseFloat(formData.devis_estime) || null,
         tarif_final: finalPrice,
-        acompte: parseFloat(pricingForm.acompte) || null,
+        acompte: parseFloat(formData.acompte) || null,
         reduction_montant: reductionAmount || null,
         reduction_pourcentage: reductionPct || null,
         reparation_supp: reparationsJson,
@@ -372,12 +381,66 @@ export default function TicketDetailPage() {
       };
       await api.updateTicket(id, updates);
       invalidateCache('tickets');
-      setEditingPricing(false);
-      await loadTicket();
-      toast.success('Tarification mise à jour');
-    } catch (err) {
-      toast.error('Erreur sauvegarde tarification');
-    } finally { setSaving(false); }
+      setAutoSavePricing('saved');
+      const data = await api.getTicket(id);
+      setTicket(data);
+      setTimeout(() => setAutoSavePricing(null), 2000);
+    } catch {
+      setAutoSavePricing('error');
+      setTimeout(() => setAutoSavePricing(null), 3000);
+    }
+  }, [id]);
+
+  // Debounce triggers (called on every field change)
+  const triggerDeviceSave = useCallback((formData) => {
+    clearTimeout(deviceTimerRef.current);
+    setAutoSaveDevice(null);
+    deviceTimerRef.current = setTimeout(() => doSaveDevice(formData), 1500);
+  }, [doSaveDevice]);
+
+  const triggerClientSave = useCallback((formData) => {
+    clearTimeout(clientTimerRef.current);
+    setAutoSaveClient(null);
+    clientTimerRef.current = setTimeout(() => doSaveClient(formData, ticket?.client_id), 1500);
+  }, [doSaveClient, ticket?.client_id]);
+
+  const triggerPricingSave = useCallback((formData, lines) => {
+    clearTimeout(pricingTimerRef.current);
+    setAutoSavePricing(null);
+    pricingTimerRef.current = setTimeout(() => doSavePricing(formData, lines), 1500);
+  }, [doSavePricing]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(deviceTimerRef.current);
+      clearTimeout(clientTimerRef.current);
+      clearTimeout(pricingTimerRef.current);
+    };
+  }, []);
+
+  // Wrappers for form changes that trigger auto-save
+  const updateDeviceForm = (updates) => {
+    const newForm = { ...deviceForm, ...updates };
+    setDeviceForm(newForm);
+    triggerDeviceSave(newForm);
+  };
+
+  const updateClientForm = (updates) => {
+    const newForm = { ...clientForm, ...updates };
+    setClientForm(newForm);
+    triggerClientSave(newForm);
+  };
+
+  const updatePricingForm = (updates) => {
+    const newForm = { ...pricingForm, ...updates };
+    setPricingForm(newForm);
+    triggerPricingSave(newForm, repairLines);
+  };
+
+  const updateRepairLines = (newLines) => {
+    setRepairLines(newLines);
+    triggerPricingSave(pricingForm, newLines);
   };
 
   // ─── Commande handlers ──────────────────────────────────────
@@ -572,10 +635,8 @@ export default function TicketDetailPage() {
   };
 
   const adjustPrice = (field, delta) => {
-    setPricingForm(f => ({
-      ...f,
-      [field]: Math.max(0, (parseFloat(f[field]) || 0) + delta).toString(),
-    }));
+    const newVal = Math.max(0, (parseFloat(pricingForm[field]) || 0) + delta).toString();
+    updatePricingForm({ [field]: newVal });
   };
 
   const handleCopyCode = () => {
@@ -715,19 +776,19 @@ export default function TicketDetailPage() {
   // ─── Repair Lines ─────────────────────────────────────────────
 
   const addRepairLine = () => {
-    setRepairLines(lines => [...lines, { label: '', prix: 0 }]);
+    updateRepairLines([...repairLines, { label: '', prix: 0 }]);
   };
 
   const removeRepairLine = (idx) => {
-    setRepairLines(lines => lines.filter((_, i) => i !== idx));
+    updateRepairLines(repairLines.filter((_, i) => i !== idx));
   };
 
   const updateRepairLine = (idx, field, value) => {
-    setRepairLines(lines => lines.map((l, i) => i === idx ? { ...l, [field]: value } : l));
+    updateRepairLines(repairLines.map((l, i) => i === idx ? { ...l, [field]: value } : l));
   };
 
   const adjustRepairPrice = (idx, delta) => {
-    setRepairLines(lines => lines.map((l, i) => i === idx ? { ...l, prix: Math.max(0, (parseFloat(l.prix) || 0) + delta) } : l));
+    updateRepairLines(repairLines.map((l, i) => i === idx ? { ...l, prix: Math.max(0, (parseFloat(l.prix) || 0) + delta) } : l));
   };
 
   const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
@@ -806,9 +867,9 @@ export default function TicketDetailPage() {
           <EditableSection
             title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
             editing={editingClient}
+            autoSaveStatus={autoSaveClient}
             onEdit={() => setEditingClient(true)}
-            onSave={handleSaveClient}
-            onCancel={() => { setEditingClient(false); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
+            onCancel={() => { clearTimeout(clientTimerRef.current); setEditingClient(false); setAutoSaveClient(null); setClientForm({ nom: t.client_nom || '', prenom: t.client_prenom || '', telephone: t.client_tel || '', email: t.client_email || '', societe: t.client_societe || '' }); }}
             viewContent={
               <>
                 <div className="flex items-center gap-3 mb-4">
@@ -861,24 +922,24 @@ export default function TicketDetailPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="input-label">Prénom</label>
-                  <input value={clientForm.prenom} onChange={e => setClientForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
+                  <input value={clientForm.prenom} onChange={e => updateClientForm({ prenom: e.target.value })} className="input" />
                 </div>
                 <div>
                   <label className="input-label">Nom</label>
-                  <input value={clientForm.nom} onChange={e => setClientForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                  <input value={clientForm.nom} onChange={e => updateClientForm({ nom: e.target.value })} className="input" />
                 </div>
               </div>
               <div>
                 <label className="input-label">Téléphone</label>
-                <input value={clientForm.telephone} onChange={e => setClientForm(f => ({ ...f, telephone: e.target.value }))} className="input font-mono" />
+                <input value={clientForm.telephone} onChange={e => updateClientForm({ telephone: e.target.value })} className="input font-mono" />
               </div>
               <div>
                 <label className="input-label">Email</label>
-                <input value={clientForm.email} onChange={e => setClientForm(f => ({ ...f, email: e.target.value }))} className="input" />
+                <input value={clientForm.email} onChange={e => updateClientForm({ email: e.target.value })} className="input" />
               </div>
               <div>
                 <label className="input-label">Société</label>
-                <input value={clientForm.societe} onChange={e => setClientForm(f => ({ ...f, societe: e.target.value }))} className="input" />
+                <input value={clientForm.societe} onChange={e => updateClientForm({ societe: e.target.value })} className="input" />
               </div>
             </div>
           </EditableSection>
@@ -889,9 +950,9 @@ export default function TicketDetailPage() {
           <EditableSection
             title="Appareil" icon={Smartphone} iconBg="bg-brand-50" iconColor="text-brand-600"
             editing={editingDevice}
+            autoSaveStatus={autoSaveDevice}
             onEdit={() => setEditingDevice(true)}
-            onSave={handleSaveDevice}
-            onCancel={() => { setEditingDevice(false); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
+            onCancel={() => { clearTimeout(deviceTimerRef.current); setEditingDevice(false); setAutoSaveDevice(null); setDeviceForm({ categorie: t.categorie || '', marque: t.marque || '', modele: t.modele || '', modele_autre: t.modele_autre || '', imei: t.imei || '', panne: t.panne || '', panne_detail: t.panne_detail || '', pin: t.pin || '', pattern: t.pattern || '', notes_client: t.notes_client || '' }); }}
             viewContent={
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4 text-sm">
@@ -934,15 +995,15 @@ export default function TicketDetailPage() {
             }
           >
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div><label className="input-label">Catégorie</label><input value={deviceForm.categorie} onChange={e => setDeviceForm(f => ({ ...f, categorie: e.target.value }))} className="input" /></div>
-              <div><label className="input-label">Marque</label><input value={deviceForm.marque} onChange={e => setDeviceForm(f => ({ ...f, marque: e.target.value }))} className="input" /></div>
-              <div><label className="input-label">Modèle</label><input value={deviceForm.modele} onChange={e => setDeviceForm(f => ({ ...f, modele: e.target.value }))} className="input" /></div>
-              <div><AutocompleteField label="Panne" categorie="panne" value={deviceForm.panne} onChange={v => setDeviceForm(f => ({ ...f, panne: v }))} onSelect={s => setDeviceForm(f => ({ ...f, panne: s.value }))} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
-              <div><label className="input-label">IMEI</label><input value={deviceForm.imei} onChange={e => setDeviceForm(f => ({ ...f, imei: e.target.value }))} className="input font-mono" /></div>
-              <div><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => setDeviceForm(f => ({ ...f, panne_detail: v }))} onSelect={s => setDeviceForm(f => ({ ...f, panne_detail: s.value }))} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>
-              <div><label className="input-label">Code PIN</label><input value={deviceForm.pin} onChange={e => setDeviceForm(f => ({ ...f, pin: e.target.value }))} className="input font-mono tracking-widest" maxLength={10} /></div>
-              <div><label className="input-label">Pattern</label><input value={deviceForm.pattern} onChange={e => setDeviceForm(f => ({ ...f, pattern: e.target.value }))} className="input font-mono" placeholder="1-5-9-6-3" /></div>
-              <div className="col-span-2 sm:col-span-3"><label className="input-label">Note client</label><textarea value={deviceForm.notes_client} onChange={e => setDeviceForm(f => ({ ...f, notes_client: e.target.value }))} className="input resize-none" rows={2} /></div>
+              <div><label className="input-label">Catégorie</label><input value={deviceForm.categorie} onChange={e => updateDeviceForm({ categorie: e.target.value })} className="input" /></div>
+              <div><label className="input-label">Marque</label><input value={deviceForm.marque} onChange={e => updateDeviceForm({ marque: e.target.value })} className="input" /></div>
+              <div><label className="input-label">Modèle</label><input value={deviceForm.modele} onChange={e => updateDeviceForm({ modele: e.target.value })} className="input" /></div>
+              <div><AutocompleteField label="Panne" categorie="panne" value={deviceForm.panne} onChange={v => updateDeviceForm({ panne: v })} onSelect={s => updateDeviceForm({ panne: s.value })} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
+              <div><label className="input-label">IMEI</label><input value={deviceForm.imei} onChange={e => updateDeviceForm({ imei: e.target.value })} className="input font-mono" /></div>
+              <div><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => updateDeviceForm({ panne_detail: v })} onSelect={s => updateDeviceForm({ panne_detail: s.value })} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>
+              <div><label className="input-label">Code PIN</label><input value={deviceForm.pin} onChange={e => updateDeviceForm({ pin: e.target.value })} className="input font-mono tracking-widest" maxLength={10} /></div>
+              <div><label className="input-label">Pattern</label><input value={deviceForm.pattern} onChange={e => updateDeviceForm({ pattern: e.target.value })} className="input font-mono" placeholder="1-5-9-6-3" /></div>
+              <div className="col-span-2 sm:col-span-3"><label className="input-label">Note client</label><textarea value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} className="input resize-none" rows={2} /></div>
             </div>
           </EditableSection>
         );
@@ -1098,8 +1159,8 @@ export default function TicketDetailPage() {
               )}
               {editingPricing && (
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => { setEditingPricing(false); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '', commande_piece: t.commande_piece || 0 }); setRepairLines(parseRepairLines(t)); }} className="btn-ghost text-xs px-2.5 py-1.5"><X className="w-3.5 h-3.5" /> Annuler</button>
-                  <button onClick={handleSavePricing} className="btn-primary text-xs px-2.5 py-1.5"><Save className="w-3.5 h-3.5" /> Sauver</button>
+                  <AutoSaveIndicator status={autoSavePricing} />
+                  <button onClick={() => { clearTimeout(pricingTimerRef.current); setEditingPricing(false); setAutoSavePricing(null); setPricingForm({ devis_estime: t.devis_estime || '', tarif_final: t.tarif_final || '', acompte: t.acompte || '', technicien_assigne: t.technicien_assigne || '', type_ecran: t.type_ecran || '', date_recuperation: t.date_recuperation || '', reduction_montant: t.reduction_montant || '', reduction_pourcentage: t.reduction_pourcentage || '', commande_piece: t.commande_piece || 0 }); setRepairLines(parseRepairLines(t)); }} className="btn-ghost text-xs px-2.5 py-1.5"><X className="w-3.5 h-3.5" /> Fermer</button>
                 </div>
               )}
             </div>
@@ -1153,7 +1214,7 @@ export default function TicketDetailPage() {
                       {teamMembers.map(m => <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>)}
                     </select>
                   ) : (
-                    <input type="text" value={pricingForm.technicien_assigne} onChange={e => setPricingForm(f => ({ ...f, technicien_assigne: e.target.value }))} className="flex-1 input text-sm" placeholder="Nom du technicien" />
+                    <input type="text" value={pricingForm.technicien_assigne} onChange={e => updatePricingForm({ technicien_assigne: e.target.value })} className="flex-1 input text-sm" placeholder="Nom du technicien" />
                   )}
                 </div>
               )}
@@ -1170,7 +1231,7 @@ export default function TicketDetailPage() {
                     <label className="input-label mb-0">Lignes de réparation</label>
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={!!pricingForm.commande_piece} onChange={e => setPricingForm(f => ({ ...f, commande_piece: e.target.checked ? 1 : 0 }))} className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
+                        <input type="checkbox" checked={!!pricingForm.commande_piece} onChange={e => updatePricingForm({ commande_piece: e.target.checked ? 1 : 0 })} className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
                         <span className="text-xs font-medium text-amber-700"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
                       </label>
                       <button onClick={() => setShowCommandeModal(true)} className="text-xs font-medium text-brand-600 hover:text-brand-800 flex items-center gap-0.5">
@@ -1200,7 +1261,7 @@ export default function TicketDetailPage() {
                     <label className="input-label">Devis estimé</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => setPricingForm(f => ({ ...f, devis_estime: e.target.value }))} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
                       <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
                     </div>
                   </div>
@@ -1208,7 +1269,7 @@ export default function TicketDetailPage() {
                     <label className="input-label">Tarif final</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.tarif_final} onChange={e => setPricingForm(f => ({ ...f, tarif_final: e.target.value }))} className="input text-center pr-7" placeholder={totalRepairs || ''} /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.tarif_final} onChange={e => updatePricingForm({ tarif_final: e.target.value })} className="input text-center pr-7" placeholder={totalRepairs || ''} /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
                       <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
                     </div>
                   </div>
@@ -1216,19 +1277,19 @@ export default function TicketDetailPage() {
                     <label className="input-label">Acompte</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => setPricingForm(f => ({ ...f, acompte: e.target.value }))} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
                       <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
                     </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => setPricingForm(f => ({ ...f, reduction_pourcentage: e.target.value, reduction_montant: '' }))} className="input" placeholder="0" /></div>
-                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => setPricingForm(f => ({ ...f, reduction_montant: e.target.value, reduction_pourcentage: '' }))} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
+                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: '' })} className="input" placeholder="0" /></div>
+                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: '' })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="input-label">Qualité écran</label>
-                    <select value={pricingForm.type_ecran} onChange={e => setPricingForm(f => ({ ...f, type_ecran: e.target.value }))} className="input">
+                    <select value={pricingForm.type_ecran} onChange={e => updatePricingForm({ type_ecran: e.target.value })} className="input">
                       <option value="">—</option>
                       <option value="Original">Original (OEM)</option>
                       <option value="Original reconditionné">Original reconditionné</option>
@@ -1240,7 +1301,7 @@ export default function TicketDetailPage() {
                       <option value="LCD">LCD</option>
                     </select>
                   </div>
-                  <div><label className="input-label">Date récupération</label><input type="datetime-local" value={pricingForm.date_recuperation} onChange={e => setPricingForm(f => ({ ...f, date_recuperation: e.target.value }))} className="input" /></div>
+                  <div><label className="input-label">Date récupération</label><input type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} className="input" /></div>
                 </div>
               </div>
             ) : (
