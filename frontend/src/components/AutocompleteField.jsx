@@ -1,65 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
 import api from '../lib/api';
-
-function HighlightText({ text, query }) {
-  if (!query || !text) return text || '';
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`(${escaped})`, 'gi');
-  const parts = text.split(regex);
-  return parts.map((part, i) =>
-    regex.test(part)
-      ? <mark key={i} className="bg-amber-100 font-bold rounded-sm px-0.5">{part}</mark>
-      : part
-  );
-}
-
-function DefaultSuggestion({ suggestion, query, categorie }) {
-  if (categorie === 'client') {
-    return (
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center text-xs font-bold shrink-0">
-          {suggestion.prenom?.[0]}{suggestion.nom?.[0]}
-        </div>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-slate-800 truncate">
-            <HighlightText text={`${suggestion.prenom} ${suggestion.nom}`} query={query} />
-          </div>
-          <div className="text-[11px] text-slate-400">{suggestion.telephone}</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (categorie === 'modele') {
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-slate-800 truncate">
-          <HighlightText text={suggestion.value} query={query} />
-        </span>
-        {suggestion.marque && (
-          <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-            {suggestion.marque}
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  // panne / detail_panne
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-sm text-slate-800 truncate">
-        <HighlightText text={suggestion.value} query={query} />
-      </span>
-      {suggestion.count > 1 && (
-        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
-          ×{suggestion.count}
-        </span>
-      )}
-    </div>
-  );
-}
 
 export default function AutocompleteField({
   label,
@@ -68,152 +8,143 @@ export default function AutocompleteField({
   value,
   onChange,
   onSelect,
-  icon,
-  renderSuggestion,
   enabled = true,
   className = '',
 }) {
   const [suggestions, setSuggestions] = useState([]);
-  const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const [open, setOpen] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
   const wrapperRef = useRef(null);
-  const debounceRef = useRef(null);
+  const timerRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Close on outside click
   useEffect(() => {
-    const handleClick = (e) => {
+    function handleClick(e) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setIsOpen(false);
+        setOpen(false);
       }
-    };
+    }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Search with debounce
-  const handleInputChange = useCallback((text) => {
-    onChange(text);
-    setHighlightIndex(-1);
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (!enabled || text.length < 1) {
+  const doSearch = useCallback(async (q) => {
+    if (!q || q.length < 1) { setSuggestions([]); setOpen(false); return; }
+    setLoading(true);
+    try {
+      const results = await api.searchAutocomplete(categorie, q, 8);
+      setSuggestions(results || []);
+      setOpen((results || []).length > 0);
+      setActiveIdx(-1);
+    } catch {
       setSuggestions([]);
-      setIsOpen(false);
-      return;
-    }
-
-    debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const data = await api.searchAutocomplete(categorie, text, 8);
-        setSuggestions(data);
-        setIsOpen(data.length > 0);
-      } catch {
-        setSuggestions([]);
-      }
+      setOpen(false);
+    } finally {
       setLoading(false);
-    }, 200);
-  }, [categorie, enabled, onChange]);
+    }
+  }, [categorie]);
 
-  // Keyboard navigation
+  const handleChange = (e) => {
+    const v = e.target.value;
+    onChange(v);
+    if (!enabled) return;
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => doSearch(v), 200);
+  };
+
+  const handleSelect = (item) => {
+    setOpen(false);
+    setSuggestions([]);
+    if (onSelect) onSelect(item);
+  };
+
   const handleKeyDown = (e) => {
-    if (!isOpen) return;
+    if (!open || suggestions.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightIndex(prev => Math.min(prev + 1, suggestions.length - 1));
+      setActiveIdx(i => (i + 1) % suggestions.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightIndex(prev => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter' && highlightIndex >= 0) {
+      setActiveIdx(i => (i <= 0 ? suggestions.length - 1 : i - 1));
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
       e.preventDefault();
-      handleSelect(suggestions[highlightIndex]);
+      handleSelect(suggestions[activeIdx]);
     } else if (e.key === 'Escape') {
-      setIsOpen(false);
+      setOpen(false);
     }
   };
 
-  const handleSelect = (suggestion) => {
-    const val = suggestion.value || `${suggestion.prenom} ${suggestion.nom}`;
-    onChange(val);
-    onSelect?.(suggestion);
-    setIsOpen(false);
-    setSuggestions([]);
+  // Highlight matching text
+  const highlight = (text, query) => {
+    if (!query || query.length < 1) return text;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <span className="bg-amber-100 font-bold">{text.slice(idx, idx + query.length)}</span>
+        {text.slice(idx + query.length)}
+      </>
+    );
   };
 
-  // If disabled, render a plain input
-  if (!enabled) {
+  const renderSuggestion = (item, idx) => {
+    const isActive = idx === activeIdx;
+    const base = `px-3 py-2 cursor-pointer text-sm transition-colors ${isActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-700'}`;
+
+    if (categorie === 'client') {
+      const initials = `${(item.prenom || '')[0] || ''}${(item.nom || '')[0] || ''}`.toUpperCase();
+      return (
+        <div key={item.id || idx} className={`${base} flex items-center gap-2`} onMouseDown={() => handleSelect(item)}>
+          <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+            {initials}
+          </div>
+          <div className="min-w-0">
+            <div className="font-medium truncate">{highlight(`${item.prenom || ''} ${item.nom || ''}`.trim(), value)}</div>
+            <div className="text-[11px] text-slate-400">{item.telephone}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // panne / detail_panne / modele
     return (
-      <div>
-        {label && (
-          <label className="input-label">
-            {icon && <span className="mr-1">{icon}</span>}
-            {label}
-          </label>
-        )}
-        <input
-          type="text"
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className={`input ${className}`}
-        />
+      <div key={(item.value || '') + idx} className={`${base} flex items-center justify-between`} onMouseDown={() => handleSelect(item)}>
+        <span className="truncate">{highlight(item.value || '', value)}</span>
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          {item.marque && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{item.marque}</span>}
+          {item.count > 1 && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">{item.count}x</span>}
+        </div>
       </div>
     );
-  }
+  };
 
   return (
-    <div ref={wrapperRef} className="relative">
-      {label && (
-        <label className="input-label">
-          {icon && <span className="mr-1">{icon}</span>}
-          {label}
-        </label>
-      )}
-
+    <div ref={wrapperRef} className={`relative ${className}`}>
+      {label && <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>}
       <div className="relative">
         <input
+          ref={inputRef}
           type="text"
           value={value || ''}
-          onChange={(e) => handleInputChange(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => suggestions.length > 0 && setIsOpen(true)}
+          onFocus={() => { if (enabled && suggestions.length > 0) setOpen(true); }}
           placeholder={placeholder}
-          className={`input ${isOpen ? 'ring-2 ring-blue-500 border-blue-500' : ''} ${className}`}
+          className="input w-full"
+          autoComplete="off"
         />
         {loading && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <div className="w-4 h-4 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
           </div>
         )}
       </div>
-
-      {/* Dropdown */}
-      {isOpen && suggestions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-lg max-h-[320px] overflow-y-auto z-20">
-          {suggestions.map((s, i) => (
-            <div
-              key={i}
-              onClick={() => handleSelect(s)}
-              onMouseEnter={() => setHighlightIndex(i)}
-              className={`px-3 py-2.5 cursor-pointer transition-colors ${
-                i === highlightIndex ? 'bg-blue-50' : 'hover:bg-slate-50'
-              } ${i < suggestions.length - 1 ? 'border-b border-slate-50' : ''}`}
-            >
-              {renderSuggestion
-                ? renderSuggestion(s, i, value)
-                : <DefaultSuggestion suggestion={s} query={value} categorie={categorie} />
-              }
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* No results */}
-      {isOpen && suggestions.length === 0 && !loading && (value || '').length >= 1 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-slate-200 shadow-md px-3 py-2.5 z-20">
-          <span className="text-sm text-slate-400">Aucun résultat pour "{value}"</span>
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden max-h-64 overflow-y-auto">
+          {suggestions.map((item, idx) => renderSuggestion(item, idx))}
         </div>
       )}
     </div>
