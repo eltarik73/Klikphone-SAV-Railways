@@ -87,6 +87,31 @@ export default function DashboardPage() {
     return () => clearInterval(id);
   }, []);
 
+  // SWR: Interactions clients
+  const { data: interactions } = useApi('dashboard:interactions', () => api.getInteractions(), { tags: ['interactions'], ttl: 30_000 });
+
+  // Build lookup: ticket_id → { accord_client, messages, avis } booleans
+  const ticketInteractions = useMemo(() => {
+    if (!interactions) return {};
+    const map = {};
+    for (const key of ['accord_client', 'messages', 'avis']) {
+      const ids = interactions[key]?.ticket_ids;
+      if (!Array.isArray(ids)) continue;
+      for (const tid of ids) {
+        if (!map[tid]) map[tid] = {};
+        map[tid][key] = true;
+      }
+    }
+    return map;
+  }, [interactions]);
+
+  // Build set of ticket IDs for active interaction filter
+  const interactionTicketIds = useMemo(() => {
+    if (!interactionFilter || !interactions) return null;
+    const ids = interactions[interactionFilter]?.ticket_ids;
+    return Array.isArray(ids) && ids.length > 0 ? new Set(ids) : null;
+  }, [interactionFilter, interactions]);
+
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -172,28 +197,6 @@ export default function DashboardPage() {
     return null;
   };
 
-  // Build lookup: ticket_id → { accord_client, messages, avis } booleans
-  const ticketInteractions = useMemo(() => {
-    if (!interactions) return {};
-    const map = {};
-    for (const key of ['accord_client', 'messages', 'avis']) {
-      const ids = interactions[key]?.ticket_ids;
-      if (!Array.isArray(ids)) continue;
-      for (const tid of ids) {
-        if (!map[tid]) map[tid] = {};
-        map[tid][key] = true;
-      }
-    }
-    return map;
-  }, [interactions]);
-
-  // Build set of ticket IDs for active interaction filter
-  const interactionTicketIds = useMemo(() => {
-    if (!interactionFilter || !interactions) return null;
-    const ids = interactions[interactionFilter]?.ticket_ids;
-    return Array.isArray(ids) && ids.length > 0 ? new Set(ids) : null;
-  }, [interactionFilter, interactions]);
-
   const filteredTickets = useMemo(() => {
     let list = tickets;
     if (filterTech === '__mine__' && techName) {
@@ -252,9 +255,6 @@ export default function DashboardPage() {
     const parts = await api.getParts({ statut: 'en_cours' });
     return parts?.length ?? 0;
   }, { tags: ['commandes'], ttl: 60_000 });
-
-  // SWR: Interactions clients
-  const { data: interactions } = useApi('dashboard:interactions', () => api.getInteractions(), { tags: ['interactions'], ttl: 30_000 });
 
   const kpiCards = kpi ? [
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', iconBg: 'bg-brand-100' },
