@@ -691,17 +691,32 @@ export default function TicketDetailPage() {
     }
   };
 
+  const getAccordMontant = () => {
+    if (!ticket) return 0;
+    // Priority: tarif_final > total repair lines > devis_estime
+    if (ticket.tarif_final && parseFloat(ticket.tarif_final) > 0) return parseFloat(ticket.tarif_final);
+    const linesTotal = repairLines.filter(l => l.label).reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+    if (linesTotal > 0) return linesTotal;
+    if (ticket.devis_estime && parseFloat(ticket.devis_estime) > 0) return parseFloat(ticket.devis_estime);
+    return 0;
+  };
+
   const buildAccordMessage = () => {
     if (!ticket) return '';
     const t = ticket;
-    const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
-    const lines = repairLines.filter(l => l.label);
-    const total = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
-    const listStr = lines.map(l => `- ${l.label} : ${parseFloat(l.prix || 0).toFixed(2)} EUR`).join('\n');
-    return `Bonjour ${t.client_prenom || ''}, suite au diagnostic de votre ${appareil}, voici le détail des réparations nécessaires :\n\n${listStr}\n\nTotal : ${total.toFixed(2)} EUR\n\nMerci de nous confirmer votre accord pour lancer la réparation.\nKlikphone 04 79 60 89 22`;
+    const marque = t.marque || '';
+    const modele = t.modele_autre || t.modele || '';
+    const montant = getAccordMontant();
+    const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
+    return `Bonjour ${t.client_prenom || ''}, le devis pour la réparation de votre ${marque} ${modele} est de ${montant.toFixed(2)} €. Vous pouvez accepter ou refuser directement en cliquant ici : ${suiviUrl}. Merci, l'équipe Klikphone`;
   };
 
   const openAccordModal = () => {
+    const montant = getAccordMontant();
+    if (montant === 0) {
+      toast.error("Renseigne un tarif avant d'envoyer la demande d'accord");
+      return;
+    }
     setAccordMessage(buildAccordMessage());
     setShowAccordModal(true);
   };
