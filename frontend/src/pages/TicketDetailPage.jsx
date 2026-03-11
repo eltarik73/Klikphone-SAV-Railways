@@ -363,21 +363,26 @@ export default function TicketDetailPage() {
   const doSavePricing = useCallback(async (formData, lines) => {
     setAutoSavePricing('saving');
     try {
-      const totalRepairs = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+      const totalLines = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
       const reparationsJson = JSON.stringify(lines.filter(l => l.label));
       let reductionAmount = parseFloat(formData.reduction_montant) || 0;
       const reductionPct = parseFloat(formData.reduction_pourcentage) || 0;
-      if (reductionPct > 0) reductionAmount = totalRepairs * (reductionPct / 100);
-      const finalPrice = parseFloat(formData.tarif_final) || (totalRepairs - reductionAmount) || null;
+      if (reductionPct > 0) reductionAmount = totalLines * (reductionPct / 100);
+      const finalPrice = totalLines - reductionAmount;
+      const acompte = parseFloat(formData.acompte) || 0;
+      const resteAPayer = Math.max(0, finalPrice - acompte);
+      const statutPaiement = resteAPayer <= 0 && finalPrice > 0 ? 'Payé' : acompte > 0 ? 'Acompte versé' : 'Non payé';
       const updates = {
         ...formData,
         devis_estime: parseFloat(formData.devis_estime) || null,
-        tarif_final: finalPrice,
-        acompte: parseFloat(formData.acompte) || null,
+        tarif_final: finalPrice || null,
+        acompte: acompte || null,
         reduction_montant: reductionAmount || null,
         reduction_pourcentage: reductionPct || null,
+        reste_a_payer: resteAPayer,
+        statut_paiement: statutPaiement,
         reparation_supp: reparationsJson,
-        prix_supp: totalRepairs,
+        prix_supp: totalLines,
       };
       await api.updateTicket(id, updates);
       invalidateCache('tickets');
@@ -795,7 +800,7 @@ export default function TicketDetailPage() {
   const reductionMontant = parseFloat(pricingForm.reduction_montant) || 0;
   const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
   const effectiveReduction = reductionPct > 0 ? totalRepairs * (reductionPct / 100) : reductionMontant;
-  const subtotalHT = parseFloat(pricingForm.tarif_final) || (totalRepairs - effectiveReduction);
+  const subtotalHT = totalRepairs - effectiveReduction;
   const tvaAmount = tvaRate > 0 ? subtotalHT * (tvaRate / 100) : 0;
   const totalTTC = subtotalHT + tvaAmount;
   const reste = totalTTC - (parseFloat(pricingForm.acompte) || 0);
@@ -1106,6 +1111,9 @@ export default function TicketDetailPage() {
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
                       {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
                     </span>
+                    <button onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors" title="Supprimer">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 );
               })}
@@ -1242,23 +1250,57 @@ export default function TicketDetailPage() {
                   </div>
                   <div className="space-y-2">
                     {repairLines.map((line, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input value={line.label} onChange={e => updateRepairLine(i, 'label', e.target.value)} className="input flex-1" placeholder="Description réparation" />
-                        <div className="relative w-28 shrink-0">
-                          <input type="number" step="0.01" value={line.prix} onChange={e => updateRepairLine(i, 'prix', e.target.value)} className="input text-right pr-7" placeholder="0" />
-                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                      <div key={i} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <input value={line.label} onChange={e => updateRepairLine(i, 'label', e.target.value)} className="input flex-1" placeholder="Description réparation" />
+                          <div className="relative w-28 shrink-0">
+                            <input type="number" step="0.01" value={line.prix} onChange={e => updateRepairLine(i, 'prix', e.target.value)} className="input text-right pr-7" placeholder="0" />
+                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                          </div>
+                          <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
+                          <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
+                          {repairLines.length > 1 && <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}
                         </div>
-                        <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                        <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                        {repairLines.length > 1 && <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}
+                        {line.label && (
+                          <label className="flex items-center gap-1.5 ml-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={commandes.some(c => c.description === line.label)}
+                              onChange={async (e) => {
+                                if (e.target.checked) {
+                                  try {
+                                    await api.createPart({ ticket_id: ticket.id, ticket_code: ticket.ticket_code, description: line.label, fournisseur: 'Mobilax', prix: parseFloat(line.prix) || 0 });
+                                    invalidateCache('commandes');
+                                    const cmds = await api.getPartsByTicket(ticket.id);
+                                    setCommandes(cmds || []);
+                                    toast.success('Pièce ajoutée aux commandes');
+                                  } catch { toast.error('Erreur ajout commande'); }
+                                } else {
+                                  const cmd = commandes.find(c => c.description === line.label);
+                                  if (cmd) {
+                                    try {
+                                      await api.deletePart(cmd.id);
+                                      invalidateCache('commandes');
+                                      const cmds = await api.getPartsByTicket(ticket.id);
+                                      setCommandes(cmds || []);
+                                      toast.success('Commande retirée');
+                                    } catch { toast.error('Erreur suppression commande'); }
+                                  }
+                                }
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className="text-[11px] text-amber-700 font-medium"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
+                          </label>
+                        )}
                       </div>
                     ))}
                   </div>
                   <div className="text-right mt-2"><span className="text-xs text-slate-400">Total :</span><span className="text-sm font-bold text-slate-800 ml-2">{formatPrix(totalRepairs)}</span></div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="input-label">Devis estimé</label>
+                    <label className="input-label">Devis estimé (avant diagnostic)</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
                       <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
@@ -1266,15 +1308,7 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="input-label">Tarif final</label>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => adjustPrice('tarif_final', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.tarif_final} onChange={e => updatePricingForm({ tarif_final: e.target.value })} className="input text-center pr-7" placeholder={totalRepairs || ''} /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
-                      <button onClick={() => adjustPrice('tarif_final', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="input-label">Acompte</label>
+                    <label className="input-label">Acompte versé</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
                       <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
@@ -1282,9 +1316,17 @@ export default function TicketDetailPage() {
                     </div>
                   </div>
                 </div>
+                {/* Computed summary in edit mode */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes</span><span className="font-semibold text-slate-800">{formatPrix(totalRepairs)}</span></div>
+                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
+                  <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(totalRepairs - effectiveReduction)}</span></div>
+                  {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
+                  <div className={`flex justify-between text-base font-extrabold border-t border-slate-200 pt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>Reste à payer</span><span>{formatPrix(Math.max(0, reste))}</span></div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: '' })} className="input" placeholder="0" /></div>
-                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: '' })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
+                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => { const pct = parseFloat(e.target.value) || 0; const euros = totalRepairs > 0 ? (totalRepairs * pct / 100).toFixed(2) : ''; updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: euros }); }} className="input" placeholder="0" /></div>
+                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => { const euros = parseFloat(e.target.value) || 0; const pct = totalRepairs > 0 ? (euros / totalRepairs * 100).toFixed(1) : ''; updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: pct }); }} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

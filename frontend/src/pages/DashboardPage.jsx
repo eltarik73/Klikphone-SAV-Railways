@@ -26,6 +26,8 @@ export default function DashboardPage() {
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [filterTech, setFilterTech] = useState('');
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
+  const [sortField, setSortField] = useState('date_depot');
+  const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
   const searchTimer = useRef(null);
 
@@ -182,7 +184,33 @@ export default function DashboardPage() {
 
   const activeTickets = useMemo(() => filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
-  const allDisplayed = showArchived ? archivedTickets : activeTickets;
+  const sortedTickets = useMemo(() => {
+    const list = showArchived ? archivedTickets : activeTickets;
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'date_depot':
+          cmp = new Date(a.date_depot || 0) - new Date(b.date_depot || 0);
+          break;
+        case 'nom':
+          cmp = (`${a.client_nom || ''} ${a.client_prenom || ''}`).localeCompare(`${b.client_nom || ''} ${b.client_prenom || ''}`);
+          break;
+        case 'date_recuperation': {
+          const da = a.date_recuperation ? new Date(a.date_recuperation) : new Date('2099-12-31');
+          const db = b.date_recuperation ? new Date(b.date_recuperation) : new Date('2099-12-31');
+          cmp = da - db;
+          break;
+        }
+        case 'statut':
+          cmp = (a.statut || '').localeCompare(b.statut || '');
+          break;
+        default:
+          cmp = 0;
+      }
+      return sortDir === 'desc' ? -cmp : cmp;
+    });
+  }, [showArchived, archivedTickets, activeTickets, sortField, sortDir]);
+  const allDisplayed = sortedTickets;
   const totalPages = Math.ceil(allDisplayed.length / pageSize);
   const displayedTickets = allDisplayed.slice(page * pageSize, (page + 1) * pageSize);
 
@@ -388,6 +416,29 @@ export default function DashboardPage() {
           className={`text-sm font-medium ${showArchived ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}>
           Voir {archivedTickets.length} archivé(s)
         </button>
+      </div>
+
+      {/* Sort controls */}
+      <div className="flex items-center gap-2 mb-3 px-1">
+        <span className="text-xs text-slate-400"><Filter className="w-3 h-3 inline mr-1" />Trier par :</span>
+        {[
+          { label: 'Date dépôt', value: 'date_depot' },
+          { label: 'Nom client', value: 'nom' },
+          { label: 'Récupération', value: 'date_recuperation' },
+          { label: 'Statut', value: 'statut' },
+        ].map(({ label, value }) => (
+          <button key={value}
+            onClick={() => {
+              if (sortField === value) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+              else { setSortField(value); setSortDir(value === 'nom' ? 'asc' : 'desc'); }
+            }}
+            className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              sortField === value ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {label} {sortField === value && (sortDir === 'asc' ? '↑' : '↓')}
+          </button>
+        ))}
       </div>
 
       {/* Bulk actions bar */}
@@ -644,7 +695,11 @@ export default function DashboardPage() {
                       </p>
                       {t.paye ? (
                         <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700">PAYÉ</span>
-                      ) : null}
+                      ) : t.acompte > 0 ? (
+                        <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700">Ac. {formatPrix(t.acompte)}</span>
+                      ) : (
+                        <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-600">Non payé</span>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs text-slate-300">—</p>

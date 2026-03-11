@@ -6,7 +6,7 @@ Reprend exactement la logique de l'app Streamlit.
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.database import get_cursor
 from app.api.autocomplete import learn_terms
@@ -14,7 +14,6 @@ from app.models import (
     TicketCreate, TicketUpdate, TicketOut, TicketFull,
     StatusChange, KPIResponse,
 )
-from app.api.auth import get_current_user, get_optional_user
 from app.services.notifications import (
     notif_nouveau_ticket, notif_changement_statut, notif_reparation_terminee,
 )
@@ -42,7 +41,7 @@ STATUTS = [
 
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
 @router.get("/stats/kpi")
-async def get_kpi(user: dict = Depends(get_current_user)):
+async def get_kpi():
     """Récupère les KPI du dashboard."""
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -73,7 +72,6 @@ async def get_kpi(user: dict = Depends(get_current_user)):
 async def get_repair_queue(
     tech: Optional[str] = None,
     limit: int = Query(20, le=50),
-    user: dict = Depends(get_current_user),
 ):
     """Retourne les tickets en attente de réparation, triés par priorité."""
     with get_cursor() as cur:
@@ -133,7 +131,6 @@ async def list_tickets(
     search: Optional[str] = None,
     limit: int = Query(100, le=500),
     offset: int = 0,
-    user: dict = Depends(get_current_user),
 ):
     """Liste les tickets avec filtres optionnels."""
     conditions = []
@@ -188,7 +185,7 @@ async def list_tickets(
 
 # ─── TICKET UNIQUE ─────────────────────────────────────────────
 @router.get("/{ticket_id}")
-async def get_ticket(ticket_id: int, user: Optional[dict] = Depends(get_optional_user)):
+async def get_ticket(ticket_id: int):
     """Récupère un ticket par ID avec les infos client + retour SAV enrichi."""
     with get_cursor() as cur:
         cur.execute("""
@@ -330,7 +327,6 @@ async def create_ticket(data: TicketCreate):
 async def update_ticket(
     ticket_id: int,
     data: TicketUpdate,
-    user: dict = Depends(get_current_user),
 ):
     """Met à jour un ticket (champs partiels)."""
     updates = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
@@ -358,7 +354,6 @@ async def update_ticket(
 @router.patch("/{ticket_id}/paye", response_model=dict)
 async def toggle_paye(
     ticket_id: int,
-    user: dict = Depends(get_current_user),
 ):
     """Bascule le statut payé du ticket. Crédite les points fidélité si marqué payé."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -379,10 +374,16 @@ async def toggle_paye(
         log_entry = f"[{ts}] {'Marqué payé' if new_paye else 'Marqué non payé'}"
         new_hist = f"{historique.rstrip()}\n{log_entry}" if historique.strip() else log_entry
 
-        cur.execute(
-            "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s WHERE id = %s",
-            (new_paye, now, new_hist, ticket_id),
-        )
+        if new_paye:
+            cur.execute(
+                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = 'Payé', reste_a_payer = 0 WHERE id = %s",
+                (new_paye, now, new_hist, ticket_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = 'Non payé' WHERE id = %s",
+                (new_paye, now, new_hist, ticket_id),
+            )
         _ajouter_historique(cur, ticket_id, 'statut', 'Marqué payé' if new_paye else 'Marqué non payé')
 
         # Auto-crédit fidélité quand marqué payé
@@ -443,7 +444,6 @@ async def toggle_paye(
 async def change_status(
     ticket_id: int,
     data: StatusChange,
-    user: dict = Depends(get_current_user),
 ):
     """Change le statut d'un ticket avec historique et notifications."""
     if data.statut not in STATUTS:
@@ -518,7 +518,7 @@ async def change_status(
 
 # ─── HISTORIQUE (structured table) ───────────────────────────────
 @router.get("/{ticket_id}/historique")
-async def get_historique(ticket_id: int, user: dict = Depends(get_current_user)):
+async def get_historique(ticket_id: int):
     """Retourne l'historique structuré d'un ticket."""
     with get_cursor() as cur:
         try:
@@ -539,7 +539,6 @@ async def get_historique(ticket_id: int, user: dict = Depends(get_current_user))
 async def add_history(
     ticket_id: int,
     texte: str = Query(...),
-    user: dict = Depends(get_current_user),
 ):
     """Ajoute une entrée dans l'historique du ticket."""
     ts = datetime.now().strftime("%d/%m %H:%M")
@@ -564,7 +563,6 @@ async def add_history(
 async def add_note(
     ticket_id: int,
     note: str = Query(...),
-    user: dict = Depends(get_current_user),
 ):
     """Ajoute une note interne au ticket."""
     ts = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -589,7 +587,7 @@ async def add_note(
 
 # ─── NOTES PRIVÉES ─────────────────────────────────────────────────
 @router.get("/{ticket_id}/notes")
-async def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
+async def get_notes(ticket_id: int):
     """Récupère les notes privées d'un ticket."""
     with get_cursor() as cur:
         try:
@@ -612,7 +610,6 @@ async def add_private_note(
     auteur: str = Query(...),
     contenu: str = Query(...),
     important: bool = Query(False),
-    user: dict = Depends(get_current_user),
 ):
     """Ajoute une note privée à un ticket."""
     with get_cursor() as cur:
@@ -629,7 +626,6 @@ async def add_private_note(
 async def delete_private_note(
     ticket_id: int,
     note_id: int,
-    user: dict = Depends(get_current_user),
 ):
     """Supprime une note privée."""
     with get_cursor() as cur:
@@ -642,7 +638,6 @@ async def update_private_note(
     ticket_id: int,
     note_id: int,
     important: Optional[bool] = Query(None),
-    user: dict = Depends(get_current_user),
 ):
     """Met à jour une note privée (toggle important)."""
     if important is not None:
@@ -661,7 +656,6 @@ async def log_message(
     auteur: str = Query(...),
     contenu: str = Query(...),
     canal: str = Query("whatsapp"),
-    user: dict = Depends(get_current_user),
 ):
     """Enregistre un message envoyé (whatsapp/sms/email) dans les notes."""
     with get_cursor() as cur:
@@ -675,7 +669,7 @@ async def log_message(
 
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
-async def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
+async def delete_ticket(ticket_id: int):
     """Supprime un ticket et toutes ses données liées (cascade)."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM notes_tickets WHERE ticket_id = %s", (ticket_id,))

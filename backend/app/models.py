@@ -114,6 +114,8 @@ class TicketUpdate(BaseModel):
     attention: Optional[str] = None
     reduction_montant: Optional[float] = None
     reduction_pourcentage: Optional[float] = None
+    reste_a_payer: Optional[float] = None
+    statut_paiement: Optional[str] = None
     telephone_pret: Optional[str] = None
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = None
@@ -165,6 +167,8 @@ class TicketOut(BaseModel):
     attention: Optional[str] = None
     reduction_montant: Optional[float] = 0
     reduction_pourcentage: Optional[float] = 0
+    reste_a_payer: Optional[float] = 0
+    statut_paiement: Optional[str] = "Non payé"
     telephone_pret: Optional[str] = None
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = 0
