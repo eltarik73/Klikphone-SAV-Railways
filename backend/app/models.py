@@ -119,6 +119,7 @@ class TicketUpdate(BaseModel):
     telephone_pret: Optional[str] = None
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = None
+    type_document: Optional[str] = None
 
 
 class StatusChange(BaseModel):
@@ -178,6 +179,7 @@ class TicketOut(BaseModel):
     est_retour_sav: Optional[bool] = False
     ticket_original_id: Optional[int] = None
     source: Optional[str] = "boutique"
+    type_document: Optional[str] = "devis"
 
 
 class TicketFull(TicketOut):

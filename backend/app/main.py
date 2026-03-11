@@ -174,6 +174,7 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_original_id INTEGER",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
         "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_document TEXT DEFAULT 'devis'",
     ]:
         try:
             with get_cursor() as cur:
