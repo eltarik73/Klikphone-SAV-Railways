@@ -607,6 +607,16 @@ export default function TicketDetailPage() {
     } catch { toast.error('Erreur suppression'); }
   };
 
+  const handleDeleteInternalNote = async (rawLine) => {
+    try {
+      const current = t.notes_internes || '';
+      const lines = current.split('\n').filter(l => l.trim() !== rawLine.trim());
+      await api.updateTicket(id, { notes_internes: lines.join('\n') });
+      await loadTicket();
+      toast.success('Note supprimée');
+    } catch { toast.error('Erreur suppression'); }
+  };
+
   const handleToggleNoteImportant = async (noteId, current) => {
     try {
       await api.toggleNoteImportant(id, noteId, !current);
@@ -1123,6 +1133,9 @@ export default function TicketDetailPage() {
                   <div key={`tl-${i}`} className="flex items-start gap-2 py-1.5">
                     <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
                     {entry.timestamp && <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>}
+                    <button onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors" title="Supprimer">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 );
               })}
