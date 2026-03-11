@@ -227,7 +227,7 @@ export default function TicketDetailPage() {
         type_document: data.type_document || 'devis',
       });
       setRepairLines(parseRepairLines(data));
-      setReductionMode(parseFloat(data.reduction_montant) > 0 && !parseFloat(data.reduction_pourcentage) ? 'eur' : 'pct');
+      setReductionMode(parseFloat(data.reduction_montant) > 0 && !(parseFloat(data.reduction_pourcentage) > 0) ? 'eur' : 'pct');
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
     } catch (err) {
       console.error(err);
@@ -386,13 +386,16 @@ export default function TicketDetailPage() {
       const acompte = parseFloat(formData.acompte) || 0;
       const resteAPayer = Math.max(0, finalPrice - acompte);
       const statutPaiement = resteAPayer <= 0 && finalPrice > 0 ? 'Payé' : acompte > 0 ? 'Acompte versé' : 'Non payé';
+      // Save only the active reduction field; zero out the other
+      const savedPct = reductionMode === 'pct' ? reductionPct : 0;
+      const savedEur = reductionMode === 'eur' ? reductionEur : 0;
       const updates = {
         ...formData,
         devis_estime: parseFloat(formData.devis_estime) || null,
         tarif_final: finalPrice || null,
         acompte: acompte || null,
-        reduction_montant: reductionAmount || null,
-        reduction_pourcentage: reductionPct || null,
+        reduction_montant: savedEur || null,
+        reduction_pourcentage: savedPct || null,
         reste_a_payer: resteAPayer,
         statut_paiement: statutPaiement,
         reparation_supp: reparationsJson,
@@ -409,7 +412,7 @@ export default function TicketDetailPage() {
       setAutoSavePricing('error');
       setTimeout(() => setAutoSavePricing(null), 3000);
     }
-  }, [id]);
+  }, [id, reductionMode]);
 
   // Debounce triggers (called on every field change)
   const triggerDeviceSave = useCallback((formData) => {
