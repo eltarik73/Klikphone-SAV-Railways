@@ -469,6 +469,13 @@ class ApiClient {
   getPendingDepots() { return this.get('/api/depot-distance/pending'); }
   getSuiviPublic(code) { return this.get(`/api/depot-distance/suivi/${encodeURIComponent(code)}`); }
 
+  // ─── SUIVI CLIENT (PUBLIC) ─────────────────────
+  suiviSendMessage(ticketCode, message) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/message`, { message }); }
+  suiviValiderDevis(ticketCode, accepte) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/valider-devis`, { accepte }); }
+  suiviLaisserAvis(ticketCode, note, commentaire) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/avis`, { note, commentaire }); }
+  suiviHasAvis(ticketCode) { return this.get(`/api/suivi/${encodeURIComponent(ticketCode)}/has-avis`); }
+  getInteractions() { return this.get('/api/suivi/dashboard/interactions'); }
+
   // ─── TELEPHONES ─────────────────────────────
   getTelephonesCatalogue(params = {}) {
     const clean = Object.fromEntries(Object.entries(params).filter(([,v]) => v != null && v !== ''));

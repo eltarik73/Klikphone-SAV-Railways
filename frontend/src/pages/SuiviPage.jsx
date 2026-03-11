@@ -5,9 +5,8 @@ import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
-import { formatDate } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw } from 'lucide-react';
-import { formatPrix } from '../lib/utils';
+import { formatDate, formatPrix } from '../lib/utils';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle } from 'lucide-react';
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
@@ -20,6 +19,23 @@ export default function SuiviPage() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const pollRef = useRef(null);
 
+  // Message state
+  const [message, setMessage] = useState('');
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const [msgSent, setMsgSent] = useState(false);
+
+  // Devis validation state
+  const [devisLoading, setDevisLoading] = useState(false);
+  const [devisResult, setDevisResult] = useState(null); // 'accepted' | 'refused'
+
+  // Avis state
+  const [avisNote, setAvisNote] = useState(0);
+  const [avisHover, setAvisHover] = useState(0);
+  const [avisComment, setAvisComment] = useState('');
+  const [avisLoading, setAvisLoading] = useState(false);
+  const [avisSent, setAvisSent] = useState(false);
+  const [hasAvis, setHasAvis] = useState(false);
+
   const isPhoneInput = (val) => /^\+?\d[\d\s.-]{5,}$/.test(val.trim());
 
   const doSearch = useCallback(async (searchVal) => {
@@ -29,6 +45,9 @@ export default function SuiviPage() {
     setError('');
     setTicket(null);
     setPhoneResults([]);
+    setDevisResult(null);
+    setMsgSent(false);
+    setAvisSent(false);
 
     try {
       if (isPhoneInput(val)) {
@@ -39,6 +58,7 @@ export default function SuiviPage() {
           const data = await api.getTicketByCode(results[0].ticket_code);
           setTicket(data);
           api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
+          api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
         } else {
           setPhoneResults(results);
         }
@@ -46,6 +66,7 @@ export default function SuiviPage() {
         const data = await api.getTicketByCode(val.toUpperCase());
         setTicket(data);
         api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
+        api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
       }
     } catch {
       setError('Aucun ticket trouvé.');
@@ -56,12 +77,9 @@ export default function SuiviPage() {
 
   useEffect(() => {
     const ticketParam = searchParams.get('ticket') || searchParams.get('tel');
-    if (ticketParam) {
-      doSearch(ticketParam);
-    }
+    if (ticketParam) doSearch(ticketParam);
   }, []);
 
-  // Auto-poll every 30s when a ticket is loaded
   useEffect(() => {
     if (!ticket) return;
     pollRef.current = setInterval(async () => {
@@ -74,10 +92,7 @@ export default function SuiviPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [ticket?.ticket_code]);
 
-  const handleSearch = (e) => {
-    e?.preventDefault();
-    doSearch();
-  };
+  const handleSearch = (e) => { e?.preventDefault(); doSearch(); };
 
   const handleSelectPhoneResult = async (ticketCode) => {
     setLoading(true);
@@ -86,12 +101,66 @@ export default function SuiviPage() {
       setTicket(data);
       setPhoneResults([]);
       api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
+      api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
     } catch {
       setError('Erreur de chargement du ticket.');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSendMessage = async () => {
+    if (!message.trim() || !ticket) return;
+    setSendingMsg(true);
+    try {
+      await api.suiviSendMessage(ticket.ticket_code, message.trim());
+      setMessage('');
+      setMsgSent(true);
+      setTimeout(() => setMsgSent(false), 4000);
+    } catch { /* silent */ }
+    finally { setSendingMsg(false); }
+  };
+
+  const handleDevisValidation = async (accepte) => {
+    if (!ticket) return;
+    setDevisLoading(true);
+    try {
+      await api.suiviValiderDevis(ticket.ticket_code, accepte);
+      setDevisResult(accepte ? 'accepted' : 'refused');
+      // Reload ticket to get new status
+      const data = await api.getTicketByCode(ticket.ticket_code);
+      setTicket(data);
+    } catch { /* silent */ }
+    finally { setDevisLoading(false); }
+  };
+
+  const handleSubmitAvis = async () => {
+    if (avisNote === 0 || !ticket) return;
+    setAvisLoading(true);
+    try {
+      await api.suiviLaisserAvis(ticket.ticket_code, avisNote, avisComment.trim());
+      setAvisSent(true);
+      setHasAvis(true);
+    } catch { /* silent */ }
+    finally { setAvisLoading(false); }
+  };
+
+  // Parse repair lines for devis display
+  const getRepairLines = () => {
+    if (!ticket) return [];
+    let repLines = [];
+    try {
+      const parsed = JSON.parse(ticket.reparation_supp || '[]');
+      if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label);
+    } catch { /* legacy */ }
+    if (repLines.length > 0) return repLines.map(r => ({ label: r.label, prix: Number(r.prix || 0) }));
+    const devis = Number(ticket.devis_estime || 0);
+    if (devis > 0) return [{ label: ticket.panne || 'Réparation', prix: devis }];
+    return [];
+  };
+
+  const isTerminal = ticket && ['Réparation terminée', 'Rendu au client', 'Clôturé'].includes(ticket.statut);
+  const isAccordClient = ticket?.statut === "En attente d'accord client";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30">
@@ -107,14 +176,9 @@ export default function SuiviPage() {
 
         {/* Search */}
         <form onSubmit={handleSearch} className="flex gap-2 mb-8">
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
+          <input type="text" value={code} onChange={(e) => setCode(e.target.value)}
             placeholder="KP-000001 ou 06 12 34 56 78"
-            className="input flex-1 text-center font-mono text-lg font-bold tracking-wider"
-            autoFocus
-          />
+            className="input flex-1 text-center font-mono text-lg font-bold tracking-wider" autoFocus />
           <button type="submit" disabled={loading} className="btn-primary px-5">
             <Search className="w-5 h-5" />
           </button>
@@ -136,18 +200,14 @@ export default function SuiviPage() {
             </div>
             <div className="divide-y divide-slate-100">
               {phoneResults.map(r => (
-                <button key={r.ticket_code}
-                  onClick={() => handleSelectPhoneResult(r.ticket_code)}
-                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-brand-50/40 transition-colors text-left"
-                >
+                <button key={r.ticket_code} onClick={() => handleSelectPhoneResult(r.ticket_code)}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-brand-50/40 transition-colors text-left">
                   <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
                     <Hash className="w-4 h-4 text-brand-600" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-brand-600 font-mono">{r.ticket_code}</p>
-                    <p className="text-xs text-slate-500 truncate">
-                      {r.marque} {r.modele || r.modele_autre} — {r.panne}
-                    </p>
+                    <p className="text-xs text-slate-500 truncate">{r.marque} {r.modele || r.modele_autre} — {r.panne}</p>
                   </div>
                   <StatusBadge statut={r.statut} />
                 </button>
@@ -167,9 +227,7 @@ export default function SuiviPage() {
                   </div>
                   <div>
                     <p className="text-sm font-bold text-indigo-800">Demande pré-enregistrée</p>
-                    <p className="text-xs text-indigo-600 mt-0.5">
-                      Notre équipe va valider votre demande. Présentez-vous en boutique avec votre appareil.
-                    </p>
+                    <p className="text-xs text-indigo-600 mt-0.5">Notre équipe va valider votre demande. Présentez-vous en boutique avec votre appareil.</p>
                   </div>
                 </div>
               </div>
@@ -197,9 +255,7 @@ export default function SuiviPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-slate-400 text-xs mb-0.5">Appareil</p>
-                  <p className="font-medium text-slate-800">
-                    {ticket.marque} {ticket.modele || ticket.modele_autre}
-                  </p>
+                  <p className="font-medium text-slate-800">{ticket.marque} {ticket.modele || ticket.modele_autre}</p>
                 </div>
                 <div>
                   <p className="text-slate-400 text-xs mb-0.5">Panne</p>
@@ -245,46 +301,23 @@ export default function SuiviPage() {
               {/* Réparations */}
               {(() => {
                 let repLines = [];
-                try {
-                  const parsed = JSON.parse(ticket.reparation_supp || '[]');
-                  if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label);
-                } catch { /* legacy */ }
+                try { const parsed = JSON.parse(ticket.reparation_supp || '[]'); if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label); } catch {}
                 const hasDetail = ticket.panne_detail || repLines.length > 0;
                 if (!hasDetail) return null;
                 return (
                   <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-lg text-sm">
                     <div className="flex items-center gap-1.5 text-slate-600 font-semibold mb-2">
-                      <Wrench className="w-3.5 h-3.5" />
-                      Détail réparation
+                      <Wrench className="w-3.5 h-3.5" /> Détail réparation
                     </div>
-                    {ticket.panne_detail && (
-                      <p className="text-slate-600 text-xs mb-1">{ticket.panne_detail}</p>
-                    )}
-                    {repLines.length > 0 && (
-                      <p className="text-slate-600 text-xs">{repLines.map(r => r.label).join(' + ')}</p>
-                    )}
+                    {ticket.panne_detail && <p className="text-slate-600 text-xs mb-1">{ticket.panne_detail}</p>}
+                    {repLines.length > 0 && <p className="text-slate-600 text-xs">{repLines.map(r => r.label).join(' + ')}</p>}
                   </div>
                 );
               })()}
 
-              {/* Tarification */}
-              {(() => {
-                let repLines = [];
-                try {
-                  const parsed = JSON.parse(ticket.reparation_supp || '[]');
-                  if (Array.isArray(parsed)) repLines = parsed.filter(r => r.label);
-                } catch { /* legacy */ }
-
-                // Use parsed lines if available, fallback to legacy
-                let lines = [];
-                if (repLines.length > 0) {
-                  lines = repLines.map(r => ({ label: r.label, prix: Number(r.prix || 0) }));
-                } else {
-                  const devis = Number(ticket.devis_estime || 0);
-                  if (devis > 0) lines.push({ label: ticket.panne || 'Réparation', prix: devis });
-                  const prixSupp = Number(ticket.prix_supp || 0);
-                  if (ticket.reparation_supp && prixSupp > 0) lines.push({ label: ticket.reparation_supp, prix: prixSupp });
-                }
+              {/* Tarification (visible sauf en attente d'accord — là c'est le bloc devis qui prend le relais) */}
+              {!isAccordClient && (() => {
+                const lines = getRepairLines();
                 const subtotal = lines.reduce((s, l) => s + l.prix, 0);
                 if (subtotal <= 0) return null;
                 const acompte = Number(ticket.acompte || 0);
@@ -296,36 +329,26 @@ export default function SuiviPage() {
                 return (
                   <div className="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-sm">
                     <div className="flex items-center gap-1.5 text-emerald-700 font-semibold mb-2">
-                      <CreditCard className="w-3.5 h-3.5" />
-                      Tarification
+                      <CreditCard className="w-3.5 h-3.5" /> Tarification
                     </div>
                     <div className="space-y-1">
                       {lines.map((l, i) => (
                         <div key={i} className="flex justify-between text-slate-700">
-                          <span>{l.label}</span>
-                          <span className="font-medium">{formatPrix(l.prix)}</span>
+                          <span>{l.label}</span><span className="font-medium">{formatPrix(l.prix)}</span>
                         </div>
                       ))}
                       {reduction > 0 && (
                         <div className="flex justify-between text-emerald-600 text-xs">
-                          <span>Réduction{redPct > 0 ? ` (${redPct}%)` : ''}</span>
-                          <span>- {formatPrix(reduction)}</span>
+                          <span>Réduction{redPct > 0 ? ` (${redPct}%)` : ''}</span><span>- {formatPrix(reduction)}</span>
                         </div>
                       )}
                       <div className="border-t border-emerald-200 pt-1 mt-1 flex justify-between font-bold text-emerald-800">
-                        <span>Total</span>
-                        <span>{formatPrix(total)}</span>
+                        <span>Total</span><span>{formatPrix(total)}</span>
                       </div>
                       {acompte > 0 && (
                         <>
-                          <div className="flex justify-between text-slate-500 text-xs">
-                            <span>Acompte versé</span>
-                            <span>- {formatPrix(acompte)}</span>
-                          </div>
-                          <div className="flex justify-between font-bold text-emerald-900">
-                            <span>Reste à payer</span>
-                            <span>{formatPrix(reste)}</span>
-                          </div>
+                          <div className="flex justify-between text-slate-500 text-xs"><span>Acompte versé</span><span>- {formatPrix(acompte)}</span></div>
+                          <div className="flex justify-between font-bold text-emerald-900"><span>Reste à payer</span><span>{formatPrix(reste)}</span></div>
                         </>
                       )}
                     </div>
@@ -340,80 +363,191 @@ export default function SuiviPage() {
               )}
             </div>
 
-            {/* Commande de pièce — visible si existe */}
+            {/* ── BLOC DEVIS À VALIDER ── */}
+            {isAccordClient && !devisResult && (() => {
+              const lines = getRepairLines();
+              const subtotal = lines.reduce((s, l) => s + l.prix, 0);
+              const redPct = Number(ticket.reduction_pourcentage || 0);
+              const redMnt = Number(ticket.reduction_montant || 0);
+              const reduction = redPct > 0 ? subtotal * (redPct / 100) : redMnt;
+              const totalTTC = Math.max(0, subtotal - reduction);
+              const ht = totalTTC / 1.20;
+              const tva = totalTTC - ht;
+              return (
+                <div className="card p-6 border-2 border-orange-300 bg-orange-50 animate-in">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-orange-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-orange-800">📋 Devis à valider</h3>
+                      <p className="text-xs text-orange-600">Veuillez accepter ou refuser le devis ci-dessous</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    {lines.map((l, i) => (
+                      <div key={i} className="flex justify-between text-sm">
+                        <span className="text-slate-700">{l.label}</span>
+                        <span className="font-semibold text-slate-800">{formatPrix(l.prix)}</span>
+                      </div>
+                    ))}
+                    {reduction > 0 && (
+                      <div className="flex justify-between text-sm text-emerald-600">
+                        <span>Réduction{redPct > 0 ? ` (${redPct}%)` : ''}</span>
+                        <span>- {formatPrix(reduction)}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-orange-200 pt-2 mt-2 space-y-1">
+                      <div className="flex justify-between text-sm text-slate-600"><span>HT</span><span>{formatPrix(ht)}</span></div>
+                      <div className="flex justify-between text-sm text-slate-600"><span>TVA (20%)</span><span>{formatPrix(tva)}</span></div>
+                      <div className="flex justify-between text-base font-extrabold text-orange-800 border-t border-orange-200 pt-1">
+                        <span>Total TTC</span><span>{formatPrix(totalTTC)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => handleDevisValidation(true)} disabled={devisLoading}
+                      className="flex-1 py-3 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
+                      <CheckCircle2 className="w-4 h-4" /> J'accepte
+                    </button>
+                    <button onClick={() => handleDevisValidation(false)} disabled={devisLoading}
+                      className="flex-1 py-3 rounded-xl bg-red-100 text-red-700 text-sm font-bold border-2 border-red-300 hover:bg-red-200 transition-colors flex items-center justify-center gap-2">
+                      <XCircle className="w-4 h-4" /> Je refuse
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {devisResult === 'accepted' && (
+              <div className="card p-5 bg-emerald-50 border border-emerald-300 text-center animate-in">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
+                <p className="text-lg font-bold text-emerald-800">Devis accepté !</p>
+                <p className="text-sm text-emerald-600 mt-1">La réparation de votre appareil va être lancée.</p>
+              </div>
+            )}
+            {devisResult === 'refused' && (
+              <div className="card p-5 bg-red-50 border border-red-300 text-center animate-in">
+                <XCircle className="w-10 h-10 text-red-400 mx-auto mb-2" />
+                <p className="text-lg font-bold text-red-800">Devis refusé</p>
+                <p className="text-sm text-red-600 mt-1">Notre équipe va vous contacter pour discuter des alternatives.</p>
+              </div>
+            )}
+
+            {/* Commande de pièce */}
             {commandes.map(cmd => {
-              const isReceived = cmd.statut === 'Reçue';
+              const isReceived = cmd.statut === 'Reçue' || cmd.statut === 'Reçu';
               const isDone = ['Réparation terminée', 'Rendu au client', 'Clôturé'].includes(ticket.statut);
               if (isDone) return null;
               return isReceived ? (
                 <div key={cmd.id} className="card p-5 bg-green-50 border border-green-200">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-                      <Package className="w-4 h-4 text-green-600" />
-                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center"><Package className="w-4 h-4 text-green-600" /></div>
                     <span className="font-bold text-sm text-green-800">Pièce reçue</span>
                   </div>
-                  <div className="text-sm font-semibold text-slate-700">{cmd.piece}</div>
-                  {cmd.date_reception && (
-                    <div className="text-xs text-green-600 mt-1">
-                      Reçue le {formatDate(cmd.date_reception)}
-                    </div>
-                  )}
-                  <div className="text-xs text-slate-500 mt-2">
-                    La réparation de votre appareil va être lancée rapidement.
-                  </div>
+                  <div className="text-sm font-semibold text-slate-700">{cmd.piece || cmd.description}</div>
+                  {cmd.date_reception && <div className="text-xs text-green-600 mt-1">Reçue le {formatDate(cmd.date_reception)}</div>}
+                  <div className="text-xs text-slate-500 mt-2">La réparation va être lancée rapidement.</div>
                 </div>
               ) : (
                 <div key={cmd.id} className="card p-5 bg-amber-50 border border-amber-200">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
-                      <Truck className="w-4 h-4 text-amber-600" />
-                    </div>
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center"><Truck className="w-4 h-4 text-amber-600" /></div>
                     <span className="font-bold text-sm text-amber-800">Pièce en cours d'acheminement</span>
                   </div>
-                  <div className="text-sm font-semibold text-slate-700">{cmd.piece}</div>
+                  <div className="text-sm font-semibold text-slate-700">{cmd.piece || cmd.description}</div>
                   <div className="flex items-center gap-2 mt-2">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                       cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
-                      cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
-                      'bg-purple-100 text-purple-700'
-                    }`}>
-                      {cmd.statut === 'En attente' ? 'En attente de commande' :
-                       cmd.statut === 'Commandée' ? 'Commandée' : 'Expédiée'}
-                    </span>
+                      cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'
+                    }`}>{cmd.statut === 'En attente' ? 'En attente' : cmd.statut === 'Commandée' ? 'Commandée' : 'Expédiée'}</span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-2">
-                    Nous vous préviendrons dès réception pour lancer la réparation.
-                  </div>
+                  <div className="text-xs text-slate-500 mt-2">Nous vous préviendrons dès réception.</div>
                 </div>
               );
             })}
 
+            {/* ── BLOC AVIS CLIENT ── */}
+            {isTerminal && !hasAvis && !avisSent && (
+              <div className="card p-6 border-2 border-brand-200 bg-brand-50/50 animate-in">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-bold text-slate-800">⭐ Notez votre expérience</h3>
+                  <p className="text-sm text-slate-500 mt-0.5">Votre avis nous aide à nous améliorer</p>
+                </div>
+                <div className="flex justify-center gap-1 mb-4">
+                  {[1,2,3,4,5].map(n => (
+                    <button key={n}
+                      onMouseEnter={() => setAvisHover(n)}
+                      onMouseLeave={() => setAvisHover(0)}
+                      onClick={() => setAvisNote(n)}
+                      className="p-1 transition-transform hover:scale-110"
+                    >
+                      <Star className={`w-8 h-8 ${(avisHover || avisNote) >= n ? 'text-yellow-400 fill-yellow-400' : 'text-slate-300'} transition-colors`} />
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  value={avisComment} onChange={e => setAvisComment(e.target.value)}
+                  placeholder="Un commentaire ? (optionnel)"
+                  className="input w-full resize-none mb-3" rows={2}
+                />
+                <button onClick={handleSubmitAvis} disabled={avisNote === 0 || avisLoading}
+                  className="w-full py-3 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors disabled:opacity-50">
+                  Envoyer mon avis
+                </button>
+              </div>
+            )}
+            {(avisSent || (isTerminal && hasAvis)) && (
+              <div className="card p-5 bg-brand-50 border border-brand-200 text-center animate-in">
+                <Star className="w-8 h-8 text-yellow-400 fill-yellow-400 mx-auto mb-2" />
+                <p className="text-base font-bold text-brand-800">Merci pour votre avis !</p>
+                <p className="text-sm text-brand-600 mt-0.5">Il a été transmis à notre équipe.</p>
+              </div>
+            )}
+
             {/* Fidélité */}
             <FideliteCard ticketCode={ticket.ticket_code} compact />
-
-            {/* Jeu de grattage */}
             <ScratchCard ticketCode={ticket.ticket_code} />
 
-            {/* Auto-refresh indicator */}
+            {/* ── MESSAGE CLIENT ── */}
+            <div className="card p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <MessageCircle className="w-4 h-4 text-brand-600" />
+                <h3 className="text-sm font-semibold text-slate-800">Envoyer un message</h3>
+              </div>
+              {msgSent && (
+                <div className="mb-3 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-medium text-center">
+                  Message envoyé ! L'équipe le verra sur votre fiche.
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input type="text" value={message} onChange={e => setMessage(e.target.value)}
+                  placeholder="Votre message..."
+                  className="input flex-1 text-sm"
+                  onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+                />
+                <button onClick={handleSendMessage} disabled={!message.trim() || sendingMsg}
+                  className="btn-primary px-4 shrink-0">
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Auto-refresh */}
             <div className="flex items-center justify-center gap-2 text-xs text-slate-400">
               <RefreshCw className="w-3 h-3" />
               <span>Mise à jour automatique toutes les 30s</span>
-              {lastRefresh && (
-                <span>— {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
-              )}
+              {lastRefresh && <span>— {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>}
             </div>
 
             {/* Contact */}
             <div className="card p-6 text-center">
               <p className="text-sm text-slate-500 mb-3">Une question sur votre réparation ?</p>
               <div className="flex items-center justify-center gap-2 text-lg font-bold text-slate-900">
-                <Phone className="w-5 h-5 text-brand-600" />
-                04 79 60 89 22
+                <Phone className="w-5 h-5 text-brand-600" /> 04 79 60 89 22
               </div>
               <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 mt-2">
-                <MapPin className="w-3 h-3" />
-                79 Place Saint Léger, Chambéry
+                <MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry
               </div>
             </div>
           </div>

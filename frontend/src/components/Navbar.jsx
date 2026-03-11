@@ -20,6 +20,7 @@ export default function Navbar() {
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
+  const [interactionCount, setInteractionCount] = useState(0);
   const [moduleDevis, setModuleDevis] = useState(false);
   const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
   const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
@@ -37,6 +38,9 @@ export default function Navbar() {
         .catch(() => {});
       api.getAvisGoogleStats()
         .then(s => setAvisNonRepondus(s?.non_repondus || 0))
+        .catch(() => {});
+      api.getInteractions()
+        .then(d => setInteractionCount(d?.total_actions || 0))
         .catch(() => {});
     };
     fetchKpi();
@@ -63,7 +67,7 @@ export default function Navbar() {
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
 
   const navItems = [
-    { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount },
+    { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
@@ -168,10 +172,10 @@ export default function Navbar() {
         {/* Navigation */}
         <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto scrollbar-none">
           {!collapsed && <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Menu</p>}
-          {navItems.map(({ path, label, icon: Icon, badge }) => (
+          {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => (
             <button key={path} onClick={() => handleNav(path)}
               title={collapsed ? label : undefined}
-              className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+              className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 relative
                 ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
                 ${isActive(path)
                   ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
@@ -185,9 +189,19 @@ export default function Navbar() {
                   {badge}
                 </span>
               )}
+              {!collapsed && alertBadge > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                  {alertBadge}
+                </span>
+              )}
               {collapsed && badge > 0 && (
                 <span className="absolute -top-1 -right-1 bg-brand-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                   {badge > 9 ? '9+' : badge}
+                </span>
+              )}
+              {collapsed && alertBadge > 0 && !badge && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {alertBadge > 9 ? '9+' : alertBadge}
                 </span>
               )}
             </button>

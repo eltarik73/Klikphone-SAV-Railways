@@ -15,11 +15,12 @@ const DEFAULT_TEMPLATES = [
   { id: 8, label: "Non reparable", message: "Bonjour {prenom}, malheureusement votre {appareil} n'est pas reparable. Vous pouvez passer recuperer votre appareil en boutique. Klikphone" },
   { id: 9, label: "Rappel RDV", message: "Bonjour {prenom}, nous vous rappelons votre rendez-vous demain pour votre {appareil}. Klikphone 79 Place Saint Leger, Chambery" },
   { id: 10, label: "Personnalise", message: "" },
+  { id: 11, label: "Demander avis Google", message: "Bonjour {prenom},\n\nMerci d'avoir fait confiance à Klikphone pour la réparation de votre {appareil} ! 🙏\n\nSi vous êtes satisfait de nos services, nous serions très reconnaissants si vous pouviez nous laisser un avis Google :\n\n👉 {lien_avis}\n\nVotre avis nous aide énormément ! Merci et à bientôt 😊\n\nL'équipe Klikphone" },
 ];
 
 const TEMPLATE_ICONS = {
   1: '📱', 2: '🔍', 3: '📋', 4: '🔧', 5: '⏳',
-  6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️',
+  6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️', 11: '⭐',
 };
 
 export default function MessageComposer({ ticket, onMessageSent }) {
@@ -29,11 +30,19 @@ export default function MessageComposer({ ticket, onMessageSent }) {
   const [selectedId, setSelectedId] = useState(null);
   const [customText, setCustomText] = useState('');
   const [sending, setSending] = useState(null);
+  const [googleReviewLink, setGoogleReviewLink] = useState('https://g.page/r/Cf6adrBONrj3EAE/review');
 
   useEffect(() => {
     api.getMessageTemplates()
       .then(data => {
         if (data && data.length > 0) setTemplates(data);
+      })
+      .catch(() => {});
+    api.getConfig()
+      .then(cfg => {
+        const map = {};
+        (Array.isArray(cfg) ? cfg : []).forEach(p => { map[p.cle] = p.valeur; });
+        if (map.GOOGLE_REVIEW_LINK) setGoogleReviewLink(map.GOOGLE_REVIEW_LINK);
       })
       .catch(() => {});
   }, []);
@@ -46,6 +55,8 @@ export default function MessageComposer({ ticket, onMessageSent }) {
   const reduction = redPct > 0 ? baseMontant * (redPct / 100) : redMnt;
   const montant = Math.max(0, baseMontant - reduction);
 
+  const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
+
   const replaceVars = (msg) => {
     return msg
       .replace(/\{prenom\}/g, t.client_prenom || '')
@@ -55,12 +66,21 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       .replace(/\{montant\}/g, String(montant))
       .replace(/\{adresse\}/g, '79 Place Saint Leger, 73000 Chambery')
       .replace(/\{horaires\}/g, 'Lundi-Samedi 10h-19h')
-      .replace(/\{tel_boutique\}/g, '04 79 60 89 22');
+      .replace(/\{tel_boutique\}/g, '04 79 60 89 22')
+      .replace(/\{lien_avis\}/g, googleReviewLink)
+      .replace(/\{lien_suivi\}/g, suiviUrl);
+  };
+
+  const appendSuiviLink = (msg) => {
+    if (!t.ticket_code || msg.includes(suiviUrl)) return msg;
+    return `${msg}\n\n📱 Suivez votre réparation : ${suiviUrl}`;
   };
 
   const selected = templates.find(tp => tp.id === selectedId);
   const isCustom = selectedId === 10;
-  const previewText = isCustom ? customText : (selected ? replaceVars(selected.message) : '');
+  const isAvisTemplate = selectedId === 11;
+  const rawText = isCustom ? customText : (selected ? replaceVars(selected.message) : '');
+  const previewText = isAvisTemplate ? rawText : appendSuiviLink(rawText);
 
   const sendWhatsApp = (telephone, message) => {
     let tel = telephone.replace(/[\s\-\.]/g, '');
@@ -103,6 +123,9 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       const auteur = user?.utilisateur || 'Accueil';
       const label = selected ? selected.label : 'Message';
       const logText = `[${label}] ${previewText.substring(0, 120)}${previewText.length > 120 ? '...' : ''}`;
+      if (isAvisTemplate) {
+        await api.addPrivateNote(t.id, auteur, `[Demande avis Google] Envoyé par ${canal}`);
+      }
       await api.logMessage(t.id, auteur, logText, canal);
 
       toast.success(canal === 'email' ? 'Email envoyé avec succès' : `Message ${canal} envoyé`);

@@ -8,7 +8,7 @@ import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
-  SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe,
+  SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -226,6 +226,9 @@ export default function DashboardPage() {
     return parts?.length ?? 0;
   }, { tags: ['commandes'], ttl: 60_000 });
 
+  // SWR: Interactions clients
+  const { data: interactions } = useApi('dashboard:interactions', () => api.getInteractions(), { tags: ['interactions'], ttl: 30_000 });
+
   const kpiCards = kpi ? [
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', iconBg: 'bg-brand-100' },
     { label: 'Diagnostic', value: kpi.en_attente_diagnostic, icon: Search, color: 'text-amber-600', iconBg: 'bg-amber-100', filter: 'En attente de diagnostic' },
@@ -364,6 +367,48 @@ export default function DashboardPage() {
           </div>
           <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-500 transition-colors" />
         </button>
+      )}
+
+      {/* Interactions clients */}
+      {interactions && interactions.total_actions > 0 && (
+        <div className="card p-4 mb-6 border border-brand-200 bg-brand-50/30">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageCircle className="w-4 h-4 text-brand-600" />
+            <h3 className="text-sm font-semibold text-slate-800">Interactions clients</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {interactions.devis_en_attente > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
+                <span className="text-lg">⏳</span>
+                <div><p className="text-sm font-bold text-orange-800">{interactions.devis_en_attente}</p><p className="text-[10px] text-orange-600">Devis en attente</p></div>
+              </div>
+            )}
+            {interactions.devis_acceptes > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg border border-emerald-200">
+                <span className="text-lg">✅</span>
+                <div><p className="text-sm font-bold text-emerald-800">{interactions.devis_acceptes}</p><p className="text-[10px] text-emerald-600">Acceptés auj.</p></div>
+              </div>
+            )}
+            {interactions.devis_refuses > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
+                <span className="text-lg">❌</span>
+                <div><p className="text-sm font-bold text-red-800">{interactions.devis_refuses}</p><p className="text-[10px] text-red-600">Refusés auj.</p></div>
+              </div>
+            )}
+            {interactions.messages_non_lus > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                <span className="text-lg">💬</span>
+                <div><p className="text-sm font-bold text-blue-800">{interactions.messages_non_lus}</p><p className="text-[10px] text-blue-600">Messages non lus</p></div>
+              </div>
+            )}
+            {interactions.avis_today > 0 && (
+              <div className="flex items-center gap-2 p-2 bg-yellow-50 rounded-lg border border-yellow-200">
+                <span className="text-lg">⭐</span>
+                <div><p className="text-sm font-bold text-yellow-800">{interactions.avis_today}</p><p className="text-[10px] text-yellow-600">Avis reçus</p></div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Search & Filters */}

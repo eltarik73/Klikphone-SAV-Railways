@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi
 
 
 @asynccontextmanager
@@ -173,6 +173,7 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS est_retour_sav BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_original_id INTEGER",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
+        "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
     ]:
         try:
             with get_cursor() as cur:
@@ -269,6 +270,10 @@ async def lifespan(app: FastAPI):
                 INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', 'caramail')
                 ON CONFLICT (cle) DO NOTHING
             """)
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
+                ON CONFLICT (cle) DO NOTHING
+            """)
     except Exception as e:
         print(f"Warning ADMIN_PASSWORD default: {e}")
 
@@ -329,6 +334,7 @@ app.include_router(autocomplete.router)
 app.include_router(devis.router)
 app.include_router(reporting.router)
 app.include_router(depot_distance.router)
+app.include_router(suivi.router)
 
 
 # --- HEALTH CHECK ---
