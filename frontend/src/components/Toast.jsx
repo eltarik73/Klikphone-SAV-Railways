@@ -54,12 +54,13 @@ function ToastItem({ toast, onDismiss }) {
   );
 }
 
+let _toastIdCounter = 0;
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
-  let idCounter = 0;
 
   const addToast = useCallback((type, message, options = {}) => {
-    const id = Date.now() + (idCounter++);
+    const id = Date.now() + (_toastIdCounter++);
     setToasts(prev => [...prev, { id, type, message, ...options }]);
   }, []);
 

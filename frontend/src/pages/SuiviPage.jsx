@@ -78,6 +78,7 @@ export default function SuiviPage() {
   useEffect(() => {
     const ticketParam = searchParams.get('ticket') || searchParams.get('tel');
     if (ticketParam) doSearch(ticketParam);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -94,12 +94,20 @@ async def change_pin(data: PinChangeRequest, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+ALLOWED_BACKUP_TABLES = frozenset([
+    "clients", "tickets", "params", "membres_equipe", "commandes_pieces",
+    "catalog_marques", "catalog_modeles", "historique", "chat_messages",
+    "notes_tickets", "autocompletion", "devis", "devis_lignes",
+    "telephones_vente", "fidelite_historique",
+])
+
+
 @router.get("/backup")
 async def export_backup(user: dict = Depends(get_current_user)):
     """Exporte toute la BDD au format JSON pour backup."""
     tables = {}
     with get_cursor() as cur:
-        for table in ["clients", "tickets", "params", "membres_equipe", "commandes_pieces", "catalog_marques", "catalog_modeles", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]:
+        for table in ALLOWED_BACKUP_TABLES:
             try:
                 cur.execute(f"SELECT * FROM {table}")
                 rows = cur.fetchall()
@@ -135,15 +143,20 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         # Supprimer dans l'ordre inverse (FK)
         for table in reversed(import_order):
+            if table not in ALLOWED_BACKUP_TABLES:
+                continue
             if table in tables:
                 cur.execute(f"DELETE FROM {table}")
 
         for table in import_order:
+            if table not in ALLOWED_BACKUP_TABLES:
+                continue
             rows = tables.get(table, [])
             if not rows:
                 counts[table] = 0
                 continue
-            cols = list(rows[0].keys())
+            # Whitelist column names: only allow alphanumeric + underscore
+            cols = [c for c in rows[0].keys() if c.replace("_", "").isalnum()]
             placeholders = ", ".join(["%s"] * len(cols))
             col_names = ", ".join(cols)
             for row in rows:
@@ -152,7 +165,9 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             counts[table] = len(rows)
 
         # Reset sequences
-        for table in ["clients", "tickets", "membres_equipe", "commandes_pieces", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]:
+        for table in import_order:
+            if table not in ALLOWED_BACKUP_TABLES or table == "params":
+                continue
             try:
                 cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table}")
             except Exception:

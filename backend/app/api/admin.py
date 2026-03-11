@@ -266,6 +266,7 @@ async def get_affluence_heure(
             FROM tickets
             WHERE date_depot IS NOT NULL
               AND date_depot::date >= %(start)s::date
+              AND date_depot::date <= %(end_d)s::date
         """, {"start": ds, "end_d": de})
         nb_jours = max(cur.fetchone()["nb_jours"], 1)
 
@@ -275,6 +276,7 @@ async def get_affluence_heure(
             FROM tickets
             WHERE date_depot IS NOT NULL
               AND date_depot::date >= %(start)s::date
+              AND date_depot::date <= %(end_d)s::date
               AND EXTRACT(HOUR FROM date_depot) BETWEEN 8 AND 19
             GROUP BY EXTRACT(HOUR FROM date_depot)
             ORDER BY heure
@@ -322,16 +324,16 @@ async def get_affluence_jour(
             FROM tickets
             WHERE date_depot IS NOT NULL
               AND date_depot::date >= %(start)s::date
+              AND date_depot::date <= %(end_d)s::date
             GROUP BY EXTRACT(ISODOW FROM date_depot)
             ORDER BY dow
         """, {"start": ds, "end_d": de})
         raw = {}
         for r in cur.fetchall():
-            # Calculate number of that weekday in the period
-            nb_weeks = max(90 // 7, 1)
+            nb_jours = max(r["nb_jours_distincts"], 1)
             raw[r["dow"]] = {
                 "total": r["total"],
-                "moyenne": round(r["total"] / nb_weeks, 1),
+                "moyenne": round(r["total"] / nb_jours, 1),
             }
 
     result = []

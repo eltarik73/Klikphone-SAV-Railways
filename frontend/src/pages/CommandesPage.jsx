@@ -7,7 +7,7 @@ import { formatDateShort, formatPrix, waLink, smsLink } from '../lib/utils';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
-  Truck, RotateCcw, Wrench, Archive, ShoppingCart, UserCheck,
+  Truck, Wrench, Archive, ShoppingCart, UserCheck,
   MessageSquare, Send,
 } from 'lucide-react';
 
@@ -153,7 +153,7 @@ export default function CommandesPage() {
     try {
       await api.updatePart(part.id, { statut: newStatut });
       invalidateCache('commandes');
-      setToast({ type: 'success', msg: `Statut \u2192 ${newStatut}` });
+      setToast({ type: 'success', msg: `Statut → ${newStatut}` });
 
       // If changed to "Reçu", show notification modal
       if (newStatut === 'Reçu' && part.client_tel) {
@@ -178,7 +178,7 @@ export default function CommandesPage() {
   const getNotifMessage = (part) => {
     const clientName = [part.client_prenom, part.client_nom].filter(Boolean).join(' ') || 'client';
     const model = [part.marque, part.modele || part.modele_autre].filter(Boolean).join(' ') || 'appareil';
-    return `Bonjour ${clientName}, la pi\u00e8ce pour votre ${model} est arriv\u00e9e ! Merci de prendre rendez-vous pour la r\u00e9paration. KLIKPHONE - 04 79 60 89 22`;
+    return `Bonjour ${clientName}, la pièce pour votre ${model} est arrivée ! Merci de prendre rendez-vous pour la réparation. KLIKPHONE - 04 79 60 89 22`;
   };
 
   const handleNotifSMS = async () => {
@@ -190,7 +190,7 @@ export default function CommandesPage() {
     // Add note to ticket
     if (notifPart.ticket_id) {
       try {
-        await api.addNote(notifPart.ticket_id, '[PI\u00c8CE] Pi\u00e8ce re\u00e7ue \u2014 Client notifi\u00e9 par SMS');
+        await api.addNote(notifPart.ticket_id, '[PIÈCE] Pièce reçue — Client notifié par SMS');
       } catch (err) {
         console.error('Erreur ajout note:', err);
       }
@@ -208,7 +208,7 @@ export default function CommandesPage() {
     // Add note to ticket
     if (notifPart.ticket_id) {
       try {
-        await api.addNote(notifPart.ticket_id, '[PI\u00c8CE] Pi\u00e8ce re\u00e7ue \u2014 Client notifi\u00e9 par WhatsApp');
+        await api.addNote(notifPart.ticket_id, '[PIÈCE] Pièce reçue — Client notifié par WhatsApp');
       } catch (err) {
         console.error('Erreur ajout note:', err);
       }
@@ -401,7 +401,7 @@ export default function CommandesPage() {
               const StatusIcon = conf.icon;
               const clientFullName = [p.client_prenom, p.client_nom].filter(Boolean).join(' ');
               const modelText = [p.marque, p.modele || p.modele_autre].filter(Boolean).join(' ');
-              const panneText = p.panne || '\u2014';
+              const panneText = p.panne || '—';
 
               return (
                 <div key={p.id}
@@ -421,18 +421,18 @@ export default function CommandesPage() {
 
                   {/* Modèle */}
                   <div className="hidden lg:block min-w-0">
-                    <p className="text-sm text-slate-600 truncate" title={modelText}>{modelText || '\u2014'}</p>
+                    <p className="text-sm text-slate-600 truncate" title={modelText}>{modelText || '—'}</p>
                   </div>
 
                   {/* Client */}
                   <div className="hidden lg:block min-w-0">
-                    <p className="text-sm text-slate-700 truncate" title={clientFullName}>{clientFullName || '\u2014'}</p>
+                    <p className="text-sm text-slate-700 truncate" title={clientFullName}>{clientFullName || '—'}</p>
                     {p.client_tel && <p className="text-[11px] text-slate-400 font-mono">{p.client_tel}</p>}
                   </div>
 
                   {/* Fournisseur */}
                   <div className="hidden lg:block min-w-0">
-                    <p className="text-sm text-slate-600 truncate" title={p.fournisseur || '\u2014'}>{p.fournisseur || '\u2014'}</p>
+                    <p className="text-sm text-slate-600 truncate" title={p.fournisseur || '—'}>{p.fournisseur || '—'}</p>
                   </div>
 
                   {/* Panne */}
@@ -442,14 +442,14 @@ export default function CommandesPage() {
 
                   {/* Prix */}
                   <div className="hidden lg:block text-right">
-                    <p className="text-sm font-medium text-slate-800">{p.prix ? formatPrix(p.prix) : '\u2014'}</p>
+                    <p className="text-sm font-medium text-slate-800">{p.prix ? formatPrix(p.prix) : '—'}</p>
                   </div>
 
                   {/* Dates */}
                   <div className="hidden lg:block">
                     <p className="text-[11px] text-slate-500">
                       <Calendar className="w-3 h-3 inline mr-0.5" />
-                      {p.date_creation ? formatDateShort(p.date_creation) : '\u2014'}
+                      {p.date_creation ? formatDateShort(p.date_creation) : '—'}
                     </p>
                     {p.date_commande && (
                       <p className="text-[10px] text-blue-500">Cmd: {formatDateShort(p.date_commande)}</p>

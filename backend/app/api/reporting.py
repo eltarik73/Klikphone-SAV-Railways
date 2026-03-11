@@ -90,8 +90,8 @@ async def get_reporting(
         # ═══ 6. Top Modeles ═══
         top_modeles = _compute_top_modeles(cur, debut, fin)
 
-    # ═══ 7. Retours SAV ═══
-    retours_sav = _compute_retours_sav(cur, debut, fin)
+        # ═══ 7. Retours SAV ═══
+        retours_sav = _compute_retours_sav(cur, debut, fin)
 
     return {
         "kpis": kpis,

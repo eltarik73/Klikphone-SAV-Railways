@@ -1,4 +1,4 @@
-const CACHE_NAME = 'klikphone-v3';
+const CACHE_NAME = 'klikphone-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
