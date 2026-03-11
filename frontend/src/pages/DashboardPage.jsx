@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [bulkStatus, setBulkStatus] = useState('');
   const [showBulkMenu, setShowBulkMenu] = useState(false);
   const [filterTech, setFilterTech] = useState('');
+  const [interactionFilter, setInteractionFilter] = useState(null); // 'accord_client' | 'messages' | 'avis' | null
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
   const [sortField, setSortField] = useState('date_depot');
   const [sortDir, setSortDir] = useState('desc');
@@ -171,16 +172,41 @@ export default function DashboardPage() {
     return null;
   };
 
+  // Build lookup: ticket_id → set of interaction types
+  const ticketInteractions = useMemo(() => {
+    if (!interactions) return {};
+    const map = {};
+    for (const key of ['accord_client', 'messages', 'avis']) {
+      const ids = interactions[key]?.ticket_ids || [];
+      for (const tid of ids) {
+        if (!map[tid]) map[tid] = new Set();
+        map[tid].add(key);
+      }
+    }
+    return map;
+  }, [interactions]);
+
+  // Build set of ticket IDs for active interaction filter
+  const interactionTicketIds = useMemo(() => {
+    if (!interactionFilter || !interactions) return null;
+    const cat = interactions[interactionFilter];
+    return cat?.ticket_ids ? new Set(cat.ticket_ids) : null;
+  }, [interactionFilter, interactions]);
+
   const filteredTickets = useMemo(() => {
+    let list = tickets;
     if (filterTech === '__mine__' && techName) {
-      return tickets.filter(t =>
+      list = list.filter(t =>
         matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
       );
     } else if (filterTech) {
-      return tickets.filter(t => matchTech(t.technicien_assigne, filterTech));
+      list = list.filter(t => matchTech(t.technicien_assigne, filterTech));
     }
-    return tickets;
-  }, [tickets, filterTech, techName]);
+    if (interactionTicketIds) {
+      list = list.filter(t => interactionTicketIds.has(t.id));
+    }
+    return list;
+  }, [tickets, filterTech, techName, interactionTicketIds]);
 
   const activeTickets = useMemo(() => filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
@@ -369,43 +395,45 @@ export default function DashboardPage() {
         </button>
       )}
 
-      {/* Interactions clients */}
+      {/* Interactions clients — 3 clickable counters */}
       {interactions && interactions.total_actions > 0 && (
         <div className="card p-4 mb-6 border border-brand-200 bg-brand-50/30">
           <div className="flex items-center gap-2 mb-3">
             <MessageCircle className="w-4 h-4 text-brand-600" />
             <h3 className="text-sm font-semibold text-slate-800">Interactions clients</h3>
+            {interactionFilter && (
+              <button onClick={() => setInteractionFilter(null)} className="ml-auto text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                <X className="w-3 h-3" /> Tout afficher
+              </button>
+            )}
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            {interactions.devis_en_attente > 0 && (
-              <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
-                <span className="text-lg">⏳</span>
-                <div><p className="text-sm font-bold text-orange-800">{interactions.devis_en_attente}</p><p className="text-[10px] text-orange-600">Devis en attente</p></div>
-              </div>
+          <div className="grid grid-cols-3 gap-2">
+            {interactions.accord_client?.count > 0 && (
+              <button onClick={() => setInteractionFilter(interactionFilter === 'accord_client' ? null : 'accord_client')}
+                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
+                  interactionFilter === 'accord_client' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-300' : 'bg-orange-50 border-orange-200 hover:border-orange-300'
+                }`}>
+                <span className="text-lg">📋</span>
+                <div className="text-left"><p className="text-sm font-bold text-orange-800">{interactions.accord_client.count}</p><p className="text-[10px] text-orange-600">Accord client</p></div>
+              </button>
             )}
-            {interactions.devis_acceptes > 0 && (
-              <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-lg border border-emerald-200">
-                <span className="text-lg">✅</span>
-                <div><p className="text-sm font-bold text-emerald-800">{interactions.devis_acceptes}</p><p className="text-[10px] text-emerald-600">Acceptés auj.</p></div>
-              </div>
-            )}
-            {interactions.devis_refuses > 0 && (
-              <div className="flex items-center gap-2 p-2 bg-red-50 rounded-lg border border-red-200">
-                <span className="text-lg">❌</span>
-                <div><p className="text-sm font-bold text-red-800">{interactions.devis_refuses}</p><p className="text-[10px] text-red-600">Refusés auj.</p></div>
-              </div>
-            )}
-            {interactions.messages_non_lus > 0 && (
-              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+            {interactions.messages?.count > 0 && (
+              <button onClick={() => setInteractionFilter(interactionFilter === 'messages' ? null : 'messages')}
+                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
+                  interactionFilter === 'messages' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-300' : 'bg-blue-50 border-blue-200 hover:border-blue-300'
+                }`}>
                 <span className="text-lg">💬</span>
-                <div><p className="text-sm font-bold text-blue-800">{interactions.messages_non_lus}</p><p className="text-[10px] text-blue-600">Messages non lus</p></div>
-              </div>
+                <div className="text-left"><p className="text-sm font-bold text-blue-800">{interactions.messages.count}</p><p className="text-[10px] text-blue-600">Messages non lus</p></div>
+              </button>
             )}
-            {interactions.avis_today > 0 && (
-              <div className="flex items-center gap-2 p-2 bg-yellow-50 rounded-lg border border-yellow-200">
+            {interactions.avis?.count > 0 && (
+              <button onClick={() => setInteractionFilter(interactionFilter === 'avis' ? null : 'avis')}
+                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
+                  interactionFilter === 'avis' ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-300' : 'bg-yellow-50 border-yellow-200 hover:border-yellow-300'
+                }`}>
                 <span className="text-lg">⭐</span>
-                <div><p className="text-sm font-bold text-yellow-800">{interactions.avis_today}</p><p className="text-[10px] text-yellow-600">Avis reçus</p></div>
-              </div>
+                <div className="text-left"><p className="text-sm font-bold text-yellow-800">{interactions.avis.count}</p><p className="text-[10px] text-yellow-600">Avis reçus</p></div>
+              </button>
             )}
           </div>
         </div>
@@ -586,6 +614,15 @@ export default function DashboardPage() {
                       <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 text-[9px] font-bold flex items-center gap-0.5" title="Dépôt à distance">
                         <Globe className="w-2.5 h-2.5" /> Dist.
                       </span>
+                    )}
+                    {ticketInteractions[t.id]?.has('accord_client') && (
+                      <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] font-bold flex items-center justify-center" title="Accord client en attente">📋</span>
+                    )}
+                    {ticketInteractions[t.id]?.has('messages') && (
+                      <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center" title="Message client non lu">💬</span>
+                    )}
+                    {ticketInteractions[t.id]?.has('avis') && (
+                      <span className="w-4 h-4 rounded-full bg-yellow-400 text-white text-[8px] font-bold flex items-center justify-center" title="Avis client">⭐</span>
                     )}
                   </div>
                 </div>

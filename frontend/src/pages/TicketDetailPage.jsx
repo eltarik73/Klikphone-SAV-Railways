@@ -231,7 +231,11 @@ export default function TicketDetailPage() {
     }
   }, [id]);
 
-  useEffect(() => { loadTicket(); }, [loadTicket]);
+  useEffect(() => {
+    loadTicket();
+    // Mark client interactions as read
+    api.markTicketRead(id).then(() => invalidateCache('interactions')).catch(() => {});
+  }, [loadTicket]);
 
   const loadNotes = useCallback(async () => {
     try {

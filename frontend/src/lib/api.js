@@ -475,6 +475,7 @@ class ApiClient {
   suiviLaisserAvis(ticketCode, note, commentaire) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/avis`, { note, commentaire }); }
   suiviHasAvis(ticketCode) { return this.get(`/api/suivi/${encodeURIComponent(ticketCode)}/has-avis`); }
   getInteractions() { return this.get('/api/suivi/dashboard/interactions'); }
+  markTicketRead(ticketId) { return this.put(`/api/tickets/${ticketId}/mark-read`, {}); }
 
   // ─── TELEPHONES ─────────────────────────────
   getTelephonesCatalogue(params = {}) {

@@ -666,6 +666,19 @@ async def update_private_note(
     return {"ok": True}
 
 
+# ─── MARK INTERACTIONS READ ───────────────────────────────────────
+@router.put("/{ticket_id}/mark-read")
+async def mark_ticket_read(ticket_id: int):
+    """Marque toutes les interactions client (message, devis, avis) comme lues."""
+    with get_cursor() as cur:
+        cur.execute("""
+            UPDATE notes_tickets SET is_read = TRUE
+            WHERE ticket_id = %s AND (is_read = FALSE OR is_read IS NULL)
+            AND type_note IN ('message_client', 'validation_devis', 'avis_client')
+        """, (ticket_id,))
+    return {"ok": True}
+
+
 # ─── LOG MESSAGE ENVOYÉ ──────────────────────────────────────────
 @router.post("/{ticket_id}/message-log", response_model=dict)
 async def log_message(

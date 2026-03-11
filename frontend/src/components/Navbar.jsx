@@ -40,7 +40,7 @@ export default function Navbar() {
         .then(s => setAvisNonRepondus(s?.non_repondus || 0))
         .catch(() => {});
       api.getInteractions()
-        .then(d => setInteractionCount(d?.total_actions || 0))
+        .then(d => setInteractionCount(d?.total_actions ?? 0))
         .catch(() => {});
     };
     fetchKpi();

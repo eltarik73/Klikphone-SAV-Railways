@@ -106,49 +106,35 @@ async def laisser_avis(ticket_code: str, body: AvisBody):
 # ─── DASHBOARD INTERACTIONS ──────────────────────────────
 @router.get("/dashboard/interactions")
 async def get_interactions():
-    """Compteurs pour le bloc interactions sur le dashboard."""
+    """3 catégories d'interactions non lues : accord_client, messages, avis."""
     with get_cursor() as cur:
-        # Devis en attente
-        cur.execute("SELECT COUNT(*) as c FROM tickets WHERE statut = %s", ("En attente d'accord client",))
-        devis_en_attente = cur.fetchone()["c"]
-
-        # Devis acceptés aujourd'hui
+        # Accord client (validation_devis non lues)
         cur.execute("""
-            SELECT COUNT(*) as c FROM notes_tickets
-            WHERE type_note = 'validation_devis' AND contenu LIKE '%%accepté%%'
-            AND date_creation::date = CURRENT_DATE
+            SELECT DISTINCT ticket_id FROM notes_tickets
+            WHERE type_note = 'validation_devis' AND (is_read = FALSE OR is_read IS NULL)
         """)
-        devis_acceptes = cur.fetchone()["c"]
-
-        # Devis refusés aujourd'hui
-        cur.execute("""
-            SELECT COUNT(*) as c FROM notes_tickets
-            WHERE type_note = 'validation_devis' AND contenu LIKE '%%refusé%%'
-            AND date_creation::date = CURRENT_DATE
-        """)
-        devis_refuses = cur.fetchone()["c"]
+        accord_ids = [r["ticket_id"] for r in cur.fetchall()]
 
         # Messages clients non lus
         cur.execute("""
-            SELECT COUNT(*) as c FROM notes_tickets
+            SELECT DISTINCT ticket_id FROM notes_tickets
             WHERE type_note = 'message_client' AND (is_read = FALSE OR is_read IS NULL)
         """)
-        messages_non_lus = cur.fetchone()["c"]
+        message_ids = [r["ticket_id"] for r in cur.fetchall()]
 
-        # Avis reçus aujourd'hui
+        # Avis clients non lus
         cur.execute("""
-            SELECT COUNT(*) as c FROM notes_tickets
-            WHERE type_note = 'avis_client' AND date_creation::date = CURRENT_DATE
+            SELECT DISTINCT ticket_id FROM notes_tickets
+            WHERE type_note = 'avis_client' AND (is_read = FALSE OR is_read IS NULL)
         """)
-        avis_today = cur.fetchone()["c"]
+        avis_ids = [r["ticket_id"] for r in cur.fetchall()]
 
+    total = len(accord_ids) + len(message_ids) + len(avis_ids)
     return {
-        "devis_en_attente": devis_en_attente,
-        "devis_acceptes": devis_acceptes,
-        "devis_refuses": devis_refuses,
-        "messages_non_lus": messages_non_lus,
-        "avis_today": avis_today,
-        "total_actions": devis_en_attente + messages_non_lus,
+        "accord_client": {"count": len(accord_ids), "ticket_ids": accord_ids},
+        "messages": {"count": len(message_ids), "ticket_ids": message_ids},
+        "avis": {"count": len(avis_ids), "ticket_ids": avis_ids},
+        "total_actions": total,
     }
 
 
