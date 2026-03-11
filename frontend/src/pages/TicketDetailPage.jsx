@@ -96,6 +96,8 @@ export default function TicketDetailPage() {
 
   // Repair lines (parsed from reparation_supp JSON or legacy)
   const [repairLines, setRepairLines] = useState([]);
+  // Reduction mode: 'pct' or 'eur'
+  const [reductionMode, setReductionMode] = useState('pct');
 
   // Print drawer state
   const [showPrintDrawer, setShowPrintDrawer] = useState(false);
@@ -224,6 +226,7 @@ export default function TicketDetailPage() {
         commande_piece: data.commande_piece || 0,
       });
       setRepairLines(parseRepairLines(data));
+      setReductionMode(parseFloat(data.reduction_montant) > 0 && !parseFloat(data.reduction_pourcentage) ? 'eur' : 'pct');
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
     } catch (err) {
       console.error(err);
@@ -375,9 +378,9 @@ export default function TicketDetailPage() {
     try {
       const totalLines = lines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
       const reparationsJson = JSON.stringify(lines.filter(l => l.label));
-      let reductionAmount = parseFloat(formData.reduction_montant) || 0;
       const reductionPct = parseFloat(formData.reduction_pourcentage) || 0;
-      if (reductionPct > 0) reductionAmount = totalLines * (reductionPct / 100);
+      const reductionEur = parseFloat(formData.reduction_montant) || 0;
+      const reductionAmount = reductionMode === 'pct' ? totalLines * (reductionPct / 100) : reductionEur;
       const finalPrice = totalLines - reductionAmount;
       const acompte = parseFloat(formData.acompte) || 0;
       const resteAPayer = Math.max(0, finalPrice - acompte);
@@ -843,7 +846,7 @@ export default function TicketDetailPage() {
   const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
   const reductionMontant = parseFloat(pricingForm.reduction_montant) || 0;
   const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
-  const effectiveReduction = reductionPct > 0 ? totalRepairs * (reductionPct / 100) : reductionMontant;
+  const effectiveReduction = reductionMode === 'pct' ? totalRepairs * (reductionPct / 100) : reductionMontant;
   const subtotalHT = totalRepairs - effectiveReduction;
   const tvaAmount = tvaRate > 0 ? subtotalHT * (tvaRate / 100) : 0;
   const totalTTC = subtotalHT + tvaAmount;
@@ -1379,10 +1382,35 @@ export default function TicketDetailPage() {
                   <div className="relative"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
                 </div>
 
-                {/* 5. Réduction % et € */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => { const pct = parseFloat(e.target.value) || 0; const euros = totalRepairs > 0 ? (totalRepairs * pct / 100).toFixed(2) : ''; updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: euros }); }} className="input" placeholder="0" /></div>
-                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => { const euros = parseFloat(e.target.value) || 0; const pct = totalRepairs > 0 ? (euros / totalRepairs * 100).toFixed(1) : ''; updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: pct }); }} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
+                {/* 5. Réduction — toggle % / € */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="input-label mb-0 flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction</label>
+                    <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                      <button type="button" onClick={() => { setReductionMode('pct'); updatePricingForm({ reduction_montant: '', reduction_pourcentage: pricingForm.reduction_pourcentage }); }}
+                        className={`px-2.5 py-1 rounded-md transition-all ${reductionMode === 'pct' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-400'}`}>%</button>
+                      <button type="button" onClick={() => { setReductionMode('eur'); updatePricingForm({ reduction_pourcentage: '', reduction_montant: pricingForm.reduction_montant }); }}
+                        className={`px-2.5 py-1 rounded-md transition-all ${reductionMode === 'eur' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-400'}`}>€</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="relative">
+                      <input type="number" step="1" min="0" max="100"
+                        value={reductionMode === 'pct' ? pricingForm.reduction_pourcentage : (totalRepairs > 0 && reductionMontant > 0 ? (reductionMontant / totalRepairs * 100).toFixed(1) : '')}
+                        onChange={reductionMode === 'pct' ? (e => updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: '' })) : undefined}
+                        readOnly={reductionMode !== 'pct'}
+                        className={`input pr-7 ${reductionMode !== 'pct' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''}`} placeholder="0" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">%</span>
+                    </div>
+                    <div className="relative">
+                      <input type="number" step="0.01"
+                        value={reductionMode === 'eur' ? pricingForm.reduction_montant : (totalRepairs > 0 && reductionPct > 0 ? (totalRepairs * reductionPct / 100).toFixed(2) : '')}
+                        onChange={reductionMode === 'eur' ? (e => updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: '' })) : undefined}
+                        readOnly={reductionMode !== 'eur'}
+                        className={`input pr-7 ${reductionMode !== 'eur' ? 'bg-slate-50 text-slate-400 cursor-not-allowed' : ''}`} placeholder="0" />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* 6. Acompte */}
@@ -1404,7 +1432,7 @@ export default function TicketDetailPage() {
                       </>
                     );
                   })()}
-                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
+                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
                   <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
                   {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
                   <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
@@ -1491,7 +1519,7 @@ export default function TicketDetailPage() {
                   })()}
                   {effectiveReduction > 0 && (
                     <div className="flex justify-between text-sm text-emerald-600">
-                      <span className="flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
+                      <span className="flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
                       <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
                     </div>
                   )}
