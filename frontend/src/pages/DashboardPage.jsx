@@ -172,15 +172,16 @@ export default function DashboardPage() {
     return null;
   };
 
-  // Build lookup: ticket_id → set of interaction types
+  // Build lookup: ticket_id → { accord_client, messages, avis } booleans
   const ticketInteractions = useMemo(() => {
     if (!interactions) return {};
     const map = {};
     for (const key of ['accord_client', 'messages', 'avis']) {
-      const ids = interactions[key]?.ticket_ids || [];
+      const ids = interactions[key]?.ticket_ids;
+      if (!Array.isArray(ids)) continue;
       for (const tid of ids) {
-        if (!map[tid]) map[tid] = new Set();
-        map[tid].add(key);
+        if (!map[tid]) map[tid] = {};
+        map[tid][key] = true;
       }
     }
     return map;
@@ -189,8 +190,8 @@ export default function DashboardPage() {
   // Build set of ticket IDs for active interaction filter
   const interactionTicketIds = useMemo(() => {
     if (!interactionFilter || !interactions) return null;
-    const cat = interactions[interactionFilter];
-    return cat?.ticket_ids ? new Set(cat.ticket_ids) : null;
+    const ids = interactions[interactionFilter]?.ticket_ids;
+    return Array.isArray(ids) && ids.length > 0 ? new Set(ids) : null;
   }, [interactionFilter, interactions]);
 
   const filteredTickets = useMemo(() => {
@@ -615,13 +616,13 @@ export default function DashboardPage() {
                         <Globe className="w-2.5 h-2.5" /> Dist.
                       </span>
                     )}
-                    {ticketInteractions[t.id]?.has('accord_client') && (
+                    {ticketInteractions[t.id]?.accord_client && (
                       <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] font-bold flex items-center justify-center" title="Accord client en attente">📋</span>
                     )}
-                    {ticketInteractions[t.id]?.has('messages') && (
+                    {ticketInteractions[t.id]?.messages && (
                       <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center" title="Message client non lu">💬</span>
                     )}
-                    {ticketInteractions[t.id]?.has('avis') && (
+                    {ticketInteractions[t.id]?.avis && (
                       <span className="w-4 h-4 rounded-full bg-yellow-400 text-white text-[8px] font-bold flex items-center justify-center" title="Avis client">⭐</span>
                     )}
                   </div>
