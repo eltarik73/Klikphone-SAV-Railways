@@ -1294,6 +1294,16 @@ export default function TicketDetailPage() {
                               className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                             />
                             <span className="text-[11px] text-amber-700 font-medium"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
+                            {(() => {
+                              const cmd = commandes.find(c => c.description === line.label);
+                              if (!cmd) return null;
+                              const st = cmd.statut || 'En attente';
+                              const cfg = st === 'Reçu' ? 'bg-green-100 text-green-700'
+                                : st === 'Commandée' ? 'bg-blue-100 text-blue-700'
+                                : st === 'En réparation' ? 'bg-violet-100 text-violet-700'
+                                : 'bg-amber-100 text-amber-700';
+                              return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ml-2 ${cfg}`}>{st}</span>;
+                            })()}
                           </label>
                         )}
                       </div>
@@ -1393,9 +1403,16 @@ export default function TicketDetailPage() {
                           {t.type_ecran && i === 0 && (
                             <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">{t.type_ecran}</span>
                           )}
-                          {commandes.some(c => c.description === line.label) && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"><Package className="w-2.5 h-2.5 inline mr-0.5" />Commandée</span>
-                          )}
+                          {(() => {
+                            const cmd = commandes.find(c => c.description === line.label);
+                            if (!cmd) return null;
+                            const st = cmd.statut || 'En attente';
+                            const cfg = st === 'Reçu' ? 'bg-green-100 text-green-700'
+                              : st === 'Commandée' ? 'bg-blue-100 text-blue-700'
+                              : st === 'En réparation' ? 'bg-violet-100 text-violet-700'
+                              : 'bg-amber-100 text-amber-700';
+                            return <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${cfg}`}><Package className="w-2.5 h-2.5 inline mr-0.5" />{st}</span>;
+                          })()}
                         </div>
                         <span className="text-sm font-bold text-slate-800">{formatPrix(line.prix)}</span>
                       </div>

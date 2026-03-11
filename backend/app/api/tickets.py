@@ -505,6 +505,23 @@ async def change_status(
                     (now, prev + elapsed, ticket_id),
                 )
 
+        # ── Auto-sync commandes_pieces selon le statut ticket ──
+        if data.statut in ("Réparation terminée", "Rendu au client", "Clôturé"):
+            cur.execute(
+                "UPDATE commandes_pieces SET statut = 'Reçu', date_reception = %s WHERE ticket_id = %s AND statut IN ('En attente', 'Commandée')",
+                (now, ticket_id),
+            )
+        elif data.statut == "En cours de réparation":
+            cur.execute(
+                "UPDATE commandes_pieces SET statut = 'En réparation' WHERE ticket_id = %s AND statut = 'Reçu'",
+                (ticket_id,),
+            )
+        elif data.statut == "En attente de pièce":
+            cur.execute(
+                "UPDATE commandes_pieces SET statut = 'Commandée', date_commande = %s WHERE ticket_id = %s AND statut = 'En attente'",
+                (now, ticket_id),
+            )
+
         _ajouter_historique(cur, ticket_id, 'statut', f"Statut: {ancien_statut} → {data.statut}")
 
     # Notifications Discord
