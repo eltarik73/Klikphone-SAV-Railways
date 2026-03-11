@@ -104,6 +104,7 @@ export default function TicketDetailPage() {
   const [showAccordModal, setShowAccordModal] = useState(false);
   const [accordLoading, setAccordLoading] = useState(false);
   const [accordMessage, setAccordMessage] = useState('');
+  const [accordTemplateMsg, setAccordTemplateMsg] = useState('');
 
   // Team members for tech dropdown
   const [teamMembers, setTeamMembers] = useState([]);
@@ -244,13 +245,14 @@ export default function TicketDetailPage() {
     } catch { setPrivateNotes([]); }
   }, [id]);
 
-  // Config + team + caisse loaded in parallel on mount
+  // Config + team + caisse + templates loaded in parallel on mount
   useEffect(() => {
     Promise.all([
       api.getActiveTeam().catch(() => []),
       api.getConfig().catch(() => []),
       api.getCaisseConfig().catch(() => ({})),
-    ]).then(([team, params, caisseCfg]) => {
+      api.getMessageTemplates().catch(() => []),
+    ]).then(([team, params, caisseCfg, templates]) => {
       setTeamMembers(team || []);
       const arr = Array.isArray(params) ? params : [];
       const tvaParam = arr.find(p => p.cle === 'tva');
@@ -258,6 +260,10 @@ export default function TicketDetailPage() {
       const acParam = arr.find(p => p.cle === 'AFFICHER_AUTOCOMPLETION');
       if (acParam) setAutocompletionEnabled(acParam.valeur !== 'false');
       setCaisseEnabled(caisseCfg?.CAISSE_ENABLED === '1');
+      // Load accord template (id 12)
+      const tpls = Array.isArray(templates) ? templates : [];
+      const accord = tpls.find(t => t.id === 12);
+      if (accord?.message) setAccordTemplateMsg(accord.message);
     });
   }, []);
 
@@ -691,6 +697,8 @@ export default function TicketDetailPage() {
     }
   };
 
+  const DEFAULT_ACCORD_TEMPLATE = "Bonjour {prenom}, le devis pour la réparation de votre {marque} {modele} est de {montant} €. Vous pouvez accepter ou refuser directement en cliquant ici : {lien_suivi}. Merci, l'équipe Klikphone";
+
   const getAccordMontant = () => {
     if (!ticket) return 0;
     // Priority: tarif_final > total repair lines > devis_estime
@@ -704,11 +712,18 @@ export default function TicketDetailPage() {
   const buildAccordMessage = () => {
     if (!ticket) return '';
     const t = ticket;
-    const marque = t.marque || '';
-    const modele = t.modele_autre || t.modele || '';
     const montant = getAccordMontant();
     const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
-    return `Bonjour ${t.client_prenom || ''}, le devis pour la réparation de votre ${marque} ${modele} est de ${montant.toFixed(2)} €. Vous pouvez accepter ou refuser directement en cliquant ici : ${suiviUrl}. Merci, l'équipe Klikphone`;
+    const template = accordTemplateMsg || DEFAULT_ACCORD_TEMPLATE;
+    return template
+      .replace(/\{prenom\}/g, t.client_prenom || '')
+      .replace(/\{nom\}/g, t.client_nom || '')
+      .replace(/\{marque\}/g, t.marque || '')
+      .replace(/\{modele\}/g, t.modele_autre || t.modele || '')
+      .replace(/\{appareil\}/g, t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil')
+      .replace(/\{code\}/g, t.ticket_code || '')
+      .replace(/\{montant\}/g, montant.toFixed(2))
+      .replace(/\{lien_suivi\}/g, suiviUrl);
   };
 
   const openAccordModal = () => {

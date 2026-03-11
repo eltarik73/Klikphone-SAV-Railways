@@ -16,11 +16,12 @@ const DEFAULT_TEMPLATES = [
   { id: 9, label: "Rappel RDV", message: "Bonjour {prenom}, nous vous rappelons votre rendez-vous demain pour votre {appareil}. Klikphone 79 Place Saint Leger, Chambery" },
   { id: 10, label: "Personnalise", message: "" },
   { id: 11, label: "Demander avis Google", message: "Bonjour {prenom},\n\nMerci d'avoir fait confiance à Klikphone pour la réparation de votre {appareil} ! 🙏\n\nSi vous êtes satisfait de nos services, nous serions très reconnaissants si vous pouviez nous laisser un avis Google :\n\n👉 {lien_avis}\n\nVotre avis nous aide énormément ! Merci et à bientôt 😊\n\nL'équipe Klikphone" },
+  { id: 12, label: "Demande d'accord", message: "Bonjour {prenom}, le devis pour la réparation de votre {marque} {modele} est de {montant} €. Vous pouvez accepter ou refuser directement en cliquant ici : {lien_suivi}. Merci, l'équipe Klikphone" },
 ];
 
 const TEMPLATE_ICONS = {
   1: '📱', 2: '🔍', 3: '📋', 4: '🔧', 5: '⏳',
-  6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️', 11: '⭐',
+  6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️', 11: '⭐', 12: '🤝',
 };
 
 export default function MessageComposer({ ticket, onMessageSent }) {
@@ -62,6 +63,8 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       .replace(/\{prenom\}/g, t.client_prenom || '')
       .replace(/\{nom\}/g, t.client_nom || '')
       .replace(/\{appareil\}/g, appareil)
+      .replace(/\{marque\}/g, t.marque || '')
+      .replace(/\{modele\}/g, t.modele_autre || t.modele || '')
       .replace(/\{code\}/g, t.ticket_code || '')
       .replace(/\{montant\}/g, String(montant))
       .replace(/\{adresse\}/g, '79 Place Saint Leger, 73000 Chambery')
