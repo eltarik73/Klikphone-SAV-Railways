@@ -1234,19 +1234,11 @@ export default function TicketDetailPage() {
             {editingPricing ? (
               /* ─── Edit mode ─── */
               <div className="space-y-4">
+                {/* 1. Lignes de réparation */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="input-label mb-0">Lignes de réparation</label>
-                    <div className="flex items-center gap-2">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={!!pricingForm.commande_piece} onChange={e => updatePricingForm({ commande_piece: e.target.checked ? 1 : 0 })} className="w-3.5 h-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
-                        <span className="text-xs font-medium text-amber-700"><Package className="w-3 h-3 inline mr-0.5" />Pièce à commander</span>
-                      </label>
-                      <button onClick={() => setShowCommandeModal(true)} className="text-xs font-medium text-brand-600 hover:text-brand-800 flex items-center gap-0.5">
-                        <Plus className="w-3 h-3" /> Commander
-                      </button>
-                      <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
-                    </div>
+                    <button onClick={addRepairLine} className="btn-ghost text-xs px-2 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
                   </div>
                   <div className="space-y-2">
                     {repairLines.map((line, i) => (
@@ -1257,8 +1249,6 @@ export default function TicketDetailPage() {
                             <input type="number" step="0.01" value={line.prix} onChange={e => updateRepairLine(i, 'prix', e.target.value)} className="input text-right pr-7" placeholder="0" />
                             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
                           </div>
-                          <button onClick={() => adjustRepairPrice(i, -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                          <button onClick={() => adjustRepairPrice(i, 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
                           {repairLines.length > 1 && <button onClick={() => removeRepairLine(i)} className="btn-ghost p-1.5 shrink-0 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}
                         </div>
                         {line.label && (
@@ -1296,38 +1286,9 @@ export default function TicketDetailPage() {
                       </div>
                     ))}
                   </div>
-                  <div className="text-right mt-2"><span className="text-xs text-slate-400">Total :</span><span className="text-sm font-bold text-slate-800 ml-2">{formatPrix(totalRepairs)}</span></div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="input-label">Devis estimé (avant diagnostic)</label>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => adjustPrice('devis_estime', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
-                      <button onClick={() => adjustPrice('devis_estime', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="input-label">Acompte versé</label>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => adjustPrice('acompte', -5)} className="btn-ghost p-1.5 shrink-0"><Minus className="w-3 h-3" /></button>
-                      <div className="relative flex-1"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input text-center pr-7" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
-                      <button onClick={() => adjustPrice('acompte', 5)} className="btn-ghost p-1.5 shrink-0"><Plus className="w-3 h-3" /></button>
-                    </div>
-                  </div>
-                </div>
-                {/* Computed summary in edit mode */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                  <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes</span><span className="font-semibold text-slate-800">{formatPrix(totalRepairs)}</span></div>
-                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
-                  <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(totalRepairs - effectiveReduction)}</span></div>
-                  {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
-                  <div className={`flex justify-between text-base font-extrabold border-t border-slate-200 pt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>Reste à payer</span><span>{formatPrix(Math.max(0, reste))}</span></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => { const pct = parseFloat(e.target.value) || 0; const euros = totalRepairs > 0 ? (totalRepairs * pct / 100).toFixed(2) : ''; updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: euros }); }} className="input" placeholder="0" /></div>
-                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => { const euros = parseFloat(e.target.value) || 0; const pct = totalRepairs > 0 ? (euros / totalRepairs * 100).toFixed(1) : ''; updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: pct }); }} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
-                </div>
+
+                {/* 2. Qualité écran + Date récupération */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="input-label">Qualité écran</label>
@@ -1343,79 +1304,88 @@ export default function TicketDetailPage() {
                       <option value="LCD">LCD</option>
                     </select>
                   </div>
-                  <div><label className="input-label">Date récupération</label><input type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} className="input" /></div>
+                  <div>
+                    <label className="input-label">Date récupération</label>
+                    <input type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} className="input" />
+                  </div>
                 </div>
+
+                {/* 3. Séparateur tarification */}
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+                  <div className="relative flex justify-center"><span className="bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tarification</span></div>
+                </div>
+
+                {/* 4. Devis estimé */}
+                <div>
+                  <label className="input-label">Devis estimé (avant diagnostic)</label>
+                  <div className="relative"><input type="number" step="0.01" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                </div>
+
+                {/* 5. Réduction % et € */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="input-label flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction (%)</label><input type="number" step="1" min="0" max="100" value={pricingForm.reduction_pourcentage} onChange={e => { const pct = parseFloat(e.target.value) || 0; const euros = totalRepairs > 0 ? (totalRepairs * pct / 100).toFixed(2) : ''; updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: euros }); }} className="input" placeholder="0" /></div>
+                  <div><label className="input-label">Réduction (€)</label><div className="relative"><input type="number" step="0.01" value={pricingForm.reduction_montant} onChange={e => { const euros = parseFloat(e.target.value) || 0; const pct = totalRepairs > 0 ? (euros / totalRepairs * 100).toFixed(1) : ''; updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: pct }); }} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div></div>
+                </div>
+
+                {/* 6. Acompte */}
+                <div>
+                  <label className="input-label">Acompte versé</label>
+                  <div className="relative"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                </div>
+
+                {/* 7. Bloc récapitulatif */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  {(() => {
+                    const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
+                    const tva = totalRepairs - ht;
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes HT</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-600">{formatPrix(tva)}</span></div>
+                        <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                      </>
+                    );
+                  })()}
+                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
+                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
+                  {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
+                  <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
+                </div>
+
+                {/* 8. Bouton payé */}
+                <button onClick={() => {
+                    if (t.paye) {
+                      if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
+                    } else {
+                      setShowPayeModal(true);
+                    }
+                  }}
+                  className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${
+                    t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
+                  }`}>
+                  <CheckCircle2 className="w-4 h-4 inline mr-1.5" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
+                </button>
               </div>
             ) : (
               /* ─── View mode ─── */
               <>
-                {/* Pièces commandées */}
-                <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span className="flex items-center gap-1"><Package className="w-3 h-3" /> Pièce(s) commandée(s) ({commandes.length})</span>
-                    <button onClick={() => setShowCommandeModal(true)} className="text-[10px] font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-0.5">
-                      <Plus className="w-3 h-3" /> Ajouter
-                    </button>
-                  </div>
-                  {commandes.length === 0 && (
-                    <p className="text-xs text-amber-600 italic py-1">Aucune commande de pièce</p>
-                  )}
-                  {commandes.map(cmd => (
-                    <div key={cmd.id} className="py-2 border-b border-amber-100 last:border-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-slate-700">{cmd.description}</div>
-                          {cmd.reference && <div className="text-[10px] text-slate-400 font-mono">Réf: {cmd.reference}</div>}
-                          {cmd.notes && <div className="text-xs text-slate-500">{cmd.notes}</div>}
-                          {cmd.fournisseur && <div className="text-xs text-slate-400">Fournisseur : {cmd.fournisseur}</div>}
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {cmd.prix > 0 && (
-                            <span className="text-xs font-bold text-slate-700">{formatPrix(cmd.prix)}</span>
-                          )}
-                          <select
-                            value={cmd.statut || 'En attente'}
-                            onChange={e => handleCommandeStatusChange(cmd.id, e.target.value)}
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border-0 cursor-pointer appearance-none pr-4 ${
-                              cmd.statut === 'Panier' ? 'bg-slate-100 text-slate-700' :
-                              cmd.statut === 'En attente' ? 'bg-amber-100 text-amber-700' :
-                              cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
-                              cmd.statut === 'Reçu' ? 'bg-green-100 text-green-700' :
-                              cmd.statut === 'En réparation' ? 'bg-indigo-100 text-indigo-700' :
-                              cmd.statut === 'Donné au client' ? 'bg-purple-100 text-purple-700' :
-                              cmd.statut === 'Clôturé' ? 'bg-emerald-100 text-emerald-700' :
-                              'bg-red-100 text-red-700'
-                            }`}
-                            style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'10\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 2px center' }}
-                          >
-                            <option value="Panier">Panier</option>
-                            <option value="En attente">En attente</option>
-                            <option value="Commandée">Commandée</option>
-                            <option value="Reçu">Reçu</option>
-                            <option value="En réparation">En réparation</option>
-                            <option value="Donné au client">Donné au client</option>
-                            <option value="Clôturé">Clôturé</option>
-                          </select>
-                          <button onClick={() => handleDeleteCommande(cmd.id)} className="p-0.5 text-red-400 hover:text-red-600" title="Supprimer">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 2. Repair lines */}
+                {/* Repair lines */}
                 <div className="mb-3">
                   {repairLines.filter(l => l.label).map((line, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-700">{line.label}</span>
-                        {t.type_ecran && i === 0 && (
-                          <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">{t.type_ecran}</span>
-                        )}
+                    <div key={i} className="py-2 border-b border-slate-50 last:border-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-700">{line.label}</span>
+                          {t.type_ecran && i === 0 && (
+                            <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded">{t.type_ecran}</span>
+                          )}
+                          {commandes.some(c => c.description === line.label) && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700"><Package className="w-2.5 h-2.5 inline mr-0.5" />Commandée</span>
+                          )}
+                        </div>
+                        <span className="text-sm font-bold text-slate-800">{formatPrix(line.prix)}</span>
                       </div>
-                      <span className="text-sm font-bold text-slate-800">{formatPrix(line.prix)}</span>
                     </div>
                   ))}
                   {repairLines.filter(l => l.label).length === 0 && (
@@ -1423,30 +1393,49 @@ export default function TicketDetailPage() {
                   )}
                 </div>
 
-                {/* 3. Reduction */}
-                {effectiveReduction > 0 && (
-                  <div className="flex justify-between py-1 text-sm text-emerald-600">
-                    <span className="flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
-                    <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
+                {/* Pièces commandées (compact) */}
+                {commandes.length > 0 && (
+                  <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <Package className="w-3 h-3" /> {commandes.length} pièce(s) commandée(s)
+                    </div>
+                    {commandes.map(cmd => (
+                      <div key={cmd.id} className="flex items-center justify-between py-1 text-xs">
+                        <span className="text-slate-700 font-medium">{cmd.description}</span>
+                        <span className={`font-bold px-1.5 py-0.5 rounded-full text-[9px] ${
+                          cmd.statut === 'Reçu' ? 'bg-green-100 text-green-700' :
+                          cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-700' :
+                          'bg-amber-100 text-amber-700'
+                        }`}>{cmd.statut || 'En attente'}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* 4. Totals */}
+                {/* Récap tarification */}
                 <div className="border-t border-slate-200 mt-2 pt-2 space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">{tvaRate > 0 ? 'Sous-total HT' : 'Tarif final'}</span>
-                    <span className="font-semibold text-slate-800">{formatPrix(subtotalHT)}</span>
-                  </div>
-                  {tvaRate > 0 && (
-                    <>
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">TVA ({tvaRate}%)</span><span className="font-medium text-slate-600">{formatPrix(tvaAmount)}</span></div>
-                      <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-2"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalTTC)}</span></div>
-                    </>
+                  {(() => {
+                    const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
+                    const tva = totalRepairs - ht;
+                    return (
+                      <>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes HT</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-600">{formatPrix(tva)}</span></div>
+                        <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                      </>
+                    );
+                  })()}
+                  {effectiveReduction > 0 && (
+                    <div className="flex justify-between text-sm text-emerald-600">
+                      <span className="flex items-center gap-1"><Percent className="w-3 h-3" /> Réduction{reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
+                      <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
+                    </div>
                   )}
+                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte versé</span><span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span></div>
                 </div>
 
-                {/* 5. Reste à payer / Payé */}
+                {/* Reste à payer / Payé */}
                 {t.paye ? (
                   <div className="mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-100 to-green-100 border border-emerald-300 text-center">
                     <span className="font-extrabold text-emerald-700 text-[15px]">PAYÉ</span>
@@ -1459,7 +1448,7 @@ export default function TicketDetailPage() {
                   </div>
                 ) : null}
 
-                {/* 6. Action buttons */}
+                {/* Action buttons */}
                 <div className="flex gap-2 mt-3 flex-wrap">
                   <button onClick={() => {
                       if (t.paye) {
@@ -1468,24 +1457,18 @@ export default function TicketDetailPage() {
                         setShowPayeModal(true);
                       }
                     }}
-                    className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
-                      t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                      t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
                     }`}>
-                    <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{t.paye ? 'Payé ✓' : 'Marquer payé'}
+                    <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
                   </button>
-                  {t.paye && (
-                    <button onClick={() => { if (confirm('Annuler le paiement ?')) handleTogglePaye(); }}
-                      className="px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-red-500 border border-slate-200 hover:border-red-200 transition-colors">
-                      Annuler paiement
-                    </button>
-                  )}
                   {caisseEnabled && (
-                    <button onClick={handleSendCaisse} className="px-3 py-2 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">
-                      <Zap className="w-3.5 h-3.5 inline mr-1" />Envoyer en caisse
+                    <button onClick={handleSendCaisse} className="px-3 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">
+                      <Zap className="w-3.5 h-3.5 inline mr-1" />Caisse
                     </button>
                   )}
-                  <button onClick={openAccordModal} className="px-3 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
-                    <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Accord client
+                  <button onClick={openAccordModal} className="px-3 py-2.5 rounded-xl bg-orange-50 text-orange-600 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
+                    <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Accord
                   </button>
                 </div>
               </>
