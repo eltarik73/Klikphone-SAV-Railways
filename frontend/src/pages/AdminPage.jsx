@@ -8,7 +8,7 @@ import {
 import {
   Lock, LogOut, TrendingUp, TrendingDown, Minus,
   BarChart3, Users, Clock, Receipt, UserPlus, Target, Wrench,
-  Calendar, ChevronUp, ChevronDown, Award,
+  Calendar, ChevronUp, ChevronDown, Award, Smartphone,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────
@@ -45,6 +45,7 @@ const KPI_COLORS = {
   indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' },
 };
 
+const MEDALS = ['🥇', '🥈', '🥉'];
 const AUTH_KEY = 'kp_admin_auth';
 
 // ─── Helpers ──────────────────────────────────────────────
