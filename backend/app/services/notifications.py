@@ -285,7 +285,7 @@ def sms_link(tel: str, msg: str) -> str:
 
 def qr_url(data: str) -> str:
     """Génère une URL de QR code."""
-    return f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={urllib.parse.quote(data)}"
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={urllib.parse.quote(data, safe='')}"
 
 
 # ─── MESSAGES PRÉDÉFINIS ────────────────────────────────────────

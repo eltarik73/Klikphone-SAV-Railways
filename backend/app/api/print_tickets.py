@@ -13,6 +13,12 @@ from io import BytesIO
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, Response
 
+try:
+    import qrcode
+    HAS_QRCODE = True
+except ImportError:
+    HAS_QRCODE = False
+
 from app.database import get_cursor
 
 router = APIRouter(prefix="/api/tickets", tags=["print"])
@@ -101,10 +107,25 @@ def _suivi_url(code: str) -> str:
     return f"{_FRONTEND_URL}/suivi?ticket={urllib.parse.quote(code)}"
 
 
-def _qr_url(code: str) -> str:
-    """URL QR code API pointant vers le suivi."""
+def _qr_data_uri(code: str) -> str:
+    """Génère un QR code en base64 data URI (local, pas de dépendance externe)."""
     target = _suivi_url(code)
-    return f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={urllib.parse.quote(target)}"
+    if HAS_QRCODE:
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+        qr.add_data(target)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
+    # Fallback: API externe avec encodage correct
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={urllib.parse.quote(target, safe='')}"
+
+
+def _qr_url(code: str) -> str:
+    """Alias pour compatibilité — retourne data URI ou URL externe."""
+    return _qr_data_uri(code)
 
 
 def _pattern_grid(pattern_str: str) -> str:
