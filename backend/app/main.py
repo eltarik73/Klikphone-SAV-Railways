@@ -275,6 +275,11 @@ async def lifespan(app: FastAPI):
                 INSERT INTO params (cle, valeur) VALUES ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
                 ON CONFLICT (cle) DO NOTHING
             """)
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
+                ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+                WHERE params.valeur LIKE '%klikphone-sav-railways%'
+            """)
     except Exception as e:
         print(f"Warning ADMIN_PASSWORD default: {e}")
 

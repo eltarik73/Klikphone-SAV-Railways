@@ -24,8 +24,26 @@ from app.database import get_cursor
 router = APIRouter(prefix="/api/tickets", tags=["print"])
 
 # URL frontend pour les QR codes de suivi
-_FRONTEND_URL = os.getenv("FRONTEND_URL", "https://klikphone-sav-v2-production.up.railway.app")
-_LOGO_URL = f"{_FRONTEND_URL}/logo_k.png"
+_FRONTEND_URL_DEFAULT = "https://klikphone-sav-v2-production.up.railway.app"
+_FRONTEND_URL_ENV = os.getenv("FRONTEND_URL", "")
+
+
+def _get_frontend_url() -> str:
+    """Résout l'URL frontend : params DB > env FRONTEND_URL > défaut hardcodé."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT valeur FROM params WHERE cle = 'URL_SUIVI'")
+            row = cur.fetchone()
+            if row and row["valeur"] and row["valeur"].startswith("http"):
+                return row["valeur"].rstrip("/")
+    except Exception:
+        pass
+    if _FRONTEND_URL_ENV:
+        return _FRONTEND_URL_ENV.rstrip("/")
+    return _FRONTEND_URL_DEFAULT
+
+
+_LOGO_URL = f"{_FRONTEND_URL_DEFAULT}/logo_k.png"
 
 
 def _get_ticket_full(ticket_id: int) -> dict:
@@ -104,7 +122,7 @@ def _fidelite_section(t: dict) -> str:
 
 def _suivi_url(code: str) -> str:
     """URL de suivi pour le QR code."""
-    return f"{_FRONTEND_URL}/suivi?ticket={urllib.parse.quote(code)}"
+    return f"{_get_frontend_url()}/suivi?ticket={urllib.parse.quote(code)}"
 
 
 def _qr_data_uri(code: str) -> str:
