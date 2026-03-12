@@ -162,7 +162,7 @@ async def get_client_by_tel(telephone: str):
 async def create_or_get_client(data: ClientCreate):
     """Crée un client ou retourne l'existant si le téléphone existe déjà.
     
-    Compatible avec get_or_create_client de l'app Streamlit.
+    Compatible avec get_or_create_client.
     """
     with get_cursor() as cur:
         # Vérifier si le client existe

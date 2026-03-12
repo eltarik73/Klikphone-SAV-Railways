@@ -1,6 +1,6 @@
 """
 Service de notifications : Discord, Email, WhatsApp, SMS.
-Reprend la logique exacte de l'app Streamlit.
+Gestion des notifications Discord, Email, WhatsApp, SMS.
 """
 
 import os

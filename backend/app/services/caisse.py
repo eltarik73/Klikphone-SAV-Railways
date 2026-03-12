@@ -1,6 +1,6 @@
 """
 Service d'intégration avec caisse.enregistreuse.fr
-Reprend exactement la logique de l'app Streamlit.
+Integration avec caisse.enregistreuse.fr.
 """
 
 import httpx

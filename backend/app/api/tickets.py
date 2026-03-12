@@ -1,6 +1,6 @@
 """
 API CRUD Tickets — compatible schéma PostgreSQL existant.
-Reprend exactement la logique de l'app Streamlit.
+CRUD et gestion des statuts.
 """
 
 from datetime import datetime
