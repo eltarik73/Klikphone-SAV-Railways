@@ -639,6 +639,7 @@ export default function DashboardPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800 truncate" title={`${t.client_prenom || ''} ${t.client_nom || ''}`.trim()}>
                         {t.client_prenom || ''} {t.client_nom || ''}
+                        {t.client_carte_camby ? <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold align-middle">🎫 Camby</span> : null}
                       </p>
                       <p className="text-[11px] text-slate-400 font-mono truncate" title={t.client_tel || ''}>{t.client_tel || ''}</p>
                     </div>
