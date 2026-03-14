@@ -938,6 +938,7 @@ export default function TicketDetailPage() {
                   <div className="min-w-0">
                     <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
                     {t.client_societe && <p className="text-xs text-slate-500">{t.client_societe}</p>}
+                    {t.client_carte_camby ? <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">🎫 Camby</span> : null}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1429,13 +1430,11 @@ export default function TicketDetailPage() {
                   </div>
                 </div>
 
-                {/* 6. Acompte (facture only) */}
-                {(pricingForm.type_document || 'devis') === 'facture' && (
-                  <div>
-                    <label className="input-label">Acompte versé</label>
-                    <div className="relative"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
-                  </div>
-                )}
+                {/* 6. Acompte versé */}
+                <div>
+                  <label className="input-label">Acompte versé</label>
+                  <div className="relative"><input type="number" step="0.01" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span></div>
+                </div>
 
                 {/* 7. Bloc récapitulatif */}
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
@@ -1451,15 +1450,9 @@ export default function TicketDetailPage() {
                     );
                   })()}
                   {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-600"><span>Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
-                  {(pricingForm.type_document || 'devis') === 'devis' ? (
-                    <div className="flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 text-brand-700"><span>MONTANT DU DEVIS</span><span>{formatPrix(subtotalHT)}</span></div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
-                      {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
-                      <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
-                    </>
-                  )}
+                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">{(pricingForm.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
+                  {(parseFloat(pricingForm.acompte) || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte versé</span><span className="font-medium text-blue-600">- {formatPrix(pricingForm.acompte)}</span></div>}
+                  <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
                 </div>
 
                 {/* 8. Bouton payé (facture only) */}
@@ -1558,32 +1551,22 @@ export default function TicketDetailPage() {
                       <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
                     </div>
                   )}
-                  {(t.type_document || 'devis') === 'devis' ? (
-                    <div className="flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 text-brand-700"><span>MONTANT DU DEVIS</span><span>{formatPrix(subtotalHT)}</span></div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">Tarif final</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte versé</span><span className="font-medium text-slate-800">- {t.acompte ? formatPrix(t.acompte) : '0,00 €'}</span></div>
-                    </>
-                  )}
+                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">{(t.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(subtotalHT)}</span></div>
+                  {(t.acompte || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-slate-500">Acompte versé</span><span className="font-medium text-blue-600">- {formatPrix(t.acompte)}</span></div>}
                 </div>
 
-                {/* Reste à payer / Payé — facture mode only */}
-                {(t.type_document || 'devis') === 'facture' && (
-                  <>
-                    {t.paye ? (
-                      <div className="mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-100 to-green-100 border border-emerald-300 text-center">
-                        <span className="font-extrabold text-emerald-700 text-[15px]">PAYÉ</span>
-                        <div className="text-xs text-emerald-600 mt-0.5">Reste à payer : 0,00 €</div>
-                      </div>
-                    ) : reste > 0 ? (
-                      <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
-                        <span className="font-extrabold text-red-600 text-[15px]">RESTE À PAYER</span>
-                        <span className="font-extrabold text-red-600 text-[15px]">{formatPrix(reste)}</span>
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                {/* Reste à payer / Payé */}
+                {t.paye ? (
+                  <div className="mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-100 to-green-100 border border-emerald-300 text-center">
+                    <span className="font-extrabold text-emerald-700 text-[15px]">PAYÉ</span>
+                    <div className="text-xs text-emerald-600 mt-0.5">Reste à payer : 0,00 €</div>
+                  </div>
+                ) : reste > 0 ? (
+                  <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
+                    <span className="font-extrabold text-red-600 text-[15px]">RESTE À PAYER</span>
+                    <span className="font-extrabold text-red-600 text-[15px]">{formatPrix(reste)}</span>
+                  </div>
+                ) : null}
 
                 {/* Action buttons */}
                 <div className="flex gap-2 mt-3 flex-wrap">

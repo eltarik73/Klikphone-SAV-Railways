@@ -27,6 +27,7 @@ export default function DeposerPage() {
     nom: '', prenom: '', telephone: '', email: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', notes_client: '',
+    carte_camby: false,
   });
 
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function DeposerPage() {
         prenom: form.prenom,
         telephone: form.telephone,
         email: form.email,
+        carte_camby: form.carte_camby,
         categorie: form.categorie,
         marque: form.marque,
         modele: form.marque === 'Autre' ? '' : form.modele,
@@ -313,6 +315,11 @@ export default function DeposerPage() {
               <FieldError field="email" />
               <p className="text-xs text-slate-400 mt-1">Recommandé pour recevoir les mises à jour de votre réparation</p>
             </div>
+            <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
+              <input type="checkbox" checked={form.carte_camby} onChange={e => updateForm('carte_camby', e.target.checked)}
+                className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+              <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
+            </label>
           </div>
         )}
 

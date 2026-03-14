@@ -31,6 +31,7 @@ class DepotDistanceRequest(BaseModel):
     panne: str
     panne_detail: Optional[str] = ""
     notes_client: Optional[str] = ""
+    carte_camby: Optional[bool] = False
 
 
 class RefusMotif(BaseModel):
@@ -60,14 +61,15 @@ async def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
                 UPDATE clients SET
                     nom = COALESCE(NULLIF(%s, ''), nom),
                     prenom = COALESCE(NULLIF(%s, ''), prenom),
-                    email = COALESCE(NULLIF(%s, ''), email)
+                    email = COALESCE(NULLIF(%s, ''), email),
+                    carte_camby = %s
                 WHERE id = %s
-            """, (data.nom, data.prenom, data.email, client_id))
+            """, (data.nom, data.prenom, data.email, data.carte_camby, client_id))
         else:
             cur.execute("""
-                INSERT INTO clients (nom, prenom, telephone, email)
-                VALUES (%s, %s, %s, %s) RETURNING id
-            """, (data.nom, data.prenom, data.telephone, data.email))
+                INSERT INTO clients (nom, prenom, telephone, email, carte_camby)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (data.nom, data.prenom, data.telephone, data.email, data.carte_camby))
             client_id = cur.fetchone()["id"]
 
         # Créer le ticket en statut "Pré-enregistré"

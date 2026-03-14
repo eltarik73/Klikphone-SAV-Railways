@@ -42,7 +42,7 @@ export default function ClientFormPage() {
     nom: '', prenom: '', telephone: '', email: '', societe: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
-    imei: '',
+    imei: '', carte_camby: false,
   });
 
   // Pièce à commander (for regular tickets with piece checkbox)
@@ -160,7 +160,7 @@ export default function ClientFormPage() {
       const client = await api.createOrGetClient({
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
-        societe: form.societe,
+        societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
       });
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
@@ -314,6 +314,11 @@ export default function ClientFormPage() {
               <label className="input-label">Société</label>
               <input value={form.societe} onChange={e => updateForm('societe', e.target.value)} className="input" placeholder="optionnel" />
             </div>
+            <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
+              <input type="checkbox" checked={form.carte_camby} onChange={e => updateForm('carte_camby', e.target.checked)}
+                className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+              <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
+            </label>
           </div>
         )}
 

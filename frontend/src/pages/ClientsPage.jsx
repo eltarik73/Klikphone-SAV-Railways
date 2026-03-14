@@ -190,6 +190,7 @@ export default function ClientsPage() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-slate-800 truncate">
                           {c.prenom || ''} {c.nom || ''}
+                          {c.carte_camby ? <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold">🎫 Camby</span> : null}
                         </p>
                         {c.societe && <p className="text-xs text-slate-400 truncate">{c.societe}</p>}
                       </div>
@@ -257,6 +258,7 @@ export default function ClientsPage() {
                     <div>
                       <p className="font-bold text-slate-900">{selectedClient.prenom} {selectedClient.nom}</p>
                       {selectedClient.societe && <p className="text-xs text-slate-400">{selectedClient.societe}</p>}
+                      {selectedClient.carte_camby ? <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">🎫 Camby</span> : null}
                     </div>
                   </div>
                   <div className="flex gap-1">
