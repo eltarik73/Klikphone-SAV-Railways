@@ -1455,21 +1455,19 @@ export default function TicketDetailPage() {
                   <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-600' : 'text-emerald-600'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
                 </div>
 
-                {/* 8. Bouton payé (facture only) */}
-                {(pricingForm.type_document || 'devis') === 'facture' && (
-                  <button onClick={() => {
-                      if (t.paye) {
-                        if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
-                      } else {
-                        setShowPayeModal(true);
-                      }
-                    }}
-                    className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${
-                      t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
-                    }`}>
-                    <CheckCircle2 className="w-4 h-4 inline mr-1.5" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
-                  </button>
-                )}
+                {/* 8. Bouton payé */}
+                <button onClick={() => {
+                    if (t.paye) {
+                      if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
+                    } else {
+                      setShowPayeModal(true);
+                    }
+                  }}
+                  className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${
+                    t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
+                  }`}>
+                  <CheckCircle2 className="w-4 h-4 inline mr-1.5" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
+                </button>
               </div>
             ) : (
               /* ─── View mode ─── */
@@ -1570,20 +1568,18 @@ export default function TicketDetailPage() {
 
                 {/* Action buttons */}
                 <div className="flex gap-2 mt-3 flex-wrap">
-                  {(t.type_document || 'devis') === 'facture' && (
-                    <button onClick={() => {
-                        if (t.paye) {
-                          if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
-                        } else {
-                          setShowPayeModal(true);
-                        }
-                      }}
-                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                        t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
-                      }`}>
-                      <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
-                    </button>
-                  )}
+                  <button onClick={() => {
+                      if (t.paye) {
+                        if (confirm('Démarquer comme non payé ?')) handleTogglePaye();
+                      } else {
+                        setShowPayeModal(true);
+                      }
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                      t.paye ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-700 border-2 border-emerald-300 hover:bg-emerald-100'
+                    }`}>
+                    <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
+                  </button>
                   {caisseEnabled && (
                     <button onClick={handleSendCaisse} className="px-3 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">
                       <Zap className="w-3.5 h-3.5 inline mr-1" />Caisse
