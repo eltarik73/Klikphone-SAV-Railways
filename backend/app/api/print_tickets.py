@@ -498,7 +498,7 @@ def _ticket_staff_html(t: dict) -> str:
 
     # --- Notes from notes_tickets table ---
     ticket_id = t.get("id")
-    notes_list = _get_ticket_notes(ticket_id) if ticket_id else []
+    notes_list = _get_ticket_notes(ticket_id)[:3] if ticket_id else []
     notes_html = ""
     if notes_list:
         notes_inner = ""
@@ -593,6 +593,12 @@ body {{ margin:0; padding:0; background:#fff; }}
     f'<div><strong>Catégorie :</strong> {t.get("categorie", "")}</div>'
     + (f'<div><strong>IMEI :</strong> <span style="font-family:Courier New,monospace">{t.get("imei","")}</span></div>' if t.get("imei") else "")
     + '</div>'
+  )}
+
+  <!-- PANNE -->
+  {_staff_box("⚠️ PANNE",
+    f'<div style="font-size:14px;font-weight:700;">{t.get("panne", "Non renseignée")}</div>'
+    + (f'<div style="font-size:12px;margin-top:4px;white-space:pre-wrap;">{t.get("panne_detail", "")}</div>' if t.get("panne_detail") else "")
   )}
 
   <!-- RÉPARATIONS -->
