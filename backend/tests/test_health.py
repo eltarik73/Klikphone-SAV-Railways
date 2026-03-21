@@ -2,12 +2,9 @@
 
 
 def test_root(client):
-    """GET / returns service info."""
+    """GET / returns 200 (serves SPA index.html or fallback)."""
     r = client.get("/")
     assert r.status_code == 200
-    data = r.json()
-    assert data["service"] == "Klikphone SAV API"
-    assert "version" in data
 
 
 def test_health(client):

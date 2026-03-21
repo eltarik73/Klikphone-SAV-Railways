@@ -333,6 +333,14 @@ async def update_ticket(
     if not updates:
         return {"ok": True}
 
+    # Si paye est modifié, synchroniser statut_paiement et reste_a_payer
+    if "paye" in updates:
+        if updates["paye"]:
+            updates.setdefault("statut_paiement", "Payé")
+            updates.setdefault("reste_a_payer", 0)
+        else:
+            updates.setdefault("statut_paiement", "Non payé")
+
     updates["date_maj"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     set_clause = ", ".join(f"{k} = %s" for k in updates.keys())

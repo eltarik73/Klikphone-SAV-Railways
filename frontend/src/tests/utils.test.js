@@ -4,7 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatDate, formatDateShort, formatPrix,
-  waLink, smsLink, getStatusConfig, STATUTS,
+  waLink, smsLink, getStatusConfig, getStatusStyle,
+  STATUTS, MESSAGE_TEMPLATES,
 } from '../lib/utils';
 
 describe('formatDate', () => {
@@ -87,12 +88,69 @@ describe('getStatusConfig', () => {
 });
 
 describe('STATUTS', () => {
-  it('has 8 statuses', () => {
-    expect(STATUTS).toHaveLength(8);
+  it('has 9 statuses', () => {
+    expect(STATUTS).toHaveLength(9);
   });
 
-  it('starts with diagnostic and ends with closed', () => {
-    expect(STATUTS[0]).toBe('En attente de diagnostic');
-    expect(STATUTS[7]).toBe('Cl\u00F4tur\u00E9');
+  it('starts with pré-enregistré and ends with clôturé', () => {
+    expect(STATUTS[0]).toBe('Pré-enregistré');
+    expect(STATUTS[STATUTS.length - 1]).toBe('Clôturé');
+  });
+
+  it('contains all expected statuses in order', () => {
+    expect(STATUTS).toContain('En attente de diagnostic');
+    expect(STATUTS).toContain('En attente de pièce');
+    expect(STATUTS).toContain('En cours de réparation');
+    expect(STATUTS).toContain('Réparation terminée');
+    expect(STATUTS).toContain('Rendu au client');
+    expect(STATUTS.indexOf('En attente de diagnostic'))
+      .toBeLessThan(STATUTS.indexOf('En cours de réparation'));
+  });
+});
+
+describe('getStatusConfig - all statuses', () => {
+  it('returns indigo config for Pré-enregistré', () => {
+    const config = getStatusConfig('Pré-enregistré');
+    expect(config.bg).toContain('indigo');
+  });
+
+  it('returns config with all required keys for every status', () => {
+    STATUTS.forEach(s => {
+      const config = getStatusConfig(s);
+      expect(config).toHaveProperty('bg');
+      expect(config).toHaveProperty('text');
+      expect(config).toHaveProperty('dot');
+      expect(config).toHaveProperty('color');
+      // Should not be the default slate config
+      expect(config.color).not.toBe('#94A3B8');
+    });
+  });
+});
+
+describe('getStatusStyle', () => {
+  it('returns a string with bg and text classes', () => {
+    const style = getStatusStyle('En attente de diagnostic');
+    expect(style).toContain('bg-amber-50');
+    expect(style).toContain('text-amber-700');
+    expect(style).toContain('ring-1');
+  });
+});
+
+describe('MESSAGE_TEMPLATES', () => {
+  it('has at least 5 templates', () => {
+    expect(MESSAGE_TEMPLATES.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('each template has key and label', () => {
+    MESSAGE_TEMPLATES.forEach(t => {
+      expect(t).toHaveProperty('key');
+      expect(t).toHaveProperty('label');
+      expect(t.key).toBeTruthy();
+      expect(t.label).toBeTruthy();
+    });
+  });
+
+  it('contains appareil_pret template', () => {
+    expect(MESSAGE_TEMPLATES.find(t => t.key === 'appareil_pret')).toBeDefined();
   });
 });

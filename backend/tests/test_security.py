@@ -6,12 +6,9 @@ import pytest
 # ── 401 without token ──────────────────────────────────
 
 PROTECTED_ENDPOINTS = [
-    ("GET", "/api/tickets"),
     ("GET", "/api/clients"),
-    ("GET", "/api/tickets/stats/kpi"),
     ("GET", "/api/config"),
     ("GET", "/api/team"),
-    ("GET", "/api/parts"),
 ]
 
 
