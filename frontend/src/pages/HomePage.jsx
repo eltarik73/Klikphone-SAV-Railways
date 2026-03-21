@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe } from 'lucide-react';
+import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone } from 'lucide-react';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -18,9 +18,18 @@ export default function HomePage() {
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-2">
-          <img src="/logo_k.png" alt="Klikphone"
-            className="w-20 h-20 rounded-2xl object-contain shadow-xl shadow-brand-600/20"
-          />
+          <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg"
+            className="w-20 h-20 drop-shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+          >
+            <defs>
+              <linearGradient id="logo-bg" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+                <stop stopColor="#8B5CF6"/>
+                <stop offset="1" stopColor="#4F46E5"/>
+              </linearGradient>
+            </defs>
+            <rect width="200" height="200" rx="44" fill="url(#logo-bg)"/>
+            <path d="M62 42 L84 42 L84 89 L130 42 L156 42 L106 98 L158 158 L130 158 L84 111 L84 158 L62 158 Z" fill="white" fillOpacity="0.95"/>
+          </svg>
         </div>
         <h1 className="text-3xl sm:text-4xl font-display font-extrabold text-white text-center tracking-tight mt-3">
           KLIKPHONE
@@ -38,7 +47,7 @@ export default function HomePage() {
           <button onClick={() => navigate('/client')}
             className="w-full flex items-center gap-4 p-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/30 transition-all group hover:-translate-y-0.5">
             <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
-              <img src="/logo_k.png" alt="" className="w-6 h-6 object-contain" />
+              <Smartphone className="w-5 h-5" />
             </div>
             <div className="flex-1 text-left">
               <p className="font-semibold">Déposer un appareil</p>
