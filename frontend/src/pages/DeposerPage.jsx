@@ -6,7 +6,10 @@ import {
   Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle,
 } from 'lucide-react';
 
-const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
+const isValidPhone = (tel) => {
+  const digits = tel.replace(/[\s.\-()+ ]/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+};
 const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 const STEPS = ['Coordonnées', 'Appareil', 'Panne'];
@@ -89,18 +92,18 @@ export default function DeposerPage() {
     setLoading(true);
     try {
       const result = await api.createDepotDistance({
-        nom: form.nom,
-        prenom: form.prenom,
-        telephone: form.telephone,
-        email: form.email,
-        carte_camby: form.carte_camby,
+        nom: form.nom.trim(),
+        prenom: (form.prenom || '').trim(),
+        telephone: form.telephone.trim(),
+        email: (form.email || '').trim(),
+        carte_camby: form.carte_camby ? 1 : 0,
         categorie: form.categorie,
         marque: form.marque,
         modele: form.marque === 'Autre' ? '' : form.modele,
-        modele_autre: form.marque === 'Autre' ? form.modele_autre : '',
+        modele_autre: form.marque === 'Autre' ? form.modele_autre.trim() : '',
         panne: form.panne,
-        panne_detail: form.panne_detail,
-        notes_client: form.notes_client,
+        panne_detail: (form.panne_detail || '').trim(),
+        notes_client: (form.notes_client || '').trim(),
       });
       setCreatedCode(result.ticket_code);
     } catch (err) {

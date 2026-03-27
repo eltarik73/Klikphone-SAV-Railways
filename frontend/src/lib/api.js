@@ -463,7 +463,7 @@ class ApiClient {
   deleteTelephoneVente(id) { return this.delete(`/api/devis/telephones-vente/${id}`); }
 
   // ─── DEPOT DISTANCE ────────────────────────────
-  createDepotDistance(data) { return this.post('/api/depot-distance', data); }
+  createDepotDistance(data) { return this.request('/api/depot-distance', { method: 'POST', body: JSON.stringify(data) }, 20000); }
   validerDepot(ticketId) { return this.put(`/api/depot-distance/${ticketId}/valider`, {}); }
   refuserDepot(ticketId, motif) { return this.put(`/api/depot-distance/${ticketId}/refuser`, { motif }); }
   getPendingDepots() { return this.get('/api/depot-distance/pending'); }

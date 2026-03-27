@@ -24,14 +24,14 @@ class DepotDistanceRequest(BaseModel):
     prenom: Optional[str] = ""
     telephone: str
     email: Optional[str] = ""
-    categorie: str
-    marque: str
+    categorie: str = ""
+    marque: str = ""
     modele: Optional[str] = ""
     modele_autre: Optional[str] = ""
-    panne: str
+    panne: str = ""
     panne_detail: Optional[str] = ""
     notes_client: Optional[str] = ""
-    carte_camby: Optional[bool] = False
+    carte_camby: Optional[int] = 0
 
 
 class RefusMotif(BaseModel):
@@ -43,6 +43,12 @@ class RefusMotif(BaseModel):
 @router.post("")
 async def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     """Pré-enregistre un appareil à distance (public, pas d'auth)."""
+    # Validation basique
+    if not data.nom or not data.nom.strip():
+        raise HTTPException(400, "Le nom est requis")
+    if not data.telephone or not data.telephone.strip():
+        raise HTTPException(400, "Le téléphone est requis")
+
     # Vérifier si le module est actif
     actif = _get_param("DEPOT_DISTANCE_ACTIF")
     if actif == "false":
