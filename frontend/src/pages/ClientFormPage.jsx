@@ -5,18 +5,22 @@ import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Lock, Shield, FileText, Send, Package,
+  Lock, Shield, FileText, Send, Package, ShoppingBag,
 } from 'lucide-react';
 
 // Flow = ordered list of step IDs
 const FLOW_DEFAULT = ['client', 'appareil', 'modele', 'panne', 'securite', 'confirmation'];
 const FLOW_COMMANDE = ['client', 'appareil', 'panne', 'confirmation'];
+const FLOW_ACHAT = ['client', 'achat', 'confirmation'];
 
 const LABELS = {
   client: 'Client', appareil: 'Appareil', modele: 'Modèle',
   panne: 'Panne', securite: 'Sécurité', confirmation: 'Confirmation',
+  achat: 'Achat',
 };
 const LABELS_COMMANDE = { ...LABELS, panne: 'Commande' };
+
+const ACHAT_TYPES = ['Téléphone', 'Accessoire', 'Ordinateur'];
 
 // Validation helpers
 const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
@@ -52,9 +56,15 @@ export default function ClientFormPage() {
   const [fournisseur, setFournisseur] = useState('');
   const [prixEstime, setPrixEstime] = useState('');
 
+  // Achat fields
+  const [achatType, setAchatType] = useState('');
+  const [achatDescription, setAchatDescription] = useState('');
+  const [achatPrix, setAchatPrix] = useState('');
+
   // ─── Flow logic ──────────────────────────────────────────────
   const isCommande = form.categorie === 'Commande';
-  const flow = isCommande ? FLOW_COMMANDE : FLOW_DEFAULT;
+  const isAchat = form.categorie === 'Achat';
+  const flow = isAchat ? FLOW_ACHAT : isCommande ? FLOW_COMMANDE : FLOW_DEFAULT;
   const labels = isCommande ? LABELS_COMMANDE : LABELS;
   const currentId = flow[step] || 'client';
   const isLastStep = step === flow.length - 2; // last before confirmation
@@ -72,6 +82,9 @@ export default function ClientFormPage() {
     setPieceDetails('');
     setFournisseur('');
     setPrixEstime('');
+    setAchatType('');
+    setAchatDescription('');
+    setAchatPrix('');
     setCreatedCode(null);
     setStep(0);
     setErrors({});
@@ -162,50 +175,75 @@ export default function ClientFormPage() {
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
       });
-      const result = await api.createTicket({
-        client_id: client.id, categorie: form.categorie,
-        marque: form.marque,
-        modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
-        modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
-        panne: isCommande ? 'Pièce à commander' : (pieceACommander && pieceNom ? 'Pièce à commander' : form.panne),
-        panne_detail: isCommande ? form.panne_detail : (pieceACommander && pieceNom
-          ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
-          : form.panne_detail),
-        pin: form.pin,
-        pattern: form.pattern,
-        notes_client: form.notes_client,
-        commande_piece: (isCommande || pieceACommander) ? 1 : 0,
-      });
 
-      // Auto-create commande for "Commande" type
-      if (isCommande) {
-        await api.createPartAuto({
-          ticket_id: result.id,
-          description: form.panne_detail.trim(),
-          fournisseur: fournisseur || '',
-          prix: prixEstime ? parseFloat(prixEstime) : null,
-          notes: form.notes_client || '',
+      if (isAchat) {
+        // Achat flow: create ticket with "Achat" category, auto-close
+        const result = await api.createTicket({
+          client_id: client.id, categorie: 'Achat',
+          marque: achatType, modele: '', modele_autre: achatDescription,
+          panne: `Achat ${achatType}`,
+          panne_detail: achatDescription,
+          notes_client: form.notes_client,
         });
-      }
-      // Auto-create commande if piece à commander (regular ticket)
-      else if (pieceACommander && pieceNom) {
-        await api.createPartAuto({
-          ticket_id: result.id,
-          description: pieceNom,
-          fournisseur: fournisseur || '',
-          prix: prixEstime ? parseFloat(prixEstime) : null,
-          notes: pieceDetails || '',
+        // Set price and mark as paid + closed
+        if (achatPrix) {
+          await api.updateTicket(result.id, {
+            devis_estime: parseFloat(achatPrix) || 0,
+            tarif_final: parseFloat(achatPrix) || 0,
+            paye: 1,
+            statut_paiement: 'Payé',
+            reste_a_payer: 0,
+          });
+        }
+        await api.changeStatus(result.id, 'Clôturé');
+        setCreatedCode(result.ticket_code);
+        setStep(flow.length - 1);
+      } else {
+        const result = await api.createTicket({
+          client_id: client.id, categorie: form.categorie,
+          marque: form.marque,
+          modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
+          modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
+          panne: isCommande ? 'Pièce à commander' : (pieceACommander && pieceNom ? 'Pièce à commander' : form.panne),
+          panne_detail: isCommande ? form.panne_detail : (pieceACommander && pieceNom
+            ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
+            : form.panne_detail),
+          pin: form.pin,
+          pattern: form.pattern,
+          notes_client: form.notes_client,
+          commande_piece: (isCommande || pieceACommander) ? 1 : 0,
         });
+
+        // Auto-create commande for "Commande" type
+        if (isCommande) {
+          await api.createPartAuto({
+            ticket_id: result.id,
+            description: form.panne_detail.trim(),
+            fournisseur: fournisseur || '',
+            prix: prixEstime ? parseFloat(prixEstime) : null,
+            notes: form.notes_client || '',
+          });
+        }
+        // Auto-create commande if piece à commander (regular ticket)
+        else if (pieceACommander && pieceNom) {
+          await api.createPartAuto({
+            ticket_id: result.id,
+            description: pieceNom,
+            fournisseur: fournisseur || '',
+            prix: prixEstime ? parseFloat(prixEstime) : null,
+            notes: pieceDetails || '',
+          });
+        }
+
+        // Apprentissage silencieux
+        const panne = isCommande ? null : (pieceACommander && pieceNom ? null : form.panne);
+        if (panne && panne !== 'Pièce à commander') api.learnTerm('panne', panne).catch(() => {});
+        if (form.panne_detail) api.learnTerm('detail_panne', form.panne_detail).catch(() => {});
+        if (form.modele_autre) api.learnTerm('modele_custom', form.modele_autre).catch(() => {});
+
+        setCreatedCode(result.ticket_code);
+        setStep(flow.length - 1);
       }
-
-      // Apprentissage silencieux (l'autocomplétion ne s'affiche pas ici mais les termes sont appris)
-      const panne = isCommande ? null : (pieceACommander && pieceNom ? null : form.panne);
-      if (panne && panne !== 'Pièce à commander') api.learnTerm('panne', panne).catch(() => {});
-      if (form.panne_detail) api.learnTerm('detail_panne', form.panne_detail).catch(() => {});
-      if (form.modele_autre) api.learnTerm('modele_custom', form.modele_autre).catch(() => {});
-
-      setCreatedCode(result.ticket_code);
-      setStep(flow.length - 1); // go to confirmation
     } catch (err) {
       toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
@@ -219,6 +257,7 @@ export default function ClientFormPage() {
       case 'appareil': return form.categorie;
       case 'modele': return form.marque && (form.marque !== 'Autre' && form.modele !== 'Autre' || form.modele_autre.trim());
       case 'panne': return isCommande ? form.panne_detail.trim() : (form.panne || pieceACommander);
+      case 'achat': return achatType && achatDescription.trim();
       case 'securite': return true;
       default: return true;
     }
@@ -348,6 +387,15 @@ export default function ClientFormPage() {
                   {cat}
                 </button>
               ))}
+              <button
+                onClick={() => updateForm('categorie', 'Achat')}
+                className={`p-5 rounded-xl text-base font-semibold border-2 transition-all text-left flex items-center gap-2
+                  ${form.categorie === 'Achat'
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-500/10'
+                    : 'border-emerald-200 hover:border-emerald-300 text-emerald-700 bg-emerald-50/50'}`}
+              >
+                <ShoppingBag className="w-5 h-5" /> Achat
+              </button>
             </div>
           </div>
         )}
@@ -541,6 +589,72 @@ export default function ClientFormPage() {
           </div>
         )}
 
+        {/* ═══ Step: Achat ═══ */}
+        {currentId === 'achat' && (
+          <div className="card p-6 space-y-4 animate-in">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <ShoppingBag className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Détail de l'achat</h2>
+                <p className="text-xs text-slate-400">Enregistrer un achat sans réparation</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="input-label">Type d'achat *</label>
+              <div className="grid grid-cols-3 gap-3">
+                {ACHAT_TYPES.map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setAchatType(type)}
+                    className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-center
+                      ${achatType === type
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="input-label">Description de l'achat *</label>
+              <input
+                value={achatDescription}
+                onChange={e => setAchatDescription(e.target.value)}
+                className="input"
+                placeholder="Ex: iPhone 15 128Go Noir, Coque silicone..."
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="input-label">Prix de vente (€)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={achatPrix}
+                onChange={e => setAchatPrix(e.target.value)}
+                className="input"
+                placeholder="0.00"
+              />
+            </div>
+
+            <div>
+              <label className="input-label">Notes</label>
+              <textarea
+                value={form.notes_client}
+                onChange={e => updateForm('notes_client', e.target.value)}
+                className="input min-h-[60px] resize-none"
+                placeholder="Informations complémentaires..."
+              />
+            </div>
+          </div>
+        )}
+
         {/* ═══ Step: Sécurité (skipped for Commande) ═══ */}
         {currentId === 'securite' && (
           <div className="card p-6 space-y-5 animate-in">
@@ -598,7 +712,7 @@ export default function ClientFormPage() {
               <p className="text-4xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
             </div>
             <p className="text-sm text-slate-400 mb-6">
-              Conservez ce code pour suivre l'avancement de votre {isCommande ? 'commande' : 'réparation'}.
+              Conservez ce code pour suivre l'avancement de votre {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}.
             </p>
             {countdown !== null && (
               <div className="mb-6">
@@ -616,7 +730,7 @@ export default function ClientFormPage() {
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
                 className="btn-primary w-full"
               >
-                <Send className="w-4 h-4" /> Suivre ma {isCommande ? 'commande' : 'réparation'}
+                <Send className="w-4 h-4" /> Suivre ma {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}
               </button>
               <button onClick={resetForm} className="btn-secondary w-full">
                 <ArrowLeft className="w-4 h-4" /> Nouveau dépôt
