@@ -354,7 +354,8 @@ def _ticket_client_html(t: dict) -> str:
     reduction = _calc_reduction(t, subtotal)
     total = max(0, subtotal - reduction)
     acompte = float(t.get("acompte") or 0)
-    reste = total - acompte
+    reste = max(0, total - acompte)
+    is_paid = bool(t.get("paye"))
 
     # Date de récupération
     recup_html = ""
@@ -375,7 +376,10 @@ def _ticket_client_html(t: dict) -> str:
         tarif_inner += f'<div class="row" style="font-size:16px;"><span>TOTAL</span><span class="val">{_fp(total)} €</span></div></div>'
         if acompte > 0:
             tarif_inner += f'<div class="row"><span>Acompte versé</span><span class="val">- {_fp(acompte)} €</span></div>'
-        tarif_inner += f'<div style="border:3px solid #000;padding:8px;margin-top:6px;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>'
+        if is_paid:
+            tarif_inner += f'<div style="border:3px solid #059669;padding:8px;margin-top:6px;text-align:center;font-size:17px;font-weight:900;color:#059669;">✓ PAYÉ</div>'
+        else:
+            tarif_inner += f'<div style="border:3px solid #000;padding:8px;margin-top:6px;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>'
         tarif_html = f'<div class="box"><div class="box-title">💰 TARIFICATION</div>{tarif_inner}</div>'
 
     # Note publique
@@ -462,7 +466,8 @@ def _ticket_staff_html(t: dict) -> str:
     reduction = _calc_reduction(t, subtotal)
     total = max(0, subtotal - reduction)
     acompte = float(t.get("acompte") or 0)
-    reste = total - acompte
+    reste = max(0, total - acompte)
+    is_paid = bool(t.get("paye"))
 
     repairs_html = ""
     for i, r in enumerate(repair_lines):
@@ -611,9 +616,12 @@ body {{ margin:0; padding:0; background:#fff; }}
     + f'TOTAL : <span style="float:right;">{_fp(total)} €</span></div>'
     + (f'<div style="font-size:13px;padding:2px 0;">'
        f'Acompte : <span style="float:right;">- {_fp(acompte)} €</span></div>' if acompte > 0 else "")
-    + f'<div style="border:2px solid #000;padding:6px 8px;margin-top:6px;'
+    + (f'<div style="border:2px solid #059669;padding:6px 8px;margin-top:6px;'
+    + f'font-size:16px;font-weight:900;text-align:center;color:#059669;">'
+    + f'✓ PAYÉ</div>' if is_paid else
+    f'<div style="border:2px solid #000;padding:6px 8px;margin-top:6px;'
     + f'font-size:16px;font-weight:900;text-align:center;">'
-    + f'★ RESTE À PAYER : {_fp(reste)} €</div>'
+    + f'★ RESTE À PAYER : {_fp(reste)} €</div>')
   )}
 
   <!-- CODES DE SÉCURITÉ -->
@@ -670,7 +678,7 @@ def _devis_html(t: dict) -> str:
     total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
-    reste = total_ttc - acompte
+    reste = max(0, total_ttc - acompte)
     tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
@@ -746,16 +754,14 @@ def _recu_html(t: dict) -> str:
     tva_rate = float(_get_config("tva", "20"))
 
     repair_lines = _parse_repair_lines(t)
-    # For reçu, use tarif_final if available (overrides devis)
-    if t.get("tarif_final") and len(repair_lines) > 0:
-        repair_lines[0]["prix"] = float(t["tarif_final"])
     subtotal_ttc = sum(r["prix"] for r in repair_lines)
     acompte = float(t.get("acompte") or 0)
     reduction = _calc_reduction(t, subtotal_ttc)
     total_ttc = max(0, subtotal_ttc - reduction)
     tva = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva, 2)
-    reste = total_ttc - acompte
+    reste = max(0, total_ttc - acompte)
+    is_paid = bool(t.get("paye"))
     tva_label = f"TVA ({tva_rate:g}%)"
 
     lignes = ""
@@ -806,7 +812,7 @@ def _recu_html(t: dict) -> str:
 
 <div class="total-box"><div class="row"><span>TOTAL TTC :</span><span>{_fp(total_ttc)} €</span></div></div>
 {f'<div class="row" style="padding:2px 10px;"><span>Acompte :</span><span class="val">- {_fp(acompte)} €</span></div>' if acompte > 0 else ''}
-{f'<div style="border:3px solid #000;padding:8px;margin:6px 0;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>' if acompte > 0 else ''}
+{f'<div style="border:3px solid #059669;padding:8px;margin:6px 0;text-align:center;font-size:17px;font-weight:900;color:#059669;">✓ PAYÉ</div>' if is_paid else f'<div style="border:3px solid #000;padding:8px;margin:6px 0;text-align:center;font-size:17px;font-weight:900;">RESTE À PAYER : {_fp(reste)} €</div>'}
 
 <hr class="sep">
 <div class="tiny" style="padding:2px 0;">
@@ -930,16 +936,14 @@ def _a4_document(t: dict, doc_type: str) -> str:
     type_ecran = t.get("type_ecran", "")
 
     repair_lines = _parse_repair_lines(t)
-    if not is_devis and t.get("tarif_final") and len(repair_lines) > 0:
-        repair_lines[0]["prix"] = float(t["tarif_final"])
     subtotal_ttc = sum(r["prix"] for r in repair_lines)
     reduction = _calc_reduction(t, subtotal_ttc)
     total_ttc = max(0, subtotal_ttc - reduction)
     tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva_amount, 2)
     acompte = float(t.get("acompte") or 0)
-    reste = total_ttc - acompte
-    is_paid = reste <= 0
+    reste = max(0, total_ttc - acompte)
+    is_paid = bool(t.get("paye"))
 
     date_depot = _fd(t.get("date_depot"))
     date_recup = t.get("date_recuperation") or "\u2014"
@@ -1146,16 +1150,14 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     type_ecran = t.get("type_ecran", "")
 
     repair_lines = _parse_repair_lines(t)
-    if not is_devis and t.get("tarif_final") and len(repair_lines) > 0:
-        repair_lines[0]["prix"] = float(t["tarif_final"])
     subtotal_ttc = sum(r["prix"] for r in repair_lines)
     reduction = _calc_reduction(t, subtotal_ttc)
     total_ttc = max(0, subtotal_ttc - reduction)
     tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva_amount, 2)
     acompte = float(t.get("acompte") or 0)
-    reste = total_ttc - acompte
-    is_paid = reste <= 0
+    reste = max(0, total_ttc - acompte)
+    is_paid = bool(t.get("paye"))
 
     date_depot = _fd(t.get("date_depot"))
     date_recup = t.get("date_recuperation") or "-"

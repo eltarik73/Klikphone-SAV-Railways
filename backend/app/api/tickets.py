@@ -370,7 +370,7 @@ async def toggle_paye(
 
     with get_cursor() as cur:
         cur.execute(
-            "SELECT paye, historique, client_id, tarif_final, devis_estime, prix_supp FROM tickets WHERE id = %s",
+            "SELECT paye, historique, client_id, tarif_final, devis_estime, prix_supp, acompte FROM tickets WHERE id = %s",
             (ticket_id,),
         )
         row = cur.fetchone()
@@ -388,9 +388,14 @@ async def toggle_paye(
                 (new_paye, now, new_hist, ticket_id),
             )
         else:
+            # Recalculate reste_a_payer from financial fields
+            tarif = float(row.get("tarif_final") or row.get("devis_estime") or 0) + float(row.get("prix_supp") or 0)
+            acompte_val = float(row.get("acompte") or 0)
+            reste = max(0, tarif - acompte_val)
+            statut = 'Acompte versé' if acompte_val > 0 and reste > 0 else 'Non payé'
             cur.execute(
-                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = 'Non payé' WHERE id = %s",
-                (new_paye, now, new_hist, ticket_id),
+                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = %s, reste_a_payer = %s WHERE id = %s",
+                (new_paye, now, new_hist, statut, reste, ticket_id),
             )
         _ajouter_historique(cur, ticket_id, 'statut', 'Marqué payé' if new_paye else 'Marqué non payé')
 
