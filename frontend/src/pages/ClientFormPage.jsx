@@ -145,7 +145,7 @@ export default function ClientFormPage() {
       api.getModeles(form.categorie, form.marque).then(setModeles).catch(() => setModeles([]));
       setForm(f => ({ ...f, modele: '', modele_autre: '' }));
     }
-  }, [form.marque]);
+  }, [form.categorie, form.marque]);
 
   const updateForm = (field, value) => {
     setForm(f => ({ ...f, [field]: value }));

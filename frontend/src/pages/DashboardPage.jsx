@@ -328,7 +328,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => mutate()} className="btn-ghost p-2.5" title="Rafraîchir">
-            <RefreshCw className={`w-4 h-4 ${loading || isRevalidating ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button onClick={() => navigate('/client')} className="btn-primary">
             <Plus className="w-4 h-4" /> Nouveau ticket

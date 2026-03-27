@@ -39,7 +39,9 @@ export function formatDateShort(d) {
 
 export function formatPrix(p) {
   if (p === null || p === undefined) return '—';
-  return `${Number(p).toFixed(2)} €`;
+  const n = Number(p);
+  if (!isFinite(n)) return '—';
+  return `${n.toFixed(2)} €`;
 }
 
 export const STATUTS = [

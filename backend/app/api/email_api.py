@@ -4,6 +4,7 @@ API Email — envoi via Resend (HTTP) ou SMTP fallback.
 
 import asyncio
 import base64
+import os
 import ssl
 import smtplib
 from functools import partial
@@ -65,7 +66,7 @@ def _send_smtp(to: str, subject: str, body: str) -> tuple:
     """Envoie un email via SMTP. Essaie SSL 465 puis STARTTLS 587."""
     smtp_host = _get_param("SMTP_HOST") or "ex4.mail.ovh.net"
     smtp_user = _get_param("SMTP_USER") or "contact@klikphone.com"
-    smtp_pass = _get_param("SMTP_PASSWORD") or "73000Kliks"
+    smtp_pass = _get_param("SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD", "")
     smtp_name = _get_param("SMTP_NAME") or "Klikphone"
 
     if not smtp_user or not smtp_pass:

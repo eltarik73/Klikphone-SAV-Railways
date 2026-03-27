@@ -50,7 +50,9 @@ function ChatMessageContent({ content }) {
   let html = content
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 
   // Bold
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
@@ -659,7 +661,7 @@ export default function ChatWidget() {
       {/* Chat panel */}
       {open && (
         <div
-          className="fixed bottom-5 right-5 z-[100] w-[380px] h-[560px] bg-white rounded-2xl
+          className="fixed bottom-5 right-5 z-[100] w-[calc(100vw-40px)] sm:w-[380px] h-[calc(100vh-100px)] sm:h-[560px] bg-white rounded-2xl
                      shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
           style={{ animation: 'chatSlideUp 250ms ease-out' }}
         >

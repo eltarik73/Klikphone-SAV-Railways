@@ -73,6 +73,7 @@ def get_cursor(dict_cursor=True):
     with get_db() as conn:
         cursor_factory = psycopg2.extras.RealDictCursor if dict_cursor else None
         with conn.cursor(cursor_factory=cursor_factory) as cur:
+            cur.execute("SET statement_timeout = '30s'")
             yield cur
 
 
