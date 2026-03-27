@@ -1262,17 +1262,21 @@ export default function TicketDetailPage() {
                   {teamMembers.length > 0 ? (
                     <select
                       value={t.technicien_assigne || ''}
-                      onChange={async (e) => {
+                      onChange={(e) => {
                         const nom = e.target.value;
-                        if (!nom) return;
-                        try {
-                          await api.updateTicket(id, { technicien_assigne: nom });
-                          await loadTicket();
-                          toast.success(`Assigné à ${nom}`);
-                          setEditingAssign(false);
-                        } catch { toast.error('Erreur assignation'); }
+                        if (nom === (t.technicien_assigne || '')) return;
+                        const doUpdate = async () => {
+                          try {
+                            await api.updateTicket(id, { technicien_assigne: nom || null });
+                            await loadTicket();
+                            toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
+                            setEditingAssign(false);
+                          } catch { toast.error('Erreur assignation'); }
+                        };
+                        doUpdate();
                       }}
                       className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold bg-white"
+                      style={{ WebkitAppearance: 'menulist', fontSize: '16px' }}
                     >
                       <option value="">— Non assigné —</option>
                       {teamMembers.map(m => <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>)}

@@ -695,12 +695,14 @@ export default function DashboardPage() {
                 </div>
 
                 {/* Tech — inline dropdown */}
-                <div className="hidden lg:block" onClick={e => e.stopPropagation()}>
+                <div className="hidden lg:block" onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                   <select
                     value={t.technicien_assigne || ''}
-                    onChange={e => handleInlineTech(t.id, e.target.value)}
-                    className="w-full py-1.5 px-2 text-[11px] font-medium rounded-lg border cursor-pointer appearance-none bg-no-repeat truncate transition-colors"
+                    onChange={e => { const val = e.target.value; handleInlineTech(t.id, val); }}
+                    className="w-full py-1.5 px-2 text-[11px] font-medium rounded-lg border cursor-pointer bg-no-repeat truncate transition-colors"
                     style={{
+                      WebkitAppearance: 'none',
+                      appearance: 'none',
                       borderColor: t.technicien_assigne ? (getTechColor(t.technicien_assigne) || '#94a3b8') : '#e2e8f0',
                       color: t.technicien_assigne ? '#334155' : '#94a3b8',
                       backgroundColor: t.technicien_assigne && getTechColor(t.technicien_assigne) ? getTechColor(t.technicien_assigne) + '15' : '#f8fafc',
