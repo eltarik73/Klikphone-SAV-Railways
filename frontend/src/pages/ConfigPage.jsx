@@ -388,13 +388,13 @@ export default function ConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-1 mb-6">
+      <div className="flex flex-wrap gap-1.5 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setActiveTab(id)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap
               ${activeTab === id
-                ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
+                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 border border-transparent hover:border-slate-200'
               }`}
           >
             <Icon className="w-3.5 h-3.5" /> {label}
@@ -500,7 +500,7 @@ export default function ConfigPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="input-label">Nom *</label>
                   <input value={teamForm.nom} onChange={e => setTeamForm(f => ({ ...f, nom: e.target.value }))} className="input" />
@@ -825,7 +825,7 @@ export default function ConfigPage() {
 
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <AtSign className="w-4 h-4 text-brand-600" /> Email
+              <Mail className="w-4 h-4 text-brand-600" /> Email
             </h2>
 
             <div className="p-3 bg-brand-50 border border-brand-100 rounded-lg mb-4">
@@ -836,7 +836,7 @@ export default function ConfigPage() {
             <div className="space-y-3 mb-4">
               <div>
                 <label className="input-label">Clé API Resend</label>
-                <input value={config.RESEND_API_KEY || 're_BxiE1NX2_9qVCBVSvEAHztuFtzc8F38kr'} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
+                <input value={config.RESEND_API_KEY || ''} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
                   className="input font-mono text-xs" placeholder="re_xxxxxxxx..." />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1226,7 +1226,7 @@ export default function ConfigPage() {
                     toast.success(newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
                   } catch { toast.error('Erreur sauvegarde'); }
                 }}
-                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'bg-amber-500' : 'bg-slate-300'}`}
+                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
               </button>
