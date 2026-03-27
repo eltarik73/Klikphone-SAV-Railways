@@ -1265,15 +1265,19 @@ export default function TicketDetailPage() {
                       onChange={(e) => {
                         const nom = e.target.value;
                         if (nom === (t.technicien_assigne || '')) return;
-                        const doUpdate = async () => {
-                          try {
-                            await api.updateTicket(id, { technicien_assigne: nom || null });
-                            await loadTicket();
+                        // Optimistic update: update local state immediately
+                        setTicket(prev => ({ ...prev, technicien_assigne: nom || null }));
+                        setEditingAssign(false);
+                        api.updateTicket(id, { technicien_assigne: nom || null })
+                          .then(() => {
+                            invalidateCache('tickets');
                             toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
-                            setEditingAssign(false);
-                          } catch { toast.error('Erreur assignation'); }
-                        };
-                        doUpdate();
+                          })
+                          .catch(() => {
+                            // Rollback on error
+                            setTicket(prev => ({ ...prev, technicien_assigne: t.technicien_assigne }));
+                            toast.error('Erreur assignation');
+                          });
                       }}
                       className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold bg-white"
                       style={{ WebkitAppearance: 'menulist', fontSize: '16px' }}

@@ -152,15 +152,16 @@ export default function DashboardPage() {
     }
   };
 
-  const handleInlineTech = async (ticketId, newTech) => {
-    try {
-      await api.updateTicket(ticketId, { technicien_assigne: newTech || null });
-      mutate(prev => prev ? {
-        ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, technicien_assigne: newTech || null } : t),
-      } : prev);
-    } catch (err) {
-      console.error(err);
-    }
+  const handleInlineTech = (ticketId, newTech) => {
+    // Optimistic update first
+    mutate(prev => prev ? {
+      ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, technicien_assigne: newTech || null } : t),
+    } : prev, { revalidate: false });
+    api.updateTicket(ticketId, { technicien_assigne: newTech || null })
+      .catch(err => {
+        console.error(err);
+        mutate(); // Rollback: refetch from server
+      });
   };
 
   const handleKpiClick = (filter, idx) => {
