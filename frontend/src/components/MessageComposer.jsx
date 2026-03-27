@@ -50,11 +50,17 @@ export default function MessageComposer({ ticket, onMessageSent }) {
 
   const t = ticket;
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
-  const baseMontant = parseFloat(t.tarif_final) || parseFloat(t.devis_estime) || 0;
+  // tarif_final already includes reduction, so don't reduce again
+  // Use reste_a_payer if available (accounts for acompte), else tarif_final, else devis_estime with reduction
+  const acompte = parseFloat(t.acompte) || 0;
+  const tarif = parseFloat(t.tarif_final) || 0;
+  const devis = parseFloat(t.devis_estime) || 0;
   const redPct = parseFloat(t.reduction_pourcentage) || 0;
   const redMnt = parseFloat(t.reduction_montant) || 0;
-  const reduction = redPct > 0 ? baseMontant * (redPct / 100) : redMnt;
-  const montant = Math.max(0, baseMontant - reduction);
+  // If tarif_final exists, it already has reduction applied
+  // If only devis_estime, apply reduction manually
+  const totalApresReduction = tarif > 0 ? tarif : Math.max(0, devis - (redPct > 0 ? devis * (redPct / 100) : redMnt));
+  const montant = t.paye ? 0 : Math.max(0, totalApresReduction - acompte);
 
   const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
 
