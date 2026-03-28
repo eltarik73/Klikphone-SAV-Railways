@@ -64,13 +64,26 @@ def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
         # Rayon ID pour rattacher la TVA (configuré dans le POS)
         rayon_id = (_get_param("CAISSE_RAYON_ID") or "").strip()
 
-        api_url = (
-            f"https://caisse.enregistreuse.fr/workers/webapp.php?"
-            f"idboutique={shopid}&key={apikey}&idUser={user_id}"
-            f"&idcaisse={caisse_id}&payment={payment_mode}&deliveryMethod={delivery_method}"
-        )
+        api_url = "https://caisse.enregistreuse.fr/workers/webapp.php"
 
-        payload = [("publicComment", f"Ticket: {ticket.get('ticket_code', '')}")]
+        # Format: -[idRayon]_[prix]_[titre] pour avoir la TVA du rayon
+        #         Free_[prix]_[titre] si pas de rayon configuré
+        def _item(prix, titre):
+            if rayon_id and rayon_id.isdigit():
+                return f"-{rayon_id}_{prix:.2f}_{titre}"
+            return f"Free_{prix:.2f}_{titre}"
+
+        # Tout dans le POST body (format tuples pour PHP)
+        payload = [
+            ("shopID", shopid),
+            ("idboutique", shopid),
+            ("key", apikey),
+            ("idUser", user_id),
+            ("idcaisse", caisse_id),
+            ("payment", payment_mode),
+            ("deliveryMethod", delivery_method),
+            ("publicComment", f"Ticket: {ticket.get('ticket_code', '')}"),
+        ]
 
         if ticket.get("client_nom") or ticket.get("client_prenom"):
             payload += [
@@ -80,13 +93,6 @@ def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
             ]
             if ticket.get("client_email"):
                 payload.append(("client[email]", ticket.get("client_email")))
-
-        # Format: -[idRayon]_[prix]_[titre] pour avoir la TVA du rayon
-        #         Free_[prix]_[titre] si pas de rayon configuré
-        def _item(prix, titre):
-            if rayon_id and rayon_id.isdigit():
-                return f"-{rayon_id}_{prix:.2f}_{titre}"
-            return f"Free_{prix:.2f}_{titre}"
 
         payload.append(("itemsList[]", _item(total, description)))
 

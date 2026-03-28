@@ -64,15 +64,10 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
         raise HTTPException(400, "Montant à 0 : rien à envoyer")
 
     description = str(data.get("description", "Réparation") or "Réparation")
+    description = description.replace("_", " ")
 
     # Rayon ID pour rattacher la TVA (configuré dans le POS)
     rayon_id = str(_get_param("CAISSE_RAYON_ID") or "").strip()
-
-    api_url = (
-        f"https://caisse.enregistreuse.fr/workers/webapp.php?"
-        f"idboutique={shopid}&key={apikey}&idUser={user_id}"
-        f"&idcaisse={caisse_id}&payment=-1&deliveryMethod={delivery_method}"
-    )
 
     nom = str(data.get("nom", "") or "")
     prenom = str(data.get("prenom", "") or "")
@@ -80,27 +75,35 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     email = str(data.get("email", "") or "")
     ticket_code = str(data.get("ticket_code", "") or "")
 
-    # Format: -[idRayon]_[prix]_[titre] si rayon configuré (TVA du rayon appliquée)
-    #         Free_[prix]_[titre] sinon (pas de TVA)
+    # Format article: -[idRayon]_[prix]_[titre] (avec TVA rayon) ou Free_[prix]_[titre]
     if rayon_id and rayon_id.isdigit():
         item_str = f"-{rayon_id}_{montant_ttc:.2f}_{description}"
     else:
         item_str = f"Free_{montant_ttc:.2f}_{description}"
 
-    form_data = {
-        "publicComment": f"Ticket: {ticket_code}",
-        "itemsList[]": item_str,
-    }
+    # Construire le payload en tuples (format fiable pour PHP)
+    api_url = "https://caisse.enregistreuse.fr/workers/webapp.php"
+    payload = [
+        ("shopID", shopid),
+        ("idboutique", shopid),
+        ("key", apikey),
+        ("idUser", user_id),
+        ("idcaisse", caisse_id),
+        ("payment", "-1"),
+        ("deliveryMethod", delivery_method),
+        ("publicComment", f"Ticket: {ticket_code}"),
+        ("itemsList[]", item_str),
+    ]
     if nom or prenom:
-        form_data["client[nom]"] = nom
-        form_data["client[prenom]"] = prenom
-        form_data["client[telephone]"] = telephone
+        payload.append(("client[nom]", nom))
+        payload.append(("client[prenom]", prenom))
+        payload.append(("client[telephone]", telephone))
         if email:
-            form_data["client[email]"] = email
+            payload.append(("client[email]", email))
 
     try:
         with httpx.Client(timeout=15) as client:
-            res = client.post(api_url, data=form_data)
+            res = client.post(api_url, data=payload)
 
         try:
             result = res.json()
