@@ -229,6 +229,9 @@ class ApiClient {
   testCaisseConnexion() {
     return this.post('/api/config/caisse/test');
   }
+  getCaisseRayons() {
+    return this.get('/api/caisse/rayons');
+  }
 
   // ─── EMAIL ──────────────────────────────
   envoyerEmail(to, subject, body) {

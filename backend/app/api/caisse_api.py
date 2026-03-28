@@ -134,3 +134,44 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
         raise
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@router.get("/rayons")
+async def get_rayons(user: dict = Depends(get_current_user)):
+    """Récupère la liste des rayons/départements depuis caisse.enregistreuse.fr."""
+    import httpx
+
+    def _get_param(key, default=""):
+        with get_cursor() as cur:
+            cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
+            row = cur.fetchone()
+        return row["valeur"] if row else default
+
+    shopid = str(_get_param("CAISSE_SHOPID") or "")
+    apikey = str(_get_param("CAISSE_APIKEY") or "")
+
+    if not shopid or not apikey:
+        raise HTTPException(400, "Caisse non configurée (SHOPID ou APIKEY manquant)")
+
+    try:
+        url = (
+            f"https://caisse.enregistreuse.fr/workers/getDepartments.php?"
+            f"shopID={shopid}&key={apikey}&format=json"
+        )
+        with httpx.Client(timeout=15) as client:
+            res = client.get(url)
+
+        if res.status_code != 200:
+            raise HTTPException(502, f"Erreur caisse: HTTP {res.status_code}")
+
+        data = res.json()
+        # data peut être une liste ou un dict avec les rayons
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "departments" in data:
+            return data["departments"]
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Erreur récupération rayons: {e}")

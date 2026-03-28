@@ -1056,9 +1056,32 @@ export default function ConfigPage() {
                 <input value={caisseConfig.CAISSE_USER_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_USER_ID: e.target.value }))} className="input font-mono" />
               </div>
               <div className="sm:col-span-2">
-                <label className="input-label">ID Rayon (pour TVA)</label>
-                <input value={caisseConfig.CAISSE_RAYON_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: e.target.value }))} className="input font-mono" placeholder="Ex: 12345" />
-                <p className="text-[10px] text-slate-400 mt-1">ID du rayon/département dans la caisse qui a le bon taux de TVA (ex: "Réparations" à 20%). Sans ce champ, les articles seront envoyés sans TVA.</p>
+                <label className="input-label">Rayon (pour TVA)</label>
+                <div className="flex gap-2">
+                  <input value={caisseConfig.CAISSE_RAYON_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: e.target.value }))} className="input font-mono flex-1" placeholder="ID du rayon" />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await api.saveCaisseConfig(caisseConfig);
+                        const rayons = await api.getCaisseRayons();
+                        const list = Array.isArray(rayons) ? rayons : [];
+                        if (list.length === 0) { toast.error('Aucun rayon trouvé — vérifiez la config'); return; }
+                        const options = list.map(r => `${r.id || r.ID} — ${r.name || r.nom || r.title || r.label || 'Sans nom'}`).join('\n');
+                        const choix = prompt(`Choisissez un rayon (copiez l'ID) :\n\n${options}`);
+                        if (choix && choix.trim()) {
+                          const id = choix.trim().split(/\s/)[0];
+                          setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: id }));
+                          toast.success(`Rayon ${id} sélectionné`);
+                        }
+                      } catch (err) { toast.error(err.message || 'Erreur chargement rayons'); }
+                    }}
+                    className="btn-ghost text-xs px-3 py-2 whitespace-nowrap border border-slate-200"
+                  >
+                    <Search className="w-3.5 h-3.5 inline mr-1" />Charger rayons
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Rayon avec le bon taux de TVA (ex: "Réparations" à 20%). Cliquez "Charger rayons" pour voir la liste. Sans rayon, pas de TVA.</p>
               </div>
             </div>
 
