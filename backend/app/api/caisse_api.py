@@ -59,11 +59,20 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     if not shopid or not apikey:
         raise HTTPException(400, "Caisse non configurée")
 
-    montant = float(data.get("montant", 0))
-    if montant <= 0:
+    montant_ttc = float(data.get("montant", 0))
+    if montant_ttc <= 0:
         raise HTTPException(400, "Montant à 0 : rien à envoyer")
 
+    tva_rate = float(data.get("tva_rate", 0))
     description = str(data.get("description", "Réparation") or "Réparation")
+
+    # Calculer HT et TVA à partir du TTC
+    if tva_rate > 0:
+        montant_ht = round(montant_ttc * 100 / (100 + tva_rate), 2)
+        montant_tva = round(montant_ttc - montant_ht, 2)
+    else:
+        montant_ht = montant_ttc
+        montant_tva = 0
 
     api_url = (
         f"https://caisse.enregistreuse.fr/workers/webapp.php?"
@@ -77,10 +86,13 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     email = str(data.get("email", "") or "")
     ticket_code = str(data.get("ticket_code", "") or "")
 
+    # Format: Free_{prix_ht}_{description} + taxe séparée si TVA > 0
     form_data = {
-        "publicComment": f"Ticket: {ticket_code}",
-        "itemsList[]": f"Free_{montant:.2f}_{description}",
+        "publicComment": f"Ticket: {ticket_code} | TTC: {montant_ttc:.2f}€ (HT: {montant_ht:.2f}€ + TVA {tva_rate:g}%: {montant_tva:.2f}€)",
+        "itemsList[]": f"Free_{montant_ttc:.2f}_{description}",
     }
+    if tva_rate > 0:
+        form_data["tax"] = f"{tva_rate:g}"
     if nom or prenom:
         form_data["client[nom]"] = nom
         form_data["client[prenom]"] = prenom
@@ -111,7 +123,7 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
                 """, (
                     ticket_id,
                     user.get("utilisateur", "Système"),
-                    f"Vente envoyée en caisse — {montant:.2f} €",
+                    f"Vente envoyée en caisse — {montant_ttc:.2f} € TTC (HT: {montant_ht:.2f} € + TVA {tva_rate:g}%: {montant_tva:.2f} €)",
                 ))
 
         if str(result.get("result", "")).upper() == "OK":

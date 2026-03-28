@@ -36,9 +36,18 @@ def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
 
         payment_mode = str(payment_override) if payment_override is not None else "-1"
 
-        devis = float(ticket.get("devis_estime") or 0)
-        prix_supp = float(ticket.get("prix_supp") or 0)
-        total = devis + prix_supp
+        # Calculate total with reduction (tarif_final already includes reduction)
+        tarif_final = float(ticket.get("tarif_final") or 0)
+        if tarif_final > 0:
+            total = tarif_final
+        else:
+            devis = float(ticket.get("devis_estime") or 0)
+            prix_supp = float(ticket.get("prix_supp") or 0)
+            subtotal = devis + prix_supp
+            red_pct = float(ticket.get("reduction_pourcentage") or 0)
+            red_mnt = float(ticket.get("reduction_montant") or 0)
+            reduction = subtotal * (red_pct / 100) if red_pct > 0 else red_mnt
+            total = max(0, subtotal - reduction)
         if total <= 0:
             return False, "Montant total à 0 : rien à envoyer"
 

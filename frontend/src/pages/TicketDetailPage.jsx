@@ -693,6 +693,7 @@ export default function TicketDetailPage() {
         email: t.client_email || '',
         description: desc,
         montant: totalTTC,
+        tva_rate: tvaRate || 0,
       });
       if (res.result === 'OK') {
         toast.success(res.message || 'Vente envoyée en caisse');
