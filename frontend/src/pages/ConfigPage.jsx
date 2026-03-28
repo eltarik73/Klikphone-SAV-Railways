@@ -1055,6 +1055,11 @@ export default function ConfigPage() {
                 <label className="input-label">ID Utilisateur</label>
                 <input value={caisseConfig.CAISSE_USER_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_USER_ID: e.target.value }))} className="input font-mono" />
               </div>
+              <div className="sm:col-span-2">
+                <label className="input-label">ID Rayon (pour TVA)</label>
+                <input value={caisseConfig.CAISSE_RAYON_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: e.target.value }))} className="input font-mono" placeholder="Ex: 12345" />
+                <p className="text-[10px] text-slate-400 mt-1">ID du rayon/département dans la caisse qui a le bon taux de TVA (ex: "Réparations" à 20%). Sans ce champ, les articles seront envoyés sans TVA.</p>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-5">

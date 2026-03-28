@@ -61,6 +61,9 @@ def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
             description += f" [{ticket['type_ecran']}]"
         description = description.replace("_", " ")
 
+        # Rayon ID pour rattacher la TVA (configuré dans le POS)
+        rayon_id = (_get_param("CAISSE_RAYON_ID") or "").strip()
+
         api_url = (
             f"https://caisse.enregistreuse.fr/workers/webapp.php?"
             f"idboutique={shopid}&key={apikey}&idUser={user_id}"
@@ -78,12 +81,14 @@ def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
             if ticket.get("client_email"):
                 payload.append(("client[email]", ticket.get("client_email")))
 
-        if ticket.get("reparation_supp") and prix_supp > 0:
-            payload.append(("itemsList[]", f"Free_{devis:.2f}_{description}"))
-            rep_supp = (ticket.get("reparation_supp") or "Reparation supplementaire").replace("_", " ")
-            payload.append(("itemsList[]", f"Free_{prix_supp:.2f}_{rep_supp}"))
-        else:
-            payload.append(("itemsList[]", f"Free_{total:.2f}_{description}"))
+        # Format: -[idRayon]_[prix]_[titre] pour avoir la TVA du rayon
+        #         Free_[prix]_[titre] si pas de rayon configuré
+        def _item(prix, titre):
+            if rayon_id and rayon_id.isdigit():
+                return f"-{rayon_id}_{prix:.2f}_{titre}"
+            return f"Free_{prix:.2f}_{titre}"
+
+        payload.append(("itemsList[]", _item(total, description)))
 
         with httpx.Client(timeout=15) as client:
             res = client.post(api_url, data=payload)

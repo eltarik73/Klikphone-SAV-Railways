@@ -63,16 +63,10 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     if montant_ttc <= 0:
         raise HTTPException(400, "Montant à 0 : rien à envoyer")
 
-    tva_rate = float(data.get("tva_rate", 0))
     description = str(data.get("description", "Réparation") or "Réparation")
 
-    # Calculer HT et TVA à partir du TTC
-    if tva_rate > 0:
-        montant_ht = round(montant_ttc * 100 / (100 + tva_rate), 2)
-        montant_tva = round(montant_ttc - montant_ht, 2)
-    else:
-        montant_ht = montant_ttc
-        montant_tva = 0
+    # Rayon ID pour rattacher la TVA (configuré dans le POS)
+    rayon_id = str(_get_param("CAISSE_RAYON_ID") or "").strip()
 
     api_url = (
         f"https://caisse.enregistreuse.fr/workers/webapp.php?"
@@ -86,13 +80,17 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     email = str(data.get("email", "") or "")
     ticket_code = str(data.get("ticket_code", "") or "")
 
-    # Format: Free_{prix_ht}_{description} + taxe séparée si TVA > 0
+    # Format: -[idRayon]_[prix]_[titre] si rayon configuré (TVA du rayon appliquée)
+    #         Free_[prix]_[titre] sinon (pas de TVA)
+    if rayon_id and rayon_id.isdigit():
+        item_str = f"-{rayon_id}_{montant_ttc:.2f}_{description}"
+    else:
+        item_str = f"Free_{montant_ttc:.2f}_{description}"
+
     form_data = {
-        "publicComment": f"Ticket: {ticket_code} | TTC: {montant_ttc:.2f}€ (HT: {montant_ht:.2f}€ + TVA {tva_rate:g}%: {montant_tva:.2f}€)",
-        "itemsList[]": f"Free_{montant_ttc:.2f}_{description}",
+        "publicComment": f"Ticket: {ticket_code}",
+        "itemsList[]": item_str,
     }
-    if tva_rate > 0:
-        form_data["tax"] = f"{tva_rate:g}"
     if nom or prenom:
         form_data["client[nom]"] = nom
         form_data["client[prenom]"] = prenom
@@ -123,7 +121,7 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
                 """, (
                     ticket_id,
                     user.get("utilisateur", "Système"),
-                    f"Vente envoyée en caisse — {montant_ttc:.2f} € TTC (HT: {montant_ht:.2f} € + TVA {tva_rate:g}%: {montant_tva:.2f} €)",
+                    f"Vente envoyée en caisse — {montant_ttc:.2f} € TTC",
                 ))
 
         if str(result.get("result", "")).upper() == "OK":
