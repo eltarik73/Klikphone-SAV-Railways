@@ -1235,38 +1235,38 @@ export default function TicketDetailPage() {
               {isTech && !editingAssign ? (
                 <div className="flex items-center gap-2">
                   {(() => {
-                    const m = teamMembers.find(m => t.technicien_assigne === m.nom || (t.technicien_assigne || '').startsWith(m.nom + ' '));
-                    return m ? (
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m.couleur || '#94a3b8' }}>
-                        {t.technicien_assigne?.charAt(0) || '?'}
-                      </div>
-                    ) : (
-                      <div className="w-7 h-7 rounded-lg bg-slate-300 flex items-center justify-center text-white text-xs font-bold">
-                        {t.technicien_assigne?.charAt(0) || '?'}
+                    const techName = t.technicien_assigne || '';
+                    const m = Array.isArray(teamMembers) ? teamMembers.find(m => techName === m.nom || techName.startsWith(m.nom + ' ')) : null;
+                    const initial = techName ? techName.charAt(0) : '?';
+                    return (
+                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m?.couleur || '#94a3b8' }}>
+                        {initial}
                       </div>
                     );
                   })()}
-                  <span className="text-sm font-semibold text-slate-800">{t.technicien_assigne || 'Non assigné'}</span>
+                  <span className={`text-sm font-semibold ${t.technicien_assigne ? 'text-slate-800' : 'text-slate-400'}`}>{t.technicien_assigne || 'Non assigné'}</span>
                   <button onClick={() => setEditingAssign(true)} className="text-slate-400 hover:text-brand-600 ml-auto"><Edit3 className="w-3.5 h-3.5" /></button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   {(() => {
-                    const m = teamMembers.find(m => (t.technicien_assigne || '') === m.nom);
+                    const techName = t.technicien_assigne || '';
+                    const m = Array.isArray(teamMembers) ? teamMembers.find(m => techName === m.nom) : null;
+                    const initial = techName ? techName.charAt(0) : '?';
                     return (
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m?.couleur || '#94a3b8' }}>
-                        {(t.technicien_assigne || '?').charAt(0)}
+                        {initial}
                       </div>
                     );
                   })()}
-                  {teamMembers.length > 0 ? (
+                  {Array.isArray(teamMembers) && teamMembers.length > 0 ? (
                     <select
                       value={t.technicien_assigne || ''}
                       onChange={(e) => {
                         const nom = e.target.value;
                         if (nom === (t.technicien_assigne || '')) return;
-                        // Optimistic update: update local state immediately
-                        setTicket(prev => ({ ...prev, technicien_assigne: nom || null }));
+                        const oldTech = t.technicien_assigne;
+                        setTicket(prev => prev ? { ...prev, technicien_assigne: nom || null } : prev);
                         setEditingAssign(false);
                         api.updateTicket(id, { technicien_assigne: nom || null })
                           .then(() => {
@@ -1274,8 +1274,7 @@ export default function TicketDetailPage() {
                             toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
                           })
                           .catch(() => {
-                            // Rollback on error
-                            setTicket(prev => ({ ...prev, technicien_assigne: t.technicien_assigne }));
+                            setTicket(prev => prev ? { ...prev, technicien_assigne: oldTech } : prev);
                             toast.error('Erreur assignation');
                           });
                       }}
@@ -1286,7 +1285,7 @@ export default function TicketDetailPage() {
                       {teamMembers.map(m => <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>)}
                     </select>
                   ) : (
-                    <input type="text" value={pricingForm.technicien_assigne} onChange={e => updatePricingForm({ technicien_assigne: e.target.value })} className="flex-1 input text-sm" placeholder="Nom du technicien" />
+                    <input type="text" value={pricingForm.technicien_assigne || ''} onChange={e => updatePricingForm({ technicien_assigne: e.target.value })} className="flex-1 input text-sm" placeholder="Nom du technicien" />
                   )}
                 </div>
               )}

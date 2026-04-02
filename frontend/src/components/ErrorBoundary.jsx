@@ -11,6 +11,10 @@ export default class ErrorBoundary extends Component {
     return { hasError: true, error };
   }
 
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error?.message, error?.stack, info?.componentStack);
+  }
+
   handleBack = () => {
     this.setState({ hasError: false, error: null });
     // Try going back, fallback to dashboard
