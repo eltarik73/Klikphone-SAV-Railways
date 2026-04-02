@@ -183,8 +183,8 @@ export default function TicketDetailPage() {
     return lines.length > 0 ? lines : [{ label: '', prix: 0 }];
   };
 
-  const loadTicket = useCallback(async () => {
-    setLoading(true);
+  const loadTicket = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     try {
       // Parallel: ticket + commandes + notes
       const [data, cmds, notes] = await Promise.all([
@@ -230,9 +230,10 @@ export default function TicketDetailPage() {
       setReductionMode(parseFloat(data.reduction_montant) > 0 && !(parseFloat(data.reduction_pourcentage) > 0) ? 'eur' : 'pct');
       setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
     } catch (err) {
-      console.error(err);
+      console.error('[loadTicket]', err);
+      if (showSpinner) setTicket(null); // Only clear on initial load failure
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, [id]);
 
@@ -349,9 +350,7 @@ export default function TicketDetailPage() {
       if (formData.panne) api.learnTerm('panne', formData.panne).catch(() => {});
       if (formData.panne_detail) api.learnTerm('detail_panne', formData.panne_detail).catch(() => {});
       setAutoSaveDevice('saved');
-      // Refresh ticket data silently
-      const data = await api.getTicket(id);
-      setTicket(data);
+      setTicket(prev => prev ? { ...prev, ...formData } : prev);
       setTimeout(() => setAutoSaveDevice(null), 2000);
     } catch {
       setAutoSaveDevice('error');
@@ -365,8 +364,7 @@ export default function TicketDetailPage() {
       await api.updateClient(clientId, formData);
       invalidateCache('clients', 'tickets');
       setAutoSaveClient('saved');
-      const data = await api.getTicket(id);
-      setTicket(data);
+      setTicket(prev => prev ? { ...prev, client_nom: formData.nom, client_prenom: formData.prenom, client_tel: formData.telephone, client_email: formData.email, client_societe: formData.societe } : prev);
       setTimeout(() => setAutoSaveClient(null), 2000);
     } catch {
       setAutoSaveClient('error');
@@ -389,8 +387,10 @@ export default function TicketDetailPage() {
       // Save only the active reduction field; zero out the other
       const savedPct = reductionMode === 'pct' ? reductionPct : 0;
       const savedEur = reductionMode === 'eur' ? reductionEur : 0;
+      // Exclude technicien_assigne from pricing save — it has its own update flow
+      const { technicien_assigne: _ignoreTech, ...pricingFields } = formData;
       const updates = {
-        ...formData,
+        ...pricingFields,
         devis_estime: parseFloat(formData.devis_estime) || 0,
         tarif_final: finalPrice,
         acompte: acompte,
@@ -405,8 +405,8 @@ export default function TicketDetailPage() {
       await api.updateTicket(id, updates);
       invalidateCache('tickets');
       setAutoSavePricing('saved');
-      const data = await api.getTicket(id);
-      setTicket(data);
+      // Merge saved pricing fields into ticket state without overwriting tech/other fields
+      setTicket(prev => prev ? { ...prev, ...updates, date_maj: new Date().toISOString() } : prev);
       setTimeout(() => setAutoSavePricing(null), 2000);
     } catch {
       setAutoSavePricing('error');
@@ -498,7 +498,7 @@ export default function TicketDetailPage() {
       setCommandes(cmds || []);
       toast.success(`Statut → ${newStatut}`);
       // If piece received, refresh ticket too (status may change)
-      if (newStatut === 'Reçue') await loadTicket();
+      if (newStatut === 'Reçue') await loadTicket(false);
     } catch {
       toast.error('Erreur changement statut commande');
     }
@@ -532,7 +532,7 @@ export default function TicketDetailPage() {
     try {
       await api.changeStatus(id, statut);
       invalidateCache('tickets');
-      await loadTicket();
+      await loadTicket(false);
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
       toast.error('Erreur changement de statut');
@@ -557,7 +557,7 @@ export default function TicketDetailPage() {
       await api.changeStatus(id, 'Clôturé');
       invalidateCache('tickets');
       setShowRenduModal(false);
-      await loadTicket();
+      await loadTicket(false);
       toast.success('Ticket clôturé');
     } catch (err) {
       toast.error('Erreur');
@@ -569,7 +569,7 @@ export default function TicketDetailPage() {
       await api.changeStatus(id, 'Rendu au client');
       invalidateCache('tickets');
       setShowRenduModal(false);
-      await loadTicket();
+      await loadTicket(false);
       toast.success('Attention : ticket non payé');
     } catch (err) {
       toast.error('Erreur');
@@ -598,7 +598,7 @@ export default function TicketDetailPage() {
       const prefix = notePrivate ? '[INTERNE]' : '[CLIENT]';
       await api.addNote(id, `${prefix} ${noteText}`);
       setNoteText('');
-      await loadTicket();
+      await loadTicket(false);
 
       toast.success('Note ajoutée');
     } catch (err) {
@@ -630,7 +630,7 @@ export default function TicketDetailPage() {
       const current = t.notes_internes || '';
       const lines = current.split('\n').filter(l => l.trim() !== rawLine.trim());
       await api.updateTicket(id, { notes_internes: lines.join('\n') });
-      await loadTicket();
+      await loadTicket(false);
       toast.success('Note supprimée');
     } catch { toast.error('Erreur suppression'); }
   };
@@ -648,7 +648,7 @@ export default function TicketDetailPage() {
     try {
       await api.addPrivateNote(id, user?.utilisateur || 'Accueil', message.trim(), true);
       await api.updateTicket(id, { attention: message.trim() });
-      await loadTicket();
+      await loadTicket(false);
       toast.success('Note importante ajoutée');
     } catch (err) {
       toast.error('Erreur ajout attention');
@@ -660,7 +660,7 @@ export default function TicketDetailPage() {
       const result = await api.togglePaye(id);
       invalidateCache('tickets');
       setShowPayeModal(false);
-      await loadTicket();
+      await loadTicket(false);
       toast.success(result.paye ? 'Marqué payé' : 'Marqué non payé');
     } catch (err) {
       toast.error('Erreur toggle payé');
@@ -696,7 +696,7 @@ export default function TicketDetailPage() {
       });
       if (res.result === 'OK') {
         toast.success(res.message || 'Vente envoyée en caisse');
-        loadTicket();
+        loadTicket(false);
       } else {
         toast.error(res.message || 'Erreur caisse');
       }
@@ -772,7 +772,7 @@ export default function TicketDetailPage() {
       await api.logMessage(id, auteur, logText, canal);
 
       setShowAccordModal(false);
-      await loadTicket();
+      await loadTicket(false);
       toast.success("Demande d'accord envoyée");
     } catch (err) {
       toast.error('Erreur envoi de la demande');
@@ -794,7 +794,7 @@ export default function TicketDetailPage() {
         await api.addPrivateNote(id, auteur, 'Client a refusé la réparation');
         toast.success('Ticket marqué non réparable');
       }
-      await loadTicket();
+      await loadTicket(false);
     } catch (err) {
       toast.error('Erreur changement de statut');
     }
@@ -1800,7 +1800,7 @@ export default function TicketDetailPage() {
                   try {
                     await api.validerDepot(t.id);
                     toast.success('Dépôt validé — passage en diagnostic');
-                    loadTicket();
+                    loadTicket(false);
                   } catch (err) { toast.error(err.message); }
                 }}
                 className="btn-primary text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700"
@@ -1812,7 +1812,7 @@ export default function TicketDetailPage() {
                   const motif = prompt('Motif du refus :');
                   if (motif === null) return;
                   api.refuserDepot(t.id, motif || 'Non précisé')
-                    .then(() => { toast.success('Dépôt refusé'); loadTicket(); })
+                    .then(() => { toast.success('Dépôt refusé'); loadTicket(false); })
                     .catch(err => toast.error(err.message));
                 }}
                 className="btn-ghost text-xs px-3 py-1.5 text-red-600 hover:bg-red-50"
