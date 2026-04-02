@@ -1255,7 +1255,7 @@ export default function TicketDetailPage() {
                     const m = teamMembers.find(m => (t.technicien_assigne || '') === m.nom);
                     return (
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m?.couleur || '#94a3b8' }}>
-                        {(t.technicien_assigne || editingAssign || '?').charAt(0)}
+                        {(t.technicien_assigne || '?').charAt(0)}
                       </div>
                     );
                   })()}
