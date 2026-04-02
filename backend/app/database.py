@@ -52,6 +52,15 @@ def get_db():
     pool = get_pool()
     conn = pool.getconn()
     try:
+        # Validate connection is still alive (Supabase idle timeout)
+        try:
+            conn.cursor().execute("SELECT 1")
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = pool.getconn()
         yield conn
         conn.commit()
     except Exception:

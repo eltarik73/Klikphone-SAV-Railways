@@ -76,11 +76,11 @@ async def get_dashboard(
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture >= %s::date AND date_cloture < %s::date + interval '1 day') as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot >= %s::date AND date_depot < %s::date + interval '1 day') as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today))
+        """, (today, today, today, today))
         kpi_row = cur.fetchone()
 
         # Tickets list
@@ -122,11 +122,11 @@ async def get_kpi():
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture >= %s::date AND date_cloture < %s::date + interval '1 day') as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot >= %s::date AND date_depot < %s::date + interval '1 day') as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today))
+        """, (today, today, today, today))
         row = cur.fetchone()
 
     data = dict(row) if row else {}
@@ -263,15 +263,16 @@ async def get_ticket(ticket_id: int):
             WHERE t.id = %s
         """, (ticket_id,))
         row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Ticket non trouvé")
+        if not row:
+            raise HTTPException(404, "Ticket non trouvé")
 
-    result = dict(row)
+        result = dict(row)
+        result["ticket_original"] = None
+        result["retours_sav"] = []
 
-    # Enrichir avec info ticket original si retour SAV
-    if result.get("est_retour_sav") and result.get("ticket_original_id"):
-        try:
-            with get_cursor() as cur:
+        # Enrichir avec info ticket original si retour SAV (même connexion)
+        if result.get("est_retour_sav") and result.get("ticket_original_id"):
+            try:
                 cur.execute("""
                     SELECT id, ticket_code, statut, panne, marque, modele, modele_autre,
                            date_depot, date_cloture, technicien_assigne
@@ -279,14 +280,11 @@ async def get_ticket(ticket_id: int):
                 """, (result["ticket_original_id"],))
                 orig = cur.fetchone()
                 result["ticket_original"] = dict(orig) if orig else None
-        except Exception:
-            result["ticket_original"] = None
-    else:
-        result["ticket_original"] = None
+            except Exception:
+                pass
 
-    # Lister les retours SAV liés à ce ticket (si c'est un ticket original)
-    try:
-        with get_cursor() as cur:
+        # Lister les retours SAV liés (même connexion)
+        try:
             cur.execute("""
                 SELECT id, ticket_code, statut, panne, date_depot
                 FROM tickets
@@ -294,9 +292,10 @@ async def get_ticket(ticket_id: int):
                 ORDER BY date_depot DESC
             """, (ticket_id,))
             retours = cur.fetchall()
-            result["retours_sav"] = [dict(r) for r in retours] if retours else []
-    except Exception:
-        result["retours_sav"] = []
+            if retours:
+                result["retours_sav"] = [dict(r) for r in retours]
+        except Exception:
+            pass
 
     return result
 

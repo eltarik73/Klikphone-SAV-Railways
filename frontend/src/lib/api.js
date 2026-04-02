@@ -19,36 +19,52 @@ class ApiClient {
 
   async request(path, options = {}, timeoutMs = 10000) {
     const url = `${API_URL}${path}`;
-    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    const headers = { ...options.headers };
+    if (options.body) headers['Content-Type'] = 'application/json';
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let res;
-    try {
-      res = await fetch(url, { ...options, headers, signal: controller.signal });
-    } catch (err) {
-      clearTimeout(timeout);
-      if (err.name === 'AbortError') throw new Error('Connexion au serveur expirée (timeout)');
-      throw err;
-    }
-    clearTimeout(timeout);
+    const isGet = !options.method || options.method === 'GET';
+    const maxRetries = isGet ? 2 : 0;
+    let lastErr;
 
-    if (res.status === 401) {
-      this.setToken(null);
-      window.location.href = '/';
-      throw new Error('Non authentifié');
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { ...options, headers, signal: controller.signal });
+        clearTimeout(timeout);
+
+        if (res.status === 401) {
+          this.setToken(null);
+          window.location.href = '/';
+          throw new Error('Non authentifié');
+        }
+        if (res.status >= 500 && attempt < maxRetries) {
+          lastErr = new Error(`Erreur ${res.status}`);
+          continue;
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail || `Erreur ${res.status}`);
+        }
+        if (res.status === 204) return null;
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          throw new Error('Serveur indisponible (réponse non-JSON)');
+        }
+        return res.json();
+      } catch (err) {
+        clearTimeout(timeout);
+        lastErr = err.name === 'AbortError'
+          ? new Error('Connexion au serveur expirée (timeout)')
+          : err;
+        if (attempt < maxRetries && (err.name === 'AbortError' || err.name === 'TypeError')) continue;
+        throw lastErr;
+      }
     }
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.detail || `Erreur ${res.status}`);
-    }
-    if (res.status === 204) return null;
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) {
-      throw new Error('Serveur indisponible (réponse non-JSON)');
-    }
-    return res.json();
+    throw lastErr;
   }
 
   get(path) { return this.request(path); }

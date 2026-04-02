@@ -21,11 +21,11 @@ export default defineConfig({
     target: 'es2020',
     cssMinify: true,
     minify: 'esbuild',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-charts': ['recharts'],
           'vendor-icons': ['lucide-react'],
         },
       },
