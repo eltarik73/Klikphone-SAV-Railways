@@ -391,11 +391,11 @@ export default function TicketDetailPage() {
       const savedEur = reductionMode === 'eur' ? reductionEur : 0;
       const updates = {
         ...formData,
-        devis_estime: parseFloat(formData.devis_estime) || null,
-        tarif_final: finalPrice || null,
-        acompte: acompte || null,
-        reduction_montant: savedEur || null,
-        reduction_pourcentage: savedPct || null,
+        devis_estime: parseFloat(formData.devis_estime) || 0,
+        tarif_final: finalPrice,
+        acompte: acompte,
+        reduction_montant: savedEur,
+        reduction_pourcentage: savedPct,
         reste_a_payer: resteAPayer,
         statut_paiement: statutPaiement,
         reparation_supp: reparationsJson,
@@ -709,10 +709,10 @@ export default function TicketDetailPage() {
 
   const getAccordMontant = () => {
     if (!ticket) return 0;
-    // Priority: tarif_final > total repair lines > devis_estime
+    // Use live-calculated totalTTC (already includes reduction) from pricing section
+    if (totalTTC > 0) return totalTTC;
+    // Fallback to tarif_final from DB
     if (ticket.tarif_final && parseFloat(ticket.tarif_final) > 0) return parseFloat(ticket.tarif_final);
-    const linesTotal = repairLines.filter(l => l.label).reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
-    if (linesTotal > 0) return linesTotal;
     if (ticket.devis_estime && parseFloat(ticket.devis_estime) > 0) return parseFloat(ticket.devis_estime);
     return 0;
   };

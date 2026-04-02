@@ -50,17 +50,33 @@ export default function MessageComposer({ ticket, onMessageSent }) {
 
   const t = ticket;
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
-  // tarif_final already includes reduction, so don't reduce again
-  // Use reste_a_payer if available (accounts for acompte), else tarif_final, else devis_estime with reduction
+
+  // Calculate montant from repair lines if available, else tarif_final, else devis_estime
   const acompte = parseFloat(t.acompte) || 0;
-  const tarif = parseFloat(t.tarif_final) || 0;
-  const devis = parseFloat(t.devis_estime) || 0;
   const redPct = parseFloat(t.reduction_pourcentage) || 0;
   const redMnt = parseFloat(t.reduction_montant) || 0;
-  // If tarif_final exists, it already has reduction applied
-  // If only devis_estime, apply reduction manually
-  const totalApresReduction = tarif > 0 ? tarif : Math.max(0, devis - (redPct > 0 ? devis * (redPct / 100) : redMnt));
-  const montant = t.paye ? 0 : Math.max(0, totalApresReduction - acompte);
+
+  // Parse repair lines to get the real total (most up-to-date)
+  let linesTotal = 0;
+  try {
+    const reps = t.reparation_supp && t.reparation_supp.startsWith('[') ? JSON.parse(t.reparation_supp) : [];
+    linesTotal = reps.reduce((s, r) => s + (parseFloat(r.prix) || 0), 0);
+  } catch { /* ignore */ }
+
+  // Best source of truth: lines total with reduction > tarif_final > devis_estime
+  let totalAvantAcompte;
+  if (linesTotal > 0) {
+    const reduction = redPct > 0 ? linesTotal * (redPct / 100) : redMnt;
+    totalAvantAcompte = Math.max(0, linesTotal - reduction);
+  } else if (parseFloat(t.tarif_final) > 0) {
+    totalAvantAcompte = parseFloat(t.tarif_final);
+  } else {
+    const devis = parseFloat(t.devis_estime) || 0;
+    const reduction = redPct > 0 ? devis * (redPct / 100) : redMnt;
+    totalAvantAcompte = Math.max(0, devis - reduction);
+  }
+
+  const montant = t.paye ? 0 : Math.max(0, totalAvantAcompte - acompte);
 
   const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
 
@@ -72,7 +88,7 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       .replace(/\{marque\}/g, t.marque || '')
       .replace(/\{modele\}/g, t.modele_autre || t.modele || '')
       .replace(/\{code\}/g, t.ticket_code || '')
-      .replace(/\{montant\}/g, String(montant))
+      .replace(/\{montant\}/g, montant.toFixed(2))
       .replace(/\{adresse\}/g, '79 Place Saint Leger, 73000 Chambery')
       .replace(/\{horaires\}/g, 'Lundi-Samedi 10h-19h')
       .replace(/\{tel_boutique\}/g, '04 79 60 89 22')
@@ -103,9 +119,16 @@ export default function MessageComposer({ ticket, onMessageSent }) {
     window.open(`sms:${telephone}?body=${encodeURIComponent(message)}`, '_blank');
   };
 
+  // Check if the selected template uses {montant}
+  const templateUsesMontant = selected && !isCustom && selected.message.includes('{montant}');
+
   const sendMessage = async (canal) => {
     if (!previewText.trim()) {
       toast.error('Message vide');
+      return;
+    }
+    if (templateUsesMontant && montant <= 0 && !t.paye) {
+      toast.error('Renseigne un tarif avant d\'envoyer');
       return;
     }
     setSending(canal);
