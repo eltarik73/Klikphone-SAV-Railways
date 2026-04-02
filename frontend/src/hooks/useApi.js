@@ -1,11 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-// ─── Global in-memory cache ────────────────────────────────
+// ─── Global in-memory cache (LRU, max 100 entries) ─────────
 const _cache = new Map();
 const _subs = new Set();
+const CACHE_MAX = 100;
 
 function _emit(tags) {
   _subs.forEach(fn => fn(tags));
+}
+
+function _evict() {
+  if (_cache.size <= CACHE_MAX) return;
+  // Remove oldest entries (first inserted in Map)
+  const toRemove = _cache.size - CACHE_MAX;
+  let i = 0;
+  for (const key of _cache.keys()) {
+    if (i++ >= toRemove) break;
+    _cache.delete(key);
+  }
 }
 
 /**
@@ -37,6 +49,7 @@ export function prefetch(key, fetcher, opts = {}) {
   try {
     fetcher().then(data => {
       _cache.set(key, { data, ts: Date.now(), tags, ttl, stale: false });
+      _evict();
     }).catch(() => {});
   } catch { /* ignore sync errors */ }
 }
@@ -98,6 +111,7 @@ export function useApi(key, fetcher, opts = {}) {
         data: result, ts: Date.now(),
         tags: tr.current, ttl: tlr.current, stale: false,
       });
+      _evict();
       dataRef.current = result;
       setData(result);
       setError(null);

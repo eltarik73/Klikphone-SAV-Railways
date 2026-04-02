@@ -49,16 +49,13 @@ export default function DashboardPage() {
 
   const { data: dashData, loading, isRevalidating, mutate } = useApi(
     dashKey,
-    async () => {
+    () => {
       const params = { limit: 200 };
       if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatut) params.statut = filterStatut;
-      const [kpiData, ticketsData] = await Promise.all([
-        api.getKPI(), api.getTickets(params),
-      ]);
-      return { kpi: kpiData, tickets: ticketsData };
+      return api.getDashboard(params);
     },
-    { tags: ['dashboard', 'tickets'], ttl: 30_000 }
+    { tags: ['dashboard', 'tickets'], ttl: 45_000 }
   );
   const kpi = dashData?.kpi ?? null;
   const tickets = dashData?.tickets ?? [];
@@ -79,12 +76,17 @@ export default function DashboardPage() {
     prefetch('config:main', () => api.getConfig(), { tags: ['config'], ttl: 300_000 });
   }, []);
 
-  // Auto-refresh every 30s
+  // Auto-refresh every 60s, only when tab is visible
   const mutateRef = useRef(mutate);
   mutateRef.current = mutate;
   useEffect(() => {
-    const id = setInterval(() => mutateRef.current(), 30_000);
-    return () => clearInterval(id);
+    let id;
+    const start = () => { clearInterval(id); id = setInterval(() => mutateRef.current(), 60_000); };
+    const stop = () => clearInterval(id);
+    const onVisibility = () => document.hidden ? stop() : start();
+    document.addEventListener('visibilitychange', onVisibility);
+    start();
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
   }, []);
 
   // SWR: Interactions clients

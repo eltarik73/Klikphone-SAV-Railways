@@ -377,6 +377,24 @@ app.add_middleware(
 # --- GZIP (compress responses > 500 bytes) ---
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
+
+# --- CACHE HEADERS for static assets ---
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    # Hashed JS/CSS assets: cache 1 year (immutable, filename changes on rebuild)
+    if path.startswith("/assets/") and any(path.endswith(ext) for ext in (".js", ".css")):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    # Images/fonts: cache 1 week
+    elif path.startswith("/assets/") or path.endswith((".png", ".jpg", ".svg", ".woff2")):
+        response.headers["Cache-Control"] = "public, max-age=604800"
+    # index.html: no cache (always fresh)
+    elif path == "/" or (not path.startswith("/api/") and "." not in path.split("/")[-1]):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 # --- ERROR HANDLER ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

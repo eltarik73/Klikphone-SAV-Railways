@@ -39,6 +39,74 @@ STATUTS = [
 ]
 
 
+# ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
+@router.get("/dashboard")
+async def get_dashboard(
+    search: Optional[str] = None,
+    statut: Optional[str] = None,
+    limit: int = Query(200, le=500),
+):
+    """Retourne KPI + tickets en une seule requête pour le dashboard."""
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    conditions = []
+    params_tickets = []
+    if statut:
+        conditions.append("t.statut = %s")
+        params_tickets.append(statut)
+    if search:
+        conditions.append(
+            "(t.ticket_code ILIKE %s OR c.nom ILIKE %s OR c.prenom ILIKE %s "
+            "OR c.telephone LIKE %s OR t.marque ILIKE %s OR t.modele ILIKE %s "
+            "OR t.modele_autre ILIKE %s)"
+        )
+        s = f"%{search}%"
+        params_tickets.extend([s, s, s, s, s, s, s])
+
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    params_tickets.append(limit)
+
+    with get_cursor() as cur:
+        # KPI in one query
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
+                COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
+                COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
+                COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
+                COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
+                COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
+                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
+            FROM tickets
+        """, (today, today))
+        kpi_row = cur.fetchone()
+
+        # Tickets list
+        cur.execute(f"""
+            SELECT t.*,
+                   c.nom as client_nom, c.prenom as client_prenom,
+                   c.telephone as client_tel, c.email as client_email,
+                   c.societe as client_societe, c.carte_camby as client_carte_camby,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
+            FROM tickets t
+            JOIN clients c ON t.client_id = c.id
+            {where}
+            ORDER BY t.date_depot DESC
+            LIMIT %s
+        """, params_tickets)
+        tickets = cur.fetchall()
+
+    kpi_data = dict(kpi_row) if kpi_row else {}
+    pre = kpi_data.pop("pre_enregistres", 0)
+    kpi = {**KPIResponse(**kpi_data).model_dump(), "pre_enregistres": pre}
+
+    return {"kpi": kpi, "tickets": tickets}
+
+
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
 @router.get("/stats/kpi")
 async def get_kpi():

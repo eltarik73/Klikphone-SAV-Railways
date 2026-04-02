@@ -93,6 +93,10 @@ class ApiClient {
   changeStatus(id, statut) { return this.patch(`/api/tickets/${id}/statut`, { statut }); }
   deleteTicket(id) { return this.delete(`/api/tickets/${id}`); }
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
+  getDashboard(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/tickets/dashboard${qs ? '?' + qs : ''}`);
+  }
   addNote(id, note) { return this.post(`/api/tickets/${id}/note?note=${encodeURIComponent(note)}`); }
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
   getHistorique(id) { return this.get(`/api/tickets/${id}/historique`); }
