@@ -40,7 +40,7 @@ STATUTS = [
 
 
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
-@router.get("/dashboard")
+@router.get("/stats/dashboard")
 async def get_dashboard(
     search: Optional[str] = None,
     statut: Optional[str] = None,

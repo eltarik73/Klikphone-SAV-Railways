@@ -95,7 +95,7 @@ class ApiClient {
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
   getDashboard(params = {}) {
     const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/tickets/dashboard${qs ? '?' + qs : ''}`);
+    return this.get(`/api/tickets/stats/dashboard${qs ? '?' + qs : ''}`);
   }
   addNote(id, note) { return this.post(`/api/tickets/${id}/note?note=${encodeURIComponent(note)}`); }
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
