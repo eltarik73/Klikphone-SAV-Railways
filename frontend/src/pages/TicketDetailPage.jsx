@@ -884,7 +884,7 @@ export default function TicketDetailPage() {
     );
   }
 
-  const t = ticket;
+  const t = ticket || {};
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim();
 
   // Parse notes into timeline entries
