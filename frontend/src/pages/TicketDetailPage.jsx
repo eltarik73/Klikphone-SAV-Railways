@@ -87,7 +87,7 @@ export default function TicketDetailPage() {
   const [editingDevice, setEditingDevice] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [editingPricing, setEditingPricing] = useState(false);
-  const [editingAssign, setEditingAssign] = useState(false);
+  // editingAssign removed — select always visible
 
   // Edit form data
   const [deviceForm, setDeviceForm] = useState({});
@@ -1232,63 +1232,31 @@ export default function TicketDetailPage() {
             {/* 1. Technicien assigné — EN HAUT */}
             <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-2">Technicien assigné</div>
-              {isTech && !editingAssign ? (
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const techName = t.technicien_assigne || '';
-                    const m = Array.isArray(teamMembers) ? teamMembers.find(m => techName === m.nom || techName.startsWith(m.nom + ' ')) : null;
-                    const initial = techName ? techName.charAt(0) : '?';
-                    return (
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m?.couleur || '#94a3b8' }}>
-                        {initial}
-                      </div>
-                    );
-                  })()}
-                  <span className={`text-sm font-semibold ${t.technicien_assigne ? 'text-slate-800' : 'text-slate-400'}`}>{t.technicien_assigne || 'Non assigné'}</span>
-                  <button onClick={() => setEditingAssign(true)} className="text-slate-400 hover:text-brand-600 ml-auto"><Edit3 className="w-3.5 h-3.5" /></button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const techName = t.technicien_assigne || '';
-                    const m = Array.isArray(teamMembers) ? teamMembers.find(m => techName === m.nom) : null;
-                    const initial = techName ? techName.charAt(0) : '?';
-                    return (
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: m?.couleur || '#94a3b8' }}>
-                        {initial}
-                      </div>
-                    );
-                  })()}
-                  {Array.isArray(teamMembers) && teamMembers.length > 0 ? (
-                    <select
-                      value={t.technicien_assigne || ''}
-                      onChange={(e) => {
-                        const nom = e.target.value;
-                        if (nom === (t.technicien_assigne || '')) return;
-                        const oldTech = t.technicien_assigne;
-                        setTicket(prev => prev ? { ...prev, technicien_assigne: nom || null } : prev);
-                        setEditingAssign(false);
-                        api.updateTicket(id, { technicien_assigne: nom || null })
-                          .then(() => {
-                            invalidateCache('tickets');
-                            toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
-                          })
-                          .catch(() => {
-                            setTicket(prev => prev ? { ...prev, technicien_assigne: oldTech } : prev);
-                            toast.error('Erreur assignation');
-                          });
-                      }}
-                      className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-semibold bg-white"
-                      style={{ WebkitAppearance: 'menulist', fontSize: '16px' }}
-                    >
-                      <option value="">— Non assigné —</option>
-                      {teamMembers.map(m => <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>)}
-                    </select>
-                  ) : (
-                    <input type="text" value={pricingForm.technicien_assigne || ''} onChange={e => updatePricingForm({ technicien_assigne: e.target.value })} className="flex-1 input text-sm" placeholder="Nom du technicien" />
-                  )}
-                </div>
-              )}
+              <select
+                value={t.technicien_assigne || ''}
+                onChange={(e) => {
+                  const nom = e.target.value;
+                  const oldTech = t.technicien_assigne || '';
+                  if (nom === oldTech) return;
+                  setTicket(prev => prev ? { ...prev, technicien_assigne: nom || null } : prev);
+                  api.updateTicket(id, { technicien_assigne: nom || null })
+                    .then(() => {
+                      invalidateCache('tickets');
+                      toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
+                    })
+                    .catch(() => {
+                      setTicket(prev => prev ? { ...prev, technicien_assigne: oldTech || null } : prev);
+                      toast.error('Erreur assignation');
+                    });
+                }}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white cursor-pointer"
+                style={{ WebkitAppearance: 'menulist', fontSize: '16px' }}
+              >
+                <option value="">— Non assigné —</option>
+                {Array.isArray(teamMembers) && teamMembers.map(m => (
+                  <option key={m.id} value={m.nom}>{m.nom}{m.role ? ` (${m.role})` : ''}</option>
+                ))}
+              </select>
               {t.personne_charge && (
                 <p className="text-[10px] text-slate-400 mt-2">Prise en charge : <span className="font-medium text-slate-600">{t.personne_charge}</span></p>
               )}
