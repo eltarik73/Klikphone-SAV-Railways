@@ -101,6 +101,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Enable unaccent extension for accent-insensitive search
+    try:
+        with get_cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
+    except Exception as e:
+        print(f"Warning unaccent extension: {e}")
+
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
         """CREATE TABLE IF NOT EXISTS historique (

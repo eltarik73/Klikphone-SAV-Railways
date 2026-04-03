@@ -28,9 +28,9 @@ async def list_clients(
             s = f"%{search}%"
             cur.execute("""
                 SELECT * FROM clients
-                WHERE nom ILIKE %s OR prenom ILIKE %s
-                      OR telephone LIKE %s OR email ILIKE %s
-                      OR societe ILIKE %s
+                WHERE unaccent(nom) ILIKE unaccent(%s) OR unaccent(prenom) ILIKE unaccent(%s)
+                      OR telephone LIKE %s OR unaccent(email) ILIKE unaccent(%s)
+                      OR unaccent(societe) ILIKE unaccent(%s)
                 ORDER BY date_creation DESC
                 LIMIT %s OFFSET %s
             """, (s, s, s, s, s, limit, offset))

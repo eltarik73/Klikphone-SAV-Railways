@@ -56,9 +56,9 @@ async def get_dashboard(
         params_tickets.append(statut)
     if search:
         conditions.append(
-            "(t.ticket_code ILIKE %s OR c.nom ILIKE %s OR c.prenom ILIKE %s "
-            "OR c.telephone LIKE %s OR t.marque ILIKE %s OR t.modele ILIKE %s "
-            "OR t.modele_autre ILIKE %s)"
+            "(t.ticket_code ILIKE %s OR unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s) "
+            "OR c.telephone LIKE %s OR unaccent(t.marque) ILIKE unaccent(%s) OR unaccent(t.modele) ILIKE unaccent(%s) "
+            "OR unaccent(t.modele_autre) ILIKE unaccent(%s))"
         )
         s = f"%{search}%"
         params_tickets.extend([s, s, s, s, s, s, s])
@@ -214,13 +214,13 @@ async def list_tickets(
         conditions.append("t.ticket_code ILIKE %s")
         params.append(f"%{code}%")
     if nom:
-        conditions.append("(c.nom ILIKE %s OR c.prenom ILIKE %s)")
+        conditions.append("(unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s))")
         params.extend([f"%{nom}%", f"%{nom}%"])
     if search:
         conditions.append(
-            "(t.ticket_code ILIKE %s OR c.nom ILIKE %s OR c.prenom ILIKE %s "
-            "OR c.telephone LIKE %s OR t.marque ILIKE %s OR t.modele ILIKE %s "
-            "OR t.modele_autre ILIKE %s)"
+            "(t.ticket_code ILIKE %s OR unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s) "
+            "OR c.telephone LIKE %s OR unaccent(t.marque) ILIKE unaccent(%s) OR unaccent(t.modele) ILIKE unaccent(%s) "
+            "OR unaccent(t.modele_autre) ILIKE unaccent(%s))"
         )
         s = f"%{search}%"
         params.extend([s, s, s, s, s, s, s])
