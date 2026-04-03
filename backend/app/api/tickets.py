@@ -76,11 +76,11 @@ async def get_dashboard(
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture >= %s::date AND date_cloture < %s::date + interval '1 day') as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot >= %s::date AND date_depot < %s::date + interval '1 day') as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today, today, today))
+        """, (today, today))
         kpi_row = cur.fetchone()
 
         # Tickets list
@@ -122,11 +122,11 @@ async def get_kpi():
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture >= %s::date AND date_cloture < %s::date + interval '1 day') as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot >= %s::date AND date_depot < %s::date + interval '1 day') as nouveaux_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today, today, today))
+        """, (today, today))
         row = cur.fetchone()
 
     data = dict(row) if row else {}
