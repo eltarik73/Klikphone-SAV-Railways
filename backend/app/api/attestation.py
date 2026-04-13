@@ -82,126 +82,143 @@ def _get_param(key: str) -> str:
 
 
 def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
-    """Génère un PDF A4 propre de l'attestation avec logo."""
+    """Genere un PDF A4 professionnel de l'attestation - tient sur 1 page."""
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+    LM = 18
+    RM = 192
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_auto_page_break(auto=False)
+    pdf.set_margins(LM, 10, LM)
     pdf.add_page()
 
-    # Logo
+    # ── Logo + en-tete cote a cote ──
     logo_path = STATIC_DIR / "logo_k.png"
+    y_start = 10
     if logo_path.exists():
-        pdf.image(str(logo_path), x=75, y=10, w=60)
-        pdf.ln(35)
-    else:
-        pdf.ln(10)
-
-    # En-tête boutique
+        pdf.image(str(logo_path), x=LM, y=y_start, w=35)
+    pdf.set_y(y_start)
+    pdf.set_x(LM + 40)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(30, 30, 30)
+    pdf.cell(0, 7, "KLIKPHONE", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(LM + 40)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 4, "KLIKPHONE - Specialiste Apple & Multimarque", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 4, "79 Place Saint Leger, 73000 Chambery", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 4, "Tel: 04 79 60 89 22 - www.klikphone.com - SIREN: 813 901 191", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(8)
+    pdf.cell(0, 4, "Specialiste Apple & Multimarque", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(LM + 40)
+    pdf.cell(0, 4, "79 Place Saint Leger, 73000 Chambery", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(LM + 40)
+    pdf.cell(0, 4, "04 79 60 89 22 - www.klikphone.com - SIREN: 813 901 191", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(max(pdf.get_y(), y_start + 30))
+    pdf.ln(3)
 
-    # Titre encadré
+    # ── Trait separateur ──
+    pdf.set_draw_color(200, 200, 200)
+    pdf.set_line_width(0.3)
+    pdf.line(LM, pdf.get_y(), RM, pdf.get_y())
+    pdf.ln(4)
+
+    # ── Titre ──
+    pdf.set_draw_color(30, 30, 30)
+    pdf.set_line_width(0.6)
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(0, 0, 0)
-    pdf.set_draw_color(0, 0, 0)
-    pdf.set_line_width(0.5)
-    pdf.cell(0, 14, "ATTESTATION DE NON-REPARABILITE", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
+    pdf.cell(0, 12, "ATTESTATION DE NON-REPARABILITE", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
 
-    # Date
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, f"Chambery, le {date_fr}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
+    # ── Date ──
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.set_text_color(80, 80, 80)
+    pdf.cell(0, 5, f"Chambery, le {date_fr}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
 
-    # Corps
+    # ── Intro ──
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(0, 0, 0)
-    pdf.multi_cell(0, 6,
+    pdf.multi_cell(0, 5.5,
         "Je soussigne, KLIKPHONE, professionnel de la reparation d'appareils electroniques, "
-        "atteste par la presente que l'appareil decrit ci-dessous a ete examine dans nos ateliers et "
-        "declare non reparable pour les raisons indiquees.")
-    pdf.ln(5)
+        "atteste par la presente que l'appareil decrit ci-dessous a ete examine dans nos "
+        "ateliers et declare non reparable pour les raisons indiquees.")
+    pdf.ln(4)
 
-    # Section : Propriétaire
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "INFORMATIONS DU PROPRIETAIRE", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_draw_color(0, 0, 0)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    # ── Helpers ──
+    def section(title):
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(30, 30, 30)
+        pdf.set_fill_color(240, 240, 245)
+        pdf.cell(0, 7, f"  {title}", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+
+    def field(label, value):
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(48, 6, f"{label} :")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(0, 6, value or "-", new_x="LMARGIN", new_y="NEXT")
+
+    # ── 2 colonnes : Proprietaire | Appareil ──
+    section("PROPRIETAIRE")
+    field("Nom", data.nom)
+    field("Prenom", data.prenom)
+    if data.adresse:
+        field("Adresse", data.adresse)
     pdf.ln(3)
+
+    section("APPAREIL")
+    field("Marque", data.marque)
+    field("Modele", data.modele)
+    if data.imei:
+        field("IMEI / N. serie", data.imei)
+    if data.etat:
+        field("Etat", data.etat)
+    pdf.ln(3)
+
+    # ── Motif ──
+    section("MOTIF DE NON-REPARABILITE")
     pdf.set_font("Helvetica", "", 11)
-    for label, val in [("Nom", data.nom), ("Prenom", data.prenom), ("Adresse", data.adresse or "-")]:
-        pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(100, 100, 100)
-        pdf.cell(45, 6, f"{label} :")
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(0, 0, 0)
-        pdf.cell(0, 6, val, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    # Section : Appareil
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "INFORMATIONS DE L'APPAREIL", new_x="LMARGIN", new_y="NEXT")
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-    for label, val in [("Marque", data.marque), ("Modele", data.modele),
-                        ("IMEI / N. serie", data.imei or "-"), ("Etat general", data.etat or "-")]:
-        pdf.set_font("Helvetica", "", 10)
-        pdf.set_text_color(100, 100, 100)
-        pdf.cell(45, 6, f"{label} :")
-        pdf.set_font("Helvetica", "B", 11)
-        pdf.set_text_color(0, 0, 0)
-        pdf.cell(0, 6, val, new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-
-    # Section : Motif
-    pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 8, "MOTIF DE NON-REPARABILITE", new_x="LMARGIN", new_y="NEXT")
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.set_fill_color(245, 245, 245)
-    pdf.multi_cell(0, 6, data.motif or "-", fill=True)
+    pdf.multi_cell(0, 5.5, data.motif or "-")
     pdf.ln(3)
 
-    # Section : Compte-rendu
+    # ── Compte-rendu ──
     if data.compte_rendu:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "COMPTE-RENDU TECHNIQUE", new_x="LMARGIN", new_y="NEXT")
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(3)
+        section("COMPTE-RENDU TECHNIQUE")
         pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 6, data.compte_rendu, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(0, 5.5, data.compte_rendu)
         pdf.ln(3)
 
-    # Mention légale
-    pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 6,
+    # ── Mention legale ──
+    pdf.set_font("Helvetica", "I", 9)
+    pdf.set_text_color(80, 80, 80)
+    pdf.multi_cell(0, 4.5,
         "Cette attestation est delivree pour servir et valoir ce que de droit, "
         "notamment aupres des compagnies d'assurance.")
-    pdf.ln(10)
+    pdf.ln(5)
 
-    # Signature
+    # ── Signature + tampon ──
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, f"Fait a Chambery, le {date_fr}", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 5, f"Fait a Chambery, le {date_fr}", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 6, "Signature et cachet :", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(3)
+    pdf.cell(0, 5, "Signature et cachet :", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
     tampon_path = STATIC_DIR / "tampon_klikphone.png"
     if tampon_path.exists():
-        pdf.image(str(tampon_path), x=10, w=55)
+        pdf.image(str(tampon_path), x=LM, w=50)
 
-    # Footer
-    pdf.set_y(-20)
-    pdf.set_font("Helvetica", "", 8)
+    # ── Footer ──
+    pdf.set_y(-12)
+    pdf.set_draw_color(180, 180, 180)
+    pdf.set_line_width(0.2)
+    pdf.line(LM, pdf.get_y(), RM, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 4, "KLIKPHONE - 79 Place Saint Leger, 73000 Chambery - SIREN: 813 901 191", align="C")
+    pdf.cell(0, 3, "KLIKPHONE - 79 Place Saint Leger, 73000 Chambery - SIREN: 813 901 191 - 04 79 60 89 22", align="C")
 
     return pdf.output()
 
