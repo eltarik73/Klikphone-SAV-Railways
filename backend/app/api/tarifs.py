@@ -127,21 +127,28 @@ def _ensure_table():
                 ecouteur_apn_barre INTEGER,
                 vitre_arriere_barre INTEGER,
                 chassis_barre INTEGER,
+                ordre INTEGER DEFAULT 0,
                 updated_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(modele)
             )
         """)
-        # Add _barre columns if table already existed without them
+        # Add columns if table already existed without them
         for col in [
             "ecran_generique_barre", "ecran_confort_barre", "ecran_apple_barre",
             "batterie_barre", "desoxydation_barre", "connecteur_charge_barre",
             "reparation_divers_barre", "ecouteur_apn_barre", "vitre_arriere_barre",
-            "chassis_barre",
+            "chassis_barre", "ordre",
         ]:
+            col_type = "INTEGER DEFAULT 0" if col == "ordre" else "INTEGER"
             try:
-                cur.execute(f"ALTER TABLE tarifs_reparation ADD COLUMN IF NOT EXISTS {col} INTEGER")
+                cur.execute(f"ALTER TABLE tarifs_reparation ADD COLUMN IF NOT EXISTS {col} {col_type}")
             except Exception:
                 pass
+        # Init ordre from id if all zeros
+        try:
+            cur.execute("UPDATE tarifs_reparation SET ordre = id WHERE ordre = 0 OR ordre IS NULL")
+        except Exception:
+            pass
         # Seed data
         cur.execute("""
             INSERT INTO tarifs_reparation (modele, ecran_generique, ecran_confort, ecran_apple, batterie, desoxydation, connecteur_charge, reparation_divers, ecouteur_apn, vitre_arriere, chassis) VALUES
@@ -767,7 +774,7 @@ async def list_tarifs_reparation():
     """Liste tous les tarifs reparation iPhone (public)."""
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, modele,
+            SELECT id, modele, ordre,
                    ecran_generique, ecran_confort, ecran_apple,
                    batterie, desoxydation, connecteur_charge, reparation_divers,
                    ecouteur_apn, vitre_arriere, chassis,
@@ -776,7 +783,7 @@ async def list_tarifs_reparation():
                    reparation_divers_barre, ecouteur_apn_barre, vitre_arriere_barre,
                    chassis_barre, updated_at
             FROM tarifs_reparation
-            ORDER BY id
+            ORDER BY ordre, id
         """)
         rows = cur.fetchall()
     return [dict(r) for r in rows]
@@ -827,3 +834,46 @@ async def bulk_tarifs_reparation(body: List[Dict[str, Any]]):
                 [modele] + vals,
             )
     return {"status": "ok", "count": len(body)}
+
+
+@router.post("/reparation/add")
+async def add_tarif_reparation(body: Dict[str, Any]):
+    """Ajoute un nouveau modele dans la grille tarifs."""
+    modele = body.get("modele", "").strip()
+    if not modele:
+        raise HTTPException(400, "Le nom du modele est requis")
+    with get_cursor() as cur:
+        # Prend l'ordre max + 1
+        cur.execute("SELECT COALESCE(MAX(ordre), 0) + 1 AS next_ordre FROM tarifs_reparation")
+        next_ordre = cur.fetchone()["next_ordre"]
+        cur.execute(
+            "INSERT INTO tarifs_reparation (modele, ordre) VALUES (%s, %s) RETURNING *",
+            (modele, next_ordre),
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(500, "Erreur creation")
+    return dict(row)
+
+
+@router.delete("/reparation/{tarif_id}")
+async def delete_tarif_reparation(tarif_id: int):
+    """Supprime un modele de la grille tarifs."""
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM tarifs_reparation WHERE id = %s RETURNING id", (tarif_id,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Tarif non trouve")
+    return {"status": "ok", "deleted": tarif_id}
+
+
+@router.post("/reparation/reorder")
+async def reorder_tarifs_reparation(body: List[Dict[str, Any]]):
+    """Reordonne les tarifs. Body = [{id, ordre}, ...]"""
+    with get_cursor() as cur:
+        for item in body:
+            cur.execute(
+                "UPDATE tarifs_reparation SET ordre = %s WHERE id = %s",
+                (item["ordre"], item["id"]),
+            )
+    return {"status": "ok"}

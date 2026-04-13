@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Printer, FileJson, FileSpreadsheet, X } from 'lucide-react';
+import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import api from '../lib/api';
 
 const COLUMNS = [
@@ -43,8 +43,11 @@ export default function TarifsReparationPage() {
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
-  const [printPages, setPrintPages] = useState(2); // 1 or 2
+  const [printPages, setPrintPages] = useState(2);
+  const [newModele, setNewModele] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
   const inputRef = useRef(null);
+  const addRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -59,10 +62,11 @@ export default function TarifsReparationPage() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (editCell && inputRef.current) inputRef.current.focus(); }, [editCell]);
+  useEffect(() => { if (showAdd && addRef.current) addRef.current.focus(); }, [showAdd]);
 
-  const filtered = tarifs.filter(t =>
-    t.modele.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = search
+    ? tarifs.filter(t => t.modele.toLowerCase().includes(search.toLowerCase()))
+    : tarifs;
 
   const startEdit = (id, key, val) => {
     setEditCell({ id, key });
@@ -90,6 +94,48 @@ export default function TarifsReparationPage() {
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') saveEdit();
     if (e.key === 'Escape') cancelEdit();
+  };
+
+  // ─── Add model ───
+  const handleAdd = async () => {
+    const name = newModele.trim();
+    if (!name) return;
+    try {
+      const created = await api.addTarifReparation(name);
+      setTarifs(prev => [...prev, created]);
+      setNewModele('');
+      setShowAdd(false);
+    } catch (e) {
+      console.error('Erreur ajout:', e);
+    }
+  };
+
+  // ─── Delete model ───
+  const handleDelete = async (id, modele) => {
+    if (!confirm(`Supprimer "${modele}" ?`)) return;
+    try {
+      await api.deleteTarifReparation(id);
+      setTarifs(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      console.error('Erreur suppression:', e);
+    }
+  };
+
+  // ─── Move model ───
+  const handleMove = async (index, direction) => {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= tarifs.length) return;
+    const newTarifs = [...tarifs];
+    [newTarifs[index], newTarifs[newIndex]] = [newTarifs[newIndex], newTarifs[index]];
+    // Update ordre
+    const reordered = newTarifs.map((t, i) => ({ ...t, ordre: i }));
+    setTarifs(reordered);
+    try {
+      await api.reorderTarifsReparation(reordered.map((t, i) => ({ id: t.id, ordre: i })));
+    } catch (e) {
+      console.error('Erreur reorder:', e);
+      load(); // reload on failure
+    }
   };
 
   const exportJSON = () => {
@@ -123,7 +169,6 @@ export default function TarifsReparationPage() {
   if (printMode) {
     const onePage = printPages === 1;
     const pageSize = onePage ? 999 : 18;
-    // 1 page = tout compressé max, 2 pages = plus gros et lisible
     const S = onePage
       ? { font: 7, price: 8, barre: 5.5, model: 7, header: 6, padY: '0px', padX: '1px', title: 11, logo: 26, pagePad: '1mm 2mm', gap: 4 }
       : { font: 9, price: 11, barre: 7, model: 9, header: 8, padY: '2px', padX: '3px', title: 14, logo: 36, pagePad: '3mm 4mm', gap: 6 };
@@ -151,7 +196,6 @@ export default function TarifsReparationPage() {
 
         {pages.map((pageRows, pageIdx) => (
           <div key={pageIdx} className="print-page" style={{ padding: S.pagePad, pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
-            {/* Header compact */}
             <div style={{ display: 'flex', alignItems: 'center', gap: S.gap, marginBottom: onePage ? 1 : 3 }}>
               <img src="/logo_k.png" alt="K" style={{ width: S.logo, height: S.logo, objectFit: 'contain' }} />
               <div style={{ flex: 1 }}>
@@ -164,8 +208,6 @@ export default function TarifsReparationPage() {
                 </div>
               </div>
             </div>
-
-            {/* Table - fills max width */}
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
@@ -182,9 +224,7 @@ export default function TarifsReparationPage() {
                   const rowBg = ROW_PRINT_COLORS[i % ROW_PRINT_COLORS.length];
                   return (
                     <tr key={t.id}>
-                      <td style={{ padding: `${S.padY} 3px`, fontWeight: 900, fontSize: S.model, color: '#0f172a', border: '0.5px solid #d1d5db', whiteSpace: 'nowrap', background: rowBg }}>
-                        {t.modele}
-                      </td>
+                      <td style={{ padding: `${S.padY} 3px`, fontWeight: 900, fontSize: S.model, color: '#0f172a', border: '0.5px solid #d1d5db', whiteSpace: 'nowrap', background: rowBg }}>{t.modele}</td>
                       {COLUMNS.map(c => {
                         const val = t[c.key];
                         const barre = getBarrePrice(val, t[c.key + '_barre']);
@@ -208,7 +248,6 @@ export default function TarifsReparationPage() {
                 })}
               </tbody>
             </table>
-
             <div style={{ marginTop: 1, textAlign: 'center', fontSize: onePage ? 5 : 6, color: '#94a3b8' }}>
               Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min — klikphone.com
             </div>
@@ -237,7 +276,7 @@ export default function TarifsReparationPage() {
           <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">Tarifs Réparation iPhone</h1>
-            <p className="text-xs text-slate-500">{tarifs.length} modèles — Prix barrés = prix + 20€</p>
+            <p className="text-xs text-slate-500">{tarifs.length} modèles — Sauvegarde automatique</p>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
@@ -251,6 +290,9 @@ export default function TarifsReparationPage() {
               className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
             />
           </div>
+          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">
+            <Plus className="w-4 h-4" /> Ajouter
+          </button>
           <button onClick={exportJSON} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
             <FileJson className="w-4 h-4" /> JSON
           </button>
@@ -263,13 +305,37 @@ export default function TarifsReparationPage() {
         </div>
       </div>
 
+      {/* Add model bar */}
+      {showAdd && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <input
+            ref={addRef}
+            type="text"
+            value={newModele}
+            onChange={e => setNewModele(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setShowAdd(false); setNewModele(''); } }}
+            placeholder="Nom du modèle (ex: iPhone 17 Pro Max)"
+            className="flex-1 px-3 py-2 border border-emerald-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+          />
+          <button onClick={handleAdd} disabled={!newModele.trim()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-40">
+            Ajouter
+          </button>
+          <button onClick={() => { setShowAdd(false); setNewModele(''); }} className="p-2 text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[1100px]">
+          <table className="w-full border-collapse min-w-[1200px]">
             <thead>
               <tr>
-                <th className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold sticky left-0 z-20 border-r border-slate-700 min-w-[180px]">
+                <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[50px]">
+                  Ordre
+                </th>
+                <th className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold border-r border-slate-700 min-w-[170px]">
                   Modèle iPhone
                 </th>
                 {COLUMNS.map(c => (
@@ -277,53 +343,82 @@ export default function TarifsReparationPage() {
                     {c.label}
                   </th>
                 ))}
+                <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold w-[40px]" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t, i) => (
-                <tr key={t.id} className={`${ROW_COLORS[i % ROW_COLORS.length]} hover:bg-brand-50/40 transition-colors`}>
-                  <td className="px-4 py-2.5 font-bold text-sm text-slate-900 border-r border-slate-200 bg-white sticky left-0 z-10 whitespace-nowrap">
-                    {t.modele}
-                  </td>
-                  {COLUMNS.map(c => {
-                    const isEditing = editCell?.id === t.id && editCell?.key === c.key;
-                    const val = t[c.key];
-                    const barre = getBarrePrice(val, t[c.key + '_barre']);
-
-                    return (
-                      <td
-                        key={c.key}
-                        className="px-2 py-1.5 text-center border-x border-slate-100 cursor-pointer transition-colors"
-                        onClick={() => !isEditing && startEdit(t.id, c.key, val)}
+              {filtered.map((t, i) => {
+                const realIndex = tarifs.findIndex(x => x.id === t.id);
+                return (
+                  <tr key={t.id} className={`${ROW_COLORS[i % ROW_COLORS.length]} hover:bg-brand-50/40 transition-colors group`}>
+                    {/* Move buttons */}
+                    <td className="px-1 py-1 text-center border-r border-slate-200 bg-white sticky left-0 z-10">
+                      <div className="flex flex-col items-center gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0}
+                          className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Monter">
+                          <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                        </button>
+                        <span className="text-[9px] text-slate-400 font-mono">{i + 1}</span>
+                        <button onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1}
+                          className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Descendre">
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                        </button>
+                      </div>
+                    </td>
+                    {/* Model name */}
+                    <td className="px-4 py-2.5 font-bold text-sm text-slate-900 border-r border-slate-200 bg-white whitespace-nowrap">
+                      {t.modele}
+                    </td>
+                    {/* Price cells */}
+                    {COLUMNS.map(c => {
+                      const isEditing = editCell?.id === t.id && editCell?.key === c.key;
+                      const val = t[c.key];
+                      const barre = getBarrePrice(val, t[c.key + '_barre']);
+                      return (
+                        <td
+                          key={c.key}
+                          className="px-2 py-1.5 text-center border-x border-slate-100 cursor-pointer transition-colors"
+                          onClick={() => !isEditing && startEdit(t.id, c.key, val)}
+                        >
+                          {isEditing ? (
+                            <input
+                              ref={inputRef}
+                              type="text"
+                              value={editValue}
+                              onChange={e => setEditValue(e.target.value)}
+                              onKeyDown={handleKeyDown}
+                              onBlur={saveEdit}
+                              className="w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
+                            />
+                          ) : val != null ? (
+                            <div>
+                              {barre != null && barre > val && (
+                                <div className="text-[10px] text-red-400 line-through leading-none mb-0.5">{barre}€</div>
+                              )}
+                              <div className="text-sm font-black text-slate-900">{val}€</div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 text-sm">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    {/* Delete button */}
+                    <td className="px-1 py-1 text-center">
+                      <button
+                        onClick={() => handleDelete(t.id, t.modele)}
+                        className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Supprimer"
                       >
-                        {isEditing ? (
-                          <input
-                            ref={inputRef}
-                            type="text"
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onBlur={saveEdit}
-                            className="w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
-                          />
-                        ) : val != null ? (
-                          <div>
-                            {barre != null && barre > val && (
-                              <div className="text-[10px] text-red-400 line-through leading-none mb-0.5">{barre}€</div>
-                            )}
-                            <div className="text-sm font-black text-slate-900">{val}€</div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300 text-sm">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={COLUMNS.length + 3} className="text-center py-12 text-slate-400 text-sm">
                     Aucun modèle trouvé pour "{search}"
                   </td>
                 </tr>
@@ -334,7 +429,7 @@ export default function TarifsReparationPage() {
       </div>
 
       <p className="text-[11px] text-slate-400 mt-3 text-center">
-        Cliquez sur un prix pour le modifier. Entrée = sauvegarder, Escape = annuler. Prix barré = prix + 20€ automatique.
+        Cliquez sur un prix pour le modifier (Entrée = sauvegarder). Flèches = déplacer. Corbeille = supprimer.
       </p>
     </div>
   );

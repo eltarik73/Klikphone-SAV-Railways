@@ -438,6 +438,15 @@ class ApiClient {
   bulkTarifsReparation(items) {
     return this.post('/api/tarifs/reparation/bulk', items);
   }
+  addTarifReparation(modele) {
+    return this.post('/api/tarifs/reparation/add', { modele });
+  }
+  deleteTarifReparation(id) {
+    return this.delete(`/api/tarifs/reparation/${id}`);
+  }
+  reorderTarifsReparation(items) {
+    return this.post('/api/tarifs/reparation/reorder', items);
+  }
 
   getAppleDevices() {
     return this.get('/api/tarifs/apple-devices');
