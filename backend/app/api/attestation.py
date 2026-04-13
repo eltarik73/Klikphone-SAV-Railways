@@ -1,17 +1,46 @@
 """
 API Attestation de non-réparabilité.
+Historique sauvegardé en BDD lié aux clients.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
+from app.database import get_cursor
 from app.api.auth import get_current_user
 from app.services.notifications import envoyer_email
 from app.api.email_api import _send_resend_html
 
 router = APIRouter(prefix="/api/attestation", tags=["attestation"])
+
+
+def _ensure_attestation_table():
+    """Crée la table attestations si elle n'existe pas."""
+    with get_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS attestations (
+                id SERIAL PRIMARY KEY,
+                client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+                nom VARCHAR(100) NOT NULL,
+                prenom VARCHAR(100) DEFAULT '',
+                adresse TEXT DEFAULT '',
+                telephone VARCHAR(20) DEFAULT '',
+                email VARCHAR(255) DEFAULT '',
+                marque VARCHAR(100) NOT NULL,
+                modele VARCHAR(100) NOT NULL,
+                imei VARCHAR(50) DEFAULT '',
+                etat VARCHAR(100) DEFAULT '',
+                motif TEXT NOT NULL,
+                compte_rendu TEXT DEFAULT '',
+                email_envoye BOOLEAN DEFAULT FALSE,
+                cree_par VARCHAR(100) DEFAULT '',
+                date_creation TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_attestations_client ON attestations(client_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_attestations_date ON attestations(date_creation DESC)")
 
 MOIS_FR = [
     'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
@@ -23,12 +52,15 @@ class AttestationRequest(BaseModel):
     nom: str
     prenom: Optional[str] = ""
     adresse: Optional[str] = ""
+    telephone: Optional[str] = ""
+    email: Optional[str] = ""
     marque: str
     modele: str
     imei: Optional[str] = ""
     etat: Optional[str] = ""
     motif: str
     compte_rendu: Optional[str] = ""
+    client_id: Optional[int] = None
 
 
 def _generate_attestation_html(data: AttestationRequest) -> str:
@@ -145,13 +177,36 @@ def _generate_attestation_html(data: AttestationRequest) -> str:
 </body></html>"""
 
 
+def _save_attestation(data: AttestationRequest, user: dict, email_envoye: bool = False):
+    """Sauvegarde l'attestation en base de données."""
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO attestations
+                (client_id, nom, prenom, adresse, telephone, email,
+                 marque, modele, imei, etat, motif, compte_rendu,
+                 email_envoye, cree_par)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            data.client_id, data.nom, data.prenom or '', data.adresse or '',
+            data.telephone or '', data.email or '',
+            data.marque, data.modele, data.imei or '', data.etat or '',
+            data.motif, data.compte_rendu or '',
+            email_envoye, user.get("utilisateur", ""),
+        ))
+        row = cur.fetchone()
+    return row["id"] if row else None
+
+
 @router.post("/generate")
 async def generate_attestation(
     data: AttestationRequest,
     user: dict = Depends(get_current_user),
 ):
-    """Génère l'attestation HTML."""
-    return {"html": _generate_attestation_html(data)}
+    """Génère l'attestation HTML et la sauvegarde en BDD."""
+    html = _generate_attestation_html(data)
+    att_id = _save_attestation(data, user, email_envoye=False)
+    return {"html": html, "attestation_id": att_id}
 
 
 @router.post("/email")
@@ -160,7 +215,7 @@ async def email_attestation(
     destinataire: str,
     user: dict = Depends(get_current_user),
 ):
-    """Envoie l'attestation par email."""
+    """Envoie l'attestation par email et la sauvegarde."""
     html = _generate_attestation_html(data)
     sujet = f"Attestation de non-réparabilité — {data.marque} {data.modele}"
     message = (
@@ -174,4 +229,54 @@ async def email_attestation(
     success, msg = _send_resend_html(destinataire, sujet, html)
     if not success:
         success, msg = envoyer_email(destinataire, sujet, message, html)
+
+    # Sauvegarde avec le statut email
+    data.email = destinataire
+    _save_attestation(data, user, email_envoye=success)
+
     return {"success": success, "message": msg}
+
+
+@router.get("/history")
+async def list_attestations(
+    client_id: Optional[int] = Query(None),
+    limit: int = Query(50, le=200),
+    user: dict = Depends(get_current_user),
+):
+    """Liste l'historique des attestations, optionnellement filtré par client."""
+    conditions = []
+    params = []
+    if client_id is not None:
+        conditions.append("a.client_id = %s")
+        params.append(client_id)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params.append(limit)
+
+    with get_cursor() as cur:
+        cur.execute(f"""
+            SELECT a.*, c.telephone AS client_telephone
+            FROM attestations a
+            LEFT JOIN clients c ON c.id = a.client_id
+            {where}
+            ORDER BY a.date_creation DESC
+            LIMIT %s
+        """, params)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/history/{attestation_id}")
+async def get_attestation(
+    attestation_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Récupère une attestation et regénère le HTML."""
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM attestations WHERE id = %s", (attestation_id,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Attestation non trouvée")
+    att = dict(row)
+    data = AttestationRequest(**{k: att[k] for k in AttestationRequest.model_fields if k in att})
+    att["html"] = _generate_attestation_html(data)
+    return att

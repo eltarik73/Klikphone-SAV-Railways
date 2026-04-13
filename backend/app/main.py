@@ -210,6 +210,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning tarifs table: {e}")
 
+    # Attestations table
+    try:
+        attestation._ensure_attestation_table()
+    except Exception as e:
+        print(f"Warning attestations table: {e}")
+
     # Marketing tables
     try:
         marketing._ensure_tables()

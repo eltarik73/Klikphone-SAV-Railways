@@ -41,6 +41,9 @@ export default function AttestationPage() {
   const [htmlPreview, setHtmlPreview] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Catalog data
   const [categories] = useState(['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre']);
@@ -115,12 +118,44 @@ export default function AttestationPage() {
     setTelephone('');
   };
 
+  const getPayload = () => ({
+    ...form,
+    telephone,
+    email,
+    client_id: selectedClient?.id || null,
+  });
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const data = await api.getAttestationHistory();
+      setHistory(data);
+    } catch { setHistory([]); }
+    finally { setHistoryLoading(false); }
+  };
+
+  const handleReload = async (att) => {
+    setForm({
+      nom: att.nom || '', prenom: att.prenom || '', adresse: att.adresse || '',
+      marque: att.marque || '', modele: att.modele || '', imei: att.imei || '',
+      etat: att.etat || '', motif: att.motif || '', compte_rendu: att.compte_rendu || '',
+    });
+    setEmail(att.email || '');
+    setTelephone(att.telephone || att.client_telephone || '');
+    try {
+      const result = await api.getAttestation(att.id);
+      if (result.html) setHtmlPreview(result.html);
+    } catch {}
+    setShowHistory(false);
+    toast.success('Attestation rechargée');
+  };
+
   const handleGenerate = async () => {
     setLoading(true);
     try {
-      const result = await api.generateAttestation(form);
+      const result = await api.generateAttestation(getPayload());
       setHtmlPreview(result.html);
-      toast.success('Attestation générée');
+      toast.success('Attestation générée et sauvegardée');
     } catch (err) {
       toast.error('Erreur génération');
     } finally {
@@ -139,9 +174,9 @@ export default function AttestationPage() {
   const handleSendEmail = async () => {
     if (!email || !htmlPreview) return;
     try {
-      await api.emailAttestation(form, email);
+      await api.emailAttestation(getPayload(), email);
       setEmailSent(true);
-      toast.success('Email envoyé');
+      toast.success('Email envoyé et attestation sauvegardée');
       setTimeout(() => setEmailSent(false), 3000);
     } catch (err) {
       toast.error('Erreur envoi email');
@@ -166,14 +201,63 @@ export default function AttestationPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-6xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
-          Attestation de non-réparabilité
-        </h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          Générez un document officiel A4 pour les appareils irréparables
-        </p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+            Attestation de non-réparabilité
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Générez un document officiel A4 pour les appareils irréparables
+          </p>
+        </div>
+        <button
+          onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 shrink-0"
+        >
+          <FileText className="w-4 h-4" />
+          Historique
+        </button>
       </div>
+
+      {/* History panel */}
+      {showHistory && (
+        <div className="mb-6 card p-5">
+          <h3 className="text-sm font-semibold text-slate-800 mb-3">Historique des attestations</h3>
+          {historyLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-4">Aucune attestation enregistrée</p>
+          ) : (
+            <div className="space-y-1 max-h-64 overflow-y-auto">
+              {history.map(att => (
+                <button
+                  key={att.id}
+                  onClick={() => handleReload(att)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">
+                      {att.marque} {att.modele} — {att.prenom} {att.nom}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {new Date(att.date_creation).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {att.cree_par && ` · par ${att.cree_par}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {att.email_envoye && (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-full">Email envoyé</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ─── Form Column ─── */}

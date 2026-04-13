@@ -271,6 +271,13 @@ class ApiClient {
   emailAttestation(data, email) {
     return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}`, data);
   }
+  getAttestationHistory(clientId) {
+    const qs = clientId ? `?client_id=${clientId}` : '';
+    return this.get(`/api/attestation/history${qs}`);
+  }
+  getAttestation(id) {
+    return this.get(`/api/attestation/history/${id}`);
+  }
 
   // ─── FIDELITE ─────────────────────────────────
   getFidelite(clientId) { return this.get(`/api/fidelite/${clientId}`); }
