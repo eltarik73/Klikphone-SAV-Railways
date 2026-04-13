@@ -123,14 +123,10 @@ export default function TarifsReparationPage() {
   if (printMode) {
     const onePage = printPages === 1;
     const pageSize = onePage ? 999 : 18;
-    const fontSize = onePage ? 6.5 : 8;
-    const priceFontSize = onePage ? 7 : 9;
-    const barreFontSize = onePage ? 5 : 6;
-    const modelFontSize = onePage ? 6 : 7.5;
-    const headerFontSize = onePage ? 5.5 : 6.5;
-    const cellPadY = onePage ? '1px' : '2px';
-    const cellPadX = onePage ? '1px' : '2px';
-    const titleSize = onePage ? 11 : 13;
+    // 1 page = tout compressé max, 2 pages = plus gros et lisible
+    const S = onePage
+      ? { font: 7, price: 8, barre: 5.5, model: 7, header: 6, padY: '0px', padX: '1px', title: 11, logo: 26, pagePad: '1mm 2mm', gap: 4 }
+      : { font: 9, price: 11, barre: 7, model: 9, header: 8, padY: '2px', padX: '3px', title: 14, logo: 36, pagePad: '3mm 4mm', gap: 6 };
 
     const pages = [];
     for (let i = 0; i < tarifs.length; i += pageSize) {
@@ -154,63 +150,66 @@ export default function TarifsReparationPage() {
         </div>
 
         {pages.map((pageRows, pageIdx) => (
-          <div key={pageIdx} className="print-page" style={{ padding: onePage ? '3mm 4mm' : '4mm 5mm', pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: onePage ? 2 : 4 }}>
-              <img src="/logo_k.png" alt="Klikphone" style={{ width: onePage ? 30 : 40, height: onePage ? 30 : 40, objectFit: 'contain' }} />
-              <div>
-                <div style={{ fontSize: titleSize, fontWeight: 900, color: '#1e293b', letterSpacing: '-0.02em' }}>
+          <div key={pageIdx} className="print-page" style={{ padding: S.pagePad, pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
+            {/* Header compact */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: S.gap, marginBottom: onePage ? 1 : 3 }}>
+              <img src="/logo_k.png" alt="K" style={{ width: S.logo, height: S.logo, objectFit: 'contain' }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: S.title, fontWeight: 900, color: '#1e293b' }}>
                   KLIKPHONE — Grille Tarifs Réparation iPhone — 2025
                 </div>
-                <div style={{ fontSize: onePage ? 6 : 7, color: '#94a3b8', marginTop: 1 }}>
+                <div style={{ fontSize: onePage ? 5.5 : 7, color: '#64748b' }}>
                   Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min
                   {pages.length > 1 && ` — Page ${pageIdx + 1}/${pages.length}`}
                 </div>
               </div>
             </div>
 
-            {/* Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize, lineHeight: 1.1 }}>
+            {/* Table - fills max width */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <thead>
                 <tr>
-                  <th style={{ background: '#0f172a', color: '#fff', padding: `${cellPadY} 4px`, textAlign: 'left', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: headerFontSize, whiteSpace: 'nowrap' }}>Modèle</th>
+                  <th style={{ background: '#0f172a', color: '#fff', padding: `${S.padY} 3px`, textAlign: 'left', fontWeight: 900, border: '0.5px solid #94a3b8', fontSize: S.header, width: onePage ? '13%' : '15%' }}>Modèle</th>
                   {COLUMNS.map((c, i) => (
-                    <th key={c.key} style={{ background: HEADER_COLORS[i], color: '#fff', padding: `${cellPadY} ${cellPadX}`, textAlign: 'center', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: headerFontSize, whiteSpace: 'nowrap' }}>
+                    <th key={c.key} style={{ background: HEADER_COLORS[i], color: '#fff', padding: `${S.padY} ${S.padX}`, textAlign: 'center', fontWeight: 900, border: '0.5px solid #94a3b8', fontSize: S.header }}>
                       {c.shortLabel}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map((t, i) => (
-                  <tr key={t.id} style={{ background: ROW_PRINT_COLORS[i % ROW_PRINT_COLORS.length] }}>
-                    <td style={{ padding: `${cellPadY} 4px`, fontWeight: 800, fontSize: modelFontSize, color: '#0f172a', border: '1px solid #e2e8f0', whiteSpace: 'nowrap', background: '#fff' }}>
-                      {t.modele}
-                    </td>
-                    {COLUMNS.map(c => {
-                      const val = t[c.key];
-                      const barre = getBarrePrice(val, t[c.key + '_barre']);
-                      return (
-                        <td key={c.key} style={{ padding: `${cellPadY} ${cellPadX}`, textAlign: 'center', border: '1px solid #e2e8f0', verticalAlign: 'middle' }}>
-                          {val != null ? (
-                            <div>
-                              {barre != null && barre > val && (
-                                <div style={{ fontSize: barreFontSize, color: '#ef4444', textDecoration: 'line-through', lineHeight: 1 }}>{barre}€</div>
-                              )}
-                              <div style={{ fontSize: priceFontSize, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>{val}€</div>
-                            </div>
-                          ) : (
-                            <span style={{ color: '#cbd5e1', fontSize }}>—</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {pageRows.map((t, i) => {
+                  const rowBg = ROW_PRINT_COLORS[i % ROW_PRINT_COLORS.length];
+                  return (
+                    <tr key={t.id}>
+                      <td style={{ padding: `${S.padY} 3px`, fontWeight: 900, fontSize: S.model, color: '#0f172a', border: '0.5px solid #d1d5db', whiteSpace: 'nowrap', background: rowBg }}>
+                        {t.modele}
+                      </td>
+                      {COLUMNS.map(c => {
+                        const val = t[c.key];
+                        const barre = getBarrePrice(val, t[c.key + '_barre']);
+                        return (
+                          <td key={c.key} style={{ padding: `${S.padY} ${S.padX}`, textAlign: 'center', border: '0.5px solid #d1d5db', verticalAlign: 'middle', background: rowBg }}>
+                            {val != null ? (
+                              <div style={{ lineHeight: 1 }}>
+                                {barre != null && barre > val && (
+                                  <div style={{ fontSize: S.barre, color: '#dc2626', textDecoration: 'line-through', lineHeight: 1 }}>{barre}€</div>
+                                )}
+                                <div style={{ fontSize: S.price, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>{val}€</div>
+                              </div>
+                            ) : (
+                              <span style={{ color: '#d1d5db', fontSize: S.font }}>—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
-            <div style={{ marginTop: 2, textAlign: 'center', fontSize: onePage ? 5.5 : 6.5, color: '#94a3b8' }}>
+            <div style={{ marginTop: 1, textAlign: 'center', fontSize: onePage ? 5 : 6, color: '#94a3b8' }}>
               Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min — klikphone.com
             </div>
           </div>
@@ -218,13 +217,11 @@ export default function TarifsReparationPage() {
 
         <style>{`
           @media print {
-            @page { size: A4 landscape; margin: 2mm; }
+            @page { size: A4 landscape; margin: 1mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
-            /* Hide everything except the print content */
-            .no-print, aside, [data-testid="chat-widget"] { display: none !important; }
-            /* Remove sidebar spacing on main */
+            .no-print, aside { display: none !important; }
             main { padding-left: 0 !important; padding-top: 0 !important; }
-            .print-page { padding: 2mm 3mm !important; }
+            .print-page { padding: 1mm 2mm !important; }
           }
         `}</style>
       </div>
