@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Download, Printer, FileJson, FileSpreadsheet, X } from 'lucide-react';
+import { Search, Printer, FileJson, FileSpreadsheet, X } from 'lucide-react';
 import api from '../lib/api';
 
 const COLUMNS = [
@@ -27,29 +27,12 @@ const ROW_PRINT_COLORS = [
   '#FFF7ED', '#fff', '#F8FAFC', '#fff',
 ];
 
-function PriceCell({ val, barre, isEditing, editValue, setEditValue, onKeyDown, onBlur, inputRef, onClick }) {
-  if (isEditing) {
-    return (
-      <input
-        ref={inputRef}
-        type="text"
-        value={editValue}
-        onChange={e => setEditValue(e.target.value)}
-        onKeyDown={onKeyDown}
-        onBlur={onBlur}
-        className="w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
-      />
-    );
-  }
-  if (val == null) return <span className="text-slate-300 text-sm">—</span>;
-  return (
-    <div className="cursor-pointer" onClick={onClick}>
-      {barre != null && barre > val && (
-        <div className="text-[10px] text-red-400 line-through leading-none mb-0.5">{barre}€</div>
-      )}
-      <div className="text-sm font-black text-slate-900">{val}€</div>
-    </div>
-  );
+const HEADER_COLORS = ['#2563eb','#1d4ed8','#1e40af','#ca8a04','#16a34a','#e11d48','#4f46e5','#9333ea','#ea580c','#475569'];
+
+function getBarrePrice(val, barreDb) {
+  if (barreDb != null) return barreDb;
+  if (val != null) return val + 20;
+  return null;
 }
 
 export default function TarifsReparationPage() {
@@ -58,9 +41,9 @@ export default function TarifsReparationPage() {
   const [loading, setLoading] = useState(true);
   const [editCell, setEditCell] = useState(null);
   const [editValue, setEditValue] = useState('');
-  const [editMode, setEditMode] = useState('prix'); // 'prix' or 'barre'
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
+  const [printPages, setPrintPages] = useState(2); // 1 or 2
   const inputRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -118,11 +101,9 @@ export default function TarifsReparationPage() {
   };
 
   const exportCSV = () => {
-    const headers = ['Modèle', ...COLUMNS.map(c => c.label), ...COLUMNS.map(c => c.label + ' (barré)')];
+    const headers = ['Modèle', ...COLUMNS.map(c => c.label)];
     const rows = tarifs.map(t => [
-      t.modele,
-      ...COLUMNS.map(c => t[c.key] ?? ''),
-      ...COLUMNS.map(c => t[c.key + '_barre'] ?? ''),
+      t.modele, ...COLUMNS.map(c => t[c.key] ?? ''),
     ]);
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -140,8 +121,17 @@ export default function TarifsReparationPage() {
 
   // ── Print preview ──
   if (printMode) {
-    // Split into 2 pages if more than 18 rows
-    const pageSize = 18;
+    const onePage = printPages === 1;
+    const pageSize = onePage ? 999 : 18;
+    const fontSize = onePage ? 6.5 : 8;
+    const priceFontSize = onePage ? 7 : 9;
+    const barreFontSize = onePage ? 5 : 6;
+    const modelFontSize = onePage ? 6 : 7.5;
+    const headerFontSize = onePage ? 5.5 : 6.5;
+    const cellPadY = onePage ? '1px' : '2px';
+    const cellPadX = onePage ? '1px' : '2px';
+    const titleSize = onePage ? 11 : 13;
+
     const pages = [];
     for (let i = 0; i < tarifs.length; i += pageSize) {
       pages.push(tarifs.slice(i, i + pageSize));
@@ -153,22 +143,26 @@ export default function TarifsReparationPage() {
           <button onClick={() => setPrintMode(false)} className="p-1.5 rounded-lg hover:bg-white/10">
             <X className="w-5 h-5" />
           </button>
-          <span className="font-medium text-sm">Aperçu impression A4 paysage — {pages.length} page(s)</span>
+          <span className="font-medium text-sm">Aperçu A4 paysage — {pages.length} page(s)</span>
+          <div className="flex items-center gap-1 ml-4 bg-white/10 rounded-lg overflow-hidden">
+            <button onClick={() => setPrintPages(1)} className={`px-3 py-1 text-xs font-bold ${printPages === 1 ? 'bg-brand-600' : 'hover:bg-white/10'}`}>1 page</button>
+            <button onClick={() => setPrintPages(2)} className={`px-3 py-1 text-xs font-bold ${printPages === 2 ? 'bg-brand-600' : 'hover:bg-white/10'}`}>2 pages</button>
+          </div>
           <button onClick={() => window.print()} className="ml-auto flex items-center gap-2 px-4 py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg text-sm font-bold">
             <Printer className="w-4 h-4" /> Imprimer
           </button>
         </div>
 
         {pages.map((pageRows, pageIdx) => (
-          <div key={pageIdx} className="print-page" style={{ padding: '4mm 5mm', pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
+          <div key={pageIdx} className="print-page" style={{ padding: onePage ? '3mm 4mm' : '4mm 5mm', pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
             {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <img src="/logo_k.png" alt="Klikphone" style={{ width: 40, height: 40, objectFit: 'contain' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: onePage ? 2 : 4 }}>
+              <img src="/logo_k.png" alt="Klikphone" style={{ width: onePage ? 30 : 40, height: onePage ? 30 : 40, objectFit: 'contain' }} />
               <div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#1e293b', letterSpacing: '-0.02em' }}>
+                <div style={{ fontSize: titleSize, fontWeight: 900, color: '#1e293b', letterSpacing: '-0.02em' }}>
                   KLIKPHONE — Grille Tarifs Réparation iPhone — 2025
                 </div>
-                <div style={{ fontSize: 7, color: '#94a3b8', marginTop: 1 }}>
+                <div style={{ fontSize: onePage ? 6 : 7, color: '#94a3b8', marginTop: 1 }}>
                   Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min
                   {pages.length > 1 && ` — Page ${pageIdx + 1}/${pages.length}`}
                 </div>
@@ -176,40 +170,37 @@ export default function TarifsReparationPage() {
             </div>
 
             {/* Table */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 8, lineHeight: 1.2 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize, lineHeight: 1.1 }}>
               <thead>
                 <tr>
-                  <th style={{ background: '#0f172a', color: '#fff', padding: '3px 5px', textAlign: 'left', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: 7, whiteSpace: 'nowrap' }}>Modèle</th>
-                  {COLUMNS.map((c, i) => {
-                    const colors = ['#2563eb','#1d4ed8','#1e40af','#ca8a04','#16a34a','#e11d48','#4f46e5','#9333ea','#ea580c','#475569'];
-                    return (
-                      <th key={c.key} style={{ background: colors[i], color: '#fff', padding: '3px 2px', textAlign: 'center', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: 6.5, whiteSpace: 'nowrap' }}>
-                        {c.shortLabel}
-                      </th>
-                    );
-                  })}
+                  <th style={{ background: '#0f172a', color: '#fff', padding: `${cellPadY} 4px`, textAlign: 'left', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: headerFontSize, whiteSpace: 'nowrap' }}>Modèle</th>
+                  {COLUMNS.map((c, i) => (
+                    <th key={c.key} style={{ background: HEADER_COLORS[i], color: '#fff', padding: `${cellPadY} ${cellPadX}`, textAlign: 'center', fontWeight: 800, border: '1px solid #cbd5e1', fontSize: headerFontSize, whiteSpace: 'nowrap' }}>
+                      {c.shortLabel}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((t, i) => (
                   <tr key={t.id} style={{ background: ROW_PRINT_COLORS[i % ROW_PRINT_COLORS.length] }}>
-                    <td style={{ padding: '2px 5px', fontWeight: 800, fontSize: 7.5, color: '#0f172a', border: '1px solid #e2e8f0', whiteSpace: 'nowrap', background: '#fff' }}>
+                    <td style={{ padding: `${cellPadY} 4px`, fontWeight: 800, fontSize: modelFontSize, color: '#0f172a', border: '1px solid #e2e8f0', whiteSpace: 'nowrap', background: '#fff' }}>
                       {t.modele}
                     </td>
                     {COLUMNS.map(c => {
                       const val = t[c.key];
-                      const barre = t[c.key + '_barre'];
+                      const barre = getBarrePrice(val, t[c.key + '_barre']);
                       return (
-                        <td key={c.key} style={{ padding: '1px 2px', textAlign: 'center', border: '1px solid #e2e8f0', verticalAlign: 'middle' }}>
+                        <td key={c.key} style={{ padding: `${cellPadY} ${cellPadX}`, textAlign: 'center', border: '1px solid #e2e8f0', verticalAlign: 'middle' }}>
                           {val != null ? (
                             <div>
                               {barre != null && barre > val && (
-                                <div style={{ fontSize: 6, color: '#ef4444', textDecoration: 'line-through', lineHeight: 1 }}>{barre}€</div>
+                                <div style={{ fontSize: barreFontSize, color: '#ef4444', textDecoration: 'line-through', lineHeight: 1 }}>{barre}€</div>
                               )}
-                              <div style={{ fontSize: 9, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>{val}€</div>
+                              <div style={{ fontSize: priceFontSize, fontWeight: 900, color: '#0f172a', lineHeight: 1.1 }}>{val}€</div>
                             </div>
                           ) : (
-                            <span style={{ color: '#cbd5e1', fontSize: 8 }}>—</span>
+                            <span style={{ color: '#cbd5e1', fontSize }}>—</span>
                           )}
                         </td>
                       );
@@ -219,7 +210,7 @@ export default function TarifsReparationPage() {
               </tbody>
             </table>
 
-            <div style={{ marginTop: 3, textAlign: 'center', fontSize: 6.5, color: '#94a3b8' }}>
+            <div style={{ marginTop: 2, textAlign: 'center', fontSize: onePage ? 5.5 : 6.5, color: '#94a3b8' }}>
               Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min — klikphone.com
             </div>
           </div>
@@ -228,9 +219,9 @@ export default function TarifsReparationPage() {
         <style>{`
           @media print {
             .no-print { display: none !important; }
-            @page { size: A4 landscape; margin: 3mm; }
+            @page { size: A4 landscape; margin: 2mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .print-page { padding: 3mm 4mm !important; }
+            .print-page { padding: 2mm 3mm !important; }
           }
         `}</style>
       </div>
@@ -246,25 +237,10 @@ export default function TarifsReparationPage() {
           <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">Tarifs Réparation iPhone</h1>
-            <p className="text-xs text-slate-500">{tarifs.length} modèles</p>
+            <p className="text-xs text-slate-500">{tarifs.length} modèles — Prix barrés = prix + 20€</p>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
-          {/* Toggle edit mode */}
-          <div className="flex items-center bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <button
-              onClick={() => setEditMode('prix')}
-              className={`px-3 py-2 text-xs font-medium transition-colors ${editMode === 'prix' ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              Prix
-            </button>
-            <button
-              onClick={() => setEditMode('barre')}
-              className={`px-3 py-2 text-xs font-medium transition-colors ${editMode === 'barre' ? 'bg-red-500 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
-            >
-              Prix barrés
-            </button>
-          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -275,10 +251,10 @@ export default function TarifsReparationPage() {
               className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
             />
           </div>
-          <button onClick={exportJSON} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50" title="Export JSON">
+          <button onClick={exportJSON} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
             <FileJson className="w-4 h-4" /> JSON
           </button>
-          <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50" title="Export CSV">
+          <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
             <FileSpreadsheet className="w-4 h-4" /> CSV
           </button>
           <button onClick={() => setPrintMode(true)} className="flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
@@ -286,12 +262,6 @@ export default function TarifsReparationPage() {
           </button>
         </div>
       </div>
-
-      {editMode === 'barre' && (
-        <div className="mb-4 px-4 py-2 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
-          Mode édition <strong>prix barrés</strong> — Cliquez sur une cellule pour définir l'ancien prix (affiché barré au-dessus du prix actuel)
-        </div>
-      )}
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -316,17 +286,15 @@ export default function TarifsReparationPage() {
                     {t.modele}
                   </td>
                   {COLUMNS.map(c => {
-                    const editKey = editMode === 'barre' ? c.key + '_barre' : c.key;
-                    const isEditing = editCell?.id === t.id && editCell?.key === editKey;
+                    const isEditing = editCell?.id === t.id && editCell?.key === c.key;
                     const val = t[c.key];
-                    const barre = t[c.key + '_barre'];
-                    const cellVal = editMode === 'barre' ? barre : val;
+                    const barre = getBarrePrice(val, t[c.key + '_barre']);
 
                     return (
                       <td
                         key={c.key}
-                        className={`px-2 py-1.5 text-center border-x border-slate-100 transition-colors ${editMode === 'barre' ? 'cursor-pointer hover:bg-red-50' : 'cursor-pointer'}`}
-                        onClick={() => !isEditing && startEdit(t.id, editKey, cellVal)}
+                        className="px-2 py-1.5 text-center border-x border-slate-100 cursor-pointer transition-colors"
+                        onClick={() => !isEditing && startEdit(t.id, c.key, val)}
                       >
                         {isEditing ? (
                           <input
@@ -336,14 +304,17 @@ export default function TarifsReparationPage() {
                             onChange={e => setEditValue(e.target.value)}
                             onKeyDown={handleKeyDown}
                             onBlur={saveEdit}
-                            className={`w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 rounded-lg outline-none ${editMode === 'barre' ? 'border-red-500 bg-red-50' : 'border-brand-500 bg-brand-50'}`}
+                            className="w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
                           />
+                        ) : val != null ? (
+                          <div>
+                            {barre != null && barre > val && (
+                              <div className="text-[10px] text-red-400 line-through leading-none mb-0.5">{barre}€</div>
+                            )}
+                            <div className="text-sm font-black text-slate-900">{val}€</div>
+                          </div>
                         ) : (
-                          <PriceCell
-                            val={val}
-                            barre={barre}
-                            onClick={() => startEdit(t.id, editKey, cellVal)}
-                          />
+                          <span className="text-slate-300 text-sm">—</span>
                         )}
                       </td>
                     );
@@ -363,9 +334,7 @@ export default function TarifsReparationPage() {
       </div>
 
       <p className="text-[11px] text-slate-400 mt-3 text-center">
-        {editMode === 'prix'
-          ? 'Cliquez sur un prix pour le modifier. Entrée = sauvegarder, Escape = annuler.'
-          : 'Mode prix barrés : cliquez sur une cellule pour définir l\'ancien prix affiché barré.'}
+        Cliquez sur un prix pour le modifier. Entrée = sauvegarder, Escape = annuler. Prix barré = prix + 20€ automatique.
       </p>
     </div>
   );
