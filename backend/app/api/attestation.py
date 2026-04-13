@@ -1,17 +1,28 @@
 """
 API Attestation de non-réparabilité.
 Historique sauvegardé en BDD lié aux clients.
+Envoi PDF par email via Resend (avec logo).
 """
 
+import base64
+import io
+import os
 from datetime import datetime
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional, List
+from fpdf import FPDF
+import httpx
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
-from app.services.notifications import envoyer_email
+from app.services.notifications import envoyer_email, envoyer_email_avec_pdf
 from app.api.email_api import _send_resend_html
+
+STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 
 router = APIRouter(prefix="/api/attestation", tags=["attestation"])
 
@@ -61,6 +72,177 @@ class AttestationRequest(BaseModel):
     motif: str
     compte_rendu: Optional[str] = ""
     client_id: Optional[int] = None
+
+
+def _get_param(key: str) -> str:
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
+        row = cur.fetchone()
+    return row["valeur"] if row else ""
+
+
+def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
+    """Génère un PDF A4 propre de l'attestation avec logo."""
+    now = datetime.now()
+    date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # Logo
+    logo_path = STATIC_DIR / "logo_k.png"
+    if logo_path.exists():
+        pdf.image(str(logo_path), x=75, y=10, w=60)
+        pdf.ln(35)
+    else:
+        pdf.ln(10)
+
+    # En-tête boutique
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 4, "KLIKPHONE - Specialiste Apple & Multimarque", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, "79 Place Saint Leger, 73000 Chambery", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, "Tel: 04 79 60 89 22 - www.klikphone.com - SIREN: 813 901 191", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(8)
+
+    # Titre encadré
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.5)
+    pdf.cell(0, 14, "ATTESTATION DE NON-REPARABILITE", border=1, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+
+    # Date
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, f"Chambery, le {date_fr}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+
+    # Corps
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(0, 0, 0)
+    pdf.multi_cell(0, 6,
+        "Je soussigne, KLIKPHONE, professionnel de la reparation d'appareils electroniques, "
+        "atteste par la presente que l'appareil decrit ci-dessous a ete examine dans nos ateliers et "
+        "declare non reparable pour les raisons indiquees.")
+    pdf.ln(5)
+
+    # Section : Propriétaire
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "INFORMATIONS DU PROPRIETAIRE", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_draw_color(0, 0, 0)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 11)
+    for label, val in [("Nom", data.nom), ("Prenom", data.prenom), ("Adresse", data.adresse or "-")]:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(45, 6, f"{label} :")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(0, 6, val, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # Section : Appareil
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "INFORMATIONS DE L'APPAREIL", new_x="LMARGIN", new_y="NEXT")
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+    for label, val in [("Marque", data.marque), ("Modele", data.modele),
+                        ("IMEI / N. serie", data.imei or "-"), ("Etat general", data.etat or "-")]:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(45, 6, f"{label} :")
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(0, 0, 0)
+        pdf.cell(0, 6, val, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # Section : Motif
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 8, "MOTIF DE NON-REPARABILITE", new_x="LMARGIN", new_y="NEXT")
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_fill_color(245, 245, 245)
+    pdf.multi_cell(0, 6, data.motif or "-", fill=True)
+    pdf.ln(3)
+
+    # Section : Compte-rendu
+    if data.compte_rendu:
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "COMPTE-RENDU TECHNIQUE", new_x="LMARGIN", new_y="NEXT")
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 6, data.compte_rendu, fill=True)
+        pdf.ln(3)
+
+    # Mention légale
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 6,
+        "Cette attestation est delivree pour servir et valoir ce que de droit, "
+        "notamment aupres des compagnies d'assurance.")
+    pdf.ln(10)
+
+    # Signature
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, f"Fait a Chambery, le {date_fr}", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 6, "Signature et cachet :", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    tampon_path = STATIC_DIR / "tampon_klikphone.png"
+    if tampon_path.exists():
+        pdf.image(str(tampon_path), x=10, w=55)
+
+    # Footer
+    pdf.set_y(-20)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 4, "KLIKPHONE - 79 Place Saint Leger, 73000 Chambery - SIREN: 813 901 191", align="C")
+
+    return pdf.output()
+
+
+def _send_resend_pdf(to: str, subject: str, message: str, pdf_bytes: bytes, filename: str) -> tuple:
+    """Envoie un email avec PDF en pièce jointe via Resend."""
+    api_key = _get_param("RESEND_API_KEY")
+    if not api_key:
+        return False, "Cle API Resend non configuree"
+
+    from_name = _get_param("SMTP_NAME") or "Klikphone"
+    from_email = _get_param("SMTP_USER") or "onboarding@resend.dev"
+
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    try:
+        with httpx.Client(timeout=20) as client:
+            resp = client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": f"{from_name} <{from_email}>",
+                    "to": [to],
+                    "subject": subject,
+                    "text": message,
+                    "attachments": [{
+                        "filename": filename,
+                        "content": pdf_b64,
+                    }],
+                },
+            )
+        if resp.status_code in (200, 201):
+            return True, "Email PDF envoye avec succes"
+        else:
+            error = resp.json().get("message", resp.text) if "json" in resp.headers.get("content-type", "") else resp.text
+            return False, f"Resend erreur {resp.status_code}: {error}"
+    except Exception as e:
+        return False, f"Erreur Resend: {str(e)}"
 
 
 def _generate_attestation_html(data: AttestationRequest) -> str:
@@ -215,26 +397,42 @@ async def email_attestation(
     destinataire: str,
     user: dict = Depends(get_current_user),
 ):
-    """Envoie l'attestation par email et la sauvegarde."""
-    html = _generate_attestation_html(data)
-    sujet = f"Attestation de non-réparabilité — {data.marque} {data.modele}"
+    """Envoie l'attestation PDF par email et la sauvegarde."""
+    pdf_bytes = _generate_attestation_pdf(data)
+    sujet = f"Attestation de non-reparabilite - {data.marque} {data.modele}"
+    filename = f"attestation_{data.marque}_{data.modele}.pdf".replace(" ", "_")
     message = (
         f"Bonjour {data.prenom} {data.nom},\n\n"
-        f"Veuillez trouver ci-joint l'attestation de non-réparabilité "
+        f"Veuillez trouver ci-joint l'attestation de non-reparabilite "
         f"de votre appareil {data.marque} {data.modele}.\n\n"
         f"Cordialement,\nKLIKPHONE - 04 79 60 89 22"
     )
 
-    # Essaie Resend (HTTP, fiable depuis Railway) puis SMTP en fallback
-    success, msg = _send_resend_html(destinataire, sujet, html)
+    # Essaie Resend avec PDF puis SMTP en fallback
+    success, msg = _send_resend_pdf(destinataire, sujet, message, pdf_bytes, filename)
     if not success:
-        success, msg = envoyer_email(destinataire, sujet, message, html)
+        success, msg = envoyer_email_avec_pdf(destinataire, sujet, message, pdf_bytes, filename)
 
     # Sauvegarde avec le statut email
     data.email = destinataire
     _save_attestation(data, user, email_envoye=success)
 
     return {"success": success, "message": msg}
+
+
+@router.post("/pdf")
+async def download_attestation_pdf(
+    data: AttestationRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Télécharge l'attestation en PDF."""
+    pdf_bytes = _generate_attestation_pdf(data)
+    filename = f"attestation_{data.marque}_{data.modele}.pdf".replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/history")

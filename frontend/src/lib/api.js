@@ -271,6 +271,14 @@ class ApiClient {
   emailAttestation(data, email) {
     return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}`, data);
   }
+  async downloadAttestationPdf(data) {
+    const url = `${API_URL}/api/attestation/pdf`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
+    if (!res.ok) throw new Error('Erreur PDF');
+    return res.blob();
+  }
   getAttestationHistory(clientId) {
     const qs = clientId ? `?client_id=${clientId}` : '';
     return this.get(`/api/attestation/history${qs}`);

@@ -7,7 +7,7 @@ import { waLink } from '../lib/utils';
 import {
   FileText, Send, Mail, Printer, AlertTriangle, Search,
   Check, Loader2, UserPlus, Users, Phone, Smartphone,
-  MessageCircle, X, ChevronDown,
+  MessageCircle, X, ChevronDown, Download,
 } from 'lucide-react';
 
 // Accent-insensitive search helper
@@ -533,10 +533,29 @@ export default function AttestationPage() {
             <div className="card p-5 space-y-3">
               <h3 className="text-sm font-semibold text-slate-800 mb-3">Actions</h3>
 
-              {/* Print */}
-              <button onClick={handlePrint} className="btn-primary w-full justify-center gap-2">
-                <Printer className="w-4 h-4" /> Imprimer (A4)
-              </button>
+              {/* Print + PDF */}
+              <div className="flex gap-2">
+                <button onClick={handlePrint} className="btn-primary flex-1 justify-center gap-2">
+                  <Printer className="w-4 h-4" /> Imprimer
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const blob = await api.downloadAttestationPdf(getPayload());
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `attestation_${form.marque}_${form.modele}.pdf`.replace(/ /g, '_');
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success('PDF téléchargé');
+                    } catch { toast.error('Erreur PDF'); }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold"
+                >
+                  <Download className="w-4 h-4" /> PDF
+                </button>
+              </div>
 
               {/* Email */}
               <div className="flex gap-2">
