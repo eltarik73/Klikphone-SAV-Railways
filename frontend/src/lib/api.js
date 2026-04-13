@@ -413,6 +413,17 @@ class ApiClient {
   checkTarifStock() {
     return this.request('/api/tarifs/check-stock', { method: 'POST' }, 300000);
   }
+  // ─── TARIFS REPARATION (grille iPhone) ────
+  getTarifsReparation() {
+    return this.get('/api/tarifs/reparation');
+  }
+  updateTarifReparation(id, data) {
+    return this.put(`/api/tarifs/reparation/${id}`, data);
+  }
+  bulkTarifsReparation(items) {
+    return this.post('/api/tarifs/reparation/bulk', items);
+  }
+
   getAppleDevices() {
     return this.get('/api/tarifs/apple-devices');
   }

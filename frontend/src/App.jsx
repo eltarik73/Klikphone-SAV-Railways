@@ -29,6 +29,7 @@ const DevisPage = lazy(() => import('./pages/DevisPage'));
 const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
 const TelephonesVentePage = lazy(() => import('./pages/TelephonesVentePage'));
 const DeposerPage = lazy(() => import('./pages/DeposerPage'));
+const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
 
 // Preload frequent pages after initial render
 const preloadPages = () => {
@@ -124,11 +125,12 @@ function ProtectedRoute({ children, allowedTargets }) {
   }, []);
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-slate-400 font-medium">Chargement...</p>
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
+      <div className="fixed inset-x-0 top-0 z-[9999]">
+        <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
       </div>
+      <img src="/logo_k.png" alt="Klikphone" className="w-12 h-12 rounded-2xl object-contain animate-pulse" />
+      <p className="text-sm text-slate-400 font-medium">Chargement...</p>
     </div>
   );
 
@@ -167,8 +169,8 @@ function ChatOverlay() {
 }
 
 const LazyFallback = () => (
-  <div className="min-h-screen flex items-center justify-center bg-slate-50">
-    <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+  <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
+    <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
   </div>
 );
 
@@ -196,6 +198,7 @@ function AppRoutes() {
         <Route path="/accueil/config" element={<AG targets={['accueil']}><ConfigPage /></AG>} />
         <Route path="/accueil/avis-google" element={<AG targets={['accueil']}><AvisGooglePage /></AG>} />
         <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
+        <Route path="/accueil/tarifs-reparation" element={<AG targets={['accueil']}><TarifsReparationPage /></AG>} />
         <Route path="/accueil/admin" element={<AG targets={['accueil']}><AdminPage /></AG>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
@@ -211,6 +214,7 @@ function AppRoutes() {
         <Route path="/tech/config" element={<AG targets={['tech']}><ConfigPage /></AG>} />
         <Route path="/tech/avis-google" element={<AG targets={['tech']}><AvisGooglePage /></AG>} />
         <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />
+        <Route path="/tech/tarifs-reparation" element={<AG targets={['tech']}><TarifsReparationPage /></AG>} />
         <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

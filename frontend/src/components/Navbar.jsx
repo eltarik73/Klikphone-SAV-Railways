@@ -44,7 +44,12 @@ export default function Navbar() {
         .catch(() => {});
     };
     fetchKpi();
-    const interval = setInterval(fetchKpi, 30000);
+    let interval;
+    const start = () => { clearInterval(interval); interval = setInterval(fetchKpi, 30000); };
+    const stop = () => clearInterval(interval);
+    const onVisibility = () => document.hidden ? stop() : start();
+    document.addEventListener('visibilitychange', onVisibility);
+    start();
     // Load module visibility
     api.getConfig().then(cfg => {
       const map = {};
@@ -52,7 +57,7 @@ export default function Navbar() {
       setModuleDevis(map.MODULE_DEVIS_VISIBLE === 'true');
       setModuleDevisFlash(map.MODULE_DEVIS_FLASH_VISIBLE === 'true');
     }).catch(() => {});
-    return () => clearInterval(interval);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [user]);
 
   const toggleCollapse = () => {
@@ -76,6 +81,7 @@ export default function Navbar() {
 
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
+    { path: `${basePath}/tarifs-reparation`, label: 'Tarifs Réparation', icon: Wrench },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
@@ -83,7 +89,7 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const adminPages = ['/admin', '/avis-google', '/community', '/config'];
+  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/tarifs-reparation'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
 
   const handleNav = (path) => {
@@ -142,13 +148,13 @@ export default function Navbar() {
 
       {/* Backdrop */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={() => setMobileOpen(false)} />
+        <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-in" onClick={() => setMobileOpen(false)} />
       )}
 
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 bottom-0 bg-slate-900 flex flex-col z-50
-        transition-all duration-300 ease-in-out
+        transition-[width,transform] duration-300 ease-in-out will-change-[width,transform]
         ${collapsed ? 'w-[68px]' : 'w-64'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>

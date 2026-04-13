@@ -1,13 +1,14 @@
 """
 API Tarifs - Gestion des prix de reparation.
 Calcul automatique des prix clients a partir des prix fournisseur HT.
+Grille tarifs reparation iPhone (table tarifs_reparation).
 """
 
 import math
 import re
 import time
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -97,6 +98,66 @@ def _ensure_table():
                 updated_at TIMESTAMP DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS idx_apple_devices_cat ON tarifs_apple_devices(categorie);
+        """)
+
+
+    # Table grille tarifs reparation iPhone
+    with get_cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tarifs_reparation (
+                id SERIAL PRIMARY KEY,
+                modele VARCHAR(100) NOT NULL,
+                ecran_generique INTEGER,
+                ecran_confort INTEGER,
+                ecran_apple INTEGER,
+                batterie INTEGER,
+                desoxydation INTEGER,
+                connecteur_charge INTEGER,
+                reparation_divers INTEGER,
+                ecouteur_apn INTEGER,
+                vitre_arriere INTEGER,
+                chassis INTEGER,
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(modele)
+            )
+        """)
+        # Seed data
+        cur.execute("""
+            INSERT INTO tarifs_reparation (modele, ecran_generique, ecran_confort, ecran_apple, batterie, desoxydation, connecteur_charge, reparation_divers, ecouteur_apn, vitre_arriere, chassis) VALUES
+            ('iPhone 5/5S/5C/SE', 45, NULL, 55, 39, 19, 39, 19, 29, NULL, NULL),
+            ('iPhone 6/6S/6+/6s+', 49, NULL, 59, 59, 19, 49, 19, 29, NULL, 79),
+            ('iPhone 7/8/7+/8+', 59, 69, 79, 49, 29, 79, 29, 39, 89, 129),
+            ('iPhone SE 20/22', 69, 79, 89, 59, 29, 79, 39, 49, 109, 129),
+            ('iPhone X/XS', 89, 109, 129, 69, 29, 79, 59, 59, 99, 129),
+            ('iPhone XS Max', 89, 119, 149, NULL, 29, 79, NULL, NULL, 99, 129),
+            ('iPhone XR/11', 89, NULL, 109, 69, 29, 79, 59, 69, 99, 139),
+            ('iPhone 11 Pro', 89, 119, 149, 79, 39, 89, 59, 59, 99, 179),
+            ('iPhone 11 Pro Max', 99, 129, 169, 89, 39, 89, 59, 69, 109, 189),
+            ('iPhone 12/12 Pro', 99, 139, 169, 99, 49, 99, 69, 79, 119, 179),
+            ('iPhone 12 mini', 99, 139, 169, 99, 49, 99, NULL, NULL, 109, 169),
+            ('iPhone 12 Pro Max', 119, 159, 269, 99, 49, 109, 69, 79, 129, 179),
+            ('iPhone 13', 109, 139, 169, 99, 49, 119, 69, 99, 139, 189),
+            ('iPhone 13 mini', 99, 129, 169, 99, 49, 109, NULL, NULL, 119, 189),
+            ('iPhone 13 Pro', 129, 169, 269, 119, 49, 129, 69, 99, 149, 199),
+            ('iPhone 13 Pro Max', 139, 189, 339, 129, 49, 139, 79, 99, 159, 229),
+            ('iPhone 14', 119, 149, 179, 99, 49, 129, 79, 99, 129, 199),
+            ('iPhone 14 Pro', 139, 199, 299, 129, 49, 149, 79, 109, 169, 209),
+            ('iPhone 14 Plus', 139, 159, 189, 99, 49, 159, 79, 109, 139, 199),
+            ('iPhone 14 Pro Max', 149, 179, 429, 139, 49, 169, 79, 109, 169, 209),
+            ('iPhone 15', 129, 159, 269, 129, 49, NULL, 79, 109, 139, 199),
+            ('iPhone 15 Plus', 159, 169, 279, 129, 49, NULL, NULL, NULL, 149, 199),
+            ('iPhone 15 Pro', 159, 219, 359, 139, 49, 159, 79, 129, 169, 239),
+            ('iPhone 15 Pro Max', 169, 279, 429, 149, 49, 169, 79, 129, 169, 259),
+            ('iPhone 16', 139, 189, 289, 169, 49, 189, 79, 109, 149, 199),
+            ('iPhone 16 Plus', 159, 199, 339, 169, NULL, NULL, NULL, NULL, 159, 229),
+            ('iPhone 16 Pro', 169, 229, 379, 169, 49, 199, 79, 129, 179, 289),
+            ('iPhone 16 Pro Max', 179, NULL, 429, 179, 49, 199, 79, 129, 189, 299),
+            ('iPhone 16e', 129, 159, 189, 159, NULL, NULL, NULL, NULL, 169, NULL),
+            ('iPhone 17', NULL, NULL, NULL, NULL, 59, 189, 79, 109, NULL, NULL),
+            ('iPhone 17 Air', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+            ('iPhone 17 Pro', NULL, NULL, NULL, NULL, 59, 199, 79, 129, NULL, NULL),
+            ('iPhone 17 Pro Max', NULL, NULL, NULL, NULL, 59, 199, 79, 129, NULL, NULL)
+            ON CONFLICT (modele) DO NOTHING
         """)
 
 
@@ -665,3 +726,75 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
             await asyncio.sleep(0.3)
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# Grille tarifs reparation iPhone (table tarifs_reparation)
+# ---------------------------------------------------------------------------
+
+TARIF_REP_COLS = [
+    "ecran_generique", "ecran_confort", "ecran_apple", "batterie",
+    "desoxydation", "connecteur_charge", "reparation_divers",
+    "ecouteur_apn", "vitre_arriere", "chassis",
+]
+
+
+@router.get("/reparation")
+async def list_tarifs_reparation():
+    """Liste tous les tarifs reparation iPhone (public)."""
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT id, modele, ecran_generique, ecran_confort, ecran_apple,
+                   batterie, desoxydation, connecteur_charge, reparation_divers,
+                   ecouteur_apn, vitre_arriere, chassis, updated_at
+            FROM tarifs_reparation
+            ORDER BY id
+        """)
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.put("/reparation/{tarif_id}")
+async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any]):
+    """Met a jour un tarif reparation. Seuls les champs envoyes sont modifies."""
+    updates = []
+    params = []
+    for col in TARIF_REP_COLS + ["modele"]:
+        if col in body:
+            updates.append(f"{col} = %s")
+            params.append(body[col])
+    if not updates:
+        raise HTTPException(400, "Aucun champ a mettre a jour")
+    updates.append("updated_at = NOW()")
+    params.append(tarif_id)
+
+    with get_cursor() as cur:
+        cur.execute(
+            f"UPDATE tarifs_reparation SET {', '.join(updates)} WHERE id = %s RETURNING *",
+            params,
+        )
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Tarif non trouve")
+    return dict(row)
+
+
+@router.post("/reparation/bulk")
+async def bulk_tarifs_reparation(body: List[Dict[str, Any]]):
+    """Remplace tous les tarifs reparation par le tableau fourni."""
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM tarifs_reparation")
+        for item in body:
+            modele = item.get("modele")
+            if not modele:
+                continue
+            vals = [item.get(c) for c in TARIF_REP_COLS]
+            cur.execute(
+                """INSERT INTO tarifs_reparation
+                   (modele, ecran_generique, ecran_confort, ecran_apple, batterie,
+                    desoxydation, connecteur_charge, reparation_divers,
+                    ecouteur_apn, vitre_arriere, chassis)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                [modele] + vals,
+            )
+    return {"status": "ok", "count": len(body)}
