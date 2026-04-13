@@ -219,6 +219,25 @@ export default function TarifsReparationPage() {
         <style>{`
           @media print {
             .no-print { display: none !important; }
+            /* Hide sidebar, navbar, chat widget, floating buttons, everything outside print */
+            aside, nav, [class*="ChatWidget"], [class*="FloatingBack"],
+            header, footer, .lg\\:pl-64, .lg\\:pl-\\[68px\\] {
+              display: none !important;
+              width: 0 !important;
+              padding: 0 !important;
+              margin: 0 !important;
+            }
+            /* Reset layout so print page is full width */
+            body, html, #root, #root > div, main, [class*="min-h-screen"] {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              min-height: auto !important;
+              background: white !important;
+            }
+            main {
+              padding-left: 0 !important;
+            }
             @page { size: A4 landscape; margin: 2mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .print-page { padding: 2mm 3mm !important; }
