@@ -9,6 +9,7 @@ from typing import Optional
 
 from app.api.auth import get_current_user
 from app.services.notifications import envoyer_email
+from app.api.email_api import _send_resend_html
 
 router = APIRouter(prefix="/api/attestation", tags=["attestation"])
 
@@ -169,5 +170,8 @@ async def email_attestation(
         f"Cordialement,\nKLIKPHONE - 04 79 60 89 22"
     )
 
-    success, msg = envoyer_email(destinataire, sujet, message, html)
+    # Essaie Resend (HTTP, fiable depuis Railway) puis SMTP en fallback
+    success, msg = _send_resend_html(destinataire, sujet, html)
+    if not success:
+        success, msg = envoyer_email(destinataire, sujet, message, html)
     return {"success": success, "message": msg}
