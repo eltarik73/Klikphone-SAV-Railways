@@ -117,10 +117,31 @@ def _ensure_table():
                 ecouteur_apn INTEGER,
                 vitre_arriere INTEGER,
                 chassis INTEGER,
+                ecran_generique_barre INTEGER,
+                ecran_confort_barre INTEGER,
+                ecran_apple_barre INTEGER,
+                batterie_barre INTEGER,
+                desoxydation_barre INTEGER,
+                connecteur_charge_barre INTEGER,
+                reparation_divers_barre INTEGER,
+                ecouteur_apn_barre INTEGER,
+                vitre_arriere_barre INTEGER,
+                chassis_barre INTEGER,
                 updated_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(modele)
             )
         """)
+        # Add _barre columns if table already existed without them
+        for col in [
+            "ecran_generique_barre", "ecran_confort_barre", "ecran_apple_barre",
+            "batterie_barre", "desoxydation_barre", "connecteur_charge_barre",
+            "reparation_divers_barre", "ecouteur_apn_barre", "vitre_arriere_barre",
+            "chassis_barre",
+        ]:
+            try:
+                cur.execute(f"ALTER TABLE tarifs_reparation ADD COLUMN IF NOT EXISTS {col} INTEGER")
+            except Exception:
+                pass
         # Seed data
         cur.execute("""
             INSERT INTO tarifs_reparation (modele, ecran_generique, ecran_confort, ecran_apple, batterie, desoxydation, connecteur_charge, reparation_divers, ecouteur_apn, vitre_arriere, chassis) VALUES
@@ -737,6 +758,8 @@ TARIF_REP_COLS = [
     "desoxydation", "connecteur_charge", "reparation_divers",
     "ecouteur_apn", "vitre_arriere", "chassis",
 ]
+TARIF_REP_BARRE_COLS = [c + "_barre" for c in TARIF_REP_COLS]
+TARIF_REP_ALL_COLS = TARIF_REP_COLS + TARIF_REP_BARRE_COLS
 
 
 @router.get("/reparation")
@@ -744,9 +767,14 @@ async def list_tarifs_reparation():
     """Liste tous les tarifs reparation iPhone (public)."""
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, modele, ecran_generique, ecran_confort, ecran_apple,
+            SELECT id, modele,
+                   ecran_generique, ecran_confort, ecran_apple,
                    batterie, desoxydation, connecteur_charge, reparation_divers,
-                   ecouteur_apn, vitre_arriere, chassis, updated_at
+                   ecouteur_apn, vitre_arriere, chassis,
+                   ecran_generique_barre, ecran_confort_barre, ecran_apple_barre,
+                   batterie_barre, desoxydation_barre, connecteur_charge_barre,
+                   reparation_divers_barre, ecouteur_apn_barre, vitre_arriere_barre,
+                   chassis_barre, updated_at
             FROM tarifs_reparation
             ORDER BY id
         """)
@@ -759,7 +787,7 @@ async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any]):
     """Met a jour un tarif reparation. Seuls les champs envoyes sont modifies."""
     updates = []
     params = []
-    for col in TARIF_REP_COLS + ["modele"]:
+    for col in TARIF_REP_ALL_COLS + ["modele"]:
         if col in body:
             updates.append(f"{col} = %s")
             params.append(body[col])
@@ -782,19 +810,20 @@ async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any]):
 @router.post("/reparation/bulk")
 async def bulk_tarifs_reparation(body: List[Dict[str, Any]]):
     """Remplace tous les tarifs reparation par le tableau fourni."""
+    all_cols = TARIF_REP_COLS + TARIF_REP_BARRE_COLS
+    col_names = ", ".join(all_cols)
+    placeholders = ", ".join(["%s"] * len(all_cols))
     with get_cursor() as cur:
         cur.execute("DELETE FROM tarifs_reparation")
         for item in body:
             modele = item.get("modele")
             if not modele:
                 continue
-            vals = [item.get(c) for c in TARIF_REP_COLS]
+            vals = [item.get(c) for c in all_cols]
             cur.execute(
-                """INSERT INTO tarifs_reparation
-                   (modele, ecran_generique, ecran_confort, ecran_apple, batterie,
-                    desoxydation, connecteur_charge, reparation_divers,
-                    ecouteur_apn, vitre_arriere, chassis)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                f"""INSERT INTO tarifs_reparation
+                   (modele, {col_names})
+                   VALUES (%s, {placeholders})""",
                 [modele] + vals,
             )
     return {"status": "ok", "count": len(body)}
