@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Lock, Unlock, Pencil } from 'lucide-react';
 import api from '../lib/api';
+import AdminLoginModal from '../components/AdminLoginModal';
 
 const COLUMNS = [
   { key: 'ecran_generique', label: 'Écran Générique', shortLabel: 'Générique', headerBg: 'bg-blue-600' },
@@ -46,6 +47,8 @@ export default function TarifsReparationPage() {
   const [printPages, setPrintPages] = useState(2);
   const [newModele, setNewModele] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const inputRef = useRef(null);
   const addRef = useRef(null);
 
@@ -69,6 +72,7 @@ export default function TarifsReparationPage() {
     : tarifs;
 
   const startEdit = (id, key, val) => {
+    if (!isAdmin) return;
     setEditCell({ id, key });
     setEditValue(val !== null && val !== undefined ? String(val) : '');
   };
@@ -98,6 +102,7 @@ export default function TarifsReparationPage() {
 
   // ─── Add model ───
   const handleAdd = async () => {
+    if (!isAdmin) return;
     const name = newModele.trim();
     if (!name) return;
     try {
@@ -112,6 +117,7 @@ export default function TarifsReparationPage() {
 
   // ─── Delete model ───
   const handleDelete = async (id, modele) => {
+    if (!isAdmin) return;
     if (!confirm(`Supprimer "${modele}" ?`)) return;
     try {
       await api.deleteTarifReparation(id);
@@ -123,6 +129,7 @@ export default function TarifsReparationPage() {
 
   // ─── Move model ───
   const handleMove = async (index, direction) => {
+    if (!isAdmin) return;
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= tarifs.length) return;
     const newTarifs = [...tarifs];
@@ -276,10 +283,44 @@ export default function TarifsReparationPage() {
           <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">Tarifs Réparation iPhone</h1>
-            <p className="text-xs text-slate-500">{tarifs.length} modèles — Sauvegarde automatique</p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500">{tarifs.length} modèles</p>
+              {isAdmin ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ background: 'rgba(34,197,94,0.15)', color: '#16A34A' }}>
+                  <Unlock className="w-3 h-3" /> Mode édition
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                  <Lock className="w-3 h-3" /> Lecture seule
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
+          {isAdmin ? (
+            <button
+              onClick={() => {
+                localStorage.removeItem('klikphone_admin');
+                setIsAdmin(false);
+                setEditCell(null);
+                setShowAdd(false);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200"
+              title="Verrouiller l'édition"
+            >
+              <Lock className="w-4 h-4" /> Verrouiller
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600"
+              title="Activer le mode édition (admin)"
+            >
+              <Pencil className="w-4 h-4" /> Modifier
+            </button>
+          )}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -290,9 +331,11 @@ export default function TarifsReparationPage() {
               className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
             />
           </div>
-          <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">
-            <Plus className="w-4 h-4" /> Ajouter
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">
+              <Plus className="w-4 h-4" /> Ajouter
+            </button>
+          )}
           <button onClick={exportJSON} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
             <FileJson className="w-4 h-4" /> JSON
           </button>
@@ -332,9 +375,11 @@ export default function TarifsReparationPage() {
           <table className="w-full border-collapse min-w-[1200px]">
             <thead>
               <tr>
-                <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[50px]">
-                  Ordre
-                </th>
+                {isAdmin && (
+                  <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[50px]">
+                    Ordre
+                  </th>
+                )}
                 <th className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold border-r border-slate-700 min-w-[170px]">
                   Modèle iPhone
                 </th>
@@ -343,7 +388,7 @@ export default function TarifsReparationPage() {
                     {c.label}
                   </th>
                 ))}
-                <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold w-[40px]" />
+                {isAdmin && <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold w-[40px]" />}
               </tr>
             </thead>
             <tbody>
@@ -352,19 +397,21 @@ export default function TarifsReparationPage() {
                 return (
                   <tr key={t.id} className={`${ROW_COLORS[i % ROW_COLORS.length]} hover:bg-brand-50/40 transition-colors group`}>
                     {/* Move buttons */}
-                    <td className="px-1 py-1 text-center border-r border-slate-200 bg-white sticky left-0 z-10">
-                      <div className="flex flex-col items-center gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0}
-                          className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Monter">
-                          <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
-                        </button>
-                        <span className="text-[9px] text-slate-400 font-mono">{i + 1}</span>
-                        <button onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1}
-                          className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Descendre">
-                          <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
-                        </button>
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-1 py-1 text-center border-r border-slate-200 bg-white sticky left-0 z-10">
+                        <div className="flex flex-col items-center gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0}
+                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Monter">
+                            <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                          </button>
+                          <span className="text-[9px] text-slate-400 font-mono">{i + 1}</span>
+                          <button onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1}
+                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Descendre">
+                            <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                     {/* Model name */}
                     <td className="px-4 py-2.5 font-bold text-sm text-slate-900 border-r border-slate-200 bg-white whitespace-nowrap">
                       {t.modele}
@@ -377,7 +424,7 @@ export default function TarifsReparationPage() {
                       return (
                         <td
                           key={c.key}
-                          className="px-2 py-1.5 text-center border-x border-slate-100 cursor-pointer transition-colors"
+                          className={`px-2 py-1.5 text-center border-x border-slate-100 transition-colors ${isAdmin ? 'cursor-pointer hover:bg-amber-50' : 'cursor-default'}`}
                           onClick={() => !isEditing && startEdit(t.id, c.key, val)}
                         >
                           {isEditing ? (
@@ -404,21 +451,23 @@ export default function TarifsReparationPage() {
                       );
                     })}
                     {/* Delete button */}
-                    <td className="px-1 py-1 text-center">
-                      <button
-                        onClick={() => handleDelete(t.id, t.modele)}
-                        className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
+                    {isAdmin && (
+                      <td className="px-1 py-1 text-center">
+                        <button
+                          onClick={() => handleDelete(t.id, t.modele)}
+                          className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 3} className="text-center py-12 text-slate-400 text-sm">
+                  <td colSpan={COLUMNS.length + (isAdmin ? 3 : 1)} className="text-center py-12 text-slate-400 text-sm">
                     Aucun modèle trouvé pour "{search}"
                   </td>
                 </tr>
@@ -429,8 +478,19 @@ export default function TarifsReparationPage() {
       </div>
 
       <p className="text-[11px] text-slate-400 mt-3 text-center">
-        Cliquez sur un prix pour le modifier (Entrée = sauvegarder). Flèches = déplacer. Corbeille = supprimer.
+        {isAdmin
+          ? 'Cliquez sur un prix pour le modifier (Entrée = sauvegarder). Flèches = déplacer. Corbeille = supprimer.'
+          : 'Mode lecture seule. Cliquez sur « Modifier » en haut à droite pour activer l\'édition (admin requis).'}
       </p>
+
+      <AdminLoginModal
+        open={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        onSuccess={() => {
+          setIsAdmin(true);
+          setShowAdminModal(false);
+        }}
+      />
     </div>
   );
 }
