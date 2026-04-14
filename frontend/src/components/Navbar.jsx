@@ -7,7 +7,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, PanelLeftOpen,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -19,6 +19,7 @@ export default function Navbar() {
   const [pendingCount, setPendingCount] = useState(0);
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
+  const [betaOpen, setBetaOpen] = useState(() => localStorage.getItem('kp_beta_open') === '1');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
   const [interactionCount, setInteractionCount] = useState(0);
   const [moduleDevis, setModuleDevis] = useState(false);
@@ -81,15 +82,20 @@ export default function Navbar() {
 
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
-    { path: `${basePath}/tarifs-reparation`, label: 'Tarifs Réparation', icon: Wrench },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
   ];
 
+  const betaItems = [
+    { path: `${basePath}/tarifs`, label: 'Réparations (Mobilax)', icon: Wrench },
+    { path: `${basePath}/tarifs-telephones`, label: 'Téléphones', icon: Smartphone },
+    { path: `${basePath}/telephones-vente`, label: 'Mes téléphones', icon: ShoppingBag },
+  ];
+
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/tarifs-reparation'];
+  const adminPages = ['/admin', '/avis-google', '/community', '/config'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
 
   const handleNav = (path) => {
@@ -294,44 +300,18 @@ export default function Navbar() {
               </div>
             )}
             {(tarifsOpen || collapsed) && (
-              <>
-                <button onClick={() => handleNav(`${basePath}/tarifs`)}
-                  title={collapsed ? 'Réparations' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/tarifs`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Wrench className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Réparations</span>}
-                </button>
-                <button onClick={() => handleNav(`${basePath}/tarifs-telephones`)}
-                  title={collapsed ? 'Téléphones' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/tarifs-telephones`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-telephones`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Téléphones</span>}
-                </button>
-                <button onClick={() => handleNav(`${basePath}/telephones-vente`)}
-                  title={collapsed ? 'Mes téléphones' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/telephones-vente`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <ShoppingBag className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/telephones-vente`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Mes téléphones</span>}
-                </button>
-              </>
+              <button onClick={() => handleNav(`${basePath}/tarifs-reparation`)}
+                title={collapsed ? 'Réparation iPhone' : undefined}
+                className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                  ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                  ${isActive(`${basePath}/tarifs-reparation`)
+                    ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                  }`}
+              >
+                <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-reparation`) ? 'text-amber-400' : ''}`} />
+                {!collapsed && <span className="flex-1 text-left">Réparation iPhone</span>}
+              </button>
             )}
           </div>
 
@@ -381,6 +361,50 @@ export default function Navbar() {
                         {badge > 9 ? '9+' : badge}
                       </span>
                     )}
+                  </button>
+                ))}
+
+                {/* ── Beta sub-group ── */}
+                {!collapsed ? (
+                  <button
+                    onClick={() => {
+                      const next = !betaOpen;
+                      setBetaOpen(next);
+                      localStorage.setItem('kp_beta_open', next ? '1' : '0');
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                  >
+                    <FlaskConical className="w-[16px] h-[16px] shrink-0" style={{ color: '#EAB308' }} />
+                    <span className="text-[13px] font-medium flex-1 text-left">Beta</span>
+                    <span style={{
+                      background: 'rgba(234,179,8,0.12)',
+                      color: '#EAB308',
+                      fontSize: 8,
+                      fontWeight: 700,
+                      borderRadius: 4,
+                      padding: '2px 5px',
+                      letterSpacing: '0.5px',
+                    }}>DEV</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${betaOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                ) : (
+                  <div className="flex justify-center mt-1 mb-1">
+                    <FlaskConical className="w-4 h-4" style={{ color: '#EAB308' }} />
+                  </div>
+                )}
+                {(betaOpen || collapsed) && betaItems.map(({ path, label, icon: Icon }) => (
+                  <button key={path} onClick={() => handleAdminNav(path)}
+                    title={collapsed ? label : undefined}
+                    style={{ opacity: 0.5 }}
+                    className={`w-full flex items-center gap-3 rounded-lg text-[12px] font-medium transition-all duration-200 hover:!opacity-100
+                      ${collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2 pl-6'}
+                      ${isActive(path)
+                        ? `bg-yellow-500/20 text-yellow-300 ${collapsed ? '' : 'border-l-2 border-yellow-500 pl-[22px]'}`
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                      }`}
+                  >
+                    <Icon className={`w-[16px] h-[16px] shrink-0 ${isActive(path) ? 'text-yellow-400' : ''}`} />
+                    {!collapsed && <span className="flex-1 text-left">{label}</span>}
                   </button>
                 ))}
               </>

@@ -198,7 +198,7 @@ function AppRoutes() {
         <Route path="/accueil/config" element={<AG targets={['accueil']}><ConfigPage /></AG>} />
         <Route path="/accueil/avis-google" element={<AG targets={['accueil']}><AvisGooglePage /></AG>} />
         <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
-        <Route path="/accueil/tarifs-reparation" element={<AG targets={['accueil']}><TarifsReparationPage /></AG>} />
+        <Route path="/accueil/tarifs-reparation" element={<P targets={['accueil']}><TarifsReparationPage /></P>} />
         <Route path="/accueil/admin" element={<AG targets={['accueil']}><AdminPage /></AG>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
@@ -214,7 +214,7 @@ function AppRoutes() {
         <Route path="/tech/config" element={<AG targets={['tech']}><ConfigPage /></AG>} />
         <Route path="/tech/avis-google" element={<AG targets={['tech']}><AvisGooglePage /></AG>} />
         <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />
-        <Route path="/tech/tarifs-reparation" element={<AG targets={['tech']}><TarifsReparationPage /></AG>} />
+        <Route path="/tech/tarifs-reparation" element={<P targets={['tech']}><TarifsReparationPage /></P>} />
         <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
