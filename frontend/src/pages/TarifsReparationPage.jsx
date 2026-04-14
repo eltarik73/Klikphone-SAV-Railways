@@ -175,14 +175,18 @@ export default function TarifsReparationPage() {
   // ── Print preview ──
   if (printMode) {
     const onePage = printPages === 1;
-    const pageSize = onePage ? 999 : 18;
     const S = onePage
       ? { font: 7, price: 8, barre: 5.5, model: 7, header: 6, padY: '0px', padX: '1px', title: 11, logo: 26, pagePad: '1mm 2mm', gap: 4 }
-      : { font: 9, price: 11, barre: 7, model: 9, header: 8, padY: '2px', padX: '3px', title: 14, logo: 36, pagePad: '3mm 4mm', gap: 6 };
+      : { font: 13, price: 17, barre: 10, model: 13, header: 12, padY: '5px', padX: '4px', title: 18, logo: 44, pagePad: '4mm 5mm', gap: 8 };
 
+    // Split en N pages equilibrees (2 pages = moitie/moitie ~17 modeles chacune)
     const pages = [];
-    for (let i = 0; i < tarifs.length; i += pageSize) {
-      pages.push(tarifs.slice(i, i + pageSize));
+    if (onePage) {
+      pages.push(tarifs);
+    } else {
+      const perPage = Math.ceil(tarifs.length / 2);
+      pages.push(tarifs.slice(0, perPage));
+      pages.push(tarifs.slice(perPage));
     }
 
     return (
