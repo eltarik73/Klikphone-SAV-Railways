@@ -82,7 +82,6 @@ export default function Navbar() {
 
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
-    { path: `${basePath}/admin/tarifs-iphone`, label: 'Tarifs iPhones', icon: Smartphone },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
@@ -301,18 +300,32 @@ export default function Navbar() {
               </div>
             )}
             {(tarifsOpen || collapsed) && (
-              <button onClick={() => handleNav(`${basePath}/tarifs-reparation`)}
-                title={collapsed ? 'Réparation iPhone' : undefined}
-                className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                  ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                  ${isActive(`${basePath}/tarifs-reparation`)
-                    ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                  }`}
-              >
-                <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-reparation`) ? 'text-amber-400' : ''}`} />
-                {!collapsed && <span className="flex-1 text-left">Réparation iPhone</span>}
-              </button>
+              <>
+                <button onClick={() => handleNav(`${basePath}/tarifs-reparation`)}
+                  title={collapsed ? 'Réparation iPhone' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/tarifs-reparation`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-reparation`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Réparation iPhone</span>}
+                </button>
+                <button onClick={() => handleNav(`${basePath}/tarifs-iphone`)}
+                  title={collapsed ? 'Tarifs iPhones (affiches)' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 mt-1
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/tarifs-iphone`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <Tag className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-iphone`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Tarifs iPhones</span>}
+                </button>
+              </>
             )}
           </div>
 

@@ -150,7 +150,7 @@ export default function AdminTarifsIphonePage() {
       <header className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link to={`${basePath}/admin`} className="p-2 rounded-lg hover:bg-slate-800 transition">
+            <Link to={basePath} className="p-2 rounded-lg hover:bg-slate-800 transition">
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-3">

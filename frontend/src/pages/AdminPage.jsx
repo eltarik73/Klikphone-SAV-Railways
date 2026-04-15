@@ -301,18 +301,11 @@ function AdminDashboard({ onLogout }) {
                 <h1 className="text-2xl font-display font-bold text-white tracking-tight">Reporting</h1>
                 <p className="text-sm text-slate-400 mt-0.5">Vue d'ensemble de la boutique</p>
               </div>
-              <div className="flex items-center gap-2">
-                <Link to={`${basePath}/admin/tarifs-iphone`}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-brand-500 hover:bg-brand-600 border border-brand-500 transition-all">
-                  <Smartphone className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Tarifs iPhones</span>
-                </Link>
-                <button onClick={onLogout}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-all">
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Déconnexion</span>
-                </button>
-              </div>
+              <button onClick={onLogout}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-all">
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Déconnexion</span>
+              </button>
             </div>
             {/* Period filter */}
             <div className="flex items-center gap-2">
