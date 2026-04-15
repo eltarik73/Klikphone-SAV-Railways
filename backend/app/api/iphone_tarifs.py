@@ -29,30 +29,21 @@ logger = logging.getLogger(__name__)
 # Chemins assets
 # ---------------------------------------------------------------------------
 ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
+FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 LOGO_PATH = ASSETS_DIR / "logo.png"
 
-# Fonts Unicode (Arial sur macOS dev, DejaVu sur Linux Railway)
+# Fonts Unicode — DejaVu Sans embarquée dans le repo (fonctionne sur Linux Railway et macOS dev).
 def _find_font(regular: bool = True, bold: bool = False, italic: bool = False) -> str:
-    candidates = []
     if bold:
-        candidates += [
-            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        ]
+        candidates = [FONTS_DIR / "DejaVuSans-Bold.ttf", Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")]
     elif italic:
-        candidates += [
-            "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
-        ]
+        candidates = [FONTS_DIR / "DejaVuSans-Oblique.ttf", Path("/System/Library/Fonts/Supplemental/Arial Italic.ttf")]
     else:
-        candidates += [
-            "/System/Library/Fonts/Supplemental/Arial.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]
+        candidates = [FONTS_DIR / "DejaVuSans.ttf", Path("/System/Library/Fonts/Supplemental/Arial.ttf")]
     for c in candidates:
-        if Path(c).exists():
-            return c
-    raise RuntimeError("Aucune police Unicode trouvée (Arial ou DejaVu)")
+        if c.exists():
+            return str(c)
+    raise RuntimeError("Aucune police Unicode trouvée (DejaVu ou Arial)")
 
 
 # ---------------------------------------------------------------------------
