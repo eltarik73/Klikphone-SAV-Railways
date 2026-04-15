@@ -57,6 +57,7 @@ export default function AdminTarifsIphonePage() {
   const [savingId, setSavingId] = useState(null);
   const [dirty, setDirty] = useState({}); // { id: true }
   const [toast, setToast] = useState(null);
+  const [selected, setSelected] = useState(new Set()); // Set<slug>
 
   useEffect(() => {
     load();
@@ -110,6 +111,35 @@ export default function AdminTarifsIphonePage() {
   async function handlePdfOne(row) {
     try {
       await openPdfInNewTab(`/api/iphone-tarifs/pdf?slugs=${row.slug}`);
+    } catch (e) {
+      setToast({ type: 'error', msg: `PDF : ${e.message}` });
+    }
+  }
+
+  function toggleSelect(slug) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else {
+        if (next.size >= 2) {
+          setToast({ type: 'error', msg: 'Maximum 2 modèles par PDF (1 page A4)' });
+          setTimeout(() => setToast(null), 2500);
+          return prev;
+        }
+        next.add(slug);
+      }
+      return next;
+    });
+  }
+
+  async function handlePdfSelection() {
+    if (selected.size === 0) return;
+    // Ordre par ordre de la table (pas ordre de sélection)
+    const slugs = rows.filter(r => selected.has(r.slug)).map(r => r.slug).join(',');
+    try {
+      await openPdfInNewTab(`/api/iphone-tarifs/pdf?slugs=${slugs}`);
+      setToast({ type: 'success', msg: 'PDF ouvert' });
+      setTimeout(() => setToast(null), 2000);
     } catch (e) {
       setToast({ type: 'error', msg: `PDF : ${e.message}` });
     }
@@ -192,6 +222,29 @@ export default function AdminTarifsIphonePage() {
         </div>
       )}
 
+      {/* Barre flottante de sélection */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-brand-500 text-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3 border border-brand-400">
+          <span className="text-sm font-semibold">
+            {selected.size} modèle{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={handlePdfSelection}
+            className="px-4 py-1.5 rounded-lg bg-white text-brand-600 font-semibold text-sm flex items-center gap-2 hover:bg-brand-50"
+          >
+            <FileDown className="w-4 h-4" />
+            Générer PDF
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="p-1.5 rounded-lg hover:bg-brand-600"
+            title="Annuler la sélection"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Contenu */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         {loading ? (
@@ -214,6 +267,7 @@ export default function AdminTarifsIphonePage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-800/50 text-slate-300 text-xs uppercase">
                   <tr>
+                    <th className="px-3 py-3 text-center w-10">Sél.</th>
                     <th className="px-3 py-3 text-left">Modèle</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 1</th>
                     <th className="px-3 py-3 text-left w-20">Prix 1 (€)</th>
@@ -233,9 +287,17 @@ export default function AdminTarifsIphonePage() {
                       <tr
                         key={r.id}
                         className={`border-t border-slate-800 hover:bg-slate-800/30 transition ${
-                          isDirty ? 'bg-brand-500/5' : ''
+                          isDirty ? 'bg-brand-500/5' : selected.has(r.slug) ? 'bg-brand-500/10' : ''
                         }`}
                       >
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(r.slug)}
+                            onChange={() => toggleSelect(r.slug)}
+                            className="w-4 h-4 rounded border-slate-600 bg-slate-800 accent-brand-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <input
