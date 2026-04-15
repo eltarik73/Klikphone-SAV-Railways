@@ -30,6 +30,7 @@ const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
 const TelephonesVentePage = lazy(() => import('./pages/TelephonesVentePage'));
 const DeposerPage = lazy(() => import('./pages/DeposerPage'));
 const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
+const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage'));
 
 // Preload frequent pages after initial render
 const preloadPages = () => {
@@ -200,6 +201,7 @@ function AppRoutes() {
         <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
         <Route path="/accueil/tarifs-reparation" element={<P targets={['accueil']}><TarifsReparationPage /></P>} />
         <Route path="/accueil/admin" element={<AG targets={['accueil']}><AdminPage /></AG>} />
+        <Route path="/accueil/admin/tarifs-iphone" element={<AG targets={['accueil']}><AdminTarifsIphonePage /></AG>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
         <Route path="/tech/ticket/:id" element={<P targets={['tech']}><TicketDetailPage /></P>} />
@@ -216,6 +218,7 @@ function AppRoutes() {
         <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />
         <Route path="/tech/tarifs-reparation" element={<P targets={['tech']}><TarifsReparationPage /></P>} />
         <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
+        <Route path="/tech/admin/tarifs-iphone" element={<AG targets={['tech']}><AdminTarifsIphonePage /></AG>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

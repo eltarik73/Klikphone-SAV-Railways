@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs
 
 
 def _seed_catalog_models():
@@ -209,6 +209,12 @@ async def lifespan(app: FastAPI):
         tarifs._ensure_table()
     except Exception as e:
         print(f"Warning tarifs table: {e}")
+
+    # iPhone tarifs (affiches boutique) : table + seed
+    try:
+        iphone_tarifs.init_iphone_tarifs()
+    except Exception as e:
+        print(f"Warning iphone_tarifs init: {e}")
 
     # Attestations table
     try:
@@ -443,6 +449,7 @@ app.include_router(devis.router)
 app.include_router(reporting.router)
 app.include_router(depot_distance.router)
 app.include_router(suivi.router)
+app.include_router(iphone_tarifs.router)
 
 
 # --- HEALTH CHECK ---
