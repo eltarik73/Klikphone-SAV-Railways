@@ -82,6 +82,7 @@ export default function Navbar() {
 
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
+    { path: `${basePath}/admin/tarifs-iphone`, label: 'Tarifs iPhones', icon: Smartphone },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
