@@ -32,7 +32,9 @@ SCENE_BG = [
 ]
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+def _font(size, bold: bool = False) -> ImageFont.FreeTypeFont:
+    # Pillow crash si size <= 0 ; clamp à 1 minimum (frame invisible de toute façon)
+    size = max(1, int(size))
     name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
     return ImageFont.truetype(str(FONTS_DIR / name), size)
 
