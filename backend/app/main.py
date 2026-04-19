@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock
 
 
 def _seed_catalog_models():
@@ -215,6 +215,12 @@ async def lifespan(app: FastAPI):
         iphone_tarifs.init_iphone_tarifs()
     except Exception as e:
         print(f"Warning iphone_tarifs init: {e}")
+
+    # iPhones stock (ventes + générateur vidéo Story) : table + seed
+    try:
+        iphones_stock.init_iphones_stock()
+    except Exception as e:
+        print(f"Warning iphones_stock init: {e}")
 
     # Attestations table
     try:
@@ -450,6 +456,7 @@ app.include_router(reporting.router)
 app.include_router(depot_distance.router)
 app.include_router(suivi.router)
 app.include_router(iphone_tarifs.router)
+app.include_router(iphones_stock.router)
 
 
 # --- HEALTH CHECK ---
@@ -468,6 +475,16 @@ async def health_db():
     except Exception as e:
         return {"status": "error", "db": str(e)}
 
+
+
+# --- GENERATED VIDEOS (Story iPhone) ---
+GENERATED_VIDEOS_DIR = Path(__file__).resolve().parent / "video" / "generated"
+GENERATED_VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount(
+    "/generated-videos",
+    StaticFiles(directory=str(GENERATED_VIDEOS_DIR)),
+    name="generated-videos",
+)
 
 
 # --- STATIC FRONTEND (SPA) ---
@@ -497,7 +514,7 @@ if STATIC_DIR.exists():
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
         # Don't serve index.html for API paths or docs
-        if full_path.startswith("api/") or full_path in ("docs", "redoc", "openapi.json", "health", "health/db"):
+        if full_path.startswith("api/") or full_path.startswith("generated-videos/") or full_path in ("docs", "redoc", "openapi.json", "health", "health/db"):
             return JSONResponse({"detail": "Not found"}, 404)
         # Check if it's a real static file
         file_path = STATIC_DIR / full_path

@@ -547,6 +547,22 @@ class ApiClient {
   getTelephoneMarques() { return this.get('/api/telephones/marques'); }
   syncTelephones() { return this.request('/api/telephones/sync', { method: 'POST' }, 30000); }
   getSyncStatus() { return this.get('/api/telephones/sync-status'); }
+
+  // ─── VENTES iPHONE (stock + générateur vidéo Story) ──
+  getIphones(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return this.get(`/api/iphones${qs ? '?' + qs : ''}`);
+  }
+  createIphone(data) { return this.post('/api/iphones', data); }
+  updateIphone(id, data) { return this.put(`/api/iphones/${id}`, data); }
+  deleteIphone(id) { return this.delete(`/api/iphones/${id}`); }
+  generateIphoneStoryVideo(ids) {
+    // Génération peut prendre 30–60s — timeout long
+    return this.request('/api/iphones/generate-video', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }, 180000);
+  }
 }
 
 export const api = new ApiClient();
