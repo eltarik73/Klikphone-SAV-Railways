@@ -16,6 +16,29 @@ export default class ErrorBoundary extends Component {
     this.setState({ errorInfo: info });
     // Structured log for observability (Sentry, Railway logs, etc.)
     console.error('[ErrorBoundary]', error?.message, error?.stack, info?.componentStack);
+
+    // Auto-reload si erreur de chunk dynamique (hash change apres deploy)
+    // Protege contre boucle infinie : max 1 reload par 10s via sessionStorage
+    const msg = (error?.message || '').toLowerCase();
+    const isChunkError = (
+      msg.includes('chunkloaderror') ||
+      msg.includes("failed to fetch dynamically imported module") ||
+      msg.includes("importing a module script failed") ||
+      msg.includes("loading chunk") ||
+      /loading css chunk \d+ failed/.test(msg)
+    );
+    if (isChunkError) {
+      try {
+        const KEY = '__kp_chunk_reload_at__';
+        const last = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+        if (Date.now() - last >= 10_000) {
+          sessionStorage.setItem(KEY, String(Date.now()));
+          window.location.reload();
+        }
+      } catch {
+        window.location.reload();
+      }
+    }
   }
 
   componentWillUnmount() {

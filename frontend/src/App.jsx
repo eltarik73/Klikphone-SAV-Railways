@@ -194,7 +194,8 @@ const LazyFallback = () => {
 
 function AppRoutes() {
   return (
-    <Suspense fallback={<LazyFallback />}>
+    <ErrorBoundary>
+      <Suspense fallback={<LazyFallback />}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login/:target" element={<LoginPage />} />
@@ -244,7 +245,8 @@ function AppRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatOverlay />
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
