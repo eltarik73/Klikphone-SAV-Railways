@@ -297,6 +297,15 @@ function VideoModal({ open, result, onClose, onRegenerate }) {
   );
 }
 
+const LOADER_STEPS = [
+  'Préparation des scènes…',
+  'Téléchargement des photos iPhone…',
+  'Rendu des frames Pillow…',
+  'Encodage MP4 via ffmpeg…',
+  'Ajout de la musique…',
+  'Upload de la vidéo…',
+];
+
 export default function VentesIphoneStory() {
   const [phones, setPhones] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -307,6 +316,15 @@ export default function VentesIphoneStory() {
   const [formOpen, setFormOpen] = useState(false);
   const [formInitial, setFormInitial] = useState(null);
   const [error, setError] = useState(null);
+  const [loaderStep, setLoaderStep] = useState(0);
+
+  useEffect(() => {
+    if (!generating) { setLoaderStep(0); return; }
+    const id = setInterval(() => {
+      setLoaderStep((s) => (s + 1) % LOADER_STEPS.length);
+    }, 2200);
+    return () => clearInterval(id);
+  }, [generating]);
 
   const adminMode = typeof window !== 'undefined' && localStorage.getItem('klikphone_admin') === 'true';
 
@@ -522,14 +540,25 @@ export default function VentesIphoneStory() {
         onRegenerate={() => { setVideoResult(null); generateVideo(); }}
       />
 
-      {/* Generation loader overlay */}
+      {/* Generation loader overlay — multi-étapes */}
       {generating && !videoResult && (
-        <div className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="bg-zinc-900 rounded-2xl border border-white/10 p-8 max-w-sm text-center">
-            <Loader2 className="w-10 h-10 animate-spin text-orange-500 mx-auto mb-4" />
-            <div className="text-white font-bold">Génération en cours…</div>
-            <div className="text-white/50 text-sm mt-1">
-              ~{Math.round(estimatedDuration * 2)}s de rendu Pillow + ffmpeg
+        <div className="fixed inset-0 z-40 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 rounded-3xl border border-white/10 p-8 max-w-sm w-full text-center shadow-2xl">
+            <div className="relative w-16 h-16 mx-auto mb-5">
+              <div className="absolute inset-0 rounded-full border-4 border-orange-500/20" />
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-orange-500 animate-spin" />
+              <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-orange-500" />
+            </div>
+            <div className="text-white font-bold text-lg mb-1">Génération en cours</div>
+            <div className="text-orange-400 text-sm font-semibold min-h-[20px] transition-opacity">
+              {LOADER_STEPS[loaderStep]}
+            </div>
+            {/* Barre shimmer */}
+            <div className="mt-5 h-1.5 rounded-full bg-white/5 overflow-hidden">
+              <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-orange-500 to-transparent animate-[shimmer_1.8s_infinite]" />
+            </div>
+            <div className="text-white/40 text-xs mt-3">
+              ≈ {Math.round(estimatedDuration * 1.5)}s pour {selected.size} iPhone{selected.size > 1 ? 's' : ''}
             </div>
           </div>
         </div>

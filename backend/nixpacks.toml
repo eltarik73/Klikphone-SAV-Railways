@@ -1,5 +1,5 @@
-# Custom Nixpacks config — ajoute ffmpeg au builder pour la génération
+# Custom Nixpacks config — ajoute ffmpeg pour la génération
 # des vidéos Story iPhone (voir backend/app/video/generator.py).
 
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg"]
+aptPkgs = ["ffmpeg"]

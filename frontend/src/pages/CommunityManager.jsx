@@ -4,11 +4,10 @@ import {
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
   TrendingUp, Users, MousePointerClick, Megaphone,
-  Copy, Check, Share2, X, Loader2, ImagePlus, Trash, Smartphone
+  Copy, Check, Share2, X, Loader2, ImagePlus, Trash
 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
-import VentesIphoneStory from '../components/VentesIphoneStory';
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -388,7 +387,6 @@ export default function CommunityManager() {
     { id: 'posts', label: 'Posts', icon: FileText },
     { id: 'calendrier', label: 'Calendrier', icon: Calendar },
     { id: 'templates', label: 'Templates', icon: LayoutGrid },
-    { id: 'ventes', label: 'Ventes iPhone', icon: Smartphone },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   ];
 
@@ -1184,9 +1182,6 @@ export default function CommunityManager() {
             )}
           </div>
         )}
-
-        {/* ─── TAB: VENTES iPHONE + STORY VIDEO ───────── */}
-        {activeTab === 'ventes' && <VentesIphoneStory />}
 
         {/* ─── TAB: ANALYTICS ─────────────────────────── */}
         {activeTab === 'analytics' && (

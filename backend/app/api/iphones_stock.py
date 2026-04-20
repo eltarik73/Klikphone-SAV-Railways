@@ -55,26 +55,34 @@ def _seed_default():
             return
 
         data = [
-            ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Neuf", 1299, 1499, 3),
-            ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Noir", "#3a3a3e", "black-titanium", "Neuf", 1049, 1229, 5),
-            ("iPhone 16", "iphone-16", "128GB", "Noir", "#1a1a1e", "black", "Neuf", 849, 969, 8),
-            ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Bleu", "#2d4a6e", "blue-titanium", "Reconditionné Premium", 949, 1099, 2),
-            ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Naturel", "#b8a898", "natural-titanium", "Reconditionné Premium", 749, 899, 4),
-            ("iPhone 15", "iphone-15", "128GB", "Rose", "#f5c7c7", "pink", "Reconditionné", 549, 699, 6),
-            ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 649, 799, 3),
-            ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 499, 649, 5),
-            ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", "Reconditionné", 399, 499, 7),
-            ("iPhone 13 Pro Max", "iphone-13-pro-max", "256GB", "Graphite", "#4a4a4e", "graphite", "Reconditionné", 449, 599, 4),
-            ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", "Reconditionné", 349, 449, 9),
-            ("iPhone 12", "iphone-12", "64GB", "Bleu Pacifique", "#3a6a8a", "blue", "Reconditionné", 249, 349, 6),
+            # (model, model_key, storage, color_name, color_hex, color_key, condition, price, old_price, stock, image_url)
+            ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Neuf", 1299, 1499, 3,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG32.png"),
+            ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Noir", "#3a3a3e", "black-titanium", "Neuf", 1049, 1229, 5,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG36.png"),
+            ("iPhone 16", "iphone-16", "128GB", "Bleu Ultramarin", "#3a5a8a", "ultramarine", "Neuf", 849, 969, 8,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
+            ("iPhone 16", "iphone-16", "128GB", "Rose", "#f5c7c7", "pink", "Neuf", 849, 969, 4,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
+            ("iPhone 16", "iphone-16", "128GB", "Vert Sarcelle", "#7ea89a", "teal", "Neuf", 849, 969, 3,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG39.png"),
+            ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Reconditionné Premium", 949, 1099, 2,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
+            ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Bleu", "#2d4a6e", "blue-titanium", "Reconditionné Premium", 749, 899, 4,
+             "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
+            ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 649, 799, 3, None),
+            ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 499, 649, 5, None),
+            ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", "Reconditionné", 399, 499, 7, None),
+            ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", "Reconditionné", 349, 449, 9, None),
+            ("iPhone 12", "iphone-12", "64GB", "Bleu Pacifique", "#3a6a8a", "blue", "Reconditionné", 249, 349, 6, None),
         ]
         for d in data:
             cur.execute(
                 """
                 INSERT INTO iphones_stock
                 (model, model_key, storage, color_name, color_hex, color_key,
-                 condition, price, old_price, stock)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 condition, price, old_price, stock, image_url)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 d,
             )

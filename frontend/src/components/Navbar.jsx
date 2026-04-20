@@ -75,6 +75,7 @@ export default function Navbar() {
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
+    { path: `${basePath}/ventes-iphone`, label: 'Ventes iPhone', icon: Smartphone },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     { path: '/suivi', label: 'Suivi client', icon: Search },
