@@ -113,22 +113,26 @@ def _download_cached(url: str) -> Optional[bytes]:
         return None
 
 
-def _remove_white_bg(img: Image.Image, threshold: int = 242) -> Image.Image:
-    """Retire le fond blanc opaque laissé par Apple CDN même avec fmt=png-alpha.
+def _remove_white_bg(img: Image.Image, threshold: int = 238,
+                     feather_px: float = 1.5) -> Image.Image:
+    """Retire le fond blanc opaque laissé par Apple CDN + bords adoucis.
 
-    Heuristique pure-Pillow : pixels où min(R, G, B) >= threshold deviennent
-    transparents (alpha=0). Les iPhones Titane Blanc/Naturel (pixels ~200-230)
-    ne sont pas touchés, seul le fond pur (245+) disparaît."""
-    from PIL import ImageChops, ImageMath
+    Pipeline :
+    1. Masque binaire : min(R,G,B) < threshold → 255 (garder), sinon 0.
+    2. Combinaison avec l'alpha original : le masque est killé sur les
+       zones déjà transparentes (pas de halo à l'interface
+       fond-blanc/transparent-original).
+    3. Feathering DU NOUVEAU ALPHA (pas du masque seul) : flou gaussien
+       qui adoucit uniquement la frontière iPhone/vide."""
+    from PIL import ImageChops, ImageFilter
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     r, g, b, a = img.split()
-    # Canal "min(R,G,B)" : pixels blanc-purs auront min >= threshold
     rgb_min = ImageChops.darker(ImageChops.darker(r, g), b)
-    # Mask : 255 si non-blanc (à garder), 0 si blanc (à supprimer)
     keep_mask = rgb_min.point(lambda x: 255 if x < threshold else 0)
-    # Nouveau alpha : alpha_original × keep_mask (normalisé)
     new_alpha = ImageChops.multiply(a, keep_mask)
+    if feather_px > 0:
+        new_alpha = new_alpha.filter(ImageFilter.GaussianBlur(feather_px))
     img.putalpha(new_alpha)
     return img
 
@@ -148,6 +152,8 @@ def _trim_alpha(img: Image.Image, padding: int = 10) -> Image.Image:
     x2 = min(img.width, x2 + padding)
     y2 = min(img.height, y2 + padding)
     return img.crop((x1, y1, x2, y2))
+
+
 
 
 def _placeholder_silhouette() -> Image.Image:

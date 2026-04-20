@@ -300,14 +300,19 @@ def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
     ph_y = photo_zone_top + max(0, (photo_zone_h - new_h) // 2) \
            + int((1 - enter) * 80 - exit_anim * 60)
 
-    # Glow diffus orange autour de la photo
-    _paste_with_glow(img, ph_resized, (ph_x, ph_y),
-                     glow_color=ORANGE_BRIGHT, blur=80, opacity=60)
-
-    # Ombre portée au sol (sous la photo)
+    # 1. Ambient shadow large (halo sombre qui fond dans le fond)
     _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
-                       shadow_color=(0, 0, 0), offset=(0, 60),
-                       blur=70, opacity=170)
+                       shadow_color=(0, 0, 0), offset=(0, 20),
+                       blur=140, opacity=90)
+
+    # 2. Glow doux coloré (très diffus — atmosphere premium)
+    _paste_with_glow(img, ph_resized, (ph_x, ph_y),
+                     glow_color=ORANGE_BRIGHT, blur=120, opacity=45)
+
+    # 3. Contact shadow (ancre l'iPhone au sol, plus nette)
+    _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
+                       shadow_color=(0, 0, 0), offset=(0, 70),
+                       blur=50, opacity=150)
 
     # ───── TEXTES (zone basse) ─────
     text_alpha = int(255 * enter * (1 - exit_anim))
