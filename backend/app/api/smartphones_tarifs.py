@@ -9,6 +9,7 @@ avec prix, storage, condition et image auto-generée (par IA) ou uploadée.
 import hashlib
 import io
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
@@ -383,9 +384,26 @@ def generate_image(payload: GenerateImageRequest):
             404, f"Aucune image trouvée pour '{query}'. Essayez autre chose."
         )
 
+    # Valide chaque candidat en parallele : ne conserve que les URLs que
+    # notre serveur peut reellement telecharger (certains CDN renvoient
+    # 403 Cloudflare ou 500 selon l'User-Agent). Le cache de fetch rend
+    # les PDFs ulterieurs instantanes sur ces URLs.
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        fetched = list(ex.map(_fetch_image_for_pdf, candidates))
+    valid = [url for url, path in zip(candidates, fetched) if path]
+    if not valid:
+        # Aucune URL telechargeable — dégradé propre : retourne la liste
+        # brute, l'admin verra au moins les vignettes (chargees depuis
+        # le navigateur, pas le serveur).
+        valid = candidates
+        logger.warning(
+            "Aucune URL DDG telechargeable pour '%s' — retour de %d candidats non valides",
+            query, len(candidates),
+        )
+
     return {
-        "image_url": candidates[0],
-        "alternatives": candidates[1:8],
+        "image_url": valid[0],
+        "alternatives": valid[1:8],
         "query": query,
         "source": "duckduckgo_images",
     }
