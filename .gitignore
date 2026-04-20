@@ -8,3 +8,4 @@ dist/
 .DS_Store
 backend/app/video/cache/*.png
 backend/app/video/generated/*.mp4
+backend/app/video/cache/pdf_images/

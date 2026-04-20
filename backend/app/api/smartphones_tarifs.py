@@ -6,6 +6,7 @@ Permet a l'admin de gerer sa propre liste de smartphones reconditionnes/neufs
 avec prix, storage, condition et image auto-generée (par IA) ou uploadée.
 """
 
+import hashlib
 import io
 import logging
 from pathlib import Path
@@ -15,6 +16,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
+from PIL import Image
 from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
@@ -24,6 +26,55 @@ from app.database import get_cursor
 _ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
 _FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 _LOGO_PATH = _ASSETS_DIR / "logo.png"
+
+# Cache disque pour les images distantes (convertit WebP/JPEG/PNG → PNG)
+_PDF_IMG_CACHE = Path(__file__).parent.parent / "video" / "cache" / "pdf_images"
+_PDF_IMG_CACHE.mkdir(parents=True, exist_ok=True)
+
+
+def _fetch_image_for_pdf(url: str) -> Optional[Path]:
+    """Télécharge + convertit une image distante en PNG local.
+
+    fpdf2 ne supporte que JPEG/PNG/GIF. Les images DuckDuckGo sont souvent
+    en WebP ou d'autres formats exotiques → Pillow convertit systematiquement
+    en PNG RGB. Cache disque SHA256 pour ne pas re-fetch a chaque PDF."""
+    if not url or not url.startswith("http"):
+        return None
+    h = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    cache = _PDF_IMG_CACHE / f"{h}.png"
+    if cache.exists() and cache.stat().st_size > 200:
+        return cache
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 Chrome/120 Safari/537.36"
+            ),
+            "Accept": "image/webp,image/jpeg,image/png,image/*,*/*;q=0.8",
+            "Referer": "https://duckduckgo.com/",
+        }
+        r = httpx.get(url, timeout=10.0, follow_redirects=True, headers=headers)
+        if r.status_code != 200 or len(r.content) < 500:
+            logger.info("PDF image skip (%s %d bytes) : %s", r.status_code, len(r.content), url[:80])
+            return None
+        # Ouvre avec Pillow (gère WebP, JPEG, PNG, etc.)
+        img = Image.open(io.BytesIO(r.content))
+        # Convertit en RGB avec fond blanc (pour les PNG avec alpha)
+        if img.mode in ("RGBA", "LA", "P"):
+            bg = Image.new("RGB", img.size, (255, 255, 255))
+            img_rgba = img.convert("RGBA")
+            bg.paste(img_rgba, mask=img_rgba.split()[-1] if img_rgba.mode == "RGBA" else None)
+            img = bg
+        else:
+            img = img.convert("RGB")
+        # Redimensionne si trop gros (pas besoin > 600px pour PDF)
+        if img.width > 600 or img.height > 600:
+            img.thumbnail((600, 600), Image.LANCZOS)
+        img.save(cache, "PNG", optimize=True)
+        return cache
+    except Exception as e:
+        logger.info("PDF image fetch failed for %s : %s", url[:80], e)
+        return None
 
 
 router = APIRouter(prefix="/api/smartphones-tarifs", tags=["smartphones-tarifs"])
@@ -458,15 +509,27 @@ class _SmartphonePDF(FPDF):
         img_x = x + 2
         img_y = y_top + (card_h - img_size) / 2
         img_url = phone.get("image_url") or ""
+        img_drawn = False
         if img_url:
-            try:
-                self.image(img_url, x=img_x, y=img_y, w=img_size, h=img_size)
-            except Exception:
-                self.set_fill_color(240, 240, 240)
-                self.rect(img_x, img_y, img_size, img_size, style="F")
-        else:
-            self.set_fill_color(240, 240, 240)
-            self.rect(img_x, img_y, img_size, img_size, style="F")
+            local = _fetch_image_for_pdf(img_url)
+            if local:
+                try:
+                    self.image(str(local), x=img_x, y=img_y, w=img_size, h=img_size)
+                    img_drawn = True
+                except Exception as e:
+                    logger.info("fpdf image failed %s : %s", local, e)
+        if not img_drawn:
+            # Placeholder : icone smartphone dans un fond gris clair
+            self.set_fill_color(235, 237, 242)
+            self.set_draw_color(210, 215, 222)
+            self.rect(img_x, img_y, img_size, img_size, style="FD")
+            # Petite silhouette de telephone au centre
+            ph_w = img_size * 0.45
+            ph_h = img_size * 0.7
+            ph_x = img_x + (img_size - ph_w) / 2
+            ph_y = img_y + (img_size - ph_h) / 2
+            self.set_fill_color(200, 205, 215)
+            self.rect(ph_x, ph_y, ph_w, ph_h, style="F")
 
         # ─ Marque + Modele + condition (milieu) ─
         text_x = x + img_size + 6
