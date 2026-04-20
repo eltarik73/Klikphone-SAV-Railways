@@ -584,11 +584,11 @@ class ApiClient {
   }
   deleteSmartphoneTarif(id) { return this.delete(`/api/smartphones-tarifs/${id}`); }
   generateSmartphoneImage(marque, modele, storage) {
-    // Génération image via Pollinations.ai, peut prendre 30-60s
+    // Retourne juste l'URL Pollinations (pas de download côté serveur) — rapide
     return this.request('/api/smartphones-tarifs/generate-image', {
       method: 'POST',
       body: JSON.stringify({ marque, modele, storage }),
-    }, 90000);
+    }, 15000);
   }
 }
 

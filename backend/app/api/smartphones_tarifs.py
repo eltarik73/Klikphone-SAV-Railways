@@ -217,24 +217,30 @@ class GenerateImageRequest(BaseModel):
 @router.post("/generate-image")
 def generate_image(payload: GenerateImageRequest):
     """Génère une URL d'image AI via Pollinations.ai pour un smartphone.
-    Prompt optimisé pour un détourage propre et un look Apple-like."""
-    prompt = (
-        f"{payload.marque} {payload.modele} smartphone, "
-        f"front and back view, isolated on pure white background, "
-        f"product photography, studio lighting, high detail, 4K, "
-        f"official marketing photo, transparent background"
-    )
-    # Pollinations API : URL lazy-generated, la 1re requête lance la gen
+
+    Pollinations est un service gratuit sans clé API qui génère l'image
+    à la première requête sur l'URL (lazy). Cette route ne télécharge PAS
+    l'image — elle construit et retourne l'URL, le front l'affiche
+    directement via <img src="..."/>. Pas de risque de timeout serveur
+    ou de mémoire."""
+    import hashlib
+    import time
     from urllib.parse import quote
+
+    prompt = (
+        f"{payload.marque} {payload.modele} smartphone product photo, "
+        f"isolated on white background, front and back view, "
+        f"studio lighting, professional photography, 4K, high detail, "
+        f"clean minimalist, transparent background"
+    )
+    # Seed deterministe pour reproductibilité (meme marque+modele = meme image)
+    seed_src = f"{payload.marque}|{payload.modele}|{payload.storage or ''}"
+    seed = int(hashlib.md5(seed_src.encode()).hexdigest()[:8], 16) % 1000000
+
     url = (
         f"https://image.pollinations.ai/prompt/{quote(prompt)}"
-        f"?width=940&height=1112&model=flux&nologo=true&enhance=true"
+        f"?width=940&height=1112&nologo=true&seed={seed}&model=flux"
     )
-    # Vérifie que l'URL répond (warm-up du cache Pollinations)
-    try:
-        r = httpx.get(url, timeout=60.0, follow_redirects=True)
-        if r.status_code != 200 or len(r.content) < 5000:
-            raise HTTPException(502, f"Pollinations returned {r.status_code}")
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"Generation failed: {e}")
-    return {"image_url": url, "prompt": prompt}
+    # Pas de check HTTP ici : on retourne l'URL directement. Le front
+    # affichera l'image qui se charge paresseusement depuis Pollinations.
+    return {"image_url": url, "prompt": prompt, "seed": seed}
