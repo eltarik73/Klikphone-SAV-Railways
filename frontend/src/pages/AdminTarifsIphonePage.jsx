@@ -208,11 +208,53 @@ export default function AdminTarifsIphonePage() {
     setGeneratingId(row.id);
     try {
       const res = await api.generateIphoneImage(row.modele, row.stockage_1);
-      setImagePicker({ row, candidates: [res.image_url, ...(res.alternatives || [])] });
+      setImagePicker({
+        row,
+        candidates: [res.image_url, ...(res.alternatives || [])],
+        query: res.query || `Apple ${row.modele} png transparent`,
+        searching: false,
+      });
     } catch (e) {
       showToast('error', `Erreur recherche image : ${e.message}`, 3500);
     } finally {
       setGeneratingId(null);
+    }
+  }
+
+  // Re-recherche avec une query custom (depuis le modal)
+  async function researchWithQuery(customQuery) {
+    if (!imagePicker) return;
+    setImagePicker(p => ({ ...p, searching: true }));
+    try {
+      const res = await api.generateIphoneImage(imagePicker.row.modele, imagePicker.row.stockage_1, customQuery);
+      setImagePicker(p => ({
+        ...p,
+        candidates: [res.image_url, ...(res.alternatives || [])],
+        query: res.query || customQuery,
+        searching: false,
+      }));
+    } catch (e) {
+      showToast('error', `Erreur recherche : ${e.message}`, 3500);
+      setImagePicker(p => ({ ...p, searching: false }));
+    }
+  }
+
+  // Generation IA via Pollinations (fond blanc/cutout garanti)
+  async function generateAiVariants() {
+    if (!imagePicker) return;
+    setImagePicker(p => ({ ...p, searching: true }));
+    try {
+      const res = await api.generateAiIphoneImage(imagePicker.row.modele, imagePicker.row.stockage_1, null, 4);
+      // Ajoute les IA en haut de la liste existante (user peut scroll pour voir DDG ensuite)
+      setImagePicker(p => ({
+        ...p,
+        candidates: [res.image_url, ...(res.alternatives || []), ...p.candidates],
+        searching: false,
+      }));
+      showToast('success', '4 photos IA générées (fond blanc)');
+    } catch (e) {
+      showToast('error', `Erreur IA : ${e.message}`, 3500);
+      setImagePicker(p => ({ ...p, searching: false }));
     }
   }
 
@@ -866,11 +908,51 @@ export default function AdminTarifsIphonePage() {
               </button>
             </div>
 
-            <div className="px-5 pt-4 pb-2">
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <Search className="w-4 h-4" />
+            <div className="px-5 pt-4 pb-2 space-y-3">
+              {/* Barre de recherche custom */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = e.target.query.value.trim();
+                  if (q) researchWithQuery(q);
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    name="query"
+                    defaultValue={imagePicker.query}
+                    placeholder="Ex: iPhone 15 Pro back view cutout, iPhone 16 Pro Max PNG mockup..."
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 focus:border-violet-500 text-white text-sm outline-none transition"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={imagePicker.searching}
+                  className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition"
+                >
+                  {imagePicker.searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  Rechercher
+                </button>
+                <button
+                  type="button"
+                  onClick={generateAiVariants}
+                  disabled={imagePicker.searching}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition shadow-lg shadow-amber-500/30"
+                  title="Génère 4 photos IA fond blanc (Pollinations.ai)"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Générer IA
+                </button>
+              </form>
+
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <Search className="w-3 h-3" />
                 <span>
-                  {imagePicker.candidates.length} photos trouvées via DuckDuckGo — cliquez sur la meilleure
+                  {imagePicker.candidates.length} photos — cliquez sur la meilleure. Besoin d'autre chose ?
+                  Modifie la recherche ci-dessus ou <strong className="text-amber-400">génère IA</strong> (fond blanc garanti).
                 </span>
               </div>
             </div>

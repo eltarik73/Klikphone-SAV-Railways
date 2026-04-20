@@ -657,12 +657,19 @@ class ApiClient {
       body: JSON.stringify({ marque, modele, storage }),
     }, 15000);
   }
-  generateIphoneImage(modele, storage) {
-    // Meme pattern que generateSmartphoneImage : DuckDuckGo + validation fetch
+  generateIphoneImage(modele, storage, query) {
+    // DuckDuckGo + validation fetch. `query` optionnel pour override manuel.
     return this.request('/api/iphone-tarifs/generate-image', {
       method: 'POST',
-      body: JSON.stringify({ modele, storage }),
+      body: JSON.stringify({ modele, storage, query }),
     }, 15000);
+  }
+  generateAiIphoneImage(modele, storage, prompt, count = 4) {
+    // Pollinations.ai — genere des photos 'detourees' fond blanc
+    return this.request('/api/iphone-tarifs/generate-ai-image', {
+      method: 'POST',
+      body: JSON.stringify({ modele, storage, prompt, count }),
+    }, 30000);
   }
 }
 

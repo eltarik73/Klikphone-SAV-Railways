@@ -59,6 +59,7 @@ def get_iphone_image(filename: str):
 class GenerateIphoneImageRequest(BaseModel):
     modele: str
     storage: Optional[str] = None
+    query: Optional[str] = None  # override manuel (ex: "iPhone 15 pro back view cutout")
 
 
 @router.post("/generate-image")
@@ -71,15 +72,19 @@ def generate_iphone_image(payload: GenerateIphoneImageRequest):
       bloques par Cloudflare, 403, 500...)
     - Retourne uniquement les URLs reellement telechargeables.
 
-    L'admin colle ensuite l'URL choisie dans le champ image_url du modele."""
+    Si `query` est fourni, il remplace la construction auto — utile pour
+    l'admin qui cherche un angle specifique (ex: "iPhone 15 mockup PNG")."""
     import json
     from urllib.parse import quote
 
-    query_parts = ["Apple", payload.modele]
-    if payload.storage:
-        query_parts.append(payload.storage)
-    query_parts.append("png transparent")
-    query = " ".join(query_parts)
+    if payload.query and payload.query.strip():
+        query = payload.query.strip()
+    else:
+        query_parts = ["Apple", payload.modele]
+        if payload.storage:
+            query_parts.append(payload.storage)
+        query_parts.append("png transparent")
+        query = " ".join(query_parts)
 
     headers = {
         "User-Agent": (
@@ -148,6 +153,55 @@ def generate_iphone_image(payload: GenerateIphoneImageRequest):
         "alternatives": valid[1:8],
         "query": query,
         "source": "duckduckgo_images",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Generation IA via Pollinations.ai (gratuit, sans API key)
+# ---------------------------------------------------------------------------
+class GenerateAiImageRequest(BaseModel):
+    modele: str
+    storage: Optional[str] = None
+    prompt: Optional[str] = None  # override complet du prompt
+    count: int = 4  # nombre de variants (seeds differents)
+
+
+@router.post("/generate-ai-image")
+def generate_ai_iphone_image(payload: GenerateAiImageRequest):
+    """Genere des photos d'iPhone via Pollinations.ai (image.pollinations.ai).
+
+    Gratuit, pas de cle API. On genere `count` variants (4 par defaut) en
+    changeant le seed. Toutes sont deja 'detourees' (fond blanc/transparent)
+    car on force le prompt avec 'white background, product photography, cutout'.
+
+    URLs retournees utilisables telles quelles (Pollinations sert directement
+    en PNG, pas de CDN exotique a valider)."""
+    from urllib.parse import quote
+
+    base_prompt = payload.prompt or (
+        f"Apple {payload.modele}"
+        + (f" {payload.storage}" if payload.storage else "")
+        + ", professional product photography, clean white background,"
+        " no shadow, straight front view, sharp focus, 4k, studio lighting,"
+        " cutout isolated, no text, no logo overlay"
+    )
+
+    count = max(1, min(8, int(payload.count or 4)))
+    prompt_enc = quote(base_prompt)
+    urls = []
+    for i in range(count):
+        seed = 100 + i * 7  # seeds differents pour varier les rendus
+        url = (
+            f"https://image.pollinations.ai/prompt/{prompt_enc}"
+            f"?width=768&height=768&seed={seed}&nologo=true&enhance=true"
+        )
+        urls.append(url)
+
+    return {
+        "image_url": urls[0],
+        "alternatives": urls[1:],
+        "prompt": base_prompt,
+        "source": "pollinations_ai",
     }
 
 # Fonts Unicode — DejaVu Sans embarquée dans le repo (fonctionne sur Linux Railway et macOS dev).
