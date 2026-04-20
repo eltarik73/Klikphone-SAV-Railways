@@ -2,8 +2,37 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Sparkles, Shield, Zap, Package, Check, Star,
   Smartphone, MapPin, Phone, Clock, Tv, Loader2, QrCode,
-  Maximize, Minimize, Share2,
+  Maximize, Minimize, Share2, Settings, X,
 } from 'lucide-react';
+
+// ─── Settings (localStorage) ────────────────────────────────────
+const DEFAULT_SETTINGS = {
+  garantieText: '12 mois',
+  showGarantie: true,
+  showTicker: true,
+  showOrbit: true,
+  showQrCode: true,
+  showFooterStats: true,
+  showAddress: true,
+  showPhone: true,
+  rotateSpeed: 7, // seconds
+};
+const SETTINGS_KEY = 'kp_vitrine_settings_v1';
+
+function useSiteSettings() {
+  const [settings, setSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
+    } catch { return DEFAULT_SETTINGS; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {}
+  }, [settings]);
+  const update = (patch) => setSettings(s => ({ ...s, ...patch }));
+  const reset = () => setSettings(DEFAULT_SETTINGS);
+  return [settings, update, reset];
+}
 
 // ─── Config ─────────────────────────────────────────────────────
 const API_BASE = import.meta.env.VITE_API_URL
@@ -105,8 +134,96 @@ function useFullscreen() {
   return [isFullscreen, toggle];
 }
 
+// ─── Settings Panel (drawer droite) ────────────────────────────
+function SettingsPanel({ open, onClose, settings, update, reset }) {
+  if (!open) return null;
+  const Toggle = ({ k, label, help }) => (
+    <label className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition-colors">
+      <input
+        type="checkbox"
+        checked={settings[k]}
+        onChange={e => update({ [k]: e.target.checked })}
+        className="mt-0.5 w-4 h-4 rounded accent-violet-500 shrink-0"
+      />
+      <div className="flex-1">
+        <div className="text-sm font-semibold text-white">{label}</div>
+        {help && <div className="text-[11px] text-slate-400 mt-0.5">{help}</div>}
+      </div>
+    </label>
+  );
+  return (
+    <>
+      <div onClick={onClose} className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-fade-in" />
+      <div className="fixed top-0 right-0 bottom-0 z-50 w-full max-w-md bg-slate-950 border-l border-white/10 shadow-2xl flex flex-col animate-slide-in-right">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-gradient-to-r from-violet-500/10 to-transparent">
+          <div className="flex items-center gap-3">
+            <Settings className="w-5 h-5 text-violet-400" />
+            <h2 className="font-display font-extrabold text-lg text-white">Paramètres vitrine</h2>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Fermer">
+            <X className="w-5 h-5 text-slate-300" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+          <section>
+            <h3 className="text-[10px] uppercase tracking-[0.3em] text-violet-300 font-bold mb-2">Garantie</h3>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={settings.garantieText}
+                onChange={e => update({ garantieText: e.target.value })}
+                className="flex-1 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-violet-400"
+                placeholder="ex: 12 mois"
+              />
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-[10px] uppercase tracking-[0.3em] text-violet-300 font-bold mb-2">Ce qui est affiché</h3>
+            <div className="space-y-2">
+              <Toggle k="showGarantie" label="Badge garantie" help="Dans le hero du produit." />
+              <Toggle k="showTicker" label="Ticker de prix" help="Bandeau qui defile sous le hero." />
+              <Toggle k="showOrbit" label="Grille 'Le reste du catalogue'" help="Mini cards sous le ticker." />
+              <Toggle k="showFooterStats" label="Badges du footer" help="Garantie / Livraison 24h / Teste." />
+              <Toggle k="showQrCode" label="QR code footer" />
+              <Toggle k="showAddress" label="Adresse boutique" help="Dans la top bar." />
+              <Toggle k="showPhone" label="Numero de telephone" help="Dans la top bar." />
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-[10px] uppercase tracking-[0.3em] text-violet-300 font-bold mb-2">Rotation hero</h3>
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-white/5">
+              <span className="text-sm text-slate-300">Change de produit toutes les</span>
+              <input
+                type="number"
+                min={3}
+                max={60}
+                value={settings.rotateSpeed}
+                onChange={e => update({ rotateSpeed: Math.max(3, Math.min(60, +e.target.value || 7)) })}
+                className="w-16 px-2 py-1.5 rounded-lg bg-white/10 border border-white/15 text-white text-sm text-center"
+              />
+              <span className="text-sm text-slate-300">secondes</span>
+            </div>
+          </section>
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
+          <button onClick={reset} className="text-xs text-slate-400 hover:text-white transition-colors">
+            Reinitialiser
+          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl bg-violet-500 hover:bg-violet-400 text-white text-sm font-bold transition-colors">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Hero Card (grand format, crossfade) ───────────────────────
-function HeroShowcase({ phone }) {
+function HeroShowcase({ phone, settings }) {
   const minPrice = Math.min(...phone.variants.map(v => v.prix));
 
   return (
@@ -155,10 +272,12 @@ function HeroShowcase({ phone }) {
             {phone.grade === 'Neuf' ? <Sparkles className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
             {phone.grade === 'Neuf' ? 'Neuf' : 'Reconditionné Premium'}
           </span>
-          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-black/30 border border-white/10 text-slate-200">
-            <Shield className="w-4 h-4 text-violet-300" />
-            Garantie 24 mois
-          </span>
+          {settings.showGarantie && (
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-black/30 border border-white/10 text-slate-200">
+              <Shield className="w-4 h-4 text-violet-300" />
+              Garantie {settings.garantieText}
+            </span>
+          )}
         </div>
 
         <div className="flex items-end gap-6 mb-10">
@@ -268,6 +387,8 @@ export default function AdminSiteTarifsPage() {
   const now = useClock();
   const [isFullscreen, toggleFullscreen] = useFullscreen();
   const [shareLabel, setShareLabel] = useState('Partager');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, updateSettings, resetSettings] = useSiteSettings();
 
   // Keyboard shortcut : F = toggle fullscreen
   useEffect(() => {
@@ -327,14 +448,15 @@ export default function AdminSiteTarifsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Featured rotate
+  // Featured rotate (configurable)
   useEffect(() => {
     if (phones.length < 2) return;
+    const ms = Math.max(3, settings.rotateSpeed || 7) * 1000;
     const id = setInterval(() => {
       setHeroIdx(i => (i + 1) % phones.length);
-    }, FEATURED_ROTATE_MS);
+    }, ms);
     return () => clearInterval(id);
-  }, [phones.length]);
+  }, [phones.length, settings.rotateSpeed]);
 
   // Orbit rotate (mini cards highlight)
   useEffect(() => {
@@ -369,6 +491,10 @@ export default function AdminSiteTarifsPage() {
         @keyframes drift-b { 0% { transform: translate(0, 0); } 50% { transform: translate(-60px, 50px); } 100% { transform: translate(0, 0); } }
         @keyframes drift-c { 0% { transform: translate(0, 0); } 50% { transform: translate(40px, 60px); } 100% { transform: translate(0, 0); } }
         @keyframes shine { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+        @keyframes slide-in-right { 0% { transform: translateX(100%); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
+        .animate-fade-in { animation: fade-in 200ms ease-out; }
+        .animate-slide-in-right { animation: slide-in-right 300ms cubic-bezier(.2,.8,.2,1); }
         .animate-scroll-x { animation: scroll-x 50s linear infinite; }
         .animate-float { animation: float 6s ease-in-out infinite; }
         .animate-pulse-slow { animation: pulse-slow 5s ease-in-out infinite; }
@@ -417,18 +543,37 @@ export default function AdminSiteTarifsPage() {
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="hidden md:flex items-center gap-2 text-sm">
-              <MapPin className="w-4 h-4 text-violet-400" />
-              <span className="text-slate-300">79 Pl. Saint-Léger, Chambéry</span>
-            </div>
-            <div className="hidden md:flex items-center gap-2 text-sm">
-              <Phone className="w-4 h-4 text-amber-400" />
-              <span className="text-slate-300 font-semibold">06 95 71 51 96</span>
-            </div>
+            {settings.showAddress && (
+              <div className="hidden md:flex items-center gap-2 text-sm">
+                <MapPin className="w-4 h-4 text-violet-400" />
+                <span className="text-slate-300">79 Pl. Saint-Léger, Chambéry</span>
+              </div>
+            )}
+            {settings.showPhone && (
+              <div className="hidden md:flex items-center gap-2 text-sm">
+                <Phone className="w-4 h-4 text-amber-400" />
+                <span className="text-slate-300 font-semibold">06 95 71 51 96</span>
+              </div>
+            )}
             <div className="flex flex-col items-end border-l border-white/10 pl-6">
               <p className="font-display font-bold text-2xl tabular-nums leading-none">{timeStr}</p>
               <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400 mt-1 capitalize">{dateStr}</p>
             </div>
+
+            {/* Settings (parametres vitrine) */}
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="group flex items-center gap-2 px-4 py-2.5 rounded-xl
+                bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20
+                transition-all duration-200 active:scale-95"
+              title="Paramètres de la vitrine"
+              aria-label="Paramètres"
+            >
+              <Settings className="w-4 h-4 text-slate-300 group-hover:rotate-90 transition-transform duration-500" />
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider text-slate-200">
+                Paramètres
+              </span>
+            </button>
 
             {/* Share link */}
             <button
@@ -481,7 +626,7 @@ export default function AdminSiteTarifsPage() {
         <>
           {/* Hero auto-rotate */}
           <section className="relative z-10 h-[68vh] min-h-[540px] max-w-[1800px] mx-auto">
-            {featured && <HeroShowcase phone={featured} />}
+            {featured && <HeroShowcase phone={featured} settings={settings} />}
 
             {/* Progress dots */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
@@ -496,9 +641,10 @@ export default function AdminSiteTarifsPage() {
           </section>
 
           {/* Ticker marquee */}
-          <PriceTicker phones={phones} />
+          {settings.showTicker && <PriceTicker phones={phones} />}
 
           {/* Orbit mini-cards */}
+          {settings.showOrbit && (
           <section className="relative z-10 max-w-[1800px] mx-auto px-8 py-10">
             <div className="flex items-baseline justify-between mb-6">
               <div>
@@ -524,38 +670,54 @@ export default function AdminSiteTarifsPage() {
               ))}
             </div>
           </section>
+          )}
 
           {/* Footer */}
-          <footer className="relative z-10 border-t border-white/10 backdrop-blur-xl bg-black/30 mt-10">
-            <div className="max-w-[1800px] mx-auto px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-6 text-sm text-slate-400">
-                <span className="inline-flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-violet-400" />
-                  Garantie 24 mois
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-amber-400" />
-                  Livraison 24h
-                </span>
-                <span className="inline-flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  Testé avant vente
-                </span>
-              </div>
+          {(settings.showFooterStats || settings.showQrCode) && (
+            <footer className="relative z-10 border-t border-white/10 backdrop-blur-xl bg-black/30 mt-10">
+              <div className="max-w-[1800px] mx-auto px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                {settings.showFooterStats ? (
+                  <div className="flex items-center gap-6 text-sm text-slate-400 flex-wrap justify-center">
+                    <span className="inline-flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-violet-400" />
+                      Garantie {settings.garantieText}
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      Livraison 24h
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Testé avant vente
+                    </span>
+                  </div>
+                ) : <div />}
 
-              <div className="flex items-center gap-4">
-                <div className="text-right text-xs text-slate-400">
-                  <p className="font-semibold text-white text-sm">Scannez pour commander</p>
-                  <p className="mt-0.5">klikphone.com</p>
-                </div>
-                <div className="w-16 h-16 rounded-xl bg-white p-2 flex items-center justify-center shadow-xl shadow-violet-500/30">
-                  <QrCode className="w-full h-full text-slate-900" strokeWidth={1.2} />
-                </div>
+                {settings.showQrCode && (
+                  <div className="flex items-center gap-4">
+                    <div className="text-right text-xs text-slate-400">
+                      <p className="font-semibold text-white text-sm">Scannez pour commander</p>
+                      <p className="mt-0.5">klikphone.com</p>
+                    </div>
+                    <div className="w-16 h-16 rounded-xl bg-white p-2 flex items-center justify-center shadow-xl shadow-violet-500/30">
+                      <QrCode className="w-full h-full text-slate-900" strokeWidth={1.2} />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          </footer>
+            </footer>
+          )}
         </>
       )}
+
+      {/* Settings drawer */}
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        update={updateSettings}
+        reset={resetSettings}
+      />
     </div>
   );
 }
