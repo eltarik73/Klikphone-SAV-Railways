@@ -248,26 +248,24 @@ function HeroShowcase({ phone, settings }) {
 
       {/* Right : infos */}
       <div className="relative flex-[1] max-w-xl">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-bold uppercase tracking-[0.25em] mb-6">
+        <div className="liquid-glass inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-amber-300 text-xs font-bold uppercase tracking-[0.25em] mb-6">
           <Sparkles className="w-3 h-3" />
           Coup de cœur
         </div>
         <p className="font-display text-2xl uppercase tracking-[0.35em] text-violet-300/80 mb-3">
-          {phone.marque}
+          {phone.marque} <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">reconditionné</span>
         </p>
-        <h2 className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6">
+        <h2 className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6 tracking-[-0.02em]">
           {phone.modele}
         </h2>
         <div className="flex items-center gap-3 flex-wrap mb-8">
-          <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold
-            ${phone.grade === 'Neuf'
-              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
-              : 'bg-violet-500/20 text-violet-300 border border-violet-400/30'}`}>
+          <span className={`liquid-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold
+            ${phone.grade === 'Neuf' ? 'text-emerald-300' : 'text-violet-200'}`}>
             {phone.grade === 'Neuf' ? <Sparkles className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
             {phone.grade === 'Neuf' ? 'Neuf' : 'Reconditionné Premium'}
           </span>
           {settings.showGarantie && (
-            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold bg-black/30 border border-white/10 text-slate-200">
+            <span className="liquid-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-slate-200">
               <Shield className="w-4 h-4 text-violet-300" />
               Garantie {settings.garantieText}
             </span>

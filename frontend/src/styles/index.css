@@ -123,3 +123,36 @@
   .no-print { display: none !important; }
   body { background: white !important; }
 }
+
+/* ─── Liquid Glass (pattern Viktor Oddy / Claude Design) ─────────
+   Cards premium avec gradient border interne + backdrop-blur léger.
+   Utilisé pour cards/pills de la page vitrine Site Tarifs iPhone. */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.015);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.10) 25%,
+    rgba(255,255,255,0) 50%, rgba(255,255,255,0.10) 75%,
+    rgba(255,255,255,0.35) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.font-editorial {
+  font-family: 'Instrument Serif', 'Playfair Display', Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+}
