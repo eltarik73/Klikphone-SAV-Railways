@@ -13,9 +13,9 @@ function useBasePath() {
 
 const EMPTY_ROW = {
   slug: '', marque: '', modele: '',
-  stockage_1: '128 Go', prix_1: 0,
-  stockage_2: '', prix_2: null,
-  stockage_3: '', prix_3: null,
+  stockage_1: '128 Go', prix_1: 0, stock_1: 0,
+  stockage_2: '', prix_2: null, stock_2: 0,
+  stockage_3: '', prix_3: null, stock_3: 0,
   condition: 'Reconditionné Premium',
   image_url: '',
 };
@@ -38,6 +38,7 @@ export default function AdminTarifsSmartphonesPage() {
   const [generatingId, setGeneratingId] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newRow, setNewRow] = useState({ ...EMPTY_ROW });
+  const [imagePicker, setImagePicker] = useState(null); // { row, candidates: [urls] }
 
   useEffect(() => { load(); }, []);
 
@@ -66,10 +67,13 @@ export default function AdminTarifsSmartphonesPage() {
         modele: row.modele,
         stockage_1: row.stockage_1,
         prix_1: row.prix_1 ? Number(row.prix_1) : null,
+        stock_1: row.stock_1 != null ? Number(row.stock_1) : 0,
         stockage_2: row.stockage_2 || null,
         prix_2: row.prix_2 ? Number(row.prix_2) : null,
+        stock_2: row.stock_2 != null ? Number(row.stock_2) : 0,
         stockage_3: row.stockage_3 || null,
         prix_3: row.prix_3 ? Number(row.prix_3) : null,
+        stock_3: row.stock_3 != null ? Number(row.stock_3) : 0,
         condition: row.condition,
         image_url: row.image_url || null,
       });
@@ -119,14 +123,24 @@ export default function AdminTarifsSmartphonesPage() {
     setGeneratingId(row.id);
     try {
       const res = await api.generateSmartphoneImage(row.marque, row.modele, row.stockage_1);
-      await api.updateSmartphoneTarif(row.id, { image_url: res.image_url });
-      await load();
-      setToast({ type: 'success', msg: 'Image IA générée ✓' });
+      // Propose les alternatives : l'admin choisit la meilleure
+      setImagePicker({ row, candidates: [res.image_url, ...(res.alternatives || [])] });
     } catch (e) {
-      setToast({ type: 'error', msg: `Erreur génération : ${e.message}` });
+      setToast({ type: 'error', msg: `Erreur recherche image : ${e.message}` });
     } finally {
       setGeneratingId(null);
-      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function chooseImage(row, url) {
+    try {
+      await api.updateSmartphoneTarif(row.id, { image_url: url });
+      await load();
+      setImagePicker(null);
+      setToast({ type: 'success', msg: 'Image enregistrée ✓' });
+      setTimeout(() => setToast(null), 2500);
+    } catch (e) {
+      setToast({ type: 'error', msg: `Erreur : ${e.message}` });
     }
   }
 
@@ -240,8 +254,10 @@ export default function AdminTarifsSmartphonesPage() {
                     <th className="px-3 py-3 text-left w-40">Condition</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 1</th>
                     <th className="px-3 py-3 text-left w-20">Prix 1 (€)</th>
+                    <th className="px-3 py-3 text-left w-16">Stock 1</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 2</th>
                     <th className="px-3 py-3 text-left w-20">Prix 2 (€)</th>
+                    <th className="px-3 py-3 text-left w-16">Stock 2</th>
                     <th className="px-3 py-3 text-right w-40">Actions</th>
                   </tr>
                 </thead>
@@ -296,6 +312,11 @@ export default function AdminTarifsSmartphonesPage() {
                           className="input-cell w-16 font-semibold text-brand-300" />
                       </Cell>
                       <Cell>
+                        <input type="number" value={r.stock_1 ?? 0}
+                          onChange={(e) => updateRow(r.id, 'stock_1', e.target.value)}
+                          className="input-cell w-12 text-center font-semibold" />
+                      </Cell>
+                      <Cell>
                         <input type="text" value={r.stockage_2 || ''}
                           onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
                           className="input-cell w-20" />
@@ -304,6 +325,11 @@ export default function AdminTarifsSmartphonesPage() {
                         <input type="number" value={r.prix_2 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
                           className="input-cell w-16 font-semibold text-brand-300" />
+                      </Cell>
+                      <Cell>
+                        <input type="number" value={r.stock_2 ?? 0}
+                          onChange={(e) => updateRow(r.id, 'stock_2', e.target.value)}
+                          className="input-cell w-12 text-center font-semibold" />
                       </Cell>
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center gap-1 justify-end">
@@ -351,6 +377,49 @@ export default function AdminTarifsSmartphonesPage() {
         </div>
 
         {/* Toast */}
+        {/* Modal choix image */}
+        {imagePicker && (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setImagePicker(null)}
+          >
+            <div
+              className="bg-slate-900 rounded-2xl border border-white/10 max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <h3 className="font-bold text-lg">
+                  Choisir la photo — {imagePicker.row.marque} {imagePicker.row.modele}
+                </h3>
+                <button onClick={() => setImagePicker(null)}
+                  className="p-2 rounded-lg bg-white/5 hover:bg-white/20">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <p className="px-4 pt-3 text-sm text-slate-400">
+                Clique sur l'image qui correspond le mieux au produit. Photos trouvées via DuckDuckGo Images.
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-4">
+                {imagePicker.candidates.map((url, i) => (
+                  <button
+                    key={i}
+                    onClick={() => chooseImage(imagePicker.row, url)}
+                    className="group relative bg-white rounded-xl overflow-hidden p-3 aspect-square flex items-center justify-center hover:ring-2 hover:ring-brand-500 transition-all"
+                  >
+                    <img src={url} alt="" referrerPolicy="no-referrer"
+                      className="max-w-full max-h-full object-contain"
+                      onError={(e) => { e.target.style.opacity = '0.3'; }}
+                    />
+                    <div className="absolute bottom-1 right-1 text-[10px] bg-black/60 text-white px-1.5 py-0.5 rounded">
+                      {i + 1}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {toast && (
           <div
             className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2 ${

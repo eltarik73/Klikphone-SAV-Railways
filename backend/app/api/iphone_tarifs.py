@@ -51,7 +51,7 @@ def _find_font(regular: bool = True, bold: bool = False, italic: bool = False) -
 # ---------------------------------------------------------------------------
 def _ensure_table():
     """Crée la table iphone_tarifs si elle n'existe pas et seed la gamme complète.
-    Migration idempotente : ajoute la colonne `condition` si absente."""
+    Migration idempotente : ajoute les colonnes `condition` et `stock_N` si absentes."""
     with get_cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS iphone_tarifs (
@@ -61,10 +61,13 @@ def _ensure_table():
                 ordre INTEGER DEFAULT 0,
                 stockage_1 TEXT,
                 prix_1 INTEGER,
+                stock_1 INTEGER DEFAULT 0,
                 stockage_2 TEXT,
                 prix_2 INTEGER,
+                stock_2 INTEGER DEFAULT 0,
                 stockage_3 TEXT,
                 prix_3 INTEGER,
+                stock_3 INTEGER DEFAULT 0,
                 grade TEXT DEFAULT '100% Satisfait',
                 das_tete TEXT,
                 das_corps TEXT,
@@ -77,6 +80,9 @@ def _ensure_table():
             );
             ALTER TABLE iphone_tarifs
                 ADD COLUMN IF NOT EXISTS condition TEXT DEFAULT 'Reconditionné Premium';
+            ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_1 INTEGER DEFAULT 0;
+            ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_2 INTEGER DEFAULT 0;
+            ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_3 INTEGER DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_ordre ON iphone_tarifs(ordre);
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_group ON iphone_tarifs(page_group);
             -- iPhone 16 et 17 par défaut en Neuf (derniers modèles Apple)
@@ -154,10 +160,13 @@ class IphoneTarifUpdate(BaseModel):
     modele: Optional[str] = None
     stockage_1: Optional[str] = None
     prix_1: Optional[int] = None
+    stock_1: Optional[int] = None
     stockage_2: Optional[str] = None
     prix_2: Optional[int] = None
+    stock_2: Optional[int] = None
     stockage_3: Optional[str] = None
     prix_3: Optional[int] = None
+    stock_3: Optional[int] = None
     grade: Optional[str] = None
     das_tete: Optional[str] = None
     das_corps: Optional[str] = None
@@ -175,8 +184,11 @@ class IphoneTarifUpdate(BaseModel):
 def list_tarifs():
     with get_cursor() as cur:
         cur.execute("""
-            SELECT id, slug, modele, ordre, stockage_1, prix_1, stockage_2, prix_2,
-                   stockage_3, prix_3, grade, das_tete, das_corps, das_membre,
+            SELECT id, slug, modele, ordre,
+                   stockage_1, prix_1, stock_1,
+                   stockage_2, prix_2, stock_2,
+                   stockage_3, prix_3, stock_3,
+                   grade, das_tete, das_corps, das_membre,
                    image_filename, page_group, actif, condition, updated_at
             FROM iphone_tarifs
             ORDER BY ordre ASC

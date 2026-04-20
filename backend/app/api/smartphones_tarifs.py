@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_table():
-    """Crée la table smartphones_tarifs si elle n'existe pas."""
+    """Crée la table smartphones_tarifs si elle n'existe pas.
+    Migration idempotente : ajoute les colonnes stock_N si absentes."""
     with get_cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS smartphones_tarifs (
@@ -32,16 +33,22 @@ def _ensure_table():
                 ordre INTEGER DEFAULT 0,
                 stockage_1 TEXT,
                 prix_1 INTEGER,
+                stock_1 INTEGER DEFAULT 0,
                 stockage_2 TEXT,
                 prix_2 INTEGER,
+                stock_2 INTEGER DEFAULT 0,
                 stockage_3 TEXT,
                 prix_3 INTEGER,
+                stock_3 INTEGER DEFAULT 0,
                 condition TEXT DEFAULT 'Reconditionné Premium',
                 image_url TEXT,
                 actif BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+            ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS stock_1 INTEGER DEFAULT 0;
+            ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS stock_2 INTEGER DEFAULT 0;
+            ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS stock_3 INTEGER DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_smartphones_tarifs_ordre ON smartphones_tarifs(ordre);
             CREATE INDEX IF NOT EXISTS idx_smartphones_tarifs_marque ON smartphones_tarifs(marque);
         """)
@@ -104,10 +111,13 @@ class SmartphoneCreate(BaseModel):
     ordre: int = 0
     stockage_1: Optional[str] = None
     prix_1: Optional[int] = None
+    stock_1: Optional[int] = 0
     stockage_2: Optional[str] = None
     prix_2: Optional[int] = None
+    stock_2: Optional[int] = 0
     stockage_3: Optional[str] = None
     prix_3: Optional[int] = None
+    stock_3: Optional[int] = 0
     condition: str = "Reconditionné Premium"
     image_url: Optional[str] = None
 
@@ -118,10 +128,13 @@ class SmartphoneUpdate(BaseModel):
     ordre: Optional[int] = None
     stockage_1: Optional[str] = None
     prix_1: Optional[int] = None
+    stock_1: Optional[int] = None
     stockage_2: Optional[str] = None
     prix_2: Optional[int] = None
+    stock_2: Optional[int] = None
     stockage_3: Optional[str] = None
     prix_3: Optional[int] = None
+    stock_3: Optional[int] = None
     condition: Optional[str] = None
     image_url: Optional[str] = None
     actif: Optional[bool] = None
@@ -149,23 +162,31 @@ def create_smartphone(payload: SmartphoneCreate):
         cur.execute(
             """
             INSERT INTO smartphones_tarifs
-            (slug, marque, modele, ordre, stockage_1, prix_1, stockage_2, prix_2,
-             stockage_3, prix_3, condition, image_url)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (slug, marque, modele, ordre,
+             stockage_1, prix_1, stock_1,
+             stockage_2, prix_2, stock_2,
+             stockage_3, prix_3, stock_3,
+             condition, image_url)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (slug) DO UPDATE SET
                 marque = EXCLUDED.marque, modele = EXCLUDED.modele,
                 ordre = EXCLUDED.ordre,
                 stockage_1 = EXCLUDED.stockage_1, prix_1 = EXCLUDED.prix_1,
+                stock_1 = EXCLUDED.stock_1,
                 stockage_2 = EXCLUDED.stockage_2, prix_2 = EXCLUDED.prix_2,
+                stock_2 = EXCLUDED.stock_2,
                 stockage_3 = EXCLUDED.stockage_3, prix_3 = EXCLUDED.prix_3,
+                stock_3 = EXCLUDED.stock_3,
                 condition = EXCLUDED.condition,
                 image_url = EXCLUDED.image_url,
                 updated_at = NOW()
             RETURNING *
             """,
             (payload.slug, payload.marque, payload.modele, payload.ordre,
-             payload.stockage_1, payload.prix_1, payload.stockage_2, payload.prix_2,
-             payload.stockage_3, payload.prix_3, payload.condition, payload.image_url),
+             payload.stockage_1, payload.prix_1, payload.stock_1 or 0,
+             payload.stockage_2, payload.prix_2, payload.stock_2 or 0,
+             payload.stockage_3, payload.prix_3, payload.stock_3 or 0,
+             payload.condition, payload.image_url),
         )
         row = cur.fetchone()
     return dict(row)
@@ -216,31 +237,82 @@ class GenerateImageRequest(BaseModel):
 
 @router.post("/generate-image")
 def generate_image(payload: GenerateImageRequest):
-    """Génère une URL d'image AI via Pollinations.ai pour un smartphone.
+    """Recherche la vraie photo officielle du smartphone sur le web via
+    DuckDuckGo Image Search (JSON API non-documentée mais stable).
 
-    Pollinations est un service gratuit sans clé API qui génère l'image
-    à la première requête sur l'URL (lazy). Cette route ne télécharge PAS
-    l'image — elle construit et retourne l'URL, le front l'affiche
-    directement via <img src="..."/>. Pas de risque de timeout serveur
-    ou de mémoire."""
-    import hashlib
-    import time
+    Au lieu de generer une image AI qui hallucine, on trouve une vraie photo
+    marketing du produit. L'admin peut choisir parmi les alternatives
+    renvoyees si la premiere ne convient pas."""
+    import re
+    import json
     from urllib.parse import quote
 
-    prompt = (
-        f"{payload.marque} {payload.modele} smartphone product photo, "
-        f"isolated on white background, front and back view, "
-        f"studio lighting, professional photography, 4K, high detail, "
-        f"clean minimalist, transparent background"
-    )
-    # Seed deterministe pour reproductibilité (meme marque+modele = meme image)
-    seed_src = f"{payload.marque}|{payload.modele}|{payload.storage or ''}"
-    seed = int(hashlib.md5(seed_src.encode()).hexdigest()[:8], 16) % 1000000
+    query_parts = [payload.marque, payload.modele]
+    if payload.storage:
+        query_parts.append(payload.storage)
+    query_parts.append("png transparent")
+    query = " ".join(query_parts)
 
-    url = (
-        f"https://image.pollinations.ai/prompt/{quote(prompt)}"
-        f"?width=940&height=1112&nologo=true&seed={seed}&model=flux"
-    )
-    # Pas de check HTTP ici : on retourne l'URL directement. Le front
-    # affichera l'image qui se charge paresseusement depuis Pollinations.
-    return {"image_url": url, "prompt": prompt, "seed": seed}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+    try:
+        # Etape 1 : recuperer le token vqd depuis la page landing
+        landing = httpx.get(
+            f"https://duckduckgo.com/?q={quote(query)}&iar=images",
+            headers=headers, timeout=10.0, follow_redirects=True,
+        )
+        m = re.search(r'vqd=[\'"]?(\d-[0-9\-]+)[\'"]?', landing.text)
+        if not m:
+            raise HTTPException(502, "Token de recherche DDG introuvable")
+        vqd = m.group(1)
+
+        # Etape 2 : appel API JSON (résultats images)
+        api_url = (
+            f"https://duckduckgo.com/i.js?q={quote(query)}"
+            f"&o=json&p=-1&s=0&vqd={vqd}"
+        )
+        r = httpx.get(
+            api_url,
+            headers={**headers, "Referer": "https://duckduckgo.com/"},
+            timeout=10.0, follow_redirects=True,
+        )
+        r.raise_for_status()
+        data = json.loads(r.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("DDG image search failed: %s", e)
+        raise HTTPException(502, f"Recherche image impossible : {e}")
+
+    results = data.get("results", [])
+    candidates = []
+    for res in results:
+        img_url = res.get("image")
+        if not img_url:
+            continue
+        # Filtre : prefere images de taille raisonnable et extensions
+        width = res.get("width", 0)
+        if width and width < 300:
+            continue
+        # Prefer PNG pour transparence
+        candidates.append(img_url)
+        if len(candidates) >= 10:
+            break
+
+    if not candidates:
+        raise HTTPException(
+            404, f"Aucune image trouvée pour '{query}'. Essayez autre chose."
+        )
+
+    return {
+        "image_url": candidates[0],
+        "alternatives": candidates[1:8],
+        "query": query,
+        "source": "duckduckgo_images",
+    }

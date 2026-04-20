@@ -91,6 +91,9 @@ export default function AdminTarifsIphonePage() {
         prix_2: row.prix_2 ? Number(row.prix_2) : null,
         stockage_3: row.stockage_3 || null,
         prix_3: row.prix_3 ? Number(row.prix_3) : null,
+        stock_1: row.stock_1 != null ? Number(row.stock_1) : 0,
+        stock_2: row.stock_2 != null ? Number(row.stock_2) : 0,
+        stock_3: row.stock_3 != null ? Number(row.stock_3) : 0,
         grade: row.grade,
         condition: row.condition || 'Reconditionné Premium',
         das_tete: row.das_tete,
@@ -273,8 +276,10 @@ export default function AdminTarifsIphonePage() {
                     <th className="px-3 py-3 text-left w-40">Condition</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 1</th>
                     <th className="px-3 py-3 text-left w-20">Prix 1 (€)</th>
+                    <th className="px-3 py-3 text-left w-16">Stock 1</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 2</th>
                     <th className="px-3 py-3 text-left w-20">Prix 2 (€)</th>
+                    <th className="px-3 py-3 text-left w-16">Stock 2</th>
                     <th className="px-3 py-3 text-left w-20">DAS Tête</th>
                     <th className="px-3 py-3 text-left w-20">DAS Corps</th>
                     <th className="px-3 py-3 text-left w-20">DAS Membre</th>
@@ -342,6 +347,14 @@ export default function AdminTarifsIphonePage() {
                         </Cell>
                         <Cell>
                           <input
+                            type="number"
+                            value={r.stock_1 ?? 0}
+                            onChange={(e) => updateRow(r.id, 'stock_1', e.target.value)}
+                            className="input-cell w-12 text-center font-semibold"
+                          />
+                        </Cell>
+                        <Cell>
+                          <input
                             type="text"
                             value={r.stockage_2 || ''}
                             onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
@@ -354,6 +367,14 @@ export default function AdminTarifsIphonePage() {
                             value={r.prix_2 || ''}
                             onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
                             className="input-cell w-16 font-semibold text-brand-300"
+                          />
+                        </Cell>
+                        <Cell>
+                          <input
+                            type="number"
+                            value={r.stock_2 ?? 0}
+                            onChange={(e) => updateRow(r.id, 'stock_2', e.target.value)}
+                            className="input-cell w-12 text-center font-semibold"
                           />
                         </Cell>
                         <Cell>

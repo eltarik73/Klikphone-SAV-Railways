@@ -488,8 +488,11 @@ def _tarifs_to_phones() -> list:
     with get_cursor() as cur:
         # iPhone tarifs
         cur.execute("""
-            SELECT id, slug, modele, stockage_1, prix_1, stockage_2, prix_2,
-                   stockage_3, prix_3, condition, image_filename, actif
+            SELECT id, slug, modele,
+                   stockage_1, prix_1, stock_1,
+                   stockage_2, prix_2, stock_2,
+                   stockage_3, prix_3, stock_3,
+                   condition, image_filename, actif
             FROM iphone_tarifs
             WHERE actif = TRUE
             ORDER BY ordre ASC
@@ -497,11 +500,11 @@ def _tarifs_to_phones() -> list:
         for r in cur.fetchall():
             d = dict(r)
             storages = [
-                (d.get("stockage_1"), d.get("prix_1")),
-                (d.get("stockage_2"), d.get("prix_2")),
-                (d.get("stockage_3"), d.get("prix_3")),
+                (d.get("stockage_1"), d.get("prix_1"), d.get("stock_1") or 0),
+                (d.get("stockage_2"), d.get("prix_2"), d.get("stock_2") or 0),
+                (d.get("stockage_3"), d.get("prix_3"), d.get("stock_3") or 0),
             ]
-            for idx, (stor, prix) in enumerate(storages):
+            for idx, (stor, prix, stock) in enumerate(storages):
                 if not stor or not prix:
                     continue
                 model = d["modele"]
@@ -510,6 +513,7 @@ def _tarifs_to_phones() -> list:
                     "id": f"it_{d['id']}_{idx}",
                     "source": "iphone_tarifs",
                     "source_id": d["id"],
+                    "storage_idx": idx,
                     "model": model,
                     "model_key": d["slug"],
                     "storage": stor,
@@ -519,16 +523,17 @@ def _tarifs_to_phones() -> list:
                     "condition": d.get("condition") or "Reconditionné Premium",
                     "price": prix,
                     "old_price": old,
-                    "stock": 5,
-                    # URL d'affichage : endpoint interne qui sert la 1re image
-                    # locale matchant le slug (detourée Apple CDN)
+                    "stock": stock,
                     "image_url": f"/api/iphones/photo/{d['slug']}",
                     "active": True,
                 })
         # Smartphones (non-Apple)
         cur.execute("""
-            SELECT id, slug, marque, modele, stockage_1, prix_1, stockage_2,
-                   prix_2, stockage_3, prix_3, condition, image_url, actif
+            SELECT id, slug, marque, modele,
+                   stockage_1, prix_1, stock_1,
+                   stockage_2, prix_2, stock_2,
+                   stockage_3, prix_3, stock_3,
+                   condition, image_url, actif
             FROM smartphones_tarifs
             WHERE actif = TRUE
             ORDER BY marque ASC, ordre ASC
@@ -536,18 +541,19 @@ def _tarifs_to_phones() -> list:
         for r in cur.fetchall():
             d = dict(r)
             storages = [
-                (d.get("stockage_1"), d.get("prix_1")),
-                (d.get("stockage_2"), d.get("prix_2")),
-                (d.get("stockage_3"), d.get("prix_3")),
+                (d.get("stockage_1"), d.get("prix_1"), d.get("stock_1") or 0),
+                (d.get("stockage_2"), d.get("prix_2"), d.get("stock_2") or 0),
+                (d.get("stockage_3"), d.get("prix_3"), d.get("stock_3") or 0),
             ]
             full_model = f"{d['marque']} {d['modele']}"
-            for idx, (stor, prix) in enumerate(storages):
+            for idx, (stor, prix, stock) in enumerate(storages):
                 if not stor or not prix:
                     continue
                 phones.append({
                     "id": f"st_{d['id']}_{idx}",
                     "source": "smartphones_tarifs",
                     "source_id": d["id"],
+                    "storage_idx": idx,
                     "model": full_model,
                     "model_key": d["slug"],
                     "storage": stor,
@@ -557,7 +563,7 @@ def _tarifs_to_phones() -> list:
                     "condition": d.get("condition") or "Reconditionné Premium",
                     "price": prix,
                     "old_price": None,
-                    "stock": 5,
+                    "stock": stock,
                     "image_url": d.get("image_url"),
                     "active": True,
                 })
