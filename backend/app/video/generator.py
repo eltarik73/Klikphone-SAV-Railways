@@ -7,10 +7,20 @@ Pipeline :
 3. Upload vers Supabase Storage si les env vars sont présentes,
    sinon sauvegarde localement dans backend/app/video/generated/
    et retourne une URL publique via /generated-videos/<filename>
+
+Photos iPhone :
+- Priorité 1 : image_url de la BDD (Apple CDN ou URL admin)
+- Priorité 2 : PNG local dans backend/app/video/assets/iphones/<model_key>_<color>.png
+- Priorité 3 : PNG local dans backend/app/video/assets/iphones/<model_key>.png
+- Fallback  : silhouette iPhone en SVG (pas de JPEG foireux)
+
+Le dossier backend/app/video/cache/ sert de cache disque TTL 7j pour les URLs
+téléchargées — évite de rebougeoir le CDN Apple à chaque génération.
 """
 
-import os
+import hashlib
 import logging
+import os
 import subprocess
 import tempfile
 import time
@@ -33,48 +43,161 @@ INTRO_DURATION_S = 1.8
 SCENE_DURATION_S = 3.0
 OUTRO_DURATION_S = 2.2
 
-GENERATED_DIR = Path(__file__).parent / "generated"
+VIDEO_DIR = Path(__file__).parent
+GENERATED_DIR = VIDEO_DIR / "generated"
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
-ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
+CACHE_DIR = VIDEO_DIR / "cache"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_TTL_SECONDS = 7 * 24 * 3600  # 7 jours
+
+LOCAL_IPHONES_DIR = VIDEO_DIR / "assets" / "iphones"
 
 
-def _image_filename_for(phone: dict) -> Optional[Path]:
-    """Mappe un iPhone vers son fichier image local."""
-    model_key = phone.get("model_key", "")
-    # Convention existante : iphone_XX_pro_max.jpeg
-    stem = model_key.replace("-", "_")
-    for ext in (".jpeg", ".jpg", ".png"):
-        p = ASSETS_DIR / f"{stem}{ext}"
-        if p.exists():
+def _slug(s: str) -> str:
+    """Normalise pour nom de fichier : lowercase, underscore, ASCII-only."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return "".join(c if c.isalnum() else "_" for c in s.lower()).strip("_")
+
+
+def _local_image_for(phone: dict) -> Optional[Path]:
+    """Cherche une image locale détourée pour cet iPhone.
+    Ordre : <model_key>_<color_slug>.png, <model_key>.png"""
+    model_key = (phone.get("model_key") or "").replace("-", "_")
+    if not model_key:
+        return None
+    color_key = phone.get("color_key") or phone.get("color_name") or ""
+    color_slug = _slug(color_key)
+
+    candidates = []
+    if color_slug:
+        candidates.append(LOCAL_IPHONES_DIR / f"{model_key}_{color_slug}.png")
+    candidates.append(LOCAL_IPHONES_DIR / f"{model_key}.png")
+
+    for p in candidates:
+        if p.exists() and p.is_file():
             return p
     return None
 
 
+def _cache_path_for(url: str) -> Path:
+    h = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    return CACHE_DIR / f"{h}.png"
+
+
+def _download_cached(url: str) -> Optional[bytes]:
+    """Télécharge une URL avec cache disque TTL 7j. None si échec."""
+    cache = _cache_path_for(url)
+    if cache.exists():
+        age = time.time() - cache.stat().st_mtime
+        if age < CACHE_TTL_SECONDS:
+            return cache.read_bytes()
+    try:
+        # User-Agent nécessaire pour certains CDN (pngimg, cloudflare)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        }
+        r = httpx.get(url, timeout=15.0, follow_redirects=True, headers=headers)
+        r.raise_for_status()
+        data = r.content
+        # Sanity: refuse les réponses trop petites (pages d'erreur, redirects HTML)
+        if len(data) < 5000:
+            logger.warning("Image trop petite (%d bytes) pour %s — skip", len(data), url)
+            return None
+        cache.write_bytes(data)
+        return data
+    except Exception as e:
+        logger.warning("Download failed for %s : %s", url, e)
+        return None
+
+
+def _remove_white_bg(img: Image.Image, threshold: int = 242) -> Image.Image:
+    """Retire le fond blanc opaque laissé par Apple CDN même avec fmt=png-alpha.
+
+    Heuristique pure-Pillow : pixels où min(R, G, B) >= threshold deviennent
+    transparents (alpha=0). Les iPhones Titane Blanc/Naturel (pixels ~200-230)
+    ne sont pas touchés, seul le fond pur (245+) disparaît."""
+    from PIL import ImageChops, ImageMath
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    r, g, b, a = img.split()
+    # Canal "min(R,G,B)" : pixels blanc-purs auront min >= threshold
+    rgb_min = ImageChops.darker(ImageChops.darker(r, g), b)
+    # Mask : 255 si non-blanc (à garder), 0 si blanc (à supprimer)
+    keep_mask = rgb_min.point(lambda x: 255 if x < threshold else 0)
+    # Nouveau alpha : alpha_original × keep_mask (normalisé)
+    new_alpha = ImageChops.multiply(a, keep_mask)
+    img.putalpha(new_alpha)
+    return img
+
+
+def _trim_alpha(img: Image.Image, padding: int = 10) -> Image.Image:
+    """Auto-crop sur la bbox des pixels opaques (alpha > 10).
+    Garantit un détourage propre peu importe la source (Apple CDN, pngimg, etc.)."""
+    if img.mode != "RGBA":
+        return img
+    alpha = img.split()[-1]
+    bbox = alpha.getbbox()  # calcule déjà sur pixels non-nuls
+    if not bbox:
+        return img
+    x1, y1, x2, y2 = bbox
+    x1 = max(0, x1 - padding)
+    y1 = max(0, y1 - padding)
+    x2 = min(img.width, x2 + padding)
+    y2 = min(img.height, y2 + padding)
+    return img.crop((x1, y1, x2, y2))
+
+
+def _placeholder_silhouette() -> Image.Image:
+    """Génère une silhouette iPhone élégante en PNG transparent (pas de JPEG moche)."""
+    from PIL import ImageDraw
+    w, h = 600, 1200
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    # Corps avec coins arrondis
+    draw.rounded_rectangle([20, 20, w - 20, h - 20], radius=80,
+                           fill=(35, 35, 42, 255),
+                           outline=(90, 90, 100, 255), width=3)
+    # Encoche Dynamic Island
+    draw.rounded_rectangle([w // 2 - 80, 60, w // 2 + 80, 110],
+                           radius=25, fill=(10, 10, 14, 255))
+    # Écran intérieur (pour effet de profondeur)
+    draw.rounded_rectangle([40, 140, w - 40, h - 40], radius=60,
+                           fill=(20, 20, 28, 255))
+    return img
+
+
 def _load_photo(phone: dict) -> Image.Image:
-    """Charge la photo iPhone. Si image_url est un chemin local ou une URL, la télécharge.
-    Sinon utilise le fichier local du mapping."""
-    # 1. Override image_url (URL distante)
+    """Charge la photo iPhone détourée.
+    Ordre : URL distante (avec cache) → local detoured → placeholder silhouette.
+    NE TOMBE JAMAIS sur les anciens JPEG studio du dossier iphone_tarifs."""
+    from io import BytesIO
+
+    # 1. image_url (Apple CDN ou upload admin)
     url = phone.get("image_url")
     if url and url.startswith("http"):
+        data = _download_cached(url)
+        if data:
+            try:
+                img = Image.open(BytesIO(data)).convert("RGBA")
+                return _trim_alpha(_remove_white_bg(img))
+            except Exception as e:
+                logger.warning("Pillow failed to open %s : %s", url, e)
+
+    # 2. PNG local détouré (model_key + color)
+    local = _local_image_for(phone)
+    if local:
         try:
-            r = httpx.get(url, timeout=10.0, follow_redirects=True)
-            r.raise_for_status()
-            from io import BytesIO
-            return Image.open(BytesIO(r.content)).convert("RGBA")
+            img = Image.open(local).convert("RGBA")
+            return _trim_alpha(_remove_white_bg(img))
         except Exception as e:
-            logger.warning("Fallback sur image locale (%s) : %s", phone.get("model"), e)
+            logger.warning("Pillow failed on local %s : %s", local, e)
 
-    # 2. Mapping local par model_key
-    local = _image_filename_for(phone)
-    if local and local.exists():
-        return Image.open(local).convert("RGBA")
-
-    # 3. Placeholder (rectangle coloré)
-    logger.warning("Aucune image trouvée pour %s (%s)", phone.get("model"),
-                   phone.get("model_key"))
-    placeholder = Image.new("RGBA", (400, 800), (60, 60, 70, 255))
-    return placeholder
+    # 3. Silhouette propre (pas de JPEG foireux)
+    logger.info("Fallback silhouette pour %s %s", phone.get("model"), phone.get("color_name"))
+    return _placeholder_silhouette()
 
 
 def _upload_supabase(mp4_path: Path, filename: str) -> Optional[str]:
@@ -175,7 +298,7 @@ def generate_story_video(phones: list) -> dict:
         output_path = Path(tmpdir) / filename
 
         # Musique optionnelle
-        music_path = Path(__file__).parent / "assets" / "story_music.mp3"
+        music_path = VIDEO_DIR / "assets" / "story_music.mp3"
         cmd = [
             "ffmpeg", "-y",
             "-framerate", str(FPS),
