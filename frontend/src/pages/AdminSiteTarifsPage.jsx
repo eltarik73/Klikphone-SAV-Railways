@@ -437,20 +437,31 @@ export default function AdminSiteTarifsPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // Featured rotate (configurable)
+  // Featured rotate (configurable) — pause quand l'onglet est cache (iPad lock, TV veille)
   useEffect(() => {
     if (phones.length < 2) return;
     const ms = Math.max(3, settings.rotateSpeed || 7) * 1000;
-    const id = setInterval(() => {
-      setHeroIdx(i => (i + 1) % phones.length);
-    }, ms);
-    return () => clearInterval(id);
+    let id = null;
+    const start = () => {
+      if (id) return;
+      id = setInterval(() => setHeroIdx(i => (i + 1) % phones.length), ms);
+    };
+    const stop = () => { if (id) { clearInterval(id); id = null; } };
+    const sync = () => (document.visibilityState === 'visible' ? start() : stop());
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => { stop(); document.removeEventListener('visibilitychange', sync); };
   }, [phones.length, settings.rotateSpeed]);
 
-  // Orbit rotate (mini cards highlight)
+  // Orbit rotate (mini cards highlight) — pause aussi quand cache
   useEffect(() => {
-    const id = setInterval(() => setOrbitIdx(i => i + 1), 2500);
-    return () => clearInterval(id);
+    let id = null;
+    const start = () => { if (!id) id = setInterval(() => setOrbitIdx(i => i + 1), 2500); };
+    const stop = () => { if (id) { clearInterval(id); id = null; } };
+    const sync = () => (document.visibilityState === 'visible' ? start() : stop());
+    sync();
+    document.addEventListener('visibilitychange', sync);
+    return () => { stop(); document.removeEventListener('visibilitychange', sync); };
   }, []);
 
   const featured = phones[heroIdx];
@@ -479,31 +490,35 @@ export default function AdminSiteTarifsPage() {
         @keyframes drift-a { 0% { transform: translate(0, 0); } 50% { transform: translate(80px, -40px); } 100% { transform: translate(0, 0); } }
         @keyframes drift-b { 0% { transform: translate(0, 0); } 50% { transform: translate(-60px, 50px); } 100% { transform: translate(0, 0); } }
         @keyframes drift-c { 0% { transform: translate(0, 0); } 50% { transform: translate(40px, 60px); } 100% { transform: translate(0, 0); } }
-        @keyframes shine { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
         @keyframes slide-in-right { 0% { transform: translateX(100%); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
         .animate-fade-in { animation: fade-in 200ms ease-out; }
         .animate-slide-in-right { animation: slide-in-right 300ms cubic-bezier(.2,.8,.2,1); }
-        .animate-scroll-x { animation: scroll-x 50s linear infinite; }
-        .animate-float { animation: float 6s ease-in-out infinite; }
-        .animate-pulse-slow { animation: pulse-slow 5s ease-in-out infinite; }
+        /* Perf : will-change promeut les layers une fois (pas a chaque frame).
+           Uniquement sur ce qui bouge en continu — pas sur hero-in (one-shot) */
+        .animate-scroll-x { animation: scroll-x 50s linear infinite; will-change: transform; }
+        .animate-float { animation: float 6s ease-in-out infinite; will-change: transform; }
+        .animate-pulse-slow { animation: pulse-slow 5s ease-in-out infinite; will-change: transform, opacity; }
         .animate-hero-in { animation: hero-in 900ms cubic-bezier(.2,.8,.2,1) both; }
         .animate-drift-a { animation: drift-a 22s ease-in-out infinite; }
         .animate-drift-b { animation: drift-b 28s ease-in-out infinite; }
         .animate-drift-c { animation: drift-c 32s ease-in-out infinite; }
-        .animate-shine {
-          background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
-          background-size: 200% 100%;
-          animation: shine 8s linear infinite;
+        /* A11y : respecte le systeme prefers-reduced-motion */
+        @media (prefers-reduced-motion: reduce) {
+          .animate-scroll-x, .animate-float, .animate-pulse-slow,
+          .animate-drift-a, .animate-drift-b, .animate-drift-c { animation: none; }
         }
       `}</style>
 
       {/* Aurora background (permanent motion) */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[55rem] h-[55rem] rounded-full bg-violet-600/25 blur-[140px] animate-drift-a" />
-        <div className="absolute top-[30%] right-[-15%] w-[45rem] h-[45rem] rounded-full bg-fuchsia-600/20 blur-[120px] animate-drift-b" />
-        <div className="absolute bottom-[-10%] left-[25%] w-[50rem] h-[50rem] rounded-full bg-amber-500/15 blur-[130px] animate-drift-c" />
-        <div className="absolute inset-0 animate-shine pointer-events-none" />
+      {/* Perf : blur fixe (jamais anime), taille reduite pour limiter la surface GPU,
+          will-change: transform pour promouvoir les layers une fois, contain pour
+          isoler les repaints. Le layer "shine" fullscreen (background-position) a ete
+          retire : il causait un repaint de tout l'ecran chaque frame. */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ contain: 'layout paint' }}>
+        <div className="absolute top-[-15%] left-[-8%] w-[40rem] h-[40rem] rounded-full bg-violet-600/25 blur-[100px] animate-drift-a" style={{ willChange: 'transform' }} />
+        <div className="absolute top-[30%] right-[-12%] w-[34rem] h-[34rem] rounded-full bg-fuchsia-600/20 blur-[90px] animate-drift-b" style={{ willChange: 'transform' }} />
+        <div className="absolute bottom-[-8%] left-[25%] w-[36rem] h-[36rem] rounded-full bg-amber-500/15 blur-[95px] animate-drift-c" style={{ willChange: 'transform' }} />
       </div>
 
       {/* Grid overlay */}
