@@ -113,26 +113,63 @@ def _download_cached(url: str) -> Optional[bytes]:
         return None
 
 
-def _remove_white_bg(img: Image.Image, threshold: int = 238,
-                     feather_px: float = 1.5) -> Image.Image:
-    """Retire le fond blanc opaque laissé par Apple CDN + bords adoucis.
+def _remove_white_bg(img: Image.Image, feather_px: float = 1.2) -> Image.Image:
+    """Détourage robuste : flood-fill multi-passes + seuil blanc final.
+
+    Problème : Apple CDN renvoie des images avec fond blanc ET ombre
+    projetée grise uniforme (iPhone 16 Pro Max, 13 Pro Max). Un simple
+    seuillage garde l'ombre grise = tache sombre autour du phone.
+    Et un simple flood-fill s'arrête à la transition blanc→gris.
 
     Pipeline :
-    1. Masque binaire : min(R,G,B) < threshold → 255 (garder), sinon 0.
-    2. Combinaison avec l'alpha original : le masque est killé sur les
-       zones déjà transparentes (pas de halo à l'interface
-       fond-blanc/transparent-original).
-    3. Feathering DU NOUVEAU ALPHA (pas du masque seul) : flou gaussien
-       qui adoucit uniquement la frontière iPhone/vide."""
-    from PIL import ImageChops, ImageFilter
+    1. Flood-fill depuis les 4 coins avec tolérance 45 → attrape le fond
+       blanc ET l'ombre grise connectée par gradient doux.
+    2. Flood-fill seconde passe depuis les coins avec tolérance 75 → rattrape
+       les zones d'ombre isolées par une transition plus nette (cas
+       iPhone 16 Pro Max).
+    3. Seuil blanc pur (min(R,G,B) >= 240) sur ce qui reste → enlève
+       les derniers pixels blanc pur qui auraient été isolés.
+    4. Feather léger sur l'alpha final pour des bords qui fondent."""
+    from PIL import ImageChops, ImageDraw, ImageFilter
     if img.mode != "RGBA":
         img = img.convert("RGBA")
-    r, g, b, a = img.split()
+    w, h = img.size
+    work = img.convert("RGB")
+    MARKER = (254, 0, 254)
+    corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+
+    # Passe 1 (tolérance modérée)
+    for c in corners:
+        try:
+            ImageDraw.floodfill(work, c, MARKER, thresh=45)
+        except Exception:
+            pass
+    # Passe 2 (tolérance large pour rattraper ombres isolées)
+    for c in corners:
+        try:
+            ImageDraw.floodfill(work, c, MARKER, thresh=75)
+        except Exception:
+            pass
+
+    # Masque : pixel MARKER → 0, sinon → 255
+    pixels = work.getdata()
+    mask_data = bytes(0 if p == MARKER else 255 for p in pixels)
+    mask = Image.frombytes("L", (w, h), mask_data)
+
+    # Combine avec alpha original
+    orig_alpha = img.split()[-1]
+    new_alpha = ImageChops.multiply(orig_alpha, mask)
+
+    # Seuil blanc additionnel : enlève les derniers pixels blanc pur
+    # (au cas où certains seraient isolés et non atteints par le flood)
+    r, g, b, _ = img.split()
     rgb_min = ImageChops.darker(ImageChops.darker(r, g), b)
-    keep_mask = rgb_min.point(lambda x: 255 if x < threshold else 0)
-    new_alpha = ImageChops.multiply(a, keep_mask)
+    not_white = rgb_min.point(lambda x: 255 if x < 240 else 0)
+    new_alpha = ImageChops.multiply(new_alpha, not_white)
+
     if feather_px > 0:
         new_alpha = new_alpha.filter(ImageFilter.GaussianBlur(feather_px))
+
     img.putalpha(new_alpha)
     return img
 

@@ -171,6 +171,33 @@ def _backfill_image_urls():
          "iphone-14-finish-select-202209-6-1inch-blue"),
         ("iPhone 14", "Minuit",
          "iphone-14-finish-select-202209-6-1inch-midnight"),
+        # iPhone 13 Pro Max (slug -select, CDN 4982)
+        ("iPhone 13 Pro Max", "Bleu Alpin", "iphone-13-pro-max-blue-select"),
+        ("iPhone 13 Pro Max", "Bleu Sierra", "iphone-13-pro-max-blue-select"),
+        ("iPhone 13 Pro Max", "Graphite", "iphone-13-pro-max-graphite-select"),
+        ("iPhone 13 Pro Max", "Or", "iphone-13-pro-max-gold-select"),
+        ("iPhone 13 Pro Max", "Argent", "iphone-13-pro-max-silver-select"),
+        # iPhone 13 Pro
+        ("iPhone 13 Pro", "Bleu Alpin", "iphone-13-pro-blue-select"),
+        ("iPhone 13 Pro", "Bleu Sierra", "iphone-13-pro-blue-select"),
+        ("iPhone 13 Pro", "Graphite", "iphone-13-pro-graphite-select"),
+        ("iPhone 13 Pro", "Or", "iphone-13-pro-gold-select"),
+        ("iPhone 13 Pro", "Argent", "iphone-13-pro-silver-select"),
+        # iPhone 13 (standard)
+        ("iPhone 13", "Minuit", "iphone-13-midnight-select-2021"),
+        ("iPhone 13", "Bleu", "iphone-13-blue-select-2021"),
+        ("iPhone 13", "Rose", "iphone-13-pink-select-2021"),
+        ("iPhone 13", "Lumière Stellaire", "iphone-13-starlight-select-2021"),
+        ("iPhone 13", "Vert", "iphone-13-green-select"),
+        ("iPhone 13", "(PRODUCT)RED", "iphone-13-product-red-select-2021"),
+        # iPhone 12
+        ("iPhone 12", "Bleu Pacifique", "iphone-12-blue-select-2020"),
+        ("iPhone 12", "Bleu", "iphone-12-blue-select-2020"),
+        ("iPhone 12", "Noir", "iphone-12-black-select-2020"),
+        ("iPhone 12", "Blanc", "iphone-12-white-select-2020"),
+        ("iPhone 12", "Vert", "iphone-12-green-select-2020"),
+        ("iPhone 12", "Violet", "iphone-12-purple-select-2021"),
+        ("iPhone 12", "(PRODUCT)RED", "iphone-12-red-select-2020"),
     ]
     with get_cursor() as cur:
         for model, color_name, slug in mappings:
