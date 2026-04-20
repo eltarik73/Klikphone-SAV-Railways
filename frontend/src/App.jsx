@@ -32,6 +32,8 @@ const DeposerPage = lazy(() => import('./pages/DeposerPage'));
 const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
 const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage'));
 const AdminTarifsSmartphonesPage = lazy(() => import('./pages/AdminTarifsSmartphonesPage'));
+const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
+const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
 
 // Preload only the most frequent pages after initial render.
 // AdminPage (378 kB) and Community/AvisGoogle are NOT preloaded — loaded on demand.
@@ -200,6 +202,8 @@ function AppRoutes() {
         <Route path="/depot" element={<DepotPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
         <Route path="/deposer" element={<DeposerPage />} />
+        <Route path="/demo-design" element={<DemoDesignPage />} />
+        <Route path="/site-tarifs-iphone" element={<AdminSiteTarifsPage />} />
 
         <Route path="/accueil" element={<P targets={['accueil']}><DashboardPage /></P>} />
         <Route path="/accueil/ticket/:id" element={<P targets={['accueil']}><TicketDetailPage /></P>} />

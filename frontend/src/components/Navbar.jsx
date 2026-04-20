@@ -7,7 +7,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -85,6 +85,7 @@ export default function Navbar() {
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
+    { path: '/site-tarifs-iphone', label: 'Site Tarifs iPhone', icon: Tv, pill: 'BETA' },
   ];
 
   const betaItems = [
@@ -414,13 +415,18 @@ export default function Navbar() {
             />
             {(adminOpen || collapsed) && (
               <div className="space-y-0.5">
-                {adminItems.map(({ path, label, icon: Icon, badge }) => {
+                {adminItems.map(({ path, label, icon: Icon, badge, pill }) => {
                   const active = isActive(path);
                   return (
                     <Tooltip key={path} label={label} badge={badge}>
                       <button onClick={() => handleAdminNav(path)} className={navBtnClass(active, 'red')}>
                         <Icon className={iconCls(active, 'red')} />
                         {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
+                        {!collapsed && pill && (
+                          <span className="bg-amber-400 text-slate-950 text-[9px] font-extrabold rounded px-1.5 py-0.5 tracking-wider">
+                            {pill}
+                          </span>
+                        )}
                         {!collapsed && <Badge value={badge} tone="red" />}
                         {collapsed && <DotBadge value={badge} tone="red" />}
                       </button>
