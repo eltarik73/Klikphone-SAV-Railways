@@ -431,169 +431,186 @@ class _SmartphonePDF(FPDF):
         self.cell(tw, 4, label, align="C")
         return tw + 1
 
-    def add_smartphone_row(self, phone: dict, y_top: float, row_idx: int):
-        """Une ligne smartphone : photo | marque/modele/condition | prix | stock."""
-        card_h = 32
+    def add_smartphone_row(self, phone: dict, y_top: float, row_idx: int,
+                           card_h: float):
+        """Une ligne smartphone sur `card_h` mm : photo | marque+modele+condition | prix.
+
+        Design compact et adaptatif :
+        - Pas de stock affiche (non pertinent sur affiche boutique)
+        - Stockage + prix : une ligne par variante effectivement remplie
+          (pas de "256 Go — vide")
+        - Taille photo / fonts proportionnelles a card_h pour lisibilite"""
         margin = 10
         x = margin
 
-        # Fond alterné subtil
+        # Fond alterne subtil
         if row_idx % 2 == 1:
             self.set_fill_color(*GRAY_BG)
             self.rect(x, y_top, 210 - 2 * margin, card_h, style="F")
 
-        # Border bottom
+        # Border bottom fin
         self.set_draw_color(*GRAY_BORDER)
         self.set_line_width(0.2)
         self.line(x, y_top + card_h, 210 - margin, y_top + card_h)
 
-        # ─ Photo (gauche) ─
-        img_x, img_y, img_w, img_h = x + 2, y_top + 2, 28, 28
+        # ─ Photo (gauche) — carree et centree verticalement ─
+        img_size = min(card_h - 4, 28)
+        img_x = x + 2
+        img_y = y_top + (card_h - img_size) / 2
         img_url = phone.get("image_url") or ""
         if img_url:
             try:
-                # FPDF peut charger des URLs directement
-                self.image(img_url, x=img_x, y=img_y, w=img_w, h=img_h)
+                self.image(img_url, x=img_x, y=img_y, w=img_size, h=img_size)
             except Exception:
-                # Fallback : rectangle gris
                 self.set_fill_color(240, 240, 240)
-                self.rect(img_x, img_y, img_w, img_h, style="F")
+                self.rect(img_x, img_y, img_size, img_size, style="F")
         else:
             self.set_fill_color(240, 240, 240)
-            self.rect(img_x, img_y, img_w, img_h, style="F")
+            self.rect(img_x, img_y, img_size, img_size, style="F")
 
-        # ─ Marque + Modèle (milieu) ─
-        text_x = x + 34
-        # Marque (petit, majuscules)
-        self.set_font("UI", "B", 8)
+        # ─ Marque + Modele + condition (milieu) ─
+        text_x = x + img_size + 6
+        # Taille fonts proportionnelle a card_h
+        compact = card_h < 22
+        brand_size = 7 if compact else 8
+        model_size = 12 if compact else 14
+
+        # Marque (petit, orange, majuscules)
+        self.set_font("UI", "B", brand_size)
         self.set_text_color(*ORANGE)
-        self.set_xy(text_x, y_top + 3)
+        marque_y = y_top + (2.5 if compact else 3)
+        self.set_xy(text_x, marque_y)
         self.cell(60, 4, (phone.get("marque") or "").upper())
 
-        # Modèle (gros)
-        self.set_font("UI", "B", 14)
+        # Modele (gros, noir)
+        self.set_font("UI", "B", model_size)
         self.set_text_color(*DARK)
-        self.set_xy(text_x, y_top + 8)
-        modele = phone.get("modele") or ""
-        self.cell(75, 7, modele[:30])
+        model_y = y_top + (6.5 if compact else 8)
+        self.set_xy(text_x, model_y)
+        modele = (phone.get("modele") or "")[:30]
+        self.cell(75, 6, modele)
 
-        # Condition pill
-        self.set_xy(text_x, y_top + 17)
-        self._condition_pill(text_x, y_top + 18, phone.get("condition") or "")
+        # Condition pill (sous le modele)
+        pill_y = y_top + (card_h - 6) if compact else y_top + 17
+        self._condition_pill(text_x, pill_y, phone.get("condition") or "")
 
-        # Stockage dispo (sous le modèle)
-        self.set_font("UI", "", 9)
-        self.set_text_color(100, 100, 100)
-        self.set_xy(text_x, y_top + 24)
-        storages = []
+        # ─ Prix (droite) : une ligne par stockage non vide ─
+        # Calcule les variantes qui ont vraiment un prix
+        variants = []
         for i in (1, 2, 3):
+            p = phone.get(f"prix_{i}")
             s = phone.get(f"stockage_{i}")
-            if s:
-                storages.append(s)
-        if storages:
-            self.cell(75, 4, "Stockage : " + " · ".join(storages))
+            if p:
+                variants.append((s, p))
 
-        # ─ Prix (droite) ─
-        price_x = 130
-        # Prix 1 (principal)
-        if phone.get("prix_1"):
-            self.set_font("UI", "B", 18)
-            self.set_text_color(*ORANGE)
-            price_label = f"{phone['prix_1']}€"
-            self.set_xy(price_x, y_top + 7)
-            self.cell(50, 8, price_label)
+        if not variants:
+            return
 
-            # Stockage 1 en petit
-            if phone.get("stockage_1"):
-                self.set_font("UI", "", 8)
-                self.set_text_color(120, 120, 120)
-                self.set_xy(price_x, y_top + 16)
-                self.cell(50, 4, phone["stockage_1"])
+        # Zone prix : droite de la page
+        price_x = 135
+        price_w = 65
+        # Taille fonts adaptative
+        main_size = 17 if not compact else 14
+        sub_size = 10 if not compact else 9
+        stor_size = 8 if not compact else 7
 
-        # Prix 2 (secondaire, si existe)
-        if phone.get("prix_2"):
-            self.set_font("UI", "B", 12)
-            self.set_text_color(100, 100, 100)
-            price2 = f"{phone['prix_2']}€"
-            self.set_xy(price_x, y_top + 21)
-            self.cell(50, 5, price2)
-            if phone.get("stockage_2"):
-                self.set_font("UI", "", 7)
-                self.set_text_color(140, 140, 140)
-                self.set_xy(price_x + 14, y_top + 23)
-                self.cell(20, 4, f"({phone['stockage_2']})")
-
-        # ─ Stock (tout à droite) ─
-        stock_x = 180
-        total_stock = (phone.get("stock_1") or 0) + (phone.get("stock_2") or 0) + \
-                      (phone.get("stock_3") or 0)
-        if total_stock > 0:
-            # Dot vert + nombre
-            self.set_fill_color(*EMERALD)
-            self.ellipse(stock_x, y_top + 10, 2.5, 2.5, style="F")
-            self.set_font("UI", "B", 11)
-            self.set_text_color(*EMERALD)
-            self.set_xy(stock_x + 3, y_top + 8)
-            self.cell(15, 5, f"{total_stock}")
-            self.set_font("UI", "", 7)
+        # Premier prix : plus gros, orange
+        first_stor, first_price = variants[0]
+        self.set_font("UI", "B", main_size)
+        self.set_text_color(*ORANGE)
+        first_y = y_top + (2 if compact else 4)
+        self.set_xy(price_x, first_y)
+        self.cell(price_w, main_size * 0.5,
+                  f"{first_price}€", align="R")
+        if first_stor:
+            self.set_font("UI", "", stor_size)
             self.set_text_color(130, 130, 130)
-            self.set_xy(stock_x - 3, y_top + 14)
-            self.cell(20, 4, "en stock")
-        else:
-            # Rupture
-            self.set_fill_color(220, 60, 60)
-            self.ellipse(stock_x, y_top + 10, 2.5, 2.5, style="F")
-            self.set_font("UI", "B", 9)
-            self.set_text_color(200, 50, 50)
-            self.set_xy(stock_x + 3, y_top + 9)
-            self.cell(15, 4, "Rupture")
+            self.set_xy(price_x, first_y + main_size * 0.5 + 0.5)
+            self.cell(price_w, 4, first_stor, align="R")
+
+        # Variantes suivantes (si existent) : plus petites, gris
+        if len(variants) > 1:
+            sub_y = first_y + main_size * 0.5 + (4 if compact else 5)
+            for stor, price in variants[1:]:
+                label = f"{price}€"
+                if stor:
+                    label = f"{stor} · {price}€"
+                self.set_font("UI", "B", sub_size)
+                self.set_text_color(110, 110, 110)
+                self.set_xy(price_x, sub_y)
+                self.cell(price_w, 4, label, align="R")
+                sub_y += sub_size * 0.42
 
 
 def _render_smartphones_pdf(phones: list) -> bytes:
-    """Génère un PDF A4 listant tous les smartphones avec photos + prix."""
+    """Génère un PDF A4 UNE PAGE listant tous les smartphones fournis.
+
+    La hauteur de chaque ligne est calculee pour que tout tienne sur 1 page,
+    entre 16mm (ultra-compact, ~13 phones max) et 34mm (aere, 6-7 phones)."""
     pdf = _SmartphonePDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=20)
+    # Pas de page break auto — on force tout sur une seule page
+    pdf.set_auto_page_break(auto=False)
     pdf.add_page()
 
-    # Calcule position après header
-    y_start = pdf.get_y() + 2
-    row_h = 32
-    usable_height = 280 - y_start  # espace jusqu'au footer
-    rows_per_page = int(usable_height / row_h)
+    # Espace disponible entre header et footer
+    y_start = pdf.get_y() + 1
+    y_end = 280  # laisse de la place pour le footer (footer commence a -15 = 282)
+    usable_h = y_end - y_start
+
+    n = max(1, len(phones))
+    # Calcule hauteur de ligne : entre 16mm et 34mm
+    row_h = max(16.0, min(34.0, usable_h / n))
+    # Si trop de phones pour 1 page meme en compact → on limite visuellement
+    # mais on tient quand meme sur 1 page
+    max_rows = int(usable_h / 16)
+    phones_to_render = phones[:max_rows]
 
     current_y = y_start
-    idx = 0
-    for phone in phones:
-        # Nouvelle page si plus de place
-        if current_y + row_h > 275:
-            pdf.add_page()
-            current_y = pdf.get_y() + 2
-            idx = 0
-
-        pdf.add_smartphone_row(phone, current_y, idx)
+    for idx, phone in enumerate(phones_to_render):
+        pdf.add_smartphone_row(phone, current_y, idx, row_h)
         current_y += row_h
-        idx += 1
 
     return bytes(pdf.output())
 
 
 @router.get("/pdf")
-def generate_pdf(marque: Optional[str] = Query(None)):
-    """Génère un PDF A4 avec tous les smartphones actifs (filtre optionnel par marque)."""
-    where = ["actif = TRUE"]
-    params = []
-    if marque:
-        where.append("marque = %s")
-        params.append(marque)
+def generate_pdf(
+    marque: Optional[str] = Query(None),
+    ids: Optional[str] = Query(None, description="CSV d'IDs a inclure (prioritaire)"),
+):
+    """Génère un PDF A4 UNE PAGE avec les smartphones selectionnes.
 
-    sql = (
-        "SELECT * FROM smartphones_tarifs "
-        f"WHERE {' AND '.join(where)} "
-        "ORDER BY marque ASC, ordre ASC, modele ASC"
-    )
-    with get_cursor() as cur:
-        cur.execute(sql, params)
-        phones = [dict(r) for r in cur.fetchall()]
+    Priorite :
+    1. `ids=1,2,3` → uniquement ces IDs, dans cet ordre
+    2. `marque=Samsung` → tous les smartphones de cette marque
+    3. Sinon → tous les smartphones actifs"""
+    if ids:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(400, "Format d'IDs invalide (attendu : 1,2,3)")
+        if not id_list:
+            raise HTTPException(400, "Aucun ID fourni")
+        sql = "SELECT * FROM smartphones_tarifs WHERE id = ANY(%s)"
+        with get_cursor() as cur:
+            cur.execute(sql, (id_list,))
+            rows = {r["id"]: dict(r) for r in cur.fetchall()}
+        # Preserve l'ordre fourni
+        phones = [rows[i] for i in id_list if i in rows]
+    else:
+        where = ["actif = TRUE"]
+        params: list = []
+        if marque:
+            where.append("marque = %s")
+            params.append(marque)
+        sql = (
+            "SELECT * FROM smartphones_tarifs "
+            f"WHERE {' AND '.join(where)} "
+            "ORDER BY marque ASC, ordre ASC, modele ASC"
+        )
+        with get_cursor() as cur:
+            cur.execute(sql, params)
+            phones = [dict(r) for r in cur.fetchall()]
 
     if not phones:
         raise HTTPException(404, "Aucun smartphone à afficher")

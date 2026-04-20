@@ -9,9 +9,14 @@ import api from '../lib/api';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-async function openPdf(marque = null) {
+async function openPdf({ ids = null, marque = null } = {}) {
   const token = localStorage.getItem('kp_token');
-  const qs = marque ? `?marque=${encodeURIComponent(marque)}` : '';
+  let qs = '';
+  if (ids && ids.length) {
+    qs = `?ids=${ids.join(',')}`;
+  } else if (marque) {
+    qs = `?marque=${encodeURIComponent(marque)}`;
+  }
   const res = await fetch(`${API_URL}/api/smartphones-tarifs/pdf${qs}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -77,6 +82,22 @@ export default function AdminTarifsSmartphonesPage() {
   const [imagePicker, setImagePicker] = useState(null); // { row, candidates: [urls] }
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');
+  const [pdfSelection, setPdfSelection] = useState(() => new Set()); // Set<id>
+
+  function toggleSelect(id) {
+    setPdfSelection(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function selectAllVisible(visibleRows) {
+    setPdfSelection(new Set(visibleRows.map(r => r.id)));
+  }
+  function clearSelection() {
+    setPdfSelection(new Set());
+  }
 
   useEffect(() => { load(); }, []);
 
@@ -263,14 +284,27 @@ export default function AdminTarifsSmartphonesPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={async () => {
-                try { await openPdf(brandFilter === 'all' ? null : brandFilter); }
-                catch (e) { showToast('error', `PDF : ${e.message}`); }
+                try {
+                  const sel = Array.from(pdfSelection);
+                  if (sel.length === 0) {
+                    showToast('error', 'Coche au moins un smartphone');
+                    return;
+                  }
+                  await openPdf({ ids: sel });
+                } catch (e) {
+                  showToast('error', `PDF : ${e.message}`);
+                }
               }}
-              disabled={rows.length === 0}
-              title="Générer PDF A4 des tarifs"
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
+              disabled={pdfSelection.size === 0}
+              title={pdfSelection.size === 0 ? 'Sélectionne des smartphones via les cases' : `PDF A4 (${pdfSelection.size} modèles)`}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
             >
               <FileDown className="w-4 h-4" /> PDF
+              {pdfSelection.size > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/20 text-[11px] font-black">
+                  {pdfSelection.size}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setShowNewForm(s => !s)}
@@ -480,9 +514,21 @@ export default function AdminTarifsSmartphonesPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: '1000px', tableLayout: 'fixed' }}>
+              <table className="w-full text-sm" style={{ minWidth: '1040px', tableLayout: 'fixed' }}>
                 <thead className="bg-slate-800/60 text-slate-300 text-xs uppercase">
                   <tr>
+                    <th className="px-2 py-3 text-center w-10">
+                      <input
+                        type="checkbox"
+                        checked={filteredRows.length > 0 && filteredRows.every(r => pdfSelection.has(r.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllVisible(filteredRows);
+                          else clearSelection();
+                        }}
+                        title="Tout sélectionner pour le PDF"
+                        className="w-4 h-4 accent-rose-500 cursor-pointer"
+                      />
+                    </th>
                     <th className="px-2 py-3 text-left w-[64px]">Photo</th>
                     <th className="px-2 py-3 text-left w-24">Marque</th>
                     <th className="px-2 py-3 text-left min-w-[180px]">Modèle</th>
@@ -506,6 +552,15 @@ export default function AdminTarifsSmartphonesPage() {
                           : idx % 2 === 0 ? 'hover:bg-slate-800/30' : 'bg-slate-900/30 hover:bg-slate-800/30'
                       }`}
                     >
+                      <td className="px-2 py-2 text-center align-middle">
+                        <input
+                          type="checkbox"
+                          checked={pdfSelection.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                          title="Inclure dans le PDF"
+                          className="w-4 h-4 accent-rose-500 cursor-pointer"
+                        />
+                      </td>
                       <Cell>
                         <div className="flex items-center gap-1">
                           {r.image_url ? (
