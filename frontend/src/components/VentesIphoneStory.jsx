@@ -460,7 +460,9 @@ export default function VentesIphoneStory() {
     return () => clearInterval(id);
   }, [generating]);
 
-  const adminMode = typeof window !== 'undefined' && localStorage.getItem('klikphone_admin') === 'true';
+  // Plus de mode admin ici : la gestion se fait dans les pages Tarifs
+  // iPhones / Tarifs Smartphones. Cette page est lecture-seule + génération vidéo.
+  const adminMode = false;
 
   const load = useCallback(async () => {
     setLoading(true);

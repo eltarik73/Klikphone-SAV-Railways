@@ -410,7 +410,9 @@ class IphoneUpdate(BaseModel):
 
 
 class GenerateVideoRequest(BaseModel):
-    ids: List[int]
+    # IDs string (format "it_<id>_<storageIdx>" ou "st_<id>_<storageIdx>")
+    # car la source est desormais iphone_tarifs + smartphones_tarifs.
+    ids: List[str]
 
 
 # ---------------------------------------------------------------------------
@@ -433,34 +435,153 @@ def get_iphone_image(filename: str):
     )
 
 
+@router.get("/photo/{model_key}")
+def get_iphone_photo(model_key: str):
+    """Sert une photo iPhone PNG detourée pour l'UI front.
+    Retourne la premiere image locale matchant le slug, ou 404."""
+    if "/" in model_key or ".." in model_key:
+        raise HTTPException(status_code=400, detail="Slug invalide")
+    local_dir = Path(__file__).parent.parent / "video" / "assets" / "iphones"
+    key = model_key.replace("-", "_")
+    # 1. Exact match sans couleur
+    p = local_dir / f"{key}.png"
+    if p.exists():
+        return FileResponse(str(p), headers={"Cache-Control": "public, max-age=604800"})
+    # 2. Premier fichier matchant le prefix
+    matches = sorted(local_dir.glob(f"{key}_*.png"))
+    if matches:
+        return FileResponse(str(matches[0]),
+                            headers={"Cache-Control": "public, max-age=604800"})
+    raise HTTPException(status_code=404, detail="Photo introuvable")
+
+
 # ---------------------------------------------------------------------------
 # Endpoints CRUD
 # ---------------------------------------------------------------------------
+def _tarifs_to_phones() -> list:
+    """Fusionne iphone_tarifs + smartphones_tarifs en entrees "phone" compatibles
+    avec VentesIphoneStory. Source de verite unique = les 2 pages Tarifs.
+
+    Chaque tarif genere 1-3 entrees (une par stockage defini). Les IDs sont
+    prefixes (it_<id>_<n> pour iphone_tarifs, st_<id>_<n> pour smartphones)
+    pour eviter les collisions entre les 2 tables."""
+    phones = []
+    # Prix Apple neuf de reference pour creer old_price sur modeles Apple
+    apple_neuf = {
+        "iPhone 16 Pro Max": {"256 Go": 1479, "512 Go": 1729},
+        "iPhone 16 Pro": {"128 Go": 1229, "256 Go": 1359},
+        "iPhone 16": {"128 Go": 969, "256 Go": 1099},
+        "iPhone 15 Pro Max": {"256 Go": 1479, "512 Go": 1729},
+        "iPhone 15 Pro": {"128 Go": 1229, "256 Go": 1359},
+        "iPhone 15": {"128 Go": 969, "256 Go": 1099},
+        "iPhone 14 Pro Max": {"128 Go": 1479, "256 Go": 1609},
+        "iPhone 14 Pro": {"128 Go": 1329, "256 Go": 1459},
+        "iPhone 14": {"128 Go": 1019, "256 Go": 1149},
+        "iPhone 13 Pro Max": {"128 Go": 1259, "256 Go": 1389},
+        "iPhone 13 Pro": {"128 Go": 1159, "256 Go": 1289},
+        "iPhone 13": {"128 Go": 909, "256 Go": 1029},
+        "iPhone 12 Pro Max": {"128 Go": 1259, "256 Go": 1389},
+        "iPhone 12 Pro": {"128 Go": 1159, "256 Go": 1289},
+        "iPhone 12": {"128 Go": 809, "256 Go": 909},
+    }
+
+    with get_cursor() as cur:
+        # iPhone tarifs
+        cur.execute("""
+            SELECT id, slug, modele, stockage_1, prix_1, stockage_2, prix_2,
+                   stockage_3, prix_3, condition, image_filename, actif
+            FROM iphone_tarifs
+            WHERE actif = TRUE
+            ORDER BY ordre ASC
+        """)
+        for r in cur.fetchall():
+            d = dict(r)
+            storages = [
+                (d.get("stockage_1"), d.get("prix_1")),
+                (d.get("stockage_2"), d.get("prix_2")),
+                (d.get("stockage_3"), d.get("prix_3")),
+            ]
+            for idx, (stor, prix) in enumerate(storages):
+                if not stor or not prix:
+                    continue
+                model = d["modele"]
+                old = apple_neuf.get(model, {}).get(stor)
+                phones.append({
+                    "id": f"it_{d['id']}_{idx}",
+                    "source": "iphone_tarifs",
+                    "source_id": d["id"],
+                    "model": model,
+                    "model_key": d["slug"],
+                    "storage": stor,
+                    "color_name": "—",
+                    "color_hex": "#888",
+                    "color_key": None,
+                    "condition": d.get("condition") or "Reconditionné Premium",
+                    "price": prix,
+                    "old_price": old,
+                    "stock": 5,
+                    # URL d'affichage : endpoint interne qui sert la 1re image
+                    # locale matchant le slug (detourée Apple CDN)
+                    "image_url": f"/api/iphones/photo/{d['slug']}",
+                    "active": True,
+                })
+        # Smartphones (non-Apple)
+        cur.execute("""
+            SELECT id, slug, marque, modele, stockage_1, prix_1, stockage_2,
+                   prix_2, stockage_3, prix_3, condition, image_url, actif
+            FROM smartphones_tarifs
+            WHERE actif = TRUE
+            ORDER BY marque ASC, ordre ASC
+        """)
+        for r in cur.fetchall():
+            d = dict(r)
+            storages = [
+                (d.get("stockage_1"), d.get("prix_1")),
+                (d.get("stockage_2"), d.get("prix_2")),
+                (d.get("stockage_3"), d.get("prix_3")),
+            ]
+            full_model = f"{d['marque']} {d['modele']}"
+            for idx, (stor, prix) in enumerate(storages):
+                if not stor or not prix:
+                    continue
+                phones.append({
+                    "id": f"st_{d['id']}_{idx}",
+                    "source": "smartphones_tarifs",
+                    "source_id": d["id"],
+                    "model": full_model,
+                    "model_key": d["slug"],
+                    "storage": stor,
+                    "color_name": "—",
+                    "color_hex": "#888",
+                    "color_key": None,
+                    "condition": d.get("condition") or "Reconditionné Premium",
+                    "price": prix,
+                    "old_price": None,
+                    "stock": 5,
+                    "image_url": d.get("image_url"),
+                    "active": True,
+                })
+    return phones
+
+
 @router.get("")
 def list_iphones(
     condition: Optional[str] = Query(None),
     model: Optional[str] = Query(None),
     active_only: bool = Query(True),
 ):
-    """Liste les iPhones en vente. Filtres : condition, model."""
-    where = []
-    params = []
-    if active_only:
-        where.append("active = TRUE")
+    """Liste les telephones en vente. Source : iphone_tarifs + smartphones_tarifs.
+    Filtres : condition, model."""
+    phones = _tarifs_to_phones()
     if condition:
-        where.append("condition = %s")
-        params.append(condition)
+        phones = [p for p in phones if p["condition"] == condition]
     if model:
-        where.append("model ILIKE %s")
-        params.append(f"%{model}%")
-    sql = "SELECT * FROM iphones_stock"
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY model DESC, price DESC"
-    with get_cursor() as cur:
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-    return [dict(r) for r in rows]
+        ml = model.lower()
+        phones = [p for p in phones if ml in (p["model"] or "").lower()]
+    # Tri : iPhone 16/17 en haut (plus cher → plus recent),
+    # puis Samsung/Xiaomi, ordonnes par prix decroissant
+    phones.sort(key=lambda p: (-(p["price"] or 0), p["model"]))
+    return phones
 
 
 @router.post("")
@@ -523,25 +644,20 @@ def delete_iphone(iphone_id: int):
 # ---------------------------------------------------------------------------
 @router.post("/generate-video")
 def generate_video(payload: GenerateVideoRequest):
-    """Génère une vidéo Story 9:16 à partir des iPhones sélectionnés."""
+    """Génère une vidéo Story 9:16 à partir des telephones selectionnes.
+    Source : iphone_tarifs + smartphones_tarifs (IDs prefixes it_ / st_)."""
     if not payload.ids:
-        raise HTTPException(status_code=400, detail="Aucun iPhone sélectionné")
+        raise HTTPException(status_code=400, detail="Aucun téléphone sélectionné")
     if len(payload.ids) > 8:
-        raise HTTPException(status_code=400, detail="Maximum 8 iPhones par vidéo")
+        raise HTTPException(status_code=400, detail="Maximum 8 téléphones par vidéo")
 
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT * FROM iphones_stock WHERE id = ANY(%s) AND active = TRUE",
-            (payload.ids,),
-        )
-        phones = [dict(r) for r in cur.fetchall()]
+    # Recupere tous les phones de la source unifiee, filtre sur les IDs demandes
+    all_phones = _tarifs_to_phones()
+    phones_by_id = {p["id"]: p for p in all_phones}
+    phones = [phones_by_id[i] for i in payload.ids if i in phones_by_id]
 
     if not phones:
-        raise HTTPException(status_code=404, detail="Aucun iPhone trouvé")
-
-    # Réordonner selon l'ordre des IDs fournis
-    order = {i: idx for idx, i in enumerate(payload.ids)}
-    phones.sort(key=lambda p: order.get(p["id"], 999))
+        raise HTTPException(status_code=404, detail="Aucun téléphone trouvé")
 
     try:
         from app.video.generator import generate_story_video

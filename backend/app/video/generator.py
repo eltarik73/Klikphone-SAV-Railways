@@ -63,21 +63,31 @@ def _slug(s: str) -> str:
 
 def _local_image_for(phone: dict) -> Optional[Path]:
     """Cherche une image locale détourée pour cet iPhone.
-    Ordre : <model_key>_<color_slug>.png, <model_key>.png"""
+    Ordre :
+    1. <model_key>_<color_slug>.png (exact match avec couleur)
+    2. <model_key>.png (fallback sans couleur)
+    3. premier fichier commencant par <model_key>_ (n'importe quelle couleur
+       dispo — utile pour iphone_tarifs qui n'a pas de couleur)"""
     model_key = (phone.get("model_key") or "").replace("-", "_")
     if not model_key:
         return None
     color_key = phone.get("color_key") or phone.get("color_name") or ""
     color_slug = _slug(color_key)
 
-    candidates = []
+    # 1. Match exact avec couleur
     if color_slug:
-        candidates.append(LOCAL_IPHONES_DIR / f"{model_key}_{color_slug}.png")
-    candidates.append(LOCAL_IPHONES_DIR / f"{model_key}.png")
-
-    for p in candidates:
-        if p.exists() and p.is_file():
+        p = LOCAL_IPHONES_DIR / f"{model_key}_{color_slug}.png"
+        if p.exists():
             return p
+    # 2. Fichier sans suffixe couleur
+    p = LOCAL_IPHONES_DIR / f"{model_key}.png"
+    if p.exists():
+        return p
+    # 3. Premiere image matchant le prefix model_key (ex: iphone_16_pro_max_*)
+    if LOCAL_IPHONES_DIR.exists():
+        matches = sorted(LOCAL_IPHONES_DIR.glob(f"{model_key}_*.png"))
+        if matches:
+            return matches[0]
     return None
 
 
