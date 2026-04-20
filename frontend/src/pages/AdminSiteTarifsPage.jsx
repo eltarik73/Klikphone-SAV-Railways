@@ -309,7 +309,10 @@ function HeroShowcase({ phone, settings }) {
           Coup de cœur
         </motion.div>
         <motion.p variants={reduceMotion ? undefined : heroItem} className="font-display text-2xl uppercase tracking-[0.35em] text-violet-300/80 mb-3">
-          {phone.marque} <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">reconditionné</span>
+          {phone.marque}{' '}
+          <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">
+            {phone.grade === 'Neuf' ? 'neuf' : 'reconditionné'}
+          </span>
         </motion.p>
         <motion.h2 variants={reduceMotion ? undefined : heroItem} className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6 tracking-[-0.02em]">
           {phone.modele}

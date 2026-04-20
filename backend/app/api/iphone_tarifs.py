@@ -619,7 +619,7 @@ def _render_pdf(models: list) -> bytes:
             "Mentions DAS obligatoires (art. R20-10-2 CPCE) — Les valeurs DAS indiquent la quantité d'énergie radiofréquence absorbée par le corps.",
             align="C", new_x="LMARGIN", new_y="NEXT",
         )
-        pdf.cell(0, 4, "KlikPhone — Tarifs reconditionnés, pièces d'origine, garantie 1 an", align="C")
+        pdf.cell(0, 4, "KlikPhone — iPhones neufs et reconditionnés, pièces d'origine, garantie 1 an", align="C")
 
     return bytes(pdf.output())
 
