@@ -231,22 +231,16 @@ function HeroShowcase({ phone, settings }) {
       key={phone.key}
       className="relative h-full flex items-center gap-12 px-16 animate-hero-in"
     >
-      {/* Left : image — mask radial pour fondre le fond JPEG dans la page sombre */}
+      {/* Left : image — brute, pas d'effet */}
       <div className="relative flex-[1] h-full flex items-center justify-center">
-        {/* Aurora derriere */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-[42rem] h-[42rem] rounded-full bg-gradient-to-br from-violet-500/30 via-fuchsia-500/15 to-amber-500/25 blur-3xl animate-pulse-slow" />
+          <div className="w-[42rem] h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
         </div>
         {phone.image && (
           <img
             src={phone.image}
             alt={phone.modele}
-            className="relative max-h-[72vh] w-auto object-contain animate-float"
-            style={{
-              WebkitMaskImage: 'radial-gradient(ellipse at 50% 50%, black 45%, transparent 85%)',
-              maskImage: 'radial-gradient(ellipse at 50% 50%, black 45%, transparent 85%)',
-              filter: 'drop-shadow(0 25px 50px rgba(0,0,0,0.5)) drop-shadow(0 0 30px rgba(124,58,237,0.3))',
-            }}
+            className="relative max-h-[68vh] w-auto object-contain animate-float"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
@@ -348,11 +342,6 @@ function MiniCard({ phone, highlight }) {
               src={phone.image}
               alt={phone.modele}
               className="w-full h-full object-contain"
-              style={{
-                WebkitMaskImage: 'radial-gradient(ellipse at 50% 50%, black 40%, transparent 80%)',
-                maskImage: 'radial-gradient(ellipse at 50% 50%, black 40%, transparent 80%)',
-                filter: 'drop-shadow(0 8px 14px rgba(0,0,0,0.4))',
-              }}
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
             />
           )}
