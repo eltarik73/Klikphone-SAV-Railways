@@ -1,61 +1,92 @@
 """
-Frame rendering for Story video 9:16 (1080×1920).
+Frame rendering for Story video 9:16 (1080×1920) — design premium Apple keynote.
 
-Design pro :
-- Fonds radiaux premium adaptés à la couleur dominante de chaque iPhone
-- Photos iPhone détourées avec shadow douce + glow subtil + reflet au sol
-- Logo Klikphone (PNG orange/blanc) affiché en intro et outro
-- Typographie hiérarchique : modèle en très gros, prix ENORME, badges lisibles
-- Animations : ease-out sur les entrées, scale pulse sur la photo, exit fluide
+Direction artistique :
+- Fond : noir profond (#000) + spot lighting coloré derrière l'iPhone (mood cinématique)
+- Hero : photo iPhone à 60% de la hauteur, glow subtil coloré par la teinte du phone
+- Typographie : Inter (Black/Bold/Medium) → tension Apple-like, très lisible mobile
+- Hiérarchie : badge condition (top) → photo hero (center) → nom/prix (bottom-heavy)
+- Prix en Inter Black 170pt avec petit glow orange → effet "prix découverte" premium
+- Pas de pill promo criarde, juste une ligne subtile "ancien prix barré"
+- Logo Klikphone discret en haut + CTA outro
+
+Inspiré des keynotes Apple : fond noir, lighting dramatique, zero friction visuelle.
 """
 
 import math
 from functools import lru_cache
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 
 
 W, H = 1080, 1920
 FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 LOGO_PATH = Path(__file__).parent / "assets" / "klikphone_logo.png"
 
-# Palette Klikphone
-ORANGE = (232, 100, 26)
-ORANGE_BRIGHT = (255, 140, 60)
-ORANGE_DEEP = (200, 70, 10)
-DARK_BG = (10, 10, 14)
+# ─── Palette ────────────────────────────────────────────────────
+BG_BLACK = (0, 0, 0)
+BG_CARD = (14, 14, 16)
 WHITE = (255, 255, 255)
-GRAY_LIGHT = (180, 180, 195)
-GRAY_DARK = (40, 40, 50)
+GRAY_400 = (170, 170, 180)
+GRAY_300 = (210, 210, 220)
+GRAY_500 = (130, 130, 140)
 
-# Fonds scène : gradient radial premium par index (couleurs cinématiques)
-SCENE_BG = [
-    ((20, 40, 70), (5, 10, 22)),    # bleu profond
-    ((40, 15, 55), (10, 5, 20)),    # violet nuit
-    ((15, 35, 45), (5, 12, 18)),    # teal sombre
-    ((50, 25, 15), (15, 8, 5)),     # ambre chaud
-    ((35, 15, 40), (12, 5, 18)),    # magenta nuit
-    ((20, 30, 55), (8, 12, 22)),    # indigo
-    ((15, 25, 35), (5, 10, 15)),    # graphite
-    ((45, 30, 15), (18, 10, 5)),    # cuivre
+# Orange Klikphone mais plus subtil dans ce design premium
+ORANGE = (255, 110, 40)
+ORANGE_SOFT = (255, 140, 70)
+
+# Condition → couleur badge (émeraude / bleu / ambre)
+CONDITION_COLORS = {
+    "Neuf": (60, 200, 140),
+    "Reconditionné Premium": (80, 150, 240),
+    "Reconditionné": (240, 175, 60),
+}
+
+# Spot lighting (inner, outer) — varie par teinte dominante du phone
+SPOT_COLORS = [
+    ((40, 30, 80), (0, 0, 0)),      # violet profond
+    ((60, 20, 30), (0, 0, 0)),      # bordeaux
+    ((20, 40, 60), (0, 0, 0)),      # bleu nuit
+    ((20, 55, 50), (0, 0, 0)),      # teal deep
+    ((55, 30, 20), (0, 0, 0)),      # ambre chaud
+    ((30, 30, 40), (0, 0, 0)),      # graphite
+    ((50, 20, 50), (0, 0, 0)),      # magenta
+    ((15, 40, 55), (0, 0, 0)),      # cyan deep
 ]
 
 
-@lru_cache(maxsize=16)
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+# ─── Fonts ──────────────────────────────────────────────────────
+# Inter est préféré (créé pour ressembler à SF Pro), DejaVu fallback
+_INTER_FILES = {
+    "black": FONTS_DIR / "Inter-Black.ttf",
+    "bold": FONTS_DIR / "Inter-Bold.ttf",
+    "semibold": FONTS_DIR / "Inter-SemiBold.ttf",
+    "medium": FONTS_DIR / "Inter-Medium.ttf",
+    "regular": FONTS_DIR / "Inter-Regular.ttf",
+}
+_DEJAVU_BOLD = FONTS_DIR / "DejaVuSans-Bold.ttf"
+_DEJAVU_REG = FONTS_DIR / "DejaVuSans.ttf"
+
+
+@lru_cache(maxsize=40)
+def _font(size: int, weight: str = "regular") -> ImageFont.FreeTypeFont:
     size = max(1, int(size))
-    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
-    return ImageFont.truetype(str(FONTS_DIR / name), size)
+    path = _INTER_FILES.get(weight)
+    if path and path.exists():
+        return ImageFont.truetype(str(path), size)
+    # Fallback DejaVu
+    fallback = _DEJAVU_BOLD if weight in ("black", "bold", "semibold") else _DEJAVU_REG
+    return ImageFont.truetype(str(fallback), size)
 
 
 @lru_cache(maxsize=1)
 def _logo() -> Image.Image:
-    """Logo Klikphone en RGBA, fond orange conservé."""
     if not LOGO_PATH.exists():
         return None
     return Image.open(LOGO_PATH).convert("RGBA")
 
 
+# ─── Easings ────────────────────────────────────────────────────
 def _ease_out(t: float) -> float:
     return 1 - (1 - t) ** 3
 
@@ -64,13 +95,18 @@ def _ease_in_out(t: float) -> float:
     return 0.5 * (1 - math.cos(math.pi * t))
 
 
-def _radial_gradient(inner: tuple, outer: tuple,
-                     cx: int = W // 2, cy: int = H // 2) -> Image.Image:
-    """Fond radial doux via interpolation par ellipses concentriques."""
+def _ease_out_quint(t: float) -> float:
+    return 1 - (1 - t) ** 5
+
+
+# ─── Drawing helpers ────────────────────────────────────────────
+def _radial_spot(inner: tuple, outer: tuple, cx: int = W // 2,
+                 cy: int = int(H * 0.45), spread: float = 1.0) -> Image.Image:
+    """Spot lighting radial (plus dramatique qu'un gradient full-screen)."""
     img = Image.new("RGB", (W, H), outer)
     draw = ImageDraw.Draw(img)
-    max_r = int(math.hypot(W, H) / 1.3)
-    steps = 60  # plus de steps = plus doux
+    max_r = int(math.hypot(W, H) * 0.6 * spread)
+    steps = 50
     for i in range(steps, 0, -1):
         t = i / steps
         r = int(max_r * t)
@@ -86,23 +122,13 @@ def _text_w(draw: ImageDraw.ImageDraw, text: str, font) -> int:
     return bbox[2] - bbox[0]
 
 
-def _text_h(draw: ImageDraw.ImageDraw, text: str, font) -> int:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    return bbox[3] - bbox[1]
-
-
-def _draw_text_shadow(draw: ImageDraw.ImageDraw, pos: tuple, text: str,
-                      font, fill=WHITE, shadow=(0, 0, 0, 160), offset=(0, 4)):
-    """Texte avec ombre portée pour lisibilité."""
-    x, y = pos
-    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=shadow)
-    draw.text((x, y), text, font=font, fill=fill)
+def _draw_text(draw: ImageDraw.ImageDraw, pos: tuple, text: str, font, fill):
+    draw.text(pos, text, font=font, fill=fill)
 
 
 def _paste_with_shadow(base: Image.Image, overlay: Image.Image, pos: tuple,
                        shadow_color: tuple = (0, 0, 0), offset: tuple = (0, 30),
-                       blur: int = 45, opacity: int = 160):
-    """Colle avec ombre floue en dessous."""
+                       blur: int = 50, opacity: int = 160):
     if overlay.mode != "RGBA":
         overlay = overlay.convert("RGBA")
     alpha = overlay.split()[-1]
@@ -114,9 +140,7 @@ def _paste_with_shadow(base: Image.Image, overlay: Image.Image, pos: tuple,
 
 
 def _paste_with_glow(base: Image.Image, overlay: Image.Image, pos: tuple,
-                     glow_color: tuple = (255, 255, 255), blur: int = 60,
-                     opacity: int = 90):
-    """Colle avec un glow diffus (halo lumineux autour du sujet)."""
+                     glow_color: tuple, blur: int = 90, opacity: int = 60):
     if overlay.mode != "RGBA":
         overlay = overlay.convert("RGBA")
     alpha = overlay.split()[-1]
@@ -127,122 +151,157 @@ def _paste_with_glow(base: Image.Image, overlay: Image.Image, pos: tuple,
     base.alpha_composite(overlay, pos)
 
 
-# ───────────────────────────────────────────────────────────
-# Logo Klikphone
-# ───────────────────────────────────────────────────────────
 def _draw_klikphone_logo(base: Image.Image, cx: int, cy: int, size: int,
                          alpha: int = 255):
-    """Compose le logo Klikphone carré centré sur (cx, cy), taille size×size.
-    Le logo est squircle-maské (iOS-style) et alpha-modulé."""
-    from PIL import ImageChops
+    """Logo Klikphone en squircle iOS."""
     logo = _logo()
     if logo is None:
         return
     s = max(1, int(size))
     resized = logo.resize((s, s), Image.LANCZOS)
-    # Module l'alpha global
     r, g, b, a = resized.split()
     if alpha < 255:
         a = a.point(lambda x: int(x * alpha / 255))
-    # Squircle mask (coins arrondis à iOS)
+    # Squircle mask
     mask = Image.new("L", (s, s), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, s, s],
-                                           radius=s // 5, fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, s, s], radius=s // 5, fill=255)
     a = ImageChops.multiply(a, mask)
     resized = Image.merge("RGBA", (r, g, b, a))
     base.alpha_composite(resized, (cx - s // 2, cy - s // 2))
 
 
-# ───────────────────────────────────────────────────────────
-# INTRO (1.8s)
-# ───────────────────────────────────────────────────────────
+def _draw_vignette(img: Image.Image, strength: float = 0.55):
+    """Vignette sombre sur les bords pour concentrer l'attention (style keynote)."""
+    vignette = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    vdraw = ImageDraw.Draw(vignette)
+    max_r = int(math.hypot(W, H) * 0.55)
+    steps = 30
+    cx, cy = W // 2, H // 2
+    for i in range(steps):
+        t = i / steps
+        r = int(max_r * (0.5 + 0.5 * t))
+        alpha = int(strength * 255 * t)
+        vdraw.ellipse([cx - r, cy - r, cx + r, cy + r],
+                      outline=(0, 0, 0, alpha), width=20)
+    vignette = vignette.filter(ImageFilter.GaussianBlur(60))
+    img.alpha_composite(vignette)
+
+
+# ─── Badge helpers ──────────────────────────────────────────────
+def _draw_condition_badge(draw: ImageDraw.ImageDraw, img: Image.Image,
+                          x: int, y: int, condition: str, alpha: int = 255):
+    """Badge condition (Neuf / Recond. Premium / Reconditionné) en pill métallique."""
+    color = CONDITION_COLORS.get(condition, (150, 150, 160))
+    label = {"Reconditionné Premium": "RECONDITIONNÉ PREMIUM",
+             "Reconditionné": "RECONDITIONNÉ",
+             "Neuf": "NEUF"}.get(condition, condition.upper())
+    font = _font(20, "bold")
+    tw = _text_w(draw, label, font)
+    # Marges : 22px à gauche (dot + espace), 24px à droite
+    dot_space = 22
+    pad_right = 24
+    h = 44
+    pill_w = dot_space + tw + pad_right
+    # Fond pill vitré + outline colorée fine
+    draw.rounded_rectangle([x, y, x + pill_w, y + h],
+                           radius=h // 2,
+                           fill=(255, 255, 255, int(22 * alpha / 255)),
+                           outline=color + (int(180 * alpha / 255),),
+                           width=1)
+    # Dot couleur à gauche (centré verticalement)
+    dot_r = 6
+    dot_cx = x + 16
+    dot_cy = y + h // 2
+    # Glow subtil sous le dot
+    glow = Image.new("RGBA", (24, 24), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([4, 4, 20, 20], fill=color + (int(180 * alpha / 255),))
+    glow = glow.filter(ImageFilter.GaussianBlur(3))
+    img.alpha_composite(glow, (dot_cx - 12, dot_cy - 12))
+    # Dot net
+    draw.ellipse([dot_cx - dot_r, dot_cy - dot_r,
+                  dot_cx + dot_r, dot_cy + dot_r],
+                 fill=color + (alpha,))
+    # Label (centré verticalement avec la pill)
+    label_y = y + (h - 20) // 2 - 3  # approx ajustement baseline
+    draw.text((x + dot_space + 8, label_y), label, font=font,
+              fill=(255, 255, 255, alpha))
+    return pill_w
+
+
+# ─── INTRO (1.8s) ───────────────────────────────────────────────
 def render_intro_frame(progress: float) -> Image.Image:
-    """Intro cinématique : logo Klikphone qui apparaît en zoom + particules."""
+    """Intro cinématique : logo Klikphone qui émerge, wordmark, baseline."""
     p = _ease_out(max(0.0, min(1.0, progress)))
-    img = _radial_gradient((30, 15, 5), DARK_BG).convert("RGBA")
+    # Spot orange-ambre derrière le logo
+    img = _radial_spot((55, 30, 15), BG_BLACK, cy=int(H * 0.42)).convert("RGBA")
     draw = ImageDraw.Draw(img)
 
-    # Particules orange convergentes vers le logo
+    # Particules orange convergentes
     center_x, center_y = W // 2, int(H * 0.38)
-    n_particles = 32
-    for i in range(n_particles):
-        angle = (i / n_particles) * 2 * math.pi
-        radius = int((1 - p) * 700 + 60)
+    for i in range(24):
+        angle = (i / 24) * 2 * math.pi
+        radius = int((1 - p) * 650 + 50)
         px = int(center_x + math.cos(angle) * radius)
         py = int(center_y + math.sin(angle) * radius)
-        size = int(3 + p * 5)
-        alpha = int(60 + p * 140)
-        glow_size = size + 6
-        # Glow doux
-        draw.ellipse([px - glow_size, py - glow_size, px + glow_size, py + glow_size],
-                     fill=ORANGE + (alpha // 3,))
+        size = int(2 + p * 3)
+        a = int(60 + p * 120)
+        draw.ellipse([px - size - 4, py - size - 4, px + size + 4, py + size + 4],
+                     fill=ORANGE + (a // 4,))
         draw.ellipse([px - size, py - size, px + size, py + size],
-                     fill=ORANGE_BRIGHT + (alpha,))
+                     fill=ORANGE_SOFT + (a,))
 
-    # Logo Klikphone : zoom in + fade
-    logo_size = int(240 + 160 * p)
-    logo_y = center_y
-    _draw_klikphone_logo(img, W // 2, logo_y, logo_size, alpha=int(255 * p))
+    # Logo Klikphone : zoom + fade
+    logo_size = int(200 + 140 * p)
+    _draw_klikphone_logo(img, W // 2, int(H * 0.40), logo_size,
+                         alpha=int(255 * p))
 
-    # Wordmark "KLIKPHONE" (monte depuis le bas, fade)
-    title_font = _font(110, bold=True)
+    # Wordmark KLIKPHONE (Inter Black, tracking serré)
+    title_font = _font(120, "black")
     title = "KLIKPHONE"
     title_alpha = int(255 * max(0, (p - 0.3) / 0.7))
     if title_alpha > 0:
         tw = _text_w(draw, title, title_font)
-        ty = int(H * 0.60 + (1 - p) * 30)
-        # Letter-spacing doux
-        spacing = 6
-        parts_w = sum(_text_w(draw, ch, title_font) for ch in title) + spacing * (len(title) - 1)
-        x = (W - parts_w) // 2
-        for ch in title:
-            _draw_text_shadow(draw, (x, ty), ch, title_font,
-                              fill=WHITE + (title_alpha,),
-                              shadow=(0, 0, 0, title_alpha // 2), offset=(0, 5))
-            x += _text_w(draw, ch, title_font) + spacing
+        ty = int(H * 0.58)
+        # Ombre subtile
+        draw.text(((W - tw) // 2, ty + 4), title, font=title_font,
+                  fill=(0, 0, 0, title_alpha // 2))
+        draw.text(((W - tw) // 2, ty), title, font=title_font,
+                  fill=(255, 255, 255, title_alpha))
 
-    # Baseline orange
-    sub_font = _font(42, bold=True)
-    sub = "VENTES iPHONE"
+    # Baseline fine
+    sub_font = _font(34, "medium")
+    sub = "SPÉCIALISTE APPLE · CHAMBÉRY"
     sub_alpha = int(255 * max(0, (p - 0.5) / 0.5))
     if sub_alpha > 0:
         sw = _text_w(draw, sub, sub_font)
-        sy = int(H * 0.68)
-        draw.text(((W - sw) // 2, sy), sub, font=sub_font,
-                  fill=ORANGE_BRIGHT + (sub_alpha,))
+        draw.text(((W - sw) // 2, int(H * 0.68)), sub, font=sub_font,
+                  fill=ORANGE_SOFT + (sub_alpha,))
 
+    _draw_vignette(img, strength=0.5)
     return img
 
 
-# ───────────────────────────────────────────────────────────
-# SCÈNE iPhone (3s par phone)
-# ───────────────────────────────────────────────────────────
+# ─── SCÈNE iPhone (3s) ──────────────────────────────────────────
 def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
                        idx: int, total: int) -> Image.Image:
-    """Scène produit avec photo détourée, titre, prix, badges."""
+    """Scène produit : photo hero + modèle + prix + ancien prix + condition."""
     p = max(0.0, min(1.0, progress))
-    color = SCENE_BG[idx % len(SCENE_BG)]
-    img = _radial_gradient(color[0], color[1]).convert("RGBA")
+
+    # Fond : spot lighting coloré selon teinte
+    spot = SPOT_COLORS[idx % len(SPOT_COLORS)]
+    img = _radial_spot(spot[0], BG_BLACK, cy=int(H * 0.40)).convert("RGBA")
     draw = ImageDraw.Draw(img)
 
-    # Grain de lumière en haut (halo orange subtil)
-    halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    halo_draw = ImageDraw.Draw(halo)
-    halo_draw.ellipse([W // 2 - 500, -300, W // 2 + 500, 400],
-                      fill=ORANGE + (20,))
-    halo = halo.filter(ImageFilter.GaussianBlur(80))
-    img.alpha_composite(halo)
-
-    # Barres progression story-style (en haut)
-    bar_y = 50
-    bar_h = 5
+    # Barres de progression story (top)
+    bar_y = 44
+    bar_h = 4
     gap = 10
     bar_w_total = W - 100
     per_bar = (bar_w_total - gap * (total - 1)) // max(1, total)
     for i in range(total):
         x = 50 + i * (per_bar + gap)
         draw.rounded_rectangle([x, bar_y, x + per_bar, bar_y + bar_h],
-                               radius=bar_h // 2, fill=(255, 255, 255, 70))
+                               radius=bar_h // 2, fill=(255, 255, 255, 50))
         if i < idx:
             fill_w = per_bar
         elif i == idx:
@@ -251,254 +310,240 @@ def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
             fill_w = 0
         if fill_w > 0:
             draw.rounded_rectangle([x, bar_y, x + fill_w, bar_y + bar_h],
-                                   radius=bar_h // 2, fill=(255, 255, 255, 240))
+                                   radius=bar_h // 2, fill=(255, 255, 255, 245))
 
-    # Mini logo + marque + compteur
-    logo_small = 52
-    _draw_klikphone_logo(img, 50 + logo_small // 2, 100 + logo_small // 2,
-                         logo_small, alpha=230)
-    brand_font = _font(28, bold=True)
-    draw.text((logo_small + 70, 108), "klikphone.fr", font=brand_font,
-              fill=(255, 255, 255, 220))
-    counter_font = _font(28, bold=True)
-    counter = f"{idx + 1} / {total}"
+    # Logo + marque + compteur (top, discret)
+    logo_small = 44
+    _draw_klikphone_logo(img, 50 + logo_small // 2, 90 + logo_small // 2,
+                         logo_small, alpha=200)
+    brand_font = _font(24, "semibold")
+    draw.text((logo_small + 66, 100), "klikphone.fr",
+              font=brand_font, fill=(255, 255, 255, 180))
+    counter_font = _font(22, "medium")
+    counter = f"{idx + 1:02d} / {total:02d}"
     cw = _text_w(draw, counter, counter_font)
-    draw.text((W - 50 - cw, 108), counter, font=counter_font,
-              fill=ORANGE_BRIGHT + (240,))
+    draw.text((W - 50 - cw, 102), counter, font=counter_font,
+              fill=(255, 255, 255, 130))
 
-    # ───── PHOTO iPhone détourée ─────
-    # Zone photo : hauteur 900, centrée en haut
-    photo_zone_top = 180
-    photo_zone_h = 900
-    # Adapter la taille selon orientation (Apple CDN dos+face = landscape 940×549,
-    # PNG portrait ~660×1276) : remplir intelligemment la zone.
+    # Animation entrée / sortie
+    enter = _ease_out_quint(min(1.0, p / 0.25))
+    exit_anim = 0
+    if p > 0.90:
+        exit_anim = _ease_in_out((p - 0.90) / 0.10)
+    text_alpha = int(255 * enter * (1 - exit_anim))
+
+    # ─── PHOTO HERO ─────────────────────────────────────────
+    # Zone photo : plein centre, bien au-dessus de la fold texte
+    photo_zone_top = 170
+    photo_zone_h = 980
     ph = photo.copy()
     if ph.width >= ph.height:
-        # Landscape : remplir largeur, limiter hauteur
-        scale = min(920 / ph.width, photo_zone_h / ph.height)
+        scale = min(940 / ph.width, photo_zone_h / ph.height)
     else:
-        # Portrait : remplir hauteur, limiter largeur
-        scale = min(photo_zone_h / ph.height, 680 / ph.width)
+        scale = min(photo_zone_h / ph.height, 720 / ph.width)
     base_w = max(1, int(ph.width * scale))
     base_h = max(1, int(ph.height * scale))
     ph = ph.resize((base_w, base_h), Image.LANCZOS)
 
-    # Animation : slide up + zoom (entrée)
-    enter = _ease_out(min(1.0, p / 0.25))
-    exit_anim = 0
-    if p > 0.88:
-        exit_anim = _ease_in_out((p - 0.88) / 0.12)
-
-    # Scale pulse (respiration douce)
-    pulse = 0.97 + 0.03 * _ease_in_out(p)
+    # Scale pulse subtil (respiration)
+    pulse = 0.98 + 0.02 * _ease_in_out(p)
     new_w = max(1, int(base_w * pulse))
     new_h = max(1, int(base_h * pulse))
     ph_resized = ph.resize((new_w, new_h), Image.LANCZOS)
 
     ph_x = (W - new_w) // 2
-    # Centrer verticalement dans la zone dédiée
     ph_y = photo_zone_top + max(0, (photo_zone_h - new_h) // 2) \
-           + int((1 - enter) * 80 - exit_anim * 60)
+           + int((1 - enter) * 60 - exit_anim * 40)
 
-    # 1. Ambient shadow large (halo sombre qui fond dans le fond)
+    # Glow coloré diffus (spot color) sous le phone
+    _paste_with_glow(img, ph_resized, (ph_x, ph_y),
+                     glow_color=ORANGE_SOFT, blur=130, opacity=50)
+    # Ambient shadow large
     _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
                        shadow_color=(0, 0, 0), offset=(0, 20),
-                       blur=140, opacity=90)
-
-    # 2. Glow doux coloré (très diffus — atmosphere premium)
-    _paste_with_glow(img, ph_resized, (ph_x, ph_y),
-                     glow_color=ORANGE_BRIGHT, blur=120, opacity=45)
-
-    # 3. Contact shadow (ancre l'iPhone au sol, plus nette)
+                       blur=120, opacity=80)
+    # Contact shadow (ancre)
     _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
-                       shadow_color=(0, 0, 0), offset=(0, 70),
-                       blur=50, opacity=150)
+                       shadow_color=(0, 0, 0), offset=(0, 60),
+                       blur=40, opacity=140)
 
-    # ───── TEXTES (zone basse) ─────
-    text_alpha = int(255 * enter * (1 - exit_anim))
+    # ─── BADGE CONDITION (top-left sous header) ─────────────
+    cond_y = 180
+    _draw_condition_badge(draw, img, 50, cond_y, phone.get("condition", ""),
+                          alpha=text_alpha)
 
-    # Modèle (sans "iPhone" pour impact)
-    model_display = phone["model"].replace("iPhone ", "")
-    model_font = _font(84, bold=True)
-    model_y = 1130
-    mw = _text_w(draw, model_display, model_font)
-    _draw_text_shadow(draw, ((W - mw) // 2, model_y), model_display, model_font,
-                      fill=(255, 255, 255, text_alpha),
-                      shadow=(0, 0, 0, text_alpha // 2), offset=(0, 4))
+    # ─── BLOC TEXTE BAS ─────────────────────────────────────
+    # 1. Nom COMPLET "iPhone 15 Pro Max" (pas juste "15 Pro Max")
+    model_full = phone["model"]  # ex: "iPhone 15 Pro Max"
+    model_font = _font(74, "bold")
+    model_y = 1230
+    mw = _text_w(draw, model_full, model_font)
+    # Soft shadow
+    draw.text(((W - mw) // 2 + 2, model_y + 3), model_full, font=model_font,
+              fill=(0, 0, 0, int(text_alpha * 0.7)))
+    draw.text(((W - mw) // 2, model_y), model_full, font=model_font,
+              fill=(255, 255, 255, text_alpha))
 
-    # Storage + couleur (sous le modèle)
-    meta_font = _font(34)
-    meta = f"{phone['storage']}  ·  {phone['color_name']}"
-    meta_y = model_y + 108
+    # 2. Storage · couleur (Inter Medium)
+    meta_font = _font(30, "medium")
+    meta = f"{phone['storage']}   ·   {phone['color_name']}"
+    meta_y = model_y + 92
     mw2 = _text_w(draw, meta, meta_font)
     draw.text(((W - mw2) // 2, meta_y), meta, font=meta_font,
-              fill=(215, 215, 228, text_alpha))
+              fill=(190, 190, 200, text_alpha))
 
-    # Prix énorme + ancien prix sur la même ligne
-    price_font = _font(150, bold=True)
+    # 3. Prix ÉNORME avec glow orange subtil + ancien prix à côté
+    price_font = _font(156, "black")
     price = f"{phone['price']}€"
     has_old = bool(phone.get("old_price") and phone["old_price"] > phone["price"])
 
-    price_y = meta_y + 70
+    price_y = meta_y + 72
     pw = _text_w(draw, price, price_font)
 
     if has_old:
-        old_font = _font(48)
+        old_font = _font(46, "medium")
         old_price = f"{phone['old_price']}€"
         opw = _text_w(draw, old_price, old_font)
-        gap = 20
-        # Largeur totale (prix + gap + ancien prix)
+        gap = 24
         total_w = pw + gap + opw
         price_x = (W - total_w) // 2
         old_x = price_x + pw + gap
-        old_y = price_y + 75  # centré verticalement avec le prix
+        old_y = price_y + 80
 
-        # Glow prix
-        pg_layer = Image.new("RGBA", (W, 240), (0, 0, 0, 0))
-        ImageDraw.Draw(pg_layer).text((price_x, 0), price, font=price_font,
-                                       fill=ORANGE_BRIGHT + (int(160 * enter),))
-        img.alpha_composite(pg_layer.filter(ImageFilter.GaussianBlur(22)),
-                            (0, price_y))
+        # Glow derrière le prix (très soft)
+        glow_layer = Image.new("RGBA", (W, 240), (0, 0, 0, 0))
+        ImageDraw.Draw(glow_layer).text(
+            (price_x, 0), price, font=price_font,
+            fill=ORANGE_SOFT + (int(140 * enter),))
+        img.alpha_composite(
+            glow_layer.filter(ImageFilter.GaussianBlur(28)), (0, price_y))
 
-        # Prix blanc net
+        # Prix blanc net avec léger stroke (effet "gravure")
         draw.text((price_x, price_y), price, font=price_font,
                   fill=(255, 255, 255, text_alpha))
 
-        # Ancien prix gris barré
+        # Ancien prix barré gris
         draw.text((old_x, old_y), old_price, font=old_font,
-                  fill=(180, 180, 195, int(200 * enter)))
+                  fill=(140, 140, 150, int(210 * enter)))
         draw.line([(old_x - 4, old_y + 32), (old_x + opw + 4, old_y + 32)],
-                  fill=ORANGE_BRIGHT + (int(230 * enter),), width=4)
+                  fill=ORANGE + (int(220 * enter),), width=4)
+
+        # Économie (petite ligne en dessous, subtile, pas de pill criarde)
+        diff = phone["old_price"] - phone["price"]
+        save_font = _font(28, "bold")
+        save_text = f"TU ÉCONOMISES {diff}€"
+        sw = _text_w(draw, save_text, save_font)
+        save_y = price_y + 210
+        draw.text(((W - sw) // 2, save_y), save_text, font=save_font,
+                  fill=ORANGE_SOFT + (text_alpha,))
     else:
         price_x = (W - pw) // 2
-        pg_layer = Image.new("RGBA", (W, 240), (0, 0, 0, 0))
-        ImageDraw.Draw(pg_layer).text((price_x, 0), price, font=price_font,
-                                       fill=ORANGE_BRIGHT + (int(160 * enter),))
-        img.alpha_composite(pg_layer.filter(ImageFilter.GaussianBlur(22)),
-                            (0, price_y))
+        glow_layer = Image.new("RGBA", (W, 240), (0, 0, 0, 0))
+        ImageDraw.Draw(glow_layer).text(
+            (price_x, 0), price, font=price_font,
+            fill=ORANGE_SOFT + (int(140 * enter),))
+        img.alpha_composite(
+            glow_layer.filter(ImageFilter.GaussianBlur(28)), (0, price_y))
         draw.text((price_x, price_y), price, font=price_font,
                   fill=(255, 255, 255, text_alpha))
 
-    # Pill remise (sous le prix)
-    if has_old:
-        diff = phone["old_price"] - phone["price"]
-        pill_text = f"ÉCONOMIE −{diff}€"
-        pill_font = _font(30, bold=True)
-        pill_tw = _text_w(draw, pill_text, pill_font)
-        pill_w = pill_tw + 56
-        pill_h = 64
-        px = (W - pill_w) // 2
-        py = price_y + 190
-        # Glow pill
-        glow_layer = Image.new("RGBA", (pill_w + 100, pill_h + 100), (0, 0, 0, 0))
-        ImageDraw.Draw(glow_layer).rounded_rectangle(
-            [50, 50, pill_w + 50, pill_h + 50],
-            radius=pill_h // 2, fill=ORANGE + (int(200 * enter),))
-        img.alpha_composite(glow_layer.filter(ImageFilter.GaussianBlur(22)),
-                            (px - 50, py - 50))
-        # Pill
-        draw.rounded_rectangle([px, py, px + pill_w, py + pill_h],
-                               radius=pill_h // 2,
-                               fill=ORANGE + (text_alpha,))
-        draw.text((px + (pill_w - pill_tw) // 2, py + 16), pill_text,
-                  font=pill_font, fill=(255, 255, 255, text_alpha))
-
-    # Footer : stock + garantie
-    footer_font = _font(26, bold=True)
-    stock = phone.get('stock', 0)
+    # 4. Footer : stock + garantie (très discret)
+    footer_font = _font(22, "medium")
+    stock = phone.get("stock", 0)
     stock_part = f"{stock} DISPONIBLE" + ("S" if stock > 1 else "")
-    footer_txt = f"{stock_part}   ·   GARANTIE 12 MOIS"
-    fw = _text_w(draw, footer_txt, footer_font)
-    draw.text(((W - fw) // 2, H - 90), footer_txt, font=footer_font,
-              fill=(220, 220, 235, int(200 * enter)))
+    footer = f"{stock_part}   ·   GARANTIE 12 MOIS"
+    fw = _text_w(draw, footer, footer_font)
+    draw.text(((W - fw) // 2, H - 90), footer, font=footer_font,
+              fill=(150, 150, 160, int(210 * enter)))
 
+    # Vignette finale
+    _draw_vignette(img, strength=0.45)
     return img
 
 
-# ───────────────────────────────────────────────────────────
-# OUTRO (2.2s)
-# ───────────────────────────────────────────────────────────
+# ─── OUTRO (2.2s) ───────────────────────────────────────────────
 def render_outro_frame(progress: float) -> Image.Image:
-    """Outro : branding Klikphone avec logo grand + contact."""
+    """Outro : branding Klikphone + CTA."""
     p = _ease_out(max(0.0, min(1.0, progress)))
-    img = _radial_gradient((60, 25, 8), DARK_BG).convert("RGBA")
+    img = _radial_spot((55, 28, 12), BG_BLACK, cy=int(H * 0.35)).convert("RGBA")
     draw = ImageDraw.Draw(img)
 
-    # Halo orange derrière le logo
+    # Halo orange doux derrière le logo
     halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     hdraw = ImageDraw.Draw(halo)
-    hr = int(400 * p)
+    hr = int(380 * p)
     hdraw.ellipse([W // 2 - hr, int(H * 0.30) - hr,
                    W // 2 + hr, int(H * 0.30) + hr],
-                  fill=ORANGE + (int(90 * p),))
-    halo = halo.filter(ImageFilter.GaussianBlur(60))
+                  fill=ORANGE + (int(75 * p),))
+    halo = halo.filter(ImageFilter.GaussianBlur(70))
     img.alpha_composite(halo)
 
     # Logo Klikphone grand
-    logo_size = int(320 * (0.5 + 0.5 * p))
-    logo_y = int(H * 0.30)
-    _draw_klikphone_logo(img, W // 2, logo_y, logo_size, alpha=int(255 * p))
+    logo_size = int(300 * (0.5 + 0.5 * p))
+    _draw_klikphone_logo(img, W // 2, int(H * 0.30), logo_size,
+                         alpha=int(255 * p))
 
-    # KLIKPHONE wordmark
-    title_font = _font(96, bold=True)
+    # Wordmark
+    title_font = _font(94, "black")
     title = "KLIKPHONE"
     tw = _text_w(draw, title, title_font)
-    ty = int(H * 0.50)
+    ty = int(H * 0.49)
     title_alpha = int(255 * p)
-    _draw_text_shadow(draw, ((W - tw) // 2, ty), title, title_font,
-                      fill=(255, 255, 255, title_alpha),
-                      shadow=(0, 0, 0, title_alpha // 2), offset=(0, 4))
+    draw.text(((W - tw) // 2 + 2, ty + 3), title, font=title_font,
+              fill=(0, 0, 0, title_alpha // 2))
+    draw.text(((W - tw) // 2, ty), title, font=title_font,
+              fill=(255, 255, 255, title_alpha))
 
     # Sous-titre
-    sub_font = _font(38)
+    sub_font = _font(34, "medium")
     sub = "Spécialiste Apple · Chambéry"
     sw = _text_w(draw, sub, sub_font)
-    draw.text(((W - sw) // 2, int(H * 0.585)), sub, font=sub_font,
-              fill=(220, 220, 235, int(240 * p)))
+    draw.text(((W - sw) // 2, int(H * 0.575)), sub, font=sub_font,
+              fill=(210, 210, 220, int(240 * p)))
 
-    # Séparateur orange
-    sep_w = int(220 * p)
-    sep_y = int(H * 0.64)
+    # Séparateur orange fin
+    sep_w = int(240 * p)
+    sep_y = int(H * 0.63)
     draw.rounded_rectangle([W // 2 - sep_w // 2, sep_y,
-                            W // 2 + sep_w // 2, sep_y + 5],
-                           radius=3, fill=ORANGE_BRIGHT + (int(255 * p),))
+                            W // 2 + sep_w // 2, sep_y + 4],
+                           radius=2, fill=ORANGE + (int(255 * p),))
 
     # Adresse
-    addr_font = _font(32)
+    addr_font = _font(28, "medium")
     addr = "79 Place Saint-Léger, 73000 Chambéry"
     aw = _text_w(draw, addr, addr_font)
-    draw.text(((W - aw) // 2, int(H * 0.68)), addr, font=addr_font,
-              fill=(235, 235, 245, int(240 * p)))
+    draw.text(((W - aw) // 2, int(H * 0.67)), addr, font=addr_font,
+              fill=(225, 225, 235, int(240 * p)))
 
-    # Téléphone
-    tel_font = _font(56, bold=True)
+    # Téléphone (accroche)
+    tel_font = _font(56, "bold")
     tel = "06 95 71 51 96"
     tw2 = _text_w(draw, tel, tel_font)
-    _draw_text_shadow(draw, ((W - tw2) // 2, int(H * 0.74)), tel, tel_font,
-                      fill=ORANGE_BRIGHT + (int(255 * p),),
-                      shadow=(0, 0, 0, int(120 * p)), offset=(0, 3))
+    draw.text(((W - tw2) // 2, int(H * 0.735)), tel, font=tel_font,
+              fill=ORANGE_SOFT + (int(255 * p),))
 
-    # Bouton KLIKPHONE.FR
-    btn_font = _font(42, bold=True)
+    # CTA button KLIKPHONE.FR
+    btn_font = _font(40, "bold")
     btn_text = "KLIKPHONE.FR"
     btn_tw = _text_w(draw, btn_text, btn_font)
     btn_w = btn_tw + 100
-    btn_h = 96
+    btn_h = 90
     btn_x = (W - btn_w) // 2
-    btn_y = int(H * 0.83)
+    btn_y = int(H * 0.84)
     # Glow bouton
     btn_glow = Image.new("RGBA", (btn_w + 100, btn_h + 100), (0, 0, 0, 0))
-    bgdraw = ImageDraw.Draw(btn_glow)
-    bgdraw.rounded_rectangle([50, 50, btn_w + 50, btn_h + 50],
-                             radius=btn_h // 2,
-                             fill=ORANGE + (int(180 * p),))
-    btn_glow = btn_glow.filter(ImageFilter.GaussianBlur(22))
-    img.alpha_composite(btn_glow, (btn_x - 50, btn_y - 50))
+    ImageDraw.Draw(btn_glow).rounded_rectangle(
+        [50, 50, btn_w + 50, btn_h + 50],
+        radius=btn_h // 2, fill=ORANGE + (int(160 * p),))
+    img.alpha_composite(
+        btn_glow.filter(ImageFilter.GaussianBlur(22)),
+        (btn_x - 50, btn_y - 50))
     # Bouton plein
     draw.rounded_rectangle([btn_x, btn_y, btn_x + btn_w, btn_y + btn_h],
                            radius=btn_h // 2,
                            fill=ORANGE + (int(255 * p),))
-    draw.text((btn_x + (btn_w - btn_tw) // 2, btn_y + 26), btn_text,
+    draw.text((btn_x + (btn_w - btn_tw) // 2, btn_y + 22), btn_text,
               font=btn_font, fill=(255, 255, 255, int(255 * p)))
 
+    _draw_vignette(img, strength=0.4)
     return img
