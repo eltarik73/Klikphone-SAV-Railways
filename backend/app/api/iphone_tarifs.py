@@ -346,11 +346,25 @@ def _ensure_table():
             ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS image_url TEXT;
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_ordre ON iphone_tarifs(ordre);
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_group ON iphone_tarifs(page_group);
-            -- iPhone 16 et 17 par défaut en Neuf (derniers modèles Apple)
-            UPDATE iphone_tarifs SET condition = 'Neuf'
-                WHERE condition IS NULL
-                  AND (slug LIKE 'iphone-16%' OR slug LIKE 'iphone-17%');
+            -- iPhone 16 et 17 sont Neuf (derniers modèles Apple).
+            -- Migration one-shot : corrige les rows qui avaient le default
+            -- 'Reconditionné Premium' par erreur. On protege l'admin qui aurait
+            -- deja change en autre chose en utilisant une cle params.
         """)
+        # Migration idempotente via params flag
+        cur.execute("SELECT valeur FROM params WHERE cle = 'migration_iphone16_17_neuf_v1'")
+        row = cur.fetchone()
+        already_migrated = row is not None
+        if not already_migrated:
+            cur.execute("""
+                UPDATE iphone_tarifs SET condition = 'Neuf'
+                WHERE (condition IS NULL OR condition = 'Reconditionné Premium')
+                  AND (slug LIKE 'iphone-16%' OR slug LIKE 'iphone-17%')
+            """)
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES ('migration_iphone16_17_neuf_v1', 'done')
+                ON CONFLICT (cle) DO NOTHING
+            """)
 
 
 def _seed_default_data():
