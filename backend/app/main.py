@@ -364,13 +364,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning autocompletion seed: {e}\n{traceback.format_exc()}")
 
-    # Default admin password
+    # Default admin password — lu depuis env var DEFAULT_ADMIN_PASSWORD.
+    # Si absent, on ne seed PAS de mot de passe en clair (security).
+    # Le password existant en DB est preserve (ON CONFLICT DO NOTHING).
     try:
+        default_admin_pwd = os.environ.get("DEFAULT_ADMIN_PASSWORD")
         with get_cursor() as cur:
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', 'caramail')
-                ON CONFLICT (cle) DO NOTHING
-            """)
+            if default_admin_pwd:
+                cur.execute(
+                    """INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', %s)
+                       ON CONFLICT (cle) DO NOTHING""",
+                    (default_admin_pwd,),
+                )
             cur.execute("""
                 INSERT INTO params (cle, valeur) VALUES ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
                 ON CONFLICT (cle) DO NOTHING

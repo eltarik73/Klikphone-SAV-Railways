@@ -101,6 +101,18 @@ ALLOWED_BACKUP_TABLES = frozenset([
     "telephones_vente", "fidelite_historique",
 ])
 
+import re as _re_sql
+_SAFE_IDENT = _re_sql.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+def _safe_ident(name: str) -> str:
+    """Protection defense-in-depth : meme si `name` sort de la whitelist,
+    on valide qu'il correspond a un identifiant SQL strict (lowercase,
+    underscore, digits, max 64 chars). Empeche toute injection f-string."""
+    if not isinstance(name, str) or not _SAFE_IDENT.match(name):
+        raise HTTPException(400, f"Nom de table/colonne invalide: {name!r}")
+    return name
+
 
 @router.get("/backup")
 async def export_backup(user: dict = Depends(get_current_user)):
@@ -109,7 +121,7 @@ async def export_backup(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         for table in ALLOWED_BACKUP_TABLES:
             try:
-                cur.execute(f"SELECT * FROM {table}")
+                cur.execute(f"SELECT * FROM {_safe_ident(table)}")
                 rows = cur.fetchall()
                 def serialize(v):
                     if isinstance(v, (datetime, date)):
@@ -146,7 +158,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             if table not in ALLOWED_BACKUP_TABLES:
                 continue
             if table in tables:
-                cur.execute(f"DELETE FROM {table}")
+                cur.execute(f"DELETE FROM {_safe_ident(table)}")
 
         for table in import_order:
             if table not in ALLOWED_BACKUP_TABLES:
@@ -155,13 +167,16 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             if not rows:
                 counts[table] = 0
                 continue
-            # Whitelist column names: only allow alphanumeric + underscore
-            cols = [c for c in rows[0].keys() if c.replace("_", "").isalnum()]
+            # Whitelist stricte des noms de colonnes via _safe_ident
+            cols = [_safe_ident(c.lower()) for c in rows[0].keys() if _SAFE_IDENT.match(c.lower())]
             placeholders = ", ".join(["%s"] * len(cols))
             col_names = ", ".join(cols)
             for row in rows:
                 vals = [row.get(c) for c in cols]
-                cur.execute(f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING", vals)
+                cur.execute(
+                    f"INSERT INTO {_safe_ident(table)} ({col_names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING",
+                    vals,
+                )
             counts[table] = len(rows)
 
         # Reset sequences
@@ -169,7 +184,10 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             if table not in ALLOWED_BACKUP_TABLES or table == "params":
                 continue
             try:
-                cur.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table}")
+                safe = _safe_ident(table)
+                cur.execute(
+                    f"SELECT setval(pg_get_serial_sequence('{safe}', 'id'), COALESCE(MAX(id), 1)) FROM {safe}"
+                )
             except Exception:
                 pass
 

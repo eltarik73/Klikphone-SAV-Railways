@@ -3,10 +3,12 @@ API CRUD Tickets — compatible schéma PostgreSQL existant.
 CRUD et gestion des statuts.
 """
 
+from collections import defaultdict, deque
 from datetime import datetime
+from time import time
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.database import get_cursor
 from app.api.autocomplete import learn_terms
@@ -19,6 +21,39 @@ from app.services.notifications import (
 )
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
+
+
+# ─── Rate limiter in-memory (protection enumeration tickets publics) ─
+# Simple token bucket par IP. Pas persistant (reset au redeploy), mais
+# suffit largement contre les attaquants automatises qui font > 30 req/min.
+_RATE_BUCKETS: dict[str, deque] = defaultdict(deque)
+_RATE_LIMIT = 30        # max 30 requetes
+_RATE_WINDOW = 60       # par 60 secondes
+
+
+def _rate_limit_public_lookup(request: Request):
+    """Raise 429 si l'IP depasse 30 req/min sur les endpoints publics."""
+    ip = request.client.host if request.client else "unknown"
+    # IP derriere Railway proxy -> header X-Forwarded-For
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        ip = xff.split(",")[0].strip()
+    now = time()
+    bucket = _RATE_BUCKETS[ip]
+    # Purge les hits plus vieux que la fenetre
+    while bucket and (now - bucket[0]) > _RATE_WINDOW:
+        bucket.popleft()
+    if len(bucket) >= _RATE_LIMIT:
+        raise HTTPException(
+            429,
+            "Trop de requetes — attendez 1 minute avant de reessayer.",
+        )
+    bucket.append(now)
+    # GC sommaire pour eviter fuite memoire (max 5000 IPs tracked)
+    if len(_RATE_BUCKETS) > 5000:
+        for k in list(_RATE_BUCKETS.keys())[:2500]:
+            if not _RATE_BUCKETS[k]:
+                del _RATE_BUCKETS[k]
 
 
 def _ajouter_historique(cur, ticket_id, type_event, contenu):
@@ -301,8 +336,9 @@ async def get_ticket(ticket_id: int):
 
 
 @router.get("/phone/{telephone}")
-async def get_tickets_by_phone(telephone: str):
+async def get_tickets_by_phone(telephone: str, request: Request):
     """Récupère les tickets par téléphone client (public — pour suivi client)."""
+    _rate_limit_public_lookup(request)
     with get_cursor() as cur:
         cur.execute("""
             SELECT t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
@@ -318,8 +354,9 @@ async def get_tickets_by_phone(telephone: str):
 
 
 @router.get("/code/{ticket_code}")
-async def get_ticket_by_code(ticket_code: str):
+async def get_ticket_by_code(ticket_code: str, request: Request):
     """Récupère un ticket par code (public — pour suivi client)."""
+    _rate_limit_public_lookup(request)
     with get_cursor() as cur:
         cur.execute("""
             SELECT t.*,

@@ -5,6 +5,7 @@ API Tarifs iPhones reconditionnés.
   reproduisant le layout des .docx historiques avec mention DAS obligatoire.
 """
 
+import hashlib
 import io
 import logging
 import re
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
@@ -37,6 +38,12 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
 FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 LOGO_PATH = ASSETS_DIR / "logo.png"
 
+# Dossier pour les photos uploadees manuellement par l'admin (hors repo)
+# Railway peut le reset au redeploy si pas monte en volume, mais au moins
+# dans la session courante les photos restent accessibles.
+UPLOADS_DIR = Path(__file__).parent.parent / "assets" / "iphone_uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 @router.get("/image/{filename}")
 def get_iphone_image(filename: str):
@@ -51,6 +58,85 @@ def get_iphone_image(filename: str):
         str(path),
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@router.get("/image-upload/{filename}")
+def get_iphone_upload(filename: str):
+    """Sert les photos uploadees manuellement par l'admin."""
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "Nom de fichier invalide")
+    path = UPLOADS_DIR / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, f"Upload {filename} introuvable")
+    return FileResponse(
+        str(path),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.post("/{tarif_id}/upload-image")
+async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...)):
+    """Upload une photo personnalisee depuis le navigateur de l'admin.
+
+    - Accepte JPEG, PNG, WebP (max 5 MB)
+    - Sauve dans UPLOADS_DIR avec hash pour eviter collisions
+    - Met a jour image_url de l'iphone_tarifs vers la route /image-upload/{filename}
+    """
+    # Valide existence du tarif
+    with get_cursor() as cur:
+        cur.execute("SELECT id, slug FROM iphone_tarifs WHERE id = %s", (tarif_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Tarif non trouvé")
+        slug = row["slug"] if isinstance(row, dict) else row[1]
+
+    # Valide le type + taille (5MB max)
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(413, "Fichier trop volumineux (max 5 Mo)")
+    if len(content) < 200:
+        raise HTTPException(400, "Fichier trop petit ou vide")
+
+    # Ext depuis content-type ou filename
+    ctype = (file.content_type or "").lower()
+    if "png" in ctype:
+        ext = "png"
+    elif "webp" in ctype:
+        ext = "webp"
+    elif "jpeg" in ctype or "jpg" in ctype:
+        ext = "jpg"
+    else:
+        # Fallback sur l'extension du filename
+        ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+        if ext not in ("jpg", "jpeg", "png", "webp"):
+            raise HTTPException(400, "Format non supporte (JPEG, PNG, WebP uniquement)")
+
+    h = hashlib.sha256(content).hexdigest()[:12]
+    filename = f"{slug}_{h}.{ext}"
+    path = UPLOADS_DIR / filename
+    path.write_bytes(content)
+
+    # Patch image_url pour pointer vers cette photo uploadee
+    image_url = f"/api/iphone-tarifs/image-upload/{filename}"
+    with get_cursor() as cur:
+        cur.execute(
+            "UPDATE iphone_tarifs SET image_url = %s, updated_at = NOW() WHERE id = %s",
+            (image_url, tarif_id),
+        )
+
+    # Invalide cache in-memory
+    try:
+        from app.api.iphones_stock import _invalidate_tarifs_cache
+        _invalidate_tarifs_cache()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "image_url": image_url,
+        "filename": filename,
+        "size": len(content),
+    }
 
 
 # ---------------------------------------------------------------------------

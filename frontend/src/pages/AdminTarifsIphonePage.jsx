@@ -187,6 +187,9 @@ export default function AdminTarifsIphonePage() {
       das_corps: row.das_corps,
       das_membre: row.das_membre,
       actif: row.actif,
+      // Inclure image_url pour que saveRow() preserve la photo choisie via le picker.
+      // undefined = omit dans le JSON (exclude_unset cote pydantic), null = effacer.
+      ...(row.image_url !== undefined ? { image_url: row.image_url } : {}),
     };
   }
 
@@ -832,7 +835,7 @@ export default function AdminTarifsIphonePage() {
                               )}
                               Photo
                               {r.image_url && (
-                                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900" title="Photo personnalisee definie" />
+                                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900" title="Photo personnalisée définie" />
                               )}
                             </button>
                             <button
