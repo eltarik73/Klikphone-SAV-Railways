@@ -454,20 +454,20 @@ export default function AdminTarifsSmartphonesPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" style={{ minWidth: '1000px', tableLayout: 'fixed' }}>
                 <thead className="bg-slate-800/60 text-slate-300 text-xs uppercase">
                   <tr>
-                    <th className="px-2 py-3 text-left w-[68px]">Photo</th>
+                    <th className="px-2 py-3 text-left w-[64px]">Photo</th>
                     <th className="px-2 py-3 text-left w-24">Marque</th>
-                    <th className="px-2 py-3 text-left min-w-[220px]">Modèle</th>
+                    <th className="px-2 py-3 text-left min-w-[180px]">Modèle</th>
                     <th className="px-2 py-3 text-left w-36">Condition</th>
-                    <th className="px-2 py-3 text-left w-20">Stock. 1</th>
-                    <th className="px-2 py-3 text-left w-[72px]">Prix 1</th>
-                    <th className="px-2 py-3 text-center w-14">Stk</th>
-                    <th className="px-2 py-3 text-left w-20 hidden xl:table-cell">Stock. 2</th>
-                    <th className="px-2 py-3 text-left w-[72px] hidden xl:table-cell">Prix 2</th>
-                    <th className="px-2 py-3 text-center w-14 hidden xl:table-cell">Stk</th>
-                    <th className="px-2 py-3 text-right w-32">Actions</th>
+                    <th className="px-2 py-3 text-left w-24">Stockage</th>
+                    <th className="px-2 py-3 text-left w-24">Prix €</th>
+                    <th className="px-2 py-3 text-center w-16">Stock</th>
+                    <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Stockage 2</th>
+                    <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Prix 2 €</th>
+                    <th className="px-2 py-3 text-center w-16 hidden xl:table-cell">Stock 2</th>
+                    <th className="px-2 py-3 text-right w-28">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -718,10 +718,14 @@ export default function AdminTarifsSmartphonesPage() {
           background: rgb(30 41 59 / 0.5);
           border: 1px solid rgb(51 65 85);
           border-radius: 0.5rem;
-          padding: 0.4rem 0.6rem;
+          padding: 0.45rem 0.55rem;
           color: white;
           transition: all 0.15s ease;
-          font-size: 0.875rem;
+          font-size: 0.925rem;
+          min-width: 0;
+        }
+        .input-cell[type="number"] {
+          font-variant-numeric: tabular-nums;
         }
         .input-cell:focus {
           outline: none;
