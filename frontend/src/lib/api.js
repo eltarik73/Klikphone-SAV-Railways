@@ -657,6 +657,13 @@ class ApiClient {
       body: JSON.stringify({ marque, modele, storage }),
     }, 15000);
   }
+  generateIphoneImage(modele, storage) {
+    // Meme pattern que generateSmartphoneImage : DuckDuckGo + validation fetch
+    return this.request('/api/iphone-tarifs/generate-image', {
+      method: 'POST',
+      body: JSON.stringify({ modele, storage }),
+    }, 15000);
+  }
 }
 
 export const api = new ApiClient();

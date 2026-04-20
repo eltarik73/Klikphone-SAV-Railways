@@ -4,6 +4,7 @@ import {
   Smartphone, Save, FileDown, Archive, ArrowLeft, Loader2, Check, X,
   Search, Filter, Rows, AlignJustify, Package, CheckCircle2, CircleOff,
   ChevronRight, AlertTriangle, Sparkles, Power, PowerOff,
+  Image as ImageIcon, Star, RefreshCw,
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -115,6 +116,8 @@ export default function AdminTarifsIphonePage() {
   const [dirty, setDirty] = useState({}); // { id: true }
   const [toast, setToast] = useState(null);
   const [selected, setSelected] = useState(new Set()); // Set<slug>
+  const [generatingId, setGeneratingId] = useState(null);
+  const [imagePicker, setImagePicker] = useState(null); // { row, candidates: [urls] }
 
   // Nouveaux états UI
   const [query, setQuery] = useState('');
@@ -197,6 +200,31 @@ export default function AdminTarifsIphonePage() {
       showToast('error', `Erreur : ${e.message}`, 3500);
     } finally {
       setSavingId(null);
+    }
+  }
+
+  // ─── Recherche d'image via DuckDuckGo (meme pattern que smartphones) ─
+  async function generateImage(row) {
+    setGeneratingId(row.id);
+    try {
+      const res = await api.generateIphoneImage(row.modele, row.stockage_1);
+      setImagePicker({ row, candidates: [res.image_url, ...(res.alternatives || [])] });
+    } catch (e) {
+      showToast('error', `Erreur recherche image : ${e.message}`, 3500);
+    } finally {
+      setGeneratingId(null);
+    }
+  }
+
+  async function chooseImage(row, url) {
+    try {
+      await api.patch(`/api/iphone-tarifs/${row.id}`, { image_url: url });
+      // Reflete l'image_url dans la row en memoire (optimistic)
+      setRows(rs => rs.map(r => r.id === row.id ? { ...r, image_url: url } : r));
+      setImagePicker(null);
+      showToast('success', 'Image enregistrée');
+    } catch (e) {
+      showToast('error', `Erreur : ${e.message}`, 3500);
     }
   }
 
@@ -750,6 +778,22 @@ export default function AdminTarifsIphonePage() {
                               </button>
                             )}
                             <button
+                              onClick={() => generateImage(r)}
+                              disabled={generatingId === r.id}
+                              title={r.image_url ? 'Remplacer la photo (rechercher DuckDuckGo)' : 'Rechercher une photo sur DuckDuckGo'}
+                              className="px-3 py-1.5 rounded bg-violet-600 hover:bg-violet-500 text-white text-xs flex items-center gap-1 disabled:opacity-50 transition relative"
+                            >
+                              {generatingId === r.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <ImageIcon className="w-3 h-3" />
+                              )}
+                              Photo
+                              {r.image_url && (
+                                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900" title="Photo personnalisee definie" />
+                              )}
+                            </button>
+                            <button
                               onClick={() => handlePdfOne(r)}
                               disabled={isDirty}
                               title={isDirty ? 'Enregistrez d\'abord' : 'Voir le PDF'}
@@ -791,6 +835,79 @@ export default function AdminTarifsIphonePage() {
           </>
         )}
       </main>
+
+      {/* Modal choix image (meme pattern que AdminTarifsSmartphonesPage) */}
+      {imagePicker && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setImagePicker(null)}
+        >
+          <div
+            className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-white/10 max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-white/10 bg-slate-900/95 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-violet-500/20">
+                  <ImageIcon className="w-5 h-5 text-violet-400" />
+                </div>
+                <div>
+                  <h3 className="font-black text-lg leading-tight">Choisir la photo</h3>
+                  <p className="text-sm text-slate-400">
+                    Apple {imagePicker.row.modele}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setImagePicker(null)}
+                className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 pt-4 pb-2">
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <Search className="w-4 h-4" />
+                <span>
+                  {imagePicker.candidates.length} photos trouvées via DuckDuckGo — cliquez sur la meilleure
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-5">
+              {imagePicker.candidates.map((url, i) => (
+                <button
+                  key={i}
+                  onClick={() => chooseImage(imagePicker.row, url)}
+                  className="group relative bg-white rounded-2xl overflow-hidden aspect-square flex items-center justify-center hover:ring-4 hover:ring-violet-500 transition-all shadow-lg hover:shadow-2xl hover:scale-[1.03]"
+                >
+                  <img
+                    src={url}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="max-w-full max-h-full object-contain p-4 group-hover:scale-110 transition-transform duration-300"
+                    onError={(e) => { e.target.style.opacity = '0.25'; }}
+                  />
+                  {i === 0 && (
+                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg">
+                      <Star className="w-3 h-3 fill-current" />
+                      RECOMMANDÉ
+                    </div>
+                  )}
+                  <div className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center bg-slate-900 text-white text-[11px] font-bold rounded-full shadow-lg">
+                    {i + 1}
+                  </div>
+                  <div className="absolute inset-0 bg-violet-500/0 group-hover:bg-violet-500/10 transition-colors" />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-violet-600 to-transparent text-white text-xs font-bold py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" /> Choisir cette photo
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         .input-cell {

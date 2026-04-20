@@ -9,9 +9,11 @@ import io
 import logging
 import re
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
@@ -20,6 +22,8 @@ from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.api.auth import get_current_user  # noqa: F401 (si besoin plus tard)
+# Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque
+from app.api.smartphones_tarifs import _fetch_image_for_pdf
 
 
 router = APIRouter(prefix="/api/iphone-tarifs", tags=["iphone-tarifs"])
@@ -47,6 +51,104 @@ def get_iphone_image(filename: str):
         str(path),
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Recherche d'image via DuckDuckGo (meme pattern que smartphones_tarifs)
+# ---------------------------------------------------------------------------
+class GenerateIphoneImageRequest(BaseModel):
+    modele: str
+    storage: Optional[str] = None
+
+
+@router.post("/generate-image")
+def generate_iphone_image(payload: GenerateIphoneImageRequest):
+    """Cherche une vraie photo d'iPhone sur le web via DuckDuckGo Images.
+
+    Meme logique que /api/smartphones-tarifs/generate-image :
+    - Recupere 10 candidats DDG
+    - Valide chaque URL avec un vrai fetch cote serveur (filtre les CDN
+      bloques par Cloudflare, 403, 500...)
+    - Retourne uniquement les URLs reellement telechargeables.
+
+    L'admin colle ensuite l'URL choisie dans le champ image_url du modele."""
+    import json
+    from urllib.parse import quote
+
+    query_parts = ["Apple", payload.modele]
+    if payload.storage:
+        query_parts.append(payload.storage)
+    query_parts.append("png transparent")
+    query = " ".join(query_parts)
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
+
+    try:
+        landing = httpx.get(
+            f"https://duckduckgo.com/?q={quote(query)}&iar=images",
+            headers=headers, timeout=10.0, follow_redirects=True,
+        )
+        m = re.search(r'vqd=[\'"]?(\d-[0-9\-]+)[\'"]?', landing.text)
+        if not m:
+            raise HTTPException(502, "Token DDG introuvable")
+        vqd = m.group(1)
+
+        api_url = (
+            f"https://duckduckgo.com/i.js?q={quote(query)}"
+            f"&o=json&p=-1&s=0&vqd={vqd}"
+        )
+        r = httpx.get(
+            api_url,
+            headers={**headers, "Referer": "https://duckduckgo.com/"},
+            timeout=10.0, follow_redirects=True,
+        )
+        r.raise_for_status()
+        data = json.loads(r.text)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("DDG image search (iphone) failed: %s", e)
+        raise HTTPException(502, f"Recherche image impossible : {e}")
+
+    results = data.get("results", [])
+    candidates = []
+    for res in results:
+        img_url = res.get("image")
+        if not img_url:
+            continue
+        if (res.get("width") or 0) and res.get("width", 0) < 300:
+            continue
+        candidates.append(img_url)
+        if len(candidates) >= 10:
+            break
+
+    if not candidates:
+        raise HTTPException(
+            404, f"Aucune image trouvée pour '{query}'. Essayez autre chose."
+        )
+
+    # Valide en parallele : ne garde que les URLs telechargeables cote serveur
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        fetched = list(ex.map(_fetch_image_for_pdf, candidates))
+    valid = [url for url, path in zip(candidates, fetched) if path]
+    if not valid:
+        valid = candidates
+        logger.warning(
+            "Aucune URL DDG telechargeable pour iPhone '%s'", query
+        )
+
+    return {
+        "image_url": valid[0],
+        "alternatives": valid[1:8],
+        "query": query,
+        "source": "duckduckgo_images",
+    }
 
 # Fonts Unicode — DejaVu Sans embarquée dans le repo (fonctionne sur Linux Railway et macOS dev).
 def _find_font(regular: bool = True, bold: bool = False, italic: bool = False) -> str:
@@ -99,6 +201,9 @@ def _ensure_table():
             ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_1 INTEGER DEFAULT 0;
             ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_2 INTEGER DEFAULT 0;
             ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS stock_3 INTEGER DEFAULT 0;
+            -- image_url = URL externe trouvee via DuckDuckGo (bouton Rechercher image).
+            -- Si presente, elle prime sur image_filename pour l'affichage web/vitrine.
+            ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS image_url TEXT;
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_ordre ON iphone_tarifs(ordre);
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_group ON iphone_tarifs(page_group);
             -- iPhone 16 et 17 par défaut en Neuf (derniers modèles Apple)
@@ -192,6 +297,7 @@ class IphoneTarifUpdate(BaseModel):
     page_group: Optional[str] = None
     actif: Optional[bool] = None
     condition: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +312,7 @@ def list_tarifs():
                    stockage_2, prix_2, stock_2,
                    stockage_3, prix_3, stock_3,
                    grade, das_tete, das_corps, das_membre,
-                   image_filename, page_group, actif, condition, updated_at
+                   image_filename, image_url, page_group, actif, condition, updated_at
             FROM iphone_tarifs
             ORDER BY ordre ASC
         """)

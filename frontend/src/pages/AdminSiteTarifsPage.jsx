@@ -82,9 +82,12 @@ function mapIphone(row) {
     key: `i-${row.id}`,
     marque: 'Apple',
     modele: row.modele,
-    image: row.image_filename
-      ? `${API_BASE}/api/iphone-tarifs/image/${encodeURIComponent(row.image_filename)}`
-      : null,
+    // Priorite : image_url (URL externe trouvee via DDG) > image_filename (asset local)
+    image: row.image_url
+      ? row.image_url
+      : row.image_filename
+        ? `${API_BASE}/api/iphone-tarifs/image/${encodeURIComponent(row.image_filename)}`
+        : null,
     condition: row.condition,
     grade: isNeuf ? 'Neuf' : (row.grade || 'Premium'),
     ordre: row.ordre ?? 999,
