@@ -45,6 +45,13 @@ def _ensure_table():
         """)
 
 
+_APPLE_CDN = "https://store.storeimages.cdn-apple.com/4982/as-images.apple.com/is"
+
+
+def _apple_url(slug: str) -> str:
+    return f"{_APPLE_CDN}/{slug}?wid=940&hei=1112&fmt=png-alpha&.v=1"
+
+
 def _seed_default():
     """Seed 12 iPhones initiaux si la table est vide."""
     with get_cursor() as cur:
@@ -54,25 +61,29 @@ def _seed_default():
         if count > 0:
             return
 
+        a = lambda slug: _apple_url(slug)
         data = [
             # (model, model_key, storage, color_name, color_hex, color_key, condition, price, old_price, stock, image_url)
             ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Neuf", 1299, 1499, 3,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG32.png"),
+             a("iphone-16-pro-finish-select-202409-6-9inch-naturaltitanium")),
             ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Noir", "#3a3a3e", "black-titanium", "Neuf", 1049, 1229, 5,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG36.png"),
+             a("iphone-16-pro-finish-select-202409-6-3inch-blacktitanium")),
             ("iPhone 16", "iphone-16", "128GB", "Bleu Ultramarin", "#3a5a8a", "ultramarine", "Neuf", 849, 969, 8,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
+             a("iphone-16-finish-select-202409-6-1inch-ultramarine")),
             ("iPhone 16", "iphone-16", "128GB", "Rose", "#f5c7c7", "pink", "Neuf", 849, 969, 4,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
+             a("iphone-16-finish-select-202409-6-1inch-pink")),
             ("iPhone 16", "iphone-16", "128GB", "Vert Sarcelle", "#7ea89a", "teal", "Neuf", 849, 969, 3,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG39.png"),
+             a("iphone-16-finish-select-202409-6-1inch-teal")),
             ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Reconditionné Premium", 949, 1099, 2,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
+             a("iphone-15-pro-finish-select-202309-6-7inch-naturaltitanium")),
             ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Bleu", "#2d4a6e", "blue-titanium", "Reconditionné Premium", 749, 899, 4,
-             "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
-            ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 649, 799, 3, None),
-            ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 499, 649, 5, None),
-            ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", "Reconditionné", 399, 499, 7, None),
+             a("iphone-15-pro-finish-select-202309-6-1inch-bluetitanium")),
+            ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 649, 799, 3,
+             a("iphone-14-pro-finish-select-202209-6-7inch-spaceblack")),
+            ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 499, 649, 5,
+             a("iphone-14-pro-finish-select-202209-6-1inch-deeppurple")),
+            ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", "Reconditionné", 399, 499, 7,
+             a("iphone-14-finish-select-202209-6-1inch-blue")),
             ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", "Reconditionné", 349, 449, 9, None),
             ("iPhone 12", "iphone-12", "64GB", "Bleu Pacifique", "#3a6a8a", "blue", "Reconditionné", 249, 349, 6, None),
         ]
@@ -90,43 +101,91 @@ def _seed_default():
 
 
 def _backfill_image_urls():
-    """Applique les URLs pngimg.com aux lignes existantes dont image_url est NULL.
-    Migration one-shot : ne touche que les rows sans image déjà définie."""
+    """Applique les URLs officielles apple.com aux lignes existantes
+    dont image_url est NULL. Migration one-shot : ne touche que les rows
+    sans image déjà définie (force=False).
+
+    Si la ligne a une image pngimg.com (ancien seed), on la remplace aussi
+    par l'officielle Apple (car pngimg est peu fiable)."""
     mappings = [
-        # (model, storage, color_name, url)
-        ("iPhone 16 Pro Max", "256GB", "Titane Naturel",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG32.png"),
-        ("iPhone 16 Pro", "128GB", "Titane Noir",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG36.png"),
-        ("iPhone 16", "128GB", "Noir",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
-        ("iPhone 16", "128GB", "Bleu Ultramarin",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
-        ("iPhone 16", "128GB", "Rose",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
-        ("iPhone 16", "128GB", "Vert Sarcelle",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG39.png"),
-        ("iPhone 15 Pro Max", "256GB", "Titane Bleu",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
-        ("iPhone 15 Pro Max", "256GB", "Titane Naturel",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
-        ("iPhone 15 Pro", "128GB", "Titane Naturel",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
-        ("iPhone 15 Pro", "128GB", "Titane Bleu",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
-        ("iPhone 15", "128GB", "Rose",
-         "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
+        # (model, color_name, slug Apple CDN)
+        # iPhone 16 Pro Max (6.9 inch)
+        ("iPhone 16 Pro Max", "Titane Naturel",
+         "iphone-16-pro-finish-select-202409-6-9inch-naturaltitanium"),
+        ("iPhone 16 Pro Max", "Titane Noir",
+         "iphone-16-pro-finish-select-202409-6-9inch-blacktitanium"),
+        ("iPhone 16 Pro Max", "Titane Blanc",
+         "iphone-16-pro-finish-select-202409-6-9inch-whitetitanium"),
+        ("iPhone 16 Pro Max", "Titane Désert",
+         "iphone-16-pro-finish-select-202409-6-9inch-deserttitanium"),
+        # iPhone 16 Pro (6.3 inch)
+        ("iPhone 16 Pro", "Titane Naturel",
+         "iphone-16-pro-finish-select-202409-6-3inch-naturaltitanium"),
+        ("iPhone 16 Pro", "Titane Noir",
+         "iphone-16-pro-finish-select-202409-6-3inch-blacktitanium"),
+        ("iPhone 16 Pro", "Titane Blanc",
+         "iphone-16-pro-finish-select-202409-6-3inch-whitetitanium"),
+        ("iPhone 16 Pro", "Titane Désert",
+         "iphone-16-pro-finish-select-202409-6-3inch-deserttitanium"),
+        # iPhone 16 (standard)
+        ("iPhone 16", "Noir",
+         "iphone-16-finish-select-202409-6-1inch-black"),
+        ("iPhone 16", "Blanc",
+         "iphone-16-finish-select-202409-6-1inch-white"),
+        ("iPhone 16", "Rose",
+         "iphone-16-finish-select-202409-6-1inch-pink"),
+        ("iPhone 16", "Vert Sarcelle",
+         "iphone-16-finish-select-202409-6-1inch-teal"),
+        ("iPhone 16", "Bleu Ultramarin",
+         "iphone-16-finish-select-202409-6-1inch-ultramarine"),
+        # iPhone 15 Pro Max (6.7 inch)
+        ("iPhone 15 Pro Max", "Titane Naturel",
+         "iphone-15-pro-finish-select-202309-6-7inch-naturaltitanium"),
+        ("iPhone 15 Pro Max", "Titane Bleu",
+         "iphone-15-pro-finish-select-202309-6-7inch-bluetitanium"),
+        ("iPhone 15 Pro Max", "Titane Blanc",
+         "iphone-15-pro-finish-select-202309-6-7inch-whitetitanium"),
+        ("iPhone 15 Pro Max", "Titane Noir",
+         "iphone-15-pro-finish-select-202309-6-7inch-blacktitanium"),
+        # iPhone 15 Pro (6.1 inch)
+        ("iPhone 15 Pro", "Titane Naturel",
+         "iphone-15-pro-finish-select-202309-6-1inch-naturaltitanium"),
+        ("iPhone 15 Pro", "Titane Bleu",
+         "iphone-15-pro-finish-select-202309-6-1inch-bluetitanium"),
+        # iPhone 14 Pro Max
+        ("iPhone 14 Pro Max", "Noir Sidéral",
+         "iphone-14-pro-finish-select-202209-6-7inch-spaceblack"),
+        ("iPhone 14 Pro Max", "Violet Intense",
+         "iphone-14-pro-finish-select-202209-6-7inch-deeppurple"),
+        ("iPhone 14 Pro Max", "Or",
+         "iphone-14-pro-finish-select-202209-6-7inch-gold"),
+        ("iPhone 14 Pro Max", "Argent",
+         "iphone-14-pro-finish-select-202209-6-7inch-silver"),
+        # iPhone 14 Pro
+        ("iPhone 14 Pro", "Noir Sidéral",
+         "iphone-14-pro-finish-select-202209-6-1inch-spaceblack"),
+        ("iPhone 14 Pro", "Violet Intense",
+         "iphone-14-pro-finish-select-202209-6-1inch-deeppurple"),
+        # iPhone 14
+        ("iPhone 14", "Bleu",
+         "iphone-14-finish-select-202209-6-1inch-blue"),
+        ("iPhone 14", "Minuit",
+         "iphone-14-finish-select-202209-6-1inch-midnight"),
     ]
     with get_cursor() as cur:
-        for model, storage, color_name, url in mappings:
+        for model, color_name, slug in mappings:
+            url = _apple_url(slug)
+            # Remplace si NULL, vide, ou si c'est une URL pngimg (ancien seed)
             cur.execute(
                 """
                 UPDATE iphones_stock
                 SET image_url = %s, updated_at = NOW()
-                WHERE model = %s AND storage = %s AND color_name = %s
-                  AND (image_url IS NULL OR image_url = '')
+                WHERE model = %s AND color_name = %s
+                  AND (image_url IS NULL
+                       OR image_url = ''
+                       OR image_url LIKE 'https://pngimg.com/%%')
                 """,
-                (url, model, storage, color_name),
+                (url, model, color_name),
             )
 
 

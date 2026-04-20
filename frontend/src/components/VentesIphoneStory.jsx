@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Smartphone, Check, Download, Share2, X, Loader2, Plus,
   Pencil, Trash2, RefreshCw, Film, Sparkles, Video,
+  ShieldCheck, Package2, Battery, Award, Zap, Truck,
 } from 'lucide-react';
 import api from '../lib/api';
 import { getIPhoneImage, PLACEHOLDER_SVG } from '../utils/appleCDN';
@@ -28,14 +29,45 @@ function conditionBadgeColor(condition) {
   return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
 }
 
+// Badges de confiance adaptés à la condition
+function trustBadges(condition) {
+  if (condition === 'Neuf') {
+    return [
+      { icon: Package2, label: 'Scellé Apple' },
+      { icon: ShieldCheck, label: 'Garantie 2 ans' },
+      { icon: Truck, label: 'Dispo boutique' },
+    ];
+  }
+  if (condition === 'Reconditionné Premium') {
+    return [
+      { icon: Award, label: '100% pièces Apple' },
+      { icon: Battery, label: 'Batterie 90%+' },
+      { icon: ShieldCheck, label: 'Garantie 12 mois' },
+    ];
+  }
+  return [
+    { icon: ShieldCheck, label: '100% satisfait' },
+    { icon: Battery, label: 'Batterie 85%+' },
+    { icon: Zap, label: 'Testé 40 points' },
+  ];
+}
+
+function tagline(condition) {
+  if (condition === 'Neuf') return 'Neuf scellé · livré avec accessoires';
+  if (condition === 'Reconditionné Premium') return 'Comme neuf · sans rayure visible';
+  return 'Reconditionné vérifié chez Klikphone';
+}
+
 function IphoneCard({ phone, selected, onToggle, adminMode, onEdit, onDelete }) {
   const [imgError, setImgError] = useState(false);
   const src = imgError ? PLACEHOLDER_SVG : getIPhoneImage(phone);
+  const savings = (phone.old_price || 0) - phone.price;
+  const badges = trustBadges(phone.condition);
 
   return (
     <div
       onClick={onToggle}
-      className={`relative cursor-pointer rounded-2xl border transition-all overflow-hidden group ${
+      className={`relative cursor-pointer rounded-2xl border transition-all overflow-hidden group flex flex-col ${
         selected
           ? 'border-orange-500 ring-2 ring-orange-500/40 shadow-[0_0_0_4px_rgba(232,100,26,0.08)]'
           : 'border-white/10 hover:border-white/25'
@@ -44,7 +76,7 @@ function IphoneCard({ phone, selected, onToggle, adminMode, onEdit, onDelete }) 
     >
       {/* Checkbox orange */}
       <div
-        className={`absolute top-3 right-3 z-10 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+        className={`absolute top-3 right-3 z-20 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
           selected
             ? 'bg-orange-500 border-orange-500'
             : 'bg-black/40 border-white/30 group-hover:border-white/50'
@@ -53,46 +85,81 @@ function IphoneCard({ phone, selected, onToggle, adminMode, onEdit, onDelete }) 
         {selected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
       </div>
 
-      {/* Condition badge */}
+      {/* Badge condition */}
       <div
-        className={`absolute top-3 left-3 z-10 text-[10px] font-bold px-2 py-1 rounded-md border ${conditionBadgeColor(phone.condition)}`}
+        className={`absolute top-3 left-3 z-20 text-[10px] font-bold px-2 py-1 rounded-md border uppercase tracking-wider ${conditionBadgeColor(phone.condition)}`}
       >
         {phone.condition}
       </div>
 
+      {/* Pill économies */}
+      {savings > 0 && (
+        <div className="absolute top-12 left-3 z-20 text-[10px] font-black px-2 py-0.5 rounded-md bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/20">
+          ÉCONOMIE −{savings}€
+        </div>
+      )}
+
       {/* Photo iPhone */}
-      <div className="relative h-52 flex items-center justify-center p-4"
+      <div
+        className="relative h-56 flex items-center justify-center p-5"
         style={{
-          background: `radial-gradient(circle at center, ${phone.color_hex || '#333'}20 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse at center, ${phone.color_hex || '#333'}30 0%, transparent 65%)`,
         }}
       >
         <img
           src={src}
           alt={phone.model}
-          className="max-h-full max-w-full object-contain drop-shadow-2xl"
+          className="max-h-full max-w-full object-contain drop-shadow-2xl transition-transform duration-300 group-hover:scale-105"
           onError={() => setImgError(true)}
           loading="lazy"
         />
       </div>
 
-      {/* Info */}
-      <div className="px-4 pb-4 pt-2">
-        <div className="flex items-center gap-1.5 text-white font-bold text-sm tracking-tight">
-          <AppleLogo className="w-3 h-3 text-white" fill="white" />
+      {/* Bloc infos */}
+      <div className="px-4 pb-4 flex-1 flex flex-col">
+        {/* Modèle + Apple */}
+        <div className="flex items-center gap-1.5 text-white font-bold text-[15px] tracking-tight">
+          <AppleLogo className="w-3 h-3" fill="white" />
           <span>{phone.model}</span>
         </div>
+
+        {/* Storage + couleur */}
         <div className="text-white/60 text-xs mt-0.5">
           {phone.storage} · {phone.color_name}
         </div>
-        <div className="flex items-baseline gap-2 mt-2">
-          <span className="text-white font-black text-2xl tracking-tight">{phone.price}€</span>
+
+        {/* Tagline marketing */}
+        <div className="text-orange-300/90 text-[11px] mt-2 font-medium italic">
+          {tagline(phone.condition)}
+        </div>
+
+        {/* Prix + ancien prix */}
+        <div className="flex items-baseline gap-2 mt-3">
+          <span className="text-white font-black text-[26px] tracking-tight leading-none">
+            {phone.price}€
+          </span>
           {phone.old_price > phone.price && (
             <span className="text-white/40 text-xs line-through">{phone.old_price}€</span>
           )}
         </div>
-        <div className="flex items-center justify-between mt-2">
-          <span className="text-[10px] text-white/50 uppercase tracking-wider font-semibold">
-            Stock: {phone.stock}
+
+        {/* Badges de confiance */}
+        <div className="mt-3 grid grid-cols-1 gap-1">
+          {badges.map(({ icon: Icon, label }) => (
+            <div key={label} className="flex items-center gap-1.5 text-[10.5px] text-white/70 font-medium">
+              <Icon className="w-3 h-3 text-emerald-400 shrink-0" strokeWidth={2.5} />
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer : stock + admin */}
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
+          <span className={`text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 ${
+            phone.stock > 0 ? 'text-emerald-400' : 'text-red-400'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${phone.stock > 0 ? 'bg-emerald-400' : 'bg-red-400'}`} />
+            {phone.stock > 0 ? `En stock · ${phone.stock}` : 'Rupture'}
           </span>
           {adminMode && (
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
