@@ -1,9 +1,25 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { motion, useScroll, useTransform, useReducedMotion } from 'framer-motion';
 import {
   Sparkles, Shield, Zap, Package, Check, Star,
   Smartphone, MapPin, Phone, Clock, Tv, Loader2, QrCode,
   Maximize, Minimize, Share2, Settings, X,
 } from 'lucide-react';
+
+// ─── Motion helpers (pattern Viktor Oddy / Claude Design) ──────
+const fadeUp = (delay = 0, y = 24) => ({
+  initial: { opacity: 0, y },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] },
+});
+const heroContainer = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } },
+};
+const heroItem = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
+};
 
 // ─── Settings (localStorage) ────────────────────────────────────
 const DEFAULT_SETTINGS = {
@@ -222,17 +238,54 @@ function SettingsPanel({ open, onClose, settings, update, reset }) {
   );
 }
 
+// ─── Scroll-driven word reveal (pattern Viktor Oddy) ─────────
+function ScrollRevealHeading({ text, className }) {
+  const ref = useRef(null);
+  const reduceMotion = useReducedMotion();
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start 0.9", "start 0.3"],
+  });
+  const words = text.split(' ');
+  if (reduceMotion) {
+    return <h3 ref={ref} className={className}>{text}</h3>;
+  }
+  return (
+    <h3 ref={ref} className={className}>
+      {words.map((word, i) => (
+        <Word key={i} progress={scrollYProgress} range={[i / words.length, (i + 1) / words.length]}>
+          {word}
+        </Word>
+      ))}
+    </h3>
+  );
+}
+function Word({ progress, range, children }) {
+  const opacity = useTransform(progress, range, [0.18, 1]);
+  return (
+    <motion.span style={{ opacity }} className="inline-block mr-[0.25em]">
+      {children}
+    </motion.span>
+  );
+}
+
 // ─── Hero Card (grand format, crossfade) ───────────────────────
 function HeroShowcase({ phone, settings }) {
   const minPrice = Math.min(...phone.variants.map(v => v.prix));
+  const reduceMotion = useReducedMotion();
 
   return (
-    <div
+    <motion.div
       key={phone.key}
-      className="relative h-full flex items-center gap-12 px-16 animate-hero-in"
+      variants={reduceMotion ? undefined : heroContainer}
+      initial={reduceMotion ? undefined : "hidden"}
+      animate={reduceMotion ? undefined : "show"}
+      className="relative h-full flex items-center gap-12 px-16"
     >
       {/* Left : image — brute, pas d'effet */}
-      <div className="relative flex-[1] h-full flex items-center justify-center">
+      <motion.div
+        variants={reduceMotion ? undefined : heroItem}
+        className="relative flex-[1] h-full flex items-center justify-center">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[42rem] h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
         </div>
@@ -244,21 +297,21 @@ function HeroShowcase({ phone, settings }) {
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
-      </div>
+      </motion.div>
 
       {/* Right : infos */}
       <div className="relative flex-[1] max-w-xl">
-        <div className="liquid-glass inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-amber-300 text-xs font-bold uppercase tracking-[0.25em] mb-6">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="liquid-glass inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-amber-300 text-xs font-bold uppercase tracking-[0.25em] mb-6">
           <Sparkles className="w-3 h-3" />
           Coup de cœur
-        </div>
-        <p className="font-display text-2xl uppercase tracking-[0.35em] text-violet-300/80 mb-3">
+        </motion.div>
+        <motion.p variants={reduceMotion ? undefined : heroItem} className="font-display text-2xl uppercase tracking-[0.35em] text-violet-300/80 mb-3">
           {phone.marque} <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">reconditionné</span>
-        </p>
-        <h2 className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6 tracking-[-0.02em]">
+        </motion.p>
+        <motion.h2 variants={reduceMotion ? undefined : heroItem} className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6 tracking-[-0.02em]">
           {phone.modele}
-        </h2>
-        <div className="flex items-center gap-3 flex-wrap mb-8">
+        </motion.h2>
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-center gap-3 flex-wrap mb-8">
           <span className={`liquid-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold
             ${phone.grade === 'Neuf' ? 'text-emerald-300' : 'text-violet-200'}`}>
             {phone.grade === 'Neuf' ? <Sparkles className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
@@ -270,30 +323,30 @@ function HeroShowcase({ phone, settings }) {
               Garantie {settings.garantieText}
             </span>
           )}
-        </div>
+        </motion.div>
 
-        <div className="flex items-end gap-6 mb-10">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-end gap-6 mb-10">
           <div>
             <p className="text-sm uppercase tracking-[0.3em] text-slate-400 mb-2">À partir de</p>
             <p className="font-display font-extrabold text-[7rem] leading-none bg-gradient-to-br from-amber-200 via-amber-400 to-orange-500 bg-clip-text text-transparent">
               {minPrice}€
             </p>
           </div>
-        </div>
+        </motion.div>
 
-        <div className="flex flex-wrap gap-3">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex flex-wrap gap-3">
           {phone.variants.map(v => (
             <div
               key={v.stockage}
-              className="px-5 py-3 rounded-2xl border border-white/15 bg-white/5 backdrop-blur-sm text-sm font-semibold text-white"
+              className="liquid-glass px-5 py-3 rounded-2xl text-sm font-semibold text-white"
             >
               <div className="text-base font-bold">{v.stockage}</div>
               <div className="text-amber-300 text-lg mt-0.5">{v.prix}€</div>
             </div>
           ))}
-        </div>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -650,11 +703,13 @@ export default function AdminSiteTarifsPage() {
           <section className="relative z-10 max-w-[1800px] mx-auto px-8 py-10">
             <div className="flex items-baseline justify-between mb-6">
               <div>
-                <h3 className="font-display font-extrabold text-3xl text-white">
-                  Le reste du catalogue
-                </h3>
+                <ScrollRevealHeading
+                  text="Le reste du catalogue"
+                  className="font-display font-extrabold text-3xl text-white leading-tight"
+                />
                 <p className="text-sm text-slate-400 mt-1">
-                  {phones.length - 1} modèles disponibles · mise à jour continue
+                  <span className="font-editorial text-base text-amber-200/90 mr-1">tous</span>
+                  les {phones.length - 1} modèles disponibles · mise à jour continue
                 </p>
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-400 uppercase tracking-[0.25em]">
@@ -668,7 +723,15 @@ export default function AdminSiteTarifsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {orbit.map((phone, i) => (
-                <MiniCard key={phone.key} phone={phone} highlight={i === 0} />
+                <motion.div
+                  key={phone.key}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-80px" }}
+                  transition={{ duration: 0.5, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <MiniCard phone={phone} highlight={i === 0} />
+                </motion.div>
               ))}
             </div>
           </section>
