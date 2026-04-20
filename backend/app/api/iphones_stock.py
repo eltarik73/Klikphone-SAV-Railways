@@ -89,10 +89,55 @@ def _seed_default():
         logger.info("iphones_stock : %d modèles seed", len(data))
 
 
+def _backfill_image_urls():
+    """Applique les URLs pngimg.com aux lignes existantes dont image_url est NULL.
+    Migration one-shot : ne touche que les rows sans image déjà définie."""
+    mappings = [
+        # (model, storage, color_name, url)
+        ("iPhone 16 Pro Max", "256GB", "Titane Naturel",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG32.png"),
+        ("iPhone 16 Pro", "128GB", "Titane Noir",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG36.png"),
+        ("iPhone 16", "128GB", "Noir",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
+        ("iPhone 16", "128GB", "Bleu Ultramarin",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG34.png"),
+        ("iPhone 16", "128GB", "Rose",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
+        ("iPhone 16", "128GB", "Vert Sarcelle",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG39.png"),
+        ("iPhone 15 Pro Max", "256GB", "Titane Bleu",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
+        ("iPhone 15 Pro Max", "256GB", "Titane Naturel",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG15.png"),
+        ("iPhone 15 Pro", "128GB", "Titane Naturel",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
+        ("iPhone 15 Pro", "128GB", "Titane Bleu",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG38.png"),
+        ("iPhone 15", "128GB", "Rose",
+         "https://pngimg.com/uploads/iphone16/iphone16_PNG37.png"),
+    ]
+    with get_cursor() as cur:
+        for model, storage, color_name, url in mappings:
+            cur.execute(
+                """
+                UPDATE iphones_stock
+                SET image_url = %s, updated_at = NOW()
+                WHERE model = %s AND storage = %s AND color_name = %s
+                  AND (image_url IS NULL OR image_url = '')
+                """,
+                (url, model, storage, color_name),
+            )
+
+
 def init_iphones_stock():
     """À appeler au startup (lifespan de main.py)."""
     _ensure_table()
     _seed_default()
+    try:
+        _backfill_image_urls()
+    except Exception as e:
+        logger.warning("Backfill image_urls: %s", e)
 
 
 # ---------------------------------------------------------------------------
