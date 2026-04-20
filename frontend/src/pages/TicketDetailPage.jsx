@@ -51,8 +51,8 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
             <X className="w-3.5 h-3.5" /> Fermer
           </button>
         ) : (
-          <button onClick={onEdit} className="btn-ghost p-1.5" title="Modifier">
-            <Edit3 className="w-3.5 h-3.5" />
+          <button type="button" onClick={onEdit} className="btn-ghost p-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" title="Modifier" aria-label={`Modifier ${title}`}>
+            <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         )}
       </div>
@@ -673,9 +673,21 @@ export default function TicketDetailPage() {
   };
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(ticket.ticket_code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const code = ticket?.ticket_code;
+    if (!code) return;
+    const show = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(code).then(show).catch((err) => {
+        console.warn('[TicketDetailPage] clipboard write failed', err);
+        toast.error('Impossible de copier le code');
+      });
+    } else {
+      console.warn('[TicketDetailPage] clipboard API not available');
+      toast.error('Copie non supportée par ce navigateur');
+    }
   };
 
   const handleSendCaisse = async () => {
@@ -1164,20 +1176,20 @@ export default function TicketDetailPage() {
                     <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
                       {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
                     </span>
-                    <button onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors" title="Supprimer">
-                      <Trash2 className="w-3 h-3" />
+                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" title="Supprimer" aria-label="Supprimer cette note">
+                      <Trash2 className="w-3 h-3" aria-hidden="true" />
                     </button>
                   </div>
                 );
               })}
-              {timelineEntries.filter(e => e.type !== 'history').map((entry, i) => {
+              {timelineEntries.filter(e => e.type !== 'history').map((entry) => {
                 const textColor = entry.type === 'attention' ? 'text-red-600 font-semibold' : entry.type === 'internal' ? 'text-blue-600' : 'text-emerald-600';
                 return (
-                  <div key={`tl-${i}`} className="flex items-start gap-2 py-1.5">
+                  <div key={`tl-${entry.raw}`} className="flex items-start gap-2 py-1.5">
                     <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
                     {entry.timestamp && <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>}
-                    <button onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors" title="Supprimer">
-                      <Trash2 className="w-3 h-3" />
+                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="p-0.5 text-slate-300 hover:text-red-500 shrink-0 mt-0.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" title="Supprimer" aria-label="Supprimer cette entrée">
+                      <Trash2 className="w-3 h-3" aria-hidden="true" />
                     </button>
                   </div>
                 );
@@ -1195,7 +1207,7 @@ export default function TicketDetailPage() {
                   <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" />
                   <div className="space-y-0.5">
                     {timelineEntries.filter(e => e.type === 'history').map((entry, i) => (
-                      <div key={i} className="relative flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors">
+                      <div key={`hist-${entry.timestamp || ''}-${i}`} className="relative flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors">
                         <div className="absolute -left-4 top-3 w-2 h-2 rounded-full bg-brand-400 z-10" />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-slate-500">{entry.text}</p>
@@ -1219,7 +1231,7 @@ export default function TicketDetailPage() {
                 <h2 className="text-sm font-semibold text-slate-800">Réparation & Tarifs</h2>
               </div>
               {!editingPricing && (
-                <button onClick={() => setEditingPricing(true)} className="btn-ghost p-1.5" title="Modifier"><Edit3 className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={() => setEditingPricing(true)} className="btn-ghost p-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" title="Modifier" aria-label="Modifier la réparation et les tarifs"><Edit3 className="w-3.5 h-3.5" aria-hidden="true" /></button>
               )}
               {editingPricing && (
                 <div className="flex items-center gap-1.5">
@@ -1655,8 +1667,14 @@ export default function TicketDetailPage() {
               {/* Ticket code */}
               <div className="flex items-center gap-3">
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
-                <button onClick={handleCopyCode} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Copier le code">
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                  title="Copier le code"
+                  aria-label={copied ? 'Code copié' : 'Copier le code du ticket'}
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> : <Copy className="w-4 h-4 text-slate-400" aria-hidden="true" />}
                 </button>
                 {t.est_retour_sav && (
                   <span className="px-2.5 py-1 rounded-full bg-red-500/20 text-red-300 text-xs font-bold flex items-center gap-1">

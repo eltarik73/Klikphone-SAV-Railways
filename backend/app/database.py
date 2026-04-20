@@ -27,9 +27,12 @@ def get_pool():
             sep = "&" if "?" in database_url else "?"
             database_url = f"{database_url}{sep}sslmode=require"
 
+        # Pool sizing Railway : minconn=2 pour warm-start, maxconn=10 pour
+        # rester sous la limite Supabase (free=60, paid=200 par project) en
+        # laissant de la marge pour workers parallèles.
         _pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=2,
-            maxconn=20,
+            maxconn=10,
             dsn=database_url,
             connect_timeout=10,
             keepalives=1,

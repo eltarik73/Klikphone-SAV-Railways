@@ -9,6 +9,7 @@ import {
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
   SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
+  TrendingUp, Clock, Euro, Percent, Sparkles, Maximize2, Minimize2, Inbox,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -30,7 +31,18 @@ export default function DashboardPage() {
   const [sortField, setSortField] = useState('date_depot');
   const [sortDir, setSortDir] = useState('desc');
   const [page, setPage] = useState(0);
+  const [compactMode, setCompactMode] = useState(() => localStorage.getItem('kp_compact_mode') === '1');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const searchTimer = useRef(null);
+
+  const toggleCompact = () => {
+    setCompactMode(prev => {
+      const next = !prev;
+      localStorage.setItem('kp_compact_mode', next ? '1' : '0');
+      return next;
+    });
+  };
 
   // Debounced search (300ms)
   useEffect(() => {
@@ -212,8 +224,43 @@ export default function DashboardPage() {
     if (interactionTicketIds) {
       list = list.filter(t => interactionTicketIds.has(t.id));
     }
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      list = list.filter(t => t.date_depot && new Date(t.date_depot) >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      list = list.filter(t => t.date_depot && new Date(t.date_depot) <= to);
+    }
     return list;
-  }, [tickets, filterTech, techName, interactionTicketIds]);
+  }, [tickets, filterTech, techName, interactionTicketIds, dateFrom, dateTo]);
+
+  // Extra KPIs derived client-side for the enhanced header
+  const extraKpis = useMemo(() => {
+    const today = new Date();
+    const startDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    let todayCount = 0;
+    let enAttente = 0;
+    let ca = 0;
+    let totalClos = 0;
+    let reparesOk = 0;
+    for (const t of tickets) {
+      const dep = t.date_depot ? new Date(t.date_depot).getTime() : 0;
+      if (dep >= startDay) todayCount++;
+      if (['En attente de diagnostic', "En attente d'accord client", 'En attente de pièce'].includes(t.statut)) enAttente++;
+      if (!['Clôturé'].includes(t.statut)) {
+        const prix = Number(t.tarif_final || t.devis_estime || 0);
+        if (prix > 0) ca += prix;
+      }
+      if (['Rendu au client', 'Clôturé', 'Réparation terminée'].includes(t.statut)) {
+        totalClos++;
+        if (t.statut !== 'Irréparable') reparesOk++;
+      }
+    }
+    const taux = totalClos > 0 ? Math.round((reparesOk / totalClos) * 100) : 0;
+    return { todayCount, enAttente, ca, taux };
+  }, [tickets]);
 
   const activeTickets = useMemo(() => filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
@@ -314,6 +361,18 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+      {/* Local styles: custom scrollbar, stagger, drag handle */}
+      <style>{`
+        .kp-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+        .kp-scroll::-webkit-scrollbar-track { background: transparent; }
+        .kp-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #c7d2fe, #a5b4fc); border-radius: 9999px; }
+        .kp-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #a5b4fc, #818cf8); }
+        .kp-scroll { scrollbar-width: thin; scrollbar-color: #a5b4fc transparent; }
+        .kp-snap-x { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+        .kp-snap-x > * { scroll-snap-align: start; }
+        .kp-drag-handle { cursor: grab; }
+        .kp-drag-handle:active { cursor: grabbing; }
+      `}</style>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -330,6 +389,9 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={toggleCompact} className="btn-ghost p-2.5" title={compactMode ? 'Mode confortable' : 'Mode compact'}>
+            {compactMode ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+          </button>
           <button onClick={() => mutate()} className="btn-ghost p-2.5" title="Rafraîchir">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -337,6 +399,35 @@ export default function DashboardPage() {
             <Plus className="w-4 h-4" /> Nouveau ticket
           </button>
         </div>
+      </div>
+
+      {/* Business KPIs — hero header (snap-scroll on mobile) */}
+      <div className="flex lg:grid lg:grid-cols-4 gap-3 mb-4 overflow-x-auto sm:overflow-visible kp-scroll kp-snap-x pb-2 lg:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
+        {[
+          { label: "Tickets aujourd'hui", value: extraKpis.todayCount, icon: Sparkles, gradient: 'from-brand-500 to-indigo-600', accent: 'bg-brand-500/10 text-brand-600' },
+          { label: 'En attente', value: extraKpis.enAttente, icon: Clock, gradient: 'from-amber-500 to-orange-600', accent: 'bg-amber-500/10 text-amber-600' },
+          { label: 'CA estimé', value: formatPrix(extraKpis.ca), icon: Euro, gradient: 'from-emerald-500 to-teal-600', accent: 'bg-emerald-500/10 text-emerald-600' },
+          { label: 'Taux de réparation', value: `${extraKpis.taux}%`, icon: Percent, gradient: 'from-violet-500 to-fuchsia-600', accent: 'bg-violet-500/10 text-violet-600' },
+        ].map(({ label, value, icon: Icon, gradient, accent }, i) => (
+          <div key={label}
+            className="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-4 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 animate-in shrink-0 w-[240px] lg:w-auto"
+            style={{ animationDelay: `${i * 60}ms` }}>
+            <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 blur-2xl`} />
+            <div className="flex items-start justify-between relative">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</p>
+                <p className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight mt-1 truncate">{value}</p>
+              </div>
+              <div className={`w-10 h-10 rounded-xl ${accent} flex items-center justify-center shrink-0`}>
+                <Icon className="w-5 h-5" />
+              </div>
+            </div>
+            <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div className={`h-full bg-gradient-to-r ${gradient} rounded-full transition-all`}
+                style={{ width: i === 3 ? `${Math.min(100, extraKpis.taux)}%` : '100%' }} />
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* KPI Grid — 5 cards cliquables */}
@@ -446,13 +537,33 @@ export default function DashboardPage() {
       {/* Search & Filters */}
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Rechercher par nom, téléphone, code, marque, modèle..."
+              <input type="text" placeholder="Rechercher nom, téléphone, IMEI, code, marque..."
                 value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+                className="w-full pl-10 pr-9 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
               />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(0); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/50 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+                className="bg-transparent text-xs text-slate-700 outline-none w-[120px]" title="Date depuis" />
+              <span className="text-slate-300">→</span>
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
+                className="bg-transparent text-xs text-slate-700 outline-none w-[120px]" title="Date jusque" />
+              {(dateFrom || dateTo) && (
+                <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600" title="Réinitialiser dates">
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
             {teamList.length > 0 && (
               <select value={filterTech} onChange={e => { setFilterTech(e.target.value); setPage(0); }}
@@ -468,7 +579,7 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
+        <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto kp-scroll bg-slate-50/50">
           {filterTabs.map(({ label, value }) => (
             <button key={value} onClick={() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(['Rendu au client', 'Clôturé'].includes(value)); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
@@ -582,18 +693,32 @@ export default function DashboardPage() {
             ))}
           </div>
         ) : displayedTickets.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <Smartphone className="w-7 h-7 text-slate-300" />
+          <div className="py-20 text-center animate-in">
+            <div className="relative w-20 h-20 mx-auto mb-5">
+              <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-brand-100 to-indigo-100 blur-xl opacity-60" />
+              <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-50 to-indigo-50 border border-brand-100 flex items-center justify-center">
+                <Inbox className="w-9 h-9 text-brand-400" />
+              </div>
             </div>
-            <p className="text-slate-500 font-medium">Aucun ticket trouvé</p>
-            <p className="text-sm text-slate-400 mt-1">Modifiez vos filtres ou créez un nouveau ticket</p>
+            <p className="text-slate-700 font-semibold text-base">Aucun ticket trouvé</p>
+            <p className="text-sm text-slate-400 mt-1.5 max-w-xs mx-auto">
+              {search || dateFrom || dateTo || filterStatut || filterTech
+                ? 'Essayez d\'ajuster vos filtres pour voir plus de résultats.'
+                : 'C\'est le calme ! Créez un nouveau ticket pour démarrer.'}
+            </p>
+            <button onClick={() => navigate('/client')}
+              className="btn-primary mt-5 inline-flex items-center gap-1.5 text-sm">
+              <Plus className="w-4 h-4" /> Nouveau ticket
+            </button>
           </div>
         ) : (
           <div className="divide-y divide-slate-100/80">
-            {displayedTickets.map((t) => (
+            {displayedTickets.map((t, rowIdx) => (
               <div key={t.id}
-                className="lg:grid lg:grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-4 sm:px-5 py-3 hover:bg-brand-50/40 transition-colors group"
+                className={`lg:grid lg:grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-4 sm:px-5 ${compactMode ? 'py-2' : 'py-3'} hover:bg-brand-50/40 hover:shadow-[inset_3px_0_0_0] hover:shadow-brand-500 transition-all duration-200 group relative animate-in`}
+                style={{ animationDelay: `${Math.min(rowIdx * 25, 400)}ms`, borderLeft: `3px solid transparent`, borderLeftColor: 'transparent' }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = getStatusConfig(t.statut).color; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = 'transparent'; }}
               >
                 {/* Checkbox */}
                 <div className="hidden lg:flex items-center justify-center">
@@ -634,13 +759,13 @@ export default function DashboardPage() {
                 {/* Client */}
                 <div className="min-w-0 mt-1 lg:mt-0 cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                    <div className={`${compactMode ? 'w-6 h-6' : 'w-7 h-7'} rounded-full bg-gradient-to-br from-brand-100 to-indigo-100 flex items-center justify-center shrink-0 ring-2 ring-white shadow-sm group-hover:scale-110 transition-transform duration-200`}>
                       <span className="text-brand-700 font-bold text-[10px]">
                         {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-800 truncate" title={`${t.client_prenom || ''} ${t.client_nom || ''}`.trim()}>
+                      <p className="text-sm font-bold text-slate-900 truncate tracking-tight" title={`${t.client_prenom || ''} ${t.client_nom || ''}`.trim()}>
                         {t.client_prenom || ''} {t.client_nom || ''}
                         {t.client_carte_camby ? <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold align-middle">🎫 Camby</span> : null}
                       </p>
@@ -795,9 +920,19 @@ export default function DashboardPage() {
                   )}
                 </div>
 
-                {/* Arrow */}
-                <div className="hidden lg:flex justify-end cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
+                {/* Drag handle + arrow */}
+                <div className="hidden lg:flex items-center justify-end gap-1">
+                  <div className="kp-drag-handle opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5 px-1 py-0.5 rounded hover:bg-slate-100" title="Glisser pour déplacer">
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                    <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
+                  </div>
+                  <button className="p-0.5 rounded cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 group-hover:translate-x-0.5 transition-all" />
+                  </button>
                 </div>
               </div>
             ))}

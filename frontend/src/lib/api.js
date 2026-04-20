@@ -6,15 +6,76 @@
 const API_URL = import.meta.env.VITE_API_URL || '';
 const BACKEND_URL = API_URL.trim();
 
+// Default TTL for the in-memory GET cache (ms)
+const DEFAULT_CACHE_TTL = 30_000;
+
+// Build stable querystrings — avoids re-allocating URLSearchParams for
+// identical param objects (tarifs/iphones are called in tight loops).
+const _qsCache = new Map();
+function buildQuery(params) {
+  if (!params) return '';
+  const keys = Object.keys(params);
+  if (keys.length === 0) return '';
+  // Stable key: sort to make {a,b} === {b,a}
+  keys.sort();
+  let key = '';
+  for (const k of keys) {
+    const v = params[k];
+    if (v === undefined || v === null || v === '') continue;
+    key += `${k}=${v}&`;
+  }
+  if (!key) return '';
+  const cached = _qsCache.get(key);
+  if (cached !== undefined) return cached;
+  const usp = new URLSearchParams();
+  for (const k of keys) {
+    const v = params[k];
+    if (v === undefined || v === null || v === '') continue;
+    usp.set(k, v);
+  }
+  const qs = '?' + usp.toString();
+  // Cap cache growth
+  if (_qsCache.size > 200) _qsCache.clear();
+  _qsCache.set(key, qs);
+  return qs;
+}
+
 class ApiClient {
   constructor() {
     this.token = localStorage.getItem('kp_token') || null;
+    // In-memory GET cache: Map<url, { ts, data }>
+    this._cache = new Map();
   }
 
   setToken(token) {
     this.token = token;
     if (token) localStorage.setItem('kp_token', token);
     else localStorage.removeItem('kp_token');
+    // Auth change → drop any cached data
+    this._cache.clear();
+  }
+
+  // Invalidate cache entries whose path starts with `prefix`.
+  // Called automatically on non-GET requests.
+  _invalidate(prefix) {
+    if (!prefix || this._cache.size === 0) return;
+    // Normalize: only keep the path up to '?' to match regardless of query
+    const base = prefix.split('?')[0];
+    for (const key of this._cache.keys()) {
+      if (key.startsWith(base)) this._cache.delete(key);
+    }
+  }
+
+  // Public wrapper: cached GET with configurable TTL.
+  getCached(path, ttl = DEFAULT_CACHE_TTL) {
+    const hit = this._cache.get(path);
+    if (hit && (Date.now() - hit.ts) < ttl) {
+      return Promise.resolve(hit.data);
+    }
+    return this.get(path).then((data) => {
+      this._cache.set(path, { ts: Date.now(), data });
+      return data;
+    });
   }
 
   async request(path, options = {}, timeoutMs = 10000) {
@@ -68,10 +129,22 @@ class ApiClient {
   }
 
   get(path) { return this.request(path); }
-  post(path, data) { return this.request(path, { method: 'POST', body: JSON.stringify(data) }); }
-  patch(path, data) { return this.request(path, { method: 'PATCH', body: JSON.stringify(data) }); }
-  put(path, data) { return this.request(path, { method: 'PUT', body: JSON.stringify(data) }); }
-  delete(path) { return this.request(path, { method: 'DELETE' }); }
+  post(path, data) {
+    this._invalidate(path);
+    return this.request(path, { method: 'POST', body: JSON.stringify(data) });
+  }
+  patch(path, data) {
+    this._invalidate(path);
+    return this.request(path, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+  put(path, data) {
+    this._invalidate(path);
+    return this.request(path, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  delete(path) {
+    this._invalidate(path);
+    return this.request(path, { method: 'DELETE' });
+  }
 
   // ─── AUTH ──────────────────────────────────
   async login(pin, target, utilisateur) {
@@ -90,8 +163,7 @@ class ApiClient {
 
   // ─── TICKETS ───────────────────────────────
   getTickets(params = {}) {
-    const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/tickets${qs ? '?' + qs : ''}`);
+    return this.get(`/api/tickets${buildQuery(params)}`);
   }
   getTicket(id) { return this.get(`/api/tickets/${id}`); }
   getTicketByCode(code) { return this.get(`/api/tickets/code/${code}`); }
@@ -110,8 +182,7 @@ class ApiClient {
   deleteTicket(id) { return this.delete(`/api/tickets/${id}`); }
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
   getDashboard(params = {}) {
-    const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/tickets/stats/dashboard${qs ? '?' + qs : ''}`);
+    return this.get(`/api/tickets/stats/dashboard${buildQuery(params)}`);
   }
   addNote(id, note) { return this.post(`/api/tickets/${id}/note?note=${encodeURIComponent(note)}`); }
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
@@ -124,8 +195,7 @@ class ApiClient {
 
   // ─── CLIENTS ───────────────────────────────
   getClients(params = {}) {
-    const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/clients${qs ? '?' + qs : ''}`);
+    return this.get(`/api/clients${buildQuery(params)}`);
   }
   getClient(id) { return this.get(`/api/clients/${id}`); }
   getClientByTel(tel) { return this.get(`/api/clients/tel/${encodeURIComponent(tel)}`); }
@@ -407,14 +477,11 @@ class ApiClient {
 
   // ─── TARIFS ────────────────────────────────
   getTarifs(params = {}) {
-    const qs = new URLSearchParams();
-    if (params.q) qs.set('q', params.q);
-    if (params.marque) qs.set('marque', params.marque);
-    const s = qs.toString();
-    return this.get(`/api/tarifs${s ? '?' + s : ''}`);
+    // Cached 30s — large payload, safe to reuse across rapid nav
+    return this.getCached(`/api/tarifs${buildQuery(params)}`);
   }
   getTarifsStats() {
-    return this.get('/api/tarifs/stats');
+    return this.getCached('/api/tarifs/stats');
   }
   importTarifs(items) {
     return this.request('/api/tarifs/import', { method: 'POST', body: JSON.stringify({ items }) });
@@ -430,7 +497,7 @@ class ApiClient {
   }
   // ─── TARIFS REPARATION (grille iPhone) ────
   getTarifsReparation() {
-    return this.get('/api/tarifs/reparation');
+    return this.getCached('/api/tarifs/reparation');
   }
   updateTarifReparation(id, data) {
     return this.put(`/api/tarifs/reparation/${id}`, data);
@@ -550,8 +617,8 @@ class ApiClient {
 
   // ─── VENTES iPHONE (stock + générateur vidéo Story) ──
   getIphones(params = {}) {
-    const qs = new URLSearchParams(params).toString();
-    return this.get(`/api/iphones${qs ? '?' + qs : ''}`);
+    // Cached 30s — frequent reads from TelephonesVente + Dashboard widgets
+    return this.getCached(`/api/iphones${buildQuery(params)}`);
   }
   createIphone(data) { return this.post('/api/iphones', data); }
   updateIphone(id, data) { return this.put(`/api/iphones/${id}`, data); }
@@ -565,7 +632,7 @@ class ApiClient {
   }
 
   // ─── TARIFS iPHONE (affiches boutique + condition) ──
-  getIphoneTarifs() { return this.get('/api/iphone-tarifs'); }
+  getIphoneTarifs() { return this.getCached('/api/iphone-tarifs'); }
   updateIphoneTarif(id, data) {
     return this.request(`/api/iphone-tarifs/${id}`, {
       method: 'PATCH', body: JSON.stringify(data),

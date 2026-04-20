@@ -18,8 +18,8 @@ router = APIRouter(prefix="/api/clients", tags=["clients"])
 @router.get("", response_model=list[ClientOut])
 async def list_clients(
     search: Optional[str] = None,
-    limit: int = Query(100, le=500),
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
     """Liste les clients avec recherche optionnelle."""
@@ -220,7 +220,7 @@ async def update_client(
 
 @router.delete("/{client_id}", response_model=dict)
 async def delete_client(client_id: int, user: dict = Depends(get_current_user)):
-    """Supprime un client (vérifie qu'il n'a pas de tickets)."""
+    """Supprime un client (vérifie qu'il n'a pas de tickets). Idempotent."""
     with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) as cnt FROM tickets WHERE client_id = %s", (client_id,))
         row = cur.fetchone()

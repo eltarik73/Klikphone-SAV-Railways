@@ -168,7 +168,7 @@ async def get_stats_overview(
 
 # Keep old /stats endpoint for backward compat
 @router.get("/stats")
-async def get_stats_legacy(period: Optional[str] = Query(None, regex="^(7d|30d|90d|12m)$"), user: dict = Depends(_require_admin)):
+async def get_stats_legacy(period: Optional[str] = Query(None, pattern="^(7d|30d|90d|12m)$"), user: dict = Depends(_require_admin)):
     return await get_stats_overview()
 
 
@@ -648,7 +648,7 @@ async def get_top_clients(
 # ============================================================
 @router.get("/reparations")
 async def get_reparations_legacy(
-    period: str = Query("30d", regex="^(7d|30d|90d|12m)$"),
+    period: str = Query("30d", pattern="^(7d|30d|90d|12m)$"),
     marque: Optional[str] = None,
     tech: Optional[str] = None,
     user: dict = Depends(_require_admin),
@@ -788,8 +788,8 @@ async def get_performance_tech(user: dict = Depends(_require_admin)):
 
 @router.get("/evolution")
 async def get_evolution_legacy(
-    metric: str = Query("ca", regex="^(ca|flux)$"),
-    period: str = Query("12m", regex="^(6m|12m)$"),
+    metric: str = Query("ca", pattern="^(ca|flux)$"),
+    period: str = Query("12m", pattern="^(6m|12m)$"),
     user: dict = Depends(_require_admin),
 ):
     """Legacy: courbes d'évolution mensuelles."""

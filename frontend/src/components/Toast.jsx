@@ -1,7 +1,12 @@
-import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react';
 import { CheckCircle2, AlertTriangle, X, Info } from 'lucide-react';
 
 const ToastContext = createContext(null);
+
+// Default display duration (ms) — kept consistent across call sites
+const DEFAULT_DURATION = 4000;
+// Exit animation duration (ms) — MUST match the CSS transition below
+const EXIT_ANIMATION_MS = 250;
 
 const ICONS = {
   success: CheckCircle2,
@@ -27,28 +32,48 @@ const ICON_STYLES = {
 function ToastItem({ toast, onDismiss }) {
   const [exiting, setExiting] = useState(false);
   const Icon = ICONS[toast.type] || Info;
+  const autoDismissRef = useRef(null);
+  const exitTimerRef = useRef(null);
+
+  const beginExit = useCallback(() => {
+    if (exitTimerRef.current) return;
+    setExiting(true);
+    exitTimerRef.current = setTimeout(() => onDismiss(toast.id), EXIT_ANIMATION_MS);
+  }, [onDismiss, toast.id]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setExiting(true);
-      setTimeout(() => onDismiss(toast.id), 300);
-    }, toast.duration || 3000);
-    return () => clearTimeout(timer);
-  }, [toast, onDismiss]);
+    const duration = toast.duration || DEFAULT_DURATION;
+    autoDismissRef.current = setTimeout(beginExit, duration);
+    return () => {
+      if (autoDismissRef.current) clearTimeout(autoDismissRef.current);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    };
+  }, [toast.id, toast.duration, beginExit]);
+
+  const isError = toast.type === 'error' || toast.type === 'warning';
 
   return (
-    <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg transition-all duration-300 ${
-      STYLES[toast.type] || STYLES.info
-    } ${exiting ? 'opacity-0 translate-x-8' : 'opacity-100 translate-x-0'}`}
-    style={{ animation: 'slideInToast 0.3s ease-out' }}>
-      <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${ICON_STYLES[toast.type] || ICON_STYLES.info}`} />
+    <div
+      role={isError ? 'alert' : 'status'}
+      aria-live={isError ? 'assertive' : 'polite'}
+      aria-atomic="true"
+      className={`flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg transition-all duration-[250ms] ${
+        STYLES[toast.type] || STYLES.info
+      } ${exiting ? 'opacity-0 translate-x-8' : 'opacity-100 translate-x-0'}`}
+      style={{ animation: exiting ? undefined : 'slideInToast 0.3s ease-out' }}
+    >
+      <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${ICON_STYLES[toast.type] || ICON_STYLES.info}`} aria-hidden="true" />
       <div className="flex-1 min-w-0">
         {toast.title && <p className="font-semibold text-sm">{toast.title}</p>}
         <p className="text-sm">{toast.message}</p>
       </div>
-      <button onClick={() => { setExiting(true); setTimeout(() => onDismiss(toast.id), 300); }}
-        className="p-0.5 rounded hover:bg-black/5 transition-colors shrink-0">
-        <X className="w-4 h-4" />
+      <button
+        type="button"
+        onClick={beginExit}
+        aria-label="Fermer la notification"
+        className="p-0.5 rounded hover:bg-black/5 transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-current/40"
+      >
+        <X className="w-4 h-4" aria-hidden="true" />
       </button>
     </div>
   );
@@ -79,7 +104,11 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toast}>
       {children}
       {/* Toast container */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-[calc(100vw-2rem)] w-80 pointer-events-none">
+      <div
+        className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-[calc(100vw-2rem)] w-80 pointer-events-none"
+        aria-live="polite"
+        aria-atomic="false"
+      >
         {toasts.map(t => (
           <div key={t.id} className="pointer-events-auto">
             <ToastItem toast={t} onDismiss={dismissToast} />

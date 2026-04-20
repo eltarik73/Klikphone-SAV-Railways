@@ -100,13 +100,16 @@ def _ease_out_quint(t: float) -> float:
 
 
 # ─── Drawing helpers ────────────────────────────────────────────
-def _radial_spot(inner: tuple, outer: tuple, cx: int = W // 2,
-                 cy: int = int(H * 0.45), spread: float = 1.0) -> Image.Image:
-    """Spot lighting radial (plus dramatique qu'un gradient full-screen)."""
+@lru_cache(maxsize=16)
+def _radial_spot_cached(inner: tuple, outer: tuple, cx: int, cy: int,
+                        spread_x100: int) -> Image.Image:
+    """Version cachée : même (inner,outer,cx,cy,spread) → même image.
+    Retourne une image immutable (copier avant d'écrire dessus)."""
+    spread = spread_x100 / 100.0
     img = Image.new("RGB", (W, H), outer)
     draw = ImageDraw.Draw(img)
     max_r = int(math.hypot(W, H) * 0.6 * spread)
-    steps = 50
+    steps = 35  # réduit de 50 → 35, diff visuelle imperceptible avec blur naturel
     for i in range(steps, 0, -1):
         t = i / steps
         r = int(max_r * t)
@@ -115,6 +118,14 @@ def _radial_spot(inner: tuple, outer: tuple, cx: int = W // 2,
         bc = int(inner[2] * (1 - t) + outer[2] * t)
         draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(rc, gc, bc))
     return img
+
+
+def _radial_spot(inner: tuple, outer: tuple, cx: int = W // 2,
+                 cy: int = int(H * 0.45), spread: float = 1.0) -> Image.Image:
+    """Spot lighting radial (plus dramatique qu'un gradient full-screen).
+    Retourne une COPIE du cache pour que l'appelant puisse draw dessus."""
+    cached = _radial_spot_cached(inner, outer, cx, cy, int(spread * 100))
+    return cached.copy()
 
 
 def _text_w(draw: ImageDraw.ImageDraw, text: str, font) -> int:
@@ -170,8 +181,10 @@ def _draw_klikphone_logo(base: Image.Image, cx: int, cy: int, size: int,
     base.alpha_composite(resized, (cx - s // 2, cy - s // 2))
 
 
-def _draw_vignette(img: Image.Image, strength: float = 0.55):
-    """Vignette sombre sur les bords pour concentrer l'attention (style keynote)."""
+@lru_cache(maxsize=8)
+def _vignette_cached(strength_x100: int) -> Image.Image:
+    """Vignette précalculée pour une strength donnée — identique toute la session."""
+    strength = strength_x100 / 100.0
     vignette = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     vdraw = ImageDraw.Draw(vignette)
     max_r = int(math.hypot(W, H) * 0.55)
@@ -183,7 +196,14 @@ def _draw_vignette(img: Image.Image, strength: float = 0.55):
         alpha = int(strength * 255 * t)
         vdraw.ellipse([cx - r, cy - r, cx + r, cy + r],
                       outline=(0, 0, 0, alpha), width=20)
-    vignette = vignette.filter(ImageFilter.GaussianBlur(60))
+    return vignette.filter(ImageFilter.GaussianBlur(60))
+
+
+def _draw_vignette(img: Image.Image, strength: float = 0.55):
+    """Vignette sombre sur les bords pour concentrer l'attention (style keynote).
+    Le calcul (30 ellipses + blur 60px) est lourd (~30ms) mais toujours identique
+    pour un strength donné → cache via lru_cache indexé sur strength*100."""
+    vignette = _vignette_cached(int(strength * 100))
     img.alpha_composite(vignette)
 
 
@@ -343,13 +363,15 @@ def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
         scale = min(photo_zone_h / ph.height, 720 / ph.width)
     base_w = max(1, int(ph.width * scale))
     base_h = max(1, int(ph.height * scale))
-    ph = ph.resize((base_w, base_h), Image.LANCZOS)
+    # LANCZOS pour le resize initial de qualité (source → base),
+    # BILINEAR pour le pulse (base → pulsé), imperceptible sur ±2% scale
+    ph = ph.resize((base_w, base_h), Image.Resampling.LANCZOS)
 
     # Scale pulse subtil (respiration)
     pulse = 0.98 + 0.02 * _ease_in_out(p)
     new_w = max(1, int(base_w * pulse))
     new_h = max(1, int(base_h * pulse))
-    ph_resized = ph.resize((new_w, new_h), Image.LANCZOS)
+    ph_resized = ph.resize((new_w, new_h), Image.Resampling.BILINEAR)
 
     ph_x = (W - new_w) // 2
     ph_y = photo_zone_top + max(0, (photo_zone_h - new_h) // 2) \

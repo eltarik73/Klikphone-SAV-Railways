@@ -24,6 +24,7 @@ import os
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +50,9 @@ GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
 CACHE_DIR = VIDEO_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Sous-dossier pour les photos déjà processed (remove_bg + trim + feather)
+PROCESSED_CACHE_DIR = CACHE_DIR / "processed"
+PROCESSED_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_TTL_SECONDS = 7 * 24 * 3600  # 7 jours
 
 LOCAL_IPHONES_DIR = VIDEO_DIR / "assets" / "iphones"
@@ -237,31 +241,60 @@ def _placeholder_silhouette() -> Image.Image:
     return img
 
 
+def _processed_cache_key(source_bytes: bytes) -> Path:
+    """Clé sha256 des bytes source (url-data ou file content) pour le cache processed."""
+    h = hashlib.sha256(source_bytes).hexdigest()[:24]
+    return PROCESSED_CACHE_DIR / f"{h}.png"
+
+
+def _load_and_process(source_bytes: bytes, label: str) -> Optional[Image.Image]:
+    """Lit l'image source depuis bytes, la processe (remove_bg + trim) et cache le résultat.
+    Le feather gaussien + flood fills coûtent ~150-300ms — on les saute si déjà en cache."""
+    from io import BytesIO
+    cache_path = _processed_cache_key(source_bytes)
+    if cache_path.exists():
+        try:
+            return Image.open(cache_path).convert("RGBA")
+        except Exception as e:
+            logger.warning("Cache processed corrompu %s (%s) — reprocess", cache_path, e)
+    try:
+        img = Image.open(BytesIO(source_bytes)).convert("RGBA")
+        processed = _trim_alpha(_remove_white_bg(img))
+        try:
+            processed.save(cache_path, "PNG", optimize=False, compress_level=1)
+        except Exception as e:
+            logger.debug("Save processed cache failed (%s) : %s", cache_path, e)
+        return processed
+    except Exception as e:
+        logger.warning("Pillow failed to process %s : %s", label, e)
+        return None
+
+
 def _load_photo(phone: dict) -> Image.Image:
     """Charge la photo iPhone détourée.
     Ordre : URL distante (avec cache) → local detoured → placeholder silhouette.
-    NE TOMBE JAMAIS sur les anciens JPEG studio du dossier iphone_tarifs."""
-    from io import BytesIO
-
+    NE TOMBE JAMAIS sur les anciens JPEG studio du dossier iphone_tarifs.
+    Les photos processées (remove_bg + trim + feather) sont mises en cache disque
+    avec hash sha256 des bytes source — évite les ~200ms/photo au 2e appel."""
     # 1. image_url (Apple CDN ou upload admin)
     url = phone.get("image_url")
     if url and url.startswith("http"):
         data = _download_cached(url)
         if data:
-            try:
-                img = Image.open(BytesIO(data)).convert("RGBA")
-                return _trim_alpha(_remove_white_bg(img))
-            except Exception as e:
-                logger.warning("Pillow failed to open %s : %s", url, e)
+            out = _load_and_process(data, url)
+            if out is not None:
+                return out
 
     # 2. PNG local détouré (model_key + color)
     local = _local_image_for(phone)
     if local:
         try:
-            img = Image.open(local).convert("RGBA")
-            return _trim_alpha(_remove_white_bg(img))
+            data = local.read_bytes()
+            out = _load_and_process(data, str(local))
+            if out is not None:
+                return out
         except Exception as e:
-            logger.warning("Pillow failed on local %s : %s", local, e)
+            logger.warning("Read local %s failed : %s", local, e)
 
     # 3. Silhouette propre (pas de JPEG foireux)
     logger.info("Fallback silhouette pour %s %s", phone.get("model"), phone.get("color_name"))
@@ -331,32 +364,48 @@ def generate_story_video(phones: list) -> dict:
         # Précharger toutes les photos
         photos = [_load_photo(p) for p in phones]
 
+        # Helpers de rendu atomique (progress + index → PNG sur disque)
+        def _render_intro(i: int, fidx: int):
+            prog = i / max(1, intro_frames - 1)
+            render_intro_frame(prog).convert("RGB").save(
+                frames_dir / f"frame_{fidx:05d}.png",
+                optimize=False, compress_level=1)
+
+        def _render_outro(i: int, fidx: int):
+            prog = i / max(1, outro_frames - 1)
+            render_outro_frame(prog).convert("RGB").save(
+                frames_dir / f"frame_{fidx:05d}.png",
+                optimize=False, compress_level=1)
+
         frame_idx = 0
+        intro_start = frame_idx
+        frame_idx += intro_frames
+        scenes_start = frame_idx
+        frame_idx += scene_frames * total_phones
+        outro_start = frame_idx
+        frame_idx += outro_frames
 
-        # INTRO
-        for i in range(intro_frames):
-            progress = i / max(1, intro_frames - 1)
-            img = render_intro_frame(progress)
-            img.convert("RGB").save(frames_dir / f"frame_{frame_idx:05d}.png",
-                                    optimize=False, compress_level=1)
-            frame_idx += 1
+        # INTRO + OUTRO en parallèle (indépendants, juste fonction de progress)
+        # 2 workers : Pillow libère le GIL sur les ops natives → vrai parallélisme
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = []
+            for i in range(intro_frames):
+                futures.append(pool.submit(_render_intro, i, intro_start + i))
+            for i in range(outro_frames):
+                futures.append(pool.submit(_render_outro, i, outro_start + i))
+            # Attendre la complétion (propage exceptions)
+            for f in futures:
+                f.result()
 
-        # SCÈNES
+        # SCÈNES (séquentiel : dépendent des photos préchargées)
+        fidx = scenes_start
         for idx, (phone, photo) in enumerate(zip(phones, photos)):
             for i in range(scene_frames):
                 progress = i / max(1, scene_frames - 1)
                 img = render_phone_frame(phone, photo, progress, idx, total_phones)
-                img.convert("RGB").save(frames_dir / f"frame_{frame_idx:05d}.png",
+                img.convert("RGB").save(frames_dir / f"frame_{fidx:05d}.png",
                                         optimize=False, compress_level=1)
-                frame_idx += 1
-
-        # OUTRO
-        for i in range(outro_frames):
-            progress = i / max(1, outro_frames - 1)
-            img = render_outro_frame(progress)
-            img.convert("RGB").save(frames_dir / f"frame_{frame_idx:05d}.png",
-                                    optimize=False, compress_level=1)
-            frame_idx += 1
+                fidx += 1
 
         elapsed_render = time.time() - start
         logger.info("Frames rendus en %.1fs", elapsed_render)
@@ -369,6 +418,7 @@ def generate_story_video(phones: list) -> dict:
         music_path = VIDEO_DIR / "assets" / "story_music.mp3"
         cmd = [
             "ffmpeg", "-y",
+            "-threads", "4",
             "-framerate", str(FPS),
             "-i", str(frames_dir / "frame_%05d.png"),
         ]
@@ -376,7 +426,8 @@ def generate_story_video(phones: list) -> dict:
             cmd += ["-i", str(music_path)]
         cmd += [
             "-c:v", "libx264",
-            "-preset", "veryfast",
+            "-preset", "faster",  # veryfast→faster : -20% temps, diff qualité négligeable à CRF 22
+            "-threads", "4",
             "-crf", "22",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",

@@ -33,15 +33,19 @@ const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
 const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage'));
 const AdminTarifsSmartphonesPage = lazy(() => import('./pages/AdminTarifsSmartphonesPage'));
 
-// Preload frequent pages after initial render
+// Preload only the most frequent pages after initial render.
+// AdminPage (378 kB) and Community/AvisGoogle are NOT preloaded — loaded on demand.
 const preloadPages = () => {
+  // Dashboard is the landing page after auth → highest priority
   import('./pages/DashboardPage');
-  import('./pages/TarifsPage');
+  // TicketDetailPage is reached from nearly every dashboard interaction
+  import('./pages/TicketDetailPage');
+  // Clients is also very frequent
   import('./pages/ClientsPage');
 };
 if (typeof window !== 'undefined') {
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(preloadPages);
+    window.requestIdleCallback(preloadPages, { timeout: 3000 });
   } else {
     setTimeout(preloadPages, 2000);
   }
@@ -170,11 +174,21 @@ function ChatOverlay() {
   return <ChatWidget />;
 }
 
-const LazyFallback = () => (
-  <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
-    <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
-  </div>
-);
+// Deferred loader: only appears if the lazy chunk takes >100ms,
+// avoiding UI flicker on fast (cached) navigations.
+const LazyFallback = () => {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setVisible(true), 100);
+    return () => clearTimeout(id);
+  }, []);
+  if (!visible) return null;
+  return (
+    <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
+      <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
+    </div>
+  );
+};
 
 function AppRoutes() {
   return (

@@ -15,6 +15,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
+from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
 from app.database import get_cursor
@@ -133,17 +134,18 @@ def _seed_default_data():
             ("iphone-17-pro-max", "iPhone 17 Pro Max", 250, "256 Go", 0, "512 Go", 0, "0.99", "0.98", "2.98", "iphone_17_pro_max.jpeg", "17pm"),
         ]
 
-        for d in data:
-            cur.execute(
-                """
-                INSERT INTO iphone_tarifs
-                (slug, modele, ordre, stockage_1, prix_1, stockage_2, prix_2,
-                 das_tete, das_corps, das_membre, image_filename, page_group)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (slug) DO NOTHING
-                """,
-                d,
-            )
+        # Batch INSERT en 1 round-trip via execute_values (au lieu de 25)
+        execute_values(
+            cur,
+            """
+            INSERT INTO iphone_tarifs
+            (slug, modele, ordre, stockage_1, prix_1, stockage_2, prix_2,
+             das_tete, das_corps, das_membre, image_filename, page_group)
+            VALUES %s
+            ON CONFLICT (slug) DO NOTHING
+            """,
+            data,
+        )
         logger.info("iphone_tarifs : %d modèles seed", len(data))
 
 
@@ -212,6 +214,12 @@ def update_tarif(tarif_id: int, payload: IphoneTarifUpdate):
         )
         if not cur.fetchone():
             raise HTTPException(404, "Tarif non trouvé")
+    # Invalide cache in-memory pour que list_iphones reflete immediatement
+    try:
+        from app.api.iphones_stock import _invalidate_tarifs_cache
+        _invalidate_tarifs_cache()
+    except Exception:
+        pass
     return {"ok": True, "id": tarif_id}
 
 

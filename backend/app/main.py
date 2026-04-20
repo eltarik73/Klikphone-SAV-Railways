@@ -3,7 +3,9 @@ KLIKPHONE SAV — API REST FastAPI
 Point d'entrée principal.
 """
 
+import logging
 import os
+import traceback
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -19,6 +21,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs
+
+logger = logging.getLogger("klikphone.startup")
 
 
 def _seed_catalog_models():
@@ -99,14 +103,14 @@ async def lifespan(app: FastAPI):
                 AND pid != pg_backend_pid()
             """)
     except Exception:
-        pass
+        print(f"Warning kill idle sessions:\n{traceback.format_exc()}")
 
     # Enable unaccent extension for accent-insensitive search
     try:
         with get_cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
     except Exception as e:
-        print(f"Warning unaccent extension: {e}")
+        print(f"Warning unaccent extension: {e}\n{traceback.format_exc()}")
 
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
@@ -202,49 +206,49 @@ async def lifespan(app: FastAPI):
             with get_cursor() as cur:
                 cur.execute(sql)
         except Exception as e:
-            print(f"Warning CREATE TABLE: {e}")
+            print(f"Warning CREATE TABLE: {e}\n{traceback.format_exc()}")
 
     # Tarifs table
     try:
         tarifs._ensure_table()
     except Exception as e:
-        print(f"Warning tarifs table: {e}")
+        print(f"Warning tarifs table: {e}\n{traceback.format_exc()}")
 
     # iPhone tarifs (affiches boutique) : table + seed
     try:
         iphone_tarifs.init_iphone_tarifs()
     except Exception as e:
-        print(f"Warning iphone_tarifs init: {e}")
+        print(f"Warning iphone_tarifs init: {e}\n{traceback.format_exc()}")
 
     # iPhones stock (ventes + générateur vidéo Story) : table + seed
     try:
         iphones_stock.init_iphones_stock()
     except Exception as e:
-        print(f"Warning iphones_stock init: {e}")
+        print(f"Warning iphones_stock init: {e}\n{traceback.format_exc()}")
 
     # Smartphones non-Apple (Samsung, Xiaomi, Google, etc.)
     try:
         smartphones_tarifs.init_smartphones_tarifs()
     except Exception as e:
-        print(f"Warning smartphones_tarifs init: {e}")
+        print(f"Warning smartphones_tarifs init: {e}\n{traceback.format_exc()}")
 
     # Attestations table
     try:
         attestation._ensure_attestation_table()
     except Exception as e:
-        print(f"Warning attestations table: {e}")
+        print(f"Warning attestations table: {e}\n{traceback.format_exc()}")
 
     # Marketing tables
     try:
         marketing._ensure_tables()
     except Exception as e:
-        print(f"Warning marketing tables: {e}")
+        print(f"Warning marketing tables: {e}\n{traceback.format_exc()}")
 
     # Telephones table
     try:
         telephones._ensure_table()
     except Exception as e:
-        print(f"Warning telephones table: {e}")
+        print(f"Warning telephones table: {e}\n{traceback.format_exc()}")
 
     # ALTER TABLE statements (need exclusive lock — use very short timeout)
     for sql in [
@@ -277,7 +281,7 @@ async def lifespan(app: FastAPI):
                 cur.execute("SET lock_timeout = '3s'")
                 cur.execute(sql)
         except Exception as e:
-            print(f"Warning ALTER TABLE: {e}")
+            print(f"Warning ALTER TABLE: {e}\n{traceback.format_exc()}")
     # Performance indexes (CREATE INDEX IF NOT EXISTS is safe to run every startup)
     for sql in [
         "CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id)",
@@ -315,7 +319,7 @@ async def lifespan(app: FastAPI):
             with get_cursor() as cur:
                 cur.execute(sql)
         except Exception as e:
-            print(f"Warning CREATE INDEX: {e}")
+            print(f"Warning CREATE INDEX: {e}\n{traceback.format_exc()}")
 
     # Seed autocompletion — pannes courantes
     try:
@@ -358,7 +362,7 @@ async def lifespan(app: FastAPI):
                 ON CONFLICT (cle) DO NOTHING
             """)
     except Exception as e:
-        print(f"Warning autocompletion seed: {e}")
+        print(f"Warning autocompletion seed: {e}\n{traceback.format_exc()}")
 
     # Default admin password
     try:
@@ -377,13 +381,13 @@ async def lifespan(app: FastAPI):
                 WHERE params.valeur != 'https://klikphone-sav-v2-production.up.railway.app'
             """)
     except Exception as e:
-        print(f"Warning ADMIN_PASSWORD default: {e}")
+        print(f"Warning ADMIN_PASSWORD default: {e}\n{traceback.format_exc()}")
 
     # Seed Samsung & Xiaomi models
     try:
         _seed_catalog_models()
     except Exception as e:
-        print(f"Warning catalog seed: {e}")
+        print(f"Warning catalog seed: {e}\n{traceback.format_exc()}")
 
     yield
     close_pool()
@@ -429,11 +433,12 @@ async def cache_headers(request: Request, call_next):
 # --- ERROR HANDLER ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    import traceback
+    # Log full traceback server-side, but return a generic message client-side
+    # pour éviter de fuiter des infos (stack traces, requêtes SQL, env vars).
     traceback.print_exc()
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)},
+        content={"detail": "Internal server error"},
         headers={"Access-Control-Allow-Origin": "*"},
     )
 
@@ -479,8 +484,10 @@ async def health_db():
         with get_cursor() as cur:
             cur.execute("SELECT 1")
         return {"status": "ok", "db": "connected"}
-    except Exception as e:
-        return {"status": "error", "db": str(e)}
+    except Exception:
+        # Ne pas exposer le message d'erreur DB (peut contenir DSN/secrets)
+        traceback.print_exc()
+        return {"status": "error", "db": "unreachable"}
 
 
 

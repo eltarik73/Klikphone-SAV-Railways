@@ -115,14 +115,16 @@ export default function ClientFormPage() {
   }, [isConfirmation, createdCode]);
 
   useEffect(() => {
-    api.getCategories().then(setCategories).catch(() => {});
-    api.getPannes().then(setPannes).catch(() => {});
+    let cancelled = false;
+    api.getCategories().then((data) => { if (!cancelled) setCategories(data); }).catch(() => {});
+    api.getPannes().then((data) => { if (!cancelled) setPannes(data); }).catch(() => {});
     // Pre-fill from query params (coming from ClientsPage "Nouvelle réparation")
     const clientId = searchParams.get('client_id');
     const tel = searchParams.get('tel');
     if (clientId && tel) {
       setForm(f => ({ ...f, telephone: tel }));
       api.getClient(parseInt(clientId)).then(c => {
+        if (cancelled) return;
         setForm(f => ({
           ...f,
           nom: c.nom || '', prenom: c.prenom || '',
@@ -131,6 +133,8 @@ export default function ClientFormPage() {
         }));
       }).catch(() => {});
     }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -266,7 +270,10 @@ export default function ClientFormPage() {
   const handleNext = () => {
     if (!validateStep()) return;
     if (isLastStep) {
-      handleSubmit();
+      // Fire-and-forget: handleSubmit already manages its own loading/error state via toast
+      handleSubmit().catch((err) => {
+        console.error('[ClientFormPage] handleSubmit failed', err);
+      });
     } else {
       setStep(s => s + 1);
     }
@@ -289,8 +296,13 @@ export default function ClientFormPage() {
       <div className="depot-form w-[90%] lg:max-w-2xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={handleBack} className="btn-ghost p-3">
-            <ArrowLeft className="w-6 h-6" />
+          <button
+            type="button"
+            onClick={handleBack}
+            className="btn-ghost p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            aria-label="Retour à l'étape précédente"
+          >
+            <ArrowLeft className="w-6 h-6" aria-hidden="true" />
           </button>
           <div className="flex-1">
             <h1 className="text-xl font-display font-bold text-slate-900">Déposer un appareil</h1>

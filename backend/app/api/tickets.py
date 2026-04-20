@@ -44,7 +44,7 @@ STATUTS = [
 async def get_dashboard(
     search: Optional[str] = None,
     statut: Optional[str] = None,
-    limit: int = Query(200, le=500),
+    limit: int = Query(200, ge=1, le=500),
 ):
     """Retourne KPI + tickets en une seule requête pour le dashboard."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -139,7 +139,7 @@ async def get_kpi():
 @router.get("/queue/repair")
 async def get_repair_queue(
     tech: Optional[str] = None,
-    limit: int = Query(20, le=50),
+    limit: int = Query(20, ge=1, le=50),
 ):
     """Retourne les tickets en attente de réparation, triés par priorité."""
     with get_cursor() as cur:
@@ -197,8 +197,8 @@ async def list_tickets(
     code: Optional[str] = None,
     nom: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = Query(100, le=500),
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ):
     """Liste les tickets avec filtres optionnels."""
     conditions = []
@@ -721,7 +721,7 @@ async def delete_private_note(
     ticket_id: int,
     note_id: int,
 ):
-    """Supprime une note privée."""
+    """Supprime une note privée. Idempotent."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM notes_tickets WHERE id = %s AND ticket_id = %s", (note_id, ticket_id))
     return {"ok": True}
@@ -777,7 +777,9 @@ async def log_message(
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
 async def delete_ticket(ticket_id: int):
-    """Supprime un ticket et toutes ses données liées (cascade)."""
+    """Supprime un ticket et toutes ses données liées (cascade).
+    Idempotent : retourne toujours {"ok": true} même si le ticket n'existe pas.
+    """
     with get_cursor() as cur:
         cur.execute("DELETE FROM notes_tickets WHERE ticket_id = %s", (ticket_id,))
         cur.execute("DELETE FROM commandes_pieces WHERE ticket_id = %s", (ticket_id,))

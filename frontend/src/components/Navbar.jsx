@@ -5,7 +5,7 @@ import api from '../lib/api';
 import AdminLoginModal from './AdminLoginModal';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
-  Menu, X, Search, PanelLeftClose, PanelLeftOpen,
+  Menu, X, Search, PanelLeftClose,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
   Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical,
 } from 'lucide-react';
@@ -75,7 +75,7 @@ export default function Navbar() {
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
-    { path: `${basePath}/commandes`, label: 'Commandes', icon: Package },
+    { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: pendingCount },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];
@@ -134,6 +134,113 @@ export default function Navbar() {
     navigate(`/login/${user.target}?switch=1`);
   };
 
+  // ─── Reusable tooltip wrapper for collapsed mode ───
+  const Tooltip = ({ label, children, badge }) => (
+    <div className="group/tip relative">
+      {children}
+      {collapsed && (
+        <span
+          className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-[60]
+            whitespace-nowrap rounded-md bg-slate-800 border border-white/10 px-2.5 py-1.5
+            text-[12px] font-medium text-slate-100 shadow-xl
+            opacity-0 translate-x-[-4px] group-hover/tip:opacity-100 group-hover/tip:translate-x-0
+            transition-all duration-150 ease-out"
+        >
+          {label}
+          {badge > 0 && (
+            <span className="ml-2 bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+
+  // ─── Item button (unified styling + hover scale + tooltip) ───
+  const navBtnClass = (active, variant = 'brand') => {
+    const base = `group/nav w-full flex items-center gap-3 rounded-lg text-[13px] font-medium
+      transition-all duration-150 ease-out relative
+      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}`;
+    const activeCls = {
+      brand: `bg-gradient-to-r from-brand-600/25 to-brand-500/10 text-white
+              shadow-[inset_0_0_0_1px_rgba(124,58,237,0.35)]
+              ${collapsed ? '' : 'border-l-[3px] border-brand-400 pl-[9px]'}`,
+      amber: `bg-gradient-to-r from-amber-500/25 to-amber-400/10 text-white
+              shadow-[inset_0_0_0_1px_rgba(245,158,11,0.35)]
+              ${collapsed ? '' : 'border-l-[3px] border-amber-400 pl-[9px]'}`,
+      red:   `bg-gradient-to-r from-red-500/25 to-red-400/10 text-white
+              shadow-[inset_0_0_0_1px_rgba(239,68,68,0.35)]
+              ${collapsed ? '' : 'border-l-[3px] border-red-400 pl-[9px]'}`,
+      yellow:`bg-gradient-to-r from-yellow-500/25 to-yellow-400/10 text-white
+              shadow-[inset_0_0_0_1px_rgba(234,179,8,0.35)]
+              ${collapsed ? '' : 'border-l-[3px] border-yellow-400 pl-[9px]'}`,
+    }[variant];
+    const idle = 'text-slate-400 hover:text-white hover:bg-white/[0.05]';
+    return `${base} ${active ? activeCls : idle}`;
+  };
+
+  const iconCls = (active, variant = 'brand') => {
+    const color = { brand: 'text-brand-300', amber: 'text-amber-300', red: 'text-red-300', yellow: 'text-yellow-300' }[variant];
+    return `w-[18px] h-[18px] shrink-0 transition-transform duration-150 ease-out
+      group-hover/nav:scale-110 ${active ? color : ''}`;
+  };
+
+  const Badge = ({ value, tone = 'brand' }) => {
+    if (!value || value <= 0) return null;
+    const toneCls = {
+      brand: 'bg-brand-500 shadow-[0_0_0_2px_rgba(124,58,237,0.25)]',
+      red:   'bg-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.25)]',
+    }[tone];
+    const label = value > 99 ? '99+' : value;
+    return (
+      <span className={`${toneCls} text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full
+        min-w-[20px] text-center leading-tight`}>
+        {label}
+      </span>
+    );
+  };
+
+  const DotBadge = ({ value, tone = 'brand' }) => {
+    if (!value || value <= 0) return null;
+    const bg = tone === 'red' ? 'bg-red-500' : 'bg-brand-500';
+    return (
+      <span className={`${bg} absolute top-0.5 right-0.5 text-white text-[9px] font-bold
+        min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center
+        ring-2 ring-slate-900 animate-in`}>
+        {value > 9 ? '9+' : value}
+      </span>
+    );
+  };
+
+  // ─── Section header (label uppercase discret + chevron) ───
+  const SectionHeader = ({ label, color, icon: Icon, open, onToggle }) => {
+    if (collapsed) {
+      return (
+        <div className="relative my-2 flex justify-center">
+          <span className="block w-8 h-px" style={{ background: `${color}40` }} />
+          <Icon className="w-[14px] h-[14px] absolute -top-[7px] bg-slate-900 px-0.5" style={{ color }} />
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-3 mb-2 group/sec"
+      >
+        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em]"
+          style={{ color }}>
+          <Icon className="w-3 h-3" />
+          {label}
+        </span>
+        <ChevronDown
+          className={`w-3 h-3 transition-transform duration-200 ease-out ${open ? 'rotate-0' : '-rotate-90'}`}
+          style={{ color }}
+        />
+      </button>
+    );
+  };
+
   return (
     <>
       {/* Mobile top bar */}
@@ -160,235 +267,166 @@ export default function Navbar() {
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 bottom-0 bg-slate-900 flex flex-col z-50
+        border-r border-white/[0.06]
         transition-[width,transform] duration-300 ease-in-out will-change-[width,transform]
-        ${collapsed ? 'w-[68px]' : 'w-64'}
+        ${collapsed ? 'w-[72px]' : 'w-64'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>
-        {/* Logo */}
-        <div className="h-16 px-4 flex items-center gap-3 border-b border-white/[0.06] shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0">
+        {/* Logo header with smooth collapse animation */}
+        <div className={`h-16 flex items-center border-b border-white/[0.06] shrink-0 overflow-hidden
+          ${collapsed ? 'px-3 justify-center' : 'px-4 gap-3'}`}>
+          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0
+            shadow-[0_2px_10px_rgba(124,58,237,0.25)]
+            transition-transform duration-300 ease-out hover:scale-105">
             <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
           </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none">KLIKPHONE</h1>
-              <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-0.5">Service après-vente</p>
-            </div>
-          )}
+          <div className={`flex-1 min-w-0 transition-all duration-300 ease-out
+            ${collapsed ? 'opacity-0 -translate-x-2 w-0 pointer-events-none' : 'opacity-100 translate-x-0'}`}>
+            <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none whitespace-nowrap">KLIKPHONE</h1>
+            <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-1 whitespace-nowrap">Service après-vente</p>
+          </div>
           <button onClick={() => setMobileOpen(false)}
             className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto scrollbar-none">
-          {!collapsed && <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Menu</p>}
-          {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => (
-            <button key={path} onClick={() => handleNav(path)}
-              title={collapsed ? label : undefined}
-              className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 relative
-                ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                ${isActive(path)
-                  ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                }`}
-            >
-              <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive(path) ? 'text-brand-400' : ''}`} />
-              {!collapsed && <span className="flex-1 text-left">{label}</span>}
-              {!collapsed && badge > 0 && (
-                <span className="bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                  {badge}
-                </span>
-              )}
-              {!collapsed && alertBadge > 0 && (
-                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                  {alertBadge}
-                </span>
-              )}
-              {collapsed && badge > 0 && (
-                <span className="absolute -top-1 -right-1 bg-brand-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  {badge > 9 ? '9+' : badge}
-                </span>
-              )}
-              {collapsed && alertBadge > 0 && !badge && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                  {alertBadge > 9 ? '9+' : alertBadge}
-                </span>
-              )}
-            </button>
-          ))}
+        {/* Navigation — scrollable zone with visible but discrete scrollbar */}
+        <nav
+          className={`flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-0.5
+            ${collapsed ? 'px-2' : 'px-2'}`}
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(255,255,255,0.08) transparent',
+          }}
+        >
+          {!collapsed && (
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
+              Menu principal
+            </p>
+          )}
+          {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => {
+            const active = isActive(path);
+            return (
+              <Tooltip key={path} label={label} badge={badge}>
+                <button onClick={() => handleNav(path)}
+                  className={navBtnClass(active, 'brand')}
+                >
+                  <Icon className={iconCls(active, 'brand')} />
+                  {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
+                  {!collapsed && <Badge value={badge} tone="brand" />}
+                  {!collapsed && <Badge value={alertBadge} tone="red" />}
+                  {collapsed && <DotBadge value={badge || alertBadge} tone={alertBadge && !badge ? 'red' : 'brand'} />}
+                </button>
+              </Tooltip>
+            );
+          })}
 
           {/* ─── Devis section (conditional) ─── */}
           {(moduleDevis || moduleDevisFlash) && (
             <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-              {!collapsed ? (
-                <button
-                  onClick={() => {
-                    const next = !devisOpen;
-                    setDevisOpen(next);
-                    localStorage.setItem('kp_devis_open', next ? '1' : '0');
-                  }}
-                  className="w-full flex items-center justify-between px-3 mb-2 group"
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#7C3AED' }}>
-                    <FileText className="w-3 h-3" />
-                    Devis
-                  </span>
-                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${devisOpen ? 'rotate-180' : ''}`} style={{ color: '#7C3AED' }} />
-                </button>
-              ) : (
-                <div className="flex justify-center mb-1">
-                  <FileText className="w-4 h-4" style={{ color: '#7C3AED' }} />
-                </div>
-              )}
+              <SectionHeader
+                label="Devis"
+                color="#7C3AED"
+                icon={FileText}
+                open={devisOpen}
+                onToggle={() => {
+                  const next = !devisOpen;
+                  setDevisOpen(next);
+                  localStorage.setItem('kp_devis_open', next ? '1' : '0');
+                }}
+              />
               {(devisOpen || collapsed) && (
-                <>
-                  {moduleDevis && (
-                    <button onClick={() => handleNav(`${basePath}/devis`)}
-                      title={collapsed ? 'Devis' : undefined}
-                      className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                        ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                        ${isActive(`${basePath}/devis`)
-                          ? `bg-brand-600/20 text-brand-300 ${collapsed ? '' : 'border-l-2 border-brand-400 pl-[10px]'}`
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                        }`}
-                    >
-                      <FileText className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/devis`) ? 'text-brand-400' : ''}`} />
-                      {!collapsed && <span className="flex-1 text-left">Devis</span>}
-                    </button>
-                  )}
-                  {moduleDevisFlash && (
-                    <button onClick={() => handleNav(`${basePath}/devis-flash`)}
-                      title={collapsed ? 'Devis Flash' : undefined}
-                      className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                        ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                        ${isActive(`${basePath}/devis-flash`)
-                          ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                        }`}
-                    >
-                      <Zap className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/devis-flash`) ? 'text-amber-400' : ''}`} />
-                      {!collapsed && <span className="flex-1 text-left">Devis Flash</span>}
-                    </button>
-                  )}
-                </>
+                <div className="space-y-0.5">
+                  {moduleDevis && (() => {
+                    const p = `${basePath}/devis`; const a = isActive(p);
+                    return (
+                      <Tooltip label="Devis">
+                        <button onClick={() => handleNav(p)} className={navBtnClass(a, 'brand')}>
+                          <FileText className={iconCls(a, 'brand')} />
+                          {!collapsed && <span className="flex-1 text-left truncate">Devis</span>}
+                        </button>
+                      </Tooltip>
+                    );
+                  })()}
+                  {moduleDevisFlash && (() => {
+                    const p = `${basePath}/devis-flash`; const a = isActive(p);
+                    return (
+                      <Tooltip label="Devis Flash">
+                        <button onClick={() => handleNav(p)} className={navBtnClass(a, 'amber')}>
+                          <Zap className={iconCls(a, 'amber')} />
+                          {!collapsed && <span className="flex-1 text-left truncate">Devis Flash</span>}
+                        </button>
+                      </Tooltip>
+                    );
+                  })()}
+                </div>
               )}
             </div>
           )}
 
           {/* ─── Tarifs section ─── */}
           <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-            {!collapsed ? (
-              <button
-                onClick={() => {
-                  const next = !tarifsOpen;
-                  setTarifsOpen(next);
-                  localStorage.setItem('kp_tarifs_open', next ? '1' : '0');
-                }}
-                className="w-full flex items-center justify-between px-3 mb-2 group"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#F59E0B' }}>
-                  <Tag className="w-3 h-3" />
-                  Tarifs
-                </span>
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${tarifsOpen ? 'rotate-180' : ''}`} style={{ color: '#F59E0B' }} />
-              </button>
-            ) : (
-              <div className="flex justify-center mb-1">
-                <Tag className="w-4 h-4" style={{ color: '#F59E0B' }} />
-              </div>
-            )}
+            <SectionHeader
+              label="Tarifs"
+              color="#F59E0B"
+              icon={Tag}
+              open={tarifsOpen}
+              onToggle={() => {
+                const next = !tarifsOpen;
+                setTarifsOpen(next);
+                localStorage.setItem('kp_tarifs_open', next ? '1' : '0');
+              }}
+            />
             {(tarifsOpen || collapsed) && (
-              <>
-                <button onClick={() => handleNav(`${basePath}/tarifs-reparation`)}
-                  title={collapsed ? 'Réparation iPhone' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/tarifs-reparation`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-reparation`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Réparation iPhone</span>}
-                </button>
-                <button onClick={() => handleNav(`${basePath}/tarifs-iphone`)}
-                  title={collapsed ? 'Tarifs iPhones (affiches)' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 mt-1
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/tarifs-iphone`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Tag className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-iphone`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Tarifs iPhones</span>}
-                </button>
-                <button onClick={() => handleNav(`${basePath}/tarifs-smartphones`)}
-                  title={collapsed ? 'Tarifs Smartphones (Samsung, Xiaomi…)' : undefined}
-                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 mt-1
-                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                    ${isActive(`${basePath}/tarifs-smartphones`)
-                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                    }`}
-                >
-                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-smartphones`) ? 'text-amber-400' : ''}`} />
-                  {!collapsed && <span className="flex-1 text-left">Tarifs Smartphones</span>}
-                </button>
-              </>
+              <div className="space-y-0.5">
+                {[
+                  { path: `${basePath}/tarifs-reparation`, label: 'Réparation iPhone', icon: Wrench },
+                  { path: `${basePath}/tarifs-iphone`, label: 'Tarifs iPhones', icon: Tag },
+                  { path: `${basePath}/tarifs-smartphones`, label: 'Tarifs Smartphones', icon: Smartphone },
+                ].map(({ path, label, icon: Icon }) => {
+                  const active = isActive(path);
+                  return (
+                    <Tooltip key={path} label={label}>
+                      <button onClick={() => handleNav(path)} className={navBtnClass(active, 'amber')}>
+                        <Icon className={iconCls(active, 'amber')} />
+                        {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+              </div>
             )}
           </div>
 
           {/* ─── Administration section ─── */}
           <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
-            {!collapsed ? (
-              <button
-                onClick={() => {
-                  const next = !adminOpen;
-                  setAdminOpen(next);
-                  localStorage.setItem('kp_admin_open', next ? '1' : '0');
-                }}
-                className="w-full flex items-center justify-between px-3 mb-2 group"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-[0.12em] flex items-center gap-1.5" style={{ color: '#EF4444' }}>
-                  <Lock className="w-3 h-3" />
-                  Administration
-                </span>
-                <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${adminOpen ? 'rotate-180' : ''}`} style={{ color: '#EF4444' }} />
-              </button>
-            ) : (
-              <div className="flex justify-center mb-1">
-                <Lock className="w-4 h-4" style={{ color: '#EF4444' }} />
-              </div>
-            )}
+            <SectionHeader
+              label="Administration"
+              color="#EF4444"
+              icon={Lock}
+              open={adminOpen}
+              onToggle={() => {
+                const next = !adminOpen;
+                setAdminOpen(next);
+                localStorage.setItem('kp_admin_open', next ? '1' : '0');
+              }}
+            />
             {(adminOpen || collapsed) && (
-              <>
-                {adminItems.map(({ path, label, icon: Icon, badge }) => (
-                  <button key={path} onClick={() => handleAdminNav(path)}
-                    title={collapsed ? label : undefined}
-                    className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200
-                      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
-                      ${isActive(path)
-                        ? `bg-red-500/20 text-red-300 ${collapsed ? '' : 'border-l-2 border-red-400 pl-[10px]'}`
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                      }`}
-                  >
-                    <Icon className={`w-[18px] h-[18px] shrink-0 ${isActive(path) ? 'text-red-400' : ''}`} />
-                    {!collapsed && <span className="flex-1 text-left">{label}</span>}
-                    {!collapsed && badge > 0 && (
-                      <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                        {badge}
-                      </span>
-                    )}
-                    {collapsed && badge > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                        {badge > 9 ? '9+' : badge}
-                      </span>
-                    )}
-                  </button>
-                ))}
+              <div className="space-y-0.5">
+                {adminItems.map(({ path, label, icon: Icon, badge }) => {
+                  const active = isActive(path);
+                  return (
+                    <Tooltip key={path} label={label} badge={badge}>
+                      <button onClick={() => handleAdminNav(path)} className={navBtnClass(active, 'red')}>
+                        <Icon className={iconCls(active, 'red')} />
+                        {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
+                        {!collapsed && <Badge value={badge} tone="red" />}
+                        {collapsed && <DotBadge value={badge} tone="red" />}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
 
                 {/* ── Beta sub-group ── */}
                 {!collapsed ? (
@@ -398,122 +436,146 @@ export default function Navbar() {
                       setBetaOpen(next);
                       localStorage.setItem('kp_beta_open', next ? '1' : '0');
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg
+                      text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]
+                      transition-colors duration-150 ease-out group/beta"
                   >
-                    <FlaskConical className="w-[16px] h-[16px] shrink-0" style={{ color: '#EAB308' }} />
+                    <FlaskConical className="w-[16px] h-[16px] shrink-0 transition-transform duration-150 group-hover/beta:scale-110" style={{ color: '#EAB308' }} />
                     <span className="text-[13px] font-medium flex-1 text-left">Beta</span>
-                    <span style={{
-                      background: 'rgba(234,179,8,0.12)',
-                      color: '#EAB308',
-                      fontSize: 8,
-                      fontWeight: 700,
-                      borderRadius: 4,
-                      padding: '2px 5px',
-                      letterSpacing: '0.5px',
-                    }}>DEV</span>
-                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${betaOpen ? 'rotate-180' : ''}`} />
+                    <span className="bg-yellow-500/12 text-yellow-500 text-[9px] font-bold rounded px-1.5 py-0.5 tracking-wider">
+                      DEV
+                    </span>
+                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ease-out ${betaOpen ? 'rotate-0' : '-rotate-90'}`} />
                   </button>
                 ) : (
-                  <div className="flex justify-center mt-1 mb-1">
-                    <FlaskConical className="w-4 h-4" style={{ color: '#EAB308' }} />
+                  <div className="relative my-2 flex justify-center">
+                    <span className="block w-6 h-px bg-yellow-500/25" />
+                    <FlaskConical className="w-[12px] h-[12px] absolute -top-[6px] bg-slate-900 px-0.5" style={{ color: '#EAB308' }} />
                   </div>
                 )}
-                {(betaOpen || collapsed) && betaItems.map(({ path, label, icon: Icon }) => (
-                  <button key={path} onClick={() => handleAdminNav(path)}
-                    title={collapsed ? label : undefined}
-                    style={{ opacity: 0.5 }}
-                    className={`w-full flex items-center gap-3 rounded-lg text-[12px] font-medium transition-all duration-200 hover:!opacity-100
-                      ${collapsed ? 'justify-center px-0 py-2' : 'px-3 py-2 pl-6'}
-                      ${isActive(path)
-                        ? `bg-yellow-500/20 text-yellow-300 ${collapsed ? '' : 'border-l-2 border-yellow-500 pl-[22px]'}`
-                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-                      }`}
-                  >
-                    <Icon className={`w-[16px] h-[16px] shrink-0 ${isActive(path) ? 'text-yellow-400' : ''}`} />
-                    {!collapsed && <span className="flex-1 text-left">{label}</span>}
-                  </button>
-                ))}
-              </>
+                {(betaOpen || collapsed) && betaItems.map(({ path, label, icon: Icon }) => {
+                  const active = isActive(path);
+                  return (
+                    <Tooltip key={path} label={label}>
+                      <button onClick={() => handleAdminNav(path)}
+                        className={`${navBtnClass(active, 'yellow')} ${collapsed ? '' : 'pl-6'} opacity-75 hover:opacity-100`}
+                      >
+                        <Icon className={iconCls(active, 'yellow')} />
+                        {!collapsed && <span className="flex-1 text-left truncate text-[12px]">{label}</span>}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+              </div>
             )}
           </div>
         </nav>
 
-        {/* Collapse toggle (desktop only) */}
+        {/* Collapse toggle — more visible with rotation animation */}
         <div className="hidden lg:block px-2 py-2 border-t border-white/[0.06]">
           <button onClick={toggleCollapse}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.04] transition-colors text-xs"
+            className={`group/col w-full flex items-center gap-2 px-3 py-2 rounded-lg
+              text-slate-400 hover:text-white hover:bg-brand-500/10
+              ring-1 ring-transparent hover:ring-brand-500/30
+              transition-all duration-200 ease-out text-xs
+              ${collapsed ? 'justify-center' : ''}`}
             title={collapsed ? 'Ouvrir la barre' : 'Réduire la barre'}
           >
-            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-            {!collapsed && <span>Réduire</span>}
+            <PanelLeftClose
+              className={`w-4 h-4 transition-transform duration-300 ease-out
+                group-hover/col:text-brand-300
+                ${collapsed ? 'rotate-180' : 'rotate-0'}`}
+            />
+            {!collapsed && <span className="font-medium">Réduire</span>}
           </button>
         </div>
 
         {/* Admin mode badge */}
         {isAdminMode && !collapsed && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            margin: '0 8px 4px', padding: '6px 10px',
-            background: '#EF444415', borderRadius: 8,
-          }}>
-            <Unlock style={{ width: 12, height: 12, color: '#EF4444' }} />
-            <span style={{ color: '#EF4444', fontSize: 11, fontWeight: 600, flex: 1 }}>Mode Admin</span>
-            <button onClick={lockAdmin} style={{
-              background: 'none', border: 'none', color: '#64748B',
-              fontSize: 10, cursor: 'pointer', textDecoration: 'underline',
-              padding: 0,
-            }}>Verrouiller</button>
+          <div className="flex items-center gap-2 mx-2 mb-1 px-2.5 py-1.5 rounded-lg
+            bg-red-500/10 border border-red-500/20">
+            <Unlock className="w-3 h-3 text-red-400 shrink-0" />
+            <span className="text-red-300 text-[11px] font-semibold flex-1">Mode Admin</span>
+            <button onClick={lockAdmin}
+              className="text-slate-500 hover:text-red-300 text-[10px] underline underline-offset-2 transition-colors">
+              Verrouiller
+            </button>
           </div>
         )}
         {isAdminMode && collapsed && (
           <div className="flex justify-center px-2 pb-1">
-            <button onClick={lockAdmin} title="Verrouiller admin"
-              className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
-              <Unlock style={{ width: 14, height: 14, color: '#EF4444' }} />
-            </button>
+            <Tooltip label="Verrouiller admin">
+              <button onClick={lockAdmin}
+                className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                <Unlock className="w-3.5 h-3.5 text-red-400" />
+              </button>
+            </Tooltip>
           </div>
         )}
 
-        {/* User section */}
-        <div className="px-2 py-3 border-t border-white/[0.06] shrink-0">
+        {/* User section — avatar + name truncated, polished actions */}
+        <div className="px-2 py-3 border-t border-white/[0.06] shrink-0 bg-slate-900">
           {collapsed ? (
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-brand-600/20 flex items-center justify-center">
-                <span className="text-brand-300 font-bold text-sm">
-                  {user.utilisateur?.charAt(0)?.toUpperCase()}
-                </span>
-              </div>
-              <button onClick={handleSwitchUser}
-                className="p-2 rounded-lg text-slate-500 hover:text-brand-400 hover:bg-white/5 transition-colors"
-                title="Changer d'utilisateur">
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <button onClick={() => { logout(); navigate('/'); }}
-                className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5 transition-colors"
-                title="Déconnexion">
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2 px-3 py-2">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-brand-600/20 flex items-center justify-center shrink-0">
-                  <span className="text-brand-300 font-bold text-sm">
+            <div className="flex flex-col items-center gap-1.5">
+              <Tooltip label={user.utilisateur || 'Utilisateur'}>
+                <div className="relative w-9 h-9 rounded-full
+                  bg-gradient-to-br from-brand-500 to-brand-700
+                  flex items-center justify-center
+                  ring-2 ring-brand-500/20
+                  shadow-[0_2px_10px_rgba(124,58,237,0.3)]">
+                  <span className="text-white font-bold text-sm">
                     {user.utilisateur?.charAt(0)?.toUpperCase()}
                   </span>
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" />
+                </div>
+              </Tooltip>
+              <Tooltip label="Changer d'utilisateur">
+                <button onClick={handleSwitchUser}
+                  className="p-2 rounded-lg text-slate-500 hover:text-brand-300 hover:bg-white/5 transition-all duration-150">
+                  <RefreshCw className="w-4 h-4 transition-transform hover:rotate-180 duration-500" />
+                </button>
+              </Tooltip>
+              <Tooltip label="Déconnexion">
+                <button onClick={() => { logout(); navigate('/'); }}
+                  className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all duration-150">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 px-2 py-2 rounded-lg
+                bg-white/[0.02] hover:bg-white/[0.04] transition-colors duration-150">
+                <div className="relative w-9 h-9 rounded-full shrink-0
+                  bg-gradient-to-br from-brand-500 to-brand-700
+                  flex items-center justify-center
+                  ring-2 ring-brand-500/20
+                  shadow-[0_2px_10px_rgba(124,58,237,0.3)]">
+                  <span className="text-white font-bold text-sm">
+                    {user.utilisateur?.charAt(0)?.toUpperCase()}
+                  </span>
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200 truncate">{user.utilisateur}</p>
-                  <p className="text-[11px] text-slate-500 capitalize">{user.target}{user.role ? ` · ${user.role}` : ''}</p>
+                  <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                    {user.utilisateur}
+                  </p>
+                  <p className="text-[11px] text-slate-400 capitalize truncate leading-tight mt-0.5">
+                    {user.target}{user.role ? ` · ${user.role}` : ''}
+                  </p>
                 </div>
               </div>
               <div className="flex gap-1">
                 <button onClick={handleSwitchUser}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-brand-300 hover:bg-white/5 transition-colors">
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
+                    text-[11px] font-medium text-slate-400 hover:text-brand-300 hover:bg-brand-500/10
+                    transition-all duration-150">
                   <RefreshCw className="w-3 h-3" /> Changer
                 </button>
                 <button onClick={() => { logout(); navigate('/'); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-colors">
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
+                    text-[11px] font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-500/10
+                    transition-all duration-150">
                   <LogOut className="w-3 h-3" /> Déconnexion
                 </button>
               </div>
@@ -523,16 +585,16 @@ export default function Navbar() {
 
         {/* Footer branding */}
         {!collapsed && (
-          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#A1A1AA' }}>
+          <div className="text-center py-3 text-[10px] text-slate-500 border-t border-white/[0.03]">
             Propulsé par{' '}
-            <span style={{ fontWeight: 800, fontSize: 11 }}>
-              <span style={{ color: '#7C3AED' }}>Tk</span>
-              <span style={{ color: '#FAFAFA' }}>S</span>
-              <span style={{ color: '#EC4899' }}>∞</span>
-              <span style={{ color: '#FAFAFA' }}>26</span>
+            <span className="font-extrabold text-[11px]">
+              <span className="text-brand-500">Tk</span>
+              <span className="text-slate-100">S</span>
+              <span className="text-pink-500">∞</span>
+              <span className="text-slate-100">26</span>
             </span>
             {' '}— une solution{' '}
-            <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
+            <span className="font-bold text-brand-400">Klik&Dev</span>
           </div>
         )}
       </aside>

@@ -11,6 +11,7 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
 from app.database import get_cursor
@@ -77,18 +78,18 @@ def _seed_default():
             ("google-pixel-8-pro", "Google", "Pixel 8 Pro", 90, "128 Go", 699, "256 Go", 799, "Reconditionné Premium"),
             ("honor-magic6-pro", "Honor", "Magic6 Pro", 100, "512 Go", 899, None, None, "Reconditionné Premium"),
         ]
-        for d in data:
-            slug, marque, modele, ordre, s1, p1, s2, p2, condition = d
-            cur.execute(
-                """
-                INSERT INTO smartphones_tarifs
-                (slug, marque, modele, ordre, stockage_1, prix_1,
-                 stockage_2, prix_2, condition)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (slug) DO NOTHING
-                """,
-                (slug, marque, modele, ordre, s1, p1, s2, p2, condition),
-            )
+        # Batch INSERT en 1 round-trip (au lieu de 10) via execute_values
+        execute_values(
+            cur,
+            """
+            INSERT INTO smartphones_tarifs
+            (slug, marque, modele, ordre, stockage_1, prix_1,
+             stockage_2, prix_2, condition)
+            VALUES %s
+            ON CONFLICT (slug) DO NOTHING
+            """,
+            data,
+        )
         logger.info("smartphones_tarifs : %d modèles seed", len(data))
 
 
@@ -189,7 +190,17 @@ def create_smartphone(payload: SmartphoneCreate):
              payload.condition, payload.image_url),
         )
         row = cur.fetchone()
+    _invalidate_phones_cache()
     return dict(row)
+
+
+def _invalidate_phones_cache():
+    """Invalide le cache in-memory de _tarifs_to_phones apres un CRUD."""
+    try:
+        from app.api.iphones_stock import _invalidate_tarifs_cache
+        _invalidate_tarifs_cache()
+    except Exception:
+        pass
 
 
 @router.patch("/{tarif_id}")
@@ -208,6 +219,7 @@ def update_smartphone(tarif_id: int, payload: SmartphoneUpdate):
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Smartphone non trouvé")
+    _invalidate_phones_cache()
     return dict(row)
 
 
@@ -223,6 +235,7 @@ def delete_smartphone(tarif_id: int):
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Smartphone non trouvé")
+    _invalidate_phones_cache()
     return {"ok": True, "id": tarif_id}
 
 

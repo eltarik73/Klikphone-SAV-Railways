@@ -4,12 +4,15 @@ Associé au générateur vidéo Story 9:16 pour Instagram/TikTok.
 """
 
 import logging
+import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from psycopg2.extras import execute_values
 
 from app.database import get_cursor
 
@@ -17,6 +20,23 @@ from app.database import get_cursor
 router = APIRouter(prefix="/api/iphones", tags=["iphones-stock"])
 _ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cache TTL in-memory pour _tarifs_to_phones()
+# Evite 2 round-trips DB a chaque appel de list_iphones() / generate_video().
+# TTL court (30s) car les prix peuvent bouger via admin, et l'invalidation
+# manuelle via _invalidate_tarifs_cache() est deja branchee sur les CRUD.
+# ---------------------------------------------------------------------------
+_TARIFS_CACHE_TTL = 30.0  # seconds
+_tarifs_cache: dict = {"ts": 0.0, "data": None}
+_tarifs_cache_lock = threading.Lock()
+
+
+def _invalidate_tarifs_cache():
+    """Vide le cache. A appeler sur tout INSERT/UPDATE/DELETE de tarifs."""
+    with _tarifs_cache_lock:
+        _tarifs_cache["ts"] = 0.0
+        _tarifs_cache["data"] = None
 
 
 def _ensure_table():
@@ -87,16 +107,17 @@ def _seed_default():
             ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", "Reconditionné", 349, 449, 9, None),
             ("iPhone 12", "iphone-12", "64GB", "Bleu Pacifique", "#3a6a8a", "blue", "Reconditionné", 249, 349, 6, None),
         ]
-        for d in data:
-            cur.execute(
-                """
-                INSERT INTO iphones_stock
-                (model, model_key, storage, color_name, color_hex, color_key,
-                 condition, price, old_price, stock, image_url)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """,
-                d,
-            )
+        # Batch INSERT 1 round-trip au lieu de 12
+        execute_values(
+            cur,
+            """
+            INSERT INTO iphones_stock
+            (model, model_key, storage, color_name, color_hex, color_key,
+             condition, price, old_price, stock, image_url)
+            VALUES %s
+            """,
+            data,
+        )
         logger.info("iphones_stock : %d modèles seed", len(data))
 
 
@@ -199,21 +220,26 @@ def _backfill_image_urls():
         ("iPhone 12", "Violet", "iphone-12-purple-select-2021"),
         ("iPhone 12", "(PRODUCT)RED", "iphone-12-red-select-2020"),
     ]
+    # Batch UPDATE via VALUES clause : 1 round-trip au lieu de ~50
+    rows = [(model, color_name, _apple_url(slug)) for model, color_name, slug in mappings]
+    if not rows:
+        return
     with get_cursor() as cur:
-        for model, color_name, slug in mappings:
-            url = _apple_url(slug)
-            # Remplace si NULL, vide, ou si c'est une URL pngimg (ancien seed)
-            cur.execute(
-                """
-                UPDATE iphones_stock
-                SET image_url = %s, updated_at = NOW()
-                WHERE model = %s AND color_name = %s
-                  AND (image_url IS NULL
-                       OR image_url = ''
-                       OR image_url LIKE 'https://pngimg.com/%%')
-                """,
-                (url, model, color_name),
-            )
+        execute_values(
+            cur,
+            """
+            UPDATE iphones_stock AS s
+            SET image_url = v.url, updated_at = NOW()
+            FROM (VALUES %s) AS v(model, color_name, url)
+            WHERE s.model = v.model
+              AND s.color_name = v.color_name
+              AND (s.image_url IS NULL
+                   OR s.image_url = ''
+                   OR s.image_url LIKE 'https://pngimg.com/%%')
+            """,
+            rows,
+            template="(%s, %s, %s)",
+        )
 
 
 def _ensure_full_catalog():
@@ -284,33 +310,36 @@ def _ensure_full_catalog():
         ("iPhone 12", "iphone-12", "128GB", "Violet", "#bba1c8", "purple", RP, 359, 809, 3, "iphone-12-purple-select-2021"),
         ("iPhone 12", "iphone-12", "128GB", "(PRODUCT)RED", "#c32333", "product-red", RP, 359, 809, 3, "iphone-12-red-select-2020"),
     ]
-    added = 0
+    # Prepare rows avec image_url deja calcule
+    rows = []
+    for row in catalog:
+        (model, model_key, storage, color_name, color_hex, color_key,
+         condition, price, old_price, stock, slug) = row
+        image_url = a(slug) if slug else None
+        rows.append((model, model_key, storage, color_name, color_hex,
+                     color_key, condition, price, old_price, stock, image_url))
+    if not rows:
+        return
+    # Batch INSERT en 1 round-trip : SELECT des (model,color_name) existants,
+    # puis INSERT en bulk de ceux qui manquent via execute_values.
+    # Evite d'ajouter une contrainte UNIQUE (schema break).
     with get_cursor() as cur:
-        for row in catalog:
+        cur.execute("SELECT model, color_name FROM iphones_stock")
+        existing = {(r["model"], r["color_name"]) for r in cur.fetchall()}
+        to_insert = [r for r in rows if (r[0], r[3]) not in existing]
+        if not to_insert:
+            return
+        execute_values(
+            cur,
+            """
+            INSERT INTO iphones_stock
             (model, model_key, storage, color_name, color_hex, color_key,
-             condition, price, old_price, stock, slug) = row
-            image_url = a(slug) if slug else None
-            # Check existence (model + color_name) — pas sur storage pour éviter
-            # de dupliquer si l'admin a changé 128GB→256GB
-            cur.execute(
-                "SELECT id FROM iphones_stock WHERE model = %s AND color_name = %s LIMIT 1",
-                (model, color_name),
-            )
-            if cur.fetchone():
-                continue
-            cur.execute(
-                """
-                INSERT INTO iphones_stock
-                (model, model_key, storage, color_name, color_hex, color_key,
-                 condition, price, old_price, stock, image_url)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """,
-                (model, model_key, storage, color_name, color_hex, color_key,
-                 condition, price, old_price, stock, image_url),
-            )
-            added += 1
-    if added:
-        logger.info("Catalogue iphones_stock : %d nouvelles entrees ajoutees", added)
+             condition, price, old_price, stock, image_url)
+            VALUES %s
+            """,
+            to_insert,
+        )
+        logger.info("Catalogue iphones_stock : %d nouvelles entrees ajoutees", len(to_insert))
 
 
 def _normalize_conditions_and_prices():
@@ -336,19 +365,27 @@ def _normalize_conditions_and_prices():
         ("iPhone 13", "Minuit"): (429, 909, "Reconditionné Premium"),
         ("iPhone 12", "Bleu Pacifique"): (359, 809, "Reconditionné Premium"),
     }
-    # UPDATE conditions "Reconditionné" simple -> "Reconditionné Premium"
+    # 1 seul UPDATE pour "Reconditionné" -> "Reconditionné Premium"
+    # + 1 seul UPDATE batch via VALUES pour le price_map (au lieu de 13 roundtrips)
     with get_cursor() as cur:
         cur.execute(
             """UPDATE iphones_stock SET condition = 'Reconditionné Premium',
                updated_at = NOW() WHERE condition = 'Reconditionné'"""
         )
-        # Sync prix+old_price si dispo dans le mapping
-        for (model, color_name), (price, old_price, condition) in price_map.items():
-            cur.execute(
-                """UPDATE iphones_stock
-                   SET price = %s, old_price = %s, condition = %s, updated_at = NOW()
-                   WHERE model = %s AND color_name = %s""",
-                (price, old_price, condition, model, color_name),
+        rows = [(m, c, p, o, cond)
+                for (m, c), (p, o, cond) in price_map.items()]
+        if rows:
+            execute_values(
+                cur,
+                """
+                UPDATE iphones_stock AS s
+                SET price = v.price, old_price = v.old_price,
+                    condition = v.condition, updated_at = NOW()
+                FROM (VALUES %s) AS v(model, color_name, price, old_price, condition)
+                WHERE s.model = v.model AND s.color_name = v.color_name
+                """,
+                rows,
+                template="(%s, %s, %s, %s, %s)",
             )
 
 
@@ -373,7 +410,6 @@ def init_iphones_stock():
     _ensure_table()
     _seed_default()
     # Backfill + catalogue lancés en background pour ne pas bloquer le boot Railway
-    import threading
     threading.Thread(target=_deferred_init, daemon=True, name="iphones_deferred_init").start()
 
 
@@ -464,7 +500,18 @@ def _tarifs_to_phones() -> list:
 
     Chaque tarif genere 1-3 entrees (une par stockage defini). Les IDs sont
     prefixes (it_<id>_<n> pour iphone_tarifs, st_<id>_<n> pour smartphones)
-    pour eviter les collisions entre les 2 tables."""
+    pour eviter les collisions entre les 2 tables.
+
+    Resultat cache en memoire (TTL 30s) pour eviter 2 round-trips DB a chaque
+    appel. Invalide automatiquement sur tout CRUD via _invalidate_tarifs_cache().
+    """
+    # Lecture cache sous lock court
+    with _tarifs_cache_lock:
+        now = time.time()
+        cached = _tarifs_cache.get("data")
+        if cached is not None and (now - _tarifs_cache["ts"]) < _TARIFS_CACHE_TTL:
+            return cached
+
     phones = []
     # Prix Apple neuf de reference pour creer old_price sur modeles Apple
     apple_neuf = {
@@ -486,7 +533,7 @@ def _tarifs_to_phones() -> list:
     }
 
     with get_cursor() as cur:
-        # iPhone tarifs
+        # iPhone tarifs (LIMIT 500 garde-fou, ~25 rows en prod)
         cur.execute("""
             SELECT id, slug, modele,
                    stockage_1, prix_1, stock_1,
@@ -496,6 +543,7 @@ def _tarifs_to_phones() -> list:
             FROM iphone_tarifs
             WHERE actif = TRUE
             ORDER BY ordre ASC
+            LIMIT 500
         """)
         for r in cur.fetchall():
             d = dict(r)
@@ -527,7 +575,7 @@ def _tarifs_to_phones() -> list:
                     "image_url": f"/api/iphones/photo/{d['slug']}",
                     "active": True,
                 })
-        # Smartphones (non-Apple)
+        # Smartphones (non-Apple) (LIMIT 500 garde-fou)
         cur.execute("""
             SELECT id, slug, marque, modele,
                    stockage_1, prix_1, stock_1,
@@ -537,6 +585,7 @@ def _tarifs_to_phones() -> list:
             FROM smartphones_tarifs
             WHERE actif = TRUE
             ORDER BY marque ASC, ordre ASC
+            LIMIT 500
         """)
         for r in cur.fetchall():
             d = dict(r)
@@ -567,6 +616,10 @@ def _tarifs_to_phones() -> list:
                     "image_url": d.get("image_url"),
                     "active": True,
                 })
+    # Stockage cache
+    with _tarifs_cache_lock:
+        _tarifs_cache["ts"] = time.time()
+        _tarifs_cache["data"] = phones
     return phones
 
 
@@ -610,6 +663,7 @@ def create_iphone(payload: IphoneCreate):
             ),
         )
         row = cur.fetchone()
+    _invalidate_tarifs_cache()
     return dict(row)
 
 
@@ -628,6 +682,7 @@ def update_iphone(iphone_id: int, payload: IphoneUpdate):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="iPhone introuvable")
+    _invalidate_tarifs_cache()
     return dict(row)
 
 
@@ -642,6 +697,7 @@ def delete_iphone(iphone_id: int):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="iPhone introuvable")
+    _invalidate_tarifs_cache()
     return {"status": "deleted", "id": iphone_id}
 
 

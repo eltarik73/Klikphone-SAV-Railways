@@ -135,10 +135,11 @@ export default function ClientsPage() {
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher par nom, téléphone, email..."
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
+            <label htmlFor="clients-search" className="sr-only">Rechercher un client</label>
+            <input id="clients-search" type="text" placeholder="Rechercher par nom, téléphone, email..."
               value={search} onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
             />
           </div>
         </div>
@@ -174,11 +175,15 @@ export default function ClientsPage() {
                 <p className="text-slate-500 font-medium">Aucun client trouvé</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100/80">
+              <div className="divide-y divide-slate-100/80" role="list">
                 {sorted.map((c) => (
                   <div key={c.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Sélectionner ${c.prenom || ''} ${c.nom || ''}`}
                     onClick={() => handleSelectClient(c)}
-                    className={`lg:grid lg:grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-4 sm:px-5 py-3.5 cursor-pointer transition-colors group
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelectClient(c); } }}
+                    className={`lg:grid lg:grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-4 sm:px-5 py-3.5 cursor-pointer transition-colors group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-inset
                       ${selectedClient?.id === c.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center gap-3">
@@ -262,13 +267,13 @@ export default function ClientsPage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => setEditMode(!editMode)}
-                      className="btn-ghost p-2" title="Modifier">
-                      <Edit3 className="w-4 h-4" />
+                    <button type="button" onClick={() => setEditMode(!editMode)}
+                      className="btn-ghost p-2" title="Modifier" aria-label="Modifier le client">
+                      <Edit3 className="w-4 h-4" aria-hidden="true" />
                     </button>
-                    <button onClick={() => setSelectedClient(null)}
-                      className="btn-ghost p-2" title="Fermer">
-                      <X className="w-4 h-4" />
+                    <button type="button" onClick={() => setSelectedClient(null)}
+                      className="btn-ghost p-2" title="Fermer" aria-label="Fermer le panneau client">
+                      <X className="w-4 h-4" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
@@ -277,30 +282,30 @@ export default function ClientsPage() {
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="input-label">Nom</label>
-                        <input value={editForm.nom} onChange={e => setEditForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                        <label htmlFor="client-edit-nom" className="input-label">Nom</label>
+                        <input id="client-edit-nom" value={editForm.nom} onChange={e => setEditForm(f => ({ ...f, nom: e.target.value }))} className="input" />
                       </div>
                       <div>
-                        <label className="input-label">Prénom</label>
-                        <input value={editForm.prenom} onChange={e => setEditForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
+                        <label htmlFor="client-edit-prenom" className="input-label">Prénom</label>
+                        <input id="client-edit-prenom" value={editForm.prenom} onChange={e => setEditForm(f => ({ ...f, prenom: e.target.value }))} className="input" />
                       </div>
                     </div>
                     <div>
-                      <label className="input-label">Téléphone</label>
-                      <input value={editForm.telephone} onChange={e => setEditForm(f => ({ ...f, telephone: e.target.value }))} className="input" />
+                      <label htmlFor="client-edit-tel" className="input-label">Téléphone</label>
+                      <input id="client-edit-tel" type="tel" value={editForm.telephone} onChange={e => setEditForm(f => ({ ...f, telephone: e.target.value }))} className="input" />
                     </div>
                     <div>
-                      <label className="input-label">Email</label>
-                      <input value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className="input" />
+                      <label htmlFor="client-edit-email" className="input-label">Email</label>
+                      <input id="client-edit-email" type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className="input" />
                     </div>
                     <div>
-                      <label className="input-label">Société</label>
-                      <input value={editForm.societe} onChange={e => setEditForm(f => ({ ...f, societe: e.target.value }))} className="input" />
+                      <label htmlFor="client-edit-societe" className="input-label">Société</label>
+                      <input id="client-edit-societe" value={editForm.societe} onChange={e => setEditForm(f => ({ ...f, societe: e.target.value }))} className="input" />
                     </div>
                     <div className="flex justify-end gap-2 pt-2">
-                      <button onClick={() => setEditMode(false)} className="btn-secondary text-xs">Annuler</button>
-                      <button onClick={handleSaveClient} className="btn-primary text-xs">
-                        <Save className="w-3.5 h-3.5" /> Enregistrer
+                      <button type="button" onClick={() => setEditMode(false)} className="btn-secondary text-xs">Annuler</button>
+                      <button type="button" onClick={handleSaveClient} className="btn-primary text-xs">
+                        <Save className="w-3.5 h-3.5" aria-hidden="true" /> Enregistrer
                       </button>
                     </div>
                   </div>
