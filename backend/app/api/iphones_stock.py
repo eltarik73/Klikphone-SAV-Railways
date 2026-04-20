@@ -307,10 +307,8 @@ def _ensure_full_catalog():
         logger.info("Catalogue iphones_stock : %d nouvelles entrees ajoutees", added)
 
 
-def init_iphones_stock():
-    """À appeler au startup (lifespan de main.py)."""
-    _ensure_table()
-    _seed_default()
+def _deferred_init():
+    """Backfill + catalogue en background (non-bloquant pour le startup Railway)."""
     try:
         _backfill_image_urls()
     except Exception as e:
@@ -319,6 +317,15 @@ def init_iphones_stock():
         _ensure_full_catalog()
     except Exception as e:
         logger.warning("Ensure full catalog: %s", e)
+
+
+def init_iphones_stock():
+    """Appelé au startup. Table + seed inline (rapide), reste en thread."""
+    _ensure_table()
+    _seed_default()
+    # Backfill + catalogue lancés en background pour ne pas bloquer le boot Railway
+    import threading
+    threading.Thread(target=_deferred_init, daemon=True, name="iphones_deferred_init").start()
 
 
 # ---------------------------------------------------------------------------
