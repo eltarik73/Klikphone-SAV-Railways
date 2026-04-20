@@ -311,7 +311,35 @@ function Select({ label, value, onChange, options }) {
 }
 
 function VideoModal({ open, result, onClose, onRegenerate }) {
+  const [downloading, setDownloading] = useState(false);
   if (!open || !result) return null;
+
+  const filename = result.filename || 'klikphone-story.mp4';
+
+  // Force le téléchargement même si le MP4 est sur un CDN cross-origin :
+  // fetch → Blob → objectURL → click programmatique.
+  const downloadVideo = async () => {
+    setDownloading(true);
+    try {
+      const response = await fetch(result.video_url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (err) {
+      // Fallback : ouvrir dans un nouvel onglet
+      window.open(result.video_url, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const shareLink = async () => {
     if (navigator.share) {
       try {
@@ -322,15 +350,27 @@ function VideoModal({ open, result, onClose, onRegenerate }) {
       alert('URL copiée dans le presse-papier');
     }
   };
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-zinc-900 text-white rounded-2xl border border-white/10 max-w-md w-full overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-zinc-900 text-white rounded-2xl border border-white/10 max-w-md w-full overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header avec bouton X visible et cliquable */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-2">
             <Film className="w-5 h-5 text-orange-500" />
             <h3 className="font-bold">Ta vidéo Story est prête</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10">
+          <button
+            onClick={onClose}
+            aria-label="Fermer"
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/20 active:bg-white/30 transition-all"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -351,24 +391,39 @@ function VideoModal({ open, result, onClose, onRegenerate }) {
         </div>
 
         <div className="grid grid-cols-3 gap-2 p-4 pt-0">
-          <a
-            href={result.video_url}
-            download={result.filename || 'klikphone-story.mp4'}
-            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold"
+          <button
+            onClick={downloadVideo}
+            disabled={downloading}
+            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-bold transition-all"
           >
-            <Download className="w-4 h-4" /> MP4
-          </a>
+            {downloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            {downloading ? 'Téléch…' : 'MP4'}
+          </button>
           <button
             onClick={shareLink}
-            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-bold"
+            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-bold transition-all"
           >
             <Share2 className="w-4 h-4" /> Partager
           </button>
           <button
             onClick={onRegenerate}
-            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-bold"
+            className="flex items-center justify-center gap-2 px-3 py-3 rounded-lg bg-white/10 hover:bg-white/20 text-sm font-bold transition-all"
           >
             <RefreshCw className="w-4 h-4" /> Rejouer
+          </button>
+        </div>
+
+        {/* Bouton fermer additionnel tout en bas (redondant mais pratique) */}
+        <div className="px-4 pb-4">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 text-sm font-semibold transition-all"
+          >
+            Fermer
           </button>
         </div>
       </div>

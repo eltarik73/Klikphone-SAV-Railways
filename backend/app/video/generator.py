@@ -113,55 +113,66 @@ def _download_cached(url: str) -> Optional[bytes]:
         return None
 
 
-def _remove_white_bg(img: Image.Image, feather_px: float = 1.2) -> Image.Image:
-    """Détourage robuste : flood-fill multi-passes + seuil blanc final.
+def _remove_white_bg(img: Image.Image, feather_px: float = 1.0) -> Image.Image:
+    """Détourage robuste : flood-fill + fill-holes + seuil blanc final.
 
-    Problème : Apple CDN renvoie des images avec fond blanc ET ombre
-    projetée grise uniforme (iPhone 16 Pro Max, 13 Pro Max). Un simple
-    seuillage garde l'ombre grise = tache sombre autour du phone.
-    Et un simple flood-fill s'arrête à la transition blanc→gris.
+    Problème : le flood-fill 2e passe (tolérance large) peut s'infiltrer
+    dans les zones d'ombre interne de l'iPhone (reflets sombres titane,
+    ombres de caméra) → crée des semi-transparences qui apparaissent
+    comme "taches noires" sur fond sombre dans la vidéo.
 
     Pipeline :
-    1. Flood-fill depuis les 4 coins avec tolérance 45 → attrape le fond
-       blanc ET l'ombre grise connectée par gradient doux.
-    2. Flood-fill seconde passe depuis les coins avec tolérance 75 → rattrape
-       les zones d'ombre isolées par une transition plus nette (cas
-       iPhone 16 Pro Max).
-    3. Seuil blanc pur (min(R,G,B) >= 240) sur ce qui reste → enlève
-       les derniers pixels blanc pur qui auraient été isolés.
-    4. Feather léger sur l'alpha final pour des bords qui fondent."""
+    1. Flood-fill depuis les 4 coins (tolérance 50, équilibrée) →
+       attrape le fond blanc + ombre proche sans pénétrer l'iPhone.
+    2. Fill-holes : re-flood depuis les coins sur le MASQUE binaire pour
+       identifier uniquement le vrai "fond connecté aux bords". Les
+       trous internes de l'iPhone (zones noires non-connectées aux bords)
+       sont restaurés à opaque.
+    3. Seuil blanc pur (>= 240) sur pixels restants pour capturer ceux
+       qui ont échappé aux deux passes.
+    4. Feather 1px pour bords doux."""
     from PIL import ImageChops, ImageDraw, ImageFilter
     if img.mode != "RGBA":
         img = img.convert("RGBA")
     w, h = img.size
     work = img.convert("RGB")
-    MARKER = (254, 0, 254)
+    MARKER = (254, 0, 254)  # magenta = fond supprimé
     corners = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
 
-    # Passe 1 (tolérance modérée)
+    # Passe unique, tolérance équilibrée : attrape blanc + ombre proche
+    # mais s'arrête au phone (évite de manger les reflets titane)
     for c in corners:
         try:
-            ImageDraw.floodfill(work, c, MARKER, thresh=45)
-        except Exception:
-            pass
-    # Passe 2 (tolérance large pour rattraper ombres isolées)
-    for c in corners:
-        try:
-            ImageDraw.floodfill(work, c, MARKER, thresh=75)
+            ImageDraw.floodfill(work, c, MARKER, thresh=50)
         except Exception:
             pass
 
-    # Masque : pixel MARKER → 0, sinon → 255
+    # Masque binaire initial : MARKER = 0 (fond), autre = 255 (iPhone candidate)
     pixels = work.getdata()
     mask_data = bytes(0 if p == MARKER else 255 for p in pixels)
     mask = Image.frombytes("L", (w, h), mask_data)
 
+    # Fill-holes : re-flood depuis les coins sur le masque binaire pour
+    # distinguer "vrai fond (connecté aux bords)" vs "trou interne iPhone"
+    fm = mask.convert("RGB")  # pixel (0,0,0)=fond, (255,255,255)=phone
+    HOLE_MARKER = (100, 200, 100)  # vert = fond certifié (connecté bord)
+    for c in corners:
+        if fm.getpixel(c) == (0, 0, 0):
+            try:
+                ImageDraw.floodfill(fm, c, HOLE_MARKER, thresh=5)
+            except Exception:
+                pass
+    # Après : vert=vrai fond, noir=trou interne iPhone (à restaurer),
+    # blanc=iPhone. final_mask : 0 seulement pour vert, 255 sinon.
+    fm_pixels = fm.getdata()
+    final_mask_data = bytes(0 if p == HOLE_MARKER else 255 for p in fm_pixels)
+    final_mask = Image.frombytes("L", (w, h), final_mask_data)
+
     # Combine avec alpha original
     orig_alpha = img.split()[-1]
-    new_alpha = ImageChops.multiply(orig_alpha, mask)
+    new_alpha = ImageChops.multiply(orig_alpha, final_mask)
 
-    # Seuil blanc additionnel : enlève les derniers pixels blanc pur
-    # (au cas où certains seraient isolés et non atteints par le flood)
+    # Seuil blanc pur pour pixels echapés
     r, g, b, _ = img.split()
     rgb_min = ImageChops.darker(ImageChops.darker(r, g), b)
     not_white = rgb_min.point(lambda x: 255 if x < 240 else 0)
