@@ -325,6 +325,18 @@ export default function Navbar() {
                   <Tag className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-iphone`) ? 'text-amber-400' : ''}`} />
                   {!collapsed && <span className="flex-1 text-left">Tarifs iPhones</span>}
                 </button>
+                <button onClick={() => handleNav(`${basePath}/tarifs-smartphones`)}
+                  title={collapsed ? 'Tarifs Smartphones (Samsung, Xiaomi…)' : undefined}
+                  className={`w-full flex items-center gap-3 rounded-lg text-[13px] font-medium transition-all duration-200 mt-1
+                    ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}
+                    ${isActive(`${basePath}/tarifs-smartphones`)
+                      ? `bg-amber-500/20 text-amber-300 ${collapsed ? '' : 'border-l-2 border-amber-400 pl-[10px]'}`
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                    }`}
+                >
+                  <Smartphone className={`w-[18px] h-[18px] shrink-0 ${isActive(`${basePath}/tarifs-smartphones`) ? 'text-amber-400' : ''}`} />
+                  {!collapsed && <span className="flex-1 text-left">Tarifs Smartphones</span>}
+                </button>
               </>
             )}
           </div>

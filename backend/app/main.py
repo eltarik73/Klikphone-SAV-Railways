@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs
 
 
 def _seed_catalog_models():
@@ -221,6 +221,12 @@ async def lifespan(app: FastAPI):
         iphones_stock.init_iphones_stock()
     except Exception as e:
         print(f"Warning iphones_stock init: {e}")
+
+    # Smartphones non-Apple (Samsung, Xiaomi, Google, etc.)
+    try:
+        smartphones_tarifs.init_smartphones_tarifs()
+    except Exception as e:
+        print(f"Warning smartphones_tarifs init: {e}")
 
     # Attestations table
     try:
@@ -457,6 +463,7 @@ app.include_router(depot_distance.router)
 app.include_router(suivi.router)
 app.include_router(iphone_tarifs.router)
 app.include_router(iphones_stock.router)
+app.include_router(smartphones_tarifs.router)
 
 
 # --- HEALTH CHECK ---

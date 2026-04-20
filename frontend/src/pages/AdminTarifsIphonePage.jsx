@@ -92,6 +92,7 @@ export default function AdminTarifsIphonePage() {
         stockage_3: row.stockage_3 || null,
         prix_3: row.prix_3 ? Number(row.prix_3) : null,
         grade: row.grade,
+        condition: row.condition || 'Reconditionné Premium',
         das_tete: row.das_tete,
         das_corps: row.das_corps,
         das_membre: row.das_membre,
@@ -269,6 +270,7 @@ export default function AdminTarifsIphonePage() {
                   <tr>
                     <th className="px-3 py-3 text-center w-10">Sél.</th>
                     <th className="px-3 py-3 text-left">Modèle</th>
+                    <th className="px-3 py-3 text-left w-40">Condition</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 1</th>
                     <th className="px-3 py-3 text-left w-20">Prix 1 (€)</th>
                     <th className="px-3 py-3 text-left w-24">Stockage 2</th>
@@ -308,6 +310,20 @@ export default function AdminTarifsIphonePage() {
                             />
                           </div>
                         </td>
+                        <Cell>
+                          <select
+                            value={r.condition || 'Reconditionné Premium'}
+                            onChange={(e) => updateRow(r.id, 'condition', e.target.value)}
+                            className={`input-cell w-36 font-semibold ${
+                              r.condition === 'Neuf'
+                                ? 'text-emerald-300 border-emerald-700/50'
+                                : 'text-blue-300 border-blue-700/50'
+                            }`}
+                          >
+                            <option value="Neuf">Neuf</option>
+                            <option value="Reconditionné Premium">Recond. Premium</option>
+                          </select>
+                        </Cell>
                         <Cell>
                           <input
                             type="text"

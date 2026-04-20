@@ -50,7 +50,8 @@ def _find_font(regular: bool = True, bold: bool = False, italic: bool = False) -
 # Table + seed
 # ---------------------------------------------------------------------------
 def _ensure_table():
-    """Crée la table iphone_tarifs si elle n'existe pas et seed la gamme complète."""
+    """Crée la table iphone_tarifs si elle n'existe pas et seed la gamme complète.
+    Migration idempotente : ajoute la colonne `condition` si absente."""
     with get_cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS iphone_tarifs (
@@ -71,10 +72,17 @@ def _ensure_table():
                 image_filename TEXT,
                 page_group TEXT,
                 actif BOOLEAN DEFAULT TRUE,
+                condition TEXT DEFAULT 'Reconditionné Premium',
                 updated_at TIMESTAMP DEFAULT NOW()
             );
+            ALTER TABLE iphone_tarifs
+                ADD COLUMN IF NOT EXISTS condition TEXT DEFAULT 'Reconditionné Premium';
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_ordre ON iphone_tarifs(ordre);
             CREATE INDEX IF NOT EXISTS idx_iphone_tarifs_group ON iphone_tarifs(page_group);
+            -- iPhone 16 et 17 par défaut en Neuf (derniers modèles Apple)
+            UPDATE iphone_tarifs SET condition = 'Neuf'
+                WHERE condition IS NULL
+                  AND (slug LIKE 'iphone-16%' OR slug LIKE 'iphone-17%');
         """)
 
 
@@ -157,6 +165,7 @@ class IphoneTarifUpdate(BaseModel):
     ordre: Optional[int] = None
     page_group: Optional[str] = None
     actif: Optional[bool] = None
+    condition: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +177,7 @@ def list_tarifs():
         cur.execute("""
             SELECT id, slug, modele, ordre, stockage_1, prix_1, stockage_2, prix_2,
                    stockage_3, prix_3, grade, das_tete, das_corps, das_membre,
-                   image_filename, page_group, actif, updated_at
+                   image_filename, page_group, actif, condition, updated_at
             FROM iphone_tarifs
             ORDER BY ordre ASC
         """)

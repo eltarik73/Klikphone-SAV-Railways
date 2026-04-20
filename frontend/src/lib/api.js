@@ -563,6 +563,33 @@ class ApiClient {
       body: JSON.stringify({ ids }),
     }, 180000);
   }
+
+  // ─── TARIFS iPHONE (affiches boutique + condition) ──
+  getIphoneTarifs() { return this.get('/api/iphone-tarifs'); }
+  updateIphoneTarif(id, data) {
+    return this.request(`/api/iphone-tarifs/${id}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    });
+  }
+
+  // ─── TARIFS SMARTPHONES (Samsung, Xiaomi, Google, etc.) ──
+  getSmartphonesTarifs(activeOnly = true) {
+    return this.get(`/api/smartphones-tarifs?active_only=${activeOnly}`);
+  }
+  createSmartphoneTarif(data) { return this.post('/api/smartphones-tarifs', data); }
+  updateSmartphoneTarif(id, data) {
+    return this.request(`/api/smartphones-tarifs/${id}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    });
+  }
+  deleteSmartphoneTarif(id) { return this.delete(`/api/smartphones-tarifs/${id}`); }
+  generateSmartphoneImage(marque, modele, storage) {
+    // Génération image via Pollinations.ai, peut prendre 30-60s
+    return this.request('/api/smartphones-tarifs/generate-image', {
+      method: 'POST',
+      body: JSON.stringify({ marque, modele, storage }),
+    }, 90000);
+  }
 }
 
 export const api = new ApiClient();
