@@ -38,7 +38,7 @@ function mapIphone(row) {
     marque: 'Apple',
     modele: row.modele,
     image: row.image_filename
-      ? `${API_BASE}/static/iphones/${row.image_filename}`
+      ? `${API_BASE}/api/iphone-tarifs/image/${encodeURIComponent(row.image_filename)}`
       : null,
     condition: row.condition,
     grade: isNeuf ? 'Neuf' : (row.grade || 'Premium'),
@@ -114,16 +114,27 @@ function HeroShowcase({ phone }) {
       key={phone.key}
       className="relative h-full flex items-center gap-12 px-16 animate-hero-in"
     >
-      {/* Left : image */}
+      {/* Left : image — halo blanc radial + multiply pour "detourer" les JPEG fond blanc */}
       <div className="relative flex-[1] h-full flex items-center justify-center">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-[36rem] h-[36rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/10 to-amber-500/20 blur-3xl animate-pulse-slow" />
+        {/* Aurora derriere */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-[38rem] h-[38rem] rounded-full bg-gradient-to-br from-violet-500/30 via-fuchsia-500/15 to-amber-500/25 blur-3xl animate-pulse-slow" />
+        </div>
+        {/* Halo blanc qui noie le fond JPEG quand combine a mix-blend multiply */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div
+            className="w-[32rem] h-[32rem] rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.7) 40%, rgba(255,255,255,0) 70%)',
+            }}
+          />
         </div>
         {phone.image && (
           <img
             src={phone.image}
             alt={phone.modele}
-            className="relative max-h-[70vh] w-auto object-contain drop-shadow-[0_30px_60px_rgba(124,58,237,0.35)] animate-float"
+            className="relative max-h-[65vh] w-auto object-contain drop-shadow-[0_25px_50px_rgba(0,0,0,0.4)] animate-float"
+            style={{ mixBlendMode: 'multiply' }}
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
@@ -217,12 +228,14 @@ function MiniCard({ phone, highlight }) {
         : 'bg-white/[0.03] border-white/10'}`}
     >
       <div className="flex items-center gap-5 p-5">
-        <div className="relative w-28 h-28 shrink-0 rounded-2xl bg-black/30 flex items-center justify-center overflow-hidden">
+        <div className="relative w-28 h-28 shrink-0 rounded-2xl overflow-hidden flex items-center justify-center"
+             style={{ background: 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.92) 60%, rgba(255,255,255,0.8) 100%)' }}>
           {phone.image && (
             <img
               src={phone.image}
               alt={phone.modele}
               className="w-full h-full object-contain p-2"
+              style={{ mixBlendMode: 'multiply' }}
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
             />
           )}

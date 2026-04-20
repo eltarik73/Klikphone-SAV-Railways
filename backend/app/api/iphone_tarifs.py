@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
 from pydantic import BaseModel
@@ -32,6 +32,21 @@ logger = logging.getLogger(__name__)
 ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
 FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
 LOGO_PATH = ASSETS_DIR / "logo.png"
+
+
+@router.get("/image/{filename}")
+def get_iphone_image(filename: str):
+    """Sert les images iPhone stockées dans backend/app/assets/iphone_tarifs/.
+    Utilisé par la page vitrine (Site Tarifs iPhone) pour afficher les photos."""
+    if "/" in filename or ".." in filename:
+        raise HTTPException(400, "Nom de fichier invalide")
+    path = ASSETS_DIR / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, f"Image {filename} introuvable")
+    return FileResponse(
+        str(path),
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 # Fonts Unicode — DejaVu Sans embarquée dans le repo (fonctionne sur Linux Railway et macOS dev).
 def _find_font(regular: bool = True, bold: bool = False, italic: bool = False) -> str:
