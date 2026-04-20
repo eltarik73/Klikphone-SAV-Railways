@@ -25,6 +25,7 @@ import {
   Zap, Edit3, X, CheckCircle2,
   Flag, PhoneCall, Percent, RotateCcw, Globe,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 // ─── Auto-save status indicator ────────────────────────────────
 function AutoSaveIndicator({ status }) {
@@ -1652,8 +1653,12 @@ export default function TicketDetailPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Dark Header — spacious */}
-      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
+      {/* Dark Header — spacious (motion fadeUp pattern Claude Design) */}
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
         <div className="max-w-7xl mx-auto">
           {/* Top row: back button */}
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors mb-5 -ml-1">
@@ -1677,18 +1682,18 @@ export default function TicketDetailPage() {
                   {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> : <Copy className="w-4 h-4 text-slate-400" aria-hidden="true" />}
                 </button>
                 {t.est_retour_sav && (
-                  <span className="px-2.5 py-1 rounded-full bg-red-500/20 text-red-300 text-xs font-bold flex items-center gap-1">
+                  <span className="liquid-glass px-2.5 py-1 rounded-full text-red-300 text-xs font-bold flex items-center gap-1">
                     <RotateCcw className="w-3.5 h-3.5" /> SAV
                   </span>
                 )}
                 {t.source === 'distance' && (
-                  <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold flex items-center gap-1">
-                    <Globe className="w-3.5 h-3.5" /> Distance
+                  <span className="liquid-glass px-2.5 py-1 rounded-full text-indigo-300 text-xs font-bold flex items-center gap-1">
+                    <Globe className="w-3.5 h-3.5" /> <span className="font-editorial font-normal">Distance</span>
                   </span>
                 )}
                 {t.paye && (
-                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Payé
+                  <span className="liquid-glass px-2.5 py-1 rounded-full text-emerald-300 text-xs font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> <span className="font-editorial font-normal">Payé</span>
                   </span>
                 )}
               </div>
@@ -1725,7 +1730,7 @@ export default function TicketDetailPage() {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Retour SAV banner (red) */}
       {t.est_retour_sav && (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
@@ -374,17 +375,23 @@ export default function DashboardPage() {
         .kp-drag-handle:active { cursor: grabbing; }
       `}</style>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <img src="/logo_k.png" alt="" className="w-8 h-8 rounded-lg object-contain shadow-sm hidden sm:block" />
           <div>
-            <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
-              {user?.target === 'tech' ? 'Espace Technicien' : 'Tableau de bord'}
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 tracking-tight">
+              {user?.target === 'tech'
+                ? <>Espace <span className="font-editorial text-brand-600">Technicien</span></>
+                : <>Tableau de <span className="font-editorial text-brand-600">bord</span></>}
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
               {user?.target === 'tech'
-                ? `Bienvenue ${user?.utilisateur || ''} — vos réparations`
-                : 'Vue d\'ensemble des réparations'}
+                ? <>Bienvenue <span className="font-editorial text-brand-500">{user?.utilisateur || ''}</span> — vos réparations</>
+                : <>Vue d'ensemble des <span className="font-editorial">réparations</span></>}
             </p>
           </div>
         </div>
@@ -399,7 +406,7 @@ export default function DashboardPage() {
             <Plus className="w-4 h-4" /> Nouveau ticket
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Business KPIs — hero header (snap-scroll on mobile) */}
       <div className="flex lg:grid lg:grid-cols-4 gap-3 mb-4 overflow-x-auto sm:overflow-visible kp-scroll kp-snap-x pb-2 lg:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -410,7 +417,7 @@ export default function DashboardPage() {
           { label: 'Taux de réparation', value: `${extraKpis.taux}%`, icon: Percent, gradient: 'from-violet-500 to-fuchsia-600', accent: 'bg-violet-500/10 text-violet-600' },
         ].map(({ label, value, icon: Icon, gradient, accent }, i) => (
           <div key={label}
-            className="relative overflow-hidden rounded-2xl border border-slate-200/70 bg-white p-4 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 animate-in shrink-0 w-[240px] lg:w-auto"
+            className="relative overflow-hidden rounded-2xl border border-white/80 bg-white/70 backdrop-blur-md ring-1 ring-slate-200/50 p-4 hover:shadow-xl hover:shadow-brand-500/5 hover:-translate-y-0.5 transition-all duration-300 animate-in shrink-0 w-[240px] lg:w-auto"
             style={{ animationDelay: `${i * 60}ms` }}>
             <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 blur-2xl`} />
             <div className="flex items-start justify-between relative">

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { Monitor, Wrench, ArrowLeft, Loader2, Lock, MapPin, Phone, RefreshCw } from 'lucide-react';
@@ -95,14 +96,23 @@ export default function LoginPage() {
   const isAccueil = target === 'accueil';
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 relative overflow-hidden">
+      {/* Aurora backdrop subtil (pattern Claude Design) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
+        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[640px] h-[640px] rounded-full bg-gradient-to-br from-brand-400/20 via-fuchsia-300/10 to-amber-200/10 blur-3xl" />
+        <div className="absolute bottom-[-15%] right-[10%] w-[420px] h-[420px] rounded-full bg-gradient-to-br from-sky-300/15 to-violet-300/15 blur-3xl" />
+      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-md relative z-10">
         <button onClick={() => isSwitchMode ? navigate(-1) : navigate('/')}
           className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Retour
         </button>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 p-8 animate-in">
+        <div className="liquid-glass bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 p-8 animate-in">
           {/* Logo */}
           <div className="flex justify-center mb-6">
             <div className="w-20 h-20 rounded-2xl bg-white border border-slate-100 p-1.5 overflow-hidden">
@@ -110,8 +120,13 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <h1 className="text-xl font-display font-bold text-center text-slate-900 mb-1">
-            {isSwitchMode ? "Changer d'utilisateur" : (isAccueil ? 'Espace Accueil' : 'Espace Technicien')}
+          <h1 className="text-2xl font-display font-bold text-center text-slate-900 mb-1 tracking-tight">
+            {isSwitchMode
+              ? <>Changer d'<span className="font-editorial text-brand-600">utilisateur</span></>
+              : isAccueil
+                ? <>Espace <span className="font-editorial text-brand-600">Accueil</span></>
+                : <>Espace <span className="font-editorial text-brand-600">Technicien</span></>
+            }
           </h1>
           <p className="text-sm text-slate-400 text-center mb-8">
             {isSwitchMode ? 'Sélectionnez votre profil' : 'Entrez votre PIN pour continuer'}
@@ -209,7 +224,7 @@ export default function LoginPage() {
             <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
