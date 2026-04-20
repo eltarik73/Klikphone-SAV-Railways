@@ -457,17 +457,17 @@ export default function AdminTarifsSmartphonesPage() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-800/60 text-slate-300 text-xs uppercase">
                   <tr>
-                    <th className="px-3 py-3 text-left w-24">Photo</th>
-                    <th className="px-3 py-3 text-left w-28">Marque</th>
-                    <th className="px-3 py-3 text-left">Modèle</th>
-                    <th className="px-3 py-3 text-left w-44">Condition</th>
-                    <th className="px-3 py-3 text-left w-24">Stockage 1</th>
-                    <th className="px-3 py-3 text-left w-24">Prix 1 (€)</th>
-                    <th className="px-3 py-3 text-center w-20">Stock 1</th>
-                    <th className="px-3 py-3 text-left w-24">Stockage 2</th>
-                    <th className="px-3 py-3 text-left w-24">Prix 2 (€)</th>
-                    <th className="px-3 py-3 text-center w-20">Stock 2</th>
-                    <th className="px-3 py-3 text-right w-44">Actions</th>
+                    <th className="px-2 py-3 text-left w-[68px]">Photo</th>
+                    <th className="px-2 py-3 text-left w-24">Marque</th>
+                    <th className="px-2 py-3 text-left min-w-[220px]">Modèle</th>
+                    <th className="px-2 py-3 text-left w-36">Condition</th>
+                    <th className="px-2 py-3 text-left w-20">Stock. 1</th>
+                    <th className="px-2 py-3 text-left w-[72px]">Prix 1</th>
+                    <th className="px-2 py-3 text-center w-14">Stk</th>
+                    <th className="px-2 py-3 text-left w-20 hidden xl:table-cell">Stock. 2</th>
+                    <th className="px-2 py-3 text-left w-[72px] hidden xl:table-cell">Prix 2</th>
+                    <th className="px-2 py-3 text-center w-14 hidden xl:table-cell">Stk</th>
+                    <th className="px-2 py-3 text-right w-32">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -515,21 +515,22 @@ export default function AdminTarifsSmartphonesPage() {
                           )}
                         </div>
                       </Cell>
-                      <Cell>
+                      <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.marque || ''}
                           onChange={(e) => updateRow(r.id, 'marque', e.target.value)}
-                          className="input-cell w-24 font-bold" />
-                      </Cell>
-                      <Cell>
+                          className="input-cell w-full font-bold" />
+                      </td>
+                      <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.modele || ''}
                           onChange={(e) => updateRow(r.id, 'modele', e.target.value)}
-                          className="input-cell w-full font-semibold text-white" />
-                      </Cell>
-                      <Cell>
+                          className="input-cell w-full font-semibold text-white"
+                          placeholder="Ex: Galaxy A17 5G" />
+                      </td>
+                      <td className="px-2 py-2 align-middle">
                         <div className="relative">
                           <select value={r.condition || 'Reconditionné Premium'}
                             onChange={(e) => updateRow(r.id, 'condition', e.target.value)}
-                            className={`input-cell w-40 pl-7 font-bold appearance-none cursor-pointer ${
+                            className={`input-cell w-full pl-6 pr-1 font-bold appearance-none cursor-pointer ${
                               r.condition === 'Neuf'
                                 ? 'text-emerald-200 border-emerald-600/50 bg-emerald-500/10'
                                 : 'text-blue-200 border-blue-600/50 bg-blue-500/10'
@@ -537,38 +538,40 @@ export default function AdminTarifsSmartphonesPage() {
                             <option value="Neuf">Neuf</option>
                             <option value="Reconditionné Premium">Recond. Premium</option>
                           </select>
-                          <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${
+                          <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${
                             r.condition === 'Neuf' ? 'bg-emerald-400' : 'bg-blue-400'
                           }`} />
                         </div>
-                      </Cell>
-                      <Cell>
+                      </td>
+                      <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.stockage_1 || ''}
                           onChange={(e) => updateRow(r.id, 'stockage_1', e.target.value)}
-                          className="input-cell w-20" />
-                      </Cell>
-                      <Cell>
+                          placeholder="128 Go"
+                          className="input-cell w-full" />
+                      </td>
+                      <td className="px-2 py-2 align-middle">
                         <input type="number" value={r.prix_1 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_1', e.target.value)}
-                          className="input-cell w-20 font-bold text-brand-300" />
-                      </Cell>
-                      <td className="px-3 py-2 text-center align-middle">
+                          className="input-cell w-full font-bold text-brand-300" />
+                      </td>
+                      <td className="px-2 py-2 text-center align-middle">
                         <StockInput value={r.stock_1} onChange={(v) => updateRow(r.id, 'stock_1', v)} />
                       </td>
-                      <Cell>
+                      <td className="px-2 py-2 align-middle hidden xl:table-cell">
                         <input type="text" value={r.stockage_2 || ''}
                           onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
-                          className="input-cell w-20" />
-                      </Cell>
-                      <Cell>
+                          placeholder="256 Go"
+                          className="input-cell w-full" />
+                      </td>
+                      <td className="px-2 py-2 align-middle hidden xl:table-cell">
                         <input type="number" value={r.prix_2 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
-                          className="input-cell w-20 font-bold text-brand-300" />
-                      </Cell>
-                      <td className="px-3 py-2 text-center align-middle">
+                          className="input-cell w-full font-bold text-brand-300" />
+                      </td>
+                      <td className="px-2 py-2 text-center align-middle hidden xl:table-cell">
                         <StockInput value={r.stock_2} onChange={(v) => updateRow(r.id, 'stock_2', v)} />
                       </td>
-                      <td className="px-3 py-2 text-right align-middle">
+                      <td className="px-2 py-2 text-right align-middle">
                         <div className="flex items-center gap-1 justify-end">
                           <button
                             onClick={() => generateImage(r)}
