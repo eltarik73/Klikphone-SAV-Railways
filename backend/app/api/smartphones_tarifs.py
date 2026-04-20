@@ -6,15 +6,24 @@ Permet a l'admin de gerer sa propre liste de smartphones reconditionnes/neufs
 avec prix, storage, condition et image auto-generée (par IA) ou uploadée.
 """
 
+import io
 import logging
+from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from fpdf import FPDF
 from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
 from app.database import get_cursor
+
+# Assets pour PDF (logo + fonts)
+_ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
+_FONTS_DIR = Path(__file__).parent.parent / "assets" / "fonts"
+_LOGO_PATH = _ASSETS_DIR / "logo.png"
 
 
 router = APIRouter(prefix="/api/smartphones-tarifs", tags=["smartphones-tarifs"])
@@ -329,3 +338,270 @@ def generate_image(payload: GenerateImageRequest):
         "query": query,
         "source": "duckduckgo_images",
     }
+
+
+# ---------------------------------------------------------------------------
+# PDF Generation — affiche boutique smartphones (A4)
+# ---------------------------------------------------------------------------
+ORANGE = (245, 130, 32)
+DARK = (40, 40, 40)
+GRAY_BG = (248, 249, 251)
+GRAY_BORDER = (220, 224, 230)
+EMERALD = (34, 160, 110)
+BLUE = (45, 120, 220)
+
+
+def _find_font_file(bold: bool = False, italic: bool = False) -> str:
+    if bold:
+        p = _FONTS_DIR / "DejaVuSans-Bold.ttf"
+    elif italic:
+        p = _FONTS_DIR / "DejaVuSans-Oblique.ttf"
+    else:
+        p = _FONTS_DIR / "DejaVuSans.ttf"
+    if not p.exists():
+        raise RuntimeError(f"Police introuvable : {p}")
+    return str(p)
+
+
+class _SmartphonePDF(FPDF):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self.add_font("UI", "", _find_font_file())
+        self.add_font("UI", "B", _find_font_file(bold=True))
+        self.add_font("UI", "I", _find_font_file(italic=True))
+
+    def header(self):
+        # Bandeau orange en haut
+        self.set_fill_color(*ORANGE)
+        self.rect(0, 0, 210, 8, style="F")
+
+        # Logo centré
+        if _LOGO_PATH.exists():
+            self.image(str(_LOGO_PATH), x=(210 - 22) / 2, y=14, w=22, h=22)
+
+        # Wordmark
+        self.set_font("UI", "B", 22)
+        self.set_text_color(*DARK)
+        self.set_y(38)
+        self.cell(0, 7, "KLIKPHONE", align="C", new_x="LMARGIN", new_y="NEXT")
+
+        # Baseline
+        self.set_font("UI", "I", 9)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 4, "Spécialiste Apple & Smartphones · Chambéry", align="C",
+                  new_x="LMARGIN", new_y="NEXT")
+
+        # Séparateur
+        self.ln(2)
+        self.set_draw_color(*ORANGE)
+        self.set_line_width(0.8)
+        self.line(40, self.get_y(), 170, self.get_y())
+        self.ln(4)
+
+        # Sous-titre
+        self.set_font("UI", "B", 15)
+        self.set_text_color(*DARK)
+        self.cell(0, 7, "NOS SMARTPHONES — TARIFS", align="C",
+                  new_x="LMARGIN", new_y="NEXT")
+        self.ln(3)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("UI", "", 8)
+        self.set_text_color(140, 140, 140)
+        self.cell(0, 4, "klikphone.com  ·  06 95 71 51 96  ·  79 Place Saint-Léger, Chambéry",
+                  align="C", new_x="LMARGIN", new_y="NEXT")
+        self.set_text_color(180, 180, 180)
+        self.cell(0, 4, f"Page {self.page_no()}",
+                  align="C", new_x="LMARGIN", new_y="NEXT")
+
+    def _condition_pill(self, x: float, y: float, condition: str):
+        """Petite pill colorée pour la condition."""
+        is_neuf = (condition or "").lower() == "neuf"
+        color = EMERALD if is_neuf else BLUE
+        label = "NEUF" if is_neuf else "RECOND. PREMIUM"
+
+        self.set_font("UI", "B", 7)
+        tw = self.get_string_width(label) + 4
+        self.set_fill_color(*color)
+        self.set_draw_color(*color)
+        self.set_text_color(255, 255, 255)
+        self.rect(x, y, tw + 1, 4.5, style="F")
+        self.set_xy(x + 0.5, y + 0.3)
+        self.cell(tw, 4, label, align="C")
+        return tw + 1
+
+    def add_smartphone_row(self, phone: dict, y_top: float, row_idx: int):
+        """Une ligne smartphone : photo | marque/modele/condition | prix | stock."""
+        card_h = 32
+        margin = 10
+        x = margin
+
+        # Fond alterné subtil
+        if row_idx % 2 == 1:
+            self.set_fill_color(*GRAY_BG)
+            self.rect(x, y_top, 210 - 2 * margin, card_h, style="F")
+
+        # Border bottom
+        self.set_draw_color(*GRAY_BORDER)
+        self.set_line_width(0.2)
+        self.line(x, y_top + card_h, 210 - margin, y_top + card_h)
+
+        # ─ Photo (gauche) ─
+        img_x, img_y, img_w, img_h = x + 2, y_top + 2, 28, 28
+        img_url = phone.get("image_url") or ""
+        if img_url:
+            try:
+                # FPDF peut charger des URLs directement
+                self.image(img_url, x=img_x, y=img_y, w=img_w, h=img_h)
+            except Exception:
+                # Fallback : rectangle gris
+                self.set_fill_color(240, 240, 240)
+                self.rect(img_x, img_y, img_w, img_h, style="F")
+        else:
+            self.set_fill_color(240, 240, 240)
+            self.rect(img_x, img_y, img_w, img_h, style="F")
+
+        # ─ Marque + Modèle (milieu) ─
+        text_x = x + 34
+        # Marque (petit, majuscules)
+        self.set_font("UI", "B", 8)
+        self.set_text_color(*ORANGE)
+        self.set_xy(text_x, y_top + 3)
+        self.cell(60, 4, (phone.get("marque") or "").upper())
+
+        # Modèle (gros)
+        self.set_font("UI", "B", 14)
+        self.set_text_color(*DARK)
+        self.set_xy(text_x, y_top + 8)
+        modele = phone.get("modele") or ""
+        self.cell(75, 7, modele[:30])
+
+        # Condition pill
+        self.set_xy(text_x, y_top + 17)
+        self._condition_pill(text_x, y_top + 18, phone.get("condition") or "")
+
+        # Stockage dispo (sous le modèle)
+        self.set_font("UI", "", 9)
+        self.set_text_color(100, 100, 100)
+        self.set_xy(text_x, y_top + 24)
+        storages = []
+        for i in (1, 2, 3):
+            s = phone.get(f"stockage_{i}")
+            if s:
+                storages.append(s)
+        if storages:
+            self.cell(75, 4, "Stockage : " + " · ".join(storages))
+
+        # ─ Prix (droite) ─
+        price_x = 130
+        # Prix 1 (principal)
+        if phone.get("prix_1"):
+            self.set_font("UI", "B", 18)
+            self.set_text_color(*ORANGE)
+            price_label = f"{phone['prix_1']}€"
+            self.set_xy(price_x, y_top + 7)
+            self.cell(50, 8, price_label)
+
+            # Stockage 1 en petit
+            if phone.get("stockage_1"):
+                self.set_font("UI", "", 8)
+                self.set_text_color(120, 120, 120)
+                self.set_xy(price_x, y_top + 16)
+                self.cell(50, 4, phone["stockage_1"])
+
+        # Prix 2 (secondaire, si existe)
+        if phone.get("prix_2"):
+            self.set_font("UI", "B", 12)
+            self.set_text_color(100, 100, 100)
+            price2 = f"{phone['prix_2']}€"
+            self.set_xy(price_x, y_top + 21)
+            self.cell(50, 5, price2)
+            if phone.get("stockage_2"):
+                self.set_font("UI", "", 7)
+                self.set_text_color(140, 140, 140)
+                self.set_xy(price_x + 14, y_top + 23)
+                self.cell(20, 4, f"({phone['stockage_2']})")
+
+        # ─ Stock (tout à droite) ─
+        stock_x = 180
+        total_stock = (phone.get("stock_1") or 0) + (phone.get("stock_2") or 0) + \
+                      (phone.get("stock_3") or 0)
+        if total_stock > 0:
+            # Dot vert + nombre
+            self.set_fill_color(*EMERALD)
+            self.ellipse(stock_x, y_top + 10, 2.5, 2.5, style="F")
+            self.set_font("UI", "B", 11)
+            self.set_text_color(*EMERALD)
+            self.set_xy(stock_x + 3, y_top + 8)
+            self.cell(15, 5, f"{total_stock}")
+            self.set_font("UI", "", 7)
+            self.set_text_color(130, 130, 130)
+            self.set_xy(stock_x - 3, y_top + 14)
+            self.cell(20, 4, "en stock")
+        else:
+            # Rupture
+            self.set_fill_color(220, 60, 60)
+            self.ellipse(stock_x, y_top + 10, 2.5, 2.5, style="F")
+            self.set_font("UI", "B", 9)
+            self.set_text_color(200, 50, 50)
+            self.set_xy(stock_x + 3, y_top + 9)
+            self.cell(15, 4, "Rupture")
+
+
+def _render_smartphones_pdf(phones: list) -> bytes:
+    """Génère un PDF A4 listant tous les smartphones avec photos + prix."""
+    pdf = _SmartphonePDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # Calcule position après header
+    y_start = pdf.get_y() + 2
+    row_h = 32
+    usable_height = 280 - y_start  # espace jusqu'au footer
+    rows_per_page = int(usable_height / row_h)
+
+    current_y = y_start
+    idx = 0
+    for phone in phones:
+        # Nouvelle page si plus de place
+        if current_y + row_h > 275:
+            pdf.add_page()
+            current_y = pdf.get_y() + 2
+            idx = 0
+
+        pdf.add_smartphone_row(phone, current_y, idx)
+        current_y += row_h
+        idx += 1
+
+    return bytes(pdf.output())
+
+
+@router.get("/pdf")
+def generate_pdf(marque: Optional[str] = Query(None)):
+    """Génère un PDF A4 avec tous les smartphones actifs (filtre optionnel par marque)."""
+    where = ["actif = TRUE"]
+    params = []
+    if marque:
+        where.append("marque = %s")
+        params.append(marque)
+
+    sql = (
+        "SELECT * FROM smartphones_tarifs "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY marque ASC, ordre ASC, modele ASC"
+    )
+    with get_cursor() as cur:
+        cur.execute(sql, params)
+        phones = [dict(r) for r in cur.fetchall()]
+
+    if not phones:
+        raise HTTPException(404, "Aucun smartphone à afficher")
+
+    pdf_bytes = _render_smartphones_pdf(phones)
+    filename = "smartphones_tarifs.pdf" if not marque else f"smartphones_{marque.lower()}.pdf"
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )

@@ -3,9 +3,24 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Smartphone, Save, Plus, ArrowLeft, Loader2, Check, X, Trash2,
   Sparkles, Image as ImageIcon, Search, Filter, AlertCircle,
-  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag,
+  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown,
 } from 'lucide-react';
 import api from '../lib/api';
+
+const API_URL = import.meta.env.VITE_API_URL || '';
+
+async function openPdf(marque = null) {
+  const token = localStorage.getItem('kp_token');
+  const qs = marque ? `?marque=${encodeURIComponent(marque)}` : '';
+  const res = await fetch(`${API_URL}/api/smartphones-tarifs/pdf${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 
 function useBasePath() {
   const location = useLocation();
@@ -246,6 +261,17 @@ export default function AdminTarifsSmartphonesPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={async () => {
+                try { await openPdf(brandFilter === 'all' ? null : brandFilter); }
+                catch (e) { showToast('error', `PDF : ${e.message}`); }
+              }}
+              disabled={rows.length === 0}
+              title="Générer PDF A4 des tarifs"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
+            >
+              <FileDown className="w-4 h-4" /> PDF
+            </button>
             <button
               onClick={() => setShowNewForm(s => !s)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all"
