@@ -178,6 +178,10 @@ def _remove_white_bg(img: Image.Image, feather_px: float = 1.0) -> Image.Image:
     not_white = rgb_min.point(lambda x: 255 if x < 240 else 0)
     new_alpha = ImageChops.multiply(new_alpha, not_white)
 
+    # Seuillage net sur l'alpha : <128 = totalement transparent, >=128 = opaque
+    # → élimine les pixels semi-transparents résiduels qui créent un halo
+    new_alpha = new_alpha.point(lambda a: 0 if a < 128 else 255)
+
     if feather_px > 0:
         new_alpha = new_alpha.filter(ImageFilter.GaussianBlur(feather_px))
 

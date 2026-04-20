@@ -221,62 +221,68 @@ def _ensure_full_catalog():
     et image_url par défaut. Les entrées existantes ne sont PAS modifiées
     (l'admin peut avoir ajusté prix, stock, image_url custom).
 
-    Appelé à chaque startup → la boutique se remplit automatiquement de tous
-    les modèles vendables, même sur une base déjà seedée en production."""
+    Prix : prix réels Klikphone (Reconditionné Premium) — sync avec la table
+    iphone_tarifs. Le champ old_price = prix Apple neuf officiel (crée la
+    promo "−X€").
+
+    Condition : uniquement "Neuf" (iPhone 16/17) et "Reconditionné Premium"
+    (tout le reste). Pas de "Reconditionné" simple chez Klikphone."""
     a = _apple_url
+    RP = "Reconditionné Premium"
+    NEUF = "Neuf"
     # (model, model_key, storage, color_name, color_hex, color_key,
     #  condition, price, old_price, stock, image_slug)
     catalog = [
-        # ─── iPhone 16 series (neuf) ───────────────────────────────
-        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Neuf", 1299, 1499, 3, "iphone-16-pro-finish-select-202409-6-9inch-naturaltitanium"),
-        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Noir", "#3a3a3e", "black-titanium", "Neuf", 1299, 1499, 2, "iphone-16-pro-finish-select-202409-6-9inch-blacktitanium"),
-        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Blanc", "#e6e3dd", "white-titanium", "Neuf", 1299, 1499, 2, "iphone-16-pro-finish-select-202409-6-9inch-whitetitanium"),
-        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Désert", "#c9a482", "desert-titanium", "Neuf", 1299, 1499, 2, "iphone-16-pro-finish-select-202409-6-9inch-deserttitanium"),
-        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Naturel", "#b8a898", "natural-titanium", "Neuf", 1049, 1229, 4, "iphone-16-pro-finish-select-202409-6-3inch-naturaltitanium"),
-        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Noir", "#3a3a3e", "black-titanium", "Neuf", 1049, 1229, 5, "iphone-16-pro-finish-select-202409-6-3inch-blacktitanium"),
-        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Blanc", "#e6e3dd", "white-titanium", "Neuf", 1049, 1229, 3, "iphone-16-pro-finish-select-202409-6-3inch-whitetitanium"),
-        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Désert", "#c9a482", "desert-titanium", "Neuf", 1049, 1229, 3, "iphone-16-pro-finish-select-202409-6-3inch-deserttitanium"),
-        ("iPhone 16", "iphone-16", "128GB", "Noir", "#1c1c1e", "black", "Neuf", 849, 969, 6, "iphone-16-finish-select-202409-6-1inch-black"),
-        ("iPhone 16", "iphone-16", "128GB", "Blanc", "#f5f5f0", "white", "Neuf", 849, 969, 5, "iphone-16-finish-select-202409-6-1inch-white"),
-        ("iPhone 16", "iphone-16", "128GB", "Bleu Ultramarin", "#3a5a8a", "ultramarine", "Neuf", 849, 969, 8, "iphone-16-finish-select-202409-6-1inch-ultramarine"),
-        ("iPhone 16", "iphone-16", "128GB", "Rose", "#f5c7c7", "pink", "Neuf", 849, 969, 4, "iphone-16-finish-select-202409-6-1inch-pink"),
-        ("iPhone 16", "iphone-16", "128GB", "Vert Sarcelle", "#7ea89a", "teal", "Neuf", 849, 969, 3, "iphone-16-finish-select-202409-6-1inch-teal"),
-        # ─── iPhone 15 Pro / Pro Max (reconditionné premium) ───────
-        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", "Reconditionné Premium", 949, 1099, 2, "iphone-15-pro-finish-select-202309-6-7inch-naturaltitanium"),
-        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Bleu", "#2d4a6e", "blue-titanium", "Reconditionné Premium", 949, 1099, 2, "iphone-15-pro-finish-select-202309-6-7inch-bluetitanium"),
-        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Blanc", "#e6e3dd", "white-titanium", "Reconditionné Premium", 949, 1099, 1, "iphone-15-pro-finish-select-202309-6-7inch-whitetitanium"),
-        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Noir", "#3a3a3e", "black-titanium", "Reconditionné Premium", 949, 1099, 2, "iphone-15-pro-finish-select-202309-6-7inch-blacktitanium"),
-        ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Naturel", "#b8a898", "natural-titanium", "Reconditionné Premium", 749, 899, 3, "iphone-15-pro-finish-select-202309-6-1inch-naturaltitanium"),
-        ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Bleu", "#2d4a6e", "blue-titanium", "Reconditionné Premium", 749, 899, 4, "iphone-15-pro-finish-select-202309-6-1inch-bluetitanium"),
-        # ─── iPhone 14 Pro / Pro Max (reconditionné) ───────────────
-        ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 649, 799, 3, "iphone-14-pro-finish-select-202209-6-7inch-spaceblack"),
-        ("iPhone 14 Pro Max", "iphone-14-pro-max", "256GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 649, 799, 2, "iphone-14-pro-finish-select-202209-6-7inch-deeppurple"),
-        ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Noir Sidéral", "#2a2a2e", "space-black", "Reconditionné", 499, 649, 4, "iphone-14-pro-finish-select-202209-6-1inch-spaceblack"),
-        ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", "Reconditionné", 499, 649, 5, "iphone-14-pro-finish-select-202209-6-1inch-deeppurple"),
-        ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", "Reconditionné", 399, 499, 7, "iphone-14-finish-select-202209-6-1inch-blue"),
-        # ─── iPhone 13 Pro / Pro Max (reconditionné premium) ───────
-        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Bleu Sierra", "#3a5a7a", "sierra-blue", "Reconditionné Premium", 649, 799, 3, "iphone-13-pro-max-blue-select"),
-        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Graphite", "#3a3a3a", "graphite", "Reconditionné Premium", 649, 799, 3, "iphone-13-pro-max-graphite-select"),
-        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Or", "#d4b896", "gold", "Reconditionné Premium", 649, 799, 2, "iphone-13-pro-max-gold-select"),
-        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Argent", "#e6e6e6", "silver", "Reconditionné Premium", 649, 799, 2, "iphone-13-pro-max-silver-select"),
-        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Bleu Sierra", "#3a5a7a", "sierra-blue", "Reconditionné Premium", 499, 649, 4, "iphone-13-pro-blue-select"),
-        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Graphite", "#3a3a3a", "graphite", "Reconditionné Premium", 499, 649, 4, "iphone-13-pro-graphite-select"),
-        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Or", "#d4b896", "gold", "Reconditionné Premium", 499, 649, 3, "iphone-13-pro-gold-select"),
-        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Argent", "#e6e6e6", "silver", "Reconditionné Premium", 499, 649, 3, "iphone-13-pro-silver-select"),
-        # ─── iPhone 13 (reconditionné) ─────────────────────────────
-        ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", "Reconditionné", 349, 449, 6, "iphone-13-midnight-select-2021"),
-        ("iPhone 13", "iphone-13", "128GB", "Bleu", "#4a6a9a", "blue", "Reconditionné", 349, 449, 5, "iphone-13-blue-select-2021"),
-        ("iPhone 13", "iphone-13", "128GB", "Rose", "#f5c7c7", "pink", "Reconditionné", 349, 449, 4, "iphone-13-pink-select-2021"),
-        ("iPhone 13", "iphone-13", "128GB", "Lumière Stellaire", "#eee5d6", "starlight", "Reconditionné", 349, 449, 5, "iphone-13-starlight-select-2021"),
-        ("iPhone 13", "iphone-13", "128GB", "Vert", "#3a5a4a", "green", "Reconditionné", 349, 449, 3, "iphone-13-green-select"),
-        ("iPhone 13", "iphone-13", "128GB", "(PRODUCT)RED", "#c32333", "product-red", "Reconditionné", 349, 449, 3, "iphone-13-product-red-select-2021"),
-        # ─── iPhone 12 (reconditionné) ─────────────────────────────
-        ("iPhone 12", "iphone-12", "64GB", "Bleu", "#2a5a8a", "blue", "Reconditionné", 249, 349, 6, "iphone-12-blue-select-2020"),
-        ("iPhone 12", "iphone-12", "64GB", "Noir", "#1c1c1e", "black", "Reconditionné", 249, 349, 5, "iphone-12-black-select-2020"),
-        ("iPhone 12", "iphone-12", "64GB", "Blanc", "#f5f5f0", "white", "Reconditionné", 249, 349, 4, "iphone-12-white-select-2020"),
-        ("iPhone 12", "iphone-12", "64GB", "Vert", "#9ac2a8", "green", "Reconditionné", 249, 349, 4, "iphone-12-green-select-2020"),
-        ("iPhone 12", "iphone-12", "64GB", "Violet", "#bba1c8", "purple", "Reconditionné", 249, 349, 3, "iphone-12-purple-select-2021"),
-        ("iPhone 12", "iphone-12", "64GB", "(PRODUCT)RED", "#c32333", "product-red", "Reconditionné", 249, 349, 3, "iphone-12-red-select-2020"),
+        # ─── iPhone 16 series (NEUF, tarifs Klikphone / Apple neuf) ────
+        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", NEUF, 1149, 1479, 3, "iphone-16-pro-finish-select-202409-6-9inch-naturaltitanium"),
+        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Noir", "#3a3a3e", "black-titanium", NEUF, 1149, 1479, 2, "iphone-16-pro-finish-select-202409-6-9inch-blacktitanium"),
+        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Blanc", "#e6e3dd", "white-titanium", NEUF, 1149, 1479, 2, "iphone-16-pro-finish-select-202409-6-9inch-whitetitanium"),
+        ("iPhone 16 Pro Max", "iphone-16-pro-max", "256GB", "Titane Désert", "#c9a482", "desert-titanium", NEUF, 1149, 1479, 2, "iphone-16-pro-finish-select-202409-6-9inch-deserttitanium"),
+        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Naturel", "#b8a898", "natural-titanium", NEUF, 949, 1229, 4, "iphone-16-pro-finish-select-202409-6-3inch-naturaltitanium"),
+        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Noir", "#3a3a3e", "black-titanium", NEUF, 949, 1229, 5, "iphone-16-pro-finish-select-202409-6-3inch-blacktitanium"),
+        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Blanc", "#e6e3dd", "white-titanium", NEUF, 949, 1229, 3, "iphone-16-pro-finish-select-202409-6-3inch-whitetitanium"),
+        ("iPhone 16 Pro", "iphone-16-pro", "128GB", "Titane Désert", "#c9a482", "desert-titanium", NEUF, 949, 1229, 3, "iphone-16-pro-finish-select-202409-6-3inch-deserttitanium"),
+        ("iPhone 16", "iphone-16", "128GB", "Noir", "#1c1c1e", "black", NEUF, 689, 969, 6, "iphone-16-finish-select-202409-6-1inch-black"),
+        ("iPhone 16", "iphone-16", "128GB", "Blanc", "#f5f5f0", "white", NEUF, 689, 969, 5, "iphone-16-finish-select-202409-6-1inch-white"),
+        ("iPhone 16", "iphone-16", "128GB", "Bleu Ultramarin", "#3a5a8a", "ultramarine", NEUF, 689, 969, 8, "iphone-16-finish-select-202409-6-1inch-ultramarine"),
+        ("iPhone 16", "iphone-16", "128GB", "Rose", "#f5c7c7", "pink", NEUF, 689, 969, 4, "iphone-16-finish-select-202409-6-1inch-pink"),
+        ("iPhone 16", "iphone-16", "128GB", "Vert Sarcelle", "#7ea89a", "teal", NEUF, 689, 969, 3, "iphone-16-finish-select-202409-6-1inch-teal"),
+        # ─── iPhone 15 Pro / Pro Max (RECOND. PREMIUM) ──────────────────
+        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Naturel", "#b8a898", "natural-titanium", RP, 999, 1479, 2, "iphone-15-pro-finish-select-202309-6-7inch-naturaltitanium"),
+        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Bleu", "#2d4a6e", "blue-titanium", RP, 999, 1479, 2, "iphone-15-pro-finish-select-202309-6-7inch-bluetitanium"),
+        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Blanc", "#e6e3dd", "white-titanium", RP, 999, 1479, 1, "iphone-15-pro-finish-select-202309-6-7inch-whitetitanium"),
+        ("iPhone 15 Pro Max", "iphone-15-pro-max", "256GB", "Titane Noir", "#3a3a3e", "black-titanium", RP, 999, 1479, 2, "iphone-15-pro-finish-select-202309-6-7inch-blacktitanium"),
+        ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Naturel", "#b8a898", "natural-titanium", RP, 849, 1229, 3, "iphone-15-pro-finish-select-202309-6-1inch-naturaltitanium"),
+        ("iPhone 15 Pro", "iphone-15-pro", "128GB", "Titane Bleu", "#2d4a6e", "blue-titanium", RP, 849, 1229, 4, "iphone-15-pro-finish-select-202309-6-1inch-bluetitanium"),
+        # ─── iPhone 14 Pro / Pro Max (RECOND. PREMIUM) ──────────────────
+        ("iPhone 14 Pro Max", "iphone-14-pro-max", "128GB", "Noir Sidéral", "#2a2a2e", "space-black", RP, 799, 1479, 3, "iphone-14-pro-finish-select-202209-6-7inch-spaceblack"),
+        ("iPhone 14 Pro Max", "iphone-14-pro-max", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", RP, 799, 1479, 2, "iphone-14-pro-finish-select-202209-6-7inch-deeppurple"),
+        ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Noir Sidéral", "#2a2a2e", "space-black", RP, 699, 1329, 4, "iphone-14-pro-finish-select-202209-6-1inch-spaceblack"),
+        ("iPhone 14 Pro", "iphone-14-pro", "128GB", "Violet Intense", "#6a4a7a", "deep-purple", RP, 699, 1329, 5, "iphone-14-pro-finish-select-202209-6-1inch-deeppurple"),
+        ("iPhone 14", "iphone-14", "128GB", "Bleu", "#3a5a7a", "blue", RP, 479, 1019, 7, "iphone-14-finish-select-202209-6-1inch-blue"),
+        # ─── iPhone 13 Pro / Pro Max (RECOND. PREMIUM) ──────────────────
+        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Bleu Sierra", "#3a5a7a", "sierra-blue", RP, 599, 1259, 3, "iphone-13-pro-max-blue-select"),
+        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Graphite", "#3a3a3a", "graphite", RP, 599, 1259, 3, "iphone-13-pro-max-graphite-select"),
+        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Or", "#d4b896", "gold", RP, 599, 1259, 2, "iphone-13-pro-max-gold-select"),
+        ("iPhone 13 Pro Max", "iphone-13-pro-max", "128GB", "Argent", "#e6e6e6", "silver", RP, 599, 1259, 2, "iphone-13-pro-max-silver-select"),
+        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Bleu Sierra", "#3a5a7a", "sierra-blue", RP, 529, 1159, 4, "iphone-13-pro-blue-select"),
+        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Graphite", "#3a3a3a", "graphite", RP, 529, 1159, 4, "iphone-13-pro-graphite-select"),
+        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Or", "#d4b896", "gold", RP, 529, 1159, 3, "iphone-13-pro-gold-select"),
+        ("iPhone 13 Pro", "iphone-13-pro", "128GB", "Argent", "#e6e6e6", "silver", RP, 529, 1159, 3, "iphone-13-pro-silver-select"),
+        # ─── iPhone 13 (RECOND. PREMIUM) ────────────────────────────────
+        ("iPhone 13", "iphone-13", "128GB", "Minuit", "#1a2030", "midnight", RP, 429, 909, 6, "iphone-13-midnight-select-2021"),
+        ("iPhone 13", "iphone-13", "128GB", "Bleu", "#4a6a9a", "blue", RP, 429, 909, 5, "iphone-13-blue-select-2021"),
+        ("iPhone 13", "iphone-13", "128GB", "Rose", "#f5c7c7", "pink", RP, 429, 909, 4, "iphone-13-pink-select-2021"),
+        ("iPhone 13", "iphone-13", "128GB", "Lumière Stellaire", "#eee5d6", "starlight", RP, 429, 909, 5, "iphone-13-starlight-select-2021"),
+        ("iPhone 13", "iphone-13", "128GB", "Vert", "#3a5a4a", "green", RP, 429, 909, 3, "iphone-13-green-select"),
+        ("iPhone 13", "iphone-13", "128GB", "(PRODUCT)RED", "#c32333", "product-red", RP, 429, 909, 3, "iphone-13-product-red-select-2021"),
+        # ─── iPhone 12 (RECOND. PREMIUM) ────────────────────────────────
+        ("iPhone 12", "iphone-12", "128GB", "Bleu", "#2a5a8a", "blue", RP, 359, 809, 6, "iphone-12-blue-select-2020"),
+        ("iPhone 12", "iphone-12", "128GB", "Noir", "#1c1c1e", "black", RP, 359, 809, 5, "iphone-12-black-select-2020"),
+        ("iPhone 12", "iphone-12", "128GB", "Blanc", "#f5f5f0", "white", RP, 359, 809, 4, "iphone-12-white-select-2020"),
+        ("iPhone 12", "iphone-12", "128GB", "Vert", "#9ac2a8", "green", RP, 359, 809, 4, "iphone-12-green-select-2020"),
+        ("iPhone 12", "iphone-12", "128GB", "Violet", "#bba1c8", "purple", RP, 359, 809, 3, "iphone-12-purple-select-2021"),
+        ("iPhone 12", "iphone-12", "128GB", "(PRODUCT)RED", "#c32333", "product-red", RP, 359, 809, 3, "iphone-12-red-select-2020"),
     ]
     added = 0
     with get_cursor() as cur:
@@ -307,6 +313,45 @@ def _ensure_full_catalog():
         logger.info("Catalogue iphones_stock : %d nouvelles entrees ajoutees", added)
 
 
+def _normalize_conditions_and_prices():
+    """Sync les conditions et prix avec le catalogue Klikphone officiel :
+    - "Reconditionné" simple → "Reconditionné Premium" (toute la gamme)
+    - Aligne les prix des entrées existantes sur les prix catalogue
+      (sauf si l'admin a custom modifié, détecté via prix != ancien seed)
+    - Force old_price = prix Apple neuf officiel pour créer la promo."""
+    price_map = {
+        # (model, color_name) : (price, old_price, condition)
+        ("iPhone 16 Pro Max", "Titane Naturel"): (1149, 1479, "Neuf"),
+        ("iPhone 16 Pro Max", "Titane Noir"): (1149, 1479, "Neuf"),
+        ("iPhone 16 Pro", "Titane Naturel"): (949, 1229, "Neuf"),
+        ("iPhone 16 Pro", "Titane Noir"): (949, 1229, "Neuf"),
+        ("iPhone 16", "Bleu Ultramarin"): (689, 969, "Neuf"),
+        ("iPhone 16", "Rose"): (689, 969, "Neuf"),
+        ("iPhone 16", "Vert Sarcelle"): (689, 969, "Neuf"),
+        ("iPhone 15 Pro Max", "Titane Naturel"): (999, 1479, "Reconditionné Premium"),
+        ("iPhone 15 Pro", "Titane Bleu"): (849, 1229, "Reconditionné Premium"),
+        ("iPhone 14 Pro Max", "Noir Sidéral"): (799, 1479, "Reconditionné Premium"),
+        ("iPhone 14 Pro", "Violet Intense"): (699, 1329, "Reconditionné Premium"),
+        ("iPhone 14", "Bleu"): (479, 1019, "Reconditionné Premium"),
+        ("iPhone 13", "Minuit"): (429, 909, "Reconditionné Premium"),
+        ("iPhone 12", "Bleu Pacifique"): (359, 809, "Reconditionné Premium"),
+    }
+    # UPDATE conditions "Reconditionné" simple -> "Reconditionné Premium"
+    with get_cursor() as cur:
+        cur.execute(
+            """UPDATE iphones_stock SET condition = 'Reconditionné Premium',
+               updated_at = NOW() WHERE condition = 'Reconditionné'"""
+        )
+        # Sync prix+old_price si dispo dans le mapping
+        for (model, color_name), (price, old_price, condition) in price_map.items():
+            cur.execute(
+                """UPDATE iphones_stock
+                   SET price = %s, old_price = %s, condition = %s, updated_at = NOW()
+                   WHERE model = %s AND color_name = %s""",
+                (price, old_price, condition, model, color_name),
+            )
+
+
 def _deferred_init():
     """Backfill + catalogue en background (non-bloquant pour le startup Railway)."""
     try:
@@ -317,6 +362,10 @@ def _deferred_init():
         _ensure_full_catalog()
     except Exception as e:
         logger.warning("Ensure full catalog: %s", e)
+    try:
+        _normalize_conditions_and_prices()
+    except Exception as e:
+        logger.warning("Normalize conditions: %s", e)
 
 
 def init_iphones_stock():

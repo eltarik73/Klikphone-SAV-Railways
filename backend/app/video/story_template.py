@@ -317,7 +317,7 @@ def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
     _draw_klikphone_logo(img, 50 + logo_small // 2, 90 + logo_small // 2,
                          logo_small, alpha=200)
     brand_font = _font(24, "semibold")
-    draw.text((logo_small + 66, 100), "klikphone.fr",
+    draw.text((logo_small + 66, 100), "klikphone.com",
               font=brand_font, fill=(255, 255, 255, 180))
     counter_font = _font(22, "medium")
     counter = f"{idx + 1:02d} / {total:02d}"
@@ -355,17 +355,11 @@ def render_phone_frame(phone: dict, photo: Image.Image, progress: float,
     ph_y = photo_zone_top + max(0, (photo_zone_h - new_h) // 2) \
            + int((1 - enter) * 60 - exit_anim * 40)
 
-    # Glow coloré diffus (spot color) sous le phone
-    _paste_with_glow(img, ph_resized, (ph_x, ph_y),
-                     glow_color=ORANGE_SOFT, blur=130, opacity=50)
-    # Ambient shadow large
+    # Ombre très douce pour ancrer le phone (pas de glow coloré → l'iPhone
+    # se fond directement dans le spot lighting du fond, sans halo visible)
     _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
-                       shadow_color=(0, 0, 0), offset=(0, 20),
-                       blur=120, opacity=80)
-    # Contact shadow (ancre)
-    _paste_with_shadow(img, ph_resized, (ph_x, ph_y),
-                       shadow_color=(0, 0, 0), offset=(0, 60),
-                       blur=40, opacity=140)
+                       shadow_color=(0, 0, 0), offset=(0, 45),
+                       blur=80, opacity=110)
 
     # ─── BADGE CONDITION (top-left sous header) ─────────────
     cond_y = 180
@@ -524,7 +518,7 @@ def render_outro_frame(progress: float) -> Image.Image:
 
     # CTA button KLIKPHONE.FR
     btn_font = _font(40, "bold")
-    btn_text = "KLIKPHONE.FR"
+    btn_text = "KLIKPHONE.COM"
     btn_tw = _text_w(draw, btn_text, btn_font)
     btn_w = btn_tw + 100
     btn_h = 90
