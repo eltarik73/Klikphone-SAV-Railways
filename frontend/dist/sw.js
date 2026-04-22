@@ -1,7 +1,7 @@
 // v6 — Fix bug page blanche : on ne cache PLUS index.html (servi toujours fresh)
 // sinon le SW sert un ancien HTML qui reference des chunks JS dont le hash a
 // change entre deploys, et la page casse jusqu'a un hard refresh.
-const CACHE_NAME = 'klikphone-v6';
+const CACHE_NAME = 'klikphone-v7';
 const STATIC_ASSETS = [
   '/logo_k.png',
   '/manifest.json'
