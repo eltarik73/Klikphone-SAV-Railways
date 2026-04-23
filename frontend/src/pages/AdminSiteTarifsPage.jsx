@@ -448,10 +448,11 @@ function HeroShowcase({ phone, settings }) {
       animate={reduceMotion ? undefined : "show"}
       className="relative h-full flex flex-col md:flex-row items-center gap-4 md:gap-12 px-4 md:px-16 py-4 md:py-0"
     >
-      {/* Left : image — brute, pas d'effet. Mobile = 1/2 hauteur, desktop = 1/2 largeur */}
+      {/* Left : image avec effet "sort de l'ecran" (perspective 3D + drop-shadow violet) */}
       <motion.div
         variants={reduceMotion ? undefined : heroItem}
-        className="relative w-full md:flex-[1] h-[32vh] md:h-full flex items-center justify-center shrink-0">
+        className="relative w-full md:flex-[1] h-[32vh] md:h-full flex items-center justify-center shrink-0"
+        style={{ perspective: '1400px', perspectiveOrigin: '50% 50%' }}>
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[22rem] md:w-[42rem] h-[22rem] md:h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
         </div>
@@ -459,7 +460,12 @@ function HeroShowcase({ phone, settings }) {
           <img
             src={phone.image}
             alt={phone.modele}
-            className="relative max-h-[28vh] md:max-h-[65vh] w-auto object-contain animate-float"
+            className="relative max-h-[30vh] md:max-h-[70vh] w-auto object-contain animate-float"
+            style={{
+              filter: 'drop-shadow(0 30px 40px rgba(124, 58, 237, 0.45)) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.4))',
+              transformStyle: 'preserve-3d',
+              willChange: 'transform',
+            }}
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
@@ -704,7 +710,10 @@ export default function AdminSiteTarifsPage() {
       {/* Keyframes + custom animations */}
       <style>{`
         @keyframes scroll-x { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        @keyframes float { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-18px) rotate(1deg); } }
+        @keyframes float {
+          0%, 100% { transform: perspective(1400px) rotateY(-5deg) rotateX(2deg) translateY(0) translateZ(0) scale(1.02); }
+          50%      { transform: perspective(1400px) rotateY(-8deg) rotateX(4deg) translateY(-22px) translateZ(40px) scale(1.06); }
+        }
         @keyframes pulse-slow { 0%, 100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
         @keyframes hero-in { 0% { opacity: 0; transform: translateX(40px) scale(0.97); } 100% { opacity: 1; transform: translateX(0) scale(1); } }
         @keyframes drift-a { 0% { transform: translate(0, 0); } 50% { transform: translate(80px, -40px); } 100% { transform: translate(0, 0); } }
