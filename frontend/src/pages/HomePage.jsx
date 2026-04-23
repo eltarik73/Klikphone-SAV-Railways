@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone } from 'lucide-react';
+import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone, Tag } from 'lucide-react';
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -78,6 +78,19 @@ export default function HomePage() {
               <p className="text-sm text-slate-400 mt-0.5">Avec mon numéro de ticket</p>
             </div>
             <ArrowRight className="w-5 h-5 text-slate-500 group-hover:translate-x-1 transition-transform" />
+          </button>
+
+          <button onClick={() => navigate('/site-tarifs-iphone')}
+            className="w-full relative overflow-hidden flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-600/30 transition-all group hover:-translate-y-0.5">
+            <div aria-hidden className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
+            <div className="relative w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0 backdrop-blur-sm ring-1 ring-white/20">
+              <Tag className="w-5 h-5" />
+            </div>
+            <div className="relative flex-1 text-left">
+              <p className="font-semibold">Voir nos tarifs <span className="font-editorial font-normal">iPhone</span></p>
+              <p className="text-sm text-amber-50/90 mt-0.5">Reconditionnés & neufs — prix en direct</p>
+            </div>
+            <ArrowRight className="relative w-5 h-5 text-amber-50 group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
 

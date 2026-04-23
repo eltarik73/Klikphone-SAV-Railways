@@ -6,7 +6,7 @@ import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate, formatPrix } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, Tv } from 'lucide-react';
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
@@ -554,8 +554,38 @@ export default function SuiviPage() {
           </div>
         )}
 
+        {/* CTA — Voir nos tarifs iPhone (visible sur la page Suivi) */}
+        <a
+          href="/site-tarifs-iphone"
+          className="group mt-8 block relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-brand-800 to-slate-900 text-white p-5 shadow-xl shadow-brand-900/20 hover:shadow-2xl hover:shadow-brand-900/30 transition-shadow"
+          aria-label="Voir nos tarifs iPhone"
+        >
+          {/* Aurora backdrop subtil */}
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-brand-500/40 blur-3xl" />
+            <div className="absolute -bottom-16 -left-8 w-48 h-48 rounded-full bg-amber-500/20 blur-3xl" />
+          </div>
+          <div className="relative flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center shrink-0 ring-1 ring-white/20">
+              <Tag className="w-6 h-6 text-amber-300" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/90 font-bold mb-1">
+                Nos prix en temps réel
+              </p>
+              <p className="text-base font-display font-extrabold leading-tight">
+                Voir nos tarifs <span className="font-editorial font-normal text-amber-200">iPhone</span>
+              </p>
+              <p className="text-xs text-slate-300 mt-1 truncate">
+                Reconditionnés & neufs, garantie 12 mois
+              </p>
+            </div>
+            <ArrowRight className="w-5 h-5 text-white/70 group-hover:text-white group-hover:translate-x-1 transition-all shrink-0" />
+          </div>
+        </a>
+
         {/* Back */}
-        <div className="mt-8 text-center">
+        <div className="mt-6 text-center">
           <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
           </a>
