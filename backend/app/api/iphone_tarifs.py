@@ -487,11 +487,23 @@ async def demande_devis(payload: DemandeDevisRequest, request: Request):
     except Exception:
         to_email = "contact@klikphone.com"
 
-    ok, _msg = _send_email(to_email, subject, body)
+    ok, send_msg = _send_email(to_email, subject, body)
     if not ok:
-        logger.warning("demande-devis : envoi email %s -> KO (%s)", to_email, _msg)
-        # On ne remonte pas l'erreur au client : son message est important
-        # meme si l'email foire temporairement (l'admin verra dans les logs).
+        logger.warning("demande-devis : envoi email %s -> KO (%s)", to_email, send_msg)
+    else:
+        logger.info("demande-devis : envoi email %s -> OK", to_email)
+
+    # Debug mode (?debug=1) : renvoie le statut reel (utilise pour tests).
+    # En prod, l'admin/dev peut curl avec ?debug=1 pour savoir si resend marche.
+    debug_mode = request.query_params.get("debug") == "1"
+    if debug_mode:
+        return {
+            "ok": True,
+            "email_sent": ok,
+            "email_to": to_email,
+            "email_msg": send_msg,
+            "message": "Demande envoyée." if ok else "Formulaire reçu mais email non envoyé — admin doit checker les logs.",
+        }
     return {"ok": True, "message": "Demande envoyée. Nous vous recontactons rapidement."}
 
 
