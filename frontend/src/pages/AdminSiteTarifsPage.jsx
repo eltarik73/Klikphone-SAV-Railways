@@ -446,71 +446,71 @@ function HeroShowcase({ phone, settings }) {
       variants={reduceMotion ? undefined : heroContainer}
       initial={reduceMotion ? undefined : "hidden"}
       animate={reduceMotion ? undefined : "show"}
-      className="relative h-full flex items-center gap-12 px-16"
+      className="relative h-full flex flex-col md:flex-row items-center gap-4 md:gap-12 px-4 md:px-16 py-4 md:py-0"
     >
-      {/* Left : image — brute, pas d'effet */}
+      {/* Left : image — brute, pas d'effet. Mobile = 1/2 hauteur, desktop = 1/2 largeur */}
       <motion.div
         variants={reduceMotion ? undefined : heroItem}
-        className="relative flex-[1] h-full flex items-center justify-center">
+        className="relative w-full md:flex-[1] h-[32vh] md:h-full flex items-center justify-center shrink-0">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-[42rem] h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
+          <div className="w-[22rem] md:w-[42rem] h-[22rem] md:h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
         </div>
         {phone.image && (
           <img
             src={phone.image}
             alt={phone.modele}
-            className="relative max-h-[68vh] w-auto object-contain animate-float"
+            className="relative max-h-[28vh] md:max-h-[65vh] w-auto object-contain animate-float"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
       </motion.div>
 
-      {/* Right : infos */}
-      <div className="relative flex-[1] max-w-xl">
-        <motion.div variants={reduceMotion ? undefined : heroItem} className="liquid-glass inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-amber-300 text-xs font-bold uppercase tracking-[0.25em] mb-6">
+      {/* Right : infos — stacked mobile, side-by-side desktop */}
+      <div className="relative w-full md:flex-[1] md:max-w-xl text-center md:text-left">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="liquid-glass inline-flex items-center gap-2 px-3 py-1 md:px-4 md:py-1.5 rounded-full text-amber-300 text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] md:tracking-[0.25em] mb-3 md:mb-6">
           <Sparkles className="w-3 h-3" />
           Coup de cœur
         </motion.div>
-        <motion.p variants={reduceMotion ? undefined : heroItem} className="font-display text-2xl uppercase tracking-[0.35em] text-violet-300/80 mb-3">
+        <motion.p variants={reduceMotion ? undefined : heroItem} className="font-display text-sm md:text-2xl uppercase tracking-[0.25em] md:tracking-[0.35em] text-violet-300/80 mb-2 md:mb-3">
           {phone.marque}{' '}
           <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">
             {phone.grade === 'Neuf' ? 'neuf' : 'reconditionné'}
           </span>
         </motion.p>
-        <motion.h2 variants={reduceMotion ? undefined : heroItem} className="font-display font-extrabold text-7xl leading-[0.95] text-white mb-6 tracking-[-0.02em]">
+        <motion.h2 variants={reduceMotion ? undefined : heroItem} className="font-display font-extrabold text-4xl md:text-7xl leading-[0.95] text-white mb-4 md:mb-6 tracking-[-0.02em]">
           {phone.modele}
         </motion.h2>
-        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-center gap-3 flex-wrap mb-8">
-          <span className={`liquid-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-center gap-2 flex-wrap justify-center md:justify-start mb-4 md:mb-8">
+          <span className={`liquid-glass inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-bold
             ${phone.grade === 'Neuf' ? 'text-emerald-300' : 'text-violet-200'}`}>
-            {phone.grade === 'Neuf' ? <Sparkles className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+            {phone.grade === 'Neuf' ? <Sparkles className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Shield className="w-3.5 h-3.5 md:w-4 md:h-4" />}
             {phone.grade === 'Neuf' ? 'Neuf' : 'Reconditionné Premium'}
           </span>
           {settings.showGarantie && (
-            <span className="liquid-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-slate-200">
-              <Shield className="w-4 h-4 text-violet-300" />
+            <span className="liquid-glass inline-flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-semibold text-slate-200">
+              <Shield className="w-3.5 h-3.5 md:w-4 md:h-4 text-violet-300" />
               Garantie {settings.garantieText}
             </span>
           )}
         </motion.div>
 
-        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-end gap-6 mb-10">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex items-end justify-center md:justify-start gap-6 mb-6 md:mb-10">
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-400 mb-2">À partir de</p>
-            <p className="font-display font-extrabold text-[7rem] leading-none bg-gradient-to-br from-amber-200 via-amber-400 to-orange-500 bg-clip-text text-transparent">
+            <p className="text-[11px] md:text-sm uppercase tracking-[0.3em] text-slate-400 mb-1 md:mb-2">À partir de</p>
+            <p className="font-display font-extrabold text-6xl md:text-[7rem] leading-none bg-gradient-to-br from-amber-200 via-amber-400 to-orange-500 bg-clip-text text-transparent">
               {minPrice}€
             </p>
           </div>
         </motion.div>
 
-        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex flex-wrap gap-3">
+        <motion.div variants={reduceMotion ? undefined : heroItem} className="flex flex-wrap justify-center md:justify-start gap-2 md:gap-3">
           {phone.variants.map(v => (
             <div
               key={v.stockage}
-              className="liquid-glass px-5 py-3 rounded-2xl text-sm font-semibold text-white"
+              className="liquid-glass px-3 md:px-5 py-2 md:py-3 rounded-xl md:rounded-2xl text-xs md:text-sm font-semibold text-white"
             >
-              <div className="text-base font-bold">{v.stockage}</div>
-              <div className="text-amber-300 text-lg mt-0.5">{v.prix}€</div>
+              <div className="text-sm md:text-base font-bold">{v.stockage}</div>
+              <div className="text-amber-300 text-base md:text-lg mt-0.5">{v.prix}€</div>
             </div>
           ))}
         </motion.div>
@@ -555,8 +555,8 @@ function MiniCard({ phone, highlight }) {
         ? 'bg-gradient-to-br from-violet-500/15 to-amber-500/10 border-violet-300/40 scale-[1.03]'
         : 'bg-white/[0.03] border-white/10'}`}
     >
-      <div className="flex items-center gap-5 p-5">
-        <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
+      <div className="flex items-center gap-3 md:gap-5 p-3 md:p-5">
+        <div className="relative w-20 h-20 md:w-28 md:h-28 shrink-0 flex items-center justify-center">
           {phone.image && (
             <img
               src={phone.image}
@@ -567,17 +567,17 @@ function MiniCard({ phone, highlight }) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-violet-300 mb-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.25em] md:tracking-[0.3em] text-violet-300 mb-0.5 md:mb-1">
             {phone.marque}
           </p>
-          <h3 className="font-display font-extrabold text-xl text-white leading-tight truncate">
+          <h3 className="font-display font-extrabold text-base md:text-xl text-white leading-tight truncate">
             {phone.modele}
           </h3>
-          <p className="text-[10px] text-slate-400 mt-2">{phone.grade}</p>
+          <p className="text-[10px] text-slate-400 mt-1 md:mt-2">{phone.grade}</p>
         </div>
         <div className="text-right shrink-0">
           <p className="text-[9px] uppercase tracking-widest text-slate-500">dès</p>
-          <p className="font-display font-extrabold text-3xl bg-gradient-to-br from-amber-300 to-orange-400 bg-clip-text text-transparent">
+          <p className="font-display font-extrabold text-2xl md:text-3xl bg-gradient-to-br from-amber-300 to-orange-400 bg-clip-text text-transparent">
             {min}€
           </p>
         </div>
@@ -753,24 +753,24 @@ export default function AdminSiteTarifsPage() {
 
       {/* Top bar */}
       <header className="relative z-10 border-b border-white/10 backdrop-blur-xl bg-black/30">
-        <div className="px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative">
+        <div className="px-4 md:px-8 py-3 md:py-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 md:gap-4 min-w-0">
+            <div className="relative shrink-0">
               <div className="absolute inset-0 bg-violet-500 blur-xl opacity-60" />
-              <div className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center font-display font-extrabold text-xl">
+              <div className="relative w-9 h-9 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center font-display font-extrabold text-lg md:text-xl">
                 K
               </div>
             </div>
-            <div>
-              <p className="font-display font-extrabold text-xl leading-none">Klikphone</p>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400 mt-1">Catalogue en temps réel</p>
+            <div className="min-w-0">
+              <p className="font-display font-extrabold text-base md:text-xl leading-none truncate">Klikphone</p>
+              <p className="hidden sm:block text-[10px] md:text-[11px] uppercase tracking-[0.3em] text-slate-400 mt-1 truncate">Catalogue en temps réel</p>
             </div>
-            <span className="ml-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-extrabold bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/30">
+            <span className="hidden sm:inline-flex ml-2 md:ml-3 shrink-0 items-center gap-1.5 px-2 md:px-2.5 py-0.5 md:py-1 rounded-md text-[9px] md:text-[10px] font-extrabold bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/30">
               <Sparkles className="w-3 h-3" /> BETA
             </span>
           </div>
 
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 md:gap-6 shrink-0">
             {settings.showAddress && (
               <div className="hidden md:flex items-center gap-2 text-sm">
                 <MapPin className="w-4 h-4 text-violet-400" />
@@ -783,15 +783,15 @@ export default function AdminSiteTarifsPage() {
                 <span className="text-slate-300 font-semibold">06 95 71 51 96</span>
               </div>
             )}
-            <div className="flex flex-col items-end border-l border-white/10 pl-6">
-              <p className="font-display font-bold text-2xl tabular-nums leading-none">{timeStr}</p>
-              <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400 mt-1 capitalize">{dateStr}</p>
+            <div className="hidden sm:flex flex-col items-end border-l border-white/10 pl-3 md:pl-6">
+              <p className="font-display font-bold text-lg md:text-2xl tabular-nums leading-none">{timeStr}</p>
+              <p className="hidden md:block text-[10px] uppercase tracking-[0.25em] text-slate-400 mt-1 capitalize">{dateStr}</p>
             </div>
 
             {/* Settings (parametres vitrine) */}
             <button
               onClick={() => setSettingsOpen(true)}
-              className="group flex items-center gap-2 px-4 py-2.5 rounded-xl
+              className="group flex items-center gap-2 p-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl
                 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20
                 transition-all duration-200 active:scale-95"
               title="Paramètres de la vitrine"
@@ -806,7 +806,7 @@ export default function AdminSiteTarifsPage() {
             {/* Share link */}
             <button
               onClick={share}
-              className="group flex items-center gap-2 px-4 py-2.5 rounded-xl
+              className="group flex items-center gap-2 p-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl
                 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20
                 transition-all duration-200 active:scale-95"
               title="Copier le lien pour iPad / TV"
@@ -821,7 +821,7 @@ export default function AdminSiteTarifsPage() {
             {/* Fullscreen toggle (iPad / TV kiosk) */}
             <button
               onClick={toggleFullscreen}
-              className="group relative flex items-center gap-2 px-4 py-2.5 rounded-xl
+              className="group relative flex items-center gap-2 p-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl
                 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20
                 border border-violet-400/30 hover:border-violet-300/60
                 hover:from-violet-500/30 hover:to-fuchsia-500/30
@@ -853,7 +853,7 @@ export default function AdminSiteTarifsPage() {
       ) : (
         <>
           {/* Hero auto-rotate */}
-          <section className="relative z-10 h-[68vh] min-h-[540px] max-w-[1800px] mx-auto">
+          <section className="relative z-10 min-h-[80vh] md:h-[68vh] md:min-h-[540px] max-w-[1800px] mx-auto">
             {featured && <HeroShowcase phone={featured} settings={settings} />}
 
             {/* Progress dots */}
@@ -873,19 +873,19 @@ export default function AdminSiteTarifsPage() {
 
           {/* Orbit mini-cards */}
           {settings.showOrbit && (
-          <section className="relative z-10 max-w-[1800px] mx-auto px-8 py-10">
-            <div className="flex items-baseline justify-between mb-6">
-              <div>
+          <section className="relative z-10 max-w-[1800px] mx-auto px-4 md:px-8 py-6 md:py-10">
+            <div className="flex items-start sm:items-baseline justify-between gap-3 mb-4 md:mb-6">
+              <div className="min-w-0">
                 <ScrollRevealHeading
                   text="Le reste du catalogue"
-                  className="font-display font-extrabold text-3xl text-white leading-tight"
+                  className="font-display font-extrabold text-2xl md:text-3xl text-white leading-tight"
                 />
-                <p className="text-sm text-slate-400 mt-1">
-                  <span className="font-editorial text-base text-amber-200/90 mr-1">tous</span>
-                  les {phones.length - 1} modèles disponibles · mise à jour continue
+                <p className="text-xs md:text-sm text-slate-400 mt-1">
+                  <span className="font-editorial text-sm md:text-base text-amber-200/90 mr-1">tous</span>
+                  les {phones.length - 1} modèles disponibles
                 </p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-slate-400 uppercase tracking-[0.25em]">
+              <div className="flex items-center gap-2 text-[10px] md:text-xs text-slate-400 uppercase tracking-[0.2em] md:tracking-[0.25em] shrink-0">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
@@ -900,7 +900,7 @@ export default function AdminSiteTarifsPage() {
                   key={phone.key}
                   initial={{ opacity: 0, y: 24 }}
                   whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-80px" }}
+                  viewport={{ once: true, margin: "0px" }}
                   transition={{ duration: 0.5, delay: (showAllModels ? 0 : i * 0.08), ease: [0.22, 1, 0.36, 1] }}
                 >
                   <MiniCard phone={phone} highlight={!showAllModels && i === 0} />
