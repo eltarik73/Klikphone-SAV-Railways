@@ -845,8 +845,39 @@ export default function AdminSiteTarifsPage() {
         </div>
       ) : (
         <>
+          {/* Intro — titre marketing de la vitrine */}
+          <section className="relative z-10 max-w-[1800px] mx-auto px-4 md:px-16 pt-6 md:pt-10 pb-2 md:pb-4 text-center">
+            <motion.p
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-violet-300/80 font-bold mb-2 md:mb-3"
+            >
+              Klikphone vous présente
+            </motion.p>
+            <motion.h1
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
+              className="font-display font-extrabold text-2xl sm:text-3xl md:text-5xl lg:text-6xl text-white leading-[1.05] tracking-tight"
+            >
+              Des téléphones{' '}
+              <span className="font-editorial font-normal bg-gradient-to-r from-amber-200 via-amber-400 to-orange-400 bg-clip-text text-transparent">
+                100% satisfait
+              </span>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.16, ease: [0.22, 1, 0.36, 1] }}
+              className="text-xs md:text-base text-slate-400 mt-3 md:mt-4 max-w-2xl mx-auto"
+            >
+              Reconditionnés premium & neufs · testés, garantis {settings.garantieText} · livrés en 24h depuis Chambéry
+            </motion.p>
+          </section>
+
           {/* Hero auto-rotate */}
-          <section className="relative z-10 min-h-[80vh] md:h-[68vh] md:min-h-[540px] max-w-[1800px] mx-auto">
+          <section className="relative z-10 min-h-[72vh] md:h-[60vh] md:min-h-[480px] max-w-[1800px] mx-auto">
             {featured && <HeroShowcase phone={featured} settings={settings} />}
 
             {/* Progress dots */}
