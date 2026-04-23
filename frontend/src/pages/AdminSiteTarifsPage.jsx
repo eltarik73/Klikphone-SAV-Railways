@@ -3,8 +3,10 @@ import { motion, useScroll, useTransform, useReducedMotion } from 'framer-motion
 import {
   Sparkles, Shield, Zap, Package, Check, Star,
   Smartphone, MapPin, Phone, Clock, Tv, Loader2, QrCode,
-  Maximize, Minimize, Share2, Settings, X,
+  Maximize, Minimize, Share2, Settings, X, Mail, ArrowRight,
+  User, MessageSquare, Send,
 } from 'lucide-react';
+import api from '../lib/api';
 
 // ─── Motion helpers (pattern Viktor Oddy / Claude Design) ──────
 const fadeUp = (delay = 0, y = 24) => ({
@@ -241,6 +243,167 @@ function SettingsPanel({ open, onClose, settings, update, reset }) {
   );
 }
 
+// ─── Modal "Demander un devis" (formulaire public) ──────────────
+function DevisModal({ open, onClose, defaultModele }) {
+  const [nom, setNom] = useState('');
+  const [telephone, setTelephone] = useState('');
+  const [email, setEmail] = useState('');
+  const [modele, setModele] = useState(defaultModele || '');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (open) {
+      setModele(defaultModele || '');
+      setDone(false);
+      setErr(null);
+    }
+  }, [open, defaultModele]);
+
+  if (!open) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSending(true);
+    setErr(null);
+    try {
+      await api.demandeDevisIphone({ nom, telephone, email, modele, message });
+      setDone(true);
+      setTimeout(() => { onClose(); }, 2200);
+    } catch (e2) {
+      setErr(e2.message || 'Erreur envoi');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <div onClick={onClose} className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm animate-fade-in" />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 pointer-events-none">
+        <div className="liquid-glass pointer-events-auto bg-slate-950/95 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl animate-slide-in-right">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+                <Mail className="w-5 h-5 text-slate-950" />
+              </div>
+              <div>
+                <h3 className="font-display font-extrabold text-lg text-white leading-tight">
+                  Demander un <span className="font-editorial font-normal text-amber-300">devis</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">On vous recontacte rapidement</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Fermer">
+              <X className="w-5 h-5 text-slate-300" />
+            </button>
+          </div>
+
+          {done ? (
+            <div className="px-6 py-10 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4">
+                <Check className="w-7 h-7 text-emerald-300" />
+              </div>
+              <p className="font-display font-bold text-white text-lg mb-1">Demande envoyée</p>
+              <p className="text-sm text-slate-400">Nous vous recontactons rapidement au {telephone}.</p>
+            </div>
+          ) : (
+            <form onSubmit={submit} className="px-6 py-5 space-y-3">
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Nom *</span>
+                <div className="relative mt-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    required
+                    value={nom}
+                    onChange={e => setNom(e.target.value)}
+                    placeholder="Votre nom"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Téléphone *</span>
+                <div className="relative mt-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="tel"
+                    required
+                    value={telephone}
+                    onChange={e => setTelephone(e.target.value)}
+                    placeholder="06 12 34 56 78"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Email (optionnel)</span>
+                <div className="relative mt-1">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="vous@exemple.com"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Modèle souhaité</span>
+                <div className="relative mt-1">
+                  <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    value={modele}
+                    onChange={e => setModele(e.target.value)}
+                    placeholder="iPhone 15 Pro Max 256 Go..."
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                  />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Message</span>
+                <div className="relative mt-1">
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
+                  <textarea
+                    rows={3}
+                    value={message}
+                    onChange={e => setMessage(e.target.value)}
+                    placeholder="Couleur, stockage, question..."
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition resize-none"
+                  />
+                </div>
+              </label>
+
+              {err && (
+                <div className="text-xs text-rose-400 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/30">
+                  {err}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={sending}
+                className="w-full py-3 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/30 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? 'Envoi...' : 'Envoyer ma demande'}
+              </button>
+              <p className="text-[10px] text-slate-500 text-center">
+                Vos infos sont envoyées directement à Klikphone. Pas de spam.
+              </p>
+            </form>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Scroll-driven word reveal (pattern Viktor Oddy) ─────────
 function ScrollRevealHeading({ text, className }) {
   const ref = useRef(null);
@@ -435,6 +598,8 @@ export default function AdminSiteTarifsPage() {
   const [shareLabel, setShareLabel] = useState('Partager');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, updateSettings, resetSettings] = useSiteSettings();
+  const [showAllModels, setShowAllModels] = useState(false);
+  const [devisModalOpen, setDevisModalOpen] = useState(false);
 
   // Keyboard shortcut : F = toggle fullscreen
   useEffect(() => {
@@ -523,14 +688,16 @@ export default function AdminSiteTarifsPage() {
 
   const featured = phones[heroIdx];
   const orbit = useMemo(() => {
-    if (phones.length <= 6) return phones.filter((_, i) => i !== heroIdx);
-    // Prend une fenêtre glissante de 6 cards autour de orbitIdx, sans le featured
     const others = phones.filter((_, i) => i !== heroIdx);
+    // Mode "tous les modeles" : on affiche l'integralite en grille statique
+    if (showAllModels) return others;
+    // Sinon, fenetre glissante de 6 cards
+    if (others.length <= 6) return others;
     const start = orbitIdx % others.length;
     const out = [];
     for (let i = 0; i < 6; i++) out.push(others[(start + i) % others.length]);
     return out;
-  }, [phones, heroIdx, orbitIdx]);
+  }, [phones, heroIdx, orbitIdx, showAllModels]);
 
   const timeStr = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -734,11 +901,34 @@ export default function AdminSiteTarifsPage() {
                   initial={{ opacity: 0, y: 24 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-80px" }}
-                  transition={{ duration: 0.5, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 0.5, delay: (showAllModels ? 0 : i * 0.08), ease: [0.22, 1, 0.36, 1] }}
                 >
-                  <MiniCard phone={phone} highlight={i === 0} />
+                  <MiniCard phone={phone} highlight={!showAllModels && i === 0} />
                 </motion.div>
               ))}
+            </div>
+
+            {/* CTAs : Voir tous + Demander un devis */}
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => setShowAllModels(v => !v)}
+                className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-semibold transition-all"
+              >
+                {showAllModels
+                  ? <>Mode vitrine <span className="font-editorial font-normal ml-1 text-violet-300">rotatif</span></>
+                  : <>Voir <span className="font-editorial font-normal mx-1 text-amber-300">tous</span> les modèles ({phones.length})</>
+                }
+                <ArrowRight className={`w-4 h-4 transition-transform ${showAllModels ? 'rotate-180' : 'group-hover:translate-x-0.5'}`} />
+              </button>
+
+              <button
+                onClick={() => setDevisModalOpen(true)}
+                className="group relative inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold shadow-xl shadow-amber-500/30 transition-all"
+              >
+                <Mail className="w-4 h-4" />
+                Demander un <span className="font-editorial font-normal">devis</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </button>
             </div>
           </section>
           )}
@@ -789,6 +979,25 @@ export default function AdminSiteTarifsPage() {
         update={updateSettings}
         reset={resetSettings}
       />
+
+      {/* Modal "Demander un devis / Commander" */}
+      <DevisModal
+        open={devisModalOpen}
+        onClose={() => setDevisModalOpen(false)}
+        defaultModele={featured ? `${featured.marque} ${featured.modele}` : ''}
+      />
+
+      {/* FAB floating bouton devis (visible en permanence, mobile + desktop) */}
+      <button
+        onClick={() => setDevisModalOpen(true)}
+        className="fixed bottom-5 right-5 z-40 group flex items-center gap-2 px-5 py-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-2xl shadow-amber-500/40 hover:shadow-amber-500/60 transition-all hover:scale-105 active:scale-95"
+        aria-label="Demander un devis"
+      >
+        <Mail className="w-4 h-4" />
+        <span className="hidden sm:inline">
+          Demander un <span className="font-editorial font-normal">devis</span>
+        </span>
+      </button>
     </div>
   );
 }

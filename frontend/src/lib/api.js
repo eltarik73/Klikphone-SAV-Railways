@@ -671,6 +671,13 @@ class ApiClient {
       body: JSON.stringify({ modele, storage, prompt, count }),
     }, 30000);
   }
+  // Formulaire public "Demande de tarif / Commander" (vitrine)
+  demandeDevisIphone(data) {
+    return this.request('/api/iphone-tarifs/demande-devis', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const api = new ApiClient();

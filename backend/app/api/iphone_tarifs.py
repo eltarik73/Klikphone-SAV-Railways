@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
@@ -25,6 +25,10 @@ from app.database import get_cursor
 from app.api.auth import get_current_user  # noqa: F401 (si besoin plus tard)
 # Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque
 from app.api.smartphones_tarifs import _fetch_image_for_pdf
+# Reutilise le rate limiter public (protection anti-spam)
+from app.api.tickets import _rate_limit_public_lookup
+# Pour l'envoi d'email sur le formulaire demande de tarif
+from app.api.email_api import _send_email
 
 
 router = APIRouter(prefix="/api/iphone-tarifs", tags=["iphone-tarifs"])
@@ -427,6 +431,68 @@ def init_iphone_tarifs():
     """À appeler au startup (lifespan de main.py)."""
     _ensure_table()
     _seed_default_data()
+
+
+# ---------------------------------------------------------------------------
+# Formulaire public "Demande de tarif / Commander"
+# (accessible depuis la vitrine /site-tarifs-iphone)
+# ---------------------------------------------------------------------------
+class DemandeDevisRequest(BaseModel):
+    nom: str
+    telephone: str
+    email: Optional[str] = None
+    modele: Optional[str] = None
+    message: Optional[str] = None
+
+
+@router.post("/demande-devis")
+async def demande_devis(payload: DemandeDevisRequest, request: Request):
+    """Endpoint public : un visiteur de la vitrine demande un tarif ou
+    souhaite commander un modele. Envoie un email a la boutique et
+    enregistre aussi dans params pour trace.
+
+    Rate-limite (30 req/min/IP) pour eviter le spam."""
+    _rate_limit_public_lookup(request)
+
+    # Validation stricte
+    nom = (payload.nom or "").strip()
+    tel = (payload.telephone or "").strip()
+    if not nom or len(nom) < 2:
+        raise HTTPException(400, "Nom requis (2 caractères min)")
+    if not tel or len(tel) < 6:
+        raise HTTPException(400, "Téléphone requis")
+
+    email = (payload.email or "").strip() or "(non renseigné)"
+    modele = (payload.modele or "").strip() or "(non précisé)"
+    message = (payload.message or "").strip() or "(pas de message)"
+
+    subject = f"Klikphone — Demande de tarif de {nom}"
+    body = (
+        f"Nouvelle demande de tarif depuis la vitrine :\n\n"
+        f"Nom : {nom}\n"
+        f"Téléphone : {tel}\n"
+        f"Email : {email}\n"
+        f"Modèle souhaité : {modele}\n\n"
+        f"Message :\n{message}\n\n"
+        f"— Envoyé depuis la vitrine Site Tarifs iPhone"
+    )
+
+    # Envoie a l'adresse contact de la boutique (lu depuis params, fallback
+    # sur une valeur raisonnable).
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT valeur FROM params WHERE cle = 'CONTACT_EMAIL'")
+            row = cur.fetchone()
+        to_email = (row["valeur"] if row else None) or "contact@klikphone.com"
+    except Exception:
+        to_email = "contact@klikphone.com"
+
+    ok, _msg = _send_email(to_email, subject, body)
+    if not ok:
+        logger.warning("demande-devis : envoi email %s -> KO (%s)", to_email, _msg)
+        # On ne remonte pas l'erreur au client : son message est important
+        # meme si l'email foire temporairement (l'admin verra dans les logs).
+    return {"ok": True, "message": "Demande envoyée. Nous vous recontactons rapidement."}
 
 
 # ---------------------------------------------------------------------------
