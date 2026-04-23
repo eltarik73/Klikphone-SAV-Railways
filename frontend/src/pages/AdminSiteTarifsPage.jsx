@@ -448,11 +448,10 @@ function HeroShowcase({ phone, settings }) {
       animate={reduceMotion ? undefined : "show"}
       className="relative h-full flex flex-col md:flex-row items-center gap-4 md:gap-12 px-4 md:px-16 py-4 md:py-0"
     >
-      {/* Left : image avec effet "sort de l'ecran" (perspective 3D + drop-shadow violet) */}
+      {/* Left : image — float simple sans effet 3D */}
       <motion.div
         variants={reduceMotion ? undefined : heroItem}
-        className="relative w-full md:flex-[1] h-[32vh] md:h-full flex items-center justify-center shrink-0"
-        style={{ perspective: '1400px', perspectiveOrigin: '50% 50%' }}>
+        className="relative w-full md:flex-[1] h-[32vh] md:h-full flex items-center justify-center shrink-0">
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[22rem] md:w-[42rem] h-[22rem] md:h-[42rem] rounded-full bg-gradient-to-br from-violet-500/25 via-fuchsia-500/12 to-amber-500/20 blur-3xl animate-pulse-slow" />
         </div>
@@ -460,12 +459,7 @@ function HeroShowcase({ phone, settings }) {
           <img
             src={phone.image}
             alt={phone.modele}
-            className="relative max-h-[30vh] md:max-h-[70vh] w-auto object-contain animate-float"
-            style={{
-              filter: 'drop-shadow(0 30px 40px rgba(124, 58, 237, 0.45)) drop-shadow(0 10px 20px rgba(0, 0, 0, 0.4))',
-              transformStyle: 'preserve-3d',
-              willChange: 'transform',
-            }}
+            className="relative max-h-[28vh] md:max-h-[65vh] w-auto object-contain animate-float"
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         )}
@@ -710,10 +704,7 @@ export default function AdminSiteTarifsPage() {
       {/* Keyframes + custom animations */}
       <style>{`
         @keyframes scroll-x { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-        @keyframes float {
-          0%, 100% { transform: perspective(1400px) rotateY(-5deg) rotateX(2deg) translateY(0) translateZ(0) scale(1.02); }
-          50%      { transform: perspective(1400px) rotateY(-8deg) rotateX(4deg) translateY(-22px) translateZ(40px) scale(1.06); }
-        }
+        @keyframes float { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-18px) rotate(1deg); } }
         @keyframes pulse-slow { 0%, 100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
         @keyframes hero-in { 0% { opacity: 0; transform: translateX(40px) scale(0.97); } 100% { opacity: 1; transform: translateX(0) scale(1); } }
         @keyframes drift-a { 0% { transform: translate(0, 0); } 50% { transform: translate(80px, -40px); } 100% { transform: translate(0, 0); } }
@@ -881,7 +872,7 @@ export default function AdminSiteTarifsPage() {
               transition={{ duration: 0.6, delay: 0.16, ease: [0.22, 1, 0.36, 1] }}
               className="text-xs md:text-base text-slate-400 mt-3 md:mt-4 max-w-2xl mx-auto"
             >
-              Reconditionnés premium & neufs · testés, garantis {settings.garantieText} · livrés en 24h depuis Chambéry
+              Reconditionnés premium & neufs · testés, garantis {settings.garantieText} · depuis Chambéry
             </motion.p>
           </section>
 
@@ -941,8 +932,8 @@ export default function AdminSiteTarifsPage() {
               ))}
             </div>
 
-            {/* CTAs : Voir tous + Demander un devis */}
-            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-3">
+            {/* CTA : bouton "Voir tous les modeles" (le devis est dans le FAB permanent) */}
+            <div className="mt-10 flex items-center justify-center">
               <button
                 onClick={() => setShowAllModels(v => !v)}
                 className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white font-semibold transition-all"
@@ -953,10 +944,21 @@ export default function AdminSiteTarifsPage() {
                 }
                 <ArrowRight className={`w-4 h-4 transition-transform ${showAllModels ? 'rotate-180' : 'group-hover:translate-x-0.5'}`} />
               </button>
+            </div>
 
+            {/* Phrase d'invitation au devis */}
+            <div className="mt-12 md:mt-16 max-w-2xl mx-auto text-center px-4">
+              <p className="font-display font-extrabold text-2xl md:text-3xl text-white leading-tight mb-3">
+                Vous ne trouvez pas le modèle{' '}
+                <span className="font-editorial font-normal text-amber-300">qu'il vous faut</span> ?
+              </p>
+              <p className="text-sm md:text-base text-slate-400 mb-5">
+                Pas de panique. Demandez un devis, on vous répond{' '}
+                <span className="font-editorial text-violet-300">rapidement</span>.
+              </p>
               <button
                 onClick={() => setDevisModalOpen(true)}
-                className="group relative inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold shadow-xl shadow-amber-500/30 transition-all"
+                className="group inline-flex items-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold shadow-xl shadow-amber-500/30 transition-all"
               >
                 <Mail className="w-4 h-4" />
                 Demander un <span className="font-editorial font-normal">devis</span>
@@ -975,10 +977,6 @@ export default function AdminSiteTarifsPage() {
                     <span className="inline-flex items-center gap-2">
                       <Shield className="w-4 h-4 text-violet-400" />
                       Garantie {settings.garantieText}
-                    </span>
-                    <span className="inline-flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-amber-400" />
-                      Livraison 24h
                     </span>
                     <span className="inline-flex items-center gap-2">
                       <Check className="w-4 h-4 text-emerald-400" />
@@ -1020,17 +1018,9 @@ export default function AdminSiteTarifsPage() {
         defaultModele={featured ? `${featured.marque} ${featured.modele}` : ''}
       />
 
-      {/* FAB floating bouton devis (visible en permanence, mobile + desktop) */}
-      <button
-        onClick={() => setDevisModalOpen(true)}
-        className="fixed bottom-5 right-5 z-40 group flex items-center gap-2 px-5 py-3 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-2xl shadow-amber-500/40 hover:shadow-amber-500/60 transition-all hover:scale-105 active:scale-95"
-        aria-label="Demander un devis"
-      >
-        <Mail className="w-4 h-4" />
-        <span className="hidden sm:inline">
-          Demander un <span className="font-editorial font-normal">devis</span>
-        </span>
-      </button>
+      {/* FAB floating supprime (faisait doublon avec le CTA sous la grille
+           et cachait le QR code 'Scannez pour commander' du footer). Le
+           bouton 'Demander un devis' reste accessible dans le contenu. */}
     </div>
   );
 }
