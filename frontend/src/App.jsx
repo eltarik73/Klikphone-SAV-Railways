@@ -172,7 +172,13 @@ const AG = ({ children, targets }) => <P targets={targets}><AdminGuard>{children
 
 function ChatOverlay() {
   const { user } = useAuth();
+  const location = useLocation();
   if (!user) return null;
+  // Masquer le chat sur les pages vitrine publique (affichage boutique / partage)
+  const hiddenOn = ['/site-tarifs-iphone', '/demo-design'];
+  if (hiddenOn.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))) {
+    return null;
+  }
   return <ChatWidget />;
 }
 

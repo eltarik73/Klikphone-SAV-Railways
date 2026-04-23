@@ -467,10 +467,6 @@ function HeroShowcase({ phone, settings }) {
 
       {/* Right : infos — stacked mobile, side-by-side desktop */}
       <div className="relative w-full md:flex-[1] md:max-w-xl text-center md:text-left">
-        <motion.div variants={reduceMotion ? undefined : heroItem} className="liquid-glass inline-flex items-center gap-2 px-3 py-1 md:px-4 md:py-1.5 rounded-full text-amber-300 text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] md:tracking-[0.25em] mb-3 md:mb-6">
-          <Sparkles className="w-3 h-3" />
-          Coup de cœur
-        </motion.div>
         <motion.p variants={reduceMotion ? undefined : heroItem} className="font-display text-sm md:text-2xl uppercase tracking-[0.25em] md:tracking-[0.35em] text-violet-300/80 mb-2 md:mb-3">
           {phone.marque}{' '}
           <span className="font-editorial normal-case tracking-normal text-amber-200/90 ml-1">
@@ -570,7 +566,7 @@ function MiniCard({ phone, highlight }) {
           <p className="text-[10px] font-bold uppercase tracking-[0.25em] md:tracking-[0.3em] text-violet-300 mb-0.5 md:mb-1">
             {phone.marque}
           </p>
-          <h3 className="font-display font-extrabold text-base md:text-xl text-white leading-tight truncate">
+          <h3 className="font-display font-extrabold text-base md:text-xl text-white leading-tight">
             {phone.modele}
           </h3>
           <p className="text-[10px] text-slate-400 mt-1 md:mt-2">{phone.grade}</p>
@@ -765,9 +761,6 @@ export default function AdminSiteTarifsPage() {
               <p className="font-display font-extrabold text-base md:text-xl leading-none truncate">Klikphone</p>
               <p className="hidden sm:block text-[10px] md:text-[11px] uppercase tracking-[0.3em] text-slate-400 mt-1 truncate">Catalogue en temps réel</p>
             </div>
-            <span className="hidden sm:inline-flex ml-2 md:ml-3 shrink-0 items-center gap-1.5 px-2 md:px-2.5 py-0.5 md:py-1 rounded-md text-[9px] md:text-[10px] font-extrabold bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/30">
-              <Sparkles className="w-3 h-3" /> BETA
-            </span>
           </div>
 
           <div className="flex items-center gap-2 md:gap-6 shrink-0">
