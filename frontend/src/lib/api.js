@@ -364,6 +364,9 @@ class ApiClient {
   utiliserPoints(data) { return this.post('/api/fidelite/utiliser', data); }
   getGrattage(ticketCode) { return this.get(`/api/fidelite/grattage/${ticketCode}`); }
   gratter(ticketCode) { return this.post(`/api/fidelite/grattage/${ticketCode}`); }
+  consommerBonGrattage(clientId, ticketId = null) {
+    return this.post('/api/fidelite/consommer-bon', { client_id: clientId, ticket_id: ticketId });
+  }
 
   // ─── ADMIN ──────────────────────────────────
   adminLogin(identifiant, password) {

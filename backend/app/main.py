@@ -255,6 +255,9 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
+        # Bon de grattage disponible : 'film', 'reduction' ou NULL. Valable pour
+        # la PROCHAINE reparation (consome au paiement par l'admin).
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS bon_grattage TEXT DEFAULT NULL",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_montant DECIMAL(10,2) DEFAULT 0",

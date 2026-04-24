@@ -137,6 +137,39 @@ async def utiliser_points(data: UtiliserRequest, user: dict = Depends(get_curren
     return {"status": "ok", "points_restants": points_actuels - points_deduits}
 
 
+# ─── CONSOMMER BON GRATTAGE (cote staff au paiement) ────
+class ConsommerBonRequest(BaseModel):
+    client_id: int
+    ticket_id: Optional[int] = None
+
+
+@router.post("/consommer-bon")
+async def consommer_bon_grattage(data: ConsommerBonRequest, user: dict = Depends(get_current_user)):
+    """L'admin applique le bon de grattage du client au paiement.
+    Clear la colonne bon_grattage + insert dans fidelite_historique pour trace."""
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT bon_grattage FROM clients WHERE id = %s",
+            (data.client_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Client non trouvé")
+        bon = row["bon_grattage"] if isinstance(row, dict) else row[0]
+        if not bon:
+            raise HTTPException(400, "Pas de bon de grattage disponible pour ce client")
+
+        description = f"Bon grattage utilisé — {_gain_label(bon)}"
+        cur.execute("""
+            INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
+            VALUES (%s, %s, 'utilisation_bon_grattage', 0, %s)
+        """, (data.client_id, data.ticket_id, description))
+
+        cur.execute("UPDATE clients SET bon_grattage = NULL WHERE id = %s", (data.client_id,))
+
+    return {"status": "ok", "bon_consomme": bon, "label": _gain_label(bon)}
+
+
 # ─── GET FIDELITE ───────────────────────────────────────
 
 @router.get("/{client_id}")
@@ -150,13 +183,17 @@ async def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
         montant_reduction = _get_param(cur, "fidelite_montant_reduction", "10")
         pts_par_euro = int(_get_param(cur, "fidelite_points_par_euro", "10"))
 
-        cur.execute("SELECT points_fidelite, total_depense FROM clients WHERE id = %s", (client_id,))
+        cur.execute(
+            "SELECT points_fidelite, total_depense, bon_grattage FROM clients WHERE id = %s",
+            (client_id,),
+        )
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Client non trouvé")
 
         points = row["points_fidelite"] or 0
         total = float(row["total_depense"] or 0)
+        bon_grattage = row.get("bon_grattage") if isinstance(row, dict) else None
 
         cur.execute("""
             SELECT type, points, description, date_creation
@@ -192,6 +229,9 @@ async def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
             "film": points >= palier_film,
             "reduction": points >= palier_reduction,
         },
+        # Bon de grattage disponible (valable prochaine reparation)
+        "bon_grattage": bon_grattage,
+        "bon_grattage_label": _gain_label(bon_grattage) if bon_grattage else None,
         "historique": historique,
     }
 
@@ -288,6 +328,15 @@ async def gratter(ticket_code: str):
                 INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
                 VALUES (%s, %s, 'grattage', 0, %s)
             """, (client_id, ticket_id, description))
+            # Le gain est valable pour la PROCHAINE reparation : on le stocke
+            # sur le client, l'admin le verra/consommera au paiement.
+            # Si le client avait deja un bon, on le laisse (on priorise le plus
+            # ancien — l'admin peut decider d'appliquer un seul bon a la fois).
+            cur.execute(
+                """UPDATE clients SET bon_grattage = COALESCE(bon_grattage, %s)
+                   WHERE id = %s""",
+                (gain, client_id),
+            )
 
         cur.execute(
             "UPDATE tickets SET grattage_fait = TRUE, grattage_gain = %s WHERE id = %s",

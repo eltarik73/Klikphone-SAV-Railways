@@ -80,6 +80,10 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Fidelite & bon grattage du client (affiches au modal paiement)
+  const [clientFidelite, setClientFidelite] = useState(null);
+  const [applyBonGrattage, setApplyBonGrattage] = useState(false);
+  const [applyFidelite, setApplyFidelite] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [notePrivate, setNotePrivate] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -243,6 +247,14 @@ export default function TicketDetailPage() {
     // Mark client interactions as read
     api.markTicketRead(id).then(() => invalidateCache('interactions')).catch(() => {});
   }, [loadTicket]);
+
+  // Fetch fidelite + bon grattage du client (pour afficher les avantages au paiement)
+  useEffect(() => {
+    if (!ticket?.client_id) return;
+    api.getFidelite(ticket.client_id)
+      .then(setClientFidelite)
+      .catch(() => setClientFidelite(null));
+  }, [ticket?.client_id]);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -1992,23 +2004,97 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {reste > 0 && (
-                <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl mb-5 text-center">
-                  <p className="text-xs text-emerald-600 font-medium mb-1">Reste à payer</p>
-                  <p className="text-2xl font-extrabold text-emerald-700">{formatPrix(reste)}</p>
-                </div>
-              )}
+              {(() => {
+                const bonMontant = clientFidelite?.bon_grattage === 'reduction' ? 10 : 0;
+                const bonFilmDispo = clientFidelite?.bon_grattage === 'film';
+                const fideliteDispo = clientFidelite?.recompenses_disponibles?.reduction;
+                const fideliteMontant = parseFloat(clientFidelite?.montant_reduction || 10);
+                const reduction = (applyBonGrattage ? bonMontant : 0) + (applyFidelite ? fideliteMontant : 0);
+                const resteApresRed = Math.max(0, reste - reduction);
+                return (
+                  <>
+                    {reste > 0 && (
+                      <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl mb-4 text-center">
+                        <p className="text-xs text-emerald-600 font-medium mb-1">Reste à payer</p>
+                        {reduction > 0 && (
+                          <p className="text-sm text-slate-400 line-through">{formatPrix(reste)}</p>
+                        )}
+                        <p className="text-2xl font-extrabold text-emerald-700">{formatPrix(resteApresRed)}</p>
+                        {reduction > 0 && (
+                          <p className="text-[11px] text-amber-600 font-semibold mt-1">
+                            −{formatPrix(reduction)} de réduction appliquée
+                          </p>
+                        )}
+                      </div>
+                    )}
 
-              <div className="space-y-2">
-                <button onClick={handleTogglePaye}
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
-                  <CheckCircle2 className="w-4 h-4" /> Oui, confirmer le paiement
-                </button>
-                <button onClick={() => setShowPayeModal(false)}
-                  className="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-1">
-                  <ArrowLeft className="w-3.5 h-3.5" /> Annuler
-                </button>
-              </div>
+                    {/* Avantages client disponibles (bon grattage + fidelite) */}
+                    {(clientFidelite?.bon_grattage || fideliteDispo) && (
+                      <div className="mb-4 rounded-xl border-2 border-amber-200 bg-amber-50/70 p-3 space-y-2">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-amber-700 font-bold flex items-center gap-1.5">
+                          <Star className="w-3 h-3 fill-amber-500 text-amber-500" /> Avantages client disponibles
+                        </p>
+
+                        {clientFidelite?.bon_grattage === 'reduction' && (
+                          <label className="flex items-start gap-2.5 p-2 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors">
+                            <input type="checkbox" checked={applyBonGrattage}
+                              onChange={e => setApplyBonGrattage(e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded accent-amber-500 shrink-0" />
+                            <div className="flex-1 text-sm">
+                              <p className="font-semibold text-slate-800">💰 Bon de grattage : −10€</p>
+                              <p className="text-[11px] text-slate-500">Gagné lors d'un précédent ticket</p>
+                            </div>
+                          </label>
+                        )}
+                        {bonFilmDispo && (
+                          <div className="flex items-start gap-2.5 p-2 rounded-lg bg-white/80">
+                            <Check className="mt-0.5 w-4 h-4 text-amber-600 shrink-0" />
+                            <div className="flex-1 text-sm">
+                              <p className="font-semibold text-slate-800">🎁 Film verre trempé offert</p>
+                              <p className="text-[11px] text-slate-500">À remettre au client en main propre</p>
+                            </div>
+                          </div>
+                        )}
+                        {fideliteDispo && (
+                          <label className="flex items-start gap-2.5 p-2 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors">
+                            <input type="checkbox" checked={applyFidelite}
+                              onChange={e => setApplyFidelite(e.target.checked)}
+                              className="mt-0.5 w-4 h-4 rounded accent-amber-500 shrink-0" />
+                            <div className="flex-1 text-sm">
+                              <p className="font-semibold text-slate-800">⭐ Fidélité : −{formatPrix(fideliteMontant)}</p>
+                              <p className="text-[11px] text-slate-500">{clientFidelite.points} points ({clientFidelite.palier_reduction} requis)</p>
+                            </div>
+                          </label>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <button onClick={async () => {
+                        try {
+                          if (applyBonGrattage && clientFidelite?.bon_grattage) {
+                            await api.consommerBonGrattage(ticket.client_id, ticket.id);
+                          }
+                          if (applyFidelite) {
+                            await api.utiliserPoints({ client_id: ticket.client_id, type: 'reduction' });
+                          }
+                        } catch (e) {
+                          toast.error('Avantage non applicable : ' + (e.message || 'erreur'));
+                          return;
+                        }
+                        handleTogglePaye();
+                      }}
+                        className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" /> Oui, confirmer le paiement
+                      </button>
+                      <button onClick={() => setShowPayeModal(false)}
+                        className="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-1">
+                        <ArrowLeft className="w-3.5 h-3.5" /> Annuler
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </>

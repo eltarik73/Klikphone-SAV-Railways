@@ -126,9 +126,14 @@ export default function ScratchCard({ ticketCode }) {
       <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 text-center">
         <p className="text-sm text-slate-500">Vous avez déjà gratté ce ticket</p>
         {result.gain && (
-          <p className="text-lg font-bold text-emerald-600 mt-2">
-            {result.gain === 'film' ? '🎁' : '💰'} {result.gain_label}
-          </p>
+          <>
+            <p className="text-lg font-bold text-emerald-600 mt-2">
+              {result.gain === 'film' ? '🎁' : '💰'} {result.gain_label}
+            </p>
+            <p className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+              ✨ Valable pour votre <strong className="font-bold">prochaine réparation</strong>
+            </p>
+          </>
         )}
         {!result.gain && (
           <p className="text-sm text-slate-400 mt-1">Retentez votre chance au prochain passage !</p>
@@ -194,6 +199,12 @@ export default function ScratchCard({ ticketCode }) {
           />
         )}
       </div>
+
+      {isRevealed && result?.gagnant && (
+        <p className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
+          ✨ Valable pour votre <strong className="font-bold">prochaine réparation</strong>
+        </p>
+      )}
 
       <p className="text-[10px] text-slate-400 mt-3">
         1 chance sur {frequence} de gagner un film verre trempé ou une réduction

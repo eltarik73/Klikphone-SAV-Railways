@@ -4,7 +4,7 @@ import {
   Sparkles, Shield, Zap, Package, Check, Star,
   Smartphone, MapPin, Phone, Clock, Tv, Loader2, QrCode,
   Maximize, Minimize, Share2, Settings, X, Mail, ArrowRight,
-  User, MessageSquare, Send,
+  User, MessageSquare, Send, ShoppingBag,
 } from 'lucide-react';
 import api from '../lib/api';
 
@@ -950,15 +950,17 @@ export default function AdminSiteTarifsPage() {
               </button>
             </div>
 
-            {/* Phrase d'invitation au devis */}
+            {/* Phrase d'invitation au devis — quand le modele cherché n'est pas dans le catalogue visible */}
             <div className="mt-12 md:mt-16 max-w-2xl mx-auto text-center px-4">
               <p className="font-display font-extrabold text-2xl md:text-3xl text-white leading-tight mb-3">
-                Vous ne trouvez pas le modèle{' '}
-                <span className="font-editorial font-normal text-amber-300">qu'il vous faut</span> ?
+                Vous ne trouvez pas votre{' '}
+                <span className="font-editorial font-normal text-amber-300">modèle</span> ?
               </p>
-              <p className="text-sm md:text-base text-slate-400 mb-5">
-                Pas de panique. Demandez un devis, on vous répond{' '}
-                <span className="font-editorial text-violet-300">rapidement</span>.
+              <p className="text-sm md:text-base text-slate-400 leading-relaxed mb-5">
+                Pas de panique — notre stock bouge chaque semaine et on a souvent{' '}
+                <span className="text-slate-200">ce qu'il vous faut en coulisses</span>.
+                Précisez-nous votre besoin, on revient vers vous avec le meilleur{' '}
+                <span className="font-editorial text-violet-300">tarif</span>.
               </p>
               <button
                 onClick={() => setDevisModalOpen(true)}
@@ -990,15 +992,16 @@ export default function AdminSiteTarifsPage() {
                 ) : <div />}
 
                 {settings.showQrCode && (
-                  <div className="flex items-center gap-4">
-                    <div className="text-right text-xs text-slate-400">
-                      <p className="font-semibold text-white text-sm">Scannez pour commander</p>
-                      <p className="mt-0.5">klikphone.com</p>
-                    </div>
-                    <div className="w-16 h-16 rounded-xl bg-white p-2 flex items-center justify-center shadow-xl shadow-violet-500/30">
-                      <QrCode className="w-full h-full text-slate-900" strokeWidth={1.2} />
-                    </div>
-                  </div>
+                  <button
+                    onClick={() => setDevisModalOpen(true)}
+                    className="group inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-95"
+                  >
+                    <ShoppingBag className="w-5 h-5" />
+                    <span className="text-sm">
+                      Passer <span className="font-editorial font-normal">commande</span>
+                    </span>
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </button>
                 )}
               </div>
             </footer>
