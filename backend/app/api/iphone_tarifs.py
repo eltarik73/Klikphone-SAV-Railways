@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, Response, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
@@ -434,6 +434,184 @@ def init_iphone_tarifs():
 
 
 # ---------------------------------------------------------------------------
+# Demandes de commande (depuis la vitrine /site-tarifs-iphone)
+# Enregistree en DB + envoi email, visible dans le dashboard admin
+# ---------------------------------------------------------------------------
+class PasserCommandeRequest(BaseModel):
+    nom: str
+    telephone: str
+    email: Optional[str] = None
+    marque: Optional[str] = None
+    modele: str
+    stockage: Optional[str] = None
+    prix: Optional[int] = 0
+    message: Optional[str] = None
+
+
+@router.post("/passer-commande")
+async def passer_commande(payload: PasserCommandeRequest, request: Request):
+    """Client clique 'Passer commande' sur la vitrine. On :
+    1. Valide les données (rate-limite 30/min/IP anti-spam)
+    2. Enregistre dans demandes_commandes (statut='nouvelle')
+    3. Envoie un email a contact@klikphone.com avec sujet [COMMANDE]
+    L'admin voit ensuite la demande dans son dashboard et peut la gerer."""
+    _rate_limit_public_lookup(request)
+
+    nom = (payload.nom or "").strip()
+    tel = (payload.telephone or "").strip()
+    modele = (payload.modele or "").strip()
+    if not nom or len(nom) < 2:
+        raise HTTPException(400, "Nom requis (2 caractères min)")
+    if not tel or len(tel) < 6:
+        raise HTTPException(400, "Téléphone requis")
+    if not modele:
+        raise HTTPException(400, "Modèle requis")
+
+    marque = (payload.marque or "").strip()[:60]
+    stockage = (payload.stockage or "").strip()[:30]
+    prix = max(0, int(payload.prix or 0))
+    email = (payload.email or "").strip()[:200]
+    message = (payload.message or "").strip()
+
+    # Insert en DB
+    with get_cursor() as cur:
+        cur.execute(
+            """INSERT INTO demandes_commandes
+               (nom, telephone, email, marque, modele, stockage, prix, message)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               RETURNING id""",
+            (nom, tel, email, marque, modele, stockage, prix, message),
+        )
+        row = cur.fetchone()
+        new_id = row["id"] if isinstance(row, dict) else row[0]
+
+    # Envoi email admin (fire-and-forget, on ne bloque pas si ca echoue)
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT valeur FROM params WHERE cle = 'CONTACT_EMAIL'")
+            r = cur.fetchone()
+        admin_email = (r["valeur"] if r else None) or "contact@klikphone.com"
+        subject = f"[COMMANDE #{new_id}] {nom} — {marque} {modele}"
+        body = (
+            f"NOUVELLE COMMANDE #{new_id} depuis la vitrine\n\n"
+            f"Client : {nom}\n"
+            f"Téléphone : {tel}\n"
+            f"Email : {email or '(non renseigné)'}\n\n"
+            f"Modèle : {marque} {modele}\n"
+            f"Stockage : {stockage or 'N/A'}\n"
+            f"Prix : {prix}€\n\n"
+            f"Message : {message or '(aucun)'}\n\n"
+            f"→ Dashboard : /accueil/demandes-commandes"
+        )
+        _send_email(admin_email, subject, body)
+    except Exception as e:
+        logger.warning("passer-commande : email admin KO (%s)", e)
+
+    # Envoi confirmation au CLIENT (si email fourni)
+    if email and "@" in email:
+        try:
+            subject_client = f"Klikphone — Votre commande #{new_id} bien reçue"
+            body_client = (
+                f"Bonjour {nom},\n\n"
+                f"Nous avons bien reçu votre demande de commande. Voici le récapitulatif :\n\n"
+                f"— Modèle : {marque} {modele}\n"
+                f"— Stockage : {stockage or 'N/A'}\n"
+                f"— Prix : {prix}€\n\n"
+                f"Notre équipe va vérifier la disponibilité et vous recontacte rapidement "
+                f"au {tel} pour confirmer la commande.\n\n"
+                f"À très bientôt,\n"
+                f"L'équipe Klikphone\n\n"
+                f"——\n"
+                f"Klikphone SAV — 79 Place Saint-Léger, 73000 Chambéry\n"
+                f"06 95 71 51 96 · klikphone.com"
+            )
+            _send_email(email, subject_client, body_client)
+        except Exception as e:
+            logger.warning("passer-commande : email client KO (%s)", e)
+
+    return {
+        "ok": True,
+        "id": new_id,
+        "message": "Commande enregistrée. Nous vous recontactons rapidement.",
+    }
+
+
+@router.get("/demandes-commandes")
+async def list_demandes_commandes(
+    statut: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """Liste les demandes de commande (admin). Filtrable par statut."""
+    where = []
+    params = []
+    if statut:
+        where.append("statut = %s")
+        params.append(statut)
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+    sql = f"""
+        SELECT id, nom, telephone, email, marque, modele, stockage, prix,
+               message, statut, date_creation, date_maj, admin_notes
+        FROM demandes_commandes
+        {where_sql}
+        ORDER BY date_creation DESC
+        LIMIT 200
+    """
+    with get_cursor() as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("date_creation", "date_maj"):
+            if d.get(k) and hasattr(d[k], "isoformat"):
+                d[k] = d[k].isoformat()
+        out.append(d)
+    return out
+
+
+class UpdateDemandeCommandeRequest(BaseModel):
+    statut: Optional[str] = None
+    admin_notes: Optional[str] = None
+
+
+@router.patch("/demandes-commandes/{demande_id}")
+async def update_demande_commande(
+    demande_id: int,
+    payload: UpdateDemandeCommandeRequest,
+    user: dict = Depends(get_current_user),
+):
+    """L'admin change le statut ou ajoute des notes sur une demande."""
+    data = payload.model_dump(exclude_unset=True)
+    if not data:
+        raise HTTPException(400, "Aucun champ à mettre à jour")
+
+    allowed_statuts = {"nouvelle", "en_cours", "confirmee", "annulee"}
+    if "statut" in data and data["statut"] not in allowed_statuts:
+        raise HTTPException(400, f"statut invalide, doit etre dans {allowed_statuts}")
+
+    set_parts = [f"{k} = %s" for k in data.keys()]
+    values = list(data.values()) + [demande_id]
+    with get_cursor() as cur:
+        cur.execute(
+            f"UPDATE demandes_commandes SET {', '.join(set_parts)}, date_maj = NOW() "
+            f"WHERE id = %s RETURNING id",
+            values,
+        )
+        if not cur.fetchone():
+            raise HTTPException(404, "Demande non trouvée")
+    return {"ok": True}
+
+
+@router.get("/demandes-commandes/count-nouvelles")
+async def count_nouvelles(user: dict = Depends(get_current_user)):
+    """Compte les demandes avec statut='nouvelle' (pour badge dashboard)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM demandes_commandes WHERE statut = 'nouvelle'")
+        row = cur.fetchone()
+    return {"count": row["n"] if row else 0}
+
+
+# ---------------------------------------------------------------------------
 # Formulaire public "Demande de tarif / Commander"
 # (accessible depuis la vitrine /site-tarifs-iphone)
 # ---------------------------------------------------------------------------
@@ -489,9 +667,31 @@ async def demande_devis(payload: DemandeDevisRequest, request: Request):
 
     ok, send_msg = _send_email(to_email, subject, body)
     if not ok:
-        logger.warning("demande-devis : envoi email %s -> KO (%s)", to_email, send_msg)
+        logger.warning("demande-devis : envoi email admin KO (%s)", send_msg)
     else:
-        logger.info("demande-devis : envoi email %s -> OK", to_email)
+        logger.info("demande-devis : envoi email admin OK")
+
+    # Confirmation client (si email renseigne)
+    client_email = (payload.email or "").strip()
+    if client_email and "@" in client_email:
+        try:
+            subject_client = "Klikphone — Votre demande de devis bien reçue"
+            body_client = (
+                f"Bonjour {nom},\n\n"
+                f"Nous avons bien reçu votre demande. Voici ce que vous avez transmis :\n\n"
+                f"— Modèle recherché : {modele}\n"
+                f"— Votre message : {message}\n\n"
+                f"Notre équipe va rechercher la meilleure offre et vous recontacter "
+                f"rapidement au {tel}.\n\n"
+                f"À très bientôt,\n"
+                f"L'équipe Klikphone\n\n"
+                f"——\n"
+                f"Klikphone SAV — 79 Place Saint-Léger, 73000 Chambéry\n"
+                f"06 95 71 51 96 · klikphone.com"
+            )
+            _send_email(client_email, subject_client, body_client)
+        except Exception as e:
+            logger.warning("demande-devis : email client KO (%s)", e)
 
     # Debug mode (?debug=1) : renvoie le statut reel (utilise pour tests).
     # En prod, l'admin/dev peut curl avec ?debug=1 pour savoir si resend marche.

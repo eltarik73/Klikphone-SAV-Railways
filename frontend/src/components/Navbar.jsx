@@ -76,6 +76,7 @@ export default function Navbar() {
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: pendingCount },
+    { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];

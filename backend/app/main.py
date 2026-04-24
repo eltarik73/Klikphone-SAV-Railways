@@ -114,6 +114,25 @@ async def lifespan(app: FastAPI):
 
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
+        # Demandes de commande passees depuis la vitrine publique
+        # /site-tarifs-iphone (bouton 'Passer commande').
+        # Statut : nouvelle / en_cours / confirmee / annulee
+        """CREATE TABLE IF NOT EXISTS demandes_commandes (
+            id SERIAL PRIMARY KEY,
+            nom TEXT NOT NULL,
+            telephone TEXT NOT NULL,
+            email TEXT DEFAULT '',
+            marque TEXT DEFAULT '',
+            modele TEXT NOT NULL,
+            stockage TEXT DEFAULT '',
+            prix INTEGER DEFAULT 0,
+            message TEXT DEFAULT '',
+            statut TEXT DEFAULT 'nouvelle',
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            admin_notes TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_demandes_commandes_statut ON demandes_commandes(statut, date_creation DESC)""",
         # Tracking events : clics sur liens publics (compteurs admin reporting)
         """CREATE TABLE IF NOT EXISTS tracking_events (
             id SERIAL PRIMARY KEY,

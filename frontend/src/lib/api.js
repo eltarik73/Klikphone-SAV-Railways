@@ -693,6 +693,25 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+  // Commande depuis la vitrine (enregistree en DB + email admin + email client)
+  passerCommandeIphone(data) {
+    return this.request('/api/iphone-tarifs/passer-commande', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+  listDemandesCommandes(statut) {
+    const qs = statut ? `?statut=${encodeURIComponent(statut)}` : '';
+    return this.get(`/api/iphone-tarifs/demandes-commandes${qs}`);
+  }
+  updateDemandeCommande(id, data) {
+    return this.request(`/api/iphone-tarifs/demandes-commandes/${id}`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    });
+  }
+  countDemandesCommandesNouvelles() {
+    return this.get('/api/iphone-tarifs/demandes-commandes/count-nouvelles');
+  }
 }
 
 export const api = new ApiClient();

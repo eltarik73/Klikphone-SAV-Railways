@@ -34,6 +34,7 @@ const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage')
 const AdminTarifsSmartphonesPage = lazy(() => import('./pages/AdminTarifsSmartphonesPage'));
 const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
 const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
+const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage'));
 
 // Preload only the most frequent pages after initial render.
 // AdminPage (378 kB) and Community/AvisGoogle are NOT preloaded — loaded on demand.
@@ -247,6 +248,8 @@ function AppRoutes() {
         <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
         <Route path="/tech/tarifs-iphone" element={<P targets={['tech']}><AdminTarifsIphonePage /></P>} />
         <Route path="/tech/tarifs-smartphones" element={<P targets={['tech']}><AdminTarifsSmartphonesPage /></P>} />
+        <Route path="/accueil/demandes-commandes" element={<P targets={['accueil']}><DemandesCommandesPage /></P>} />
+        <Route path="/tech/demandes-commandes" element={<P targets={['tech']}><DemandesCommandesPage /></P>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -275,7 +275,7 @@ function DevisModal({ open, onClose, defaultModele }) {
     try {
       await api.demandeDevisIphone({ nom, telephone, email, modele, message });
       setDone(true);
-      setTimeout(() => { onClose(); }, 2200);
+      setTimeout(() => { onClose(); }, 5000);
     } catch (e2) {
       setErr(e2.message || 'Erreur envoi');
     } finally {
@@ -307,11 +307,20 @@ function DevisModal({ open, onClose, defaultModele }) {
 
           {done ? (
             <div className="px-6 py-10 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-7 h-7 text-emerald-300" />
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-emerald-300" />
               </div>
-              <p className="font-display font-bold text-white text-lg mb-1">Demande envoyée</p>
-              <p className="text-sm text-slate-400">Nous vous recontactons rapidement au {telephone}.</p>
+              <p className="font-display font-extrabold text-white text-xl mb-2">
+                Demande <span className="font-editorial font-normal text-amber-300">bien reçue</span>
+              </p>
+              <p className="text-sm text-slate-300 mb-2">
+                Nous vous recontactons rapidement au <strong className="text-white">{telephone}</strong>.
+              </p>
+              {email && email.includes('@') && (
+                <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-400/30 rounded-lg px-3 py-2 inline-block">
+                  📩 Un email de confirmation vient d'être envoyé à <strong>{email}</strong>
+                </p>
+              )}
             </div>
           ) : (
             <form onSubmit={submit} className="px-6 py-5 space-y-3">
@@ -445,17 +454,19 @@ function CommandeModal({ open, onClose, phones }) {
     }
     setSending(true); setErr(null);
     try {
-      const modeleComplet = `${selectedPhone.marque} ${selectedPhone.modele} — ${selectedVariant.stockage} (${selectedVariant.prix}€)`;
-      const msgFinal = message
-        ? `[COMMANDE] ${modeleComplet}\n\n${message}`
-        : `[COMMANDE] ${modeleComplet}\n\nLe client souhaite commander ce modèle aux conditions affichées sur la vitrine.`;
-      await api.demandeDevisIphone({
+      // Nouvel endpoint dedie : enregistre en DB (dashboard admin) +
+      // envoie email admin + email de confirmation au client
+      await api.passerCommandeIphone({
         nom, telephone, email,
-        modele: modeleComplet,
-        message: msgFinal,
+        marque: selectedPhone.marque,
+        modele: selectedPhone.modele,
+        stockage: selectedVariant.stockage,
+        prix: selectedVariant.prix,
+        message,
       });
       setDone(true);
-      setTimeout(() => onClose(), 2500);
+      // Laisse 5s pour que le client voie bien le message de succes
+      setTimeout(() => onClose(), 5000);
     } catch (e2) {
       setErr(e2.message || 'Erreur envoi');
     } finally {
@@ -487,11 +498,20 @@ function CommandeModal({ open, onClose, phones }) {
 
           {done ? (
             <div className="px-6 py-10 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-7 h-7 text-emerald-300" />
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4 animate-pulse-slow">
+                <Check className="w-8 h-8 text-emerald-300" />
               </div>
-              <p className="font-display font-bold text-white text-lg mb-1">Commande envoyée</p>
-              <p className="text-sm text-slate-400">Nous vous recontactons rapidement au {telephone} pour confirmer la disponibilité.</p>
+              <p className="font-display font-extrabold text-white text-xl mb-2">
+                Commande <span className="font-editorial font-normal text-amber-300">bien reçue</span>
+              </p>
+              <p className="text-sm text-slate-300 mb-2">
+                Nous vous recontactons rapidement au <strong className="text-white">{telephone}</strong> pour confirmer la disponibilité.
+              </p>
+              {email && email.includes('@') && (
+                <p className="text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-400/30 rounded-lg px-3 py-2 inline-block">
+                  📩 Un email de confirmation vient d'être envoyé à <strong>{email}</strong>
+                </p>
+              )}
             </div>
           ) : (
             <form onSubmit={submit} className="flex-1 flex flex-col min-h-0">
