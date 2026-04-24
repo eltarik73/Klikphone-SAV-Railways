@@ -466,11 +466,11 @@ function CommandeModal({ open, onClose, phones }) {
   return (
     <>
       <div onClick={onClose} className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm animate-fade-in" />
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 pointer-events-none">
-        <div className="liquid-glass pointer-events-auto bg-slate-950/95 rounded-3xl border border-white/10 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-in-right">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 sticky top-0 bg-slate-950/95 backdrop-blur">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 pointer-events-none">
+        <div className="liquid-glass pointer-events-auto bg-slate-950/95 rounded-3xl border border-white/10 w-full max-w-md max-h-[92vh] shadow-2xl animate-slide-in-right flex flex-col">
+          <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/10 bg-slate-950/95 backdrop-blur shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0">
                 <ShoppingBag className="w-5 h-5 text-slate-950" />
               </div>
               <div>
@@ -480,7 +480,7 @@ function CommandeModal({ open, onClose, phones }) {
                 <p className="text-xs text-slate-400 mt-0.5">Choisissez un modèle du catalogue</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Fermer">
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors shrink-0" aria-label="Fermer">
               <X className="w-5 h-5 text-slate-300" />
             </button>
           </div>
@@ -494,107 +494,108 @@ function CommandeModal({ open, onClose, phones }) {
               <p className="text-sm text-slate-400">Nous vous recontactons rapidement au {telephone} pour confirmer la disponibilité.</p>
             </div>
           ) : (
-            <form onSubmit={submit} className="px-6 py-5 space-y-3">
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Modèle *</span>
-                <select
-                  required
-                  value={phoneKey}
-                  onChange={e => setPhoneKey(e.target.value)}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
-                >
-                  <option value="" className="bg-slate-900">— Choisissez votre modèle —</option>
-                  {phones.map(p => (
-                    <option key={p.key} value={p.key} className="bg-slate-900">
-                      {p.marque} {p.modele}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {selectedPhone && selectedPhone.variants.length > 0 && (
+            <form onSubmit={submit} className="flex-1 flex flex-col min-h-0">
+              {/* Corps scrollable */}
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-4 space-y-3">
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Stockage *</span>
-                  <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {selectedPhone.variants.map((v, i) => (
-                      <button
-                        type="button"
-                        key={v.stockage}
-                        onClick={() => setVariantIdx(i)}
-                        className={`px-3 py-2.5 rounded-xl border text-sm font-semibold text-left transition-all
-                          ${i === variantIdx
-                            ? 'bg-amber-400/20 border-amber-400 text-white'
-                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}
-                      >
-                        <div>{v.stockage}</div>
-                        <div className="text-amber-300 text-base mt-0.5">{v.prix}€</div>
-                      </button>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Modèle *</span>
+                  <select
+                    required
+                    value={phoneKey}
+                    onChange={e => setPhoneKey(e.target.value)}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                  >
+                    <option value="" className="bg-slate-900">— Choisissez votre modèle —</option>
+                    {phones.map(p => (
+                      <option key={p.key} value={p.key} className="bg-slate-900">
+                        {p.marque} {p.modele}
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 </label>
-              )}
 
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Nom *</span>
-                <div className="relative mt-1">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input type="text" required value={nom} onChange={e => setNom(e.target.value)}
-                    placeholder="Votre nom"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                {selectedPhone && selectedPhone.variants.length > 0 && (
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Stockage *</span>
+                    <div className="mt-1 grid grid-cols-2 gap-2">
+                      {selectedPhone.variants.map((v, i) => (
+                        <button
+                          type="button"
+                          key={v.stockage}
+                          onClick={() => setVariantIdx(i)}
+                          className={`px-3 py-2 rounded-xl border text-sm font-semibold text-left transition-all
+                            ${i === variantIdx
+                              ? 'bg-amber-400/20 border-amber-400 text-white'
+                              : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}
+                        >
+                          <div className="text-xs">{v.stockage}</div>
+                          <div className="text-amber-300 text-base mt-0.5">{v.prix}€</div>
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+                )}
+
+                {/* Nom + Tel sur une ligne pour gagner de la place */}
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Nom *</span>
+                    <input type="text" required value={nom} onChange={e => setNom(e.target.value)}
+                      placeholder="Votre nom"
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Téléphone *</span>
+                    <input type="tel" required value={telephone} onChange={e => setTelephone(e.target.value)}
+                      placeholder="06 12 34 56 78"
+                      className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                  </label>
                 </div>
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Téléphone *</span>
-                <div className="relative mt-1">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input type="tel" required value={telephone} onChange={e => setTelephone(e.target.value)}
-                    placeholder="06 12 34 56 78"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
-                </div>
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Email (optionnel)</span>
-                <div className="relative mt-1">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Email (optionnel)</span>
                   <input type="email" value={email} onChange={e => setEmail(e.target.value)}
                     placeholder="vous@exemple.com"
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
-                </div>
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Message (optionnel)</span>
-                <div className="relative mt-1">
-                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Message (optionnel)</span>
                   <textarea rows={2} value={message} onChange={e => setMessage(e.target.value)}
                     placeholder="Couleur souhaitée, délai..."
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition resize-none" />
-                </div>
-              </label>
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition resize-none" />
+                </label>
 
-              {selectedPhone && selectedVariant && (
-                <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300 font-bold mb-1">Récap</p>
-                  <p className="text-sm text-white font-semibold">
-                    {selectedPhone.marque} {selectedPhone.modele} — {selectedVariant.stockage}
-                  </p>
-                  <p className="text-2xl font-display font-extrabold text-amber-300">{selectedVariant.prix}€</p>
-                </div>
-              )}
+                {err && (
+                  <div className="text-xs text-rose-400 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/30">
+                    {err}
+                  </div>
+                )}
+              </div>
 
-              {err && (
-                <div className="text-xs text-rose-400 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/30">
-                  {err}
-                </div>
-              )}
-
-              <button type="submit" disabled={sending || !selectedPhone}
-                className="w-full py-3 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/30 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {sending ? 'Envoi...' : 'Valider ma commande'}
-              </button>
-              <p className="text-[10px] text-slate-500 text-center">
-                Non engageant — Klikphone vous recontacte pour confirmer.
-              </p>
+              {/* Footer sticky avec recap + submit (toujours visible) */}
+              <div className="shrink-0 border-t border-white/10 bg-slate-950/95 backdrop-blur px-5 sm:px-6 py-3 space-y-2">
+                {selectedPhone && selectedVariant ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-slate-400 truncate">{selectedPhone.marque} {selectedPhone.modele} · {selectedVariant.stockage}</p>
+                      <p className="text-xl font-display font-extrabold text-amber-300">{selectedVariant.prix}€</p>
+                    </div>
+                    <button type="submit" disabled={sending}
+                      className="px-5 py-3 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/30 disabled:opacity-50 transition-all flex items-center gap-2 shrink-0">
+                      {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                      {sending ? 'Envoi…' : 'Valider'}
+                    </button>
+                  </div>
+                ) : (
+                  <button type="submit" disabled
+                    className="w-full py-3 rounded-xl bg-white/5 border border-white/10 text-slate-500 font-bold text-sm cursor-not-allowed">
+                    Sélectionnez d'abord un modèle
+                  </button>
+                )}
+                <p className="text-[9px] text-slate-500 text-center">
+                  Non engageant — Klikphone vous recontacte pour confirmer.
+                </p>
+              </div>
             </form>
           )}
         </div>
