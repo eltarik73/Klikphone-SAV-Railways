@@ -254,13 +254,17 @@ function DevisModal({ open, onClose, defaultModele }) {
   const [done, setDone] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Pre-remplit le modele UNE SEULE FOIS a l'ouverture — ne suit plus les
+  // changements de defaultModele (sinon la rotation du hero ecrase ce que
+  // l'utilisateur est en train de taper toutes les 7 secondes).
   useEffect(() => {
     if (open) {
       setModele(defaultModele || '');
       setDone(false);
       setErr(null);
     }
-  }, [open, defaultModele]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
 
@@ -1011,11 +1015,12 @@ export default function AdminSiteTarifsPage() {
         reset={resetSettings}
       />
 
-      {/* Modal "Demander un devis / Commander" */}
+      {/* Modal "Demander un devis / Commander" : champ modele libre (pas de pre-remplissage
+           pour eviter confusion avec la rotation du hero featured) */}
       <DevisModal
         open={devisModalOpen}
         onClose={() => setDevisModalOpen(false)}
-        defaultModele={featured ? `${featured.marque} ${featured.modele}` : ''}
+        defaultModele=""
       />
 
       {/* FAB floating supprime (faisait doublon avec le CTA sous la grille
