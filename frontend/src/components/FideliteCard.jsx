@@ -87,6 +87,11 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
             Plus que <strong className="text-violet-600">{prochaine_recompense.points_restants} pts</strong> pour : {prochaine_recompense.type}
           </p>
         )}
+        {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
+          <p className="mt-3 text-center text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 font-semibold">
+            ✨ Valable pour votre <strong>prochaine réparation</strong>
+          </p>
+        )}
       </div>
     );
   }
@@ -146,6 +151,13 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
           Plus que <strong className="text-violet-600">{prochaine_recompense.points_restants} pts</strong>
           {' '}pour obtenir : {prochaine_recompense.type}
         </div>
+      )}
+
+      {/* Rappel : les recompenses sont appliquees a la prochaine reparation */}
+      {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
+        <p className="mt-3 text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-semibold">
+          ✨ À utiliser lors de la <strong>prochaine réparation</strong>
+        </p>
       )}
 
       {/* Historique */}
