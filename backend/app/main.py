@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking
 
 logger = logging.getLogger("klikphone.startup")
 
@@ -114,6 +114,16 @@ async def lifespan(app: FastAPI):
 
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
+        # Tracking events : clics sur liens publics (compteurs admin reporting)
+        """CREATE TABLE IF NOT EXISTS tracking_events (
+            id SERIAL PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            source TEXT DEFAULT '',
+            target TEXT DEFAULT '',
+            ip_hash TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_tracking_type_date ON tracking_events(event_type, created_at)""",
         """CREATE TABLE IF NOT EXISTS historique (
             id SERIAL PRIMARY KEY,
             ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
@@ -477,6 +487,7 @@ app.include_router(suivi.router)
 app.include_router(iphone_tarifs.router)
 app.include_router(iphones_stock.router)
 app.include_router(smartphones_tarifs.router)
+app.include_router(tracking.router)
 
 
 # --- HEALTH CHECK ---

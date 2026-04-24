@@ -368,6 +368,18 @@ class ApiClient {
     return this.post('/api/fidelite/consommer-bon', { client_id: clientId, ticket_id: ticketId });
   }
 
+  // ─── TRACKING ─────────────────────────────────
+  trackEvent(eventType, source, target) {
+    // Fire-and-forget : ne bloque jamais la navigation
+    return this.request('/api/tracking/event', {
+      method: 'POST',
+      body: JSON.stringify({ event_type: eventType, source, target }),
+    }).catch(() => {});
+  }
+  getTrackingStats(eventType = 'tarifs_click', days = 30) {
+    return this.get(`/api/tracking/stats?event_type=${eventType}&days=${days}`);
+  }
+
   // ─── ADMIN ──────────────────────────────────
   adminLogin(identifiant, password) {
     return this.post('/api/admin/login', { identifiant, password });

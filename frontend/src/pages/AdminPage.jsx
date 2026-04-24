@@ -9,7 +9,7 @@ import {
 import {
   Lock, LogOut, TrendingUp, TrendingDown, Minus,
   BarChart3, Users, Clock, Receipt, UserPlus, Target, Wrench,
-  Calendar, ChevronUp, ChevronDown, Award, Smartphone,
+  Calendar, ChevronUp, ChevronDown, Award, Smartphone, Tag,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────
@@ -282,6 +282,14 @@ function AdminDashboard({ onLogout }) {
     { tags: ['reporting'], ttl: 120_000 }
   );
 
+  // Tracking clics sur le lien public "Voir nos tarifs telephones"
+  const trackingKey = `tracking:tarifs_click:30`;
+  const { data: tracking } = useApi(
+    trackingKey,
+    () => api.getTrackingStats('tarifs_click', 30),
+    { tags: ['tracking'], ttl: 120_000 }
+  );
+
   const kpis = report?.kpis ?? [];
   const affluence = report?.affluence ?? [];
   const perfAccueil = report?.performance_accueil ?? [];
@@ -346,6 +354,46 @@ function AdminDashboard({ onLogout }) {
             </div>
           )}
         </section>
+
+        {/* ═══ Section 1b: Tracking clics vitrine tarifs ═══ */}
+        {tracking && (
+          <section>
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Tag className="w-4 h-4" /> Vitrine tarifs téléphones <span className="text-[10px] text-slate-500">— 30 derniers jours</span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Clics 30 jours</p>
+                <p className="text-3xl font-bold text-amber-400">{tracking.total || 0}</p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {tracking.unique_visitors || 0} visiteur{(tracking.unique_visitors || 0) > 1 ? 's' : ''} unique{(tracking.unique_visitors || 0) > 1 ? 's' : ''}
+                </p>
+              </div>
+              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Aujourd'hui</p>
+                <p className="text-3xl font-bold text-violet-400">{tracking.today || 0}</p>
+                <p className="text-[11px] text-slate-400 mt-1">clic{(tracking.today || 0) > 1 ? 's' : ''} sur « Voir nos tarifs »</p>
+              </div>
+              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-2">Par source</p>
+                {(tracking.by_source || []).length === 0 ? (
+                  <p className="text-slate-500 text-xs">Aucun clic pour le moment</p>
+                ) : (
+                  <div className="space-y-1">
+                    {tracking.by_source.slice(0, 4).map(s => (
+                      <div key={s.source} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300 font-medium">
+                          {s.source === 'home' ? '🏠 Accueil' : s.source === 'suivi' ? '🔍 Page suivi' : s.source === 'autre' ? '— Autre' : s.source}
+                        </span>
+                        <span className="text-amber-400 font-bold">{s.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ═══ Section 2: Affluence Chart ═══ */}
         <section>

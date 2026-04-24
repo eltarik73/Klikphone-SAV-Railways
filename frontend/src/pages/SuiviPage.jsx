@@ -554,11 +554,12 @@ export default function SuiviPage() {
           </div>
         )}
 
-        {/* CTA — Voir nos tarifs iPhone (visible sur la page Suivi) */}
+        {/* CTA — Voir nos tarifs telephones (iPhone + Samsung + Google + Xiaomi) */}
         <a
           href="/site-tarifs-iphone"
+          onClick={() => api.trackEvent('tarifs_click', 'suivi', '/site-tarifs-iphone')}
           className="group mt-8 block relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-brand-800 to-slate-900 text-white p-5 shadow-xl shadow-brand-900/20 hover:shadow-2xl hover:shadow-brand-900/30 transition-shadow"
-          aria-label="Voir nos tarifs iPhone"
+          aria-label="Voir nos tarifs téléphones"
         >
           {/* Aurora backdrop subtil */}
           <div aria-hidden className="pointer-events-none absolute inset-0">
@@ -571,13 +572,13 @@ export default function SuiviPage() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300/90 font-bold mb-1">
-                Nos prix en temps réel
+                Besoin d'un téléphone ?
               </p>
               <p className="text-base font-display font-extrabold leading-tight">
-                Voir nos tarifs <span className="font-editorial font-normal text-amber-200">iPhone</span>
+                Jetez un œil à nos <span className="font-editorial font-normal text-amber-200">tarifs</span>
               </p>
-              <p className="text-xs text-slate-300 mt-1 truncate">
-                Reconditionnés & neufs, garantie 12 mois
+              <p className="text-xs text-slate-300 mt-1">
+                iPhone, Samsung, Google, Xiaomi — <strong>reconditionnés &amp; neufs</strong>, garantie 12 mois
               </p>
             </div>
             <ArrowRight className="w-5 h-5 text-white/70 group-hover:text-white group-hover:translate-x-1 transition-all shrink-0" />
