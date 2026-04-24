@@ -408,6 +408,201 @@ function DevisModal({ open, onClose, defaultModele }) {
   );
 }
 
+// ─── Modal "Passer commande" (selection d'un modele du catalogue) ─
+function CommandeModal({ open, onClose, phones }) {
+  const [phoneKey, setPhoneKey] = useState('');
+  const [variantIdx, setVariantIdx] = useState(0);
+  const [nom, setNom] = useState('');
+  const [telephone, setTelephone] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const selectedPhone = phones.find(p => p.key === phoneKey);
+  const selectedVariant = selectedPhone?.variants?.[variantIdx];
+
+  useEffect(() => {
+    if (open) {
+      setPhoneKey('');
+      setVariantIdx(0);
+      setDone(false);
+      setErr(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => { setVariantIdx(0); }, [phoneKey]);
+
+  if (!open) return null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!selectedPhone || !selectedVariant) {
+      setErr('Sélectionnez un modèle et un stockage');
+      return;
+    }
+    setSending(true); setErr(null);
+    try {
+      const modeleComplet = `${selectedPhone.marque} ${selectedPhone.modele} — ${selectedVariant.stockage} (${selectedVariant.prix}€)`;
+      const msgFinal = message
+        ? `[COMMANDE] ${modeleComplet}\n\n${message}`
+        : `[COMMANDE] ${modeleComplet}\n\nLe client souhaite commander ce modèle aux conditions affichées sur la vitrine.`;
+      await api.demandeDevisIphone({
+        nom, telephone, email,
+        modele: modeleComplet,
+        message: msgFinal,
+      });
+      setDone(true);
+      setTimeout(() => onClose(), 2500);
+    } catch (e2) {
+      setErr(e2.message || 'Erreur envoi');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <>
+      <div onClick={onClose} className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm animate-fade-in" />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 pointer-events-none">
+        <div className="liquid-glass pointer-events-auto bg-slate-950/95 rounded-3xl border border-white/10 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl animate-slide-in-right">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 sticky top-0 bg-slate-950/95 backdrop-blur">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+                <ShoppingBag className="w-5 h-5 text-slate-950" />
+              </div>
+              <div>
+                <h3 className="font-display font-extrabold text-lg text-white leading-tight">
+                  Passer <span className="font-editorial font-normal text-amber-300">commande</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">Choisissez un modèle du catalogue</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Fermer">
+              <X className="w-5 h-5 text-slate-300" />
+            </button>
+          </div>
+
+          {done ? (
+            <div className="px-6 py-10 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center mx-auto mb-4">
+                <Check className="w-7 h-7 text-emerald-300" />
+              </div>
+              <p className="font-display font-bold text-white text-lg mb-1">Commande envoyée</p>
+              <p className="text-sm text-slate-400">Nous vous recontactons rapidement au {telephone} pour confirmer la disponibilité.</p>
+            </div>
+          ) : (
+            <form onSubmit={submit} className="px-6 py-5 space-y-3">
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Modèle *</span>
+                <select
+                  required
+                  value={phoneKey}
+                  onChange={e => setPhoneKey(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition"
+                >
+                  <option value="" className="bg-slate-900">— Choisissez votre modèle —</option>
+                  {phones.map(p => (
+                    <option key={p.key} value={p.key} className="bg-slate-900">
+                      {p.marque} {p.modele}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedPhone && selectedPhone.variants.length > 0 && (
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Stockage *</span>
+                  <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {selectedPhone.variants.map((v, i) => (
+                      <button
+                        type="button"
+                        key={v.stockage}
+                        onClick={() => setVariantIdx(i)}
+                        className={`px-3 py-2.5 rounded-xl border text-sm font-semibold text-left transition-all
+                          ${i === variantIdx
+                            ? 'bg-amber-400/20 border-amber-400 text-white'
+                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'}`}
+                      >
+                        <div>{v.stockage}</div>
+                        <div className="text-amber-300 text-base mt-0.5">{v.prix}€</div>
+                      </button>
+                    ))}
+                  </div>
+                </label>
+              )}
+
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Nom *</span>
+                <div className="relative mt-1">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input type="text" required value={nom} onChange={e => setNom(e.target.value)}
+                    placeholder="Votre nom"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Téléphone *</span>
+                <div className="relative mt-1">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input type="tel" required value={telephone} onChange={e => setTelephone(e.target.value)}
+                    placeholder="06 12 34 56 78"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Email (optionnel)</span>
+                <div className="relative mt-1">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="vous@exemple.com"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
+                </div>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Message (optionnel)</span>
+                <div className="relative mt-1">
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-500" />
+                  <textarea rows={2} value={message} onChange={e => setMessage(e.target.value)}
+                    placeholder="Couleur souhaitée, délai..."
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition resize-none" />
+                </div>
+              </label>
+
+              {selectedPhone && selectedVariant && (
+                <div className="p-3 rounded-xl bg-amber-400/10 border border-amber-400/30">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-amber-300 font-bold mb-1">Récap</p>
+                  <p className="text-sm text-white font-semibold">
+                    {selectedPhone.marque} {selectedPhone.modele} — {selectedVariant.stockage}
+                  </p>
+                  <p className="text-2xl font-display font-extrabold text-amber-300">{selectedVariant.prix}€</p>
+                </div>
+              )}
+
+              {err && (
+                <div className="text-xs text-rose-400 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/30">
+                  {err}
+                </div>
+              )}
+
+              <button type="submit" disabled={sending || !selectedPhone}
+                className="w-full py-3 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/30 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? 'Envoi...' : 'Valider ma commande'}
+              </button>
+              <p className="text-[10px] text-slate-500 text-center">
+                Non engageant — Klikphone vous recontacte pour confirmer.
+              </p>
+            </form>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Scroll-driven word reveal (pattern Viktor Oddy) ─────────
 function ScrollRevealHeading({ text, className }) {
   const ref = useRef(null);
@@ -600,6 +795,7 @@ export default function AdminSiteTarifsPage() {
   const [settings, updateSettings, resetSettings] = useSiteSettings();
   const [showAllModels, setShowAllModels] = useState(false);
   const [devisModalOpen, setDevisModalOpen] = useState(false);
+  const [commandeModalOpen, setCommandeModalOpen] = useState(false);
 
   // Keyboard shortcut : F = toggle fullscreen
   useEffect(() => {
@@ -993,7 +1189,7 @@ export default function AdminSiteTarifsPage() {
 
                 {settings.showQrCode && (
                   <button
-                    onClick={() => setDevisModalOpen(true)}
+                    onClick={() => setCommandeModalOpen(true)}
                     className="group inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 font-bold shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-95"
                   >
                     <ShoppingBag className="w-5 h-5" />
@@ -1018,12 +1214,18 @@ export default function AdminSiteTarifsPage() {
         reset={resetSettings}
       />
 
-      {/* Modal "Demander un devis / Commander" : champ modele libre (pas de pre-remplissage
-           pour eviter confusion avec la rotation du hero featured) */}
+      {/* Modal "Demander un devis" : champ modele libre (pour modele non trouve) */}
       <DevisModal
         open={devisModalOpen}
         onClose={() => setDevisModalOpen(false)}
         defaultModele=""
+      />
+
+      {/* Modal "Passer commande" : selection depuis le catalogue affiche */}
+      <CommandeModal
+        open={commandeModalOpen}
+        onClose={() => setCommandeModalOpen(false)}
+        phones={phones}
       />
 
       {/* FAB floating supprime (faisait doublon avec le CTA sous la grille
