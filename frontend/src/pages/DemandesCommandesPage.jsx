@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import {
   ShoppingBag, Phone, Mail, User, Package, Clock, Check, X,
-  MessageSquare, ArrowLeft, RefreshCw, Loader2, Filter,
+  MessageSquare, ArrowLeft, RefreshCw, Loader2, Filter, Trash2, Lock,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
@@ -32,6 +33,10 @@ export default function DemandesCommandesPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatut, setFilterStatut] = useState('all');
   const [savingId, setSavingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null); // { id, label }
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +62,33 @@ export default function DemandesCommandesPage() {
       toast.error('Erreur : ' + (e.message || ''));
     } finally {
       setSavingId(null);
+    }
+  }
+
+  function ouvrirSuppression(d) {
+    setDeleteTarget({ id: d.id, label: `#${d.id} — ${d.marque} ${d.modele} (${d.nom})` });
+    setDeletePassword('');
+    setDeleteError('');
+  }
+
+  async function confirmerSuppression() {
+    if (!deleteTarget) return;
+    if (!deletePassword) {
+      setDeleteError('Code admin requis');
+      return;
+    }
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteDemandeCommande(deleteTarget.id, deletePassword);
+      setDemandes(ds => ds.filter(d => d.id !== deleteTarget.id));
+      toast.success('Demande supprimée');
+      setDeleteTarget(null);
+      setDeletePassword('');
+    } catch (e) {
+      setDeleteError(e.message?.includes('Code admin') ? 'Code admin incorrect' : (e.message || 'Erreur'));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -214,11 +246,78 @@ export default function DemandesCommandesPage() {
                       <RefreshCw className="w-3 h-3" /> Rouvrir
                     </button>
                   )}
+                  {/* Suppression definitive (code admin requis) */}
+                  <button
+                    onClick={() => ouvrirSuppression(d)}
+                    disabled={isSaving}
+                    className="ml-auto px-3 py-1.5 rounded-lg text-red-500 hover:bg-red-50 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    title="Supprimer définitivement (code admin requis)"
+                  >
+                    <Trash2 className="w-3 h-3" /> Supprimer
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* Modal de confirmation suppression (code admin requis) */}
+      {deleteTarget && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteTarget(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-bold text-slate-900">Supprimer la demande</h3>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[230px]">{deleteTarget.label}</p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-600 mb-4">
+                Cette action est <strong className="text-red-600">irréversible</strong>. Entrez le code admin pour confirmer.
+              </p>
+              <div className="mb-3">
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5">
+                  <Lock className="w-3 h-3" /> Code administrateur
+                </label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={e => { setDeletePassword(e.target.value); setDeleteError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && confirmerSuppression()}
+                  className="w-full px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 text-slate-900 text-sm outline-none transition"
+                  placeholder="Entrez le code admin"
+                  autoFocus
+                  disabled={deleting}
+                />
+                {deleteError && (
+                  <p className="text-xs text-red-600 mt-1.5 font-semibold">{deleteError}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-5">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={confirmerSuppression}
+                  disabled={deleting || !deletePassword}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  {deleting ? 'Suppression…' : 'Supprimer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

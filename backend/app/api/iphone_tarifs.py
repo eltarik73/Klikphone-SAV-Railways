@@ -666,6 +666,33 @@ async def count_nouvelles(user: dict = Depends(get_current_user)):
     return {"count": row["n"] if row else 0}
 
 
+class DeleteDemandeCommandeRequest(BaseModel):
+    admin_password: str
+
+
+@router.delete("/demandes-commandes/{demande_id}")
+async def delete_demande_commande(
+    demande_id: int,
+    payload: DeleteDemandeCommandeRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Supprime une demande de commande. Necessite le code admin
+    (verifier contre params.ADMIN_PASSWORD) car action destructive."""
+    with get_cursor() as cur:
+        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
+        row = cur.fetchone()
+        stored = row["valeur"] if row else None
+
+    if not stored or payload.admin_password != stored:
+        raise HTTPException(401, "Code admin incorrect")
+
+    with get_cursor() as cur:
+        cur.execute("DELETE FROM demandes_commandes WHERE id = %s RETURNING id", (demande_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Demande non trouvée")
+    return {"ok": True, "deleted_id": demande_id}
+
+
 # ---------------------------------------------------------------------------
 # Formulaire public "Demande de tarif / Commander"
 # (accessible depuis la vitrine /site-tarifs-iphone)

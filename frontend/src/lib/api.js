@@ -712,6 +712,13 @@ class ApiClient {
   countDemandesCommandesNouvelles() {
     return this.get('/api/iphone-tarifs/demandes-commandes/count-nouvelles');
   }
+  deleteDemandeCommande(id, adminPassword) {
+    // DELETE avec body : FastAPI le supporte. On passe le code admin pour verif.
+    return this.request(`/api/iphone-tarifs/demandes-commandes/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ admin_password: adminPassword }),
+    });
+  }
 }
 
 export const api = new ApiClient();
