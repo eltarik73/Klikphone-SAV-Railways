@@ -448,18 +448,28 @@ class PasserCommandeRequest(BaseModel):
     message: Optional[str] = None
 
 
+def _clean_for_email(s: str) -> str:
+    """Sanitize : retire \\r\\n et autres chars de contrôle pour eviter
+    l'email-header-injection si la valeur passe en sujet/header."""
+    if not s:
+        return ""
+    return "".join(c for c in s if c >= " " or c == "\t").strip()
+
+
 @router.post("/passer-commande")
 async def passer_commande(payload: PasserCommandeRequest, request: Request):
     """Client clique 'Passer commande' sur la vitrine. On :
     1. Valide les données (rate-limite 30/min/IP anti-spam)
-    2. Enregistre dans demandes_commandes (statut='nouvelle')
-    3. Envoie un email a contact@klikphone.com avec sujet [COMMANDE]
+    2. Dedup anti-spam (meme tel+modele+prix dans les 60 dernieres secondes)
+    3. Enregistre dans demandes_commandes (statut='nouvelle')
+    4. Envoie un email a contact@klikphone.com avec sujet [COMMANDE]
     L'admin voit ensuite la demande dans son dashboard et peut la gerer."""
     _rate_limit_public_lookup(request)
 
-    nom = (payload.nom or "").strip()
-    tel = (payload.telephone or "").strip()
-    modele = (payload.modele or "").strip()
+    # Strip + sanitize chars de controle (anti email injection)
+    nom = _clean_for_email(payload.nom or "")
+    tel = _clean_for_email(payload.telephone or "")
+    modele = _clean_for_email(payload.modele or "")
     if not nom or len(nom) < 2:
         raise HTTPException(400, "Nom requis (2 caractères min)")
     if not tel or len(tel) < 6:
@@ -467,14 +477,42 @@ async def passer_commande(payload: PasserCommandeRequest, request: Request):
     if not modele:
         raise HTTPException(400, "Modèle requis")
 
-    marque = (payload.marque or "").strip()[:60]
-    stockage = (payload.stockage or "").strip()[:30]
-    prix = max(0, int(payload.prix or 0))
-    email = (payload.email or "").strip()[:200]
-    message = (payload.message or "").strip()
+    marque = _clean_for_email(payload.marque or "")[:60]
+    stockage = _clean_for_email(payload.stockage or "")[:30]
+    # Cast prix robuste : Pydantic Optional[int] devrait suffire mais on
+    # se protege contre les payloads exotiques (ex: float coerce en str).
+    try:
+        prix = max(0, int(payload.prix or 0))
+    except (TypeError, ValueError):
+        prix = 0
+    email = _clean_for_email(payload.email or "")[:200]
+    # Le message lui peut contenir des newlines (multilignes) : on garde
+    # juste l'extremite stripee. Pas dans un header email donc safe.
+    message = (payload.message or "").strip()[:2000]
 
-    # Insert en DB
+    # Anti-doublon : si la meme combinaison (tel + modele + prix) a ete
+    # insered dans les 60 dernieres secondes, on retourne le doublon
+    # (pas une erreur, on valide silencieusement pour ne pas frustrer).
     with get_cursor() as cur:
+        cur.execute(
+            """SELECT id FROM demandes_commandes
+               WHERE telephone = %s AND modele = %s AND prix = %s
+                 AND date_creation >= NOW() - INTERVAL '60 seconds'
+               ORDER BY date_creation DESC LIMIT 1""",
+            (tel, modele, prix),
+        )
+        existing = cur.fetchone()
+        if existing:
+            existing_id = existing["id"] if isinstance(existing, dict) else existing[0]
+            logger.info("passer-commande : dedup #%s pour %s/%s/%s€", existing_id, tel, modele, prix)
+            return {
+                "ok": True,
+                "id": existing_id,
+                "message": "Commande déjà enregistrée. Nous vous recontactons rapidement.",
+                "deduped": True,
+            }
+
+        # Insert en DB
         cur.execute(
             """INSERT INTO demandes_commandes
                (nom, telephone, email, marque, modele, stockage, prix, message)
@@ -585,12 +623,29 @@ async def update_demande_commande(
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")
 
-    allowed_statuts = {"nouvelle", "en_cours", "confirmee", "annulee"}
-    if "statut" in data and data["statut"] not in allowed_statuts:
-        raise HTTPException(400, f"statut invalide, doit etre dans {allowed_statuts}")
+    # Whitelist explicite des colonnes patchables (defense-in-depth meme
+    # si Pydantic typed le payload — on bloque tout ajout futur non-revu).
+    ALLOWED_FIELDS = {"statut", "admin_notes"}
+    bad_keys = set(data.keys()) - ALLOWED_FIELDS
+    if bad_keys:
+        raise HTTPException(400, f"Champs non autorisés : {bad_keys}")
 
-    set_parts = [f"{k} = %s" for k in data.keys()]
-    values = list(data.values()) + [demande_id]
+    ALLOWED_STATUTS = {"nouvelle", "en_cours", "confirmee", "annulee"}
+    if "statut" in data and data["statut"] not in ALLOWED_STATUTS:
+        raise HTTPException(400, f"statut invalide, doit etre dans {ALLOWED_STATUTS}")
+
+    # Construit la requete avec colonnes explicites (pas de f-string sur k)
+    set_parts = []
+    values = []
+    for k in data.keys():
+        if k not in ALLOWED_FIELDS:
+            continue  # double check
+        set_parts.append(f"{k} = %s")
+        values.append(data[k])
+    if not set_parts:
+        raise HTTPException(400, "Aucun champ valide à mettre à jour")
+    values.append(demande_id)
+
     with get_cursor() as cur:
         cur.execute(
             f"UPDATE demandes_commandes SET {', '.join(set_parts)}, date_maj = NOW() "
@@ -632,17 +687,18 @@ async def demande_devis(payload: DemandeDevisRequest, request: Request):
     Rate-limite (30 req/min/IP) pour eviter le spam."""
     _rate_limit_public_lookup(request)
 
-    # Validation stricte
-    nom = (payload.nom or "").strip()
-    tel = (payload.telephone or "").strip()
+    # Validation stricte + sanitize chars de controle (anti email injection)
+    nom = _clean_for_email(payload.nom or "")
+    tel = _clean_for_email(payload.telephone or "")
     if not nom or len(nom) < 2:
         raise HTTPException(400, "Nom requis (2 caractères min)")
     if not tel or len(tel) < 6:
         raise HTTPException(400, "Téléphone requis")
 
-    email = (payload.email or "").strip() or "(non renseigné)"
-    modele = (payload.modele or "").strip() or "(non précisé)"
-    message = (payload.message or "").strip() or "(pas de message)"
+    email = _clean_for_email(payload.email or "") or "(non renseigné)"
+    modele = _clean_for_email(payload.modele or "") or "(non précisé)"
+    # Message multiligne accepte (pas dans header)
+    message = (payload.message or "").strip()[:2000] or "(pas de message)"
 
     subject = f"Klikphone — Demande de tarif de {nom}"
     body = (

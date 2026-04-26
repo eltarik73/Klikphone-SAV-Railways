@@ -22,6 +22,7 @@ export default function Navbar() {
   const [betaOpen, setBetaOpen] = useState(() => localStorage.getItem('kp_beta_open') === '1');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
   const [interactionCount, setInteractionCount] = useState(0);
+  const [demandesCmdNew, setDemandesCmdNew] = useState(0);
   const [moduleDevis, setModuleDevis] = useState(false);
   const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
   const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
@@ -42,6 +43,9 @@ export default function Navbar() {
         .catch(() => {});
       api.getInteractions()
         .then(d => setInteractionCount(d?.total_actions ?? 0))
+        .catch(() => {});
+      api.countDemandesCommandesNouvelles()
+        .then(d => setDemandesCmdNew(d?.count ?? 0))
         .catch(() => {});
     };
     fetchKpi();
@@ -76,7 +80,7 @@ export default function Navbar() {
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: pendingCount },
-    { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag },
+    { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag, badge: demandesCmdNew },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     { path: '/suivi', label: 'Suivi client', icon: Search },
   ];
