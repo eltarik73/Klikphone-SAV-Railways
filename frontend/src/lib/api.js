@@ -713,10 +713,11 @@ class ApiClient {
     return this.get('/api/iphone-tarifs/demandes-commandes/count-nouvelles');
   }
   deleteDemandeCommande(id, adminPassword) {
-    // DELETE avec body : FastAPI le supporte. On passe le code admin pour verif.
+    // Code admin via Header X-Admin-Password (RFC 7231 dit que les bodies
+    // sur DELETE n'ont pas de semantique definie ; certains proxies les strip).
     return this.request(`/api/iphone-tarifs/demandes-commandes/${id}`, {
       method: 'DELETE',
-      body: JSON.stringify({ admin_password: adminPassword }),
+      headers: { 'X-Admin-Password': adminPassword || '' },
     });
   }
 }

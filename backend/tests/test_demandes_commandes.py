@@ -161,3 +161,104 @@ def test_count_nouvelles_requires_auth(client):
     """Endpoint admin sans token → 401."""
     r = client.get("/api/iphone-tarifs/demandes-commandes/count-nouvelles")
     assert r.status_code in (401, 403)
+
+
+# ─── DELETE /demandes-commandes/{id} ───────────────────────
+
+def test_delete_demande_requires_jwt(client):
+    """Sans token JWT → 401."""
+    r = client.request(
+        "DELETE",
+        "/api/iphone-tarifs/demandes-commandes/1",
+        headers={"X-Admin-Password": "anything"},
+    )
+    assert r.status_code in (401, 403)
+
+
+def test_delete_demande_requires_admin_password(client, admin_headers):
+    """JWT OK mais pas de header X-Admin-Password → 403 (pas 401 pour ne
+    pas declencher le redirect frontend qui reset le token JWT)."""
+    r = client.request(
+        "DELETE",
+        "/api/iphone-tarifs/demandes-commandes/1",
+        headers=admin_headers,
+    )
+    # 401 redirigerait l'utilisateur, on veut 403 pour rester connecte
+    assert r.status_code == 403
+
+
+def test_delete_demande_wrong_password(client, admin_headers):
+    """Mauvais code admin → 403, pas 401."""
+    cur = MagicMock()
+    cur.fetchone.return_value = {"valeur": "le-vrai-mdp"}
+    cur.fetchall.return_value = []
+
+    @contextmanager
+    def ctx():
+        yield cur
+
+    with patch("app.api.iphone_tarifs.get_cursor", ctx):
+        r = client.request(
+            "DELETE",
+            "/api/iphone-tarifs/demandes-commandes/1",
+            headers={**admin_headers, "X-Admin-Password": "mauvais"},
+        )
+    assert r.status_code == 403
+
+
+def test_delete_demande_constant_time_compare(client, admin_headers):
+    """Bon code → 200 + audit log + delete."""
+    fetchone_seq = iter([
+        {"valeur": "secret-mdp"},  # 1er fetchone : SELECT params
+        {"nom": "Jean", "marque": "Apple", "modele": "iPhone 15", "prix": 729},  # 2nd : SELECT existing
+    ])
+    cur = MagicMock()
+    cur.fetchone.side_effect = lambda: next(fetchone_seq, None)
+    cur.fetchall.return_value = []
+    executed_sqls = []
+    cur.execute.side_effect = lambda sql, *a: executed_sqls.append(sql)
+
+    @contextmanager
+    def ctx():
+        yield cur
+
+    with patch("app.api.iphone_tarifs.get_cursor", ctx):
+        r = client.request(
+            "DELETE",
+            "/api/iphone-tarifs/demandes-commandes/42",
+            headers={**admin_headers, "X-Admin-Password": "secret-mdp"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["deleted_id"] == 42
+    # Verifier qu'un INSERT audit_log a bien ete fait
+    audit_inserts = [s for s in executed_sqls if "admin_audit_log" in s]
+    assert len(audit_inserts) >= 1
+    # Verifier qu'un DELETE FROM demandes_commandes a bien ete fait
+    deletes = [s for s in executed_sqls if "DELETE FROM demandes_commandes" in s]
+    assert len(deletes) >= 1
+
+
+def test_delete_demande_inexistante_meme_message_que_password_KO(client, admin_headers):
+    """Demande inexistante avec bon code → 403 (pas 404) avec meme
+    message que 'code KO' pour ne pas leaker l'existence d'IDs."""
+    fetchone_seq = iter([
+        {"valeur": "secret-mdp"},  # SELECT params OK
+        None,  # SELECT existing → introuvable
+    ])
+    cur = MagicMock()
+    cur.fetchone.side_effect = lambda: next(fetchone_seq, None)
+    cur.fetchall.return_value = []
+
+    @contextmanager
+    def ctx():
+        yield cur
+
+    with patch("app.api.iphone_tarifs.get_cursor", ctx):
+        r = client.request(
+            "DELETE",
+            "/api/iphone-tarifs/demandes-commandes/9999",
+            headers={**admin_headers, "X-Admin-Password": "secret-mdp"},
+        )
+    assert r.status_code == 403  # meme code que mauvais password

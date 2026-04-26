@@ -114,6 +114,20 @@ async def lifespan(app: FastAPI):
 
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
+        # Audit log : actions admin sensibles (suppression, etc.)
+        # Permet de tracer qui a fait quoi (ne pas truster aveuglement le staff).
+        """CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id SERIAL PRIMARY KEY,
+            user_login TEXT DEFAULT '',
+            user_target TEXT DEFAULT '',
+            action TEXT NOT NULL,
+            target_type TEXT DEFAULT '',
+            target_id INTEGER DEFAULT NULL,
+            details TEXT DEFAULT '',
+            ip_hash TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_audit_action_date ON admin_audit_log(action, created_at DESC)""",
         # Demandes de commande passees depuis la vitrine publique
         # /site-tarifs-iphone (bouton 'Passer commande').
         # Statut : nouvelle / en_cours / confirmee / annulee

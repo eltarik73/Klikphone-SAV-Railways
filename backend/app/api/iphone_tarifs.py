@@ -9,13 +9,14 @@ import hashlib
 import io
 import logging
 import re
+import secrets
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
@@ -666,30 +667,122 @@ async def count_nouvelles(user: dict = Depends(get_current_user)):
     return {"count": row["n"] if row else 0}
 
 
-class DeleteDemandeCommandeRequest(BaseModel):
-    admin_password: str
+# Rate limiter dedie a la verif admin password (anti brute-force).
+# Plus strict que le rate-limit public : 5 tentatives / 5 min / IP.
+_ADMIN_VERIFY_BUCKETS: "_AdminBuckets" = None  # init lazy ci-dessous
+
+
+def _rate_limit_admin_verify(request: Request):
+    from collections import defaultdict, deque
+    from time import time as _now_t
+    global _ADMIN_VERIFY_BUCKETS
+    if _ADMIN_VERIFY_BUCKETS is None:
+        _ADMIN_VERIFY_BUCKETS = defaultdict(deque)
+    ip = request.client.host if request.client else "unknown"
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        ip = xff.split(",")[0].strip()
+    now = _now_t()
+    bucket = _ADMIN_VERIFY_BUCKETS[ip]
+    while bucket and (now - bucket[0]) > 300:  # fenetre 5 min
+        bucket.popleft()
+    if len(bucket) >= 5:
+        raise HTTPException(
+            429, "Trop de tentatives. Reessayez dans quelques minutes."
+        )
+    bucket.append(now)
+
+
+def _audit_log(cur, *, user, action, target_type, target_id, details, request):
+    """Insere une trace dans admin_audit_log."""
+    login = (user.get("utilisateur") or "") if isinstance(user, dict) else ""
+    target = (user.get("target") or "") if isinstance(user, dict) else ""
+    ip = "unknown"
+    if request and request.client:
+        ip = request.client.host
+    xff = request.headers.get("x-forwarded-for", "") if request else ""
+    if xff:
+        ip = xff.split(",")[0].strip()
+    ip_hash = hashlib.sha256(("kp:" + ip).encode("utf-8")).hexdigest()[:16]
+    try:
+        cur.execute(
+            """INSERT INTO admin_audit_log
+               (user_login, user_target, action, target_type, target_id, details, ip_hash)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (login[:60], target[:30], action[:60], target_type[:40],
+             target_id, details[:500], ip_hash),
+        )
+    except Exception as e:
+        # Ne JAMAIS casser une operation pour un audit log echoue.
+        logger.warning("audit_log insert failed (%s)", e)
 
 
 @router.delete("/demandes-commandes/{demande_id}")
 async def delete_demande_commande(
     demande_id: int,
-    payload: DeleteDemandeCommandeRequest,
+    request: Request,
+    x_admin_password: Optional[str] = Header(None, alias="X-Admin-Password"),
     user: dict = Depends(get_current_user),
 ):
     """Supprime une demande de commande. Necessite le code admin
-    (verifier contre params.ADMIN_PASSWORD) car action destructive."""
+    (verif contre params.ADMIN_PASSWORD) car action destructive.
+
+    Securite :
+    - Auth JWT (Depends get_current_user)
+    - Header X-Admin-Password (pas dans le body, pour eviter qu'un proxy
+      le strip — RFC 7231 dit que les bodies sur DELETE n'ont pas de
+      semantique definie)
+    - Rate limit 5 tentatives / 5 min / IP (anti brute-force)
+    - Comparaison constant-time (secrets.compare_digest) anti timing-attack
+    - Audit log dans admin_audit_log avant de supprimer (trace user + IP)
+    - Meme message d'erreur que ce soit 'code KO' ou 'demande inexistante'
+      pour ne pas faciliter la reconnaissance d'IDs valides
+    """
+    _rate_limit_admin_verify(request)
+
+    if not x_admin_password:
+        raise HTTPException(403, "Code admin requis")
+
+    # Lecture du password stocke
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
         row = cur.fetchone()
-        stored = row["valeur"] if row else None
+    stored = row["valeur"] if row else None
+    if not stored:
+        raise HTTPException(503, "Code admin non configure")
 
-    if not stored or payload.admin_password != stored:
-        raise HTTPException(401, "Code admin incorrect")
+    # Comparaison constant-time pour eviter le timing attack
+    ok = secrets.compare_digest(
+        x_admin_password.encode("utf-8"),
+        stored.encode("utf-8"),
+    )
+    if not ok:
+        raise HTTPException(403, "Code admin incorrect ou demande introuvable")
 
+    # Audit + delete dans la meme transaction (un seul context cursor)
     with get_cursor() as cur:
-        cur.execute("DELETE FROM demandes_commandes WHERE id = %s RETURNING id", (demande_id,))
-        if not cur.fetchone():
-            raise HTTPException(404, "Demande non trouvée")
+        # On recupere le snapshot avant de supprimer (pour l'audit log)
+        cur.execute(
+            "SELECT nom, marque, modele, prix FROM demandes_commandes WHERE id = %s",
+            (demande_id,),
+        )
+        existing = cur.fetchone()
+        if not existing:
+            # Meme message que 'code KO' pour ne pas leaker l'existence
+            raise HTTPException(403, "Code admin incorrect ou demande introuvable")
+
+        details = (
+            f"deleted: nom={existing.get('nom')} | "
+            f"{existing.get('marque')} {existing.get('modele')} "
+            f"| {existing.get('prix')}€"
+        )
+        _audit_log(
+            cur, user=user, action="delete_demande_commande",
+            target_type="demandes_commandes", target_id=demande_id,
+            details=details, request=request,
+        )
+        cur.execute("DELETE FROM demandes_commandes WHERE id = %s", (demande_id,))
+
     return {"ok": True, "deleted_id": demande_id}
 
 
