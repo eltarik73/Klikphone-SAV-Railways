@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_cursor
+from app.api.notifications_center import push_notification
 
 router = APIRouter(prefix="/api/suivi", tags=["suivi"])
 
@@ -54,27 +55,88 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
     """Le client accepte ou refuse le devis depuis la page de suivi."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
+    ticket_id = None
+    technicien = None
+    client_label = "Le client"
+    panne = ""
+
     with get_cursor() as cur:
         t = _get_ticket_by_code(cur, ticket_code)
+        ticket_id = t["id"]
+
+        # Récupère détails ticket + client pour la notif
+        cur.execute(
+            """
+            SELECT t.technicien_assigne, t.panne,
+                   c.prenom AS client_prenom, c.nom AS client_nom
+            FROM tickets t
+            LEFT JOIN clients c ON c.id = t.client_id
+            WHERE t.id = %s
+            """,
+            (ticket_id,),
+        )
+        det = cur.fetchone() or {}
+        technicien = det.get("technicien_assigne")
+        panne = det.get("panne") or ""
+        prenom = det.get("client_prenom") or ""
+        nom = det.get("client_nom") or ""
+        client_label = (f"{prenom} {nom}".strip()) or "Le client"
+
         if body.accepte:
             contenu = "✅ Devis accepté par le client"
             # Passer en "En cours de réparation"
             cur.execute(
                 "UPDATE tickets SET statut = 'En cours de réparation', date_maj = %s, "
                 "historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
-                (now, f"[{ts}] Devis accepté par le client", t["id"]),
+                (now, f"[{ts}] Devis accepté par le client", ticket_id),
             )
         else:
             contenu = "❌ Devis refusé par le client"
             cur.execute(
                 "UPDATE tickets SET date_maj = %s, "
                 "historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
-                (now, f"[{ts}] Devis refusé par le client", t["id"]),
+                (now, f"[{ts}] Devis refusé par le client", ticket_id),
             )
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note)
             VALUES (%s, 'Client', %s, 'validation_devis')
-        """, (t["id"], contenu))
+        """, (ticket_id, contenu))
+
+    # ─── Push notif après commit (toast + chat tech + centre) ────
+    try:
+        action_url = f"/accueil/ticket/{ticket_id}"
+        panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
+        if body.accepte:
+            push_notification(
+                type="devis_accepte_distance",
+                title=f"{client_label} a accepté le devis 🎉",
+                message=(
+                    f"Ticket {ticket_code} — {panne_excerpt}. "
+                    "Le ticket passe automatiquement en réparation."
+                ),
+                important=True,
+                icon="✅",
+                target_user=technicien,  # message privé au tech assigné si présent
+                related_ticket_id=ticket_id,
+                action_url=action_url,
+            )
+        else:
+            push_notification(
+                type="devis_refuse_distance",
+                title=f"{client_label} a refusé le devis",
+                message=(
+                    f"Ticket {ticket_code} — {panne_excerpt}. "
+                    "À recontacter rapidement."
+                ),
+                important=True,
+                icon="❌",
+                target_user=technicien,
+                related_ticket_id=ticket_id,
+                action_url=action_url,
+            )
+    except Exception as e:
+        print(f"[suivi] notification trigger failed: {e}")
+
     return {"ok": True, "accepte": body.accepte}
 
 

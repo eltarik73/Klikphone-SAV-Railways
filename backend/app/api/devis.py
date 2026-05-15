@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.api.notifications_center import push_notification
 
 router = APIRouter(prefix="/api/devis", tags=["devis"])
 
@@ -393,20 +394,31 @@ async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
 async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(get_current_user)):
     updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k != "lignes"}
 
+    # Pour le trigger de notification après commit
+    notif_event = None  # 'accepte' | 'refuse' | None
+    existing_data = None
+
     with get_cursor() as cur:
         cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
         existing = cur.fetchone()
         if not existing:
             raise HTTPException(404, "Devis non trouvé")
+        existing_data = dict(existing)
 
         # Handle status changes
         if "statut" in updates:
             if updates["statut"] not in STATUTS:
                 raise HTTPException(400, f"Statut invalide. Valides: {STATUTS}")
-            if updates["statut"] == "Accepté":
+            previous_statut = existing_data.get("statut")
+            new_statut = updates["statut"]
+            if new_statut == "Accepté":
                 updates["date_acceptation"] = datetime.now()
-            elif updates["statut"] == "Refusé":
+                if previous_statut != "Accepté":
+                    notif_event = "accepte"
+            elif new_statut == "Refusé":
                 updates["date_refus"] = datetime.now()
+                if previous_statut != "Refusé":
+                    notif_event = "refuse"
 
         # Update lignes if provided
         if data.lignes is not None:
@@ -432,6 +444,43 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
             set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
             values = list(updates.values()) + [devis_id]
             cur.execute(f"UPDATE devis SET {set_clause} WHERE id = %s", values)
+
+    # Trigger notification APRÈS le commit (transaction close)
+    if notif_event and existing_data:
+        try:
+            numero = existing_data.get("numero", f"#{devis_id}")
+            total_ttc = existing_data.get("total_ttc") or 0
+            client_nom = (
+                f"{existing_data.get('client_prenom', '')} {existing_data.get('client_nom', '')}".strip()
+                or existing_data.get("client_tel", "Client")
+            )
+            related_ticket_id = existing_data.get("ticket_id")
+            action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
+
+            if notif_event == "accepte":
+                push_notification(
+                    type="devis_accepte",
+                    title=f"Devis {numero} accepté",
+                    message=f"{client_nom} a accepté le devis ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
+                    important=True,
+                    icon="✅",
+                    related_devis_id=devis_id,
+                    related_ticket_id=related_ticket_id,
+                    action_url=action_url,
+                )
+            else:  # refuse
+                push_notification(
+                    type="devis_refuse",
+                    title=f"Devis {numero} refusé",
+                    message=f"{client_nom} a refusé le devis ({float(total_ttc):.2f} €). À recontacter.",
+                    important=True,
+                    icon="❌",
+                    related_devis_id=devis_id,
+                    related_ticket_id=related_ticket_id,
+                    action_url=action_url,
+                )
+        except Exception as e:
+            print(f"[devis] notification trigger failed: {e}")
 
     return {"ok": True}
 

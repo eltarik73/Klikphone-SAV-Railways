@@ -490,6 +490,24 @@ class ApiClient {
     return this.get(`/api/chat/team/unread/total?user=${encodeURIComponent(user)}`);
   }
 
+  // ─── NOTIFICATIONS CENTER ──────────────────
+  notifsList(user, unreadOnly = false, limit = 30) {
+    const qs = new URLSearchParams({ user, unread_only: String(unreadOnly), limit: String(limit) }).toString();
+    return this.get(`/api/notifications-center?${qs}`);
+  }
+  notifsUnreadCount(user) {
+    return this.get(`/api/notifications-center/unread-count?user=${encodeURIComponent(user)}`);
+  }
+  notifsMarkRead(id, user) {
+    return this.post(`/api/notifications-center/${id}/read?user=${encodeURIComponent(user)}`, {});
+  }
+  notifsMarkAllRead(user) {
+    return this.post(`/api/notifications-center/mark-all-read?user=${encodeURIComponent(user)}`, {});
+  }
+  notifsDelete(id) {
+    return this.delete(`/api/notifications-center/${id}`);
+  }
+
   // ─── TARIFS ────────────────────────────────
   getTarifs(params = {}) {
     // Cached 30s — large payload, safe to reuse across rapid nav

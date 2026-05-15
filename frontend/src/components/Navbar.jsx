@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
 import AdminLoginModal from './AdminLoginModal';
+import NotificationCenter from './NotificationCenter';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose,
@@ -311,6 +312,12 @@ export default function Navbar() {
               Menu principal
             </p>
           )}
+
+          {/* Notification center — toujours en haut, hyper-visible */}
+          <div className={`mb-1 ${collapsed ? 'flex justify-center' : 'px-0'}`}>
+            <NotificationCenter collapsed={collapsed} />
+          </div>
+
           {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => {
             const active = isActive(path);
             return (

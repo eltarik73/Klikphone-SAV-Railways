@@ -19,6 +19,7 @@ from app.models import (
 from app.services.notifications import (
     notif_nouveau_ticket, notif_changement_statut, notif_reparation_terminee,
 )
+from app.api.notifications_center import push_notification
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -567,8 +568,11 @@ async def change_status(
     ts = datetime.now().strftime("%d/%m %H:%M")
 
     with get_cursor() as cur:
-        # Récupérer ancien statut et historique
-        cur.execute("SELECT statut, historique, ticket_code FROM tickets WHERE id = %s", (ticket_id,))
+        # Récupérer ancien statut, historique, technicien et panne
+        cur.execute(
+            "SELECT statut, historique, ticket_code, technicien_assigne, panne FROM tickets WHERE id = %s",
+            (ticket_id,),
+        )
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Ticket non trouvé")
@@ -576,6 +580,8 @@ async def change_status(
         ancien_statut = row.get("statut", "")
         historique = row.get("historique") or ""
         ticket_code = row.get("ticket_code", f"#{ticket_id}")
+        technicien = row.get("technicien_assigne")
+        panne = row.get("panne") or ""
 
         # Ajouter à l'historique
         log_entry = f"[{ts}] Statut: {ancien_statut} → {data.statut}"
@@ -643,6 +649,55 @@ async def change_status(
         notif_reparation_terminee(ticket_code)
     elif ancien_statut and ancien_statut != data.statut:
         notif_changement_statut(ticket_code, ancien_statut, data.statut)
+
+    # ─── Notif in-app (toast + chat + centre) sur statuts importants ──
+    if ancien_statut != data.statut:
+        try:
+            panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
+            action_url = f"/accueil/ticket/{ticket_id}"
+
+            if data.statut == "Pièce reçue":
+                push_notification(
+                    type="piece_recue",
+                    title=f"📦 Pièce reçue — {ticket_code}",
+                    message=(
+                        f"Pièce disponible pour le ticket. "
+                        f"{('Panne : ' + panne_excerpt + '. ') if panne_excerpt else ''}"
+                        "Tu peux démarrer la réparation."
+                    ),
+                    important=True,
+                    icon="📦",
+                    target_user=technicien,
+                    related_ticket_id=ticket_id,
+                    action_url=action_url,
+                )
+            elif data.statut == "Réparation terminée":
+                push_notification(
+                    type="reparation_terminee",
+                    title=f"🔧 Réparation terminée — {ticket_code}",
+                    message=(
+                        "Le ticket est prêt à être rendu au client. "
+                        "Pense à le prévenir."
+                    ),
+                    important=True,
+                    icon="🔧",
+                    target_user=None,  # tout le monde (accueil notifie le client)
+                    related_ticket_id=ticket_id,
+                    action_url=action_url,
+                )
+            elif data.statut == "En attente d'accord client":
+                push_notification(
+                    type="en_attente_accord",
+                    title=f"⏳ Devis à valider — {ticket_code}",
+                    message="Le ticket attend l'accord client. Pense à le contacter.",
+                    important=False,
+                    icon="⏳",
+                    target_user=None,
+                    related_ticket_id=ticket_id,
+                    action_url=action_url,
+                )
+        except Exception as e:
+            print(f"[tickets] notification trigger failed: {e}")
 
     return {"ok": True, "ancien_statut": ancien_statut, "nouveau_statut": data.statut}
 

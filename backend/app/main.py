@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
-from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking
+from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking, notifications_center
 
 logger = logging.getLogger("klikphone.startup")
 
@@ -521,6 +521,7 @@ app.include_router(iphone_tarifs.router)
 app.include_router(iphones_stock.router)
 app.include_router(smartphones_tarifs.router)
 app.include_router(tracking.router)
+app.include_router(notifications_center.router)
 
 
 # --- HEALTH CHECK ---
