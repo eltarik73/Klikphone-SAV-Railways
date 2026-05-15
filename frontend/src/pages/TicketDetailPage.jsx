@@ -873,7 +873,15 @@ export default function TicketDetailPage() {
     updateRepairLines(repairLines.map((l, i) => i === idx ? { ...l, prix: Math.max(0, (parseFloat(l.prix) || 0) + delta) } : l));
   };
 
-  const totalRepairs = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+  // ─── Calcul des totaux avec fallback devis_estime ─────────────────────
+  // Si aucune ligne de réparation détaillée n'est saisie mais qu'un "devis estimé"
+  // est renseigné (cas avant diagnostic), on utilise ce dernier comme base de calcul.
+  // → Permet d'afficher Total TTC / Reste à payer dès qu'on saisit un montant flat,
+  //   sans avoir à détailler les lignes.
+  const sommeLignes = repairLines.reduce((sum, l) => sum + (parseFloat(l.prix) || 0), 0);
+  const devisEstimeNum = parseFloat(pricingForm.devis_estime) || 0;
+  const useDevisEstime = sommeLignes === 0 && devisEstimeNum > 0;
+  const totalRepairs = useDevisEstime ? devisEstimeNum : sommeLignes;
   const reductionMontant = parseFloat(pricingForm.reduction_montant) || 0;
   const reductionPct = parseFloat(pricingForm.reduction_pourcentage) || 0;
   const effectiveReduction = reductionMode === 'pct' ? totalRepairs * (reductionPct / 100) : reductionMontant;
@@ -1470,12 +1478,19 @@ export default function TicketDetailPage() {
 
                 {/* 7. Bloc récapitulatif */}
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  {useDevisEstime && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mb-1.5">
+                      <Sparkles className="w-3 h-3" aria-hidden="true" />
+                      <span>Estimation forfaitaire (pas de détail des lignes)</span>
+                    </div>
+                  )}
                   {(() => {
                     const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
                     const tva = totalRepairs - ht;
+                    const htLabel = useDevisEstime ? 'Devis estimé HT' : 'Total lignes HT';
                     return (
                       <>
-                        <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes HT</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">{htLabel}</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
                         <div className="flex justify-between text-sm"><span className="text-slate-500">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-600">{formatPrix(tva)}</span></div>
                         <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
@@ -1564,12 +1579,19 @@ export default function TicketDetailPage() {
 
                 {/* Récap tarification */}
                 <div className="border-t border-slate-200 mt-2 pt-2 space-y-1">
+                  {useDevisEstime && (
+                    <div className="flex items-center gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mb-1.5">
+                      <Sparkles className="w-3 h-3" aria-hidden="true" />
+                      <span>Estimation forfaitaire (pas de détail des lignes)</span>
+                    </div>
+                  )}
                   {(() => {
                     const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
                     const tva = totalRepairs - ht;
+                    const htLabel = useDevisEstime ? 'Devis estimé HT' : 'Total lignes HT';
                     return (
                       <>
-                        <div className="flex justify-between text-sm"><span className="text-slate-500">Total lignes HT</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between text-sm"><span className="text-slate-500">{htLabel}</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
                         <div className="flex justify-between text-sm"><span className="text-slate-500">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-600">{formatPrix(tva)}</span></div>
                         <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
