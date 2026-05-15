@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('kp_compact_mode') === '1');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [isPending, startTransition] = useTransition();
   const searchTimer = useRef(null);
 
   const toggleCompact = () => {
@@ -361,7 +362,13 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8 relative">
+      {/* Revalidation indicator */}
+      {isRevalidating && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
+          <div className="h-full bg-brand-400/60 animate-progress-bar" />
+        </div>
+      )}
       {/* Local styles: custom scrollbar, stagger, drag handle */}
       <style>{`
         .kp-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
@@ -441,10 +448,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         {!kpi && loading ? (
           Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="card p-4 animate-pulse">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 mb-3" />
-              <div className="h-7 w-12 bg-slate-100 rounded mb-1" />
-              <div className="h-3 w-20 bg-slate-100 rounded" />
+            <div key={i} className="card p-4">
+              <div className="w-9 h-9 rounded-lg animate-shimmer mb-3" />
+              <div className="h-7 w-12 animate-shimmer rounded mb-1" />
+              <div className="h-3 w-20 animate-shimmer rounded" />
             </div>
           ))
         ) : kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter }, i) => (
@@ -588,7 +595,7 @@ export default function DashboardPage() {
         </div>
         <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto kp-scroll bg-slate-50/50">
           {filterTabs.map(({ label, value }) => (
-            <button key={value} onClick={() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(['Rendu au client', 'Clôturé'].includes(value)); }}
+            <button key={value} onClick={() => startTransition(() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(['Rendu au client', 'Clôturé'].includes(value)); })}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
                 ${filterStatut === value
                   ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
@@ -666,7 +673,7 @@ export default function DashboardPage() {
       )}
 
       {/* Table */}
-      <div className="card overflow-hidden">
+      <div className={`card overflow-hidden transition-opacity duration-150 ${isPending ? 'opacity-60' : ''}`}>
         <div className="hidden lg:grid grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <button onClick={toggleSelectAll} className="flex items-center justify-center">
             {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
@@ -688,14 +695,14 @@ export default function DashboardPage() {
         {loading && tickets.length === 0 ? (
           <div className="divide-y divide-slate-100/80">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="px-5 py-3.5 animate-pulse flex items-center gap-3">
-                <div className="w-7 h-7 rounded-full bg-slate-100 shrink-0" />
+              <div key={i} className="px-5 py-3.5 flex items-center gap-3">
+                <div className="w-7 h-7 rounded-full animate-shimmer shrink-0" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-32 bg-slate-100 rounded" />
-                  <div className="h-3 w-48 bg-slate-100 rounded" />
+                  <div className="h-4 w-32 animate-shimmer rounded" />
+                  <div className="h-3 w-48 animate-shimmer rounded" />
                 </div>
-                <div className="hidden lg:block h-6 w-20 bg-slate-100 rounded-lg" />
-                <div className="hidden lg:block h-6 w-28 bg-slate-100 rounded-lg" />
+                <div className="hidden lg:block h-6 w-20 animate-shimmer rounded-lg" />
+                <div className="hidden lg:block h-6 w-28 animate-shimmer rounded-lg" />
               </div>
             ))}
           </div>
