@@ -655,14 +655,38 @@ async def change_status(
         try:
             panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
             action_url = f"/accueil/ticket/{ticket_id}"
+            panne_str = f" Panne : {panne_excerpt}." if panne_excerpt else ""
 
-            if data.statut == "Pièce reçue":
+            # CAS LE PLUS IMPORTANT : le client accepte la réparation.
+            # En interne ça se traduit par le passage à "En cours de réparation"
+            # (depuis "En attente d'accord client", "En attente de diagnostic", "Pièce reçue", etc.)
+            if data.statut == "En cours de réparation":
+                # On précise le contexte selon d'où on vient pour que le message soit clair.
+                if ancien_statut == "En attente d'accord client":
+                    title = f"🎉 Devis accepté — {ticket_code}"
+                    msg = f"Le client a validé la réparation !{panne_str} Tu peux démarrer."
+                elif ancien_statut == "Pièce reçue":
+                    title = f"🔧 Réparation démarrée — {ticket_code}"
+                    msg = f"Pièce en main, lancement de la réparation.{panne_str}"
+                else:
+                    title = f"🔧 Réparation démarrée — {ticket_code}"
+                    msg = f"Passage en cours de réparation.{panne_str}"
+                push_notification(
+                    type="reparation_demarree",
+                    title=title,
+                    message=msg,
+                    important=True,
+                    icon="🎉",
+                    target_user=technicien,
+                    related_ticket_id=ticket_id,
+                    action_url=action_url,
+                )
+            elif data.statut == "Pièce reçue":
                 push_notification(
                     type="piece_recue",
                     title=f"📦 Pièce reçue — {ticket_code}",
                     message=(
-                        f"Pièce disponible pour le ticket. "
-                        f"{('Panne : ' + panne_excerpt + '. ') if panne_excerpt else ''}"
+                        f"Pièce disponible pour le ticket.{panne_str} "
                         "Tu peux démarrer la réparation."
                     ),
                     important=True,
@@ -674,13 +698,13 @@ async def change_status(
             elif data.statut == "Réparation terminée":
                 push_notification(
                     type="reparation_terminee",
-                    title=f"🔧 Réparation terminée — {ticket_code}",
+                    title=f"✅ Réparation terminée — {ticket_code}",
                     message=(
                         "Le ticket est prêt à être rendu au client. "
                         "Pense à le prévenir."
                     ),
                     important=True,
-                    icon="🔧",
+                    icon="✅",
                     target_user=None,  # tout le monde (accueil notifie le client)
                     related_ticket_id=ticket_id,
                     action_url=action_url,
@@ -689,15 +713,28 @@ async def change_status(
                 push_notification(
                     type="en_attente_accord",
                     title=f"⏳ Devis à valider — {ticket_code}",
-                    message="Le ticket attend l'accord client. Pense à le contacter.",
-                    important=False,
+                    message=f"Le ticket attend l'accord client.{panne_str} Pense à le contacter.",
+                    important=True,
                     icon="⏳",
+                    target_user=technicien,
+                    related_ticket_id=ticket_id,
+                    action_url=action_url,
+                )
+            elif data.statut == "Rendu au client":
+                push_notification(
+                    type="rendu_client",
+                    title=f"📲 Téléphone rendu — {ticket_code}",
+                    message="Le téléphone a été remis au client.",
+                    important=False,
+                    icon="📲",
                     target_user=None,
                     related_ticket_id=ticket_id,
                     action_url=action_url,
                 )
         except Exception as e:
             print(f"[tickets] notification trigger failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     return {"ok": True, "ancien_statut": ancien_statut, "nouveau_statut": data.statut}
 

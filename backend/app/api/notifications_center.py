@@ -26,7 +26,9 @@ _TABLE_CHECKED = False
 
 
 def _ensure_table():
-    """Crée la table notifications_center si absente. Idempotent."""
+    """Crée la table notifications_center si absente. Idempotent.
+    Crée aussi le membre 'Système' dans membres_equipe pour que les messages
+    auto soient visibles dans le ChatWidget (tab Privé)."""
     global _TABLE_CHECKED
     if _TABLE_CHECKED:
         return
@@ -54,6 +56,19 @@ def _ensure_table():
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_notifc_target ON notifications_center(target_user)"
             )
+            # S'assurer que le membre "Système" existe pour que les messages auto
+            # apparaissent dans le ChatWidget (sinon le JOIN dans get_team_contacts
+            # ne renvoie pas Système comme contact privé).
+            try:
+                cur.execute("SELECT 1 FROM membres_equipe WHERE nom = %s", ("Système",))
+                if not cur.fetchone():
+                    cur.execute(
+                        "INSERT INTO membres_equipe (nom, role, couleur, actif) VALUES (%s, %s, %s, %s)",
+                        ("Système", "Bot SAV", "#7C3AED", 1),
+                    )
+            except Exception as e:
+                # Si la table membres_equipe n'existe pas encore ou autre, on continue
+                print(f"[notifications_center] Système member create skipped: {e}")
         _TABLE_CHECKED = True
     except Exception as e:
         print(f"[notifications_center] _ensure_table warning: {e}")
@@ -106,6 +121,7 @@ def push_notification(
                  related_devis_id, action_url, icon),
             )
             notif_id = cur.fetchone()["id"]
+            print(f"[notifications_center] PUSHED notif #{notif_id} type={type!r} target_user={target_user!r} important={important}")
 
             # Mirror dans chat_messages → s'affichera dans le ChatWidget existant
             if also_chat:
@@ -122,12 +138,17 @@ def push_notification(
                         """,
                         ("Système", recipient, chat_msg, is_private),
                     )
+                    print(f"[notifications_center] chat mirrored to recipient={recipient!r} is_private={is_private}")
                 except Exception as e:
                     print(f"[notifications_center] chat mirror failed: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             return notif_id
     except Exception as e:
-        print(f"[notifications_center] push_notification failed: {e}")
+        print(f"[notifications_center] push_notification FAILED: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
