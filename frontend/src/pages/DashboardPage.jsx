@@ -106,11 +106,11 @@ export default function DashboardPage() {
   // SWR: Interactions clients
   const { data: interactions } = useApi('dashboard:interactions', () => api.getInteractions(), { tags: ['interactions'], ttl: 30_000 });
 
-  // Build lookup: ticket_id → { accord_client, messages, avis } booleans
+  // Build lookup: ticket_id → { accord_client, accord_client_valide, messages, avis } booleans
   const ticketInteractions = useMemo(() => {
     if (!interactions) return {};
     const map = {};
-    for (const key of ['accord_client', 'messages', 'avis']) {
+    for (const key of ['accord_client', 'accord_client_valide', 'messages', 'avis']) {
       const ids = interactions[key]?.ticket_ids;
       if (!Array.isArray(ids)) continue;
       for (const tid of ids) {
@@ -758,7 +758,13 @@ export default function DashboardPage() {
                         <Globe className="w-2.5 h-2.5" /> Dist.
                       </span>
                     )}
-                    {ticketInteractions[t.id]?.accord_client && (
+                    {ticketInteractions[t.id]?.accord_client_valide ? (
+                      <span
+                        className="w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 motion-safe:animate-pulse"
+                        title="Le client a validé le devis"
+                        aria-label="Devis validé par le client"
+                      />
+                    ) : ticketInteractions[t.id]?.accord_client && (
                       <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] font-bold flex items-center justify-center" title="Accord client en attente">📋</span>
                     )}
                     {ticketInteractions[t.id]?.messages && (

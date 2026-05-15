@@ -102,14 +102,13 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
             VALUES (%s, 'Client', %s, 'validation_devis')
         """, (ticket_id, contenu))
 
-    # ─── Push notif après commit (toast + chat tech + centre) ────
-    try:
-        action_url = f"/accueil/ticket/{ticket_id}"
-        panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
-        if body.accepte:
+    # ─── Push notif après commit : UNIQUEMENT validation positive ────
+    if body.accepte:
+        try:
+            panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
             push_notification(
                 type="devis_accepte_distance",
-                title=f"{client_label} a accepté le devis 🎉",
+                title=f"✅ {client_label} a validé le devis",
                 message=(
                     f"Ticket {ticket_code} — {panne_excerpt}. "
                     "Le ticket passe automatiquement en réparation."
@@ -118,24 +117,10 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
                 icon="✅",
                 target_user=technicien,  # message privé au tech assigné si présent
                 related_ticket_id=ticket_id,
-                action_url=action_url,
+                action_url=f"/accueil/ticket/{ticket_id}",
             )
-        else:
-            push_notification(
-                type="devis_refuse_distance",
-                title=f"{client_label} a refusé le devis",
-                message=(
-                    f"Ticket {ticket_code} — {panne_excerpt}. "
-                    "À recontacter rapidement."
-                ),
-                important=True,
-                icon="❌",
-                target_user=technicien,
-                related_ticket_id=ticket_id,
-                action_url=action_url,
-            )
-    except Exception as e:
-        print(f"[suivi] notification trigger failed: {e}")
+        except Exception as e:
+            print(f"[suivi] notification trigger failed: {e}")
 
     return {"ok": True, "accepte": body.accepte}
 
@@ -168,14 +153,25 @@ async def laisser_avis(ticket_code: str, body: AvisBody):
 # ─── DASHBOARD INTERACTIONS ──────────────────────────────
 @router.get("/dashboard/interactions")
 async def get_interactions():
-    """3 catégories d'interactions non lues : accord_client, messages, avis."""
+    """4 catégories d'interactions non lues : accord_client (tout), accord_client_valide
+    (validations positives uniquement, pour point vert dashboard), messages, avis."""
     with get_cursor() as cur:
-        # Accord client (validation_devis non lues)
+        # Accord client (validation_devis non lues — toutes : validation + refus)
         cur.execute("""
             SELECT DISTINCT ticket_id FROM notes_tickets
             WHERE type_note = 'validation_devis' AND (is_read = FALSE OR is_read IS NULL)
         """)
         accord_ids = [r["ticket_id"] for r in cur.fetchall()]
+
+        # Accord client VALIDÉ (uniquement le contenu commence par ✅).
+        # Sert à afficher un point vert sur le dashboard distinct du refus.
+        cur.execute("""
+            SELECT DISTINCT ticket_id FROM notes_tickets
+            WHERE type_note = 'validation_devis'
+              AND (is_read = FALSE OR is_read IS NULL)
+              AND contenu LIKE %s
+        """, ("✅%",))
+        accord_valide_ids = [r["ticket_id"] for r in cur.fetchall()]
 
         # Messages clients non lus
         cur.execute("""
@@ -194,6 +190,7 @@ async def get_interactions():
     total = len(accord_ids) + len(message_ids) + len(avis_ids)
     return {
         "accord_client": {"count": len(accord_ids), "ticket_ids": accord_ids},
+        "accord_client_valide": {"count": len(accord_valide_ids), "ticket_ids": accord_valide_ids},
         "messages": {"count": len(message_ids), "ticket_ids": message_ids},
         "avis": {"count": len(avis_ids), "ticket_ids": avis_ids},
         "total_actions": total,

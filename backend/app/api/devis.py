@@ -445,8 +445,8 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
             values = list(updates.values()) + [devis_id]
             cur.execute(f"UPDATE devis SET {set_clause} WHERE id = %s", values)
 
-    # Trigger notification APRÈS le commit (transaction close)
-    if notif_event and existing_data:
+    # Trigger notification APRÈS le commit : UNIQUEMENT validation positive
+    if notif_event == "accepte" and existing_data:
         try:
             numero = existing_data.get("numero", f"#{devis_id}")
             total_ttc = existing_data.get("total_ttc") or 0
@@ -456,29 +456,16 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
             )
             related_ticket_id = existing_data.get("ticket_id")
             action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
-
-            if notif_event == "accepte":
-                push_notification(
-                    type="devis_accepte",
-                    title=f"Devis {numero} accepté",
-                    message=f"{client_nom} a accepté le devis ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
-                    important=True,
-                    icon="✅",
-                    related_devis_id=devis_id,
-                    related_ticket_id=related_ticket_id,
-                    action_url=action_url,
-                )
-            else:  # refuse
-                push_notification(
-                    type="devis_refuse",
-                    title=f"Devis {numero} refusé",
-                    message=f"{client_nom} a refusé le devis ({float(total_ttc):.2f} €). À recontacter.",
-                    important=True,
-                    icon="❌",
-                    related_devis_id=devis_id,
-                    related_ticket_id=related_ticket_id,
-                    action_url=action_url,
-                )
+            push_notification(
+                type="devis_accepte",
+                title=f"✅ Devis {numero} accepté",
+                message=f"{client_nom} a accepté le devis ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
+                important=True,
+                icon="✅",
+                related_devis_id=devis_id,
+                related_ticket_id=related_ticket_id,
+                action_url=action_url,
+            )
         except Exception as e:
             print(f"[devis] notification trigger failed: {e}")
 

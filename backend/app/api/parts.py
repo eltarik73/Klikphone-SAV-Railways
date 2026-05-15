@@ -7,7 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 from app.database import get_cursor
 from app.models import CommandePieceCreate, CommandePieceUpdate, CommandePieceOut
-from app.api.notifications_center import push_notification
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 
@@ -172,9 +171,6 @@ async def update_part(
     set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
     values = list(updates.values()) + [commande_id]
 
-    # Données pour notification (après commit)
-    notif_data = None
-
     with get_cursor() as cur:
         cur.execute(f"UPDATE commandes_pieces SET {set_clause} WHERE id = %s", values)
 
@@ -188,48 +184,12 @@ async def update_part(
                     "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
                     (now.strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
                 )
-                ticket_changed = cur.rowcount > 0
                 # Append history entry on ticket
                 history_entry = f"[{now.strftime('%d/%m %H:%M')}] Pièce \"{row['description']}\" reçue"
                 cur.execute(
                     "UPDATE tickets SET historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
                     (history_entry, row["ticket_id"]),
                 )
-                # Récupère détails ticket pour la notif (tech assigné + code)
-                if ticket_changed:
-                    cur.execute(
-                        "SELECT ticket_code, technicien_assigne, panne FROM tickets WHERE id = %s",
-                        (row["ticket_id"],),
-                    )
-                    t = cur.fetchone() or {}
-                    notif_data = {
-                        "ticket_id": row["ticket_id"],
-                        "ticket_code": t.get("ticket_code") or f"#{row['ticket_id']}",
-                        "technicien": t.get("technicien_assigne"),
-                        "panne": t.get("panne") or "",
-                        "piece": row["description"],
-                    }
-
-    # Push notification après commit
-    if notif_data:
-        try:
-            panne_excerpt = (notif_data["panne"][:50] + "…") if len(notif_data["panne"]) > 50 else notif_data["panne"]
-            push_notification(
-                type="piece_recue",
-                title=f"📦 Pièce reçue — {notif_data['ticket_code']}",
-                message=(
-                    f"« {notif_data['piece']} » est arrivée. "
-                    f"{('Ticket : ' + panne_excerpt + '. ') if panne_excerpt else ''}"
-                    "Tu peux démarrer la réparation."
-                ),
-                important=True,
-                icon="📦",
-                target_user=notif_data["technicien"],
-                related_ticket_id=notif_data["ticket_id"],
-                action_url=f"/accueil/ticket/{notif_data['ticket_id']}",
-            )
-        except Exception as e:
-            print(f"[parts] notification trigger failed: {e}")
 
     return {"ok": True}
 

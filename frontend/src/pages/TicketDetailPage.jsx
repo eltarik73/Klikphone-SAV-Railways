@@ -1798,6 +1798,44 @@ export default function TicketDetailPage() {
         </div>
       </motion.div>
 
+      {/* Validation devis banner (vert) — affichée si une note validation_devis ✅ existe */}
+      {(() => {
+        const validationNote = privateNotes.find(
+          n => n.type_note === 'validation_devis' && (n.contenu || '').trim().startsWith('✅')
+        );
+        if (!validationNote) return null;
+        const dateStr = validationNote.date_creation
+          ? new Date(validationNote.date_creation).toLocaleString('fr-FR', {
+              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+            })
+          : null;
+        return (
+          <div
+            role="status"
+            aria-live="polite"
+            className="bg-emerald-50 border-l-4 border-emerald-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
+          >
+            <div className="max-w-7xl mx-auto flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-emerald-800">
+                  Client a validé le devis
+                </p>
+                {dateStr && (
+                  <p className="text-xs text-emerald-700/80">Validé le {dateStr}</p>
+                )}
+              </div>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" aria-hidden="true" />
+                Confirmé
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Retour SAV banner (red) */}
       {t.est_retour_sav && (
         <div className="bg-red-50 border-l-4 border-red-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
