@@ -544,7 +544,7 @@ export default function TicketDetailPage() {
     }
     try {
       await api.changeStatus(id, statut);
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'interactions', 'dashboard');
       await loadTicket(false);
       toast.success(`Statut changé : ${statut}`);
     } catch (err) {
@@ -568,7 +568,7 @@ export default function TicketDetailPage() {
       await api.updateTicket(id, { paye: 1 });
       await api.changeStatus(id, 'Rendu au client');
       await api.changeStatus(id, 'Clôturé');
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'interactions', 'dashboard');
       setShowRenduModal(false);
       await loadTicket(false);
       toast.success('Ticket clôturé');
@@ -580,7 +580,7 @@ export default function TicketDetailPage() {
   const handleRenduNonPaye = async () => {
     try {
       await api.changeStatus(id, 'Rendu au client');
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'interactions', 'dashboard');
       setShowRenduModal(false);
       await loadTicket(false);
       toast.success('Attention : ticket non payé');
@@ -797,6 +797,7 @@ export default function TicketDetailPage() {
       await api.logMessage(id, auteur, logText, canal);
 
       setShowAccordModal(false);
+      invalidateCache('tickets', 'interactions', 'dashboard');
       await loadTicket(false);
       toast.success("Demande d'accord envoyée");
     } catch (err) {
@@ -819,6 +820,7 @@ export default function TicketDetailPage() {
         await api.addPrivateNote(id, auteur, 'Client a refusé la réparation');
         toast.success('Ticket marqué non réparable');
       }
+      invalidateCache('tickets', 'interactions', 'dashboard');
       await loadTicket(false);
     } catch (err) {
       toast.error('Erreur changement de statut');

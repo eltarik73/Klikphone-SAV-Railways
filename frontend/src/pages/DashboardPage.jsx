@@ -151,7 +151,9 @@ export default function DashboardPage() {
       await Promise.all([...selectedIds].map(id => api.changeStatus(id, statut)));
       setSelectedIds(new Set());
       setShowBulkMenu(false);
-      invalidateCache('tickets', 'dashboard');
+      // Invalide aussi 'interactions' pour que les points vert/orange se mettent
+      // à jour immédiatement (sinon ils restent figés ~30s le temps du polling).
+      invalidateCache('tickets', 'dashboard', 'interactions');
     } catch (err) {
       console.error(err);
     }
@@ -160,9 +162,13 @@ export default function DashboardPage() {
   const handleInlineStatus = async (ticketId, newStatut) => {
     try {
       await api.changeStatus(ticketId, newStatut);
+      // Mise à jour optimiste du statut affiché
       mutate(prev => prev ? {
         ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, statut: newStatut } : t),
       } : prev);
+      // Force le refetch d'interactions → les points vert/orange se synchronisent
+      // tout de suite avec le nouveau statut (validation_devis, accord_client, etc.)
+      invalidateCache('interactions');
     } catch (err) {
       console.error(err);
     }
