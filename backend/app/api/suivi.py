@@ -163,13 +163,17 @@ async def get_interactions():
         """)
         accord_ids = [r["ticket_id"] for r in cur.fetchall()]
 
-        # Accord client VALIDÉ (uniquement le contenu commence par ✅).
-        # Sert à afficher un point vert sur le dashboard distinct du refus.
+        # Accord client VALIDÉ : tous les tickets ayant une note 'validation_devis'
+        # commençant par ✅, ET dont le ticket est encore actif (pas rendu/clôturé).
+        # → Le point vert dashboard reste donc visible toute la phase de réparation,
+        # même après que le staff a ouvert le ticket (ce qui marque is_read=TRUE).
         cur.execute("""
-            SELECT DISTINCT ticket_id FROM notes_tickets
-            WHERE type_note = 'validation_devis'
-              AND (is_read = FALSE OR is_read IS NULL)
-              AND contenu LIKE %s
+            SELECT DISTINCT n.ticket_id
+            FROM notes_tickets n
+            JOIN tickets t ON t.id = n.ticket_id
+            WHERE n.type_note = 'validation_devis'
+              AND n.contenu LIKE %s
+              AND t.statut NOT IN ('Rendu au client', 'Clôturé')
         """, ("✅%",))
         accord_valide_ids = [r["ticket_id"] for r in cur.fetchall()]
 
