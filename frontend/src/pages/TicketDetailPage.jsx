@@ -21,8 +21,8 @@ import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Trash2,
   ChevronDown, Plus, Minus, User, Wrench, Package,
   FileText, Printer, Lock, Eye, Copy, Check,
-  AlertTriangle, Smartphone, Shield, Calendar,
-  Zap, Edit3, X, CheckCircle2,
+  AlertTriangle, Smartphone, Shield, Calendar, Clock,
+  Zap, Edit3, X, CheckCircle2, Sparkles,
   Flag, PhoneCall, Percent, RotateCcw, Globe,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -1798,42 +1798,68 @@ export default function TicketDetailPage() {
         </div>
       </motion.div>
 
-      {/* Validation devis banner (vert) — affichée si une note validation_devis ✅ existe */}
+      {/* Bannière statut devis — verte si validé, orange si en attente, rien sinon */}
       {(() => {
         const validationNote = privateNotes.find(
           n => n.type_note === 'validation_devis' && (n.contenu || '').trim().startsWith('✅')
         );
-        if (!validationNote) return null;
-        const dateStr = validationNote.date_creation
-          ? new Date(validationNote.date_creation).toLocaleString('fr-FR', {
-              day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-            })
-          : null;
-        return (
-          <div
-            role="status"
-            aria-live="polite"
-            className="bg-emerald-50 border-l-4 border-emerald-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
-          >
-            <div className="max-w-7xl mx-auto flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
+
+        if (validationNote) {
+          // ─── VERT : client a validé ───────────────────
+          const dateStr = validationNote.date_creation
+            ? new Date(validationNote.date_creation).toLocaleString('fr-FR', {
+                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              })
+            : null;
+          return (
+            <div
+              role="status"
+              aria-live="polite"
+              className="bg-emerald-50 border-l-4 border-emerald-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
+            >
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-emerald-800">Client a validé le devis</p>
+                  {dateStr && <p className="text-xs text-emerald-700/80">Validé le {dateStr}</p>}
+                </div>
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" aria-hidden="true" />
+                  Confirmé
+                </span>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-emerald-800">
-                  Client a validé le devis
-                </p>
-                {dateStr && (
-                  <p className="text-xs text-emerald-700/80">Validé le {dateStr}</p>
-                )}
-              </div>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" aria-hidden="true" />
-                Confirmé
-              </span>
             </div>
-          </div>
-        );
+          );
+        }
+
+        if (t.statut === "En attente d'accord client") {
+          // ─── ORANGE : en attente de réponse client ─────
+          return (
+            <div
+              role="status"
+              aria-live="polite"
+              className="bg-amber-50 border-l-4 border-amber-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
+            >
+              <div className="max-w-7xl mx-auto flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4 text-amber-600" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-amber-800">En attente de l'accord client</p>
+                  <p className="text-xs text-amber-700/80">Le devis a été envoyé, le client n'a pas encore validé. Pense à le relancer.</p>
+                </div>
+                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 motion-safe:animate-pulse" aria-hidden="true" />
+                  À relancer
+                </span>
+              </div>
+            </div>
+          );
+        }
+
+        return null;
       })()}
 
       {/* Retour SAV banner (red) */}

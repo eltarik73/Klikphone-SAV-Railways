@@ -758,15 +758,20 @@ export default function DashboardPage() {
                         <Globe className="w-2.5 h-2.5" /> Dist.
                       </span>
                     )}
+                    {/* État de la validation devis : vert si validé, orange si en attente, rien sinon */}
                     {ticketInteractions[t.id]?.accord_client_valide ? (
                       <span
                         className="w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-emerald-200 motion-safe:animate-pulse"
-                        title="Le client a validé le devis"
+                        title="Client a validé le devis — tu peux démarrer la réparation"
                         aria-label="Devis validé par le client"
                       />
-                    ) : ticketInteractions[t.id]?.accord_client && (
-                      <span className="w-4 h-4 rounded-full bg-orange-500 text-white text-[8px] font-bold flex items-center justify-center" title="Accord client en attente">📋</span>
-                    )}
+                    ) : t.statut === "En attente d'accord client" ? (
+                      <span
+                        className="w-3.5 h-3.5 rounded-full bg-amber-500 ring-2 ring-amber-200 motion-safe:animate-pulse"
+                        title="En attente de l'accord client — à relancer"
+                        aria-label="En attente d'accord client"
+                      />
+                    ) : null}
                     {ticketInteractions[t.id]?.messages && (
                       <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center" title="Message client non lu">💬</span>
                     )}
