@@ -650,14 +650,29 @@ async def change_status(
     elif ancien_statut and ancien_statut != data.statut:
         notif_changement_statut(ticket_code, ancien_statut, data.statut)
 
-    # ─── Notif in-app : UNIQUEMENT validation devis au comptoir ──────
-    # On notifie seulement la transition "En attente d'accord client" → "En cours
-    # de réparation" qui signifie que le staff vient de valider le devis pour le
-    # client au comptoir. Aucune autre transition de statut ne déclenche de notif.
+    # ─── Validation devis au comptoir : transition spécifique ─────────
+    # On détecte que le staff vient de valider le devis pour le client en passant
+    # de "En attente d'accord client" → "En cours de réparation". Dans ce cas on :
+    #   1. Crée une note de type 'validation_devis' (pour bannière verte ticket + point vert dashboard)
+    #   2. Déclenche la notification in-app (toast + cloche + chat tech)
     if (
         ancien_statut == "En attente d'accord client"
         and data.statut == "En cours de réparation"
     ):
+        # 1. Note 'validation_devis' (alimente accord_client_valide → point vert + bannière)
+        try:
+            with get_cursor() as cur2:
+                cur2.execute(
+                    """
+                    INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
+                    VALUES (%s, %s, %s, 'validation_devis', FALSE)
+                    """,
+                    (ticket_id, "Staff", "✅ Devis accepté par le client (validation au comptoir)"),
+                )
+        except Exception as e:
+            print(f"[tickets] note validation_devis insert failed: {e}")
+
+        # 2. Notification in-app (toast + cloche + chat tech)
         try:
             panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
             panne_str = f" Panne : {panne_excerpt}." if panne_excerpt else ""

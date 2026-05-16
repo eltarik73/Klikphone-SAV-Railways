@@ -445,17 +445,38 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
             values = list(updates.values()) + [devis_id]
             cur.execute(f"UPDATE devis SET {set_clause} WHERE id = %s", values)
 
-    # Trigger notification APRÈS le commit : UNIQUEMENT validation positive
+    # Trigger validation APRÈS le commit : UNIQUEMENT validation positive
     if notif_event == "accepte" and existing_data:
+        numero = existing_data.get("numero", f"#{devis_id}")
+        total_ttc = existing_data.get("total_ttc") or 0
+        client_nom = (
+            f"{existing_data.get('client_prenom', '')} {existing_data.get('client_nom', '')}".strip()
+            or existing_data.get("client_tel", "Client")
+        )
+        related_ticket_id = existing_data.get("ticket_id")
+        action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
+
+        # 1. Si le devis est lié à un ticket, on crée une note 'validation_devis'
+        # → alimente accord_client_valide (point vert dashboard + bannière verte ticket).
+        if related_ticket_id:
+            try:
+                with get_cursor() as cur2:
+                    cur2.execute(
+                        """
+                        INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
+                        VALUES (%s, %s, %s, 'validation_devis', FALSE)
+                        """,
+                        (
+                            related_ticket_id,
+                            "Staff",
+                            f"✅ Devis {numero} accepté ({float(total_ttc):.2f} €)",
+                        ),
+                    )
+            except Exception as e:
+                print(f"[devis] note validation_devis insert failed: {e}")
+
+        # 2. Notification in-app
         try:
-            numero = existing_data.get("numero", f"#{devis_id}")
-            total_ttc = existing_data.get("total_ttc") or 0
-            client_nom = (
-                f"{existing_data.get('client_prenom', '')} {existing_data.get('client_nom', '')}".strip()
-                or existing_data.get("client_tel", "Client")
-            )
-            related_ticket_id = existing_data.get("ticket_id")
-            action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
             push_notification(
                 type="devis_accepte",
                 title=f"✅ Devis {numero} accepté",
