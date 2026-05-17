@@ -1,6 +1,7 @@
 """
 KLIKPHONE SAV — API REST FastAPI
 Point d'entrée principal.
+Last frontend bundle: index-Bevv2zlk.js (2026-05-17).
 """
 
 import logging
