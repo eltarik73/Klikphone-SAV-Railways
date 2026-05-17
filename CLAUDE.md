@@ -102,7 +102,7 @@ uvicorn app.main:app --reload --port 8000
 # Frontend (depuis /frontend)
 npm install
 npm run dev          # Dev server Vite (port 5173, proxy /api → :8000)
-npm run build        # Build production
+npm run build        # Build production + sync auto vers backend/static (hook postbuild)
 npm run test         # Tests vitest
 
 # Tests backend
@@ -111,6 +111,27 @@ cd backend && pytest
 # Deploy
 git add -A && git commit -m "message" && git push origin main
 ```
+
+## ⚠️ Frontend prod servi depuis `backend/static/` (PAS `frontend/dist/`)
+
+Railway/FastAPI sert les fichiers statiques depuis `backend/static/`
+(cf. `STATIC_DIR` dans `backend/app/main.py`). Le dossier `frontend/dist/`
+n'est jamais lu en prod.
+
+Pour éviter le piège classique « j'ai pushé mes modifs frontend mais la
+prod ne change pas », un hook **`postbuild`** dans `frontend/package.json`
+copie automatiquement `frontend/dist/` → `backend/static/` après chaque
+`npm run build` (cf. `frontend/scripts/sync-to-backend.mjs`).
+
+**Workflow correct** :
+```bash
+cd frontend && npm run build           # build + sync auto
+cd .. && git add backend/static/       # commit le nouveau bundle
+git commit -m "build: ..."
+git push origin main                   # Railway redeploy
+```
+
+Ne JAMAIS modifier `backend/static/` à la main — c'est généré par le hook.
 
 ## Règles non négociables
 
