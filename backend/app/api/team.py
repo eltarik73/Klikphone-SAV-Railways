@@ -2,6 +2,7 @@
 API Membres équipe.
 """
 
+import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
 from app.models import MembreEquipeCreate, MembreEquipeUpdate, MembreEquipeOut
@@ -9,7 +10,10 @@ from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 
-ADMIN_CODE_MANAGER = "caramail"
+# Code admin manager : lu depuis l'env var ADMIN_CODE_MANAGER (à définir sur
+# Railway). Fallback sur l'ancienne valeur pour ne pas casser l'existant ; à
+# retirer une fois la var d'env configurée.
+ADMIN_CODE_MANAGER = os.getenv("ADMIN_CODE_MANAGER", "caramail")
 
 
 @router.get("", response_model=list[MembreEquipeOut])

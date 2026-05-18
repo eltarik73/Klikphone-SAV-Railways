@@ -445,18 +445,28 @@ async def lifespan(app: FastAPI):
     close_pool()
 
 
+# Désactive la doc Swagger/Redoc en prod (évite d'exposer l'arborescence de
+# l'API). Réactivable via DISABLE_DOCS=0 si besoin de debug.
+_DISABLE_DOCS = os.getenv("DISABLE_DOCS", "1") != "0"
+
 app = FastAPI(
     title="Klikphone SAV API",
     version="2.1.0",
     description="API de gestion de tickets SAV pour Klikphone",
     lifespan=lifespan,
+    docs_url=None if _DISABLE_DOCS else "/docs",
+    redoc_url=None if _DISABLE_DOCS else "/redoc",
+    openapi_url=None if _DISABLE_DOCS else "/openapi.json",
 )
 
 # --- CORS ---
+# allow_credentials=False car on utilise JWT en header (pas de cookies). Cela
+# permet de garder allow_origins=["*"] côté navigateur (les credentials avec
+# wildcard origin sont de toute façon refusés par les navigateurs).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -465,11 +475,23 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
-# --- CACHE HEADERS for static assets ---
+# --- SECURITY HEADERS + CACHE HEADERS for static assets ---
 @app.middleware("http")
-async def cache_headers(request: Request, call_next):
+async def security_and_cache_headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
+
+    # ─── Security headers (toujours posés sur les réponses HTML/JSON) ───
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), microphone=(), camera=(), payment=()"
+    )
+    # HSTS uniquement sur HTTPS (Railway sert en HTTPS, donc actif)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # ─── Cache headers (assets versionnés Vite) ───
     # Hashed JS/CSS assets: cache 1 year (immutable, filename changes on rebuild)
     if path.startswith("/assets/") and any(path.endswith(ext) for ext in (".js", ".css")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
