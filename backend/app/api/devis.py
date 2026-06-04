@@ -455,6 +455,8 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
         )
         related_ticket_id = existing_data.get("ticket_id")
         action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
+        # Nom du membre connecté qui a coché "Accepté" dans DevisPage.
+        auteur_action = (user or {}).get("sub") or "Staff"
 
         # 1. Si le devis est lié à un ticket, on crée une note 'validation_devis'
         # → alimente accord_client_valide (point vert dashboard + bannière verte ticket).
@@ -468,8 +470,8 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
                         """,
                         (
                             related_ticket_id,
-                            "Staff",
-                            f"✅ Devis {numero} accepté ({float(total_ttc):.2f} €)",
+                            auteur_action,
+                            f"✅ Devis {numero} accepté ({float(total_ttc):.2f} €) — marqué par {auteur_action}",
                         ),
                     )
             except Exception as e:
@@ -480,7 +482,7 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
             push_notification(
                 type="devis_accepte",
                 title=f"✅ Devis {numero} accepté",
-                message=f"{client_nom} a accepté le devis ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
+                message=f"{auteur_action} a marqué le devis comme accepté par {client_nom} ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
                 important=True,
                 icon="✅",
                 related_devis_id=devis_id,

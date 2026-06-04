@@ -662,6 +662,8 @@ async def change_status(
     # de "En attente d'accord client" → "En cours de réparation". Dans ce cas on :
     #   1. Crée une note de type 'validation_devis' (pour bannière verte ticket + point vert dashboard)
     #   2. Déclenche la notification in-app (toast + cloche + chat tech)
+    # On capture le nom de l'utilisateur connecté pour tracer QUI a validé.
+    auteur_action = (user or {}).get("sub") or "Staff"
     if (
         ancien_statut == "En attente d'accord client"
         and data.statut == "En cours de réparation"
@@ -674,7 +676,11 @@ async def change_status(
                     INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
                     VALUES (%s, %s, %s, 'validation_devis', FALSE)
                     """,
-                    (ticket_id, "Staff", "✅ Devis accepté par le client (validation au comptoir)"),
+                    (
+                        ticket_id,
+                        auteur_action,
+                        f"✅ Devis accepté par le client — validé au comptoir par {auteur_action}",
+                    ),
                 )
         except Exception as e:
             print(f"[tickets] note validation_devis insert failed: {e}")
@@ -686,7 +692,7 @@ async def change_status(
             push_notification(
                 type="devis_accepte_comptoir",
                 title=f"✅ Devis accepté — {ticket_code}",
-                message=f"Le client a validé la réparation.{panne_str} Tu peux démarrer.",
+                message=f"{auteur_action} a validé la réparation pour le client.{panne_str} Tu peux démarrer.",
                 important=True,
                 icon="✅",
                 target_user=technicien,
