@@ -1209,18 +1209,22 @@ export default function TicketDetailPage() {
             <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
               {privateNotes.map(note => {
                 const tn = note.type_note || 'note';
+                // Détection robuste : si l'auteur est "Client" (insertion par
+                // /suivi) on force le badge CLIENT même si type_note n'est pas
+                // 'message_client' (compat anciennes notes / data legacy).
+                const isClientMsg = tn === 'message_client'
+                  || (note.auteur || '').trim().toLowerCase() === 'client';
                 // Badge selon le type de note : on identifie visuellement
                 // CLIENT (message via /suivi), ACCORD (validation devis), AVIS,
                 // et les canaux d'envoi staff (WhatsApp/SMS/Email).
-                const badge = tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-700', label: 'WhatsApp' }
+                const badge = isClientMsg ? { bg: 'bg-violet-100 text-violet-700 ring-1 ring-violet-300', label: '💬 CLIENT' }
+                  : tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-700', label: 'WhatsApp' }
                   : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-700', label: 'SMS' }
                   : tn === 'email' ? { bg: 'bg-amber-100 text-amber-700', label: 'Email' }
-                  : tn === 'message_client' ? { bg: 'bg-violet-100 text-violet-700 ring-1 ring-violet-300', label: '💬 CLIENT' }
                   : tn === 'validation_devis' ? { bg: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300', label: '✅ ACCORD' }
                   : tn === 'avis_client' ? { bg: 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-300', label: '⭐ AVIS' }
                   : null;
                 const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const isClientMsg = tn === 'message_client';
                 const textColor = note.important ? 'text-red-600 font-semibold'
                   : isClientMsg ? 'text-violet-700 font-medium'
                   : badge ? 'text-slate-600'
