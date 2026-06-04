@@ -1209,14 +1209,25 @@ export default function TicketDetailPage() {
             <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
               {privateNotes.map(note => {
                 const tn = note.type_note || 'note';
+                // Badge selon le type de note : on identifie visuellement
+                // CLIENT (message via /suivi), ACCORD (validation devis), AVIS,
+                // et les canaux d'envoi staff (WhatsApp/SMS/Email).
                 const badge = tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-700', label: 'WhatsApp' }
                   : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-700', label: 'SMS' }
                   : tn === 'email' ? { bg: 'bg-amber-100 text-amber-700', label: 'Email' }
+                  : tn === 'message_client' ? { bg: 'bg-violet-100 text-violet-700 ring-1 ring-violet-300', label: '💬 CLIENT' }
+                  : tn === 'validation_devis' ? { bg: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300', label: '✅ ACCORD' }
+                  : tn === 'avis_client' ? { bg: 'bg-yellow-100 text-yellow-700 ring-1 ring-yellow-300', label: '⭐ AVIS' }
                   : null;
                 const isTechNote = note.auteur?.toLowerCase().includes('tech');
-                const textColor = note.important ? 'text-red-600 font-semibold' : badge ? 'text-slate-600' : isTechNote ? 'text-blue-600' : 'text-emerald-600';
+                const isClientMsg = tn === 'message_client';
+                const textColor = note.important ? 'text-red-600 font-semibold'
+                  : isClientMsg ? 'text-violet-700 font-medium'
+                  : badge ? 'text-slate-600'
+                  : isTechNote ? 'text-blue-600'
+                  : 'text-emerald-600';
                 return (
-                  <div key={`db-${note.id}`} className="flex items-start gap-2 py-1.5">
+                  <div key={`db-${note.id}`} className={`flex items-start gap-2 py-1.5 ${isClientMsg ? 'bg-violet-50/40 -mx-2 px-2 rounded' : ''}`}>
                     {badge && (
                       <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 mt-0.5 ${badge.bg}`}>
                         {badge.label}
