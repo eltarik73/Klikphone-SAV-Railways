@@ -359,7 +359,7 @@ export default function TicketDetailPage() {
     setAutoSaveDevice('saving');
     try {
       await api.updateTicket(id, formData);
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'dashboard', 'interactions');
       if (formData.panne) api.learnTerm('panne', formData.panne).catch(() => {});
       if (formData.panne_detail) api.learnTerm('detail_panne', formData.panne_detail).catch(() => {});
       setAutoSaveDevice('saved');
@@ -375,7 +375,7 @@ export default function TicketDetailPage() {
     setAutoSaveClient('saving');
     try {
       await api.updateClient(clientId, formData);
-      invalidateCache('clients', 'tickets');
+      invalidateCache('clients', 'tickets', 'dashboard');
       setAutoSaveClient('saved');
       setTicket(prev => prev ? { ...prev, client_nom: formData.nom, client_prenom: formData.prenom, client_tel: formData.telephone, client_email: formData.email, client_societe: formData.societe } : prev);
       setTimeout(() => setAutoSaveClient(null), 2000);
@@ -416,7 +416,7 @@ export default function TicketDetailPage() {
         type_document: formData.type_document || 'devis',
       };
       await api.updateTicket(id, updates);
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'dashboard', 'interactions');
       setAutoSavePricing('saved');
       // Merge saved pricing fields into ticket state without overwriting tech/other fields
       setTicket(prev => prev ? { ...prev, ...updates, date_maj: new Date().toISOString() } : prev);
@@ -671,7 +671,7 @@ export default function TicketDetailPage() {
   const handleTogglePaye = async () => {
     try {
       const result = await api.togglePaye(id);
-      invalidateCache('tickets');
+      invalidateCache('tickets', 'dashboard', 'interactions');
       setShowPayeModal(false);
       await loadTicket(false);
       toast.success(result.paye ? 'Marqué payé' : 'Marqué non payé');
@@ -1308,7 +1308,7 @@ export default function TicketDetailPage() {
                   setTicket(prev => prev ? { ...prev, technicien_assigne: nom || null } : prev);
                   api.updateTicket(id, { technicien_assigne: nom || null })
                     .then(() => {
-                      invalidateCache('tickets');
+                      invalidateCache('tickets', 'dashboard', 'interactions');
                       toast.success(nom ? `Assigné à ${nom}` : 'Technicien retiré');
                     })
                     .catch(() => {

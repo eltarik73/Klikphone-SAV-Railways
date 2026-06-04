@@ -37,15 +37,63 @@ def _get_ticket_by_code(cur, code: str):
 # ─── MESSAGE CLIENT ──────────────────────────────────────
 @router.post("/{ticket_code}/message")
 async def send_client_message(ticket_code: str, body: MessageBody):
-    """Le client envoie un message depuis la page de suivi."""
-    if not body.message.strip():
+    """Le client envoie un message depuis la page de suivi.
+
+    En plus de la note 'message_client', on déclenche une notification
+    in-app (toast + cloche + chat tech) préfixée 'Client : ...' pour que
+    le staff identifie immédiatement que le message vient du client (et
+    pas d'un membre interne de l'équipe)."""
+    msg = body.message.strip()
+    if not msg:
         raise HTTPException(400, "Message vide")
+
+    ticket_id = None
+    technicien = None
+    client_label = "Client"
+
     with get_cursor() as cur:
         t = _get_ticket_by_code(cur, ticket_code)
+        ticket_id = t["id"]
+
+        # Récupère détails ticket + client pour la notif
+        cur.execute(
+            """
+            SELECT t.technicien_assigne, t.panne,
+                   c.prenom AS client_prenom, c.nom AS client_nom
+            FROM tickets t
+            LEFT JOIN clients c ON c.id = t.client_id
+            WHERE t.id = %s
+            """,
+            (ticket_id,),
+        )
+        det = cur.fetchone() or {}
+        technicien = det.get("technicien_assigne")
+        prenom = det.get("client_prenom") or ""
+        nom = det.get("client_nom") or ""
+        full_name = f"{prenom} {nom}".strip()
+        client_label = f"Client {full_name}" if full_name else "Client"
+
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note)
             VALUES (%s, 'Client', %s, 'message_client')
-        """, (t["id"], body.message.strip()))
+        """, (ticket_id, msg))
+
+    # Notif in-app après commit — préfixée "Client : " pour distinction visuelle
+    try:
+        msg_excerpt = (msg[:150] + "…") if len(msg) > 150 else msg
+        push_notification(
+            type="message_client",
+            title=f"💬 {client_label} — {ticket_code}",
+            message=f"Client : {msg_excerpt}",
+            important=True,
+            icon="💬",
+            target_user=technicien,
+            related_ticket_id=ticket_id,
+            action_url=f"/accueil/ticket/{ticket_id}",
+        )
+    except Exception as e:
+        print(f"[suivi] notification message_client failed: {e}")
+
     return {"ok": True}
 
 
