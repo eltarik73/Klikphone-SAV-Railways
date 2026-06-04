@@ -387,70 +387,58 @@ export default function DashboardPage() {
         .kp-drag-handle { cursor: grab; }
         .kp-drag-handle:active { cursor: grabbing; }
       `}</style>
-      {/* Header */}
+      {/* ─── Header Hero ─── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <img src="/logo_k.png" alt="" className="w-8 h-8 rounded-lg object-contain shadow-sm hidden sm:block" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-display font-bold text-slate-900 tracking-tight">
-              {user?.target === 'tech'
-                ? <>Espace <span className="font-editorial text-brand-600">Technicien</span></>
-                : <>Tableau de <span className="font-editorial text-brand-600">bord</span></>}
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {user?.target === 'tech'
-                ? <>Bienvenue <span className="font-editorial text-brand-500">{user?.utilisateur || ''}</span> — vos réparations</>
-                : <>Vue d'ensemble des <span className="font-editorial">réparations</span></>}
-            </p>
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-5 sm:p-6 mb-5 -mx-1"
+      >
+        {/* Halo décoratif */}
+        <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-gradient-to-br from-brand-500 to-fuchsia-500 opacity-20 blur-3xl pointer-events-none" />
+        <div className="absolute -left-16 -bottom-16 w-48 h-48 rounded-full bg-gradient-to-br from-indigo-500 to-brand-500 opacity-10 blur-3xl pointer-events-none" />
+
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img src="/logo_k.png" alt="" className="w-10 h-10 rounded-xl object-contain bg-white/10 p-1.5 shadow-lg hidden sm:block" />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-300 mb-1">
+                {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+              <h1 className="text-2xl sm:text-3xl font-display font-bold tracking-tight">
+                {user?.target === 'tech'
+                  ? <>Espace <span className="font-editorial bg-gradient-to-r from-brand-300 to-fuchsia-300 bg-clip-text text-transparent">Technicien</span></>
+                  : <>Tableau de <span className="font-editorial bg-gradient-to-r from-brand-300 to-fuchsia-300 bg-clip-text text-transparent">bord</span></>}
+              </h1>
+              <p className="text-sm text-slate-300 mt-1">
+                {user?.target === 'tech'
+                  ? <>Bienvenue <span className="font-editorial text-brand-200">{user?.utilisateur || ''}</span> — vos réparations en cours</>
+                  : <><span className="text-white font-semibold">{extraKpis.enAttente}</span> ticket{extraKpis.enAttente > 1 ? 's' : ''} en attente · <span className="text-white font-semibold">{extraKpis.todayCount}</span> nouveau{extraKpis.todayCount > 1 ? 'x' : ''} aujourd'hui</>}
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={toggleCompact} className="btn-ghost p-2.5" title={compactMode ? 'Mode confortable' : 'Mode compact'}>
-            {compactMode ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-          </button>
-          <button onClick={() => mutate()} className="btn-ghost p-2.5" title="Rafraîchir">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button onClick={() => navigate('/client')} className="btn-primary">
-            <Plus className="w-4 h-4" /> Nouveau ticket
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={toggleCompact}
+              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              title={compactMode ? 'Mode confortable' : 'Mode compact'}
+              aria-label={compactMode ? 'Mode confortable' : 'Mode compact'}>
+              {compactMode ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+            </button>
+            <button onClick={() => mutate()}
+              className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              title="Rafraîchir"
+              aria-label="Rafraîchir">
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={() => navigate('/client')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-slate-900 font-semibold text-sm hover:bg-slate-100 transition-colors shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+              <Plus className="w-4 h-4" /> Nouveau ticket
+            </button>
+          </div>
         </div>
       </motion.div>
 
-      {/* Business KPIs — hero header (snap-scroll on mobile) */}
-      <div className="flex lg:grid lg:grid-cols-4 gap-3 mb-4 overflow-x-auto sm:overflow-visible kp-scroll kp-snap-x pb-2 lg:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
-        {[
-          { label: "Tickets aujourd'hui", value: extraKpis.todayCount, icon: Sparkles, gradient: 'from-brand-500 to-indigo-600', accent: 'bg-brand-500/10 text-brand-600' },
-          { label: 'En attente', value: extraKpis.enAttente, icon: Clock, gradient: 'from-amber-500 to-orange-600', accent: 'bg-amber-500/10 text-amber-600' },
-          { label: 'CA estimé', value: formatPrix(extraKpis.ca), icon: Euro, gradient: 'from-emerald-500 to-teal-600', accent: 'bg-emerald-500/10 text-emerald-600' },
-          { label: 'Taux de réparation', value: `${extraKpis.taux}%`, icon: Percent, gradient: 'from-violet-500 to-fuchsia-600', accent: 'bg-violet-500/10 text-violet-600' },
-        ].map(({ label, value, icon: Icon, gradient, accent }, i) => (
-          <div key={label}
-            className="relative overflow-hidden rounded-2xl border border-white/80 bg-white/70 backdrop-blur-md ring-1 ring-slate-200/50 p-4 hover:shadow-xl hover:shadow-brand-500/5 hover:-translate-y-0.5 transition-all duration-300 animate-in shrink-0 w-[240px] lg:w-auto"
-            style={{ animationDelay: `${i * 60}ms` }}>
-            <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full bg-gradient-to-br ${gradient} opacity-10 blur-2xl`} />
-            <div className="flex items-start justify-between relative">
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{label}</p>
-                <p className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight mt-1 truncate">{value}</p>
-              </div>
-              <div className={`w-10 h-10 rounded-xl ${accent} flex items-center justify-center shrink-0`}>
-                <Icon className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full bg-gradient-to-r ${gradient} rounded-full transition-all`}
-                style={{ width: i === 3 ? `${Math.min(100, extraKpis.taux)}%` : '100%' }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* KPI Grid — 5 cards cliquables */}
+      {/* KPI Grid — 5 cards cliquables (filtres rapides au-dessus du tableau) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         {!kpi && loading ? (
           Array.from({ length: 5 }).map((_, i) => (
@@ -476,81 +464,66 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Commandes en cours badge */}
-      {commandesEnCours > 0 && (
-        <button onClick={() => navigate(`${basePath}/commandes`)}
-          className="card px-4 py-3 mb-6 flex items-center gap-3 hover:shadow-md transition-all group w-full text-left">
-          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-            <Package className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-slate-800">
-              {commandesEnCours} commande{commandesEnCours > 1 ? 's' : ''} de pièces en cours
-            </p>
-            <p className="text-xs text-slate-400">Cliquez pour voir le détail</p>
-          </div>
-          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 transition-colors" />
-        </button>
-      )}
-
-      {/* Pre-registration banner */}
-      {kpi?.pre_enregistres > 0 && (
-        <button onClick={() => { setFilterStatut('Pré-enregistré'); setActiveKpi(null); setShowArchived(false); }}
-          className="card px-4 py-3 mb-6 flex items-center gap-3 hover:shadow-md transition-all group w-full text-left bg-indigo-50 border border-indigo-200">
-          <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-            <Globe className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-indigo-800">
-              {kpi.pre_enregistres} dépôt{kpi.pre_enregistres > 1 ? 's' : ''} à distance en attente de validation
-            </p>
-            <p className="text-xs text-indigo-500">Cliquez pour voir et valider</p>
-          </div>
-          <ChevronRight className="w-4 h-4 text-indigo-300 group-hover:text-indigo-500 transition-colors" />
-        </button>
-      )}
-
-      {/* Interactions clients — 3 clickable counters */}
-      {interactions && interactions.total_actions > 0 && (
-        <div className="card p-4 mb-6 border border-brand-200 bg-brand-50/30">
-          <div className="flex items-center gap-2 mb-3">
-            <MessageCircle className="w-4 h-4 text-brand-600" />
-            <h3 className="text-sm font-semibold text-slate-800">Interactions clients</h3>
-            {interactionFilter && (
-              <button onClick={() => setInteractionFilter(null)} className="ml-auto text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
-                <X className="w-3 h-3" /> Tout afficher
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {interactions.accord_client?.count > 0 && (
-              <button onClick={() => setInteractionFilter(interactionFilter === 'accord_client' ? null : 'accord_client')}
-                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
-                  interactionFilter === 'accord_client' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-300' : 'bg-orange-50 border-orange-200 hover:border-orange-300'
-                }`}>
-                <span className="text-lg">📋</span>
-                <div className="text-left"><p className="text-sm font-bold text-orange-800">{interactions.accord_client.count}</p><p className="text-[10px] text-orange-600">Accord client</p></div>
-              </button>
-            )}
-            {interactions.messages?.count > 0 && (
-              <button onClick={() => setInteractionFilter(interactionFilter === 'messages' ? null : 'messages')}
-                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
-                  interactionFilter === 'messages' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-300' : 'bg-blue-50 border-blue-200 hover:border-blue-300'
-                }`}>
-                <span className="text-lg">💬</span>
-                <div className="text-left"><p className="text-sm font-bold text-blue-800">{interactions.messages.count}</p><p className="text-[10px] text-blue-600">Messages non lus</p></div>
-              </button>
-            )}
-            {interactions.avis?.count > 0 && (
-              <button onClick={() => setInteractionFilter(interactionFilter === 'avis' ? null : 'avis')}
-                className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
-                  interactionFilter === 'avis' ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-300' : 'bg-yellow-50 border-yellow-200 hover:border-yellow-300'
-                }`}>
-                <span className="text-lg">⭐</span>
-                <div className="text-left"><p className="text-sm font-bold text-yellow-800">{interactions.avis.count}</p><p className="text-[10px] text-yellow-600">Avis reçus</p></div>
-              </button>
-            )}
-          </div>
+      {/* ★ Barre actions compacte — regroupe commandes, dépôts distants, interactions */}
+      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0)) && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          {commandesEnCours > 0 && (
+            <button onClick={() => navigate(`${basePath}/commandes`)}
+              className="group inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all text-xs">
+              <span className="w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center"><Package className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" /></span>
+              <span className="font-bold text-amber-700">{commandesEnCours}</span>
+              <span className="text-amber-700">commande{commandesEnCours > 1 ? 's' : ''} pièces</span>
+              <ChevronRight className="w-3 h-3 text-amber-400 group-hover:text-amber-600 transition-colors" aria-hidden="true" />
+            </button>
+          )}
+          {kpi?.pre_enregistres > 0 && (
+            <button onClick={() => { setFilterStatut('Pré-enregistré'); setActiveKpi(null); setShowArchived(false); }}
+              className="group inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:shadow-sm transition-all text-xs">
+              <span className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center"><Globe className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" /></span>
+              <span className="font-bold text-indigo-700">{kpi.pre_enregistres}</span>
+              <span className="text-indigo-700">dépôt{kpi.pre_enregistres > 1 ? 's' : ''} à distance</span>
+              <ChevronRight className="w-3 h-3 text-indigo-400 group-hover:text-indigo-600 transition-colors" aria-hidden="true" />
+            </button>
+          )}
+          {interactions?.accord_client?.count > 0 && (
+            <button onClick={() => setInteractionFilter(interactionFilter === 'accord_client' ? null : 'accord_client')}
+              aria-pressed={interactionFilter === 'accord_client'}
+              className={`inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full border transition-all text-xs ${
+                interactionFilter === 'accord_client' ? 'bg-orange-100 border-orange-400 ring-2 ring-orange-200' : 'bg-orange-50 border-orange-200 hover:border-orange-400'
+              }`}>
+              <span className="text-base leading-none" aria-hidden="true">📋</span>
+              <span className="font-bold text-orange-700">{interactions.accord_client.count}</span>
+              <span className="text-orange-700">accord{interactions.accord_client.count > 1 ? 's' : ''}</span>
+            </button>
+          )}
+          {interactions?.messages?.count > 0 && (
+            <button onClick={() => setInteractionFilter(interactionFilter === 'messages' ? null : 'messages')}
+              aria-pressed={interactionFilter === 'messages'}
+              className={`inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full border transition-all text-xs ${
+                interactionFilter === 'messages' ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-200' : 'bg-blue-50 border-blue-200 hover:border-blue-400'
+              }`}>
+              <span className="text-base leading-none" aria-hidden="true">💬</span>
+              <span className="font-bold text-blue-700">{interactions.messages.count}</span>
+              <span className="text-blue-700">message{interactions.messages.count > 1 ? 's' : ''} client</span>
+            </button>
+          )}
+          {interactions?.avis?.count > 0 && (
+            <button onClick={() => setInteractionFilter(interactionFilter === 'avis' ? null : 'avis')}
+              aria-pressed={interactionFilter === 'avis'}
+              className={`inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full border transition-all text-xs ${
+                interactionFilter === 'avis' ? 'bg-yellow-100 border-yellow-400 ring-2 ring-yellow-200' : 'bg-yellow-50 border-yellow-200 hover:border-yellow-400'
+              }`}>
+              <span className="text-base leading-none" aria-hidden="true">⭐</span>
+              <span className="font-bold text-yellow-700">{interactions.avis.count}</span>
+              <span className="text-yellow-700">avis</span>
+            </button>
+          )}
+          {interactionFilter && (
+            <button onClick={() => setInteractionFilter(null)}
+              className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors">
+              <X className="w-3 h-3" aria-hidden="true" /> Réinitialiser
+            </button>
+          )}
         </div>
       )}
 
@@ -1004,6 +977,29 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* ─── Stats business compactes (en pied de dashboard) ──────── */}
+      <div className="mt-8 pt-6 border-t border-slate-200/70">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Statistiques du jour</p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: "Tickets aujourd'hui", value: extraKpis.todayCount, icon: Sparkles, color: 'text-brand-600', bg: 'bg-brand-500/10' },
+            { label: 'En attente', value: extraKpis.enAttente, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-500/10' },
+            { label: 'CA estimé', value: formatPrix(extraKpis.ca), icon: Euro, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+            { label: 'Taux de réparation', value: `${extraKpis.taux}%`, icon: Percent, color: 'text-violet-600', bg: 'bg-violet-500/10' },
+          ].map(({ label, value, icon: Icon, color, bg }) => (
+            <div key={label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/60 border border-slate-100">
+              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+                <Icon className={`w-4 h-4 ${color}`} aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wider text-slate-400 truncate">{label}</p>
+                <p className="text-base font-bold text-slate-800 tracking-tight truncate">{value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
