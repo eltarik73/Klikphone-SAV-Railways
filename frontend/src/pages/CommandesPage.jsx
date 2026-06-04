@@ -117,7 +117,9 @@ export default function CommandesPage() {
         setToast({ type: 'success', msg: 'Commande créée' });
       }
       resetForm();
-      invalidateCache('commandes');
+      // Une commande pièce peut auto-changer le statut du ticket lié
+      // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
+      invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
     } catch (err) {
       console.error(err);
       setToast({ type: 'error', msg: 'Erreur lors de la sauvegarde' });
@@ -142,7 +144,9 @@ export default function CommandesPage() {
     if (!confirm('Supprimer cette commande ?')) return;
     try {
       await api.deletePart(id);
-      invalidateCache('commandes');
+      // Une commande pièce peut auto-changer le statut du ticket lié
+      // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
+      invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
       setToast({ type: 'success', msg: 'Commande supprimée' });
     } catch (err) {
       console.error(err);
@@ -152,7 +156,9 @@ export default function CommandesPage() {
   const handleStatusChange = async (part, newStatut) => {
     try {
       await api.updatePart(part.id, { statut: newStatut });
-      invalidateCache('commandes');
+      // Une commande pièce peut auto-changer le statut du ticket lié
+      // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
+      invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
       setToast({ type: 'success', msg: `Statut → ${newStatut}` });
 
       // If changed to "Reçu", show notification modal

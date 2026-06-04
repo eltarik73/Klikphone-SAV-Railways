@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
+import { invalidateCache } from '../hooks/useApi';
 import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
@@ -248,6 +249,9 @@ export default function ClientFormPage() {
         setCreatedCode(result.ticket_code);
         setStep(flow.length - 1);
       }
+      // Invalide tous les caches impactés par la création de ticket/achat
+      // → le dashboard se rafraichit instantanément avec le nouveau ticket.
+      invalidateCache('tickets', 'dashboard', 'interactions', 'clients', 'commandes');
     } catch (err) {
       toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
