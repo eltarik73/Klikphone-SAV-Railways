@@ -115,6 +115,98 @@ async def lifespan(app: FastAPI):
 
     # CREATE TABLE statements (don't need exclusive locks)
     for sql in [
+        # ─── TABLES COEUR ────────────────────────────────────────────
+        # Historiquement créées à la main sur la prod ; déclarées ici pour que
+        # le schéma soit reproductible sur une fresh DB (test, restauration).
+        # IF NOT EXISTS → no-op sur la prod existante.
+        """CREATE TABLE IF NOT EXISTS params (
+            cle TEXT PRIMARY KEY,
+            valeur TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS membres_equipe (
+            id SERIAL PRIMARY KEY,
+            nom TEXT NOT NULL,
+            role TEXT DEFAULT 'Technicien',
+            couleur TEXT DEFAULT '#94A3B8',
+            actif INTEGER DEFAULT 1
+        )""",
+        """CREATE TABLE IF NOT EXISTS clients (
+            id SERIAL PRIMARY KEY,
+            nom TEXT,
+            prenom TEXT,
+            telephone TEXT,
+            email TEXT,
+            societe TEXT,
+            points_fidelite INTEGER DEFAULT 0,
+            total_depense DECIMAL(10,2) DEFAULT 0,
+            carte_camby BOOLEAN DEFAULT FALSE,
+            cree_par TEXT DEFAULT '',
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS tickets (
+            id SERIAL PRIMARY KEY,
+            ticket_code TEXT,
+            client_id INTEGER REFERENCES clients(id),
+            categorie TEXT,
+            marque TEXT,
+            modele TEXT,
+            modele_autre TEXT,
+            imei TEXT,
+            panne TEXT,
+            panne_detail TEXT,
+            pin TEXT,
+            pattern TEXT,
+            notes_client TEXT,
+            notes_internes TEXT,
+            commentaire_client TEXT,
+            type_ecran TEXT,
+            statut TEXT DEFAULT 'En attente de diagnostic',
+            statut_paiement TEXT DEFAULT 'Non payé',
+            paye INTEGER DEFAULT 0,
+            devis_estime DECIMAL(10,2) DEFAULT 0,
+            tarif_final DECIMAL(10,2) DEFAULT 0,
+            acompte DECIMAL(10,2) DEFAULT 0,
+            reste_a_payer DECIMAL(10,2) DEFAULT 0,
+            reparation_supp TEXT,
+            prix_supp DECIMAL(10,2) DEFAULT 0,
+            technicien_assigne TEXT,
+            historique TEXT,
+            commande_piece INTEGER DEFAULT 0,
+            msg_whatsapp INTEGER DEFAULT 0,
+            msg_sms INTEGER DEFAULT 0,
+            msg_email INTEGER DEFAULT 0,
+            date_depot TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            date_cloture TEXT,
+            date_recuperation TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS commandes_pieces (
+            id SERIAL PRIMARY KEY,
+            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+            ticket_code TEXT DEFAULT '',
+            description TEXT,
+            fournisseur TEXT,
+            reference TEXT,
+            prix DECIMAL(10,2),
+            statut TEXT DEFAULT 'En attente',
+            notes TEXT,
+            date_commande TEXT,
+            date_reception TEXT,
+            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS catalog_marques (
+            id SERIAL PRIMARY KEY,
+            categorie TEXT NOT NULL,
+            marque TEXT NOT NULL,
+            UNIQUE(categorie, marque)
+        )""",
+        """CREATE TABLE IF NOT EXISTS catalog_modeles (
+            id SERIAL PRIMARY KEY,
+            categorie TEXT NOT NULL,
+            marque TEXT NOT NULL,
+            modele TEXT NOT NULL,
+            UNIQUE(categorie, marque, modele)
+        )""",
         # Audit log : actions admin sensibles (suppression, etc.)
         # Permet de tracer qui a fait quoi (ne pas truster aveuglement le staff).
         """CREATE TABLE IF NOT EXISTS admin_audit_log (
@@ -322,6 +414,24 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_document TEXT DEFAULT 'devis'",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS carte_camby BOOLEAN DEFAULT FALSE",
+        # Colonnes tickets écrites par le code mais absentes des migrations
+        # historiques (toggle_paye, update_ticket, parts auto-sync). Sans elles,
+        # une fresh DB crashe au premier paiement / PATCH ticket.
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS statut_paiement TEXT DEFAULT 'Non payé'",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reste_a_payer DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commentaire_client TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_ecran TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_whatsapp INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_sms INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_email INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS historique TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commande_piece INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_supp TEXT",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS prix_supp DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS paye INTEGER DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS devis_estime DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tarif_final DECIMAL(10,2) DEFAULT 0",
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS acompte DECIMAL(10,2) DEFAULT 0",
     ]:
         try:
             with get_cursor() as cur:
@@ -361,12 +471,32 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_code ON commandes_pieces(ticket_code)",
         "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_statut ON commandes_pieces(statut)",
         "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type ON notes_tickets(ticket_id, type_note)",
+        # Index pour le filtre type_note SEUL (dashboard interactions, polées /30s)
+        # — l'index composite ci-dessus a ticket_id en tête, inutilisable ici.
+        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_note ON notes_tickets(type_note)",
+        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_unread ON notes_tickets(type_note, ticket_id) WHERE (is_read = FALSE OR is_read IS NULL)",
+        # Index chat_messages : unread (recipient) + conversations privées,
+        # polées toutes les 5-8s par poste — sinon seq scan complet à chaque poll.
+        "CREATE INDEX IF NOT EXISTS idx_chat_recipient_created ON chat_messages(recipient, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_chat_private_pair ON chat_messages(sender, recipient, created_at DESC) WHERE is_private = TRUE",
+        # Index notifications_center : unread-count polé /12s par NotificationCenter.
+        "CREATE INDEX IF NOT EXISTS idx_notifc_target_created ON notifications_center(target_user, created_at DESC)",
     ]:
         try:
             with get_cursor() as cur:
                 cur.execute(sql)
         except Exception as e:
             print(f"Warning CREATE INDEX: {e}\n{traceback.format_exc()}")
+
+    # Purge de rétention : chat_messages et notifications_center grossissent sans
+    # limite (miroir notif → chat). On borne à 90 jours pour que les requêtes
+    # unread (polées toutes les 8-12s) restent rapides dans le temps.
+    try:
+        with get_cursor() as cur:
+            cur.execute("DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '90 days'")
+            cur.execute("DELETE FROM notifications_center WHERE created_at < NOW() - INTERVAL '90 days'")
+    except Exception as e:
+        print(f"Warning purge old messages: {e}")
 
     # Seed autocompletion — pannes courantes
     try:

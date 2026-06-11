@@ -3,8 +3,9 @@ API Autocomplete — recherche intelligente et apprentissage des termes.
 Endpoints publics (pas d'authentification requise).
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
+from app.api.auth import get_optional_user
 
 router = APIRouter(prefix="/api/autocomplete", tags=["autocomplete"])
 
@@ -14,10 +15,15 @@ async def search(
     categorie: str = Query(...),
     q: str = Query(""),
     limit: int = Query(8, le=50),
+    user: dict = Depends(get_optional_user),
 ):
-    """Recherche autocomplete par catégorie."""
+    """Recherche autocomplete par catégorie.
+    Les catégories panne/detail/modele sont publiques ; la catégorie 'client'
+    expose des PII (téléphone, email) et exige donc un staff authentifié."""
     if len(q) < 1:
         return []
+    if categorie == "client" and not user:
+        raise HTTPException(401, "Authentification requise pour la recherche client")
 
     pattern = f"%{q}%"
 

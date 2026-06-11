@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
+import { invalidateCache } from '../hooks/useApi';
 import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
 import {
@@ -129,6 +130,8 @@ export default function DepotPage() {
       });
       setCreatedCode(result.ticket_code);
       setStep(5);
+      // Synchro dashboard/clients (la borne tourne dans la même SPA que le staff)
+      invalidateCache('tickets', 'dashboard', 'interactions', 'clients');
     } catch (err) {
       toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {

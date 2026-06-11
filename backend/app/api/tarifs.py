@@ -790,7 +790,7 @@ async def list_tarifs_reparation():
 
 
 @router.put("/reparation/{tarif_id}")
-async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any]):
+async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any], user: dict = Depends(get_current_user)):
     """Met a jour un tarif reparation. Seuls les champs envoyes sont modifies."""
     updates = []
     params = []
@@ -815,7 +815,7 @@ async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any]):
 
 
 @router.post("/reparation/bulk")
-async def bulk_tarifs_reparation(body: List[Dict[str, Any]]):
+async def bulk_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
     """Remplace tous les tarifs reparation par le tableau fourni."""
     all_cols = TARIF_REP_COLS + TARIF_REP_BARRE_COLS
     col_names = ", ".join(all_cols)
@@ -837,7 +837,7 @@ async def bulk_tarifs_reparation(body: List[Dict[str, Any]]):
 
 
 @router.post("/reparation/add")
-async def add_tarif_reparation(body: Dict[str, Any]):
+async def add_tarif_reparation(body: Dict[str, Any], user: dict = Depends(get_current_user)):
     """Ajoute un nouveau modele dans la grille tarifs."""
     modele = body.get("modele", "").strip()
     if not modele:
@@ -857,7 +857,7 @@ async def add_tarif_reparation(body: Dict[str, Any]):
 
 
 @router.delete("/reparation/{tarif_id}")
-async def delete_tarif_reparation(tarif_id: int):
+async def delete_tarif_reparation(tarif_id: int, user: dict = Depends(get_current_user)):
     """Supprime un modele de la grille tarifs."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM tarifs_reparation WHERE id = %s RETURNING id", (tarif_id,))
@@ -868,7 +868,7 @@ async def delete_tarif_reparation(tarif_id: int):
 
 
 @router.post("/reparation/reorder")
-async def reorder_tarifs_reparation(body: List[Dict[str, Any]]):
+async def reorder_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
     """Reordonne les tarifs. Body = [{id, ordre}, ...]"""
     with get_cursor() as cur:
         for item in body:

@@ -4,6 +4,7 @@ Endpoints d'analytics : stats globales, réparations par tech, affluence,
 répartition marques/pannes, évolution CA, temps réparation, conversion, top clients.
 """
 
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -42,9 +43,13 @@ async def verify_admin(data: dict, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
         row = cur.fetchone()
-    stored = row["valeur"] if row else "caramail"
+    stored = row["valeur"] if row else None
 
-    if password != stored:
+    # Fail-closed : si aucun mot de passe admin n'est configuré, on refuse
+    # (plus de fallback hardcodé 'caramail').
+    if not stored:
+        raise HTTPException(503, "Code admin non configuré — définir ADMIN_PASSWORD")
+    if not secrets.compare_digest(str(password), str(stored)):
         raise HTTPException(401, "Identifiants incorrects")
 
     return {"success": True}
@@ -62,9 +67,11 @@ async def change_admin_password(data: dict, user: dict = Depends(get_current_use
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
         row = cur.fetchone()
-    stored = row["valeur"] if row else "caramail"
+    stored = row["valeur"] if row else None
 
-    if old_password != stored:
+    if not stored:
+        raise HTTPException(503, "Code admin non configuré — définir ADMIN_PASSWORD")
+    if not secrets.compare_digest(str(old_password), str(stored)):
         raise HTTPException(401, "Mot de passe actuel incorrect")
 
     with get_cursor() as cur:
@@ -208,9 +215,12 @@ async def get_reparations_par_tech(
         """, {"start": ds, "end_d": de})
         rows = cur.fetchall()
 
-        # Get team colors
-        cur.execute("SELECT nom, couleur FROM equipe WHERE actif = true")
-        team_colors = {r["nom"]: r["couleur"] for r in cur.fetchall()}
+        # Get team colors (fallback silencieux si la table est absente)
+        try:
+            cur.execute("SELECT nom, couleur FROM membres_equipe WHERE actif = 1")
+            team_colors = {r["nom"]: r["couleur"] for r in cur.fetchall()}
+        except Exception:
+            team_colors = {}
 
     # Build pivot data
     techs = set()

@@ -87,7 +87,16 @@ export default function DashboardPage() {
   useEffect(() => {
     prefetch('clients:p:0:20', () => api.getClients({ limit: 20, offset: 0 }), { tags: ['clients'], ttl: 60_000 });
     prefetch('tarifs', () => Promise.all([api.getTarifs(), api.getTarifsStats(), api.getAppleDevices()]).then(([t, s, a]) => ({ tarifs: t, stats: s, appleDevices: a })), { tags: ['tarifs'], ttl: 300_000 });
-    prefetch('config:main', () => api.getConfig(), { tags: ['config'], ttl: 300_000 });
+    // MÊME forme que le fetcher de ConfigPage ({ config, team }) pour éviter une
+    // collision de clé 'config:main' qui crashait ConfigPage (configData.config
+    // undefined si le prefetch avait écrit un tableau brut).
+    prefetch('config:main', async () => {
+      const [configRaw, teamData] = await Promise.all([api.getConfig(), api.getTeam().catch(() => [])]);
+      const configMap = {};
+      if (Array.isArray(configRaw)) configRaw.forEach(c => { configMap[c.cle] = c.valeur; });
+      else Object.assign(configMap, configRaw || {});
+      return { config: configMap, team: teamData };
+    }, { tags: ['config', 'team'], ttl: 300_000 });
   }, []);
 
   // Auto-refresh every 60s, only when tab is visible
@@ -166,9 +175,11 @@ export default function DashboardPage() {
       mutate(prev => prev ? {
         ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, statut: newStatut } : t),
       } : prev);
-      // Force le refetch d'interactions → les points vert/orange se synchronisent
-      // tout de suite avec le nouveau statut (validation_devis, accord_client, etc.)
-      invalidateCache('interactions');
+      // Force le refetch tickets+dashboard+interactions → les KPI (cartes
+      // Diagnostic/Pièces/etc.), les vues filtrées et les points vert/orange se
+      // resynchronisent avec le nouveau statut (le mutate optimiste ne corrige
+      // que la liste, pas les compteurs KPI du payload dashboard).
+      invalidateCache('tickets', 'dashboard', 'interactions');
     } catch (err) {
       console.error(err);
     }

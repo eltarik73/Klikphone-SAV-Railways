@@ -9,13 +9,14 @@ import json
 import time
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
 import httpx
 
 from app.database import get_cursor
+from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -326,8 +327,10 @@ def _get_system_prompt_for_role(role: str) -> str:
 
 
 @router.post("/ai")
-async def chat_ai(msg: AIChatRequest):
-    """Chat avec l'assistant IA Klikphone (Claude + tools BDD)."""
+async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_user)):
+    """Chat avec l'assistant IA Klikphone (Claude + tools BDD).
+    L'identité et le rôle ne sont JAMAIS dérivés du body (usurpables) : le nom
+    vient du JWT, et le rôle manager est vérifié en base via _is_manager_check."""
 
     api_key = _get_param("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -335,13 +338,16 @@ async def chat_ai(msg: AIChatRequest):
 
     model = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-20250514"
 
-    # Role-based tools and prompt
-    user_role = msg.role or ""
+    # Identité dérivée du token (jamais du body)
+    current_user_name = current_user["sub"]
+    # Rôle vérifié en base, pas via msg.role (anti élévation de privilège)
+    with get_cursor() as _cur:
+        user_role = "manager" if _is_manager_check(_cur, current_user_name) else ""
     tools = _get_tools_for_role(user_role)
     system_prompt = _get_system_prompt_for_role(user_role)
 
     # Conversation (in-memory, keyed by conv_id)
-    conv_id = msg.conversation_id or f"conv_{msg.user}_{int(time.time())}"
+    conv_id = msg.conversation_id or f"conv_{current_user_name}_{int(time.time())}"
     if conv_id not in _conversations:
         _conversations[conv_id] = []
 
@@ -434,7 +440,7 @@ async def chat_ai(msg: AIChatRequest):
 
 
 @router.delete("/ai/conversation/{conv_id}")
-async def clear_conversation(conv_id: str):
+async def clear_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
     """Efface une conversation IA."""
     _conversations.pop(conv_id, None)
     return {"status": "ok"}
@@ -445,27 +451,30 @@ async def clear_conversation(conv_id: str):
 # ═════════════════════════════════════════════════════════
 
 @router.post("/team/send")
-async def send_team_message(msg: TeamMessageCreate):
-    """Envoie un message d'equipe (general ou prive)."""
+async def send_team_message(msg: TeamMessageCreate, current_user: dict = Depends(get_current_user)):
+    """Envoie un message d'equipe (general ou prive).
+    L'expéditeur est TOUJOURS dérivé du JWT (msg.sender du body est ignoré)."""
     _ensure_table()
+    sender = current_user["sub"]
     is_private = msg.recipient != "all"
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO chat_messages (sender, recipient, message, is_private)
             VALUES (%s, %s, %s, %s)
             RETURNING id, created_at
-        """, (msg.sender, msg.recipient, msg.message, is_private))
+        """, (sender, msg.recipient, msg.message, is_private))
         row = cur.fetchone()
     return {"status": "ok", "id": row["id"], "created_at": row["created_at"].isoformat()}
 
 
 @router.get("/team/messages")
 async def get_team_messages(
-    user: str,
     channel: str = Query("all", description="'general' pour messages publics, 'all' pour tout"),
     limit: int = Query(50, le=200),
+    current_user: dict = Depends(get_current_user),
 ):
-    """Recupere les messages d'equipe visibles par l'utilisateur."""
+    """Recupere les messages d'equipe visibles par l'utilisateur (JWT)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
@@ -517,61 +526,66 @@ async def get_team_messages(
 
 
 @router.get("/team/contacts")
-async def get_contacts(user: str):
+async def get_contacts(current_user: dict = Depends(get_current_user)):
     """Liste des contacts avec dernier message et nombre de non lus (pour onglet Prive)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
-        # Get all active team members except current user
+        # Membres actifs (sauf soi-même)
         cur.execute(
             "SELECT nom, role, couleur FROM membres_equipe WHERE actif = 1 AND nom != %s ORDER BY nom",
             (user,),
         )
-        members = []
-        for r in cur.fetchall():
-            members.append({
-                "name": r["nom"],
-                "role": r["role"] or "Technicien",
-                "color": r["couleur"] or "#94a3b8",
-            })
+        members = [
+            {"name": r["nom"], "role": r["role"] or "Technicien", "color": r["couleur"] or "#94a3b8"}
+            for r in cur.fetchall()
+        ]
 
-        # For each contact, get last private message + unread count
-        for member in members:
-            contact = member["name"]
+        # ─── 1 seule requête : dernier message privé par contact (DISTINCT ON) ─
+        # Remplace le N requêtes de l'ancienne boucle (polée toutes les 5s).
+        cur.execute("""
+            SELECT DISTINCT ON (contact) contact, message, created_at FROM (
+                SELECT
+                    CASE WHEN sender = %s THEN recipient ELSE sender END AS contact,
+                    message, created_at
+                FROM chat_messages
+                WHERE is_private = TRUE AND (sender = %s OR recipient = %s)
+            ) sub
+            ORDER BY contact, created_at DESC
+        """, (user, user, user))
+        last_by_contact = {r["contact"]: r for r in cur.fetchall()}
 
-            # Last private message between user and contact
-            cur.execute("""
-                SELECT message, created_at, sender FROM chat_messages
-                WHERE is_private = TRUE
-                  AND ((sender = %s AND recipient = %s) OR (sender = %s AND recipient = %s))
-                ORDER BY created_at DESC LIMIT 1
-            """, (user, contact, contact, user))
-            row = cur.fetchone()
-            if row:
-                msg_text = row["message"]
-                member["last_message"] = (msg_text[:40] + "...") if len(msg_text) > 40 else msg_text
-                member["last_message_time"] = row["created_at"].strftime("%H:%M") if row["created_at"] else None
-                member["last_activity"] = row["created_at"].isoformat() if row["created_at"] else None
-            else:
-                member["last_message"] = None
-                member["last_message_time"] = None
-                member["last_activity"] = None
+        # ─── 1 seule requête : non-lus par expéditeur (vers moi) ─────────────
+        cur.execute("""
+            SELECT sender, COUNT(*) AS count FROM chat_messages
+            WHERE recipient = %s AND is_private = TRUE
+              AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
+            GROUP BY sender
+        """, (user, user))
+        unread_by_sender = {r["sender"]: r["count"] for r in cur.fetchall()}
 
-            # Unread private messages FROM this contact TO current user
-            cur.execute("""
-                SELECT COUNT(*) as count FROM chat_messages
-                WHERE sender = %s AND recipient = %s AND is_private = TRUE
-                  AND (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
-            """, (contact, user, user))
-            member["unread"] = cur.fetchone()["count"]
+    for member in members:
+        contact = member["name"]
+        row = last_by_contact.get(contact)
+        if row:
+            msg_text = row["message"]
+            member["last_message"] = (msg_text[:40] + "...") if len(msg_text) > 40 else msg_text
+            member["last_message_time"] = row["created_at"].strftime("%H:%M") if row["created_at"] else None
+            member["last_activity"] = row["created_at"].isoformat() if row["created_at"] else None
+        else:
+            member["last_message"] = None
+            member["last_message_time"] = None
+            member["last_activity"] = None
+        member["unread"] = unread_by_sender.get(contact, 0)
 
-    # Sort by last activity (most recent first), contacts with no messages last
     members.sort(key=lambda m: m.get("last_activity") or "", reverse=True)
     return members
 
 
 @router.get("/team/conversation")
-async def get_conversation(user: str, contact: str = Query(alias="with")):
-    """Recupere les messages prives entre deux utilisateurs."""
+async def get_conversation(contact: str = Query(alias="with"), current_user: dict = Depends(get_current_user)):
+    """Recupere les messages prives entre l'utilisateur connecté (JWT) et un contact."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         cur.execute("""
@@ -592,8 +606,9 @@ async def get_conversation(user: str, contact: str = Query(alias="with")):
 
 
 @router.put("/team/read")
-async def mark_as_read(user: str, contact: Optional[str] = None):
+async def mark_as_read(contact: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Marque les messages comme lus. Si contact fourni, seulement la conv privee."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
@@ -608,7 +623,7 @@ async def mark_as_read(user: str, contact: Optional[str] = None):
                 END
                 WHERE sender = %s AND recipient = %s
                   AND is_private = TRUE
-                  AND (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                  AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
             """, (user, user, contact, user, user))
         elif is_mgr:
             # Manager: mark all visible messages as read
@@ -618,7 +633,7 @@ async def mark_as_read(user: str, contact: Optional[str] = None):
                     WHEN read_by = '' OR read_by IS NULL THEN %s
                     ELSE read_by || ',' || %s
                 END
-                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                WHERE ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
             """, (user, user, user, user))
         else:
@@ -629,7 +644,7 @@ async def mark_as_read(user: str, contact: Optional[str] = None):
                     WHEN read_by = '' OR read_by IS NULL THEN %s
                     ELSE read_by || ',' || %s
                 END
-                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                WHERE ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
                   AND (recipient = 'all' OR recipient = %s)
             """, (user, user, user, user, user))
@@ -638,8 +653,9 @@ async def mark_as_read(user: str, contact: Optional[str] = None):
 
 
 @router.get("/team/unread")
-async def get_unread_count(user: str):
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
     """Nombre de messages non lus pour cet utilisateur (general seulement)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
@@ -647,14 +663,14 @@ async def get_unread_count(user: str):
             cur.execute("""
                 SELECT COUNT(*) as count FROM chat_messages
                 WHERE recipient = 'all'
-                  AND (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                  AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
             """, (user, user))
         else:
             cur.execute("""
                 SELECT COUNT(*) as count FROM chat_messages
                 WHERE recipient = 'all'
-                  AND (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                  AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
             """, (user, user))
         general_unread = cur.fetchone()["count"]
@@ -662,8 +678,9 @@ async def get_unread_count(user: str):
 
 
 @router.get("/team/unread/total")
-async def get_total_unread(user: str):
+async def get_total_unread(current_user: dict = Depends(get_current_user)):
     """Nombre total de messages non lus (general + prive)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
@@ -673,7 +690,7 @@ async def get_total_unread(user: str):
                   COUNT(*) FILTER (WHERE recipient = 'all') as general,
                   COUNT(*) FILTER (WHERE is_private = TRUE) as private
                 FROM chat_messages
-                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                WHERE ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
             """, (user, user))
         else:
@@ -682,7 +699,7 @@ async def get_total_unread(user: str):
                   COUNT(*) FILTER (WHERE recipient = 'all') as general,
                   COUNT(*) FILTER (WHERE is_private = TRUE AND recipient = %s) as private
                 FROM chat_messages
-                WHERE (read_by NOT LIKE '%%' || %s || '%%' OR read_by = '' OR read_by IS NULL)
+                WHERE ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
                   AND sender != %s
                   AND (recipient = 'all' OR recipient = %s)
             """, (user, user, user, user))

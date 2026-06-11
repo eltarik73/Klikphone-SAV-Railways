@@ -9,7 +9,8 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from app.api.auth import get_current_user
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from psycopg2.extras import execute_values
@@ -644,7 +645,7 @@ def list_iphones(
 
 
 @router.post("")
-def create_iphone(payload: IphoneCreate):
+def create_iphone(payload: IphoneCreate, user: dict = Depends(get_current_user)):
     """Crée une entrée stock iPhone (mode admin)."""
     with get_cursor() as cur:
         cur.execute(
@@ -668,7 +669,7 @@ def create_iphone(payload: IphoneCreate):
 
 
 @router.put("/{iphone_id}")
-def update_iphone(iphone_id: int, payload: IphoneUpdate):
+def update_iphone(iphone_id: int, payload: IphoneUpdate, user: dict = Depends(get_current_user)):
     """Met à jour une entrée stock (mode admin)."""
     updates = payload.dict(exclude_unset=True)
     if not updates:
@@ -687,7 +688,7 @@ def update_iphone(iphone_id: int, payload: IphoneUpdate):
 
 
 @router.delete("/{iphone_id}")
-def delete_iphone(iphone_id: int):
+def delete_iphone(iphone_id: int, user: dict = Depends(get_current_user)):
     """Soft delete (active = false), mode admin."""
     with get_cursor() as cur:
         cur.execute(
@@ -705,7 +706,7 @@ def delete_iphone(iphone_id: int):
 # Video generation
 # ---------------------------------------------------------------------------
 @router.post("/generate-video")
-def generate_video(payload: GenerateVideoRequest):
+def generate_video(payload: GenerateVideoRequest, user: dict = Depends(get_current_user)):
     """Génère une vidéo Story 9:16 à partir des telephones selectionnes.
     Source : iphone_tarifs + smartphones_tarifs (IDs prefixes it_ / st_)."""
     if not payload.ids:

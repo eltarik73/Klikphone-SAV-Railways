@@ -150,8 +150,8 @@ async def get_client(client_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/tel/{telephone}")
-async def get_client_by_tel(telephone: str):
-    """Recherche un client par téléphone (public — formulaire client)."""
+async def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
+    """Recherche un client par téléphone (réservé au staff — renvoie la fiche complète)."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM clients WHERE telephone = %s", (telephone,))
         row = cur.fetchone()

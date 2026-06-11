@@ -509,12 +509,31 @@ async def delete_devis(devis_id: int, user: dict = Depends(get_current_user)):
 
 @router.post("/{devis_id}/convert")
 async def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
-    """Convertit un devis accepté en ticket SAV."""
+    """Convertit un devis accepté en ticket SAV.
+    Idempotent et protégé : un devis déjà converti renvoie son ticket existant,
+    et seul un devis 'Accepté' (ou 'Envoyé') peut être converti — empêche les
+    doubles tickets (double-clic/retry) et la conversion d'un devis refusé."""
     with get_cursor() as cur:
-        cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
+        cur.execute("SELECT * FROM devis WHERE id = %s FOR UPDATE", (devis_id,))
         devis = cur.fetchone()
         if not devis:
             raise HTTPException(404, "Devis non trouvé")
+
+        # Idempotence : déjà converti → renvoyer le ticket existant
+        if devis.get("statut") == "Converti":
+            existing_tid = devis.get("ticket_id")
+            if existing_tid:
+                return {
+                    "ok": True,
+                    "ticket_id": existing_tid,
+                    "ticket_code": f"KP-{existing_tid:06d}",
+                    "already_converted": True,
+                }
+            raise HTTPException(409, "Devis marqué converti sans ticket associé")
+
+        # Garde de statut : seul un devis accepté ou envoyé est convertible
+        if devis.get("statut") not in ("Accepté", "Envoyé"):
+            raise HTTPException(409, "Seul un devis accepté peut être converti")
 
         # Create client if needed
         client_id = devis.get("client_id")

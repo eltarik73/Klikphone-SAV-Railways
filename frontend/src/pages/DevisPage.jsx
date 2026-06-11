@@ -259,7 +259,8 @@ export default function DevisPage() {
     try {
       const res = await api.convertDevisToTicket(id);
       alert(`Ticket créé: ${res.ticket_code}`);
-      invalidateCache('devis', 'tickets');
+      // 'clients' : la conversion peut créer un nouveau client en base
+      invalidateCache('devis', 'tickets', 'clients', 'interactions');
       loadData();
       setShowDetail(false);
     } catch (e) {

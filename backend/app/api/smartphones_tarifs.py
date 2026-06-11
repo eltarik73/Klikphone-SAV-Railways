@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from app.api.auth import get_current_user
 from fpdf import FPDF
 from PIL import Image
 from psycopg2.extras import execute_values
@@ -218,7 +219,7 @@ def list_smartphones(active_only: bool = True):
 
 
 @router.post("")
-def create_smartphone(payload: SmartphoneCreate):
+def create_smartphone(payload: SmartphoneCreate, user: dict = Depends(get_current_user)):
     """Crée un nouveau smartphone (mode admin)."""
     with get_cursor() as cur:
         cur.execute(
@@ -265,7 +266,7 @@ def _invalidate_phones_cache():
 
 
 @router.patch("/{tarif_id}")
-def update_smartphone(tarif_id: int, payload: SmartphoneUpdate):
+def update_smartphone(tarif_id: int, payload: SmartphoneUpdate, user: dict = Depends(get_current_user)):
     data = payload.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")
@@ -285,7 +286,7 @@ def update_smartphone(tarif_id: int, payload: SmartphoneUpdate):
 
 
 @router.delete("/{tarif_id}")
-def delete_smartphone(tarif_id: int):
+def delete_smartphone(tarif_id: int, user: dict = Depends(get_current_user)):
     """Soft delete (active = false)."""
     with get_cursor() as cur:
         cur.execute(
@@ -310,7 +311,7 @@ class GenerateImageRequest(BaseModel):
 
 
 @router.post("/generate-image")
-def generate_image(payload: GenerateImageRequest):
+def generate_image(payload: GenerateImageRequest, user: dict = Depends(get_current_user)):
     """Recherche la vraie photo officielle du smartphone sur le web via
     DuckDuckGo Image Search (JSON API non-documentée mais stable).
 

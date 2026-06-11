@@ -3,6 +3,7 @@ API Config — gestion des paramètres boutique (table params).
 """
 
 import json
+import os
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Optional
@@ -237,16 +238,20 @@ async def save_message_templates(data: dict, user: dict = Depends(get_current_us
     return {"ok": True}
 
 
+# Valeurs par défaut de la config caisse. Les secrets (mot de passe, clé API)
+# NE sont PLUS hardcodés : ils sont lus depuis les variables d'environnement
+# Railway (os.getenv). Les valeurs en base (table params) restent prioritaires
+# côté get_caisse_config. Définir sur Railway : CAISSE_PASSWORD, CAISSE_APIKEY.
 CAISSE_DEFAULTS = {
-    "CAISSE_ENABLED": "1",
-    "CAISSE_LOGIN": "klikphone",
-    "CAISSE_PASSWORD": "caramail",
-    "CAISSE_APIKEY": "f4594b29685f15d9a755acbfde6571fc16a4c932",
-    "CAISSE_SHOPID": "38373",
-    "CAISSE_CB_ID": "528273",
-    "CAISSE_ESP_ID": "528275",
-    "CAISSE_ID": "49343",
-    "CAISSE_USER_ID": "42867",
+    "CAISSE_ENABLED": os.getenv("CAISSE_ENABLED", "1"),
+    "CAISSE_LOGIN": os.getenv("CAISSE_LOGIN", "klikphone"),
+    "CAISSE_PASSWORD": os.getenv("CAISSE_PASSWORD", ""),
+    "CAISSE_APIKEY": os.getenv("CAISSE_APIKEY", ""),
+    "CAISSE_SHOPID": os.getenv("CAISSE_SHOPID", "38373"),
+    "CAISSE_CB_ID": os.getenv("CAISSE_CB_ID", "528273"),
+    "CAISSE_ESP_ID": os.getenv("CAISSE_ESP_ID", "528275"),
+    "CAISSE_ID": os.getenv("CAISSE_ID", "49343"),
+    "CAISSE_USER_ID": os.getenv("CAISSE_USER_ID", "42867"),
 }
 
 CAISSE_KEYS = list(CAISSE_DEFAULTS.keys())

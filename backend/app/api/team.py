@@ -10,10 +10,20 @@ from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 
-# Code admin manager : lu depuis l'env var ADMIN_CODE_MANAGER (à définir sur
-# Railway). Fallback sur l'ancienne valeur pour ne pas casser l'existant ; à
-# retirer une fois la var d'env configurée.
-ADMIN_CODE_MANAGER = os.getenv("ADMIN_CODE_MANAGER", "caramail")
+# Code admin manager : lu UNIQUEMENT depuis l'env var ADMIN_CODE_MANAGER.
+# Fail-closed : si la variable n'est pas définie, la création/modification de
+# membres au rôle Manager est refusée (plus de fallback hardcodé).
+# ⚠️ Poser ADMIN_CODE_MANAGER sur Railway AVANT de déployer.
+import secrets as _secrets
+ADMIN_CODE_MANAGER = os.getenv("ADMIN_CODE_MANAGER")
+
+
+def _check_manager_code(admin_code: str):
+    """Refuse si le code manager n'est pas configuré (503) ou incorrect (403)."""
+    if not ADMIN_CODE_MANAGER:
+        raise HTTPException(503, "Code Manager non configuré (ADMIN_CODE_MANAGER)")
+    if not _secrets.compare_digest(str(admin_code), str(ADMIN_CODE_MANAGER)):
+        raise HTTPException(403, "Code administrateur incorrect pour le rôle Manager")
 
 
 @router.get("", response_model=list[MembreEquipeOut])
@@ -40,8 +50,7 @@ async def create_member(
 ):
     """Ajoute un membre à l'équipe."""
     if data.role and "manager" in data.role.lower():
-        if admin_code != ADMIN_CODE_MANAGER:
-            raise HTTPException(403, "Code administrateur incorrect pour le rôle Manager")
+        _check_manager_code(admin_code)
     with get_cursor() as cur:
         cur.execute(
             "INSERT INTO membres_equipe (nom, role, couleur) VALUES (%s, %s, %s) RETURNING id",
@@ -60,8 +69,7 @@ async def update_member(
 ):
     """Met à jour un membre."""
     if data.role and "manager" in data.role.lower():
-        if admin_code != ADMIN_CODE_MANAGER:
-            raise HTTPException(403, "Code administrateur incorrect pour le rôle Manager")
+        _check_manager_code(admin_code)
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
     if not updates:
         return {"ok": True}

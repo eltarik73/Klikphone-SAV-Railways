@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { useApi, invalidateCache } from '../hooks/useApi';
+import { useApi, invalidateCache, clearCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
@@ -146,6 +146,11 @@ export default function ConfigPage() {
       const params = Object.entries(config).map(([cle, valeur]) => ({ cle, valeur: valeur || '' }));
       await api.setParams(params);
       initialConfigRef.current = { ...config };
+      // Rafraîchit l'entrée de cache 'config:main' avec les valeurs sauvegardées
+      // (sinon le cache frais avec les ANCIENNES valeurs écrase l'écran au retour
+      // sur la page, et un re-save renvoie les anciennes valeurs en base).
+      mutateConfig(prev => prev ? { ...prev, config: { ...config } } : prev);
+      invalidateCache('config');
       toast.success('Configuration enregistrée');
     } catch (err) {
       toast.error('Erreur sauvegarde');
@@ -348,7 +353,10 @@ export default function ConfigPage() {
       const result = await api.importBackup(data);
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
       toast.success(`Backup restauré : ${total} enregistrements importés`);
-      invalidateCache('config', 'team');
+      // Une restauration remplace TOUTES les données : on vide tout le cache
+      // (sinon dashboard/clients/commandes affichent les données d'avant le restore).
+      clearCache();
+      invalidateCache('config', 'team', 'tickets', 'dashboard', 'clients', 'commandes', 'interactions');
     } catch (err) {
       toast.error(err.message || 'Erreur import backup');
     } finally {

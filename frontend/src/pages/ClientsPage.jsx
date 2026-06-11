@@ -103,7 +103,7 @@ export default function ClientsPage() {
     try {
       await api.updateClient(selectedClient.id, editForm);
       setEditMode(false);
-      invalidateCache('clients');
+      invalidateCache('clients', 'tickets', 'dashboard');
       setSelectedClient(prev => ({ ...prev, ...editForm }));
     } catch (err) {
       console.error(err);
@@ -115,7 +115,7 @@ export default function ClientsPage() {
     try {
       await api.deleteClient(id);
       setSelectedClient(null);
-      invalidateCache('clients');
+      invalidateCache('clients', 'tickets', 'dashboard');
     } catch (err) {
       console.error(err);
     }

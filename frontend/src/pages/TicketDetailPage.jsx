@@ -23,7 +23,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar, Clock,
   Zap, Edit3, X, CheckCircle2, Sparkles,
-  Flag, PhoneCall, Percent, RotateCcw, Globe,
+  Flag, PhoneCall, Percent, RotateCcw, Globe, Star,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -590,11 +590,20 @@ export default function TicketDetailPage() {
   };
 
   const handleDeleteTicket = async () => {
-    if (deleteCode !== 'caramail') {
-      setDeleteError('Code incorrect');
+    if (!deleteCode) {
+      setDeleteError('Code requis');
       return;
     }
     setDeleting(true);
+    setDeleteError('');
+    try {
+      // Vérification du code admin côté serveur (plus de comparaison hardcodée).
+      await api.verifyAdmin('admin', deleteCode);
+    } catch {
+      setDeleteError('Code incorrect');
+      setDeleting(false);
+      return;
+    }
     try {
       await api.deleteTicket(id);
       toast.success('Ticket supprimé');
@@ -1373,7 +1382,8 @@ export default function TicketDetailPage() {
                                 if (e.target.checked) {
                                   try {
                                     await api.createPart({ ticket_id: ticket.id, ticket_code: ticket.ticket_code, description: line.label, fournisseur: 'Mobilax', prix: parseFloat(line.prix) || 0 });
-                                    invalidateCache('commandes');
+                                    // createPart pose commande_piece=1 sur le ticket → invalider tickets+dashboard aussi
+                                    invalidateCache('commandes', 'tickets', 'dashboard');
                                     const cmds = await api.getPartsByTicket(ticket.id);
                                     setCommandes(cmds || []);
                                     toast.success('Pièce ajoutée aux commandes');

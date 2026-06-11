@@ -4,8 +4,9 @@ API Commandes de pièces.
 
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException
 from app.database import get_cursor
+from app.api.auth import get_current_user
 from app.models import CommandePieceCreate, CommandePieceUpdate, CommandePieceOut
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
@@ -19,6 +20,7 @@ async def list_parts(
     ticket_id: Optional[int] = None,
     statut: Optional[str] = None,
     search: Optional[str] = None,
+    user: dict = Depends(get_current_user),
 ):
     """Liste les commandes de pièces avec filtres.
     statut=en_cours → only active, statut=cloturees → only terminal.
@@ -75,7 +77,7 @@ async def list_parts(
 
 
 @router.post("", response_model=dict)
-async def create_part(data: CommandePieceCreate):
+async def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user)):
     """Crée une commande de pièce."""
     ticket_id = data.ticket_id
 
@@ -146,6 +148,7 @@ async def create_part_auto(data: dict):
 async def update_part(
     commande_id: int,
     data: CommandePieceUpdate,
+    user: dict = Depends(get_current_user),
 ):
     """Met à jour une commande de pièce."""
     updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
@@ -195,7 +198,7 @@ async def update_part(
 
 
 @router.delete("/{commande_id}", response_model=dict)
-async def delete_part(commande_id: int):
+async def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
     """Supprime une commande de pièce."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM commandes_pieces WHERE id = %s", (commande_id,))

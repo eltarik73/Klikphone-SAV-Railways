@@ -112,10 +112,10 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
         t = _get_ticket_by_code(cur, ticket_code)
         ticket_id = t["id"]
 
-        # Récupère détails ticket + client pour la notif
+        # Récupère détails ticket + client pour la notif (+ statut courant)
         cur.execute(
             """
-            SELECT t.technicien_assigne, t.panne,
+            SELECT t.statut, t.technicien_assigne, t.panne,
                    c.prenom AS client_prenom, c.nom AS client_nom
             FROM tickets t
             LEFT JOIN clients c ON c.id = t.client_id
@@ -124,19 +124,33 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
             (ticket_id,),
         )
         det = cur.fetchone() or {}
+        statut_courant = det.get("statut") or ""
         technicien = det.get("technicien_assigne")
         panne = det.get("panne") or ""
         prenom = det.get("client_prenom") or ""
         nom = det.get("client_nom") or ""
         client_label = (f"{prenom} {nom}".strip()) or "Le client"
 
+        # ─── Garde de statut : on n'accepte la validation que si le ticket est
+        # réellement en attente d'accord client. Bloque le rejeu (re-clic sur un
+        # vieux lien) qui ressusciterait un ticket Clôturé/Rendu.
+        if statut_courant != "En attente d'accord client":
+            raise HTTPException(409, "Ce ticket n'est plus en attente d'accord client")
+
         if body.accepte:
             contenu = "✅ Devis accepté par le client"
-            # Passer en "En cours de réparation"
+            # Passer en "En cours de réparation" + démarrer le timer réparation
+            # + synchroniser les pièces (reproduit change_status pour la cohérence).
             cur.execute(
-                "UPDATE tickets SET statut = 'En cours de réparation', date_maj = %s, "
+                "UPDATE tickets SET statut = 'En cours de réparation', "
+                "reparation_debut = %s, reparation_fin = NULL, date_maj = %s, "
                 "historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
-                (now, f"[{ts}] Devis accepté par le client", ticket_id),
+                (now, now, f"[{ts}] Devis accepté par le client", ticket_id),
+            )
+            cur.execute(
+                "UPDATE commandes_pieces SET statut = 'En réparation' "
+                "WHERE ticket_id = %s AND statut = 'Reçu'",
+                (ticket_id,),
             )
         else:
             contenu = "❌ Devis refusé par le client"

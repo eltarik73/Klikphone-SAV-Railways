@@ -80,7 +80,7 @@ def get_iphone_upload(filename: str):
 
 
 @router.post("/{tarif_id}/upload-image")
-async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...)):
+async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
     """Upload une photo personnalisee depuis le navigateur de l'admin.
 
     - Accepte JPEG, PNG, WebP (max 5 MB)
@@ -154,7 +154,7 @@ class GenerateIphoneImageRequest(BaseModel):
 
 
 @router.post("/generate-image")
-def generate_iphone_image(payload: GenerateIphoneImageRequest):
+def generate_iphone_image(payload: GenerateIphoneImageRequest, user: dict = Depends(get_current_user)):
     """Cherche une vraie photo d'iPhone sur le web via DuckDuckGo Images.
 
     Meme logique que /api/smartphones-tarifs/generate-image :
@@ -258,7 +258,7 @@ class GenerateAiImageRequest(BaseModel):
 
 
 @router.post("/generate-ai-image")
-def generate_ai_iphone_image(payload: GenerateAiImageRequest):
+def generate_ai_iphone_image(payload: GenerateAiImageRequest, user: dict = Depends(get_current_user)):
     """Genere des photos d'iPhone via Pollinations.ai (image.pollinations.ai).
 
     Gratuit, pas de cle API. On genere `count` variants (4 par defaut) en
@@ -928,7 +928,7 @@ def list_tarifs():
 
 
 @router.patch("/{tarif_id}")
-def update_tarif(tarif_id: int, payload: IphoneTarifUpdate):
+def update_tarif(tarif_id: int, payload: IphoneTarifUpdate, user: dict = Depends(get_current_user)):
     data = payload.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")

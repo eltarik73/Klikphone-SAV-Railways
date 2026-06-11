@@ -879,7 +879,7 @@ async def log_message(
 
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
-async def delete_ticket(ticket_id: int):
+async def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
     """Supprime un ticket et toutes ses données liées (cascade).
     Idempotent : retourne toujours {"ok": true} même si le ticket n'existe pas.
     """

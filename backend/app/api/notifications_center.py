@@ -12,10 +12,11 @@ Pas d'auth obligatoire — le scoping se fait par paramètre `user` (cohérent a
 
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/notifications-center", tags=["notifications-center"])
 
@@ -173,15 +174,17 @@ class NotificationOut(BaseModel):
 
 @router.get("")
 async def list_notifications(
-    user: str = Query(..., description="Nom du membre connecté"),
     unread_only: bool = False,
     limit: int = Query(30, le=100),
+    current_user: dict = Depends(get_current_user),
 ):
     """
-    Liste les notifs visibles pour cet utilisateur.
+    Liste les notifs visibles pour le membre connecté (dérivé du JWT).
     - target_user IS NULL → visible par tous
     - target_user = user → visible uniquement par lui
+    Le paramètre Query 'user' éventuellement envoyé par d'anciens bundles est ignoré.
     """
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         if unread_only:
@@ -220,8 +223,9 @@ async def list_notifications(
 
 
 @router.get("/unread-count")
-async def unread_count(user: str = Query(...)):
-    """Renvoie le nombre de notifs non lues pour cet utilisateur."""
+async def unread_count(current_user: dict = Depends(get_current_user)):
+    """Renvoie le nombre de notifs non lues pour le membre connecté (JWT)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         cur.execute(
@@ -237,8 +241,9 @@ async def unread_count(user: str = Query(...)):
 
 
 @router.post("/{notif_id}/read")
-async def mark_read(notif_id: int, user: str = Query(...)):
-    """Marque une notif comme lue par cet utilisateur."""
+async def mark_read(notif_id: int, current_user: dict = Depends(get_current_user)):
+    """Marque une notif comme lue par le membre connecté (JWT)."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         cur.execute(
@@ -261,35 +266,32 @@ async def mark_read(notif_id: int, user: str = Query(...)):
 
 
 @router.post("/mark-all-read")
-async def mark_all_read(user: str = Query(...)):
-    """Marque toutes les notifs visibles comme lues par cet utilisateur."""
+async def mark_all_read(current_user: dict = Depends(get_current_user)):
+    """Marque toutes les notifs visibles comme lues par le membre connecté.
+    Un seul UPDATE (au lieu d'une boucle SELECT+UPDATE) — le format ',u1,u2,'
+    est préservé : read_by non vide commence et finit toujours par ','."""
+    user = current_user["sub"]
     _ensure_table()
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT id, read_by FROM notifications_center
+            UPDATE notifications_center
+            SET read_by = CASE
+                WHEN read_by IS NULL OR read_by = '' THEN ',' || %s || ','
+                ELSE read_by || %s || ','
+            END
             WHERE (target_user IS NULL OR target_user = %s)
               AND (read_by NOT LIKE %s OR read_by = '' OR read_by IS NULL)
             """,
-            (user, f"%,{user},%"),
+            (user, user, user, f"%,{user},%"),
         )
-        rows = cur.fetchall() or []
-        for r in rows:
-            read_by = (r.get("read_by") or "").strip(",")
-            users = [u for u in read_by.split(",") if u]
-            if user not in users:
-                users.append(user)
-            new_read_by = "," + ",".join(users) + "," if users else ""
-            cur.execute(
-                "UPDATE notifications_center SET read_by = %s WHERE id = %s",
-                (new_read_by, r["id"]),
-            )
-    return {"ok": True, "marked": len(rows)}
+        marked = cur.rowcount
+    return {"ok": True, "marked": marked}
 
 
 @router.delete("/{notif_id}")
-async def delete_notification(notif_id: int):
-    """Supprime une notification (admin)."""
+async def delete_notification(notif_id: int, current_user: dict = Depends(get_current_user)):
+    """Supprime une notification (réservé au staff connecté)."""
     _ensure_table()
     with get_cursor() as cur:
         cur.execute("DELETE FROM notifications_center WHERE id = %s", (notif_id,))
