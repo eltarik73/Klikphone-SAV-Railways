@@ -81,12 +81,45 @@ def _get_param(key: str) -> str:
     return row["valeur"] if row else ""
 
 
+# Police core fpdf2 (Helvetica) = Latin-1 uniquement. On translittère les
+# caractères typographiques courants (apostrophe courbe, tirets, €, …) insérés
+# par les claviers Mac/iOS, sinon fpdf2 lève FPDFUnicodeEncodingException.
+_PDF_REPL = {
+    "’": "'", "‘": "'", "ʼ": "'",
+    "“": '"', "”": '"', "«": '"', "»": '"',
+    "–": "-", "—": "-", "−": "-",
+    "…": "...", "€": "EUR", " ": " ", " ": " ",
+    "•": "-", "→": "->", "œ": "oe", "Œ": "OE",
+}
+
+
+def _pdf_safe(s) -> str:
+    """Rend une chaîne sûre pour la police core Helvetica (Latin-1)."""
+    if not s:
+        return ""
+    out = str(s)
+    for k, v in _PDF_REPL.items():
+        out = out.replace(k, v)
+    # Tout caractère restant hors Latin-1 est remplacé par '?' (jamais de crash)
+    return out.encode("latin-1", "replace").decode("latin-1")
+
+
 def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     """Genere un PDF A4 professionnel de l'attestation - tient sur 1 page."""
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
     LM = 18
     RM = 192
+    # Champs utilisateur nettoyés pour la police Latin-1
+    s_nom = _pdf_safe(data.nom)
+    s_prenom = _pdf_safe(data.prenom)
+    s_adresse = _pdf_safe(data.adresse)
+    s_marque = _pdf_safe(data.marque)
+    s_modele = _pdf_safe(data.modele)
+    s_imei = _pdf_safe(data.imei)
+    s_etat = _pdf_safe(data.etat)
+    s_motif = _pdf_safe(data.motif)
+    s_cr = _pdf_safe(data.compte_rendu)
 
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=False)
@@ -161,34 +194,34 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
 
     # ── 2 colonnes : Proprietaire | Appareil ──
     section("PROPRIETAIRE")
-    field("Nom", data.nom)
-    field("Prenom", data.prenom)
-    if data.adresse:
-        field("Adresse", data.adresse)
+    field("Nom", s_nom)
+    field("Prenom", s_prenom)
+    if s_adresse:
+        field("Adresse", s_adresse)
     pdf.ln(3)
 
     section("APPAREIL")
-    field("Marque", data.marque)
-    field("Modele", data.modele)
-    if data.imei:
-        field("IMEI / N. serie", data.imei)
-    if data.etat:
-        field("Etat", data.etat)
+    field("Marque", s_marque)
+    field("Modele", s_modele)
+    if s_imei:
+        field("IMEI / N. serie", s_imei)
+    if s_etat:
+        field("Etat", s_etat)
     pdf.ln(3)
 
     # ── Motif ──
     section("MOTIF DE NON-REPARABILITE")
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(0, 0, 0)
-    pdf.multi_cell(0, 5.5, data.motif or "-")
+    pdf.multi_cell(0, 5.5, s_motif or "-")
     pdf.ln(3)
 
     # ── Compte-rendu ──
-    if data.compte_rendu:
+    if s_cr:
         section("COMPTE-RENDU TECHNIQUE")
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(0, 0, 0)
-        pdf.multi_cell(0, 5.5, data.compte_rendu)
+        pdf.multi_cell(0, 5.5, s_cr)
         pdf.ln(3)
 
     # ── Mention legale ──
@@ -220,7 +253,9 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 3, "KLIKPHONE - 79 Place Saint Leger, 73000 Chambery - SIREN: 813 901 191 - 04 79 60 89 22", align="C")
 
-    return pdf.output()
+    # bytes() explicite : fpdf2 renvoie un bytearray que Starlette ne sait pas
+    # toujours sérialiser tel quel dans une Response.
+    return bytes(pdf.output())
 
 
 def _send_resend_pdf(to: str, subject: str, message: str, pdf_bytes: bytes, filename: str) -> tuple:
@@ -386,72 +421,86 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
 
     doc = Document()
-    # Marges A4
+    # Marges A4 resserrées pour tenir sur une seule page
     section = doc.sections[0]
-    section.top_margin = Mm(15)
-    section.bottom_margin = Mm(15)
-    section.left_margin = Mm(20)
-    section.right_margin = Mm(20)
+    section.top_margin = Mm(12)
+    section.bottom_margin = Mm(10)
+    section.left_margin = Mm(18)
+    section.right_margin = Mm(18)
 
-    # ─── Logo centré (si présent) ───
+    # Style Normal compact (police 10, interligne serré, peu d'espace après)
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(10)
+    normal.paragraph_format.space_after = Pt(2)
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.line_spacing = 1.0
+
+    def _tight(p, before=0, after=2):
+        p.paragraph_format.space_before = Pt(before)
+        p.paragraph_format.space_after = Pt(after)
+        p.paragraph_format.line_spacing = 1.0
+        return p
+
+    # ─── Logo centré (compact) ───
     logo_path = STATIC_DIR / "logo_k.png"
     if logo_path.exists():
-        p = doc.add_paragraph()
+        p = _tight(doc.add_paragraph(), 0, 1)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         try:
-            p.add_run().add_picture(str(logo_path), width=Mm(50))
+            p.add_run().add_picture(str(logo_path), width=Mm(38))
         except Exception:
             pass
 
     # ─── En-tête boutique ───
-    head = doc.add_paragraph()
+    head = _tight(doc.add_paragraph(), 0, 4)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = head.add_run(
         "KLIKPHONE — Spécialiste Apple & Multimarque\n"
-        "79 Place Saint Léger, 73000 Chambéry\n"
-        "Tél: 04 79 60 89 22 — www.klikphone.com\n"
-        "SIREN: 813 901 191"
+        "79 Place Saint Léger, 73000 Chambéry — Tél: 04 79 60 89 22\n"
+        "www.klikphone.com — SIREN: 813 901 191"
     )
-    r.font.size = Pt(9)
+    r.font.size = Pt(8)
     r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
     # ─── Titre ───
-    title = doc.add_paragraph()
+    title = _tight(doc.add_paragraph(), 2, 4)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     tr = title.add_run("ATTESTATION DE NON-RÉPARABILITÉ")
     tr.bold = True
-    tr.font.size = Pt(16)
+    tr.font.size = Pt(15)
 
     # ─── Date ───
-    dp = doc.add_paragraph()
+    dp = _tight(doc.add_paragraph(), 0, 4)
     dp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     dr = dp.add_run(f"Chambéry, le {date_fr}")
     dr.italic = True
-    dr.font.size = Pt(10)
+    dr.font.size = Pt(9)
 
     # ─── Corps ───
-    intro = doc.add_paragraph()
+    intro = _tight(doc.add_paragraph(), 0, 4)
     intro.add_run(
         "Je soussigné, KLIKPHONE, professionnel de la réparation d'appareils "
         "électroniques, atteste par la présente que l'appareil décrit ci-dessous "
         "a été examiné dans nos ateliers et déclaré non réparable pour les raisons indiquées."
-    ).font.size = Pt(11)
+    ).font.size = Pt(10)
 
     def _section_title(text):
-        sp = doc.add_paragraph()
+        sp = _tight(doc.add_paragraph(), 4, 1)
         sr = sp.add_run(text.upper())
         sr.bold = True
-        sr.font.size = Pt(11)
+        sr.font.size = Pt(10)
 
     def _kv_table(rows):
         table = doc.add_table(rows=0, cols=2)
         for label, value in rows:
             cells = table.add_row().cells
-            cells[0].width = Mm(50)
-            lr = cells[0].paragraphs[0].add_run(label)
+            cells[0].width = Mm(45)
+            p0 = cells[0].paragraphs[0]; _tight(p0, 0, 0)
+            lr = p0.add_run(label)
             lr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
             lr.font.size = Pt(10)
-            vr = cells[1].paragraphs[0].add_run(str(value) if value else "—")
+            p1 = cells[1].paragraphs[0]; _tight(p1, 0, 0)
+            vr = p1.add_run(str(value) if value else "—")
             vr.font.size = Pt(10)
 
     _section_title("Informations du propriétaire")
@@ -470,26 +519,25 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
     ])
 
     _section_title("Motif de non-réparabilité")
-    doc.add_paragraph(data.motif or "—")
+    _tight(doc.add_paragraph(data.motif or "—"), 0, 3)
 
     if data.compte_rendu:
         _section_title("Compte-rendu technique")
-        doc.add_paragraph(data.compte_rendu)
+        _tight(doc.add_paragraph(data.compte_rendu), 0, 3)
 
-    doc.add_paragraph(
+    _tight(doc.add_paragraph(
         "Cette attestation est délivrée pour servir et valoir ce que de droit, "
         "notamment auprès des compagnies d'assurance."
-    )
+    ), 4, 4)
 
     # ─── Signature ───
-    doc.add_paragraph()
-    sig = doc.add_paragraph()
-    sig.add_run(f"Fait à Chambéry, le {date_fr}\nSignature et cachet :").font.size = Pt(10)
+    sig = _tight(doc.add_paragraph(), 2, 1)
+    sig.add_run(f"Fait à Chambéry, le {date_fr} — Signature et cachet :").font.size = Pt(9)
     tampon_path = STATIC_DIR / "tampon_klikphone.png"
     if tampon_path.exists():
-        sp = doc.add_paragraph()
+        sp = _tight(doc.add_paragraph(), 0, 0)
         try:
-            sp.add_run().add_picture(str(tampon_path), width=Mm(55))
+            sp.add_run().add_picture(str(tampon_path), width=Mm(45))
         except Exception:
             pass
 
