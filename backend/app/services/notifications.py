@@ -229,8 +229,8 @@ def envoyer_email(destinataire: str, sujet: str, message: str, html_content: str
         return False, f"Erreur d'envoi: {e}"
 
 
-def envoyer_email_avec_pdf(destinataire: str, sujet: str, message: str, pdf_bytes: bytes, filename: str = "document.pdf"):
-    """Envoie un email avec une pièce jointe PDF."""
+def envoyer_email_avec_pdf(destinataire: str, sujet: str, message: str, pdf_bytes: bytes, filename: str = "document.pdf", subtype: str = "pdf"):
+    """Envoie un email avec une pièce jointe (PDF par défaut, ou autre via subtype)."""
     smtp_host = _get_param("smtp_host")
     smtp_port = _get_param("smtp_port") or "587"
     smtp_user = _get_param("smtp_user")
@@ -248,7 +248,7 @@ def envoyer_email_avec_pdf(destinataire: str, sujet: str, message: str, pdf_byte
         msg["Subject"] = Header(sujet, "utf-8")
         msg.attach(MIMEText(message, "plain", "utf-8"))
 
-        pdf_part = MIMEApplication(pdf_bytes, _subtype="pdf")
+        pdf_part = MIMEApplication(pdf_bytes, _subtype=subtype)
         pdf_part.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(pdf_part)
 

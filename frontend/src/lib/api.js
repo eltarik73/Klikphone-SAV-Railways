@@ -338,8 +338,8 @@ class ApiClient {
   generateAttestation(data) {
     return this.post('/api/attestation/generate', data);
   }
-  emailAttestation(data, email) {
-    return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}`, data);
+  emailAttestation(data, email, format = 'pdf') {
+    return this.post(`/api/attestation/email?destinataire=${encodeURIComponent(email)}&format=${encodeURIComponent(format)}`, data);
   }
   async downloadAttestationPdf(data) {
     const url = `${API_URL}/api/attestation/pdf`;
@@ -347,6 +347,14 @@ class ApiClient {
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
     const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
     if (!res.ok) throw new Error('Erreur PDF');
+    return res.blob();
+  }
+  async downloadAttestationDocx(data) {
+    const url = `${API_URL}/api/attestation/docx`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data) });
+    if (!res.ok) throw new Error('Erreur Word');
     return res.blob();
   }
   getAttestationHistory(clientId) {

@@ -376,6 +376,128 @@ def _generate_attestation_html(data: AttestationRequest) -> str:
 </body></html>"""
 
 
+def _generate_attestation_docx(data: AttestationRequest) -> bytes:
+    """Génère l'attestation au format Word (.docx) — éditable côté client."""
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Mm
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    now = datetime.now()
+    date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+
+    doc = Document()
+    # Marges A4
+    section = doc.sections[0]
+    section.top_margin = Mm(15)
+    section.bottom_margin = Mm(15)
+    section.left_margin = Mm(20)
+    section.right_margin = Mm(20)
+
+    # ─── Logo centré (si présent) ───
+    logo_path = STATIC_DIR / "logo_k.png"
+    if logo_path.exists():
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        try:
+            p.add_run().add_picture(str(logo_path), width=Mm(50))
+        except Exception:
+            pass
+
+    # ─── En-tête boutique ───
+    head = doc.add_paragraph()
+    head.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = head.add_run(
+        "KLIKPHONE — Spécialiste Apple & Multimarque\n"
+        "79 Place Saint Léger, 73000 Chambéry\n"
+        "Tél: 04 79 60 89 22 — www.klikphone.com\n"
+        "SIREN: 813 901 191"
+    )
+    r.font.size = Pt(9)
+    r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+
+    # ─── Titre ───
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tr = title.add_run("ATTESTATION DE NON-RÉPARABILITÉ")
+    tr.bold = True
+    tr.font.size = Pt(16)
+
+    # ─── Date ───
+    dp = doc.add_paragraph()
+    dp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    dr = dp.add_run(f"Chambéry, le {date_fr}")
+    dr.italic = True
+    dr.font.size = Pt(10)
+
+    # ─── Corps ───
+    intro = doc.add_paragraph()
+    intro.add_run(
+        "Je soussigné, KLIKPHONE, professionnel de la réparation d'appareils "
+        "électroniques, atteste par la présente que l'appareil décrit ci-dessous "
+        "a été examiné dans nos ateliers et déclaré non réparable pour les raisons indiquées."
+    ).font.size = Pt(11)
+
+    def _section_title(text):
+        sp = doc.add_paragraph()
+        sr = sp.add_run(text.upper())
+        sr.bold = True
+        sr.font.size = Pt(11)
+
+    def _kv_table(rows):
+        table = doc.add_table(rows=0, cols=2)
+        for label, value in rows:
+            cells = table.add_row().cells
+            cells[0].width = Mm(50)
+            lr = cells[0].paragraphs[0].add_run(label)
+            lr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+            lr.font.size = Pt(10)
+            vr = cells[1].paragraphs[0].add_run(str(value) if value else "—")
+            vr.font.size = Pt(10)
+
+    _section_title("Informations du propriétaire")
+    _kv_table([
+        ("Nom :", data.nom),
+        ("Prénom :", data.prenom),
+        ("Adresse :", data.adresse),
+    ])
+
+    _section_title("Informations de l'appareil")
+    _kv_table([
+        ("Marque :", data.marque),
+        ("Modèle :", data.modele),
+        ("IMEI / N° série :", data.imei),
+        ("État général :", data.etat),
+    ])
+
+    _section_title("Motif de non-réparabilité")
+    doc.add_paragraph(data.motif or "—")
+
+    if data.compte_rendu:
+        _section_title("Compte-rendu technique")
+        doc.add_paragraph(data.compte_rendu)
+
+    doc.add_paragraph(
+        "Cette attestation est délivrée pour servir et valoir ce que de droit, "
+        "notamment auprès des compagnies d'assurance."
+    )
+
+    # ─── Signature ───
+    doc.add_paragraph()
+    sig = doc.add_paragraph()
+    sig.add_run(f"Fait à Chambéry, le {date_fr}\nSignature et cachet :").font.size = Pt(10)
+    tampon_path = STATIC_DIR / "tampon_klikphone.png"
+    if tampon_path.exists():
+        sp = doc.add_paragraph()
+        try:
+            sp.add_run().add_picture(str(tampon_path), width=Mm(55))
+        except Exception:
+            pass
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 def _save_attestation(data: AttestationRequest, user: dict, email_envoye: bool = False):
     """Sauvegarde l'attestation en base de données."""
     with get_cursor() as cur:
@@ -408,16 +530,38 @@ async def generate_attestation(
     return {"html": html, "attestation_id": att_id}
 
 
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+_DOCX_SUBTYPE = "vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _safe_filename(data: AttestationRequest, ext: str) -> str:
+    base = f"attestation_{data.marque}_{data.modele}".replace(" ", "_")
+    # Garde seulement caractères sûrs pour un nom de fichier
+    base = "".join(c for c in base if c.isalnum() or c in ("_", "-")) or "attestation"
+    return f"{base}.{ext}"
+
+
 @router.post("/email")
 async def email_attestation(
     data: AttestationRequest,
     destinataire: str,
+    format: str = Query("pdf", description="pdf ou word"),
     user: dict = Depends(get_current_user),
 ):
-    """Envoie l'attestation PDF par email et la sauvegarde."""
-    pdf_bytes = _generate_attestation_pdf(data)
+    """Envoie l'attestation par email (PDF ou Word au choix) et la sauvegarde."""
+    fmt = (format or "pdf").lower()
+    is_word = fmt in ("word", "docx")
+
+    if is_word:
+        file_bytes = _generate_attestation_docx(data)
+        filename = _safe_filename(data, "docx")
+        subtype = _DOCX_SUBTYPE
+    else:
+        file_bytes = _generate_attestation_pdf(data)
+        filename = _safe_filename(data, "pdf")
+        subtype = "pdf"
+
     sujet = f"Attestation de non-reparabilite - {data.marque} {data.modele}"
-    filename = f"attestation_{data.marque}_{data.modele}.pdf".replace(" ", "_")
     message = (
         f"Bonjour {data.prenom} {data.nom},\n\n"
         f"Veuillez trouver ci-joint l'attestation de non-reparabilite "
@@ -425,10 +569,10 @@ async def email_attestation(
         f"Cordialement,\nKLIKPHONE - 04 79 60 89 22"
     )
 
-    # Essaie Resend avec PDF puis SMTP en fallback
-    success, msg = _send_resend_pdf(destinataire, sujet, message, pdf_bytes, filename)
+    # Essaie Resend (format-agnostique : base64 + nom de fichier) puis SMTP en fallback
+    success, msg = _send_resend_pdf(destinataire, sujet, message, file_bytes, filename)
     if not success:
-        success, msg = envoyer_email_avec_pdf(destinataire, sujet, message, pdf_bytes, filename)
+        success, msg = envoyer_email_avec_pdf(destinataire, sujet, message, file_bytes, filename, subtype=subtype)
 
     # Sauvegarde avec le statut email
     data.email = destinataire
@@ -444,10 +588,25 @@ async def download_attestation_pdf(
 ):
     """Télécharge l'attestation en PDF."""
     pdf_bytes = _generate_attestation_pdf(data)
-    filename = f"attestation_{data.marque}_{data.modele}.pdf".replace(" ", "_")
+    filename = _safe_filename(data, "pdf")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/docx")
+async def download_attestation_docx(
+    data: AttestationRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Télécharge l'attestation au format Word (.docx)."""
+    docx_bytes = _generate_attestation_docx(data)
+    filename = _safe_filename(data, "docx")
+    return Response(
+        content=docx_bytes,
+        media_type=_DOCX_MIME,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

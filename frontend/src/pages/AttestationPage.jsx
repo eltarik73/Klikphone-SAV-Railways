@@ -50,6 +50,11 @@ export default function AttestationPage() {
   const [selectedCategorie, setSelectedCategorie] = useState('Smartphone');
   const [marques, setMarques] = useState([]);
   const [modeles, setModeles] = useState([]);
+  // Saisie manuelle (option "Autre") pour marque / modèle
+  const [marqueManual, setMarqueManual] = useState(false);
+  const [modeleManual, setModeleManual] = useState(false);
+  // Format d'envoi par email : 'pdf' ou 'word'
+  const [emailFormat, setEmailFormat] = useState('pdf');
 
   const etats = ['Bon état', 'Écran cassé', 'Traces d\'oxydation', 'Très endommagé', 'Autre'];
 
@@ -140,6 +145,10 @@ export default function AttestationPage() {
       marque: att.marque || '', modele: att.modele || '', imei: att.imei || '',
       etat: att.etat || '', motif: att.motif || '', compte_rendu: att.compte_rendu || '',
     });
+    // En rechargement, on affiche marque/modèle en saisie libre pré-remplie
+    // (on ne peut pas garantir que la valeur est dans le catalogue courant).
+    setMarqueManual(!!att.marque);
+    setModeleManual(!!att.modele);
     setEmail(att.email || '');
     setTelephone(att.telephone || att.client_telephone || '');
     try {
@@ -174,13 +183,26 @@ export default function AttestationPage() {
   const handleSendEmail = async () => {
     if (!email || !htmlPreview) return;
     try {
-      await api.emailAttestation(getPayload(), email);
+      await api.emailAttestation(getPayload(), email, emailFormat);
       setEmailSent(true);
-      toast.success('Email envoyé et attestation sauvegardée');
+      toast.success(`Email envoyé (${emailFormat === 'word' ? 'Word' : 'PDF'}) et attestation sauvegardée`);
       setTimeout(() => setEmailSent(false), 3000);
     } catch (err) {
       toast.error('Erreur envoi email');
     }
+  };
+
+  const handleDownloadWord = async () => {
+    try {
+      const blob = await api.downloadAttestationDocx(getPayload());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attestation_${form.marque}_${form.modele}.docx`.replace(/ /g, '_');
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Word téléchargé');
+    } catch { toast.error('Erreur Word'); }
   };
 
   const handleWhatsApp = () => {
@@ -403,7 +425,7 @@ export default function AttestationPage() {
             <div className="flex flex-wrap gap-1.5 mb-4">
               {categories.map(cat => (
                 <button key={cat}
-                  onClick={() => { setSelectedCategorie(cat); updateForm('marque', ''); updateForm('modele', ''); }}
+                  onClick={() => { setSelectedCategorie(cat); setMarqueManual(false); setModeleManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
                     ${selectedCategorie === cat
                       ? 'bg-brand-600 text-white'
@@ -415,34 +437,93 @@ export default function AttestationPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
+              {/* ─── Marque (catalogue ou saisie libre via "Autre") ─── */}
               <div>
                 <label className="input-label">Marque *</label>
-                <div className="relative">
-                  <select
-                    value={form.marque}
-                    onChange={e => { updateForm('marque', e.target.value); updateForm('modele', ''); }}
-                    className="input appearance-none pr-8"
-                  >
-                    <option value="">Sélectionner...</option>
-                    {marques.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                {marqueManual ? (
+                  <div className="flex gap-1.5">
+                    <input
+                      value={form.marque}
+                      onChange={e => updateForm('marque', e.target.value)}
+                      className="input flex-1"
+                      placeholder="Saisir la marque"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      title="Revenir à la liste"
+                      onClick={() => { setMarqueManual(false); setModeleManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
+                      className="px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={form.marque}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v === '__autre__') {
+                          // Saisie libre : marque ET modèle (pas de catalogue pour une marque hors liste)
+                          setMarqueManual(true); setModeleManual(true);
+                          updateForm('marque', ''); updateForm('modele', '');
+                        } else {
+                          updateForm('marque', v); updateForm('modele', '');
+                        }
+                      }}
+                      className="input appearance-none pr-8"
+                    >
+                      <option value="">Sélectionner...</option>
+                      {marques.map(m => <option key={m} value={m}>{m}</option>)}
+                      <option value="__autre__">✏️ Autre (saisie manuelle)</option>
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  </div>
+                )}
               </div>
+
+              {/* ─── Modèle (catalogue ou saisie libre via "Autre") ─── */}
               <div>
                 <label className="input-label">Modèle *</label>
-                <div className="relative">
-                  <select
-                    value={form.modele}
-                    onChange={e => updateForm('modele', e.target.value)}
-                    className="input appearance-none pr-8"
-                    disabled={!form.marque}
-                  >
-                    <option value="">Sélectionner...</option>
-                    {modeles.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                {modeleManual ? (
+                  <div className="flex gap-1.5">
+                    <input
+                      value={form.modele}
+                      onChange={e => updateForm('modele', e.target.value)}
+                      className="input flex-1"
+                      placeholder="Saisir le modèle"
+                    />
+                    {!marqueManual && (
+                      <button
+                        type="button"
+                        title="Revenir à la liste"
+                        onClick={() => { setModeleManual(false); updateForm('modele', ''); }}
+                        className="px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <select
+                      value={form.modele}
+                      onChange={e => {
+                        const v = e.target.value;
+                        if (v === '__autre__') { setModeleManual(true); updateForm('modele', ''); }
+                        else updateForm('modele', v);
+                      }}
+                      className="input appearance-none pr-8"
+                      disabled={!form.marque}
+                    >
+                      <option value="">Sélectionner...</option>
+                      {modeles.map(m => <option key={m} value={m}>{m}</option>)}
+                      <option value="__autre__">✏️ Autre (saisie manuelle)</option>
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  </div>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3">
@@ -533,11 +614,11 @@ export default function AttestationPage() {
             <div className="card p-5 space-y-3">
               <h3 className="text-sm font-semibold text-slate-800 mb-3">Actions</h3>
 
-              {/* Print + PDF */}
+              {/* Imprimer + Télécharger PDF / Word */}
+              <button onClick={handlePrint} className="btn-primary w-full justify-center gap-2">
+                <Printer className="w-4 h-4" /> Imprimer
+              </button>
               <div className="flex gap-2">
-                <button onClick={handlePrint} className="btn-primary flex-1 justify-center gap-2">
-                  <Printer className="w-4 h-4" /> Imprimer
-                </button>
                 <button
                   onClick={async () => {
                     try {
@@ -551,21 +632,38 @@ export default function AttestationPage() {
                       toast.success('PDF téléchargé');
                     } catch { toast.error('Erreur PDF'); }
                   }}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold"
                 >
                   <Download className="w-4 h-4" /> PDF
                 </button>
+                <button
+                  onClick={handleDownloadWord}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-sm font-bold"
+                >
+                  <Download className="w-4 h-4" /> Word
+                </button>
               </div>
 
-              {/* Email */}
-              <div className="flex gap-2">
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  className="input flex-1" placeholder="Email du client" />
-                <button onClick={handleSendEmail} disabled={!email || emailSent}
-                  className={`btn-primary shrink-0 ${emailSent ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
-                  {emailSent ? <Check className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
-                  {emailSent ? 'Envoyé' : 'Email'}
-                </button>
+              {/* Email avec choix du format PDF / Word */}
+              <div className="pt-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-slate-500">Format de la pièce jointe :</span>
+                  <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                    <button type="button" onClick={() => setEmailFormat('pdf')}
+                      className={`px-2.5 py-1 rounded-md transition-all ${emailFormat === 'pdf' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`}>PDF</button>
+                    <button type="button" onClick={() => setEmailFormat('word')}
+                      className={`px-2.5 py-1 rounded-md transition-all ${emailFormat === 'word' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-400'}`}>Word</button>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    className="input flex-1" placeholder="Email du client" />
+                  <button onClick={handleSendEmail} disabled={!email || emailSent}
+                    className={`btn-primary shrink-0 ${emailSent ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
+                    {emailSent ? <Check className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+                    {emailSent ? 'Envoyé' : 'Email'}
+                  </button>
+                </div>
               </div>
 
               {/* WhatsApp */}
