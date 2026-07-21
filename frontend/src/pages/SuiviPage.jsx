@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
@@ -18,6 +19,18 @@ export default function SuiviPage() {
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const pollRef = useRef(null);
+
+  // QR intelligent : si un membre du staff connecté scanne le QR d'un ticket
+  // (arrivée avec ?ticket=), on le redirige vers la fiche interne.
+  // Le client, sans session, reste sur le suivi public.
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const fromQrRef = useRef(Boolean(searchParams.get('ticket')));
+  useEffect(() => {
+    if (fromQrRef.current && ticket?.id && ['accueil', 'tech'].includes(user?.target)) {
+      navigate(`/${user.target}/ticket/${ticket.id}`, { replace: true });
+    }
+  }, [user?.target, ticket?.id, navigate]);
 
   // Message state
   const [message, setMessage] = useState('');

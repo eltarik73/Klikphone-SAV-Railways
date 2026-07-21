@@ -360,16 +360,22 @@ async def get_tickets_by_phone(telephone: str, request: Request):
 
 @router.get("/code/{ticket_code}")
 async def get_ticket_by_code(ticket_code: str, request: Request):
-    """Récupère un ticket par code (public — pour suivi client)."""
+    """Récupère un ticket par code (public — pour suivi client).
+
+    ⚠️ Endpoint SANS auth, accessible à quiconque possède le code (imprimé sur
+    le ticket client + encodé dans son QR). Ne renvoyer QUE les champs affichés
+    par la page de suivi — jamais de code PIN, IMEI, notes internes ni
+    coordonnées client.
+    """
     _rate_limit_public_lookup(request)
     with get_cursor() as cur:
         cur.execute("""
-            SELECT t.*,
-                   c.nom as client_nom, c.prenom as client_prenom,
-                   c.telephone as client_tel, c.email as client_email,
-                   c.societe as client_societe, c.carte_camby as client_carte_camby
+            SELECT t.id, t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
+                   t.panne, t.panne_detail, t.date_depot, t.date_maj, t.date_recuperation,
+                   t.source, t.devis_estime, t.acompte, t.reduction_montant,
+                   t.reduction_pourcentage, t.reparation_supp, t.commande_piece,
+                   t.commentaire_client
             FROM tickets t
-            JOIN clients c ON t.client_id = c.id
             WHERE t.ticket_code = %s
         """, (ticket_code,))
         row = cur.fetchone()

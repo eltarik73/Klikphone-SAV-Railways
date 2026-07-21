@@ -6,6 +6,7 @@ import Navbar from './components/Navbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ChatWidget from './components/ChatWidget';
+import ScanListener from './components/ScanListener';
 import { ShieldX, ArrowLeft, RefreshCw, Home } from 'lucide-react';
 
 import HomePage from './pages/HomePage';
@@ -254,6 +255,7 @@ function AppRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatOverlay />
+      <ScanListener />
       </Suspense>
     </ErrorBoundary>
   );

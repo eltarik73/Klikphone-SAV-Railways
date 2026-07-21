@@ -457,6 +457,7 @@ def _ticket_staff_html(t: dict) -> str:
     """Ticket staff — format thermique 80mm, contraste max, encadrés."""
     appareil = t.get("modele_autre") or f"{t.get('marque', '')} {t.get('modele', '')}".strip()
     code = t.get("ticket_code", "")
+    qr = _qr_url(code)
     tech = t.get("technicien_assigne") or "Non assigné"
     date_recup = t.get("date_recuperation") or "Non définie"
 
@@ -635,6 +636,12 @@ body {{ margin:0; padding:0; background:#fff; }}
 
   <!-- TÉL DE PRÊT -->
   {pret_html}
+
+  <!-- QR SCAN (douchette ou caméra → fiche du ticket) -->
+  <div style="text-align:center;margin-top:12px;">
+    <img src="{qr}" alt="QR fiche ticket" style="width:130px;height:130px;" />
+    <div style="font-size:11px;font-weight:700;">Scanner pour ouvrir la fiche</div>
+  </div>
 
   <!-- FOOTER -->
   <div style="
