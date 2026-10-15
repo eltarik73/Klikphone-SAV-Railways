@@ -8,6 +8,7 @@ import base64
 import io
 import os
 from datetime import datetime
+from html import escape
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +22,7 @@ from app.database import get_cursor
 from app.api.auth import get_current_user
 from app.services.notifications import envoyer_email, envoyer_email_avec_pdf
 from app.api.email_api import _send_resend_html
+from app.services.pdf_text import _pdf_safe
 
 STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "static"
 
@@ -79,29 +81,6 @@ def _get_param(key: str) -> str:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
         row = cur.fetchone()
     return row["valeur"] if row else ""
-
-
-# Police core fpdf2 (Helvetica) = Latin-1 uniquement. On translittère les
-# caractères typographiques courants (apostrophe courbe, tirets, €, …) insérés
-# par les claviers Mac/iOS, sinon fpdf2 lève FPDFUnicodeEncodingException.
-_PDF_REPL = {
-    "’": "'", "‘": "'", "ʼ": "'",
-    "“": '"', "”": '"', "«": '"', "»": '"',
-    "–": "-", "—": "-", "−": "-",
-    "…": "...", "€": "EUR", " ": " ", " ": " ",
-    "•": "-", "→": "->", "œ": "oe", "Œ": "OE",
-}
-
-
-def _pdf_safe(s) -> str:
-    """Rend une chaîne sûre pour la police core Helvetica (Latin-1)."""
-    if not s:
-        return ""
-    out = str(s)
-    for k, v in _PDF_REPL.items():
-        out = out.replace(k, v)
-    # Tout caractère restant hors Latin-1 est remplacé par '?' (jamais de crash)
-    return out.encode("latin-1", "replace").decode("latin-1")
 
 
 def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
@@ -297,117 +276,104 @@ def _send_resend_pdf(to: str, subject: str, message: str, pdf_bytes: bytes, file
         return False, f"Erreur Resend: {str(e)}"
 
 
+def _e(v) -> str:
+    return escape(str(v or ""), quote=True)
+
+
+def _e_br(v) -> str:
+    return _e(v).replace("\r\n", "\n").replace("\n", "<br>")
+
+
 def _generate_attestation_html(data: AttestationRequest) -> str:
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
 
-    motif_html = data.motif.replace('\n', '<br>') if data.motif else '—'
-    cr_html = data.compte_rendu.replace('\n', '<br>') if data.compte_rendu else ''
+    motif_html = _e_br(data.motif) if data.motif else '—'
+    cr_html = _e_br(data.compte_rendu) if data.compte_rendu else ''
 
     cr_section = ''
     if data.compte_rendu:
         cr_section = f"""
-    <h3 style="margin-top:25px; font-size:14px; font-weight:bold; text-transform:uppercase;
-               border-bottom:1px solid #000; padding-bottom:5px;">
-      Compte-rendu technique
-    </h3>
-    <p style="margin:10px 0; padding:10px; background:#f5f5f5; border-radius:4px;">{cr_html}</p>
+  <h3>Compte-rendu technique</h3>
+  <p class="encadre">{cr_html}</p>
 """
 
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Attestation de non-réparabilité</title>
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none'">
+<title>Attestation de non-réparabilité</title>
 <style>
   @page {{ margin: 15mm; size: A4; }}
-  @media print {{ @page {{ size: A4; margin: 15mm; }} body {{ padding: 0; }} }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: Arial, sans-serif; font-size: 14px; line-height: 1.8; color: #000;
+  body {{ font-family: Arial, sans-serif; font-size: 13px; line-height: 1.4; color: #000;
          max-width: 700px; margin: 0 auto; padding: 40px; }}
+  .logo {{ text-align: center; margin-bottom: 6px; }}
+  .entete {{ text-align: center; font-size: 11px; color: #555; margin-bottom: 10px; }}
+  h1 {{ text-align: center; font-size: 20px; text-transform: uppercase; letter-spacing: 2px;
+        border: 2px solid #000; padding: 8px; margin: 10px 0 12px; }}
+  .date {{ text-align: right; margin-bottom: 8px; }}
+  h3 {{ margin-top: 10px; font-size: 13px; text-transform: uppercase;
+        border-bottom: 1px solid #000; padding-bottom: 3px; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 6px 0; }}
+  td {{ padding: 2px 0; vertical-align: top; overflow-wrap: anywhere; }}
+  td.lib {{ width: 180px; color: #555; }}
+  td.fort {{ font-weight: bold; }}
+  .encadre {{ margin: 6px 0; padding: 8px 10px; background: #f5f5f5; border-radius: 4px; overflow-wrap: anywhere; }}
+  .mention {{ margin-top: 12px; }}
+  .signature {{ margin-top: 18px; break-inside: avoid; }}
+  .signature p {{ margin-bottom: 4px; }}
+  .pied {{ margin-top: 14px; border-top: 1px solid #ccc; padding-top: 6px; font-size: 10px;
+           color: #666; text-align: center; }}
+  @media print {{ body {{ padding: 0; }} }}
 </style></head><body>
 
-<!-- Logo centré -->
-<div style="text-align:center; margin-bottom:20px;">
-  <img src="/logo_k.png" width="200" onerror="this.style.display='none'" />
-</div>
+<div class="logo"><img src="/logo_k.png" width="80" height="80" alt="Klikphone"></div>
 
-<!-- En-tête boutique -->
-<div style="text-align:center; font-size:12px; color:#555; margin-bottom:30px;">
+<div class="entete">
   KLIKPHONE — Spécialiste Apple &amp; Multimarque<br>
-  79 Place Saint Léger, 73000 Chambéry<br>
-  Tél: 04 79 60 89 22 — www.klikphone.com<br>
-  SIREN: 813 901 191
+  79 Place Saint Léger, 73000 Chambéry — Tél : 04 79 60 89 22<br>
+  www.klikphone.com — SIREN : 813 901 191
 </div>
 
-<!-- Titre -->
-<h1 style="text-align:center; font-size:22px; font-weight:bold; text-transform:uppercase;
-           border:2px solid #000; padding:12px; margin:30px 0; letter-spacing:2px;">
-  Attestation de Non-Réparabilité
-</h1>
+<h1>Attestation de Non-Réparabilité</h1>
 
-<!-- Date -->
-<p style="text-align:right; font-size:13px; margin-bottom:20px;">
-  Chambéry, le {date_fr}
-</p>
+<p class="date">Chambéry, le {date_fr}</p>
 
-<!-- Corps -->
-<div style="font-size:14px; line-height:1.8;">
+<div>
   <p>Je soussigné, <strong>KLIKPHONE</strong>, professionnel de la réparation d'appareils électroniques,
   atteste par la présente que l'appareil décrit ci-dessous a été examiné dans nos ateliers et
   <strong>déclaré non réparable</strong> pour les raisons indiquées.</p>
 
-  <h3 style="margin-top:25px; font-size:14px; font-weight:bold; text-transform:uppercase;
-             border-bottom:1px solid #000; padding-bottom:5px;">
-    Informations du propriétaire
-  </h3>
-  <table style="width:100%; font-size:14px; margin:10px 0;">
-    <tr><td style="padding:4px 0; width:180px; color:#555;">Nom :</td><td style="font-weight:bold;">{data.nom}</td></tr>
-    <tr><td style="padding:4px 0; color:#555;">Prénom :</td><td style="font-weight:bold;">{data.prenom}</td></tr>
-    <tr><td style="padding:4px 0; color:#555;">Adresse :</td><td>{data.adresse or '—'}</td></tr>
+  <h3>Informations du propriétaire</h3>
+  <table>
+    <tr><td class="lib">Nom :</td><td class="fort">{_e(data.nom)}</td></tr>
+    <tr><td class="lib">Prénom :</td><td class="fort">{_e(data.prenom)}</td></tr>
+    <tr><td class="lib">Adresse :</td><td>{_e(data.adresse) or '—'}</td></tr>
   </table>
 
-  <h3 style="margin-top:25px; font-size:14px; font-weight:bold; text-transform:uppercase;
-             border-bottom:1px solid #000; padding-bottom:5px;">
-    Informations de l'appareil
-  </h3>
-  <table style="width:100%; font-size:14px; margin:10px 0;">
-    <tr><td style="padding:4px 0; width:180px; color:#555;">Marque :</td><td style="font-weight:bold;">{data.marque}</td></tr>
-    <tr><td style="padding:4px 0; color:#555;">Modèle :</td><td style="font-weight:bold;">{data.modele}</td></tr>
-    <tr><td style="padding:4px 0; color:#555;">IMEI / N° série :</td><td>{data.imei or '—'}</td></tr>
-    <tr><td style="padding:4px 0; color:#555;">État général :</td><td>{data.etat or '—'}</td></tr>
+  <h3>Informations de l'appareil</h3>
+  <table>
+    <tr><td class="lib">Marque :</td><td class="fort">{_e(data.marque)}</td></tr>
+    <tr><td class="lib">Modèle :</td><td class="fort">{_e(data.modele)}</td></tr>
+    <tr><td class="lib">IMEI / N° série :</td><td>{_e(data.imei) or '—'}</td></tr>
+    <tr><td class="lib">État général :</td><td>{_e(data.etat) or '—'}</td></tr>
   </table>
 
-  <h3 style="margin-top:25px; font-size:14px; font-weight:bold; text-transform:uppercase;
-             border-bottom:1px solid #000; padding-bottom:5px;">
-    Motif de non-réparabilité
-  </h3>
-  <p style="margin:10px 0; padding:10px; background:#f5f5f5; border-radius:4px;">{motif_html}</p>
-
+  <h3>Motif de non-réparabilité</h3>
+  <p class="encadre">{motif_html}</p>
   {cr_section}
-
-  <p style="margin-top:25px;">
+  <p class="mention">
     Cette attestation est délivrée pour servir et valoir ce que de droit, notamment auprès
     des compagnies d'assurance.
   </p>
 </div>
 
-<!-- Signature -->
-<div style="margin-top:50px;">
-  <p style="font-size:13px; margin-bottom:10px;">Fait à Chambéry, le {date_fr}</p>
-  <p style="font-size:13px; font-weight:bold; margin-bottom:15px;">Signature et cachet :</p>
-  <img src="/tampon_klikphone.png" width="250" style="margin-top:10px;"
-       onerror="this.nextElementSibling.style.display='inline-block'; this.style.display='none';" />
-  <div style="display:none; border:2px solid #000; border-radius:8px; padding:15px;
-              transform:rotate(-3deg); font-family:Arial; text-align:center;">
-    <div style="font-size:16px; font-weight:bold;">KLIKPHONE</div>
-    <div style="font-size:11px;">Spécialiste Apple</div>
-    <div style="font-size:10px;">79 Place St Léger — 73000 Chambéry</div>
-    <div style="font-size:10px;">04 79 60 89 22</div>
-    <div style="font-size:9px;">SIREN: 813 901 191</div>
-  </div>
+<div class="signature">
+  <p>Fait à Chambéry, le {date_fr}</p>
+  <p><strong>Signature et cachet :</strong></p>
+  <img src="/tampon_klikphone.png" width="170" height="96" alt="Cachet Klikphone">
 </div>
 
-<!-- Footer -->
-<div style="margin-top:40px; border-top:1px solid #ccc; padding-top:10px; font-size:10px; color:#888; text-align:center;">
-  KLIKPHONE — 79 Place Saint Léger, 73000 Chambéry — SIREN: 813 901 191
-</div>
+<div class="pied">KLIKPHONE — 79 Place Saint Léger, 73000 Chambéry — SIREN : 813 901 191</div>
 </body></html>"""
 
 

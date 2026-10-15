@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { formatDateShort, formatPrix, waLink, smsLink } from '../lib/utils';
+import { matchesQuery } from '../components/SearchPalette';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
@@ -33,8 +34,10 @@ export default function CommandesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlQ = searchParams.get('q');
+  const [search, setSearch] = useState(() => urlQ || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => (urlQ || '').trim());
   const [filterTab, setFilterTab] = useState('all');
   const searchTimer = useRef(null);
   const [showForm, setShowForm] = useState(false);
@@ -50,9 +53,14 @@ export default function CommandesPage() {
   // Debounced search (300ms)
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(searchTimer.current);
   }, [search]);
+
+  // Lien depuis la palette de recherche (?q=référence) alors que la page est déjà ouverte
+  useEffect(() => {
+    if (urlQ !== null) setSearch(urlQ);
+  }, [urlQ]);
 
   // Toast auto-hide
   useEffect(() => {
@@ -61,41 +69,37 @@ export default function CommandesPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const partsKey = useMemo(() => {
-    const p = ['commandes'];
-    if (debouncedSearch) p.push(`s:${debouncedSearch}`);
-    p.push(`tab:${filterTab}`);
-    return p.join(':');
-  }, [debouncedSearch, filterTab]);
-
-  const { data: partsData, loading, isRevalidating, mutate: mutateParts } = useApi(
-    partsKey,
-    async () => {
-      const params = {};
-      if (debouncedSearch) params.search = debouncedSearch;
-      if (filterTab !== 'all') params.statut = filterTab;
-      return api.getParts(params);
-    },
-    { tags: ['commandes'], ttl: 60_000 }
-  );
-  const parts = partsData ?? [];
-
-  // Count for tabs (load all to get counts)
-  const { data: allPartsData } = useApi(
+  // Une seule liste complète, filtrée localement : la recherche couvre aussi le client,
+  // son téléphone, le modèle et la panne du ticket lié (champs joints par l'API).
+  const { data: allPartsData, loading } = useApi(
     'commandes:all:counts',
     () => api.getParts({}),
     { tags: ['commandes'], ttl: 60_000 }
   );
   const allParts = allPartsData ?? [];
 
+  const searchedParts = useMemo(() => {
+    if (!debouncedSearch) return allParts;
+    return allParts.filter(p => matchesQuery([
+      p.description, p.fournisseur, p.reference, p.ticket_code, p.notes,
+      p.client_prenom, p.client_nom, p.client_tel,
+      p.marque, p.modele, p.modele_autre, p.panne,
+    ], debouncedSearch));
+  }, [allParts, debouncedSearch]);
+
+  const parts = useMemo(
+    () => (filterTab === 'all' ? searchedParts : searchedParts.filter(p => p.statut === filterTab)),
+    [searchedParts, filterTab]
+  );
+
   const statusCounts = useMemo(() => {
-    const counts = { all: allParts.length };
+    const counts = { all: searchedParts.length };
     PART_STATUTS.forEach(s => { counts[s] = 0; });
-    allParts.forEach(p => {
+    searchedParts.forEach(p => {
       if (counts[p.statut] !== undefined) counts[p.statut]++;
     });
     return counts;
-  }, [allParts]);
+  }, [searchedParts]);
 
   const resetForm = () => {
     setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '' });
@@ -172,12 +176,18 @@ export default function CommandesPage() {
     }
   };
 
-  const handleGoToTicket = async (ticketCode) => {
+  // Navigation directe par id ; le code saisi à la main passe par la résolution staff authentifiée
+  const handleGoToTicket = async (part) => {
+    if (part.ticket_id) {
+      navigate(`${basePath}/ticket/${part.ticket_id}`);
+      return;
+    }
     try {
-      const ticket = await api.getTicketByCode(ticketCode);
-      if (ticket?.id) navigate(`${basePath}/ticket/${ticket.id}`);
+      const r = await api.resolveCode(part.ticket_code);
+      if (r?.type === 'ticket' && r.id) navigate(`${basePath}/ticket/${r.id}`);
+      else setToast({ type: 'error', msg: `Ticket ${part.ticket_code} introuvable` });
     } catch {
-      // ticket not found, ignore
+      setToast({ type: 'error', msg: `Ticket ${part.ticket_code} introuvable` });
     }
   };
 
@@ -295,11 +305,19 @@ export default function CommandesPage() {
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher par d&eacute;signation, fournisseur, r&eacute;f&eacute;rence, ticket..."
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+            <label htmlFor="commandes-search" className="sr-only">Rechercher une commande de pièce</label>
+            <input id="commandes-search" type="text" placeholder="Pièce, référence, fournisseur, client, modèle, ticket..."
               value={search} onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+              autoComplete="off"
+              className="w-full min-h-[44px] pl-10 pr-11 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-colors"
             />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
+                className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
@@ -309,10 +327,11 @@ export default function CommandesPage() {
             const conf = tab.value !== 'all' ? getStatusConf(tab.value) : null;
             const IconComp = conf?.icon;
             return (
-              <button key={tab.value} onClick={() => setFilterTab(tab.value)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5
-                  ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-500 hover:bg-white hover:shadow-sm'}`}>
-                {IconComp && <IconComp className="w-3.5 h-3.5" />}
+              <button key={tab.value} type="button" onClick={() => setFilterTab(tab.value)}
+                aria-pressed={isActive}
+                className={`px-3 py-1.5 min-h-[44px] rounded-md text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5
+                  ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white hover:shadow-sm'}`}>
+                {IconComp && <IconComp className="w-3.5 h-3.5" aria-hidden="true" />}
                 {tab.label} ({count})
               </button>
             );
@@ -386,18 +405,24 @@ export default function CommandesPage() {
         </div>
 
         {loading ? (
-          <div className="py-16 text-center">
-            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Chargement...</p>
+          <div className="py-16 text-center" role="status">
+            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full motion-safe:animate-spin mx-auto mb-3" aria-hidden="true" />
+            <p className="text-sm text-slate-500">Chargement...</p>
           </div>
         ) : parts.length === 0 ? (
           <div className="py-16 text-center">
             <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
               <Package className="w-7 h-7 text-slate-300" />
             </div>
-            <p className="text-slate-500 font-medium">Aucune commande</p>
-            <p className="text-sm text-slate-400 mt-1">
-              {filterTab === 'all' ? 'Créez votre première commande de pièce' : `Aucune commande avec le statut "${filterTab}"`}
+            <p className="text-slate-600 font-medium">
+              {debouncedSearch ? `Aucune commande ne correspond à « ${debouncedSearch} »` : 'Aucune commande'}
+            </p>
+            <p className="text-sm text-slate-500 mt-1">
+              {debouncedSearch
+                ? (filterTab !== 'all' && searchedParts.length > 0
+                  ? `${searchedParts.length} résultat(s) avec un autre statut : choisissez l’onglet « Tous ».`
+                  : 'Essayez le nom du client, le modèle, la référence ou le code du ticket.')
+                : filterTab === 'all' ? 'Créez votre première commande de pièce' : `Aucune commande avec le statut "${filterTab}"`}
             </p>
           </div>
         ) : (
@@ -417,10 +442,14 @@ export default function CommandesPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate" title={p.description}>{p.description}</p>
                     {p.ticket_code && (
-                      <button onClick={() => handleGoToTicket(p.ticket_code)}
-                        className="text-xs text-brand-600 font-mono hover:text-brand-800 hover:underline flex items-center gap-1">
-                        {p.ticket_code} <ExternalLink className="w-2.5 h-2.5" />
+                      <button type="button" onClick={() => handleGoToTicket(p)}
+                        aria-label={`Ouvrir la fiche du ticket ${p.ticket_code}`}
+                        className="min-h-[32px] text-xs text-brand-700 font-mono hover:text-brand-800 hover:underline flex items-center gap-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                        {p.ticket_code} <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
                       </button>
+                    )}
+                    {(modelText || clientFullName) && (
+                      <p className="lg:hidden text-xs text-slate-600 truncate">{[modelText, clientFullName].filter(Boolean).join(' · ')}</p>
                     )}
                     {p.notes && <p className="text-xs text-slate-400 mt-0.5 truncate" title={p.notes}>{p.notes}</p>}
                   </div>

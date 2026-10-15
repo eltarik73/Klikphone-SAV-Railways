@@ -3,10 +3,12 @@ Schemas Pydantic pour validation des données.
 Compatible avec le schéma PostgreSQL existant de Klikphone SAV.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from typing import Any
 from typing import Optional, List
 from datetime import datetime
+
+from app.services.search import phone_canonical
 
 
 # ============================================================
@@ -28,6 +30,12 @@ class TokenResponse(BaseModel):
 # ============================================================
 # CLIENTS
 # ============================================================
+def _telephone_canonique(v):
+    # Un seul format en base (0612345678 / +41…) : sinon « 06 12 34 56 78 » et
+    # « 0612345678 » cohabitent et créent des doublons de fiches client.
+    return phone_canonical(v)
+
+
 class ClientCreate(BaseModel):
     nom: str
     prenom: Optional[str] = ""
@@ -35,6 +43,8 @@ class ClientCreate(BaseModel):
     email: Optional[str] = ""
     societe: Optional[str] = ""
     carte_camby: Optional[int] = 0
+
+    _tel = field_validator("telephone")(_telephone_canonique)
 
 
 class ClientUpdate(BaseModel):
@@ -44,6 +54,8 @@ class ClientUpdate(BaseModel):
     email: Optional[str] = None
     societe: Optional[str] = None
     carte_camby: Optional[int] = None
+
+    _tel = field_validator("telephone")(_telephone_canonique)
 
 
 class ClientOut(BaseModel):
@@ -180,6 +192,15 @@ class TicketOut(BaseModel):
     ticket_original_id: Optional[int] = None
     source: Optional[str] = "boutique"
     type_document: Optional[str] = "devis"
+
+    @field_validator("date_cloture", mode="wrap")
+    @classmethod
+    def _date_cloture_texte(cls, v, handler):
+        # Colonne TEXT libre : une valeur non datable ne doit pas faire échouer toute la liste
+        try:
+            return handler(v)
+        except ValidationError:
+            return None
 
 
 class TicketFull(TicketOut):

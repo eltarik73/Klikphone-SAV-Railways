@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import PrintPreview from '../components/PrintPreview';
 import ModelCombobox from '../components/ModelCombobox';
 import { useCatalog } from '../hooks/useCatalog';
 import { normKey } from '../lib/catalog';
@@ -42,6 +43,14 @@ export default function AttestationPage() {
   const [email, setEmail] = useState('');
   const [telephone, setTelephone] = useState('');
   const [htmlPreview, setHtmlPreview] = useState('');
+  const previewRef = useRef(null);
+  const [previewReady, setPreviewReady] = useState(false);
+  const previewDocuments = useMemo(() => (htmlPreview ? [{
+    id: 'attestation',
+    label: 'Attestation',
+    desc: 'Attestation de non-réparabilité',
+    formats: { a4: { paper: 'a4', label: 'A4', source: { kind: 'html', html: htmlPreview } } },
+  }] : []), [htmlPreview]);
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [history, setHistory] = useState([]);
@@ -171,12 +180,10 @@ export default function AttestationPage() {
     }
   };
 
+  // Impression depuis l'iframe sandboxée de l'aperçu : pas de popup ni de document.write
   const handlePrint = () => {
     if (!htmlPreview) return;
-    const win = window.open('', '_blank');
-    win.document.write(htmlPreview);
-    win.document.close();
-    setTimeout(() => win.print(), 300);
+    previewRef.current?.print();
   };
 
   const handleSendEmail = async () => {
@@ -564,13 +571,17 @@ export default function AttestationPage() {
         <div className="space-y-4">
           <div className="card overflow-hidden">
             <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Aperçu du document</h3>
+              <h3 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Aperçu du document</h3>
             </div>
             {htmlPreview ? (
-              <iframe
-                srcDoc={htmlPreview}
-                className="w-full h-[750px] border-0"
-                title="Aperçu attestation"
+              <PrintPreview
+                ref={previewRef}
+                variant="inline"
+                title="Aperçu de l'attestation"
+                documents={previewDocuments}
+                onReadyChange={setPreviewReady}
+                showFooter={false}
+                canvasClassName="h-[750px] max-h-[80vh] min-h-[420px]"
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-[500px] text-center px-6">
@@ -589,8 +600,8 @@ export default function AttestationPage() {
               <h3 className="text-sm font-semibold text-slate-800 mb-3">Actions</h3>
 
               {/* Imprimer + Télécharger PDF / Word */}
-              <button onClick={handlePrint} className="btn-primary w-full justify-center gap-2">
-                <Printer className="w-4 h-4" /> Imprimer
+              <button onClick={handlePrint} disabled={!previewReady} className="btn-primary w-full justify-center gap-2 min-h-11">
+                <Printer className="w-4 h-4" aria-hidden="true" /> {previewReady ? 'Imprimer' : 'Préparation de l\'aperçu…'}
               </button>
               <div className="flex gap-2">
                 <button

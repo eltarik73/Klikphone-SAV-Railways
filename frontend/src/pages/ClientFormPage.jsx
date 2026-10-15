@@ -210,14 +210,17 @@ export default function ClientFormPage() {
         setStep(flow.length - 1);
       } else {
         const appareil = champsModele(form.marque, form.modele, form.modele_autre);
+        // Le symptôme choisi par le client reste dans panne (stats, forfait) ; la pièce est
+        // portée par la commande. Sans symptôme, la pièce sert de motif.
+        const pieceSeule = !isCommande && !form.panne && pieceACommander && pieceNom;
         const result = await api.createTicket({
           client_id: client.id, categorie: form.categorie,
           marque: form.marque,
           ...appareil,
-          panne: isCommande ? 'Pièce à commander' : (pieceACommander && pieceNom ? 'Pièce à commander' : form.panne),
-          panne_detail: isCommande ? form.panne_detail : (pieceACommander && pieceNom
+          panne: isCommande || pieceSeule ? 'Pièce à commander' : form.panne,
+          panne_detail: pieceSeule
             ? `${pieceNom}${pieceDetails ? ' — ' + pieceDetails : ''}`
-            : form.panne_detail),
+            : form.panne_detail,
           pin: form.pin,
           pattern: form.pattern,
           notes_client: form.notes_client,
@@ -245,12 +248,11 @@ export default function ClientFormPage() {
           });
         }
 
-        // Apprentissage silencieux
-        const panne = isCommande ? null : (pieceACommander && pieceNom ? null : form.panne);
-        if (panne && panne !== 'Pièce à commander') api.learnTerm('panne', panne).catch(() => {});
-        if (form.panne_detail) api.learnTerm('detail_panne', form.panne_detail).catch(() => {});
-        const modeleSaisi = appareil.modele_autre || (modeleLibre ? appareil.modele : '');
-        if (modeleSaisi) api.learnTerm('modele_custom', modeleSaisi).catch(() => {});
+        // create_ticket apprend déjà panne, panne_detail et modele_autre : seul un modèle
+        // saisi librement dans « modele » reste à apprendre ici.
+        if (!appareil.modele_autre && modeleLibre && appareil.modele) {
+          api.learnTerm('modele_custom', appareil.modele).catch(() => {});
+        }
 
         setCreatedCode(result.ticket_code);
         setStep(flow.length - 1);
@@ -534,8 +536,10 @@ export default function ClientFormPage() {
                     {pannes.map(p => (
                       <button
                         key={p}
+                        type="button"
+                        aria-pressed={form.panne === p}
                         onClick={() => updateForm('panne', p)}
-                        className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-left
+                        className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
                           ${form.panne === p
                             ? 'border-brand-500 bg-brand-50 text-brand-700'
                             : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}

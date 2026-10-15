@@ -6,19 +6,33 @@ Chat interne intelligent Klikphone SAV.
 
 import os
 import json
+import re
+import threading
 import time
+from collections import OrderedDict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
+from starlette.concurrency import run_in_threadpool
 
 import httpx
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services import search as search_engine
+from app.services.poll_cache import PollCache, cached_json
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+
+# Compteurs et listes pollés toutes les 3 à 8 s par poste : lecture partagée 4 s,
+# invalidée à chaque envoi / lecture (et par push_notification)
+_CACHE = PollCache(ttl=4)
+
+
+def invalider_cache_chat():
+    _CACHE.invalidate()
 
 # ─── TABLE LAZY CREATION ────────────────────────────────
 
@@ -78,14 +92,30 @@ def _get_param(key: str) -> str:
         return ""
 
 
+_ROLES_TTL = 15
+_roles: dict = {}
+_roles_lock = threading.Lock()
+
+
 def _is_manager_check(cur, user: str) -> bool:
-    """Verifie si l'utilisateur a le role Manager (utilise un curseur existant)."""
+    """Verifie si l'utilisateur a le role Manager (utilise un curseur existant).
+    Résultat gardé 15 s : la vérification revient à chaque poll du chat."""
+    now = time.monotonic()
+    with _roles_lock:
+        hit = _roles.get(user)
+        if hit and now - hit[1] < _ROLES_TTL:
+            return hit[0]
     try:
         cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user,))
         row = cur.fetchone()
-        return row is not None and "manager" in (row.get("role") or "").lower()
+        ok = row is not None and "manager" in (row.get("role") or "").lower()
     except Exception:
         return False
+    with _roles_lock:
+        if len(_roles) > 500:
+            _roles.clear()
+        _roles[user] = (ok, now)
+    return ok
 
 
 def _user_in_read_by(read_by_str: str, user: str) -> bool:
@@ -97,7 +127,29 @@ def _user_in_read_by(read_by_str: str, user: str) -> bool:
 
 # ─── IN-MEMORY AI CONVERSATIONS ─────────────────────────
 
-_conversations: dict = {}
+# Bornées : 200 conversations, oubliées après 2 h sans échange
+_conversations: "OrderedDict[str, list]" = OrderedDict()
+_conv_vues: dict = {}
+_CONV_MAX = 200
+_CONV_TTL = 7200
+_conv_lock = threading.Lock()
+
+
+def _conversation(conv_id: str) -> list:
+    now = time.monotonic()
+    with _conv_lock:
+        for cid in [c for c, t in _conv_vues.items() if now - t > _CONV_TTL]:
+            _conversations.pop(cid, None)
+            _conv_vues.pop(cid, None)
+        conv = _conversations.pop(conv_id, None)
+        if conv is None:
+            conv = []
+        _conversations[conv_id] = conv
+        _conv_vues[conv_id] = now
+        while len(_conversations) > _CONV_MAX:
+            ancien, _ = _conversations.popitem(last=False)
+            _conv_vues.pop(ancien, None)
+    return conv
 
 
 # ─── CLAUDE SYSTEM PROMPT & TOOLS ────────────────────────
@@ -194,17 +246,24 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
     try:
         with get_cursor() as cur:
             if tool_name == "search_client":
-                q = f"%{tool_input['query'].strip()}%"
+                saisie = str(tool_input.get("query") or "").strip()
+                # Téléphone (tout format : 06 12…, +33 6…) : clé normalisée indexée
+                key = search_engine.phone_key(saisie) if re.fullmatch(r"[\d\s.+\-()/]+", saisie) else None
+                if key:
+                    where, params = "public.kp_phone_key(c.telephone) = %s", (key,)
+                else:
+                    q = f"%{search_engine.esc_like(saisie)}%"
+                    where, params = "c.nom ILIKE %s OR c.prenom ILIKE %s OR c.telephone LIKE %s", (q, q, q)
                 cur.execute("""
                     SELECT c.id, c.nom, c.prenom, c.telephone, c.email,
                            COUNT(t.id) as nb_tickets
                     FROM clients c
                     LEFT JOIN tickets t ON t.client_id = c.id
-                    WHERE c.nom ILIKE %s OR c.prenom ILIKE %s OR c.telephone LIKE %s
+                    WHERE """ + where + """
                     GROUP BY c.id
                     ORDER BY c.nom
                     LIMIT 5
-                """, (q, q, q))
+                """, params)
                 return json.dumps(cur.fetchall() or [], default=str, ensure_ascii=False)
 
             elif tool_name == "get_ticket":
@@ -332,29 +391,32 @@ async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_u
     L'identité et le rôle ne sont JAMAIS dérivés du body (usurpables) : le nom
     vient du JWT, et le rôle manager est vérifié en base via _is_manager_check."""
 
-    api_key = _get_param("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(500, "Cle API Anthropic non configuree. Ajoutez ANTHROPIC_API_KEY dans Configuration ou en variable d'environnement.")
-
-    model = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-20250514"
-
     # Identité dérivée du token (jamais du body)
     current_user_name = current_user["sub"]
-    # Rôle vérifié en base, pas via msg.role (anti élévation de privilège)
-    with get_cursor() as _cur:
-        user_role = "manager" if _is_manager_check(_cur, current_user_name) else ""
+
+    def _contexte():
+        # SQL synchrone hors de la boucle d'événements
+        cle = _get_param("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+        modele = _get_param("ANTHROPIC_MODEL") or "claude-sonnet-4-20250514"
+        # Rôle vérifié en base, pas via msg.role (anti élévation de privilège)
+        with get_cursor() as _cur:
+            role = "manager" if _is_manager_check(_cur, current_user_name) else ""
+        return cle, modele, role
+
+    api_key, model, user_role = await run_in_threadpool(_contexte)
+    if not api_key:
+        raise HTTPException(500, "Cle API Anthropic non configuree. Ajoutez ANTHROPIC_API_KEY dans Configuration ou en variable d'environnement.")
     tools = _get_tools_for_role(user_role)
     system_prompt = _get_system_prompt_for_role(user_role)
 
     # Conversation (in-memory, keyed by conv_id)
     conv_id = msg.conversation_id or f"conv_{current_user_name}_{int(time.time())}"
-    if conv_id not in _conversations:
-        _conversations[conv_id] = []
+    conversation = _conversation(conv_id)
 
-    _conversations[conv_id].append({"role": "user", "content": msg.message})
+    conversation.append({"role": "user", "content": msg.message})
 
     # Keep last 20 messages for context
-    messages = _conversations[conv_id][-10:]
+    messages = conversation[-10:]
 
     try:
         async with httpx.AsyncClient(timeout=60) as client:
@@ -385,20 +447,20 @@ async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_u
             while result.get("stop_reason") == "tool_use" and iterations < 5:
                 iterations += 1
                 assistant_content = result["content"]
-                _conversations[conv_id].append({"role": "assistant", "content": assistant_content})
+                conversation.append({"role": "assistant", "content": assistant_content})
 
                 tool_results = []
                 for block in assistant_content:
                     if block["type"] == "tool_use":
-                        tool_result = _execute_tool(block["name"], block["input"])
+                        tool_result = await run_in_threadpool(_execute_tool, block["name"], block["input"])
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block["id"],
                             "content": tool_result
                         })
 
-                _conversations[conv_id].append({"role": "user", "content": tool_results})
-                messages = _conversations[conv_id][-10:]
+                conversation.append({"role": "user", "content": tool_results})
+                messages = conversation[-10:]
 
                 response = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -426,7 +488,7 @@ async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_u
                 if block.get("type") == "text":
                     assistant_text += block["text"]
 
-            _conversations[conv_id].append({"role": "assistant", "content": assistant_text})
+            conversation.append({"role": "assistant", "content": assistant_text})
 
             return {
                 "response": assistant_text,
@@ -442,7 +504,9 @@ async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_u
 @router.delete("/ai/conversation/{conv_id}")
 def clear_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
     """Efface une conversation IA."""
-    _conversations.pop(conv_id, None)
+    with _conv_lock:
+        _conversations.pop(conv_id, None)
+        _conv_vues.pop(conv_id, None)
     return {"status": "ok"}
 
 
@@ -464,18 +528,25 @@ def send_team_message(msg: TeamMessageCreate, current_user: dict = Depends(get_c
             RETURNING id, created_at
         """, (sender, msg.recipient, msg.message, is_private))
         row = cur.fetchone()
+    _CACHE.invalidate()
     return {"status": "ok", "id": row["id"], "created_at": row["created_at"].isoformat()}
 
 
 @router.get("/team/messages")
 def get_team_messages(
+    request: Request,
     channel: str = Query("all", description="'general' pour messages publics, 'all' pour tout"),
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(get_current_user),
 ):
     """Recupere les messages d'equipe visibles par l'utilisateur (JWT)."""
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(request, _CACHE, ("messages", user, channel, limit),
+                       lambda: _team_messages(user, channel, limit))
+
+
+def _team_messages(user: str, channel: str, limit: int) -> list:
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
 
@@ -526,10 +597,14 @@ def get_team_messages(
 
 
 @router.get("/team/contacts")
-def get_contacts(current_user: dict = Depends(get_current_user)):
+def get_contacts(request: Request, current_user: dict = Depends(get_current_user)):
     """Liste des contacts avec dernier message et nombre de non lus (pour onglet Prive)."""
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(request, _CACHE, ("contacts", user), lambda: _contacts(user))
+
+
+def _contacts(user: str) -> list:
     with get_cursor() as cur:
         # Membres actifs (sauf soi-même)
         cur.execute(
@@ -583,10 +658,14 @@ def get_contacts(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/team/conversation")
-def get_conversation(contact: str = Query(alias="with"), current_user: dict = Depends(get_current_user)):
+def get_conversation(request: Request, contact: str = Query(alias="with"), current_user: dict = Depends(get_current_user)):
     """Recupere les messages prives entre l'utilisateur connecté (JWT) et un contact."""
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(request, _CACHE, ("conversation", user, contact), lambda: _conversation_privee(user, contact))
+
+
+def _conversation_privee(user: str, contact: str) -> list:
     with get_cursor() as cur:
         cur.execute("""
             SELECT cm.id, cm.sender, cm.recipient, cm.message, cm.created_at,
@@ -649,39 +728,39 @@ def mark_as_read(contact: Optional[str] = None, current_user: dict = Depends(get
                   AND (recipient = 'all' OR recipient = %s)
             """, (user, user, user, user, user))
 
+    _CACHE.invalidate()
     return {"status": "ok"}
 
 
 @router.get("/team/unread")
-def get_unread_count(current_user: dict = Depends(get_current_user)):
+def get_unread_count(request: Request, current_user: dict = Depends(get_current_user)):
     """Nombre de messages non lus pour cet utilisateur (general seulement)."""
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(request, _CACHE, ("non-lus-general", user), lambda: _non_lus_general(user))
+
+
+def _non_lus_general(user: str) -> dict:
     with get_cursor() as cur:
-        is_mgr = _is_manager_check(cur, user)
-        if is_mgr:
-            cur.execute("""
-                SELECT COUNT(*) as count FROM chat_messages
-                WHERE recipient = 'all'
-                  AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
-                  AND sender != %s
-            """, (user, user))
-        else:
-            cur.execute("""
-                SELECT COUNT(*) as count FROM chat_messages
-                WHERE recipient = 'all'
-                  AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
-                  AND sender != %s
-            """, (user, user))
+        cur.execute("""
+            SELECT COUNT(*) as count FROM chat_messages
+            WHERE recipient = 'all'
+              AND ((',' || COALESCE(read_by, '') || ',') NOT LIKE '%%,' || %s || ',%%' OR read_by = '' OR read_by IS NULL)
+              AND sender != %s
+        """, (user, user))
         general_unread = cur.fetchone()["count"]
     return {"unread": general_unread}
 
 
 @router.get("/team/unread/total")
-def get_total_unread(current_user: dict = Depends(get_current_user)):
+def get_total_unread(request: Request, current_user: dict = Depends(get_current_user)):
     """Nombre total de messages non lus (general + prive)."""
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(request, _CACHE, ("non-lus-total", user), lambda: _non_lus_total(user))
+
+
+def _non_lus_total(user: str) -> dict:
     with get_cursor() as cur:
         is_mgr = _is_manager_check(cur, user)
         if is_mgr:

@@ -14,6 +14,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
@@ -385,10 +386,52 @@ async def search_place(query: str = Query(..., description="Nom de la boutique +
     return {"candidates": data["candidates"]}
 
 
+def _enregistrer_avis(reviews: list) -> int:
+    """Insère les avis Google absents de la base ; renvoie le nombre d'ajouts."""
+    synced = 0
+    with get_cursor() as cur:
+        for review in reviews:
+            author = review.get("author_name", "Anonyme")
+            rating = review.get("rating", 5)
+            text = review.get("text", "")
+            timestamp = review.get("time", 0)
+            # Créer un ID unique à partir de l'auteur + timestamp
+            review_id = f"google_{author.replace(' ', '_').lower()}_{timestamp}"
+
+            # Convertir le timestamp unix en datetime
+            from datetime import datetime as dt
+            date_avis = dt.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
+
+            # Vérifier si cet avis existe déjà (par google_review_id ou par auteur+date)
+            cur.execute(
+                "SELECT id FROM avis_google WHERE google_review_id = %s",
+                (review_id,),
+            )
+            if cur.fetchone():
+                continue
+
+            # Vérifier aussi par auteur + note (pour éviter les doublons des anciens avis démo)
+            cur.execute(
+                "SELECT id FROM avis_google WHERE auteur = %s AND note = %s AND texte = %s",
+                (author, rating, text),
+            )
+            if cur.fetchone():
+                continue
+
+            cur.execute("""
+                INSERT INTO avis_google
+                    (google_review_id, auteur, note, texte, date_avis,
+                     repondu, reponse_texte, reponse_date, reponse_par)
+                VALUES (%s, %s, %s, %s, %s, FALSE, NULL, NULL, NULL)
+            """, (review_id, author, rating, text, date_avis))
+            synced += 1
+    return synced
+
+
 @router.post("/avis/sync")
 async def sync_avis(user: dict = Depends(_require_admin_marketing)):
     """Synchronise les avis depuis Google Places API. Nécessite GOOGLE_PLACES_API_KEY + GOOGLE_PLACE_ID."""
-    _ensure_tables()
+    await run_in_threadpool(_ensure_tables)
 
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
     place_id = os.getenv("GOOGLE_PLACE_ID", "").strip()
@@ -456,43 +499,7 @@ async def sync_avis(user: dict = Depends(_require_admin_marketing)):
     if not reviews:
         return {"synced": 0, "total_google": result.get("user_ratings_total", 0), "message": "Aucun avis retourné par Google"}
 
-    synced = 0
-    with get_cursor() as cur:
-        for review in reviews:
-            author = review.get("author_name", "Anonyme")
-            rating = review.get("rating", 5)
-            text = review.get("text", "")
-            timestamp = review.get("time", 0)
-            # Créer un ID unique à partir de l'auteur + timestamp
-            review_id = f"google_{author.replace(' ', '_').lower()}_{timestamp}"
-
-            # Convertir le timestamp unix en datetime
-            from datetime import datetime as dt
-            date_avis = dt.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else None
-
-            # Vérifier si cet avis existe déjà (par google_review_id ou par auteur+date)
-            cur.execute(
-                "SELECT id FROM avis_google WHERE google_review_id = %s",
-                (review_id,),
-            )
-            if cur.fetchone():
-                continue
-
-            # Vérifier aussi par auteur + note (pour éviter les doublons des anciens avis démo)
-            cur.execute(
-                "SELECT id FROM avis_google WHERE auteur = %s AND note = %s AND texte = %s",
-                (author, rating, text),
-            )
-            if cur.fetchone():
-                continue
-
-            cur.execute("""
-                INSERT INTO avis_google
-                    (google_review_id, auteur, note, texte, date_avis,
-                     repondu, reponse_texte, reponse_date, reponse_par)
-                VALUES (%s, %s, %s, %s, %s, FALSE, NULL, NULL, NULL)
-            """, (review_id, author, rating, text, date_avis))
-            synced += 1
+    synced = await run_in_threadpool(_enregistrer_avis, reviews)
 
     return {
         "synced": synced,
@@ -819,12 +826,14 @@ _PLATFORM_MAP = {
 @router.post("/posts/{post_id}/publier")
 async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
     """Publie un post via Late API sur les réseaux sociaux connectés."""
-    _ensure_tables()
-
     # 1. Récupérer le post depuis la BDD
-    with get_cursor() as cur:
-        cur.execute("SELECT * FROM posts_marketing WHERE id = %s", (post_id,))
-        post = cur.fetchone()
+    def _lire_post():
+        _ensure_tables()
+        with get_cursor() as cur:
+            cur.execute("SELECT * FROM posts_marketing WHERE id = %s", (post_id,))
+            return cur.fetchone()
+
+    post = await run_in_threadpool(_lire_post)
     if not post:
         raise HTTPException(404, "Post non trouvé")
 
@@ -944,17 +953,20 @@ async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketi
     external_id = late_result.get("id", late_result.get("postId", ""))
 
     # 4. Mettre à jour le statut en BDD
-    with get_cursor() as cur:
-        cur.execute("""
-            UPDATE posts_marketing
-            SET statut = 'publié',
-                date_publication = NOW(),
-                external_post_id = %s,
-                updated_at = NOW()
-            WHERE id = %s
-            RETURNING *
-        """, (str(external_id), post_id))
-        row = cur.fetchone()
+    def _marquer_publie():
+        with get_cursor() as cur:
+            cur.execute("""
+                UPDATE posts_marketing
+                SET statut = 'publié',
+                    date_publication = NOW(),
+                    external_post_id = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING *
+            """, (str(external_id), post_id))
+            return cur.fetchone()
+
+    row = await run_in_threadpool(_marquer_publie)
 
     result = _row_to_dict(row)
     result["late_response"] = late_result
@@ -1145,7 +1157,9 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(_require_admin_
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
-            resp = client.messages.create(
+            # Client HTTP synchrone : hors de la boucle d'événements
+            resp = await run_in_threadpool(
+                client.messages.create,
                 model="claude-sonnet-4-20250514",
                 max_tokens=300,
                 messages=[{"role": "user", "content": user_prompt}],

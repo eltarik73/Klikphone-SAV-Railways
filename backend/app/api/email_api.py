@@ -2,12 +2,10 @@
 API Email — envoi via Resend (HTTP) ou SMTP fallback.
 """
 
-import asyncio
 import base64
 import os
 import ssl
 import smtplib
-from functools import partial
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -159,13 +157,11 @@ class SendDocumentRequest(BaseModel):
     to: str
 
 
+# Routes en def : SQL, génération PDF et envoi HTTP/SMTP tournent dans le threadpool.
 @router.post("/envoyer")
-async def envoyer_email(data: EmailRequest, user: dict = Depends(get_current_user)):
+def envoyer_email(data: EmailRequest, user: dict = Depends(get_current_user)):
     """Envoie un email via Resend ou SMTP."""
-    loop = asyncio.get_event_loop()
-    success, message = await loop.run_in_executor(
-        None, partial(_send_email, data.to, data.subject, data.body)
-    )
+    success, message = _send_email(data.to, data.subject, data.body)
     return {"status": "ok" if success else "error", "message": message}
 
 
@@ -206,10 +202,18 @@ def _send_resend_pdf(to: str, subject: str, body_html: str, pdf_bytes: bytes, fi
         return False, f"Erreur Resend: {str(e)}"
 
 
+# Documents remis au client uniquement : jamais la fiche atelier (PIN, schéma,
+# notes internes) ni le document combiné qui la contient.
+DOCUMENTS_ENVOYABLES = ("client", "devis", "recu")
+
+
 @router.post("/send-document")
-async def send_document(data: SendDocumentRequest, user: dict = Depends(get_current_user)):
+def send_document(data: SendDocumentRequest, user: dict = Depends(get_current_user)):
     """Génère le document PDF A4 et l'envoie par email en pièce jointe."""
     from app.api.print_tickets import _get_ticket_full
+
+    if data.doc_type not in DOCUMENTS_ENVOYABLES:
+        raise HTTPException(400, "Document interne : seuls le ticket de dépôt, le devis et le reçu peuvent être envoyés au client")
 
     t = _get_ticket_full(data.ticket_id)
     if not t:
@@ -218,7 +222,6 @@ async def send_document(data: SendDocumentRequest, user: dict = Depends(get_curr
     ticket_code = t.get("ticket_code", "")
     type_labels = {
         "client": "Reçu de dépôt",
-        "staff": "Fiche atelier",
         "devis": "Devis",
         "recu": "Reçu de paiement",
     }
@@ -240,42 +243,23 @@ async def send_document(data: SendDocumentRequest, user: dict = Depends(get_curr
 <span style="font-size:12px;color:#94a3b8">79 Place Saint Léger, 73000 Chambéry — 04 79 60 89 22</span></p>
 </div>"""
 
-        loop = asyncio.get_event_loop()
-        success, message = await loop.run_in_executor(
-            None, partial(_send_resend_pdf, data.to, subject, body_html, pdf_bytes, filename)
-        )
+        success, message = _send_resend_pdf(data.to, subject, body_html, pdf_bytes, filename)
         return {"status": "ok" if success else "error", "message": message}
 
-    # Pour client et staff : HTML inline (80mm thermique)
-    from app.api.print_tickets import (
-        _ticket_client_html, _ticket_staff_html,
-    )
-    generators = {
-        "client": _ticket_client_html,
-        "staff": _ticket_staff_html,
-    }
-    gen = generators.get(data.doc_type)
-    if not gen:
-        raise HTTPException(400, f"Type de document '{data.doc_type}' non supporté")
+    # Ticket de dépôt : HTML inline (80mm thermique)
+    from app.api.print_tickets import _ticket_client_html
 
-    html_content = gen(t)
-    loop = asyncio.get_event_loop()
-    success, message = await loop.run_in_executor(
-        None, partial(_send_resend_html, data.to, subject, html_content)
-    )
+    html_content = _ticket_client_html(t)
+    success, message = _send_resend_html(data.to, subject, html_content)
     return {"status": "ok" if success else "error", "message": message}
 
 
 @router.post("/test")
-async def test_email(data: EmailTestRequest, user: dict = Depends(get_current_user)):
+def test_email(data: EmailTestRequest, user: dict = Depends(get_current_user)):
     """Envoie un email de test."""
-    loop = asyncio.get_event_loop()
-    success, message = await loop.run_in_executor(
-        None, partial(
-            _send_email,
-            data.to,
-            "Klikphone SAV - Test email",
-            "Ceci est un email de test depuis Klikphone SAV.\n\nSi vous recevez ce message, la configuration email est fonctionnelle !"
-        )
+    success, message = _send_email(
+        data.to,
+        "Klikphone SAV - Test email",
+        "Ceci est un email de test depuis Klikphone SAV.\n\nSi vous recevez ce message, la configuration email est fonctionnelle !"
     )
     return {"status": "ok" if success else "error", "message": message}

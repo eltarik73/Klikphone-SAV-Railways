@@ -10,9 +10,31 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.database import get_cursor
 from app.models import ClientCreate, ClientUpdate, ClientOut
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_optional_user, require_admin
+from app.services import search as search_engine
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
+
+
+def find_client_by_phone(cur, telephone):
+    """Client existant pour ce numéro, quel que soit le format (06 12…, 0612…, +33 6…).
+
+    Clé indexée sur les 9 derniers chiffres, puis égalité du numéro complet
+    (un numéro étranger peut partager ses 9 derniers chiffres). En dessous de
+    9 chiffres, seule l'égalité stricte historique s'applique.
+    """
+    key = search_engine.phone_key(telephone)
+    if not key:
+        cur.execute("SELECT * FROM clients WHERE telephone = %s ORDER BY id LIMIT 1", (telephone,))
+        return cur.fetchone()
+    cur.execute(
+        "SELECT * FROM clients WHERE public.kp_phone_key(telephone) = %s ORDER BY id",
+        (key,),
+    )
+    for row in cur.fetchall() or []:
+        if search_engine.same_phone(row["telephone"], telephone):
+            return row
+    return None
 
 
 @router.get("", response_model=list[ClientOut])
@@ -22,18 +44,24 @@ def list_clients(
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    """Liste les clients avec recherche optionnelle."""
+    """Liste les clients avec recherche optionnelle.
+
+    Recherche : chaque mot doit trouver nom, prénom, société, email ou
+    téléphone (tout format : espaces, points, +33, 4 derniers chiffres).
+    """
     if search:
+        pq = search_engine.parse_query(search)
+        pq.ticket_id = pq.code_prefix = pq.imei = None
+        sp = search_engine.SqlParams()
+        where = search_engine.client_where_sql(pq, sp, c="c")
+        score = search_engine.client_score_sql(pq, sp, c="c")
         with get_cursor() as cur:
-            s = f"%{search}%"
-            cur.execute("""
-                SELECT * FROM clients
-                WHERE unaccent(nom) ILIKE unaccent(%s) OR unaccent(prenom) ILIKE unaccent(%s)
-                      OR telephone LIKE %s OR unaccent(email) ILIKE unaccent(%s)
-                      OR unaccent(societe) ILIKE unaccent(%s)
-                ORDER BY date_creation DESC
-                LIMIT %s OFFSET %s
-            """, (s, s, s, s, s, limit, offset))
+            cur.execute(
+                "SELECT c.* FROM clients c WHERE " + where +
+                " ORDER BY " + score + " DESC, c.date_creation DESC NULLS LAST, c.id DESC"
+                " LIMIT %(limit)s OFFSET %(offset)s",
+                {**sp.values, "limit": limit, "offset": offset},
+            )
             return cur.fetchall()
     else:
         with get_cursor() as cur:
@@ -153,38 +181,51 @@ def get_client(client_id: int, user: dict = Depends(get_current_user)):
 def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
     """Recherche un client par téléphone (réservé au staff — renvoie la fiche complète)."""
     with get_cursor() as cur:
-        cur.execute("SELECT * FROM clients WHERE telephone = %s", (telephone,))
-        row = cur.fetchone()
+        row = find_client_by_phone(cur, telephone)
     return row  # None si pas trouvé (pas d'erreur 404)
 
 
-@router.post("", response_model=ClientOut)
-def create_or_get_client(data: ClientCreate):
+@router.post("", response_model=ClientOut, response_model_exclude_unset=True)
+def create_or_get_client(data: ClientCreate, user: Optional[dict] = Depends(get_optional_user)):
     """Crée un client ou retourne l'existant si le téléphone existe déjà.
-    
-    Compatible avec get_or_create_client.
+
+    Sans jeton (borne, dépôt en ligne) : la fiche d'un client existant n'est
+    jamais réécrite, seuls ses nom, prénom et société vides sont complétés, et
+    seul l'id est renvoyé (pas de fuite du nom ou de l'email d'un numéro connu).
+    L'email n'est jamais posé ainsi : connaître un numéro suffirait à recevoir
+    les devis, reçus et suivis de ce client. Il se renseigne au comptoir.
+    carte_camby n'est modifiée que si elle est fournie.
     """
+    camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
     with get_cursor() as cur:
-        # Vérifier si le client existe
-        cur.execute("SELECT * FROM clients WHERE telephone = %s", (data.telephone,))
-        existing = cur.fetchone()
+        # Vérifier si le client existe (numéro normalisé : évite les doublons 06 12… / 0612…)
+        existing = find_client_by_phone(cur, data.telephone)
+
+        if existing and user:
+            # Staff : les valeurs saisies remplacent les anciennes
+            cur.execute("""
+                UPDATE clients SET
+                    nom = COALESCE(NULLIF(%(nom)s, ''), nom),
+                    prenom = COALESCE(NULLIF(%(prenom)s, ''), prenom),
+                    email = COALESCE(NULLIF(%(email)s, ''), email),
+                    societe = COALESCE(NULLIF(%(societe)s, ''), societe),
+                    carte_camby = COALESCE(%(camby)s, carte_camby)
+                WHERE id = %(id)s
+                RETURNING *
+            """, {**data.model_dump(), "camby": camby, "id": existing["id"]})
+            return cur.fetchone()
 
         if existing:
-            # Mettre à jour les infos si elles ont changé
+            # Public : compléter seulement (jamais l'email) ; la carte peut être déclarée, jamais retirée
             cur.execute("""
-                UPDATE clients SET 
-                    nom = COALESCE(NULLIF(%s, ''), nom),
-                    prenom = COALESCE(NULLIF(%s, ''), prenom),
-                    email = COALESCE(NULLIF(%s, ''), email),
-                    societe = COALESCE(NULLIF(%s, ''), societe),
-                    carte_camby = %s
-                WHERE id = %s
-                RETURNING *
-            """, (
-                data.nom, data.prenom, data.email,
-                data.societe, data.carte_camby, existing["id"],
-            ))
-            return cur.fetchone()
+                UPDATE clients SET
+                    nom = CASE WHEN COALESCE(nom, '') = '' THEN NULLIF(%(nom)s, '') ELSE nom END,
+                    prenom = CASE WHEN COALESCE(prenom, '') = '' THEN NULLIF(%(prenom)s, '') ELSE prenom END,
+                    societe = CASE WHEN COALESCE(societe, '') = '' THEN NULLIF(%(societe)s, '') ELSE societe END,
+                    carte_camby = CASE WHEN %(camby)s = 1 THEN 1 ELSE carte_camby END
+                WHERE id = %(id)s
+            """, {**data.model_dump(), "camby": 1 if camby else 0, "id": existing["id"]})
+            return {"id": existing["id"]}
 
         # Créer le client
         cur.execute("""
@@ -193,9 +234,10 @@ def create_or_get_client(data: ClientCreate):
             RETURNING *
         """, (
             data.nom, data.prenom, data.telephone,
-            data.email, data.societe, data.carte_camby,
+            data.email, data.societe, camby or 0,
         ))
-        return cur.fetchone()
+        row = cur.fetchone()
+    return row if user else {"id": row["id"]}
 
 
 @router.patch("/{client_id}", response_model=dict)
@@ -219,8 +261,8 @@ def update_client(
 
 
 @router.delete("/{client_id}", response_model=dict)
-def delete_client(client_id: int, user: dict = Depends(get_current_user)):
-    """Supprime un client (vérifie qu'il n'a pas de tickets). Idempotent."""
+def delete_client(client_id: int, user: dict = Depends(require_admin)):
+    """Supprime un client (vérifie qu'il n'a pas de tickets). Idempotent. Élévation admin requise."""
     with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) as cnt FROM tickets WHERE client_id = %s", (client_id,))
         row = cur.fetchone()

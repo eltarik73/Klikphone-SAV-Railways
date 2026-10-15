@@ -2,12 +2,25 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import { usePolling } from '../hooks/usePolling';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate, formatPrix } from '../lib/utils';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, Tv } from 'lucide-react';
+import { normalizeTicketCode, normalizePhoneInput } from '../lib/ticketCode';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, Tv, ShieldCheck, Loader2 } from 'lucide-react';
+
+const SUIVI_POLL_MS = 30_000;
+
+// Message à afficher pour un refus du serveur sur une action publique
+function messageErreur(err) {
+  if (err?.status === 429) return 'Trop de tentatives. Réessayez dans quelques minutes.';
+  if (err?.name === 'TypeError') return 'Connexion impossible. Vérifiez votre réseau puis réessayez.';
+  return err?.message || 'Une erreur est survenue, réessayez.';
+}
+const preuveRefusee = (err) => err?.status === 401 || err?.status === 403;
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
@@ -18,7 +31,14 @@ export default function SuiviPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const pollRef = useRef(null);
+
+  // Preuve d'accès aux actions (accepter/refuser le devis, message, avis) : le jeton `t` du lien
+  // de suivi pour le ticket ouvert par ce lien ; sinon les 4 derniers chiffres du téléphone.
+  const [urlToken] = useState(() => searchParams.get('t') || '');
+  const [tokenCode, setTokenCode] = useState(null); // ticket_code auquel s'applique urlToken
+  const [verified, setVerified] = useState(null);   // { code, tel4 } déjà accepté par le serveur
+  const [verif, setVerif] = useState(null);         // demande en cours : { exec, digits, error, busy, info }
+  const [actionError, setActionError] = useState('');
 
   // QR intelligent : si un membre du staff connecté scanne le QR d'un ticket
   // (arrivée avec ?ticket=), on le redirige vers la fiche interne.
@@ -51,7 +71,7 @@ export default function SuiviPage() {
 
   const isPhoneInput = (val) => /^\+?\d[\d\s.-]{5,}$/.test(val.trim());
 
-  const doSearch = useCallback(async (searchVal) => {
+  const doSearch = useCallback(async (searchVal, { fromUrl = false } = {}) => {
     const val = (searchVal || code).trim();
     if (!val) return;
     setLoading(true);
@@ -61,10 +81,15 @@ export default function SuiviPage() {
     setDevisResult(null);
     setMsgSent(false);
     setAvisSent(false);
+    setActionError('');
+    setVerif(null);
+
+    // « 123 », « kp123 », « #123 », URL du QR → KP-000123 ; un téléphone fait au moins 9 chiffres
+    const ticketCode = normalizeTicketCode(val, { allowBareNumber: true });
 
     try {
-      if (isPhoneInput(val)) {
-        const results = await api.getTicketsByPhone(val.replace(/[\s.-]/g, ''));
+      if (!ticketCode && isPhoneInput(val)) {
+        const results = await api.getTicketsByPhone(normalizePhoneInput(val));
         if (results.length === 0) {
           setError('Aucun ticket trouvé avec ce numéro.');
         } else if (results.length === 1) {
@@ -76,8 +101,9 @@ export default function SuiviPage() {
           setPhoneResults(results);
         }
       } else {
-        const data = await api.getTicketByCode(val.toUpperCase());
+        const data = await api.getTicketByCode(encodeURIComponent(ticketCode || val.toUpperCase()));
         setTicket(data);
+        if (fromUrl && urlToken) setTokenCode(data.ticket_code);
         api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
         api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
       }
@@ -86,25 +112,91 @@ export default function SuiviPage() {
     } finally {
       setLoading(false);
     }
-  }, [code]);
+  }, [code, urlToken]);
 
   useEffect(() => {
     const ticketParam = searchParams.get('ticket') || searchParams.get('tel');
-    if (ticketParam) doSearch(ticketParam);
+    if (ticketParam) doSearch(ticketParam, { fromUrl: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  // Rafraîchissement toutes les 30 s, en pause quand l'onglet est masqué (reprise immédiate au retour)
+  const ticketCodeRef = useRef(null);
+  ticketCodeRef.current = ticket?.ticket_code || null;
+  usePolling(async () => {
+    const current = ticketCodeRef.current;
+    if (!current) return;
+    try {
+      const data = await api.background(() => api.getTicketByCode(current));
+      if (ticketCodeRef.current !== current) return;
+      setTicket(prev => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
+      setLastRefresh(new Date());
+    } catch { /* silent */ }
+  }, SUIVI_POLL_MS, { enabled: Boolean(ticket?.ticket_code), immediate: false });
+
+  const preuvePour = (ticketCode) => {
+    if (urlToken && tokenCode && tokenCode === ticketCode) return { t: urlToken };
+    if (verified?.code === ticketCode) return { tel4: verified.tel4 };
+    return null;
+  };
+
+  // Exécute une action protégée ; sans preuve (ou preuve refusée), demande les 4 chiffres
+  const avecPreuve = async (exec) => {
     if (!ticket) return;
-    pollRef.current = setInterval(async () => {
-      try {
-        const data = await api.getTicketByCode(ticket.ticket_code);
-        setTicket(data);
-        setLastRefresh(new Date());
-      } catch { /* silent */ }
-    }, 30000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [ticket?.ticket_code]);
+    const preuve = preuvePour(ticket.ticket_code);
+    setActionError('');
+    if (!preuve) {
+      setVerif({ exec, digits: '', error: '', busy: false, info: '' });
+      return;
+    }
+    try {
+      await exec(preuve);
+    } catch (err) {
+      if (preuveRefusee(err)) {
+        if (preuve.t) setTokenCode(null);
+        else setVerified(null);
+        setVerif({
+          exec, digits: '', busy: false, error: '',
+          info: preuve.t ? 'Ce lien de suivi n\'est plus valable : confirmez avec votre numéro de téléphone.' : '',
+        });
+      } else {
+        setActionError(messageErreur(err));
+      }
+    }
+  };
+
+  const submitVerif = async (e) => {
+    e?.preventDefault();
+    if (!verif || verif.busy || !ticket) return;
+    const tel4 = verif.digits.replace(/\D/g, '');
+    if (tel4.length !== 4) {
+      setVerif(v => ({ ...v, error: 'Saisissez les 4 derniers chiffres de votre numéro.' }));
+      return;
+    }
+    const ticketCode = ticket.ticket_code;
+    setVerif(v => ({ ...v, busy: true, error: '' }));
+    try {
+      await verif.exec({ tel4 });
+      setVerified({ code: ticketCode, tel4 });
+      setVerif(null);
+    } catch (err) {
+      setVerif(v => (v ? {
+        ...v, busy: false,
+        error: preuveRefusee(err)
+          ? 'Ces 4 chiffres ne correspondent pas au numéro de téléphone du dossier.'
+          : messageErreur(err),
+      } : v));
+    }
+  };
+
+  // Fenêtre des 4 chiffres : focus piégé, Échap ferme, retour du focus sur le bouton déclencheur
+  const verifRef = useRef(null);
+  const verifBusyRef = useRef(false);
+  verifBusyRef.current = Boolean(verif?.busy);
+  useFocusTrap(verifRef, Boolean(verif && ticket), {
+    initialFocus: '#suivi-tel4',
+    onEscape: () => { if (!verifBusyRef.current) setVerif(null); },
+  });
 
   const handleSearch = (e) => { e?.preventDefault(); doSearch(); };
 
@@ -123,40 +215,49 @@ export default function SuiviPage() {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || !ticket) return;
-    setSendingMsg(true);
-    try {
-      await api.suiviSendMessage(ticket.ticket_code, message.trim());
-      setMessage('');
-      setMsgSent(true);
-      setTimeout(() => setMsgSent(false), 4000);
-    } catch { /* silent */ }
-    finally { setSendingMsg(false); }
+  // Les actions lèvent l'erreur : avecPreuve / submitVerif décident du message à afficher
+  const handleSendMessage = () => {
+    const texte = message.trim();
+    if (!texte || !ticket || sendingMsg) return;
+    const ticketCode = ticket.ticket_code;
+    avecPreuve(async (preuve) => {
+      setSendingMsg(true);
+      try {
+        await api.suiviSendMessage(ticketCode, texte, preuve);
+        setMessage('');
+        setMsgSent(true);
+        setTimeout(() => setMsgSent(false), 4000);
+      } finally { setSendingMsg(false); }
+    });
   };
 
-  const handleDevisValidation = async (accepte) => {
-    if (!ticket) return;
-    setDevisLoading(true);
-    try {
-      await api.suiviValiderDevis(ticket.ticket_code, accepte);
-      setDevisResult(accepte ? 'accepted' : 'refused');
-      // Reload ticket to get new status
-      const data = await api.getTicketByCode(ticket.ticket_code);
-      setTicket(data);
-    } catch { /* silent */ }
-    finally { setDevisLoading(false); }
+  const handleDevisValidation = (accepte) => {
+    if (!ticket || devisLoading) return;
+    const ticketCode = ticket.ticket_code;
+    avecPreuve(async (preuve) => {
+      setDevisLoading(true);
+      try {
+        await api.suiviValiderDevis(ticketCode, accepte, preuve);
+        setDevisResult(accepte ? 'accepted' : 'refused');
+        // Reload ticket to get new status
+        api.getTicketByCode(ticketCode).then(setTicket).catch(() => {});
+      } finally { setDevisLoading(false); }
+    });
   };
 
-  const handleSubmitAvis = async () => {
-    if (avisNote === 0 || !ticket) return;
-    setAvisLoading(true);
-    try {
-      await api.suiviLaisserAvis(ticket.ticket_code, avisNote, avisComment.trim());
-      setAvisSent(true);
-      setHasAvis(true);
-    } catch { /* silent */ }
-    finally { setAvisLoading(false); }
+  const handleSubmitAvis = () => {
+    if (avisNote === 0 || !ticket || avisLoading) return;
+    const ticketCode = ticket.ticket_code;
+    const note = avisNote;
+    const commentaire = avisComment.trim();
+    avecPreuve(async (preuve) => {
+      setAvisLoading(true);
+      try {
+        await api.suiviLaisserAvis(ticketCode, note, commentaire, preuve);
+        setAvisSent(true);
+        setHasAvis(true);
+      } finally { setAvisLoading(false); }
+    });
   };
 
   // Parse repair lines for devis display
@@ -193,8 +294,8 @@ export default function SuiviPage() {
           <input type="text" value={code} onChange={(e) => setCode(e.target.value)}
             placeholder="KP-000001 ou 06 12 34 56 78"
             className="input flex-1 text-center font-mono text-lg font-bold tracking-wider" autoFocus />
-          <button type="submit" disabled={loading} className="btn-primary px-5">
-            <Search className="w-5 h-5" />
+          <button type="submit" disabled={loading} className="btn-primary px-5 min-h-[44px]" aria-label="Rechercher">
+            <Search className="w-5 h-5" aria-hidden="true" />
           </button>
         </form>
 
@@ -232,6 +333,11 @@ export default function SuiviPage() {
 
         {ticket && (
           <div className="space-y-5 animate-in">
+            {actionError && (
+              <div role="alert" className="card p-4 bg-red-50 border border-red-200 text-sm text-red-700 font-medium text-center">
+                {actionError}
+              </div>
+            )}
             {/* Pré-enregistré banner */}
             {ticket.statut === 'Pré-enregistré' && (
               <div className="card p-5 bg-indigo-50 border border-indigo-200">
@@ -490,18 +596,21 @@ export default function SuiviPage() {
                 </div>
                 <div className="flex justify-center gap-1 mb-4">
                   {[1,2,3,4,5].map(n => (
-                    <button key={n}
+                    <button key={n} type="button"
                       onMouseEnter={() => setAvisHover(n)}
                       onMouseLeave={() => setAvisHover(0)}
                       onClick={() => setAvisNote(n)}
-                      className="p-1 transition-transform hover:scale-110"
+                      aria-label={`${n} étoile${n > 1 ? 's' : ''} sur 5`}
+                      aria-pressed={avisNote === n}
+                      className="p-1.5 rounded-lg transition-transform motion-safe:hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
                     >
-                      <Star className={`w-8 h-8 ${(avisHover || avisNote) >= n ? 'text-yellow-400 fill-yellow-400' : 'text-slate-300'} transition-colors`} />
+                      <Star aria-hidden="true" className={`w-8 h-8 ${(avisHover || avisNote) >= n ? 'text-yellow-400 fill-yellow-400' : 'text-slate-400'} transition-colors`} />
                     </button>
                   ))}
                 </div>
                 <textarea
                   value={avisComment} onChange={e => setAvisComment(e.target.value)}
+                  aria-label="Commentaire (optionnel)"
                   placeholder="Un commentaire ? (optionnel)"
                   className="input w-full resize-none mb-3" rows={2}
                 />
@@ -537,12 +646,13 @@ export default function SuiviPage() {
               <div className="flex gap-2">
                 <input type="text" value={message} onChange={e => setMessage(e.target.value)}
                   placeholder="Votre message..."
-                  className="input flex-1 text-sm"
+                  aria-label="Votre message à l'équipe"
+                  className="input flex-1 text-sm min-h-[44px]"
                   onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
                 />
                 <button onClick={handleSendMessage} disabled={!message.trim() || sendingMsg}
-                  className="btn-primary px-4 shrink-0">
-                  <Send className="w-4 h-4" />
+                  className="btn-primary px-4 shrink-0 min-h-[44px]" aria-label="Envoyer le message">
+                  {sendingMsg ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
                 </button>
               </div>
             </div>
@@ -616,6 +726,56 @@ export default function SuiviPage() {
           </div>
         </div>
       </div>
+
+      {/* Vérification : 4 derniers chiffres du téléphone (lien de suivi sans jeton) */}
+      {verif && ticket && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/50"
+          onClick={() => { if (!verif.busy) setVerif(null); }}>
+          <form
+            ref={verifRef}
+            role="dialog" aria-modal="true" aria-labelledby="suivi-verif-titre" aria-describedby="suivi-verif-texte"
+            onClick={e => e.stopPropagation()}
+            onSubmit={submitVerif}
+            className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 animate-fade-up"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-5 h-5 text-brand-600" aria-hidden="true" />
+              </div>
+              <h2 id="suivi-verif-titre" className="text-base font-bold text-slate-900">Confirmez qu'il s'agit de votre dossier</h2>
+            </div>
+            {verif.info && <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-3">{verif.info}</p>}
+            <p id="suivi-verif-texte" className="text-sm text-slate-600 mb-4">
+              Saisissez les <strong>4 derniers chiffres</strong> du numéro de téléphone donné lors du dépôt de l'appareil ({ticket.ticket_code}).
+            </p>
+            <label htmlFor="suivi-tel4" className="input-label">4 derniers chiffres</label>
+            <input
+              id="suivi-tel4"
+              type="text" inputMode="numeric" pattern="[0-9]*" maxLength={4} autoComplete="off"
+              value={verif.digits}
+              onChange={e => setVerif(v => ({ ...v, digits: e.target.value.replace(/\D/g, '').slice(0, 4), error: '' }))}
+              aria-invalid={Boolean(verif.error)}
+              aria-describedby={verif.error ? 'suivi-tel4-erreur' : undefined}
+              className="input text-center font-mono text-2xl tracking-[0.5em] min-h-[52px]"
+              placeholder="••••"
+            />
+            {verif.error && (
+              <p id="suivi-tel4-erreur" role="alert" className="mt-2 text-sm text-red-700 font-medium">{verif.error}</p>
+            )}
+            <div className="flex gap-2 mt-5">
+              <button type="button" onClick={() => setVerif(null)} disabled={verif.busy}
+                className="btn-secondary flex-1 min-h-[44px]">
+                Annuler
+              </button>
+              <button type="submit" disabled={verif.busy || verif.digits.length !== 4}
+                className="btn-primary flex-1 min-h-[44px]">
+                {verif.busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <ShieldCheck className="w-4 h-4" aria-hidden="true" />}
+                Confirmer
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

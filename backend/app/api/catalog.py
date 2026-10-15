@@ -168,16 +168,20 @@ def get_categories():
 
 @router.get("/pannes")
 def get_pannes():
-    """Liste les pannes disponibles."""
-    return [
-        "Écran casse", "Batterie", "Connecteur de charge",
-        "Camera avant", "Camera arriere",
-        "Bouton volume", "Bouton power",
-        "Haut-parleur (je n'entends pas les gens ou la musique)",
-        "Microphone (les gens ne m'entendent pas)",
-        "Vitre arriere", "Désoxydation", "Problème logiciel",
-        "Diagnostic", "Autre",
-    ]
+    """Liste les pannes (symptômes) proposées au client."""
+    from app.services.prestations import PANNES_CATALOGUE
+    return list(PANNES_CATALOGUE)
+
+
+@router.get("/prestations")
+def get_prestations():
+    """Table symptôme → prestation (libellés des lignes facturées), source unique du front."""
+    from app.services.prestations import catalogue_prestations
+    return Response(
+        content=json.dumps(catalogue_prestations(), ensure_ascii=False),
+        media_type="application/json",
+        headers={"Cache-Control": f"public, max-age={_CACHE_TTL}"},
+    )
 
 
 def _etag_correspond(if_none_match, etag):

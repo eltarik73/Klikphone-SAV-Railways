@@ -3,24 +3,31 @@ API CRUD Tickets — compatible schéma PostgreSQL existant.
 CRUD et gestion des statuts.
 """
 
+import math
 from collections import defaultdict, deque
 from datetime import datetime
 from time import time
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request
+from psycopg2 import sql as psql
+from pydantic import BaseModel, Field
 
 from app.database import get_cursor
 from app.api.autocomplete import learn_terms
-from app.api.auth import get_current_user
+from app.api.auth import client_ip, get_current_user, require_admin
+from app.api.fidelite import crediter_ticket
+from app.services.montants import calculer_montants, format_euros, statut_paiement
 from app.models import (
     TicketCreate, TicketUpdate, TicketOut, TicketFull,
     StatusChange, KPIResponse,
 )
 from app.services.notifications import (
     notif_nouveau_ticket, notif_changement_statut, notif_reparation_terminee,
+    notif_accord_client,
 )
 from app.api.notifications_center import push_notification
+from app.services import search as search_engine
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -35,11 +42,8 @@ _RATE_WINDOW = 60       # par 60 secondes
 
 def _rate_limit_public_lookup(request: Request):
     """Raise 429 si l'IP depasse 30 req/min sur les endpoints publics."""
-    ip = request.client.host if request.client else "unknown"
-    # IP derriere Railway proxy -> header X-Forwarded-For
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        ip = xff.split(",")[0].strip()
+    # IP réelle : DERNIÈRE valeur de X-Forwarded-For (posée par le proxy Railway)
+    ip = client_ip(request)
     now = time()
     bucket = _RATE_BUCKETS[ip]
     # Purge les hits plus vieux que la fenetre
@@ -59,14 +63,15 @@ def _rate_limit_public_lookup(request: Request):
 
 
 def _ajouter_historique(cur, ticket_id, type_event, contenu):
-    """Insère une entrée dans la table historique (structured)."""
-    try:
-        cur.execute(
-            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, %s, %s)",
-            (ticket_id, type_event, contenu),
-        )
-    except Exception:
-        pass  # Table might not exist yet
+    """Insère une entrée dans la table historique (structured).
+
+    Jamais de try/except ici : une erreur SQL avalée laisse la transaction
+    avortée et le COMMIT final l'annule en silence (paiement compris).
+    """
+    cur.execute(
+        "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, %s, %s)",
+        (ticket_id, type_event, contenu),
+    )
 
 STATUTS = [
     "Pré-enregistré",
@@ -74,6 +79,152 @@ STATUTS = [
     "En attente d'accord client", "En cours de réparation",
     "Réparation terminée", "Rendu au client", "Clôturé",
 ]
+_STATUTS_RENDUS = ("Rendu au client", "Clôturé")
+
+
+# ─── Helpers fiche : historique signé, garde-fous, lecture complète ──
+def _horodatage():
+    n = datetime.now()
+    return n.strftime("%Y-%m-%d %H:%M:%S"), n.strftime("%d/%m %H:%M")
+
+
+def _auteur(user) -> str:
+    return (user or {}).get("sub") or "Staff"
+
+
+def _historiser(cur, ticket_id, ts, auteur, textes, type_event="statut") -> str:
+    """Écrit chaque texte signé dans la table historique ; renvoie les lignes du journal texte."""
+    lignes = []
+    for texte in textes:
+        contenu = f"{texte} — par {auteur}"
+        _ajouter_historique(cur, ticket_id, type_event, contenu)
+        lignes.append(f"[{ts}] {contenu}")
+    return "\n".join(lignes)
+
+
+def _journal(historique, lignes: str) -> str:
+    h = (historique or "").rstrip()
+    return f"{h}\n{lignes}" if h else lignes
+
+
+def _maj_ticket(cur, ticket_id: int, sets: dict):
+    """UPDATE des seules colonnes données (noms issus du code ou du modèle Pydantic)."""
+    cur.execute(
+        psql.SQL("UPDATE tickets SET {} WHERE id = %s").format(psql.SQL(", ").join(
+            psql.SQL("{} = %s").format(psql.Identifier(k)) for k in sets)),
+        [*sets.values(), ticket_id],
+    )
+
+
+def _conflit(code: str, message: str, reste=None):
+    raise HTTPException(409, detail={"code": code, "message": message, "reste": reste})
+
+
+def _pret_en_cours(t) -> bool:
+    return bool(str(t.get("telephone_pret") or "").strip()) and not t.get("telephone_pret_rendu")
+
+
+def _blocage_rendu(t) -> Optional[tuple]:
+    """(message, reste) qui interdit « Rendu au client » / « Clôturé » hors restitution."""
+    if _pret_en_cours(t):
+        return (f"Téléphone de prêt non restitué ({t['telephone_pret']}) : passez par la restitution.", None)
+    m = calculer_montants(t)
+    if m["reste"] > 0:
+        return (f"Ticket non payé (reste {format_euros(m['reste'])} €) : passez par la restitution.", m["reste"])
+    if not t.get("paye") and m["total"] > 0:
+        # Soldé par l'acompte : seule la restitution pose paye=1, tarif_final et les points
+        return ("Ticket soldé par l'acompte mais pas encore marqué payé : passez par la restitution.", 0)
+    return None
+
+
+def _rouvrir_si_cloture(t, sets: dict, textes: list):
+    """Un « Clôturé » dé-payé redevient un impayé visible (« Rendu au client »), hors CA."""
+    if t.get("statut") == "Clôturé":
+        sets.update(statut="Rendu au client", date_cloture=None)
+        textes.append("Statut: Clôturé → Rendu au client")
+
+
+def _booleen(v):
+    # Littéral non typé : valable que la colonne soit BOOLEAN (schéma neuf) ou INTEGER (ancienne base)
+    return None if v is None else ("1" if v else "0")
+
+
+def _maj_chrono(cur, ticket_id, t, ancien, nouveau, now):
+    """Chronomètre de réparation : démarre en entrant « En cours », s'arrête en sortant."""
+    if nouveau == ancien:
+        return
+    if nouveau == "En cours de réparation":
+        cur.execute(
+            "UPDATE tickets SET reparation_debut = %s, reparation_fin = NULL WHERE id = %s",
+            (now, ticket_id),
+        )
+    elif ancien == "En cours de réparation" and t.get("reparation_debut"):
+        debut = t["reparation_debut"]
+        if isinstance(debut, str):
+            debut = datetime.strptime(debut, "%Y-%m-%d %H:%M:%S")
+        elapsed = max(0, int((datetime.now() - debut).total_seconds()))
+        cur.execute(
+            "UPDATE tickets SET reparation_fin = %s, reparation_duree = %s WHERE id = %s",
+            (now, (t.get("reparation_duree") or 0) + elapsed, ticket_id),
+        )
+
+
+def _sync_pieces(cur, ticket_id, nouveau, now):
+    """Synchronise les commandes de pièces avec le statut du ticket."""
+    if nouveau in ("Réparation terminée", "Rendu au client", "Clôturé"):
+        cur.execute(
+            "UPDATE commandes_pieces SET statut = 'Reçu', date_reception = %s WHERE ticket_id = %s AND statut IN ('En attente', 'Commandée')",
+            (now, ticket_id),
+        )
+    elif nouveau == "En cours de réparation":
+        cur.execute(
+            "UPDATE commandes_pieces SET statut = 'En réparation' WHERE ticket_id = %s AND statut = 'Reçu'",
+            (ticket_id,),
+        )
+    elif nouveau == "En attente de pièce":
+        cur.execute(
+            "UPDATE commandes_pieces SET statut = 'Commandée', date_commande = %s WHERE ticket_id = %s AND statut = 'En attente'",
+            (now, ticket_id),
+        )
+
+
+def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
+    """Ticket + client + retours SAV + montants calculés (réponse de GET /{id})."""
+    cur.execute("""
+        SELECT t.*,
+               c.nom as client_nom, c.prenom as client_prenom,
+               c.telephone as client_tel, c.email as client_email,
+               c.societe as client_societe, c.carte_camby as client_carte_camby,
+               (SELECT MAX(n.date_creation) FROM notes_tickets n
+                 WHERE n.ticket_id = t.id AND n.type_note = 'caisse') AS caisse_envoyee_le
+        FROM tickets t
+        JOIN clients c ON t.client_id = c.id
+        WHERE t.id = %s
+    """, (ticket_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+
+    result = dict(row)
+    result["ticket_original"] = None
+    if result.get("est_retour_sav") and result.get("ticket_original_id"):
+        cur.execute("""
+            SELECT id, ticket_code, statut, panne, marque, modele, modele_autre,
+                   date_depot, date_cloture, technicien_assigne
+            FROM tickets WHERE id = %s
+        """, (result["ticket_original_id"],))
+        orig = cur.fetchone()
+        result["ticket_original"] = dict(orig) if orig else None
+
+    cur.execute("""
+        SELECT id, ticket_code, statut, panne, date_depot
+        FROM tickets
+        WHERE ticket_original_id = %s AND est_retour_sav = true
+        ORDER BY date_depot DESC
+    """, (ticket_id,))
+    result["retours_sav"] = [dict(r) for r in (cur.fetchall() or [])]
+    result["montants"] = calculer_montants(result)
+    return result
 
 
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
@@ -82,27 +233,52 @@ def get_dashboard(
     search: Optional[str] = None,
     statut: Optional[str] = None,
     limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    date_from: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    tech: Optional[str] = None,
+    vue: Optional[str] = Query(None, pattern="^(actifs|archives|tous)$"),
     user: dict = Depends(get_current_user),
 ):
-    """Retourne KPI + tickets en une seule requête pour le dashboard."""
+    """Retourne KPI + tickets en une seule requête pour le dashboard.
+
+    Filtres serveur optionnels : dates de dépôt (YYYY-MM-DD), technicien,
+    vue actifs / archives / tous, pagination (offset) ; `total` = nombre de
+    tickets correspondant aux filtres, hors limit/offset.
+    """
     today = datetime.now().strftime("%Y-%m-%d")
+    for value in (date_from, date_to):
+        if value:
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(422, f"Date invalide : {value}")
 
     conditions = []
-    params_tickets = []
+    sp = search_engine.SqlParams()
     if statut:
-        conditions.append("t.statut = %s")
-        params_tickets.append(statut)
+        conditions.append(f"t.statut = {sp.add(statut)}")
+    if vue == "actifs":
+        conditions.append(search_engine.actif_sql("t"))
+    elif vue == "archives":
+        conditions.append("t.statut IN ('Rendu au client', 'Clôturé')")
+    if tech:
+        conditions.append(f"t.technicien_assigne = {sp.add(tech)}")
+    if date_from:
+        conditions.append(f"t.date_depot >= {sp.add(date_from)}::date")
+    if date_to:
+        conditions.append(f"t.date_depot < {sp.add(date_to)}::date + 1")
+    # Même sens que idx_tickets_date_depot (DESC, nulls en tête) : sans recherche,
+    # PostgreSQL lit les `limit` premiers tickets par l'index au lieu de tout trier.
+    order = "t.date_depot DESC, t.id DESC"
     if search:
-        conditions.append(
-            "(t.ticket_code ILIKE %s OR unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s) "
-            "OR c.telephone LIKE %s OR unaccent(t.marque) ILIKE unaccent(%s) OR unaccent(t.modele) ILIKE unaccent(%s) "
-            "OR unaccent(t.modele_autre) ILIKE unaccent(%s))"
-        )
-        s = f"%{search}%"
-        params_tickets.extend([s, s, s, s, s, s, s])
+        pq = search_engine.parse_query(search)
+        conditions.append(search_engine.ticket_where_sql(pq, sp))
+        if not pq.empty:
+            order = search_engine.ticket_order_sql(pq, sp)
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
-    params_tickets.append(limit)
+    params_tickets = {**sp.values, "limit": limit, "offset": offset}
 
     with get_cursor() as cur:
         # KPI in one query
@@ -114,11 +290,11 @@ def get_dashboard(
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
                 COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today))
+        """, (today + "%", today))
         kpi_row = cur.fetchone()
 
         # Tickets list
@@ -133,16 +309,23 @@ def get_dashboard(
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
             {where}
-            ORDER BY t.date_depot DESC
-            LIMIT %s
+            ORDER BY {order}
+            LIMIT %(limit)s OFFSET %(offset)s
         """, params_tickets)
-        tickets = cur.fetchall()
+        tickets = cur.fetchall() or []
+        # COUNT séparé et seulement si la page est pleine : un COUNT(*) OVER ()
+        # empêcherait de lire les 200 premiers tickets par l'index date_depot.
+        total = offset + len(tickets)
+        if len(tickets) == limit or (offset and not tickets):
+            cur.execute(f"SELECT COUNT(*) AS n FROM tickets t JOIN clients c ON t.client_id = c.id {where}", params_tickets)
+            row = cur.fetchone()
+            total = row["n"] if row else 0
 
     kpi_data = dict(kpi_row) if kpi_row else {}
     pre = kpi_data.pop("pre_enregistres", 0)
     kpi = {**KPIResponse(**kpi_data).model_dump(), "pre_enregistres": pre}
 
-    return {"kpi": kpi, "tickets": tickets}
+    return {"kpi": kpi, "tickets": tickets, "total": total}
 
 
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
@@ -160,11 +343,11 @@ def get_kpi(user: dict = Depends(get_current_user)):
                 COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
                 COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
                 COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture::date = %s::date) as clotures_aujourdhui,
+                COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
                 COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
                 COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
             FROM tickets
-        """, (today, today))
+        """, (today + "%", today))
         row = cur.fetchone()
 
     data = dict(row) if row else {}
@@ -240,32 +423,42 @@ def list_tickets(
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    """Liste les tickets avec filtres optionnels."""
+    """Liste les tickets avec filtres optionnels (téléphone normalisé, recherche multi-mots)."""
     conditions = []
-    params = []
+    sp = search_engine.SqlParams()
+    order = "t.date_depot DESC, t.id DESC"
 
     if statut:
-        conditions.append("t.statut = %s")
-        params.append(statut)
+        conditions.append(f"t.statut = {sp.add(statut)}")
     if tel:
-        conditions.append("c.telephone LIKE %s")
-        params.append(f"%{tel}%")
+        digits = search_engine.phone_digits(tel)
+        if len(digits) >= 9:
+            pq_tel = search_engine.ParsedQuery(q=tel, phone_key=search_engine.phone_key(digits),
+                                               phone_full=search_engine.phone_full_variants(digits))
+            conditions.append(f"public.kp_phone_key(c.telephone) = {sp.add(pq_tel.phone_key)}")
+            conditions.append(search_engine.phone_homonym_sql(pq_tel, sp, "t.client_id"))
+        elif len(digits) >= 4:
+            conditions.append(f"public.kp_phone_digits(c.telephone) LIKE ANY({sp.add(search_engine.phone_patterns(digits))}::text[])")
+        else:
+            conditions.append(f"c.telephone LIKE {sp.add('%' + search_engine.esc_like(tel) + '%')}")
     if code:
-        conditions.append("t.ticket_code ILIKE %s")
-        params.append(f"%{code}%")
+        ref = search_engine.parse_ticket_ref(code)
+        if ref and ref.explicit:
+            conditions.append(f"(t.id = {sp.add(ref.ticket_id)} OR t.ticket_code = {sp.add(f'KP-{ref.ticket_id:06d}')})")
+        else:
+            conditions.append(f"t.ticket_code ILIKE {sp.add('%' + search_engine.esc_like(code) + '%')}")
     if nom:
-        conditions.append("(unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s))")
-        params.extend([f"%{nom}%", f"%{nom}%"])
+        pq_nom = search_engine.parse_query(nom)
+        pq_nom.ticket_id = pq_nom.code_prefix = pq_nom.imei = None
+        conditions.append(search_engine.client_where_sql(pq_nom, sp, c="c"))
     if search:
-        conditions.append(
-            "(t.ticket_code ILIKE %s OR unaccent(c.nom) ILIKE unaccent(%s) OR unaccent(c.prenom) ILIKE unaccent(%s) "
-            "OR c.telephone LIKE %s OR unaccent(t.marque) ILIKE unaccent(%s) OR unaccent(t.modele) ILIKE unaccent(%s) "
-            "OR unaccent(t.modele_autre) ILIKE unaccent(%s))"
-        )
-        s = f"%{search}%"
-        params.extend([s, s, s, s, s, s, s])
+        pq = search_engine.parse_query(search)
+        conditions.append(search_engine.ticket_where_sql(pq, sp))
+        if not pq.empty:
+            order = search_engine.ticket_order_sql(pq, sp)
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    params = {**sp.values, "limit": limit, "offset": offset}
 
     query = f"""
         SELECT t.*,
@@ -278,10 +471,9 @@ def list_tickets(
         FROM tickets t
         JOIN clients c ON t.client_id = c.id
         {where}
-        ORDER BY t.date_depot DESC
-        LIMIT %s OFFSET %s
+        ORDER BY {order}
+        LIMIT %(limit)s OFFSET %(offset)s
     """
-    params.extend([limit, offset])
 
     with get_cursor() as cur:
         cur.execute(query, params)
@@ -291,71 +483,44 @@ def list_tickets(
 # ─── TICKET UNIQUE ─────────────────────────────────────────────
 @router.get("/{ticket_id}")
 def get_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
-    """Récupère un ticket par ID avec les infos client + retour SAV enrichi."""
+    """Récupère un ticket par ID avec les infos client, retours SAV et montants calculés."""
     with get_cursor() as cur:
-        cur.execute("""
-            SELECT t.*,
-                   c.nom as client_nom, c.prenom as client_prenom,
-                   c.telephone as client_tel, c.email as client_email,
-                   c.societe as client_societe, c.carte_camby as client_carte_camby
-            FROM tickets t
-            JOIN clients c ON t.client_id = c.id
-            WHERE t.id = %s
-        """, (ticket_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Ticket non trouvé")
-
-        result = dict(row)
-        result["ticket_original"] = None
-        result["retours_sav"] = []
-
-        # Enrichir avec info ticket original si retour SAV (même connexion)
-        if result.get("est_retour_sav") and result.get("ticket_original_id"):
-            try:
-                cur.execute("""
-                    SELECT id, ticket_code, statut, panne, marque, modele, modele_autre,
-                           date_depot, date_cloture, technicien_assigne
-                    FROM tickets WHERE id = %s
-                """, (result["ticket_original_id"],))
-                orig = cur.fetchone()
-                result["ticket_original"] = dict(orig) if orig else None
-            except Exception:
-                pass
-
-        # Lister les retours SAV liés (même connexion)
-        try:
-            cur.execute("""
-                SELECT id, ticket_code, statut, panne, date_depot
-                FROM tickets
-                WHERE ticket_original_id = %s AND est_retour_sav = true
-                ORDER BY date_depot DESC
-            """, (ticket_id,))
-            retours = cur.fetchall()
-            if retours:
-                result["retours_sav"] = [dict(r) for r in retours]
-        except Exception:
-            pass
-
+        result = _ticket_complet(cur, ticket_id)
+    if not result:
+        raise HTTPException(404, "Ticket non trouvé")
     return result
 
 
 @router.get("/phone/{telephone}")
 def get_tickets_by_phone(telephone: str, request: Request):
-    """Récupère les tickets par téléphone client (public — pour suivi client)."""
+    """Récupère les tickets par téléphone client (public — pour suivi client).
+
+    Numéro complet exigé (≥ 9 chiffres, tout format : espaces, points, +33,
+    0033) : un fragment ne doit pas permettre d'énumérer les tickets d'autrui.
+    """
     _rate_limit_public_lookup(request)
+    digits = search_engine.phone_digits(telephone)
+    if not 9 <= len(digits) <= 15:
+        raise HTTPException(400, "Numéro de téléphone complet requis")
     with get_cursor() as cur:
         cur.execute("""
             SELECT t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
-                   t.panne, t.date_depot, t.date_maj
+                   t.panne, t.date_depot, t.date_maj, c.telephone AS _tel
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
-            WHERE c.telephone LIKE %s
+            WHERE public.kp_phone_key(c.telephone) = %s
             ORDER BY t.date_depot DESC
-            LIMIT 20
-        """, (f"%{telephone}%",))
-        rows = cur.fetchall()
-    return rows
+            LIMIT 60
+        """, (search_engine.phone_key(digits),))
+        rows = cur.fetchall() or []
+    # Clé = 9 derniers chiffres : on exige en plus le même numéro complet
+    # (un numéro étranger peut partager ses 9 derniers chiffres).
+    out = []
+    for r in rows:
+        r = dict(r)
+        if search_engine.same_phone(r.pop("_tel", None), telephone):
+            out.append(r)
+    return out[:20]
 
 
 @router.get("/code/{ticket_code}")
@@ -424,6 +589,14 @@ def create_ticket(data: TicketCreate):
         code = f"KP-{tid:06d}"
         cur.execute("UPDATE tickets SET ticket_code = %s WHERE id = %s", (code, tid))
 
+    # Transaction séparée : si la migration suivi_token a échoué, la création
+    # du ticket ne doit pas tomber (rattrapage au démarrage / à la demande)
+    from app.api.public_documents import jeton_suivi
+    try:
+        jeton_suivi(tid)
+    except Exception as e:
+        print(f"[tickets] jeton de suivi non créé pour le ticket {tid} : {e}")
+
     # Apprentissage autocomplétion (silencieux)
     learn_terms({"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre})
 
@@ -434,135 +607,140 @@ def create_ticket(data: TicketCreate):
     return {"id": tid, "ticket_code": code}
 
 
+# ─── LIENS DE PARTAGE CLIENT (documents publics par jeton) ──────
+@router.get("/{ticket_id}/share-links")
+def get_share_links(ticket_id: int, request: Request, user: dict = Depends(get_current_user)):
+    """URL absolues à envoyer au client (ticket de dépôt, devis, reçu). Jamais la fiche atelier."""
+    from app.api.public_documents import jeton_suivi, liens_partage
+    token = jeton_suivi(ticket_id)
+    if not token:
+        raise HTTPException(404, "Ticket non trouvé")
+    return liens_partage(token, request)
+
+
 # ─── MISE À JOUR ────────────────────────────────────────────────
 @router.patch("/{ticket_id}", response_model=dict)
 def update_ticket(
     ticket_id: int,
     data: TicketUpdate,
+    background_tasks: BackgroundTasks,
+    learn: bool = Query(False, description="Apprendre panne/détail/modèle : fin de saisie, jamais l'auto-save"),
     user: dict = Depends(get_current_user),
 ):
-    """Met à jour un ticket (champs partiels)."""
-    updates = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
-    if not updates:
-        return {"ok": True}
-
-    # Si paye est modifié, synchroniser statut_paiement et reste_a_payer
-    if "paye" in updates:
-        if updates["paye"]:
-            updates.setdefault("statut_paiement", "Payé")
-            updates.setdefault("reste_a_payer", 0)
-        else:
-            updates.setdefault("statut_paiement", "Non payé")
-
-    updates["date_maj"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-    values = list(updates.values()) + [ticket_id]
+    """Mise à jour PARTIELLE : seuls les champs envoyés sont écrits. Renvoie le ticket complet."""
+    updates = data.model_dump(exclude_unset=True)
+    now, ts = _horodatage()
 
     with get_cursor() as cur:
-        cur.execute(
-            f"UPDATE tickets SET {set_clause} WHERE id = %s",
-            values,
-        )
+        cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
+        avant = cur.fetchone()
+        if not avant:
+            raise HTTPException(404, "Ticket non trouvé")
+        avant = dict(avant)
 
-    # Apprentissage autocomplétion (silencieux)
-    learn_terms(updates)
+        if updates:
+            if "telephone_pret_rendu" in updates:
+                updates["telephone_pret_rendu"] = _booleen(updates["telephone_pret_rendu"])
+            if "paye" in updates:
+                paye = 1 if updates["paye"] else 0
+                updates["paye"] = paye
+                m = calculer_montants({**avant, **updates})
+                if paye:
+                    updates.setdefault("statut_paiement", "Payé")
+                    updates.setdefault("reste_a_payer", 0)
+                    # Le CA (SUM(tarif_final) WHERE paye=1) compte le montant encaissé
+                    updates.setdefault("tarif_final", m["total"])
+                else:
+                    updates.setdefault("statut_paiement", statut_paiement(m))
+                    updates.setdefault("reste_a_payer", m["reste"])
+                if paye != (1 if avant.get("paye") else 0):
+                    textes = ["Marqué payé" if paye else "Marqué non payé"]
+                    if not paye:
+                        _rouvrir_si_cloture(avant, updates, textes)
+                    lignes = _historiser(cur, ticket_id, ts, _auteur(user), textes)
+                    updates["historique"] = _journal(avant.get("historique"), lignes)
+            elif avant.get("paye"):
+                # Ticket payé : un enregistrement des prix ne le fait pas repasser « à payer »
+                updates.pop("statut_paiement", None)
+                updates.pop("reste_a_payer", None)
 
-    return {"ok": True}
+            updates["date_maj"] = now
+            _maj_ticket(cur, ticket_id, updates)
+        ticket = _ticket_complet(cur, ticket_id)
+
+    if learn:
+        appris = {k: updates[k] for k in ("panne", "panne_detail", "modele_autre") if k in updates}
+        if appris:
+            background_tasks.add_task(learn_terms, appris, avant)
+
+    return {"ok": True, "ticket": ticket}
 
 
-# ─── TOGGLE PAYÉ ────────────────────────────────────────────────
+# ─── PAYÉ (valeur explicite, ou bascule si le corps est vide) ─────
+class PayeBody(BaseModel):
+    paye: Optional[bool] = None
+
+
 @router.patch("/{ticket_id}/paye", response_model=dict)
 def toggle_paye(
     ticket_id: int,
+    background_tasks: BackgroundTasks,
+    body: Optional[PayeBody] = Body(None),
     user: dict = Depends(get_current_user),
 ):
-    """Bascule le statut payé du ticket. Crédite les points fidélité si marqué payé."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ts = datetime.now().strftime("%d/%m %H:%M")
-    fidelite_result = None
+    """Pose payé / non payé. {"paye": true|false} est idempotent (double clic sans effet) ;
+    corps vide ou {} : ancienne bascule. Crédite la fidélité une seule fois, sur le
+    total TTC du ticket. Un « Rendu au client » réglé passe en « Clôturé » (CA du jour) ;
+    un « Clôturé » dé-payé revient en « Rendu au client » (impayé visible). Les points déjà
+    gagnés ne sont pas repris et ne sont jamais recrédités pour ce ticket.
+    """
+    now, ts = _horodatage()
+    auteur = _auteur(user)
+    fidelite = None
 
     with get_cursor() as cur:
-        cur.execute(
-            "SELECT paye, historique, client_id, tarif_final, devis_estime, prix_supp, acompte FROM tickets WHERE id = %s",
-            (ticket_id,),
-        )
-        row = cur.fetchone()
-        if not row:
+        cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
+        t = cur.fetchone()
+        if not t:
             raise HTTPException(404, "Ticket non trouvé")
+        t = dict(t)
+        actuel = bool(t.get("paye"))
+        cible = (not actuel) if body is None or body.paye is None else bool(body.paye)
+        statut = t.get("statut") or ""
+        if cible == actuel:
+            return {"ok": True, "paye": actuel, "points_fidelite": None, "statut": statut}
 
-        new_paye = 0 if row.get("paye") else 1
-        historique = row.get("historique") or ""
-        log_entry = f"[{ts}] {'Marqué payé' if new_paye else 'Marqué non payé'}"
-        new_hist = f"{historique.rstrip()}\n{log_entry}" if historique.strip() else log_entry
-
-        if new_paye:
-            cur.execute(
-                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = 'Payé', reste_a_payer = 0 WHERE id = %s",
-                (new_paye, now, new_hist, ticket_id),
-            )
+        m = calculer_montants({**t, "paye": 0})
+        textes = ["Marqué payé" if cible else "Marqué non payé"]
+        if cible:
+            sets = {
+                "paye": 1, "statut_paiement": "Payé", "reste_a_payer": 0, "date_maj": now,
+                # Le CA (SUM(tarif_final) WHERE paye=1) compte ce qui est encaissé et crédité
+                "tarif_final": m["total"],
+            }
+            if statut == "Rendu au client":
+                sets.update(statut="Clôturé", date_cloture=t.get("date_cloture") or now)
+                textes.append("Statut: Rendu au client → Clôturé")
         else:
-            # Recalculate reste_a_payer from financial fields
-            tarif = float(row.get("tarif_final") or row.get("devis_estime") or 0) + float(row.get("prix_supp") or 0)
-            acompte_val = float(row.get("acompte") or 0)
-            reste = max(0, tarif - acompte_val)
-            statut = 'Acompte versé' if acompte_val > 0 and reste > 0 else 'Non payé'
-            cur.execute(
-                "UPDATE tickets SET paye = %s, date_maj = %s, historique = %s, statut_paiement = %s, reste_a_payer = %s WHERE id = %s",
-                (new_paye, now, new_hist, statut, reste, ticket_id),
-            )
-        _ajouter_historique(cur, ticket_id, 'statut', 'Marqué payé' if new_paye else 'Marqué non payé')
+            sets = {"paye": 0, "statut_paiement": statut_paiement(m), "reste_a_payer": m["reste"], "date_maj": now}
+            _rouvrir_si_cloture(t, sets, textes)
+        sets["historique"] = _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes))
+        _maj_ticket(cur, ticket_id, sets)
+        if cible:
+            fidelite = crediter_ticket(cur, ticket_id, t.get("client_id"), m["total"])
 
-        # Auto-crédit fidélité quand marqué payé
-        if new_paye == 1:
-            try:
-                fidelite_active = "1"
-                cur.execute("SELECT valeur FROM params WHERE cle = 'fidelite_active'")
-                r = cur.fetchone()
-                if r:
-                    fidelite_active = r["valeur"]
+    statut_final = sets.get("statut", statut)
+    if statut_final != statut:
+        background_tasks.add_task(notif_changement_statut, t.get("ticket_code") or f"#{ticket_id}", statut, statut_final)
 
-                if fidelite_active != "0":
-                    client_id = row["client_id"]
-                    montant = float(row.get("tarif_final") or row.get("devis_estime") or 0) + float(row.get("prix_supp") or 0)
-                    if montant > 0:
-                        cur.execute("SELECT valeur FROM params WHERE cle = 'fidelite_points_par_euro'")
-                        r2 = cur.fetchone()
-                        pts_par_euro = int(r2["valeur"]) if r2 else 10
-                        points_gagnes = int(montant * pts_par_euro)
-
-                        # Vérifier pas déjà crédité
-                        cur.execute(
-                            "SELECT id FROM fidelite_historique WHERE ticket_id = %s AND type = 'gain'",
-                            (ticket_id,),
-                        )
-                        if not cur.fetchone() and points_gagnes > 0:
-                            cur.execute("""
-                                UPDATE clients
-                                SET points_fidelite = COALESCE(points_fidelite, 0) + %s,
-                                    total_depense = COALESCE(total_depense, 0) + %s
-                                WHERE id = %s
-                                RETURNING points_fidelite
-                            """, (points_gagnes, montant, client_id))
-                            pts_row = cur.fetchone()
-                            total_pts = pts_row["points_fidelite"] if pts_row else 0
-
-                            cur.execute("""
-                                INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
-                                VALUES (%s, %s, 'gain', %s, %s)
-                            """, (client_id, ticket_id, points_gagnes,
-                                  f"Réparation {montant:.2f}€ — +{points_gagnes} pts"))
-
-                            fidelite_result = {
-                                "points_gagnes": points_gagnes,
-                                "total_points": total_pts,
-                            }
-            except Exception:
-                pass  # Ne pas bloquer le paiement si la fidélité échoue
-
-    result = {"ok": True, "paye": new_paye}
-    if fidelite_result:
-        result["fidelite"] = fidelite_result
+    result = {
+        "ok": True,
+        "paye": cible,
+        "points_fidelite": fidelite["points_gagnes"] if fidelite else None,
+        "statut": statut_final,
+    }
+    if fidelite:
+        result["fidelite"] = fidelite
     return result
 
 
@@ -571,146 +749,225 @@ def toggle_paye(
 def change_status(
     ticket_id: int,
     data: StatusChange,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ):
-    """Change le statut d'un ticket avec historique et notifications."""
+    """Change le statut d'un ticket avec historique et notifications.
+
+    « Rendu au client » et « Clôturé » sont refusés (409 utiliser_restitution)
+    tant que le ticket n'est pas réglé ou qu'un téléphone de prêt est dehors.
+    « En attente d'accord client » → « Réparation terminée » = devis refusé :
+    pièces non marquées reçues, issue='refus_devis', pas d'annonce « prêt ».
+    """
     if data.statut not in STATUTS:
         raise HTTPException(400, f"Statut invalide. Valides: {STATUTS}")
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ts = datetime.now().strftime("%d/%m %H:%M")
+    now, ts = _horodatage()
+    auteur = _auteur(user)
+    nouveau = data.statut
 
     with get_cursor() as cur:
-        # Récupérer ancien statut, historique, technicien et panne
-        cur.execute(
-            "SELECT statut, historique, ticket_code, technicien_assigne, panne FROM tickets WHERE id = %s",
-            (ticket_id,),
-        )
-        row = cur.fetchone()
-        if not row:
+        cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
+        t = cur.fetchone()
+        if not t:
             raise HTTPException(404, "Ticket non trouvé")
+        t = dict(t)
 
-        ancien_statut = row.get("statut", "")
-        historique = row.get("historique") or ""
-        ticket_code = row.get("ticket_code", f"#{ticket_id}")
-        technicien = row.get("technicien_assigne")
-        panne = row.get("panne") or ""
+        ancien = t.get("statut") or ""
+        ticket_code = t.get("ticket_code") or f"#{ticket_id}"
+        if ancien == nouveau:
+            return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau}
 
-        # Ajouter à l'historique
-        log_entry = f"[{ts}] Statut: {ancien_statut} → {data.statut}"
-        new_hist = f"{historique.rstrip()}\n{log_entry}" if historique.strip() else log_entry
+        if nouveau in _STATUTS_RENDUS:
+            blocage = _blocage_rendu(t)
+            if blocage:
+                _conflit("utiliser_restitution", blocage[0], blocage[1])
 
-        # Mise à jour
-        if data.statut == "Clôturé":
+        refus_devis = ancien == "En attente d'accord client" and nouveau == "Réparation terminée"
+        texte = f"Statut: {ancien} → {nouveau}" + (" (devis refusé par le client)" if refus_devis else "")
+        sets = {
+            "statut": nouveau, "date_maj": now,
+            "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, [texte])),
+        }
+        if nouveau == "Clôturé":
+            # Re-clôturer ne déplace pas le CA vers un autre jour
+            sets["date_cloture"] = t.get("date_cloture") or now
+        # Colonnes de _migrations_fiche : absentes si la migration a échoué au démarrage
+        if nouveau in _STATUTS_RENDUS and ancien not in _STATUTS_RENDUS and "date_rendu" in t:
+            sets["date_rendu"] = t.get("date_rendu") or now
+            sets["rendu_par"] = t.get("rendu_par") or auteur
+        if "issue" in t:
+            if refus_devis:
+                sets["issue"] = "refus_devis"
+            elif nouveau == "En cours de réparation" and t.get("issue"):
+                sets["issue"] = None
+        _maj_ticket(cur, ticket_id, sets)
+
+        _maj_chrono(cur, ticket_id, t, ancien, nouveau, now)
+        if not refus_devis:
+            _sync_pieces(cur, ticket_id, nouveau, now)
+
+        # Devis validé au comptoir (accord → en cours) : note 'validation_devis'
+        # (bannière verte + point vert dashboard), dans la même transaction.
+        validation_comptoir = ancien == "En attente d'accord client" and nouveau == "En cours de réparation"
+        if validation_comptoir:
             cur.execute(
-                "UPDATE tickets SET statut=%s, date_maj=%s, date_cloture=%s, historique=%s WHERE id=%s",
-                (data.statut, now, now, new_hist, ticket_id),
+                """
+                INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
+                VALUES (%s, %s, %s, 'validation_devis', FALSE)
+                """,
+                (ticket_id, auteur, f"✅ Devis accepté par le client — validé au comptoir par {auteur}"),
             )
+
+    # Notifications hors du chemin de la réponse (Discord : jusqu'à 5 s)
+    if refus_devis:
+        background_tasks.add_task(notif_accord_client, ticket_code, False)
+    elif nouveau == "Réparation terminée":
+        background_tasks.add_task(notif_reparation_terminee, ticket_code)
+    elif ancien:
+        background_tasks.add_task(notif_changement_statut, ticket_code, ancien, nouveau)
+
+    if validation_comptoir:
+        panne = t.get("panne") or ""
+        panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
+        panne_str = f" Panne : {panne_excerpt}." if panne_excerpt else ""
+        background_tasks.add_task(
+            push_notification,
+            type="devis_accepte_comptoir",
+            title=f"✅ Devis accepté — {ticket_code}",
+            message=f"{auteur} a validé la réparation pour le client.{panne_str} Tu peux démarrer.",
+            important=True,
+            icon="✅",
+            target_user=t.get("technicien_assigne"),
+            related_ticket_id=ticket_id,
+            action_url=f"/accueil/ticket/{ticket_id}",
+        )
+
+    return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau}
+
+
+# ─── RESTITUTION (remise au client en un appel, atomique et idempotente) ──
+class RestitutionRequest(BaseModel):
+    paiement: Literal["deja_paye", "encaisser", "non_paye"]
+    mode_paiement: Optional[str] = Field(None, max_length=40)
+    # Contrôlé dans la route : le 422 de Pydantic renverrait l'entrée NaN, que la réponse JSON ne sait pas encoder (500)
+    montant: Optional[float] = None
+    motif_non_paye: Optional[str] = Field(None, max_length=300)
+    pret_restitue: Optional[bool] = None
+    confirmer_non_termine: bool = False
+
+
+@router.post("/{ticket_id}/restitution", response_model=dict)
+def restituer_ticket(
+    ticket_id: int,
+    data: RestitutionRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """Rend l'appareil au client : contrôles, paiement, fidélité et statut en une transaction.
+
+    Réglé (encaisser / deja_paye, ou soldé par l'acompte) : Rendu au client
+    puis Clôturé, paye=1, tarif_final = total, points crédités une fois. Non
+    payé : reste « Rendu au client » avec le reste dû et le motif. Devis
+    refusé : seuls les frais (diagnostic…) sont dus (services/montants). Un
+    ticket déjà rendu renvoie deja_rendu=true sans rien réécrire (double
+    clic, deux postes).
+    """
+    if data.montant is not None and not (math.isfinite(data.montant) and data.montant >= 0):
+        raise HTTPException(422, detail={"code": "montant_invalide", "reste": None,
+                                         "message": "Montant encaissé invalide."})
+    now, ts = _horodatage()
+    auteur = _auteur(user)
+    fidelite = None
+
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "Ticket non trouvé")
+        t = dict(t)
+        ancien = t.get("statut") or ""
+
+        if ancien in _STATUTS_RENDUS:
+            return {"ok": True, "deja_rendu": True, "ticket": _ticket_complet(cur, ticket_id),
+                    "points_fidelite": None}
+
+        if ancien != "Réparation terminée" and not data.confirmer_non_termine:
+            _conflit("non_termine",
+                     f"Le ticket est « {ancien} », pas « Réparation terminée » : confirmez la restitution en l'état.")
+        if _pret_en_cours(t) and not data.pret_restitue:
+            _conflit("pret_non_restitue",
+                     f"Récupérez d'abord le téléphone de prêt ({t['telephone_pret']}).")
+
+        m = calculer_montants(t)
+        reste = m["reste"]
+        motif = " ".join((data.motif_non_paye or "").split())
+        if data.paiement == "deja_paye" and reste > 0:
+            _conflit("reste_a_payer", f"Il reste {format_euros(reste)} € à payer.", reste)
+        if (data.paiement == "encaisser" and data.montant is not None
+                and abs(round(float(data.montant), 2) - reste) > 0.005):
+            _conflit("reste_a_payer",
+                     f"Montant encaissé ({format_euros(data.montant)} €) différent du reste à payer "
+                     f"({format_euros(reste)} €).", reste)
+        if data.paiement == "non_paye" and reste > 0 and not motif:
+            _conflit("motif_requis", "Indiquez pourquoi l'appareil est rendu sans paiement.", reste)
+        mode = " ".join((data.mode_paiement or "").split())
+        if data.paiement == "encaisser" and reste > 0 and not mode:
+            # Requête incomplète (la fiche envoie toujours le mode) : 422, même forme de detail que les 409
+            raise HTTPException(422, detail={"code": "mode_requis", "reste": reste,
+                                             "message": "Indiquez le mode de paiement (CB, espèces…)."})
+
+        # Soldé par l'acompte (total > 0, reste 0) : réglé, quel que soit le choix de paiement
+        regle = data.paiement != "non_paye" or bool(t.get("paye")) or (reste <= 0 and m["total"] > 0)
+        final = "Clôturé" if regle else "Rendu au client"
+
+        textes = []
+        if _pret_en_cours(t):
+            textes.append("Téléphone de prêt restitué")
+        textes.append(f"Statut: {ancien} → Rendu au client")
+        if data.paiement == "encaisser" and reste > 0:
+            textes.append(f"Encaissé {format_euros(reste)} € ({mode})")
+        if regle and not t.get("paye"):
+            textes.append("Marqué payé" + (f" (soldé par l'acompte de {format_euros(m['acompte'])} €)"
+                                           if reste <= 0 and m["acompte"] > 0 else ""))
+        if not regle:
+            textes.append(f"Rendu sans paiement (reste {format_euros(reste)} €)"
+                          + (f" — motif : {motif}" if motif else ""))
+        if final == "Clôturé":
+            textes.append("Statut: Rendu au client → Clôturé")
+
+        sets = {
+            "statut": final, "date_maj": now,
+            "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes)),
+        }
+        if "date_rendu" in t:
+            sets.update(date_rendu=now, rendu_par=auteur)
+        if _pret_en_cours(t):
+            sets["telephone_pret_rendu"] = _booleen(True)
+        if regle:
+            # tarif_final = montant encaissé et crédité : le CA (SUM(tarif_final) WHERE paye=1) le compte
+            sets.update(paye=1, statut_paiement="Payé", reste_a_payer=0, tarif_final=m["total"],
+                        date_cloture=t.get("date_cloture") or now)
         else:
-            cur.execute(
-                "UPDATE tickets SET statut=%s, date_maj=%s, historique=%s WHERE id=%s",
-                (data.statut, now, new_hist, ticket_id),
-            )
+            sets.update(statut_paiement=statut_paiement(m), reste_a_payer=reste)
+        _maj_ticket(cur, ticket_id, sets)
 
-        # Timer auto — start/stop
-        entering_repair = data.statut == "En cours de réparation" and ancien_statut != "En cours de réparation"
-        leaving_repair = ancien_statut == "En cours de réparation" and data.statut != "En cours de réparation"
+        _maj_chrono(cur, ticket_id, t, ancien, final, now)
+        # Rendu en l'état (devis refusé, non réparable) : les pièces jamais reçues ne passent pas « Reçu »
+        if ancien == "Réparation terminée" and t.get("issue") != "refus_devis":
+            _sync_pieces(cur, ticket_id, final, now)
+        if regle:
+            fidelite = crediter_ticket(cur, ticket_id, t.get("client_id"), m["total"])
 
-        if entering_repair:
-            cur.execute(
-                "UPDATE tickets SET reparation_debut = %s, reparation_fin = NULL WHERE id = %s",
-                (now, ticket_id),
-            )
-        elif leaving_repair:
-            cur.execute(
-                "SELECT reparation_debut, reparation_duree FROM tickets WHERE id = %s",
-                (ticket_id,),
-            )
-            tr = cur.fetchone()
-            if tr and tr.get("reparation_debut"):
-                debut = tr["reparation_debut"]
-                if isinstance(debut, str):
-                    debut = datetime.strptime(debut, "%Y-%m-%d %H:%M:%S")
-                elapsed = int((datetime.now() - debut).total_seconds())
-                prev = tr.get("reparation_duree") or 0
-                cur.execute(
-                    "UPDATE tickets SET reparation_fin = %s, reparation_duree = %s WHERE id = %s",
-                    (now, prev + elapsed, ticket_id),
-                )
+        ticket = _ticket_complet(cur, ticket_id)
 
-        # ── Auto-sync commandes_pieces selon le statut ticket ──
-        if data.statut in ("Réparation terminée", "Rendu au client", "Clôturé"):
-            cur.execute(
-                "UPDATE commandes_pieces SET statut = 'Reçu', date_reception = %s WHERE ticket_id = %s AND statut IN ('En attente', 'Commandée')",
-                (now, ticket_id),
-            )
-        elif data.statut == "En cours de réparation":
-            cur.execute(
-                "UPDATE commandes_pieces SET statut = 'En réparation' WHERE ticket_id = %s AND statut = 'Reçu'",
-                (ticket_id,),
-            )
-        elif data.statut == "En attente de pièce":
-            cur.execute(
-                "UPDATE commandes_pieces SET statut = 'Commandée', date_commande = %s WHERE ticket_id = %s AND statut = 'En attente'",
-                (now, ticket_id),
-            )
-
-        _ajouter_historique(cur, ticket_id, 'statut', f"Statut: {ancien_statut} → {data.statut}")
-
-    # Notifications Discord
-    if data.statut == "Réparation terminée":
-        notif_reparation_terminee(ticket_code)
-    elif ancien_statut and ancien_statut != data.statut:
-        notif_changement_statut(ticket_code, ancien_statut, data.statut)
-
-    # ─── Validation devis au comptoir : transition spécifique ─────────
-    # On détecte que le staff vient de valider le devis pour le client en passant
-    # de "En attente d'accord client" → "En cours de réparation". Dans ce cas on :
-    #   1. Crée une note de type 'validation_devis' (pour bannière verte ticket + point vert dashboard)
-    #   2. Déclenche la notification in-app (toast + cloche + chat tech)
-    # On capture le nom de l'utilisateur connecté pour tracer QUI a validé.
-    auteur_action = (user or {}).get("sub") or "Staff"
-    if (
-        ancien_statut == "En attente d'accord client"
-        and data.statut == "En cours de réparation"
-    ):
-        # 1. Note 'validation_devis' (alimente accord_client_valide → point vert + bannière)
-        try:
-            with get_cursor() as cur2:
-                cur2.execute(
-                    """
-                    INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
-                    VALUES (%s, %s, %s, 'validation_devis', FALSE)
-                    """,
-                    (
-                        ticket_id,
-                        auteur_action,
-                        f"✅ Devis accepté par le client — validé au comptoir par {auteur_action}",
-                    ),
-                )
-        except Exception as e:
-            print(f"[tickets] note validation_devis insert failed: {e}")
-
-        # 2. Notification in-app (toast + cloche + chat tech)
-        try:
-            panne_excerpt = (panne[:50] + "…") if len(panne) > 50 else panne
-            panne_str = f" Panne : {panne_excerpt}." if panne_excerpt else ""
-            push_notification(
-                type="devis_accepte_comptoir",
-                title=f"✅ Devis accepté — {ticket_code}",
-                message=f"{auteur_action} a validé la réparation pour le client.{panne_str} Tu peux démarrer.",
-                important=True,
-                icon="✅",
-                target_user=technicien,
-                related_ticket_id=ticket_id,
-                action_url=f"/accueil/ticket/{ticket_id}",
-            )
-        except Exception as e:
-            print(f"[tickets] notification trigger failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-    return {"ok": True, "ancien_statut": ancien_statut, "nouveau_statut": data.statut}
+    background_tasks.add_task(notif_changement_statut, t.get("ticket_code") or f"#{ticket_id}", ancien, final)
+    return {
+        "ok": True,
+        "deja_rendu": False,
+        "ticket": ticket,
+        "points_fidelite": fidelite["points_gagnes"] if fidelite else None,
+    }
 
 
 # ─── HISTORIQUE (structured table) ───────────────────────────────
@@ -861,6 +1118,8 @@ def mark_ticket_read(ticket_id: int, user: dict = Depends(get_current_user)):
             WHERE ticket_id = %s AND (is_read = FALSE OR is_read IS NULL)
             AND type_note IN ('message_client', 'validation_devis', 'avis_client')
         """, (ticket_id,))
+    from app.api.suivi import invalider_interactions
+    invalider_interactions()
     return {"ok": True}
 
 
@@ -885,9 +1144,10 @@ def log_message(
 
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
-def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
+def delete_ticket(ticket_id: int, user: dict = Depends(require_admin)):
     """Supprime un ticket et toutes ses données liées (cascade).
     Idempotent : retourne toujours {"ok": true} même si le ticket n'existe pas.
+    Élévation admin requise (X-Admin-Token, cf. POST /api/admin/verify).
     """
     with get_cursor() as cur:
         cur.execute("DELETE FROM notes_tickets WHERE ticket_id = %s", (ticket_id,))
@@ -895,6 +1155,8 @@ def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
         cur.execute("DELETE FROM fidelite_historique WHERE ticket_id = %s", (ticket_id,))
         cur.execute("DELETE FROM historique WHERE ticket_id = %s", (ticket_id,))
         cur.execute("DELETE FROM tickets WHERE id = %s", (ticket_id,))
+    from app.api.suivi import invalider_interactions
+    invalider_interactions()
     return {"ok": True}
 
 

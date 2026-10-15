@@ -66,9 +66,12 @@ def test_delete_ticket_requires_auth(client):
     assert r.status_code in (401, 403)
 
 
-def test_delete_ticket_succeeds(client, auth_headers):
-    """DELETE /api/tickets/1 avec token renvoie 200 (cascade delete)."""
-    r = client.delete("/api/tickets/1", headers=auth_headers)
+def test_delete_ticket_succeeds(client, auth_headers, auth_token):
+    """DELETE /api/tickets/1 : 403 sans élévation admin, 200 avec (cascade delete)."""
+    from app.api.auth import create_admin_token, decode_token
+    assert client.delete("/api/tickets/1", headers=auth_headers).status_code == 403
+    admin = create_admin_token(decode_token(auth_token))
+    r = client.delete("/api/tickets/1", headers={**auth_headers, "X-Admin-Token": admin})
     assert r.status_code == 200
 
 

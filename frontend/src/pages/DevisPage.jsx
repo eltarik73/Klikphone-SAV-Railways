@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useSearchParams } from 'react-router-dom';
 import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
+import PrintPreview from '../components/PrintPreview';
 import {
   FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
   Send, CheckCircle, XCircle, ArrowRightCircle, Printer,
@@ -27,11 +28,17 @@ const fp = (v) => {
 export default function DevisPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  // Lien de la recherche globale : ?id= ouvre le devis ; ?q= (numéro) filtre la liste, aussi en
+  // repli si le devis est introuvable. Un ?q= seul initialise le filtre (une seule requête).
+  const urlId = searchParams.get('id');
+  const urlQ = searchParams.get('q');
   const [devisList, setDevisList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(() => (!urlId && urlQ) || '');
+  const [search, setSearch] = useState(() => ((!urlId && urlQ) || '').trim());
   const [filterStatut, setFilterStatut] = useState('');
   const [stats, setStats] = useState(null);
+  const loadSeq = useRef(0);
 
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -53,6 +60,21 @@ export default function DevisPage() {
   // Detail view
   const [viewDevis, setViewDevis] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [printDevis, setPrintDevis] = useState(null);
+
+  const printDocuments = useMemo(() => (printDevis ? [{
+    id: 'devis',
+    label: 'Devis',
+    desc: 'Devis A4',
+    icon: FileText,
+    formats: {
+      a4: {
+        paper: 'a4',
+        label: 'A4',
+        load: (signal) => api.getDevisPrintHtml(printDevis.id, { signal }).then((html) => ({ kind: 'html', html })),
+      },
+    },
+  }] : []), [printDevis]);
 
   function getEmptyForm() {
     return {
@@ -141,21 +163,50 @@ export default function DevisPage() {
   };
 
   const loadData = async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const params = {};
       if (search) params.search = search;
       if (filterStatut) params.statut = filterStatut;
       const [list, st] = await Promise.all([api.getDevis(params), api.getDevisStats()]);
+      if (seq !== loadSeq.current) return;
       setDevisList(list || []);
       setStats(st);
     } catch (e) {
       console.error(e);
     }
-    setLoading(false);
+    if (seq === loadSeq.current) setLoading(false);
   };
 
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
   useEffect(() => { loadData(); }, [search, filterStatut]);
+
+  useEffect(() => {
+    if (!urlId && !urlQ) return undefined;
+    let annule = false;
+    const filtrer = () => {
+      if (urlQ == null) return;
+      setSearchInput(urlQ);
+      setSearch(urlQ.trim());
+    };
+    if (urlId) {
+      api.getDevisById(urlId)
+        .then((d) => {
+          if (annule || !d) return;
+          setViewDevis(d);
+          setShowDetail(true);
+        })
+        .catch(() => { if (!annule) filtrer(); });
+    } else {
+      filtrer();
+    }
+    return () => { annule = true; };
+  }, [urlId, urlQ]);
 
   const openCreate = () => {
     setEditId(null);
@@ -333,8 +384,9 @@ export default function DevisPage() {
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)}
+          <input type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)}
             placeholder="Rechercher par nom, téléphone, numéro..."
+            aria-label="Rechercher un devis"
             className="input pl-9" />
         </div>
         <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
@@ -628,8 +680,9 @@ export default function DevisPage() {
                   );
                 })()}
               </div>
-              <button onClick={() => setShowDetail(false)} className="p-2 rounded-lg hover:bg-slate-100">
-                <X className="w-5 h-5 text-slate-400" />
+              <button onClick={() => setShowDetail(false)} aria-label="Fermer le détail du devis"
+                className="inline-flex items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100">
+                <X className="w-5 h-5 text-slate-500" aria-hidden="true" />
               </button>
             </div>
 
@@ -723,10 +776,10 @@ export default function DevisPage() {
                   <ArrowRightCircle className="w-3.5 h-3.5" /> Convertir en ticket
                 </button>
               )}
-              <a href={api.getDevisPrintUrl(viewDevis.id)} target="_blank" rel="noopener noreferrer"
-                className="btn-secondary text-xs">
-                <Printer className="w-3.5 h-3.5" /> Imprimer
-              </a>
+              <button type="button" onClick={() => setPrintDevis({ id: viewDevis.id, numero: viewDevis.numero })}
+                className="btn-secondary text-xs min-h-11">
+                <Printer className="w-3.5 h-3.5" aria-hidden="true" /> Imprimer
+              </button>
               <button onClick={() => { openEdit(viewDevis.id); setShowDetail(false); }}
                 className="btn-secondary text-xs">
                 <Edit3 className="w-3.5 h-3.5" /> Modifier
@@ -739,6 +792,14 @@ export default function DevisPage() {
           </div>
         </div>
       )}
+
+      <PrintPreview
+        open={!!printDevis}
+        onClose={() => setPrintDevis(null)}
+        title="Impression du devis"
+        subtitle={printDevis?.numero ? `Devis ${printDevis.numero}` : undefined}
+        documents={printDocuments}
+      />
     </div>
   );
 }

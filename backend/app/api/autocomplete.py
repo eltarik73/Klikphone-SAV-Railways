@@ -1,11 +1,17 @@
 """
 API Autocomplete — recherche intelligente et apprentissage des termes.
-Endpoints publics (pas d'authentification requise).
+Recherche publique (sauf catégorie client) ; apprentissage réservé au staff.
 """
+
+import threading
+from collections import defaultdict, deque
+from time import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
 from app.api.auth import get_optional_user
+from app.services.prestations import normaliser
 
 router = APIRouter(prefix="/api/autocomplete", tags=["autocomplete"])
 
@@ -121,61 +127,120 @@ def search(
     return []
 
 
-@router.post("/learn")
-def learn(body: dict):
-    """Enregistre un terme pour l'autocomplétion (upsert compteur)."""
-    categorie = body.get("categorie")
-    terme = body.get("terme")
+_CATEGORIES_APPRISES = {"panne", "detail_panne", "modele_custom"}
+_TERME_MAX = 120
+_JAMAIS_APPRIS = {"piece a commander"}
+# Un même terme revu dans ce délai n'est pas recompté (création + appel du
+# navigateur, sauvegardes automatiques successives).
+_UPSERT_TERME = """
+    INSERT INTO autocompletion (categorie, terme, compteur, derniere_utilisation)
+    VALUES (%s, %s, 1, NOW())
+    ON CONFLICT (categorie, terme) DO UPDATE
+    SET compteur = autocompletion.compteur
+            + CASE WHEN autocompletion.derniere_utilisation > NOW() - INTERVAL '30 seconds'
+                   THEN 0 ELSE 1 END,
+        derniere_utilisation = NOW()
+"""
 
-    if not categorie or not terme or len(terme.strip()) < 2:
+_LEARN_BUCKETS: dict = defaultdict(deque)
+_LEARN_LIMIT = 30          # apprentissages par minute et par utilisateur
+_LEARN_LOCK = threading.Lock()
+
+
+def _quota_ok(cle: str) -> bool:
+    now = time()
+    with _LEARN_LOCK:
+        bucket = _LEARN_BUCKETS[cle]
+        while bucket and now - bucket[0] > 60:
+            bucket.popleft()
+        if len(bucket) >= _LEARN_LIMIT:
+            return False
+        bucket.append(now)
+        if len(_LEARN_BUCKETS) > 500:
+            for k in [k for k, b in _LEARN_BUCKETS.items() if not b]:
+                del _LEARN_BUCKETS[k]
+        return True
+
+
+def est_terme_partiel(terme: str, connus) -> bool:
+    """Vrai si `terme` est un mot coupé d'un terme déjà connu (« batt » de « Batterie HS »).
+
+    Un mot entier (« Batterie » face à « Batterie HS ») n'est pas partiel.
+    """
+    n = normaliser(terme)
+    if not n:
+        return True
+    for autre in connus:
+        a = normaliser(autre)
+        if len(a) > len(n) and a.startswith(n) and a[len(n)].isalnum():
+            return True
+    return False
+
+
+def _terme_valide(terme) -> Optional[str]:
+    if not isinstance(terme, str):
+        return None
+    t = " ".join(terme.split())
+    if len(t) < 2 or len(t) > _TERME_MAX or normaliser(t) in _JAMAIS_APPRIS:
+        return None
+    return t
+
+
+def _apprendre(cur, categorie: str, terme: str) -> bool:
+    cur.execute(
+        "SELECT terme FROM autocompletion WHERE categorie = %s AND length(terme) > %s"
+        " ORDER BY compteur DESC LIMIT 500",
+        (categorie, len(terme)),
+    )
+    if est_terme_partiel(terme, [r["terme"] for r in cur.fetchall()]):
+        return False
+    cur.execute(_UPSERT_TERME, (categorie, terme))
+    return True
+
+
+@router.post("/learn")
+def learn(body: dict, user: dict = Depends(get_optional_user)):
+    """Enregistre un terme pour l'autocomplétion (upsert compteur).
+
+    Réservé au staff connecté : sans session, réponse neutre (pas de 401, qui
+    déconnecterait le kiosque) — le serveur apprend déjà à la création du ticket.
+    """
+    categorie = body.get("categorie")
+    terme = _terme_valide(body.get("terme"))
+    if not user or categorie not in _CATEGORIES_APPRISES or not terme:
+        return {"success": False}
+    if not _quota_ok(str(user.get("sub") or "?")):
         return {"success": False}
 
     try:
         with get_cursor() as cur:
-            cur.execute(
-                """INSERT INTO autocompletion (categorie, terme, compteur, derniere_utilisation)
-                   VALUES (%s, %s, 1, NOW())
-                   ON CONFLICT (categorie, terme) DO UPDATE
-                   SET compteur = autocompletion.compteur + 1,
-                       derniere_utilisation = NOW()""",
-                (categorie, terme.strip()),
-            )
-        return {"success": True}
+            appris = _apprendre(cur, categorie, terme)
+        return {"success": appris}
     except Exception:
         return {"success": False}
 
 
-def learn_terms(data: dict):
+def learn_terms(data: dict, anciens: Optional[dict] = None):
     """Apprend automatiquement les termes d'un ticket pour l'autocomplétion.
 
-    Appelé après la création d'un ticket. Ne bloque jamais la création
-    du ticket en cas d'erreur.
+    Appelé après la création d'un ticket (ou une édition terminée). Avec
+    `anciens`, seules les valeurs réellement modifiées sont apprises. Ne
+    bloque jamais l'appelant en cas d'erreur (transaction à part).
     """
     try:
         entries = []
-
-        panne = data.get("panne")
-        if panne and isinstance(panne, str) and len(panne.strip()) >= 2:
-            entries.append(("panne", panne.strip()))
-
-        panne_detail = data.get("panne_detail")
-        if panne_detail and isinstance(panne_detail, str) and len(panne_detail.strip()) >= 2:
-            entries.append(("detail_panne", panne_detail.strip()))
-
-        modele_autre = data.get("modele_autre")
-        if modele_autre and isinstance(modele_autre, str) and len(modele_autre.strip()) >= 2:
-            entries.append(("modele_custom", modele_autre.strip()))
+        for champ, categorie in (("panne", "panne"), ("panne_detail", "detail_panne"),
+                                 ("modele_autre", "modele_custom")):
+            terme = _terme_valide(data.get(champ))
+            if not terme:
+                continue
+            if anciens is not None and normaliser(anciens.get(champ)) == normaliser(terme):
+                continue
+            entries.append((categorie, terme))
 
         if entries:
             with get_cursor() as cur:
                 for categorie, terme in entries:
-                    cur.execute(
-                        """INSERT INTO autocompletion (categorie, terme, compteur, derniere_utilisation)
-                           VALUES (%s, %s, 1, NOW())
-                           ON CONFLICT (categorie, terme) DO UPDATE
-                           SET compteur = autocompletion.compteur + 1,
-                               derniere_utilisation = NOW()""",
-                        (categorie, terme),
-                    )
-    except Exception:
-        pass
+                    _apprendre(cur, categorie, terme)
+    except Exception as e:
+        print(f"[autocomplete] apprentissage ignoré : {e}")

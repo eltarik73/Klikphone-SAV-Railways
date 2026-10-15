@@ -4,10 +4,122 @@
  */
 
 const API_URL = import.meta.env.VITE_API_URL || '';
-const BACKEND_URL = API_URL.trim();
 
 // Default TTL for the in-memory GET cache (ms)
 const DEFAULT_CACHE_TTL = 30_000;
+
+// Relances : seulement pour un GET (idempotent) sur coupure réseau ou passerelle indisponible.
+// Jamais sur 500 (relancer triple la charge d'un serveur déjà en difficulté) ni sur timeout
+// (le serveur continue de traiter la requête abandonnée : export relancé 3 fois, etc.).
+const RETRY_STATUSES = new Set([502, 503, 504]);
+const DEFAULT_GET_RETRIES = 2;
+
+// Un 401 sur ces routes signifie « code ou PIN incorrect », pas « session expirée » :
+// il ne doit jamais déconnecter l'employé.
+const CREDENTIAL_PATHS = [
+  '/api/auth/login', '/api/auth/switch-user', '/api/admin/verify', '/api/admin/login',
+  '/api/admin/change-password', '/api/config/change-pin',
+];
+// Refus d'élévation (auth._refus_admin) : detail = { code, message }. « Admin requis » en simple
+// texte est un refus lié au RÔLE (marketing, reporting) : la saisie du code admin n'y change rien.
+const ADMIN_REFUSAL_CODES = new Set(['admin_requis', 'admin_expire', 'admin_invalide']);
+// Repli pour un detail texte (ancien serveur) : vocabulaire propre au jeton, jamais « Admin requis »
+const ADMIN_REFUSAL_RE = /élévation|elevation|(jeton|token)\s+(d['’]\s*)?(admin|élévation)|x-admin-token/i;
+const ADMIN_TOKEN_KEY = 'kp_admin_token';
+const ADMIN_TOKEN_TTL = 10 * 60_000;
+// Routes publiques (suivi, code ticket, connexion) : le jeton d'élévation n'y part jamais
+const NO_ADMIN_TOKEN_PATHS = ['/api/suivi/', '/api/tickets/code/', '/api/auth/', '/api/config/public'];
+
+const pathOnly = (path) => String(path || '').split('?')[0];
+
+export function isCredentialCheck(path) {
+  const p = pathOnly(path);
+  return CREDENTIAL_PATHS.some((c) => p === c || p.startsWith(`${c}/`));
+}
+
+// Actions publiques du suivi client : un 401/403 y signale un jeton ou des chiffres incorrects
+function isPublicSuiviAction(path) {
+  const p = pathOnly(path);
+  return p.startsWith('/api/suivi/') && !p.startsWith('/api/suivi/dashboard');
+}
+
+export function sendsAdminToken(path) {
+  const p = pathOnly(path);
+  if (p.startsWith('/api/suivi/dashboard')) return true;
+  return !NO_ADMIN_TOKEN_PATHS.some((x) => p.startsWith(x));
+}
+
+// Code d'un refus d'élévation (admin_requis / admin_expire / admin_invalide), sinon null
+function adminRefusalCode(detail) {
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    return ADMIN_REFUSAL_CODES.has(detail.code) ? detail.code : null;
+  }
+  if (typeof detail === 'string' && ADMIN_REFUSAL_RE.test(detail) && !/\bcode\b/i.test(detail)) return 'admin_requis';
+  return null;
+}
+
+const PYDANTIC_FR = [
+  [/^Field required$/i, 'champ obligatoire'],
+  [/^String should have at least (\d+) characters?$/i, (_, n) => `au moins ${n} caractère${n > 1 ? 's' : ''}`],
+  [/^String should have at most (\d+) characters?$/i, (_, n) => `${n} caractère${n > 1 ? 's' : ''} maximum`],
+  [/^Input should be a valid (integer|number)/i, 'nombre attendu'],
+  [/^Input should be a valid string/i, 'texte attendu'],
+  [/^Input should be a valid boolean/i, 'oui/non attendu'],
+  [/^Input should be greater than or equal to (.+)$/i, (_, n) => `doit être ≥ ${n}`],
+  [/^Input should be less than or equal to (.+)$/i, (_, n) => `doit être ≤ ${n}`],
+  [/^value is not a valid email address/i, 'adresse e-mail invalide'],
+  [/^Extra inputs are not permitted$/i, 'champ non autorisé'],
+  [/^Value error, (.+)$/i, (_, m) => m],
+];
+
+function traduireMessage(msg) {
+  const s = String(msg || '').trim();
+  for (const [re, fr] of PYDANTIC_FR) {
+    const m = s.match(re);
+    if (m) return typeof fr === 'function' ? fr(...m) : fr;
+  }
+  return s || 'valeur invalide';
+}
+
+// Message lisible pour `detail` (texte, objet métier {code, message}, ou tableau 422 de Pydantic)
+export function formatErrorDetail(detail, status) {
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    const parts = detail.slice(0, 3).map((d) => {
+      if (typeof d === 'string') return d;
+      const loc = Array.isArray(d?.loc)
+        ? d.loc.filter((x) => !['body', 'query', 'path', 'header'].includes(x) && typeof x !== 'number')
+        : [];
+      const msg = traduireMessage(d?.msg);
+      return loc.length ? `${loc.join('.')} : ${msg}` : msg;
+    });
+    const reste = detail.length > 3 ? ` (+${detail.length - 3})` : '';
+    return `Données invalides — ${parts.join(' ; ')}${reste}`;
+  }
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message;
+  return status ? `Erreur ${status}` : 'Erreur';
+}
+
+// Expiration (ms) d'un JWT, sans vérifier sa signature (le serveur s'en charge)
+function jwtExpiry(token) {
+  try {
+    const part = String(token).split('.')[1];
+    if (!part) return null;
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof json.exp === 'number' ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Preuve d'accès d'une action publique du suivi : jeton du lien (t) sinon 4 derniers chiffres (tel4)
+function suiviProof(preuve) {
+  if (preuve?.t) return { t: String(preuve.t) };
+  const tel4 = String(preuve?.tel4 || '').replace(/\D/g, '');
+  return tel4.length === 4 ? { tel4 } : {};
+}
 
 // Build stable querystrings — avoids re-allocating URLSearchParams for
 // identical param objects (tarifs/iphones are called in tight loops).
@@ -47,12 +159,23 @@ class ApiClient {
     this._cache = new Map();
     // GET en cours : Map<url, { promise, stale, fresh }> (stale → la réponse ne sera pas mise en cache)
     this._inflight = new Map();
+    // GET identiques en vol partagés par get() : Map<url, { promise, seq, token }>
+    this._sharedGets = new Map();
+    // Incrémenté au début et à la fin de chaque écriture : un GET lancé avant ne sert plus après
+    this._mutationSeq = 0;
+    // > 0 pendant un appel de fond (polling) : pas de relance
+    this._background = 0;
     // Compteur de modifications du catalogue et dernier compteur relu par chemin /tree
     this._catalogRev = 0;
     this._catalogRevLue = new Map();
+    // Jeton d'élévation admin (10 min) renvoyé par POST /api/admin/verify
+    this._adminToken = null;
+    this._adminExp = 0;
+    this._restoreAdminToken();
   }
 
   setToken(token) {
+    const changed = token !== this.token;
     this.token = token;
     if (token) localStorage.setItem('kp_token', token);
     else localStorage.removeItem('kp_token');
@@ -60,11 +183,54 @@ class ApiClient {
     this._cache.clear();
     for (const entry of this._inflight.values()) entry.stale = true;
     this._inflight.clear();
+    this._sharedGets.clear();
+    // Autre session ou déconnexion : l'élévation admin ne suit pas
+    if (changed || !token) this.clearAdminToken();
+  }
+
+  // ─── Élévation admin ───────────────────────
+  setAdminToken(token, ttlMs = ADMIN_TOKEN_TTL) {
+    if (!token) { this.clearAdminToken(); return; }
+    this._adminToken = token;
+    this._adminExp = jwtExpiry(token) ?? Date.now() + ttlMs;
+    try { sessionStorage.setItem(ADMIN_TOKEN_KEY, JSON.stringify({ t: token, exp: this._adminExp })); } catch { /* stockage indisponible */ }
+  }
+  getAdminToken() {
+    if (this._adminToken && Date.now() < this._adminExp - 5_000) return this._adminToken;
+    if (this._adminToken) this.clearAdminToken();
+    return null;
+  }
+  hasAdminToken() { return Boolean(this.getAdminToken()); }
+  clearAdminToken() {
+    this._adminToken = null;
+    this._adminExp = 0;
+    try { sessionStorage.removeItem(ADMIN_TOKEN_KEY); } catch { /* stockage indisponible */ }
+  }
+  _restoreAdminToken() {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(ADMIN_TOKEN_KEY) || 'null');
+      if (v?.t && typeof v.exp === 'number' && v.exp > Date.now()) {
+        this._adminToken = v.t;
+        this._adminExp = v.exp;
+      }
+    } catch { /* stockage indisponible */ }
+  }
+
+  // Appels de fond (polling) : aucune relance, une erreur attend simplement le tour suivant.
+  // Les requêtes sont lancées de façon synchrone dans `fn`, le drapeau est donc bien lu.
+  background(fn) {
+    this._background += 1;
+    try {
+      return fn();
+    } finally {
+      this._background -= 1;
+    }
   }
 
   // Invalidate cache entries whose path starts with `prefix`.
   // Called automatically on non-GET requests.
   _invalidate(prefix) {
+    this._mutationSeq += 1;
     if (!prefix) return;
     // Normalize: only keep the path up to '?' to match regardless of query
     const base = prefix.split('?')[0];
@@ -106,60 +272,106 @@ class ApiClient {
     return entry.promise;
   }
 
+  // options : celles de fetch, plus `retries` (GET uniquement, 2 par défaut, 0 en arrière-plan),
+  // `auth: false` (ni session ni élévation : borne, dépôt) et `withHeaders` (→ { data, headers }).
   async request(path, options = {}, timeoutMs = 10000) {
+    const { retries, auth = true, withHeaders = false, ...fetchOptions } = options;
     const url = `${API_URL}${path}`;
-    const headers = { ...options.headers };
-    if (options.body) headers['Content-Type'] = 'application/json';
-    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const headers = { ...fetchOptions.headers };
+    if (fetchOptions.body) headers['Content-Type'] = 'application/json';
+    const bearer = auth ? this.token : null;
+    if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
+    const adminToken = auth && sendsAdminToken(path) ? this.getAdminToken() : null;
+    if (adminToken && !headers['X-Admin-Token']) headers['X-Admin-Token'] = adminToken;
 
-    const isGet = !options.method || options.method === 'GET';
-    const maxRetries = isGet ? 2 : 0;
-    let lastErr;
+    const method = String(fetchOptions.method || 'GET').toUpperCase();
+    const isGet = method === 'GET' || method === 'HEAD';
+    const defaultRetries = this._background > 0 ? 0 : DEFAULT_GET_RETRIES;
+    const maxRetries = isGet ? (Number.isInteger(retries) ? Math.max(0, retries) : defaultRetries) : 0;
+    if (!isGet) this._mutationSeq += 1;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 300 * attempt));
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const res = await fetch(url, { ...options, headers, signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (res.status === 401) {
-          this.setToken(null);
-          window.location.href = '/';
-          throw new Error('Non authentifié');
+    try {
+      for (let attempt = 0; ; attempt++) {
+        if (attempt > 0) await sleep(300 * attempt);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        let res;
+        try {
+          res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
+        } catch (err) {
+          if (err?.name === 'AbortError') {
+            const e = new Error('Connexion au serveur expirée (timeout)');
+            e.code = 'timeout';
+            throw e;
+          }
+          // Coupure réseau (TypeError) : seul cas d'échec sans réponse que l'on relance
+          if (attempt < maxRetries) continue;
+          throw err;
+        } finally {
+          clearTimeout(timer);
         }
-        if (res.status >= 500 && attempt < maxRetries) {
-          lastErr = new Error(`Erreur ${res.status}`);
-          continue;
-        }
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.detail || `Erreur ${res.status}`);
-        }
-        if (res.status === 204) return null;
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          throw new Error('Serveur indisponible (réponse non-JSON)');
-        }
-        return res.json();
-      } catch (err) {
-        clearTimeout(timeout);
-        lastErr = err.name === 'AbortError'
-          ? new Error('Connexion au serveur expirée (timeout)')
-          : err;
-        if (attempt < maxRetries && (err.name === 'AbortError' || err.name === 'TypeError')) continue;
-        throw lastErr;
+        if (RETRY_STATUSES.has(res.status) && attempt < maxRetries) continue;
+        const data = await this._readResponse(res, { path, bearer, adminToken });
+        return withHeaders ? { data, headers: res.headers } : data;
       }
+    } finally {
+      if (!isGet) this._mutationSeq += 1;
     }
-    throw lastErr;
   }
 
-  get(path) { return this.request(path); }
-  post(path, data) {
+  async _readResponse(res, { path, bearer, adminToken }) {
+    if (res.ok) {
+      if (res.status === 204) return null;
+      const ct = res.headers?.get?.('content-type') || '';
+      if (!ct.includes('application/json')) {
+        throw new Error('Serveur indisponible (réponse non-JSON)');
+      }
+      return res.json();
+    }
+    const body = typeof res.json === 'function' ? await res.json().catch(() => ({})) : {};
+    // detail peut être un objet {code, message, …} (409 métier) : err.data le conserve
+    const detail = body?.detail;
+    const err = new Error(formatErrorDetail(detail, res.status));
+    err.status = res.status;
+    err.data = detail ?? null;
+    if (res.status !== 401 && res.status !== 403) throw err;
+
+    // Élévation admin absente ou expirée : on la redemande, la session reste ouverte.
+    // Le jeton n'est oublié que sur un refus explicite du serveur (detail.code), pas sur du texte.
+    const refusal = adminRefusalCode(detail);
+    if (refusal) {
+      if (adminToken && typeof detail === 'object' && refusal !== 'admin_invalide') this.clearAdminToken();
+      err.code = 'admin_required';
+      err.adminCode = refusal;
+      throw err;
+    }
+    const credential = isCredentialCheck(path) || isPublicSuiviAction(path);
+    if (credential || res.status === 403 || !bearer) throw err;
+
+    // Session refusée par le serveur : seule cause de déconnexion
+    this.setToken(null);
+    window.location.href = '/';
+    const e = new Error('Non authentifié');
+    e.status = 401;
+    throw e;
+  }
+
+  // GET partagé : deux appels identiques en vol ne font qu'une requête, sauf si une écriture
+  // a eu lieu entre-temps (la seconde lecture doit voir son effet).
+  get(path, options) {
+    if (options?.signal) return this.request(path, options);
+    const pending = this._sharedGets.get(path);
+    if (pending && pending.seq === this._mutationSeq && pending.token === this.token) return pending.promise;
+    const entry = { seq: this._mutationSeq, token: this.token, promise: null };
+    entry.promise = (options ? this.request(path, options) : this.request(path)).finally(() => {
+      if (this._sharedGets.get(path) === entry) this._sharedGets.delete(path);
+    });
+    this._sharedGets.set(path, entry);
+    return entry.promise;
+  }
+  post(path, data, options) {
     this._invalidate(path);
-    return this.request(path, { method: 'POST', body: JSON.stringify(data) });
+    return this.request(path, { ...options, method: 'POST', body: JSON.stringify(data) });
   }
   patch(path, data) {
     this._invalidate(path);
@@ -205,10 +417,27 @@ class ApiClient {
       ticket_original_id: ticketOriginalId,
     });
   }
-  updateTicket(id, data) { return this.patch(`/api/tickets/${id}`, data); }
+  // PATCH partiel → { ok, ticket } (ticket complet comme GET, null si le serveur ne le renvoie pas).
+  // keepalive : envoi qui survit à la fermeture de l'onglet (pagehide), sans réponse exploitable.
+  // learn : fin de saisie, le serveur apprend panne / détail / modèle pour l'autocomplétion.
+  async updateTicket(id, data, { keepalive = false, learn = false } = {}) {
+    const path = `/api/tickets/${id}${learn ? '?learn=1' : ''}`;
+    if (keepalive) return this.patchKeepalive(path, data);
+    const res = await this.patch(path, data);
+    return { ...(res || {}), ok: res?.ok !== false, ticket: res?.ticket || null };
+  }
+  patchKeepalive(path, data) {
+    this._invalidate(path);
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    return fetch(`${API_URL}${path}`, {
+      method: 'PATCH', keepalive: true, headers, body: JSON.stringify(data),
+    }).then((r) => r.ok, () => false);
+  }
   changeStatus(id, statut) { return this.patch(`/api/tickets/${id}/statut`, { statut }); }
   deleteTicket(id) { return this.delete(`/api/tickets/${id}`); }
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
+  // params : search, statut, limit, offset, vue ('actifs' | 'archives' | 'tous'), date_from, date_to (YYYY-MM-DD), tech
   getDashboard(params = {}) {
     return this.get(`/api/tickets/stats/dashboard${buildQuery(params)}`);
   }
@@ -216,9 +445,25 @@ class ApiClient {
   addHistory(id, texte) { return this.post(`/api/tickets/${id}/historique?texte=${encodeURIComponent(texte)}`); }
   getHistorique(id) { return this.get(`/api/tickets/${id}/historique`); }
   togglePaye(id) { return this.patch(`/api/tickets/${id}/paye`, {}); }
+  // Valeur explicite (idempotent : un double clic ne bascule pas) → { ok, paye, points_fidelite }
+  setPaye(id, paye) { return this.patch(`/api/tickets/${id}/paye`, { paye: !!paye }); }
+  // Remise au client atomique. body : { paiement: 'deja_paye'|'encaisser'|'non_paye', mode_paiement,
+  // montant, motif_non_paye, pret_restitue, confirmer_non_termine } → { ok, deja_rendu, ticket, points_fidelite }
+  // 409 : err.data = { code: 'reste_a_payer'|'pret_non_restitue'|'non_termine'|'motif_requis', message, reste }
+  restitution(id, body) { return this.post(`/api/tickets/${id}/restitution`, body); }
   getRepairQueue(tech) {
     const qs = tech ? `?tech=${encodeURIComponent(tech)}` : '';
     return this.get(`/api/tickets/queue/repair${qs}`);
+  }
+
+  // ─── RECHERCHE (staff) ─────────────────────
+  // Recherche globale groupée : { q, resolved, groups: { tickets, clients, devis, commandes } }
+  search(q, limit = 8) {
+    return this.get(`/api/search${buildQuery({ q, limit })}`);
+  }
+  // Code scanné ou tapé (QR, KP-000123, 123, IMEI) → { type, id, ticket_code } ; 404 si inconnu
+  resolveCode(code) {
+    return this.get(`/api/search/resolve${buildQuery({ code })}`);
   }
 
   // ─── CLIENTS ───────────────────────────────
@@ -227,7 +472,11 @@ class ApiClient {
   }
   getClient(id) { return this.get(`/api/clients/${id}`); }
   getClientByTel(tel) { return this.get(`/api/clients/tel/${encodeURIComponent(tel)}`); }
-  createOrGetClient(data) { return this.post('/api/clients', data); }
+  // Borne (/client) et dépôt (/depot) : jamais le jeton du poste, même connecté (même SPA que le
+  // staff). Le serveur ne fait alors que compléter les champs vides et ne renvoie que { id }.
+  createOrGetClient(data, { asStaff = false } = {}) {
+    return this.post('/api/clients', data, asStaff ? undefined : { auth: false });
+  }
   updateClient(id, data) { return this.patch(`/api/clients/${id}`, data); }
   deleteClient(id) { return this.delete(`/api/clients/${id}`); }
   getClientTickets(id) { return this.get(`/api/clients/${id}/tickets`); }
@@ -307,8 +556,12 @@ class ApiClient {
   setParams(params) { return this.put('/api/config/batch', params); }
   changePin(target, old_pin, new_pin) { return this.post('/api/config/change-pin', { target, old_pin, new_pin }); }
   testDiscord() { return this.post('/api/config/test-discord'); }
-  getBackup() { return this.get('/api/config/backup'); }
-  importBackup(data) { return this.post('/api/config/backup/import', data); }
+  // Export lourd : jamais relancé automatiquement (chaque relance refait l'export complet côté serveur)
+  getBackup() { return this.request('/api/config/backup', { retries: 0, cache: 'no-store' }, 120_000); }
+  importBackup(data) {
+    this._invalidate('/api/');
+    return this.request('/api/config/backup/import', { method: 'POST', body: JSON.stringify(data) }, 180_000);
+  }
   async exportFile(path, filename) {
     const url = `${API_URL}${path}`;
     const headers = {};
@@ -342,17 +595,54 @@ class ApiClient {
   }
 
   // ─── PRINT ─────────────────────────────────
-  getPrintUrl(ticketId, type) {
-    return `${API_URL}/api/tickets/${ticketId}/print/${type}`;
+  // Les documents d'impression exigent le jeton : on les récupère par fetch (texte ou blob)
+  // puis l'aperçu les affiche en srcdoc / URL blob, jamais via une URL directe.
+  async requestRaw(path, { as = 'text', signal, timeoutMs = 20000 } = {}) {
+    const headers = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    const controller = new AbortController();
+    const relayAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener('abort', relayAbort, { once: true });
+    }
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${API_URL}${path}`, { headers, signal: controller.signal, cache: 'no-store' });
+      if (res.status === 401) {
+        this.setToken(null);
+        window.location.href = '/';
+        throw new Error('Non authentifié');
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(typeof body.detail === 'string' ? body.detail : `Erreur ${res.status}`);
+      }
+      return as === 'blob' ? await res.blob() : await res.text();
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        if (signal?.aborted) throw err;
+        throw new Error('Connexion au serveur expirée (timeout)');
+      }
+      if (err.name === 'TypeError') throw new Error('Serveur injoignable');
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', relayAbort);
+    }
   }
-  getPdfUrl(ticketId, type) {
-    return `${API_URL}/api/tickets/${ticketId}/pdf/${type}`;
+  getPrintHtml(ticketId, type, { signal } = {}) {
+    return this.requestRaw(`/api/tickets/${ticketId}/print/${encodeURIComponent(type)}`, { signal });
   }
-  getSharePrintUrl(ticketId, type) {
-    return `${BACKEND_URL}/api/tickets/${ticketId}/print/${type}`;
+  getPdfBlob(ticketId, type, { signal } = {}) {
+    return this.requestRaw(`/api/tickets/${ticketId}/pdf/${encodeURIComponent(type)}`, { as: 'blob', signal, timeoutMs: 30000 });
   }
-  getSharePdfUrl(ticketId, type) {
-    return `${BACKEND_URL}/api/tickets/${ticketId}/pdf/${type}`;
+  // URL publiques absolues (jeton aléatoire) à envoyer au client : client, devis, recu, devis_pdf, recu_pdf
+  getShareLinks(ticketId) {
+    return this.get(`/api/tickets/${ticketId}/share-links`);
+  }
+  getDevisPrintHtml(id, { signal } = {}) {
+    return this.requestRaw(`/api/devis/${id}/print`, { signal });
   }
 
   // ─── CAISSE ────────────────────────────────
@@ -444,8 +734,15 @@ class ApiClient {
   adminLogin(identifiant, password) {
     return this.post('/api/admin/login', { identifiant, password });
   }
-  verifyAdmin(login, password) {
-    return this.post('/api/admin/verify', { login, password });
+  // → { success, admin_token, expires_in } : le jeton (10 min) part ensuite en X-Admin-Token
+  // (sauf vers les routes publiques)
+  async verifyAdmin(login, password) {
+    const res = await this.post('/api/admin/verify', { login, password });
+    if (res?.admin_token) {
+      const ttl = Number(res.expires_in) > 0 ? Number(res.expires_in) * 1000 : undefined;
+      this.setAdminToken(res.admin_token, ttl);
+    }
+    return res;
   }
   changeAdminPassword(old_password, new_password) {
     return this.post('/api/admin/change-password', { old_password, new_password });
@@ -554,6 +851,20 @@ class ApiClient {
   notifsList(user, unreadOnly = false, limit = 30) {
     const qs = new URLSearchParams({ user, unread_only: String(unreadOnly), limit: String(limit) }).toString();
     return this.get(`/api/notifications-center?${qs}`);
+  }
+  // Liste + nombre de non lues (en-tête X-Unread-Count) en une seule requête → { items, unread }.
+  // Réponse avec ETag : tant que rien ne change, le serveur répond 304 sans corps.
+  async notifsFeed(limit = 30) {
+    const { data, headers } = await this.request(
+      `/api/notifications-center${buildQuery({ unread_only: 'false', limit })}`,
+      { withHeaders: true },
+    );
+    const items = Array.isArray(data) ? data : [];
+    const header = headers?.get?.('x-unread-count');
+    const unread = header != null && header !== '' && Number.isFinite(Number(header))
+      ? Number(header)
+      : items.filter((n) => !n.is_read).length;
+    return { items, unread };
   }
   notifsUnreadCount(user) {
     return this.get(`/api/notifications-center/unread-count?user=${encodeURIComponent(user)}`);
@@ -664,7 +975,6 @@ class ApiClient {
   convertDevisToTicket(id) { return this.post(`/api/devis/${id}/convert`); }
   duplicateDevis(id) { return this.post(`/api/devis/${id}/duplicate`); }
   getDevisStats() { return this.get('/api/devis/stats/overview'); }
-  getDevisPrintUrl(id) { return `${API_URL}/api/devis/${id}/print`; }
   devisFlashSearch(q, limit = 20) {
     return this.get(`/api/devis/flash/search?q=${encodeURIComponent(q)}&limit=${limit}`);
   }
@@ -688,9 +998,10 @@ class ApiClient {
   getSuiviPublic(code) { return this.get(`/api/depot-distance/suivi/${encodeURIComponent(code)}`); }
 
   // ─── SUIVI CLIENT (PUBLIC) ─────────────────────
-  suiviSendMessage(ticketCode, message) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/message`, { message }); }
-  suiviValiderDevis(ticketCode, accepte) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/valider-devis`, { accepte }); }
-  suiviLaisserAvis(ticketCode, note, commentaire) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/avis`, { note, commentaire }); }
+  // preuve : { t } (jeton du lien de suivi) ou { tel4 } (4 derniers chiffres du téléphone)
+  suiviSendMessage(ticketCode, message, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/message`, { message, ...suiviProof(preuve) }); }
+  suiviValiderDevis(ticketCode, accepte, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/valider-devis`, { accepte, ...suiviProof(preuve) }); }
+  suiviLaisserAvis(ticketCode, note, commentaire, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/avis`, { note, commentaire, ...suiviProof(preuve) }); }
   suiviHasAvis(ticketCode) { return this.get(`/api/suivi/${encodeURIComponent(ticketCode)}/has-avis`); }
   getInteractions() { return this.get('/api/suivi/dashboard/interactions'); }
   markTicketRead(ticketId) { return this.put(`/api/tickets/${ticketId}/mark-read`, {}); }

@@ -2,9 +2,6 @@
 API Notifications — messages prédéfinis, WhatsApp, SMS, Email.
 """
 
-import asyncio
-from functools import partial
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -109,13 +106,13 @@ def send_sms(
 
 
 @router.post("/email")
-async def send_email_notification(
+def send_email_notification(
     ticket_id: int,
     message: str,
     sujet: str = "Klikphone - Mise à jour de votre réparation",
     user: dict = Depends(get_current_user),
 ):
-    """Envoie un email au client."""
+    """Envoie un email au client (route synchrone : SQL et SMTP dans le threadpool)."""
     with get_cursor() as cur:
         cur.execute("""
             SELECT t.ticket_code, c.email
@@ -127,10 +124,7 @@ async def send_email_notification(
     if not row or not row["email"]:
         raise HTTPException(400, "Pas d'adresse email")
 
-    loop = asyncio.get_event_loop()
-    success, msg = await loop.run_in_executor(
-        None, partial(_send_email, row["email"], sujet, message)
-    )
+    success, msg = _send_email(row["email"], sujet, message)
 
     if success:
         with get_cursor() as cur:

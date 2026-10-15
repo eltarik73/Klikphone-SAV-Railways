@@ -3,13 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, BellRing, Check, CheckCheck, ExternalLink, X, Inbox } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { usePolling } from '../hooks/usePolling';
 import { useToast } from './Toast';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+
+// Une seule requête toutes les 30 s (onglet visible) : la liste porte le nombre de non lues
+// (X-Unread-Count) et un ETag, le serveur répond 304 sans corps tant que rien ne change.
+// Toute nouvelle notification est donc vue au tour suivant, même si le compteur reste stable.
+const POLL_MS = 30_000;
 
 /**
  * NotificationCenter — cloche dans la Navbar (sidebar).
  *
  * - Lit l'utilisateur via useAuth() (réactif si l'user change via switchUser).
- * - Polling 12s : récupère les notifs visibles pour cet user.
+ * - Polling 30s de la liste + compteur ; pas de rendu si rien n'a changé.
  * - Détecte les NOUVELLES notifs important → trigger un toast via useToast.
  * - Dropdown : positionné en FIXED à côté de la sidebar, qu'elle soit
  *   collapsed (68px) ou étendue (256px). Pas de positioning relatif au
@@ -24,6 +31,8 @@ export default function NotificationCenter({ collapsed = false }) {
 
   const lastSeenIdRef = useRef(0);
   const firstLoadRef = useRef(true);
+  const listSigRef = useRef('');
+  const listAtRef = useRef(0);
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
 
@@ -31,57 +40,74 @@ export default function NotificationCenter({ collapsed = false }) {
   const currentUser = user?.utilisateur || null;
   const toast = useToast();
   const navigate = useNavigate();
+  // navigate change d'identité à chaque changement de route : en ref, il ne relance plus le polling
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
 
-  // ─── Fetch + détection nouvelles notifs importantes ────────────────
-  const fetchNotifs = useCallback(async () => {
+  // ─── Liste + détection des nouvelles notifs importantes ───────────
+  const applyList = useCallback((list) => {
+    const safe = Array.isArray(list) ? list : [];
+    if (!firstLoadRef.current) {
+      const fresh = safe.filter(n => n.id > lastSeenIdRef.current && n.important && !n.is_read);
+      fresh.forEach(n => {
+        toastRef.current.important(n.message, {
+          title: n.title,
+          onClick: n.action_url ? () => {
+            api.notifsMarkRead(n.id, currentUser).catch(() => {});
+            navigateRef.current(n.action_url);
+          } : undefined,
+        });
+      });
+    }
+    if (safe.length > 0) lastSeenIdRef.current = Math.max(lastSeenIdRef.current, safe[0].id);
+    firstLoadRef.current = false;
+    listAtRef.current = Date.now();
+    // Rien de changé : pas de nouveau rendu de la cloche
+    const sig = safe.map(n => `${n.id}:${n.is_read ? 1 : 0}`).join(',');
+    if (sig !== listSigRef.current) {
+      listSigRef.current = sig;
+      setItems(safe);
+    }
+  }, [currentUser]);
+
+  const poll = useCallback(async () => {
     if (!currentUser) return;
     try {
-      const list = await api.notifsList(currentUser, false, 30);
-      const safe = Array.isArray(list) ? list : [];
-
-      // Trigger un toast pour les nouvelles notifs importantes non lues
-      if (!firstLoadRef.current) {
-        const fresh = safe.filter(
-          n => n.id > lastSeenIdRef.current && n.important && !n.is_read,
-        );
-        fresh.forEach(n => {
-          toast.important(n.message, {
-            title: n.title,
-            onClick: n.action_url ? () => {
-              api.notifsMarkRead(n.id, currentUser).catch(() => {});
-              navigate(n.action_url);
-            } : undefined,
-          });
-        });
-      }
-
-      if (safe.length > 0) {
-        lastSeenIdRef.current = Math.max(lastSeenIdRef.current, safe[0].id);
-      }
-      firstLoadRef.current = false;
-      setItems(safe);
-
-      const u = await api.notifsUnreadCount(currentUser);
-      setUnread(u?.count || 0);
+      const { items: list, unread: count } = await api.background(() => api.notifsFeed(30));
+      applyList(list);
+      setUnread(count);
       setDebugLastError(null);
     } catch (err) {
       console.error('[NotificationCenter] fetch failed', err);
       setDebugLastError(err?.message || 'Erreur réseau');
     }
-  }, [currentUser, toast, navigate]);
+  }, [currentUser, applyList]);
 
-  // ─── Polling 12s + arrêt si onglet caché ───────────────────────────
+  // Pause onglet masqué, appel immédiat au retour ; pas de refetch à chaque navigation
+  const refresh = usePolling(poll, POLL_MS, { enabled: Boolean(currentUser) });
+
+  // Changement d'utilisateur (switchUser) : on repart de zéro, sans toast pour l'historique
+  const userRef = useRef(currentUser);
   useEffect(() => {
-    if (!currentUser) return;
-    fetchNotifs();
-    let interval;
-    const start = () => { clearInterval(interval); interval = setInterval(fetchNotifs, 12000); };
-    const stop = () => clearInterval(interval);
-    const onVisibility = () => (document.hidden ? stop() : (fetchNotifs(), start()));
-    document.addEventListener('visibilitychange', onVisibility);
-    start();
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [currentUser, fetchNotifs]);
+    if (userRef.current === currentUser) return;
+    userRef.current = currentUser;
+    lastSeenIdRef.current = 0;
+    firstLoadRef.current = true;
+    listSigRef.current = '';
+    listAtRef.current = 0;
+    setItems([]);
+    refresh();
+  }, [currentUser, refresh]);
+
+  // Ouverture de la cloche : liste à jour si elle date un peu
+  useEffect(() => {
+    if (open && Date.now() - listAtRef.current > 10_000) refresh();
+  }, [open, refresh]);
+
+  // Fenêtre modale : focus piégé, retour sur la cloche à la fermeture (Échap géré ci-dessous)
+  useFocusTrap(dropdownRef, open);
 
   // ─── Fermer au clic extérieur + Escape ─────────────────────────────
   useEffect(() => {
@@ -159,7 +185,8 @@ export default function NotificationCenter({ collapsed = false }) {
         aria-haspopup="dialog"
         title={unread > 0 ? `${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}` : 'Notifications'}
         className={`relative flex items-center rounded-lg transition-all
-          ${collapsed ? 'w-9 h-9 justify-center' : 'w-full gap-3 px-3 py-2.5'}
+          ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-[44px] gap-3 px-3 py-2.5'}
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
           ${unread > 0
             ? 'text-brand-300 hover:bg-brand-600/15 ring-1 ring-brand-500/30'
             : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
@@ -221,7 +248,7 @@ export default function NotificationCenter({ collapsed = false }) {
                       disabled={loading}
                       title="Tout marquer comme lu"
                       aria-label="Marquer toutes les notifications comme lues"
-                      className="p-1.5 rounded-lg hover:bg-white/20 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                      className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/20 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                     >
                       <CheckCheck className="w-4 h-4" aria-hidden="true" />
                     </button>
@@ -230,7 +257,7 @@ export default function NotificationCenter({ collapsed = false }) {
                     type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Fermer le centre de notifications"
-                    className="p-1.5 rounded-lg hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                    className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                   >
                     <X className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -256,7 +283,7 @@ export default function NotificationCenter({ collapsed = false }) {
                 <div className="text-center py-12 px-6">
                   <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" aria-hidden="true" />
                   <p className="text-sm font-semibold text-slate-600">Aucune notification</p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Tu seras prévenu ici quand un client valide un devis,
                     envoie un message, ou laisse un avis.
                   </p>
@@ -288,11 +315,11 @@ export default function NotificationCenter({ collapsed = false }) {
                               <span className="shrink-0 w-2 h-2 bg-brand-600 rounded-full mt-1.5" aria-label="Non lu" />
                             )}
                           </div>
-                          <p className={`text-xs mt-1 leading-relaxed ${!n.is_read ? 'text-slate-600' : 'text-slate-400'}`}>
+                          <p className={`text-xs mt-1 leading-relaxed ${!n.is_read ? 'text-slate-600' : 'text-slate-500'}`}>
                             {n.message}
                           </p>
                           <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-[10px] text-slate-400">{fmtTime(n.created_at)}</span>
+                            <span className="text-[10px] text-slate-500">{fmtTime(n.created_at)}</span>
                             {n.action_url && (
                               <span className="text-[10px] text-brand-600 font-medium flex items-center gap-0.5">
                                 <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
@@ -315,7 +342,7 @@ export default function NotificationCenter({ collapsed = false }) {
                   type="button"
                   onClick={onMarkAll}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                  className="w-full min-h-[44px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
                 >
                   <Check className="w-3.5 h-3.5" aria-hidden="true" />
                   Tout marquer comme lu ({unread})

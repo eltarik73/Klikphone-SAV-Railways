@@ -1,42 +1,93 @@
-import { useState, useEffect, useRef, useMemo, useTransition } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef, useMemo, useCallback, useTransition, Fragment } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
+import { usePolling } from '../hooks/usePolling';
 import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
+import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
   SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
-  TrendingUp, Clock, Euro, Percent, Sparkles, Maximize2, Minimize2, Inbox,
+  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox,
 } from 'lucide-react';
+
+// Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
+const DASH_STATE_KEY = 'kp_dashboard_filters';
+
+function readDashState() {
+  try {
+    const raw = sessionStorage.getItem(DASH_STATE_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDashState(v) {
+  try {
+    sessionStorage.setItem(DASH_STATE_KEY, JSON.stringify(v));
+  } catch { /* stockage indisponible : filtres non conservés */ }
+}
+
+const str = (v) => (typeof v === 'string' ? v : '');
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+  const reduceMotion = useReducedMotion();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [filterStatut, setFilterStatut] = useState('');
+  // L'URL (?q=, ?statut=, ?vue=archives) prime ; sinon on reprend les filtres de la session.
+  // Dates et technicien ne sont pas dans l'URL : toujours repris de la session.
+  const [initial] = useState(() => {
+    const fromUrl = searchParams.has('q') || searchParams.has('statut') || searchParams.has('vue');
+    const saved = readDashState();
+    const q = fromUrl ? (searchParams.get('q') || '') : str(saved.q);
+    const statut = fromUrl ? (searchParams.get('statut') || '') : str(saved.statut);
+    const archives = fromUrl ? searchParams.get('vue') === 'archives' : Boolean(saved.archives);
+    return {
+      q, statut, archives: archives || ARCHIVE_STATUTS.includes(statut),
+      dateFrom: str(saved.dateFrom), dateTo: str(saved.dateTo), tech: str(saved.tech),
+    };
+  });
+
+  const [search, setSearch] = useState(initial.q);
+  const [debouncedSearch, setDebouncedSearch] = useState(initial.q.trim());
+  const [filterStatut, setFilterStatut] = useState(initial.statut);
   const [activeKpi, setActiveKpi] = useState(null);
-  const [showArchived, setShowArchived] = useState(false);
+  const [showArchived, setShowArchived] = useState(initial.archives);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
   const [showBulkMenu, setShowBulkMenu] = useState(false);
-  const [filterTech, setFilterTech] = useState('');
+  const [filterTech, setFilterTech] = useState(initial.tech);
   const [interactionFilter, setInteractionFilter] = useState(null); // 'accord_client' | 'messages' | 'avis' | null
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
   const [sortField, setSortField] = useState('date_depot');
   const [sortDir, setSortDir] = useState('desc');
-  const [page, setPage] = useState(0);
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('kp_compact_mode') === '1');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(initial.dateFrom);
+  const [dateTo, setDateTo] = useState(initial.dateTo);
   const [isPending, startTransition] = useTransition();
   const searchTimer = useRef(null);
+  const pendingEnterRef = useRef(false);
+
+  // La page revient à 0 dès qu'un filtre, un onglet, un KPI ou le tri change (sans requête intermédiaire)
+  const filterSig = JSON.stringify([
+    debouncedSearch, filterStatut, showArchived, interactionFilter, activeKpi,
+    sortField, sortDir, dateFrom, dateTo, filterTech, pageSize,
+  ]);
+  const [pageState, setPageState] = useState({ sig: filterSig, page: 0 });
+  const page = pageState.sig === filterSig ? pageState.page : 0;
+  const setPage = (next) => setPageState((prev) => {
+    const cur = prev.sig === filterSig ? prev.page : 0;
+    return { sig: filterSig, page: Math.max(0, typeof next === 'function' ? next(cur) : next) };
+  });
 
   const toggleCompact = () => {
     setCompactMode(prev => {
@@ -49,30 +100,113 @@ export default function DashboardPage() {
   // Debounced search (300ms)
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    searchTimer.current = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
-  // SWR: Dashboard data (KPI + tickets)
-  const dashKey = useMemo(() => {
-    const parts = ['dashboard'];
-    if (debouncedSearch) parts.push(`s:${debouncedSearch}`);
-    if (filterStatut) parts.push(`f:${filterStatut}`);
-    return parts.join(':');
-  }, [debouncedSearch, filterStatut]);
+  useEffect(() => {
+    writeDashState({ q: debouncedSearch, statut: filterStatut, archives: showArchived, dateFrom, dateTo, tech: filterTech });
+  }, [debouncedSearch, filterStatut, showArchived, dateFrom, dateTo, filterTech]);
 
-  const { data: dashData, loading, isRevalidating, mutate } = useApi(
+  // Synchronisation avec l'URL. seenUrlSigRef : dernière URL observée (ne réagir qu'à un vrai
+  // changement, y compris au double montage du StrictMode) ; writtenSigRef : dernière valeur écrite,
+  // pour distinguer nos écritures d'un lien externe (palette « Tous les tickets », bouton Dashboard).
+  // JSON et non join('|') : une recherche peut contenir « | »
+  const urlSig = JSON.stringify([searchParams.get('q') || '', searchParams.get('statut') || '', searchParams.get('vue') === 'archives' ? '1' : '']);
+  const stateSig = JSON.stringify([debouncedSearch, filterStatut, showArchived ? '1' : '']);
+  const seenUrlSigRef = useRef(urlSig);
+  const writtenSigRef = useRef(urlSig);
+  const setSearchParamsRef = useRef(setSearchParams);
+  setSearchParamsRef.current = setSearchParams;
+  useEffect(() => {
+    if (urlSig === seenUrlSigRef.current) return;
+    seenUrlSigRef.current = urlSig;
+    if (urlSig === writtenSigRef.current) return;
+    writtenSigRef.current = urlSig;
+    const [q, statut, arch] = JSON.parse(urlSig);
+    setSearch(q);
+    setDebouncedSearch(q.trim());
+    setFilterStatut(statut);
+    setShowArchived(arch === '1' || ARCHIVE_STATUTS.includes(statut));
+    setActiveKpi(null);
+  }, [urlSig]);
+  useEffect(() => {
+    if (stateSig === writtenSigRef.current) return;
+    writtenSigRef.current = stateSig;
+    const [q, statut, arch] = JSON.parse(stateSig);
+    setSearchParamsRef.current((prev) => {
+      const next = new URLSearchParams(prev);
+      if (q) next.set('q', q); else next.delete('q');
+      if (statut) next.set('statut', statut); else next.delete('statut');
+      if (arch) next.set('vue', 'archives'); else next.delete('vue');
+      return next;
+    }, { replace: true });
+  }, [stateSig]);
+
+  // For tech view: filter by assigned tech
+  const isTech = user?.target === 'tech';
+  const techName = user?.utilisateur;
+
+  // Filtres envoyés au serveur. Vue actifs : liste complète (≤ 500) paginée ici ;
+  // vue archives : pagination serveur ; recherche : tous statuts, actifs d'abord.
+  const searchMode = Boolean(debouncedSearch);
+  const vue = searchMode ? 'tous' : (showArchived ? 'archives' : 'actifs');
+  const serverPaged = vue === 'archives';
+  const mineOnly = filterTech === '__mine__';
+  // Le serveur compare le technicien à l'identique : en actifs et en recherche (listes complètes)
+  // on garde le filtre local, qui accepte l'ancien format « Nom (rôle) » et, pour « Mes tickets »,
+  // les non assignés. Seules les archives paginées filtrent côté serveur (signalé à l'écran).
+  const techOnServer = Boolean(filterTech) && serverPaged;
+  const serverTech = techOnServer ? (mineOnly ? (techName || '') : filterTech) : '';
+  const queryParams = useMemo(() => {
+    const p = { vue, limit: serverPaged ? pageSize : (searchMode ? 200 : 500) };
+    if (serverPaged) p.offset = page * pageSize;
+    if (debouncedSearch) p.search = debouncedSearch;
+    if (filterStatut && !searchMode) p.statut = filterStatut;
+    if (dateFrom) p.date_from = dateFrom;
+    if (dateTo) p.date_to = dateTo;
+    if (serverTech) p.tech = serverTech;
+    return p;
+  }, [vue, serverPaged, searchMode, pageSize, page, debouncedSearch, filterStatut, dateFrom, dateTo, serverTech]);
+  const dashKey = useMemo(() => `dashboard:${JSON.stringify(queryParams)}`, [queryParams]);
+
+  // SWR: Dashboard data (KPI + tickets)
+  const { data: dashData, error: dashError, loading, isRevalidating, mutate } = useApi(
     dashKey,
-    () => {
-      const params = { limit: 200 };
-      if (debouncedSearch) params.search = debouncedSearch;
-      if (filterStatut) params.statut = filterStatut;
-      return api.getDashboard(params);
-    },
+    () => api.getDashboard(queryParams),
     { tags: ['dashboard', 'tickets'], ttl: 45_000 }
   );
-  const kpi = dashData?.kpi ?? null;
-  const tickets = dashData?.tickets ?? [];
+  // Pendant le chargement d'une autre page ou d'une recherche affinée, on garde la réponse
+  // précédente de la même vue (atténuée) : pas de squelette, pagination et focus conservés.
+  // Mise à jour en effet : seules les paires (données, vue) réellement affichées sont retenues.
+  const lastDashRef = useRef(null);
+  useEffect(() => {
+    if (dashData) lastDashRef.current = { data: dashData, vue };
+  }, [dashData, vue]);
+  const prevDash = !dashData && loading && lastDashRef.current?.vue === vue ? lastDashRef.current.data : null;
+  const viewData = dashData ?? prevDash;
+  const showingPrevious = Boolean(prevDash);
+  // Les KPI portent sur toute la base : ceux de la réponse précédente restent valables quelle que soit la vue
+  const kpi = dashData?.kpi ?? (loading ? lastDashRef.current?.data?.kpi : null) ?? null;
+  const tickets = viewData?.tickets ?? [];
+  const serverTotal = typeof viewData?.total === 'number' ? viewData.total : null;
+
+  // Nombre d'archivés correspondant aux mêmes filtres (bouton « Voir N archivé(s) », état vide)
+  const archCountParams = useMemo(() => {
+    if (searchMode || showArchived || filterStatut) return null;
+    const p = { vue: 'archives', limit: 1 };
+    if (dateFrom) p.date_from = dateFrom;
+    if (dateTo) p.date_to = dateTo;
+    const t = mineOnly ? (techName || '') : filterTech;
+    if (t) p.tech = t;
+    return p;
+  }, [searchMode, showArchived, filterStatut, dateFrom, dateTo, mineOnly, techName, filterTech]);
+  const { data: archCountData } = useApi(
+    archCountParams ? `dashboard:archcount:${JSON.stringify(archCountParams)}` : null,
+    () => api.getDashboard(archCountParams),
+    { tags: ['dashboard', 'tickets'], ttl: 60_000 }
+  );
+  const archivedTotal = typeof archCountData?.total === 'number' ? archCountData.total : null;
 
   // SWR: Team members
   const { data: teamData } = useApi('team:active', () => api.getActiveTeam(), { tags: ['team'], ttl: 300_000 });
@@ -83,34 +217,19 @@ export default function DashboardPage() {
     return map;
   }, [teamList]);
 
-  // Prefetch frequent pages on mount
+  // Préchargement de la page Clients, avec la MÊME clé et la même taille de page que ClientsPage
+  // (l'ancienne clé 'clients:p:0:20' n'était jamais relue). Plus de prefetch du catalogue tarifs
+  // (page BETA, 3 requêtes) ni de la config (réservée aux admins, déjà lue par la Navbar).
   useEffect(() => {
-    prefetch('clients:p:0:20', () => api.getClients({ limit: 20, offset: 0 }), { tags: ['clients'], ttl: 60_000 });
-    prefetch('tarifs', () => Promise.all([api.getTarifs(), api.getTarifsStats(), api.getAppleDevices()]).then(([t, s, a]) => ({ tarifs: t, stats: s, appleDevices: a })), { tags: ['tarifs'], ttl: 300_000 });
-    // MÊME forme que le fetcher de ConfigPage ({ config, team }) pour éviter une
-    // collision de clé 'config:main' qui crashait ConfigPage (configData.config
-    // undefined si le prefetch avait écrit un tableau brut).
-    prefetch('config:main', async () => {
-      const [configRaw, teamData] = await Promise.all([api.getConfig(), api.getTeam().catch(() => [])]);
-      const configMap = {};
-      if (Array.isArray(configRaw)) configRaw.forEach(c => { configMap[c.cle] = c.valeur; });
-      else Object.assign(configMap, configRaw || {});
-      return { config: configMap, team: teamData };
-    }, { tags: ['config', 'team'], ttl: 300_000 });
+    const size = parseInt(localStorage.getItem('kp_clients_page_size') || '50', 10) || 50;
+    prefetch(`clients:p:0:${size}`, () => api.getClients({ limit: size, offset: 0 }), { tags: ['clients'], ttl: 60_000 });
   }, []);
 
-  // Auto-refresh every 60s, only when tab is visible
+  // Rafraîchissement toutes les 60 s onglet visible, immédiat au retour sur l'onglet, sans
+  // chevauchement ni relance (le premier chargement est fait par useApi)
   const mutateRef = useRef(mutate);
   mutateRef.current = mutate;
-  useEffect(() => {
-    let id;
-    const start = () => { clearInterval(id); id = setInterval(() => mutateRef.current(), 60_000); };
-    const stop = () => clearInterval(id);
-    const onVisibility = () => document.hidden ? stop() : start();
-    document.addEventListener('visibilitychange', onVisibility);
-    start();
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, []);
+  usePolling(() => api.background(() => mutateRef.current()), 60_000, { immediate: false });
 
   // SWR: Interactions clients
   const { data: interactions } = useApi('dashboard:interactions', () => api.getInteractions(), { tags: ['interactions'], ttl: 30_000 });
@@ -208,10 +327,6 @@ export default function DashboardPage() {
     }
   };
 
-  // For tech view: filter by assigned tech
-  const isTech = user?.target === 'tech';
-  const techName = user?.utilisateur;
-
   // Match tech name: handles both "Marina" and "Marina (Technicien Apple)" formats
   const matchTech = (assigned, name) => {
     if (!assigned || !name) return false;
@@ -231,60 +346,69 @@ export default function DashboardPage() {
     return null;
   };
 
-  const filteredTickets = useMemo(() => {
+  // Dates et vue sont filtrées par le serveur ; restent ici le technicien quand il n'est pas
+  // envoyé (voir techOnServer), les interactions et, en recherche, l'onglet de statut.
+  const baseTickets = useMemo(() => {
     let list = tickets;
-    if (filterTech === '__mine__' && techName) {
-      list = list.filter(t =>
-        matchTech(t.technicien_assigne, techName) || !t.technicien_assigne
-      );
-    } else if (filterTech) {
-      list = list.filter(t => matchTech(t.technicien_assigne, filterTech));
+    if (filterTech && !techOnServer) {
+      if (mineOnly) {
+        if (techName) list = list.filter(t => matchTech(t.technicien_assigne, techName) || !t.technicien_assigne);
+      } else {
+        list = list.filter(t => matchTech(t.technicien_assigne, filterTech));
+      }
     }
     if (interactionTicketIds) {
       list = list.filter(t => interactionTicketIds.has(t.id));
     }
-    if (dateFrom) {
-      const from = new Date(dateFrom);
-      list = list.filter(t => t.date_depot && new Date(t.date_depot) >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo);
-      to.setHours(23, 59, 59, 999);
-      list = list.filter(t => t.date_depot && new Date(t.date_depot) <= to);
-    }
     return list;
-  }, [tickets, filterTech, techName, interactionTicketIds, dateFrom, dateTo]);
+  }, [tickets, filterTech, techOnServer, mineOnly, techName, interactionTicketIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Extra KPIs derived client-side for the enhanced header
-  const extraKpis = useMemo(() => {
-    const today = new Date();
-    const startDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    let todayCount = 0;
-    let enAttente = 0;
+  const filteredTickets = useMemo(
+    () => (searchMode && filterStatut ? baseTickets.filter(t => t.statut === filterStatut) : baseTickets),
+    [baseTickets, searchMode, filterStatut]
+  );
+
+  const statutCounts = useMemo(() => {
+    const counts = {};
+    for (const t of baseTickets) counts[t.statut] = (counts[t.statut] || 0) + 1;
+    return counts;
+  }, [baseTickets]);
+
+  const activeTickets = useMemo(() => filteredTickets.filter(t => !ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
+  const archivedTickets = useMemo(() => filteredTickets.filter(t => ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
+
+  // Compteurs du bandeau : KPI serveur (toute la base), indépendants de la recherche
+  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds);
+  // CA estimé : calculé seulement sur la liste complète des actifs (sans recherche ni filtre serveur),
+  // puis conservé tel quel pendant qu'on filtre.
+  const caActifs = useMemo(() => {
+    if (!dashData || vue !== 'actifs' || filterStatut || dateFrom || dateTo) return null;
     let ca = 0;
-    let totalClos = 0;
-    let reparesOk = 0;
-    for (const t of tickets) {
-      const dep = t.date_depot ? new Date(t.date_depot).getTime() : 0;
-      if (dep >= startDay) todayCount++;
-      if (['En attente de diagnostic', "En attente d'accord client", 'En attente de pièce'].includes(t.statut)) enAttente++;
-      if (!['Clôturé'].includes(t.statut)) {
-        const prix = Number(t.tarif_final || t.devis_estime || 0);
-        if (prix > 0) ca += prix;
-      }
-      if (['Rendu au client', 'Clôturé', 'Réparation terminée'].includes(t.statut)) {
-        totalClos++;
-        if (t.statut !== 'Irréparable') reparesOk++;
-      }
+    for (const t of dashData.tickets || []) {
+      const prix = Number(t.tarif_final || t.devis_estime || 0);
+      if (prix > 0) ca += prix;
     }
-    const taux = totalClos > 0 ? Math.round((reparesOk / totalClos) * 100) : 0;
-    return { todayCount, enAttente, ca, taux };
-  }, [tickets]);
+    return ca;
+  }, [dashData, vue, filterStatut, dateFrom, dateTo]);
+  const [caKnown, setCaKnown] = useState(null);
+  useEffect(() => { if (caActifs !== null) setCaKnown(caActifs); }, [caActifs]);
+  const extraKpis = useMemo(() => {
+    const enAttente = kpi
+      ? (kpi.en_attente_diagnostic || 0) + (kpi.en_attente_accord || 0) + (kpi.en_attente_piece || 0)
+      : 0;
+    return {
+      todayCount: kpi?.nouveaux_aujourdhui ?? 0,
+      enAttente,
+      ca: caActifs ?? caKnown,
+      prets: kpi?.reparation_terminee ?? 0,
+    };
+  }, [kpi, caActifs, caKnown]);
 
-  const activeTickets = useMemo(() => filteredTickets.filter(t => !['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
-  const archivedTickets = useMemo(() => filteredTickets.filter(t => ['Clôturé', 'Rendu au client'].includes(t.statut)), [filteredTickets]);
-  const sortedTickets = useMemo(() => {
-    const list = showArchived ? archivedTickets : activeTickets;
+  // En recherche sans tri choisi, on garde l'ordre de pertinence du serveur. Archives paginées :
+  // l'API ne trie que par date de dépôt décroissante, un tri local ne porterait que sur la page reçue.
+  const keepServerOrder = serverPaged || (searchMode && sortField === 'date_depot' && sortDir === 'desc');
+  const sortList = useCallback((list) => {
+    if (keepServerOrder) return list;
     return [...list].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
@@ -308,10 +432,77 @@ export default function DashboardPage() {
       }
       return sortDir === 'desc' ? -cmp : cmp;
     });
-  }, [showArchived, archivedTickets, activeTickets, sortField, sortDir]);
-  const allDisplayed = sortedTickets;
-  const totalPages = Math.ceil(allDisplayed.length / pageSize);
-  const displayedTickets = allDisplayed.slice(page * pageSize, (page + 1) * pageSize);
+  }, [keepServerOrder, sortField, sortDir]);
+  const sortedTickets = useMemo(() => {
+    if (searchMode) return [...sortList(activeTickets), ...sortList(archivedTickets)];
+    return sortList(showArchived ? archivedTickets : activeTickets);
+  }, [searchMode, showArchived, archivedTickets, activeTickets, sortList]);
+  const totalCount = serverPaged ? (serverTotal ?? sortedTickets.length) : sortedTickets.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const displayedTickets = serverPaged
+    ? sortedTickets
+    : sortedTickets.slice(safePage * pageSize, (safePage + 1) * pageSize);
+  // Recherche tronquée par le serveur (limit 200) ou liste d'actifs > 500
+  const truncatedBy = !serverPaged && serverTotal !== null && serverTotal > tickets.length ? serverTotal : null;
+
+  // Archives : page devenue hors limites (tickets réactivés ou supprimés entre-temps).
+  // Total de la réponse fraîche uniquement, pas de celle gardée pendant le chargement.
+  const freshTotal = typeof dashData?.total === 'number' ? dashData.total : null;
+  useEffect(() => {
+    if (!serverPaged || freshTotal === null || page === 0 || page * pageSize < freshTotal) return;
+    setPage(Math.max(0, Math.ceil(freshTotal / pageSize) - 1));
+  }, [serverPaged, freshTotal, page, pageSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openTicket = useCallback((id) => navigate(`${basePath}/ticket/${id}`), [navigate, basePath]);
+  const openTicketLink = (e, id) => {
+    e.stopPropagation();
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    openTicket(id);
+  };
+
+  const onSearchKeyDown = async (e) => {
+    if (e.key === 'ArrowDown') {
+      const first = document.querySelector('[data-ticket-link]');
+      if (first) { e.preventDefault(); first.focus(); }
+      return;
+    }
+    if (e.key !== 'Enter' || e.nativeEvent?.isComposing) return;
+    e.preventDefault();
+    const q = search.trim();
+    if (!q) return;
+    const kind = detectQueryKind(q);
+    if (kind.explicit && (kind.kind === 'ticket' || kind.kind === 'imei')) {
+      try {
+        const r = await api.resolveCode(q);
+        if (r?.type === 'ticket' && r.id) { openTicket(r.id); return; }
+      } catch { /* code inconnu : on retombe sur la liste */ }
+    }
+    if (q !== debouncedSearch || (loading && !dashData)) {
+      clearTimeout(searchTimer.current);
+      pendingEnterRef.current = true;
+      setDebouncedSearch(q);
+      return;
+    }
+    if (displayedTickets[0]) openTicket(displayedTickets[0].id);
+  };
+
+  // Entrée tapée avant l'arrivée des résultats : on ouvre le premier dès qu'ils sont là
+  useEffect(() => {
+    if (!pendingEnterRef.current || loading || isRevalidating) return;
+    pendingEnterRef.current = false;
+    if (debouncedSearch && displayedTickets[0]) openTicket(displayedTickets[0].id);
+  }, [dashData, loading, isRevalidating]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const showActives = () => {
+    setShowArchived(false);
+    if (ARCHIVE_STATUTS.includes(filterStatut)) setFilterStatut('');
+  };
+  const showArchives = () => {
+    setShowArchived(true);
+    if (filterStatut && !ARCHIVE_STATUTS.includes(filterStatut)) { setFilterStatut(''); setActiveKpi(null); }
+  };
 
   const handlePageSizeChange = (size) => {
     setPageSize(size);
@@ -324,6 +515,58 @@ export default function DashboardPage() {
     const parts = await api.getParts({ statut: 'en_cours' });
     return parts?.length ?? 0;
   }, { tags: ['commandes'], ttl: 60_000 });
+
+  // État vide explicite : ne jamais afficher « Aucun ticket » quand des résultats existent ailleurs
+  const emptyState = (() => {
+    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); };
+    if (searchMode) {
+      if (filterStatut && baseTickets.length > 0) {
+        return {
+          title: `Aucun ticket « ${filterStatut} » pour « ${debouncedSearch} »`,
+          text: `${baseTickets.length} ticket(s) correspondent avec un autre statut.`,
+          action: { label: 'Afficher tous les statuts', onClick: () => { setFilterStatut(''); setActiveKpi(null); setShowArchived(false); } },
+        };
+      }
+      if (tickets.length > 0) {
+        return {
+          title: 'Résultats masqués par un filtre',
+          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien ou interactions.`,
+          action: { label: 'Retirer ces filtres', onClick: resetFilters },
+        };
+      }
+      if (dateFrom || dateTo) {
+        return {
+          title: `Aucun ticket ne correspond à « ${debouncedSearch} » sur cette période`,
+          text: 'La recherche est limitée à la période de dépôt choisie.',
+          action: { label: 'Retirer les filtres de date', onClick: () => { setDateFrom(''); setDateTo(''); } },
+        };
+      }
+      return {
+        title: `Aucun ticket ne correspond à « ${debouncedSearch} »`,
+        text: 'Essayez le téléphone, le code (KP-000123 ou 123), l’IMEI, ou cherchez aussi dans les clients, devis et commandes.',
+        action: { label: 'Recherche globale', onClick: () => openSearchPalette(debouncedSearch) },
+      };
+    }
+    if (!showArchived && archivedTotal > 0 && (dateFrom || dateTo || filterTech)) {
+      return {
+        title: 'Aucun ticket actif avec ces filtres',
+        text: `${archivedTotal} ticket(s) rendus ou clôturés correspondent à ces filtres.`,
+        action: { label: `Voir les ${archivedTotal} archivé(s)`, onClick: showArchives },
+      };
+    }
+    if (showArchived) {
+      return {
+        title: 'Aucun ticket archivé',
+        text: hasListFilters ? 'Aucun ticket rendu ou clôturé ne correspond à ces filtres.' : 'Les tickets rendus ou clôturés apparaîtront ici.',
+        action: { label: 'Voir les actifs', onClick: showActives },
+      };
+    }
+    return {
+      title: 'Aucun ticket trouvé',
+      text: hasListFilters ? 'Essayez d’ajuster vos filtres pour voir plus de résultats.' : 'C’est le calme ! Créez un nouveau ticket pour démarrer.',
+      action: null,
+    };
+  })();
 
   const kpiCards = kpi ? [
     { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone, color: 'text-brand-600', iconBg: 'bg-brand-100' },
@@ -382,8 +625,8 @@ export default function DashboardPage() {
     <div className="p-4 sm:p-6 lg:p-8 relative">
       {/* Revalidation indicator */}
       {isRevalidating && (
-        <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10">
-          <div className="h-full bg-brand-400/60 animate-progress-bar" />
+        <div className="absolute top-0 left-0 right-0 h-0.5 overflow-hidden z-10" aria-hidden="true">
+          <div className="h-full bg-brand-400/60 motion-safe:animate-progress-bar motion-reduce:w-full" />
         </div>
       )}
       {/* Local styles: custom scrollbar, stagger, drag handle */}
@@ -400,7 +643,7 @@ export default function DashboardPage() {
       `}</style>
       {/* ─── Header Hero ─── */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={reduceMotion ? false : { opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-5 sm:p-6 mb-5 -mx-1"
@@ -439,7 +682,7 @@ export default function DashboardPage() {
               className="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors backdrop-blur-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
               title="Rafraîchir"
               aria-label="Rafraîchir">
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
             </button>
             <button onClick={() => navigate('/client')}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-slate-900 font-semibold text-sm hover:bg-slate-100 transition-colors shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
@@ -460,13 +703,14 @@ export default function DashboardPage() {
             </div>
           ))
         ) : kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter }, i) => (
-          <button key={label}
+          <button key={label} type="button"
             onClick={() => handleKpiClick(filter, i)}
-            className={`card p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 animate-in text-left
+            aria-pressed={activeKpi === i}
+            className={`card p-4 hover:shadow-md motion-safe:hover:-translate-y-0.5 transition-all duration-200 motion-safe:animate-[fadeIn_0.3s_ease-out_both] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
               ${activeKpi === i ? 'ring-2 ring-brand-500 shadow-lg shadow-brand-500/10' : ''}`}
             style={{ animationDelay: `${i * 50}ms` }}
           >
-            <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center mb-3`}>
+            <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center mb-3`} aria-hidden="true">
               <Icon className={`w-4 h-4 ${color}`} />
             </div>
             <p className="text-2xl font-bold text-slate-900 tracking-tight">{value}</p>
@@ -531,7 +775,7 @@ export default function DashboardPage() {
           )}
           {interactionFilter && (
             <button onClick={() => setInteractionFilter(null)}
-              className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400 hover:text-slate-700 transition-colors">
+              className="ml-auto inline-flex items-center gap-1 min-h-[44px] px-2 text-xs text-slate-500 hover:text-slate-700 transition-colors">
               <X className="w-3 h-3" aria-hidden="true" /> Réinitialiser
             </button>
           )}
@@ -543,35 +787,41 @@ export default function DashboardPage() {
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="flex flex-wrap gap-2">
             <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input type="text" placeholder="Rechercher nom, téléphone, IMEI, code, marque..."
-                value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-                className="w-full pl-10 pr-9 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all"
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+              <label htmlFor="dashboard-search" className="sr-only">Rechercher un ticket</label>
+              <input id="dashboard-search" type="text" placeholder="Nom, téléphone, IMEI, code, modèle, panne..."
+                value={search} onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={onSearchKeyDown}
+                enterKeyHint="search"
+                autoComplete="off"
+                aria-describedby="dashboard-search-hint"
+                className="w-full min-h-[44px] pl-10 pr-11 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-colors"
               />
+              <span id="dashboard-search-hint" className="sr-only">Entrée ouvre le premier résultat, flèche bas pour parcourir la liste.</span>
               {search && (
-                <button onClick={() => { setSearch(''); setPage(0); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-600">
-                  <X className="w-3.5 h-3.5" />
+                <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
+                  className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-md hover:bg-slate-200 text-slate-500 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/50 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500">
-              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
-                className="bg-transparent text-xs text-slate-700 outline-none w-[120px]" title="Date depuis" />
-              <span className="text-slate-300">→</span>
-              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
-                className="bg-transparent text-xs text-slate-700 outline-none w-[120px]" title="Date jusque" />
+            <div className="flex items-center gap-1.5 min-h-[44px] px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/50 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500">
+              <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} max={dateTo || undefined}
+                className="bg-transparent text-xs text-slate-700 outline-none w-[120px] min-h-[36px]" title="Déposé à partir du" aria-label="Déposé à partir du" />
+              <span className="text-slate-400" aria-hidden="true">→</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} min={dateFrom || undefined}
+                className="bg-transparent text-xs text-slate-700 outline-none w-[120px] min-h-[36px]" title="Déposé jusqu'au" aria-label="Déposé jusqu'au" />
               {(dateFrom || dateTo) && (
-                <button onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600" title="Réinitialiser dates">
-                  <X className="w-3 h-3" />
+                <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  className="w-9 h-9 flex items-center justify-center rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700" title="Réinitialiser dates" aria-label="Effacer les dates">
+                  <X className="w-3 h-3" aria-hidden="true" />
                 </button>
               )}
             </div>
             {teamList.length > 0 && (
-              <select value={filterTech} onChange={e => { setFilterTech(e.target.value); setPage(0); }}
-                className="px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
+              <select value={filterTech} onChange={e => setFilterTech(e.target.value)} aria-label="Filtrer par technicien"
+                className="min-h-[44px] px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
                 <option value="">Tous les techs</option>
                 {isTech && techName && (
                   <option value="__mine__">Mes tickets</option>
@@ -584,47 +834,82 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto kp-scroll bg-slate-50/50">
-          {filterTabs.map(({ label, value }) => (
-            <button key={value} onClick={() => startTransition(() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(['Rendu au client', 'Clôturé'].includes(value)); })}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all
-                ${filterStatut === value
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700 hover:shadow-sm'
-                }`}
-            >
-              {label}
-            </button>
-          ))}
+          {filterTabs.map(({ label, value }) => {
+            const count = searchMode ? (value ? (statutCounts[value] || 0) : baseTickets.length) : null;
+            return (
+              <button key={value} type="button" aria-pressed={filterStatut === value}
+                onClick={() => startTransition(() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(ARCHIVE_STATUTS.includes(value)); })}
+                className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] rounded-md text-xs font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                  ${filterStatut === value
+                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
+                    : 'text-slate-600 hover:bg-white hover:text-slate-800 hover:shadow-sm'
+                  }`}
+              >
+                {label}
+                {count !== null && <span className={filterStatut === value ? 'text-white/90' : 'text-slate-500'}>({count})</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Counters */}
-      <div className="flex items-center justify-between mb-3 px-1">
-        <button onClick={() => setShowArchived(false)}
-          className={`text-sm font-medium ${!showArchived ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}>
-          {activeTickets.length} actif(s)
-        </button>
-        <button onClick={() => setShowArchived(true)}
-          className={`text-sm font-medium ${showArchived ? 'text-brand-600' : 'text-slate-400 hover:text-slate-600'}`}>
-          Voir {archivedTickets.length} archivé(s)
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-3 px-1">
+        {searchMode && !dashData ? (
+          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
+            {dashError ? 'Recherche indisponible' : `Recherche de « ${debouncedSearch} »…`}
+          </p>
+        ) : searchMode ? (
+          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
+            <span>
+              <strong className="text-slate-900">{filteredTickets.length}</strong> résultat{filteredTickets.length > 1 ? 's' : ''} pour « {debouncedSearch} »
+              {' '}— {activeTickets.length} en cours, {archivedTickets.length} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
+              {truncatedBy ? ` (${tickets.length} premiers sur ${truncatedBy})` : ''}
+            </span>
+          </p>
+        ) : (
+          <>
+            <button type="button" onClick={showActives} aria-pressed={!showArchived}
+              className={`min-h-[44px] text-sm font-medium rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${!showArchived ? 'text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}>
+              {!showArchived && truncatedBy
+                ? `${activeTickets.length} actif(s) affichés sur ${truncatedBy}`
+                : `${showArchived ? 'Voir les actifs' : `${activeTickets.length} actif(s)`}`}
+            </button>
+            <button type="button" onClick={showArchives} aria-pressed={showArchived}
+              className={`min-h-[44px] text-sm font-medium rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${showArchived ? 'text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}>
+              {showArchived
+                ? (serverTotal !== null ? `${serverTotal} archivé(s)` : (loading ? 'Archivés…' : `${archivedTickets.length} archivé(s)`))
+                : archivedTotal !== null ? `Voir ${archivedTotal} archivé(s)` : 'Voir les archivés'}
+            </button>
+          </>
+        )}
+        {showArchived && !searchMode && filterTech && (
+          <p className="w-full text-xs text-slate-600">
+            Archives : technicien comparé au nom exact{mineOnly ? ', sans les tickets non assignés' : ''}. Les anciens tickets notés « Nom (rôle) » n’y figurent pas.
+          </p>
+        )}
       </div>
 
       {/* Sort controls */}
-      <div className="flex items-center gap-2 mb-3 px-1">
-        <span className="text-xs text-slate-400"><Filter className="w-3 h-3 inline mr-1" />Trier par :</span>
-        {[
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 px-1">
+        <span className="text-xs text-slate-500"><Filter className="w-3 h-3 inline mr-1" aria-hidden="true" />Trier par :</span>
+        {serverPaged ? (
+          <span className="min-h-[32px] flex items-center text-xs text-slate-600">
+            date de dépôt, plus récents d’abord (tri fixe des archives paginées)
+          </span>
+        ) : [
           { label: 'Date dépôt', value: 'date_depot' },
           { label: 'Nom client', value: 'nom' },
           { label: 'Récupération', value: 'date_recuperation' },
           { label: 'Statut', value: 'statut' },
         ].map(({ label, value }) => (
-          <button key={value}
+          <button key={value} type="button"
+            aria-pressed={sortField === value}
             onClick={() => {
               if (sortField === value) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
               else { setSortField(value); setSortDir(value === 'nom' ? 'asc' : 'desc'); }
             }}
-            className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+            className={`px-2 py-1 min-h-[44px] sm:min-h-[32px] rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               sortField === value ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:bg-slate-100'
             }`}
           >
@@ -635,7 +920,7 @@ export default function DashboardPage() {
 
       {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-xl animate-in">
+        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-xl motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
           <span className="text-sm font-semibold text-brand-700">{selectedIds.size} sélectionné(s)</span>
           <div className="relative ml-auto">
             <button onClick={() => setShowBulkMenu(!showBulkMenu)}
@@ -645,7 +930,7 @@ export default function DashboardPage() {
             {showBulkMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowBulkMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 w-64 card p-1.5 shadow-xl z-50 animate-in">
+                <div className="absolute right-0 top-full mt-1 w-64 card p-1.5 shadow-xl z-50 motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
                   {STATUTS.map(s => (
                     <button key={s} onClick={() => handleBulkStatus(s)}
                       className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
@@ -656,19 +941,23 @@ export default function DashboardPage() {
               </>
             )}
           </div>
-          <button onClick={() => setSelectedIds(new Set())} className="btn-ghost p-1.5">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={() => setSelectedIds(new Set())} className="btn-ghost p-1.5 min-w-[44px] min-h-[44px]"
+            aria-label="Annuler la sélection">
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       )}
 
       {/* Table */}
-      <div className={`card overflow-hidden transition-opacity duration-150 ${isPending ? 'opacity-60' : ''}`}>
+      <div aria-busy={loading || isPending}
+        className={`card overflow-hidden motion-safe:transition-opacity duration-150 ${isPending || showingPrevious ? 'opacity-60' : ''}`}>
         <div className="hidden lg:grid grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
-          <button onClick={toggleSelectAll} className="flex items-center justify-center">
+          <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center w-7 h-7 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            aria-label="Sélectionner tous les tickets de la page"
+            aria-pressed={selectedIds.size === displayedTickets.length && displayedTickets.length > 0}>
             {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
-              ? <SquareCheck className="w-4 h-4 text-brand-600" />
-              : <Square className="w-4 h-4 text-slate-300" />}
+              ? <SquareCheck className="w-4 h-4 text-brand-600" aria-hidden="true" />
+              : <Square className="w-4 h-4 text-slate-400" aria-hidden="true" />}
           </button>
           <span className="table-header">Ticket</span>
           <span className="table-header">Client</span>
@@ -696,48 +985,89 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        ) : dashError && !dashData ? (
+          <div className="py-12 px-6 text-center" role="alert">
+            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-3" aria-hidden="true" />
+            <p className="text-slate-800 font-semibold">Impossible de charger les tickets</p>
+            <p className="text-sm text-slate-600 mt-1">{dashError.message || 'Erreur réseau'}</p>
+            <button type="button" onClick={() => mutate()}
+              className="btn-secondary mt-4 min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+              <RefreshCw className="w-4 h-4" aria-hidden="true" /> Réessayer
+            </button>
+          </div>
         ) : displayedTickets.length === 0 ? (
-          <div className="py-20 text-center animate-in">
-            <div className="relative w-20 h-20 mx-auto mb-5">
+          <div className="py-16 px-6 text-center motion-safe:animate-[fadeIn_0.3s_ease-out_both]" role="status">
+            <div className="relative w-20 h-20 mx-auto mb-5" aria-hidden="true">
               <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-brand-100 to-indigo-100 blur-xl opacity-60" />
               <div className="relative w-20 h-20 rounded-3xl bg-gradient-to-br from-brand-50 to-indigo-50 border border-brand-100 flex items-center justify-center">
                 <Inbox className="w-9 h-9 text-brand-400" />
               </div>
             </div>
-            <p className="text-slate-700 font-semibold text-base">Aucun ticket trouvé</p>
-            <p className="text-sm text-slate-400 mt-1.5 max-w-xs mx-auto">
-              {search || dateFrom || dateTo || filterStatut || filterTech
-                ? 'Essayez d\'ajuster vos filtres pour voir plus de résultats.'
-                : 'C\'est le calme ! Créez un nouveau ticket pour démarrer.'}
-            </p>
-            <button onClick={() => navigate('/client')}
-              className="btn-primary mt-5 inline-flex items-center gap-1.5 text-sm">
-              <Plus className="w-4 h-4" /> Nouveau ticket
-            </button>
+            <p className="text-slate-800 font-semibold text-base">{emptyState.title}</p>
+            <p className="text-sm text-slate-500 mt-1.5 max-w-md mx-auto">{emptyState.text}</p>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+              {emptyState.action && (
+                <button type="button" onClick={emptyState.action.onClick}
+                  className="btn-secondary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                  {emptyState.action.label}
+                </button>
+              )}
+              <button type="button" onClick={() => navigate('/client')}
+                className="btn-primary min-h-[44px] inline-flex items-center gap-1.5 text-sm">
+                <Plus className="w-4 h-4" aria-hidden="true" /> Nouveau ticket
+              </button>
+            </div>
           </div>
         ) : (
           <div className="divide-y divide-slate-100/80">
-            {displayedTickets.map((t, rowIdx) => (
-              <div key={t.id}
-                className={`lg:grid lg:grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-4 sm:px-5 ${compactMode ? 'py-2' : 'py-3'} hover:bg-brand-50/40 hover:shadow-[inset_3px_0_0_0] hover:shadow-brand-500 transition-all duration-200 group relative animate-in`}
-                style={{ animationDelay: `${Math.min(rowIdx * 25, 400)}ms`, borderLeft: `3px solid transparent`, borderLeftColor: 'transparent' }}
+            {displayedTickets.map((t, rowIdx) => {
+              const archivedRow = ARCHIVE_STATUTS.includes(t.statut);
+              const showArchiveSeparator = searchMode && archivedRow
+                && (rowIdx === 0 || !ARCHIVE_STATUTS.includes(displayedTickets[rowIdx - 1].statut));
+              const clientName = `${t.client_prenom || ''} ${t.client_nom || ''}`.trim();
+              return (
+              <Fragment key={t.id}>
+              {showArchiveSeparator && (
+                <div className="px-4 sm:px-5 py-2 bg-slate-100/70 text-xs font-semibold text-slate-700">
+                  Rendus ou clôturés — {archivedTickets.length} résultat{archivedTickets.length > 1 ? 's' : ''} dans les archives (retour garantie, historique)
+                </div>
+              )}
+              <div
+                className={`lg:grid lg:grid-cols-[28px_72px_minmax(120px,1fr)_120px_minmax(100px,1fr)_90px_150px_68px_72px_80px_28px] gap-2 items-center px-4 sm:px-5 ${compactMode ? 'py-2' : 'py-3'} ${searchMode && archivedRow ? 'bg-slate-50/60' : ''} hover:bg-brand-50/40 hover:shadow-[inset_3px_0_0_0] hover:shadow-brand-500 transition-colors duration-200 group relative`}
+                style={{ borderLeft: `3px solid transparent`, borderLeftColor: 'transparent' }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderLeftColor = getStatusConfig(t.statut).color; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = 'transparent'; }}
               >
                 {/* Checkbox */}
                 <div className="hidden lg:flex items-center justify-center">
-                  <button onClick={() => toggleSelect(t.id)}>
+                  <button type="button" onClick={() => toggleSelect(t.id)}
+                    className="w-7 h-7 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    aria-label={`Sélectionner ${t.ticket_code}`} aria-pressed={selectedIds.has(t.id)}>
                     {selectedIds.has(t.id)
-                      ? <SquareCheck className="w-4 h-4 text-brand-600" />
-                      : <Square className="w-4 h-4 text-slate-300 group-hover:text-slate-400" />}
+                      ? <SquareCheck className="w-4 h-4 text-brand-600" aria-hidden="true" />
+                      : <Square className="w-4 h-4 text-slate-400 group-hover:text-slate-500" aria-hidden="true" />}
                   </button>
                 </div>
 
                 {/* Ticket code */}
-                <div className="cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                <div className="cursor-pointer" onClick={() => openTicket(t.id)}>
                   <div className="flex items-center gap-1">
                     {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
-                    <p className="text-xs font-bold text-brand-600 font-mono">{t.ticket_code}</p>
+                    <a href={`${basePath}/ticket/${t.id}`} data-ticket-link=""
+                      onClick={(e) => openTicketLink(e, t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                        const links = [...document.querySelectorAll('[data-ticket-link]')];
+                        const idx = links.indexOf(e.currentTarget);
+                        const next = links[idx + (e.key === 'ArrowDown' ? 1 : -1)];
+                        e.preventDefault();
+                        if (next) next.focus();
+                        else if (e.key === 'ArrowUp') document.getElementById('dashboard-search')?.focus();
+                      }}
+                      aria-label={`Ouvrir le ticket ${t.ticket_code}${clientName ? `, ${clientName}` : ''}, ${t.statut}`}
+                      className="inline-flex items-center min-h-[32px] text-xs font-bold text-brand-700 font-mono rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
+                      {t.ticket_code}
+                    </a>
                     {t.est_retour_sav && (
                       <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-600 text-[9px] font-bold flex items-center gap-0.5" title="Retour SAV">
                         <RotateCcw className="w-2.5 h-2.5" /> SAV
@@ -784,7 +1114,7 @@ export default function DashboardPage() {
                         {t.client_prenom || ''} {t.client_nom || ''}
                         {t.client_carte_camby ? <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold align-middle">🎫 Camby</span> : null}
                       </p>
-                      <p className="text-[11px] text-slate-400 font-mono truncate" title={t.client_tel || ''}>{t.client_tel || ''}</p>
+                      <p className="text-[11px] text-slate-500 font-mono truncate" title={t.client_tel || ''}>{t.client_tel || ''}</p>
                     </div>
                   </div>
                 </div>
@@ -841,6 +1171,7 @@ export default function DashboardPage() {
                 <div className="hidden lg:block" onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
                   <select
                     value={t.technicien_assigne || ''}
+                    aria-label={`Technicien du ticket ${t.ticket_code}`}
                     onChange={e => { const val = e.target.value; handleInlineTech(t.id, val); }}
                     className="w-full py-1.5 px-2 text-[11px] font-medium rounded-lg border cursor-pointer bg-no-repeat truncate transition-colors"
                     style={{
@@ -866,8 +1197,9 @@ export default function DashboardPage() {
                 <div className="mt-2 lg:mt-0" onClick={e => e.stopPropagation()}>
                   <select
                     value={t.statut}
+                    aria-label={`Statut du ticket ${t.ticket_code}`}
                     onChange={e => handleInlineStatus(t.id, e.target.value)}
-                    className="w-full py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
+                    className="w-full min-h-[44px] lg:min-h-0 py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
                     style={{
                       borderColor: getStatusConfig(t.statut).color,
                       color: getStatusConfig(t.statut).color,
@@ -889,7 +1221,7 @@ export default function DashboardPage() {
                     const ri = getRecoveryInfo(t.date_recuperation);
                     return (
                       <p className={`text-[10px] flex items-center gap-0.5 mt-0.5 ${ri.color}`}>
-                        <Calendar className="w-2.5 h-2.5" /> {ri.text}
+                        <Calendar className="w-2.5 h-2.5" aria-hidden="true" /> {ri.text}
                       </p>
                     );
                   })()}
@@ -900,18 +1232,21 @@ export default function DashboardPage() {
                   <a href={t.client_tel ? waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`) : '#'}
                     target="_blank" rel="noopener noreferrer"
                     onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
-                    className="p-1.5 rounded-md hover:bg-green-50 transition-colors" title="WhatsApp">
-                    <MessageCircle className={`w-3.5 h-3.5 ${t.msg_whatsapp ? 'text-green-500' : 'text-slate-300'}`} />
+                    aria-label={`WhatsApp à ${clientName || 'ce client'}${t.msg_whatsapp ? ' (déjà contacté)' : ''}`}
+                    className="w-11 h-11 lg:w-auto lg:h-auto lg:p-1.5 inline-flex items-center justify-center rounded-md hover:bg-green-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" title="WhatsApp">
+                    <MessageCircle className={`w-3.5 h-3.5 ${t.msg_whatsapp ? 'text-green-500' : 'text-slate-300'}`} aria-hidden="true" />
                   </a>
                   <a href={t.client_tel ? smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`) : '#'}
                     onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
-                    className="p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="SMS">
-                    <Send className={`w-3.5 h-3.5 ${t.msg_sms ? 'text-blue-500' : 'text-slate-300'}`} />
+                    aria-label={`SMS à ${clientName || 'ce client'}${t.msg_sms ? ' (déjà contacté)' : ''}`}
+                    className="w-11 h-11 lg:w-auto lg:h-auto lg:p-1.5 inline-flex items-center justify-center rounded-md hover:bg-blue-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" title="SMS">
+                    <Send className={`w-3.5 h-3.5 ${t.msg_sms ? 'text-blue-500' : 'text-slate-300'}`} aria-hidden="true" />
                   </a>
                   <a href={t.client_email ? `mailto:${t.client_email}` : '#'}
                     onClick={e => { if (!t.client_email) e.preventDefault(); e.stopPropagation(); }}
-                    className="p-1.5 rounded-md hover:bg-amber-50 transition-colors" title="Email">
-                    <Mail className={`w-3.5 h-3.5 ${t.msg_email ? 'text-amber-500' : 'text-slate-300'}`} />
+                    aria-label={`Email à ${clientName || 'ce client'}${t.msg_email ? ' (déjà contacté)' : ''}`}
+                    className="w-11 h-11 lg:w-auto lg:h-auto lg:p-1.5 inline-flex items-center justify-center rounded-md hover:bg-amber-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" title="Email">
+                    <Mail className={`w-3.5 h-3.5 ${t.msg_email ? 'text-amber-500' : 'text-slate-300'}`} aria-hidden="true" />
                   </a>
                 </div>
 
@@ -937,7 +1272,7 @@ export default function DashboardPage() {
 
                 {/* Drag handle + arrow */}
                 <div className="hidden lg:flex items-center justify-end gap-1">
-                  <div className="kp-drag-handle opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5 px-1 py-0.5 rounded hover:bg-slate-100" title="Glisser pour déplacer">
+                  <div className="kp-drag-handle opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5 px-1 py-0.5 rounded hover:bg-slate-100" title="Glisser pour déplacer" aria-hidden="true">
                     <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
                     <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
                     <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
@@ -945,67 +1280,79 @@ export default function DashboardPage() {
                     <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
                     <span className="block w-0.5 h-0.5 bg-slate-400 rounded-full" />
                   </div>
-                  <button className="p-0.5 rounded cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-brand-500 group-hover:translate-x-0.5 transition-all" />
+                  <button type="button" tabIndex={-1} aria-hidden="true" className="p-0.5 rounded cursor-pointer" onClick={() => openTicket(t.id)}>
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-500 motion-safe:group-hover:translate-x-0.5 transition-all" />
                   </button>
                 </div>
               </div>
-            ))}
+              </Fragment>
+              );
+            })}
           </div>
         )}
 
-        {/* Pagination */}
-        {allDisplayed.length > pageSize && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/50">
+        {/* Pagination (compteur basé sur le total serveur pour les archives) */}
+        {totalCount > 10 && (displayedTickets.length > 0 || loading) && (
+          <nav aria-label="Pagination des tickets"
+            className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-5 py-2 border-t border-slate-100 bg-slate-50/50">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">
-                {page * pageSize + 1}–{Math.min((page + 1) * pageSize, allDisplayed.length)} sur {allDisplayed.length}
+              <span className="text-xs text-slate-600">
+                {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, totalCount)} sur {totalCount}
               </span>
-              <select value={pageSize} onChange={e => handlePageSizeChange(Number(e.target.value))}
-                className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600">
+              <label htmlFor="dashboard-page-size" className="sr-only">Tickets par page</label>
+              <select id="dashboard-page-size" value={pageSize} onChange={e => handlePageSizeChange(Number(e.target.value))}
+                className="text-xs min-h-[36px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 {[10, 25, 50, 100].map(n => (
                   <option key={n} value={n}>{n} / page</option>
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                <ChevronLeft className="w-4 h-4 text-slate-600" />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button key={i} onClick={() => setPage(i)}
-                  className={`w-7 h-7 rounded-md text-xs font-medium transition-colors ${
-                    i === page ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100'
-                  }`}>
-                  {i + 1}
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setPage(safePage - 1)} disabled={safePage === 0}
+                  aria-label="Page précédente"
+                  className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <ChevronLeft className="w-4 h-4 text-slate-600" aria-hidden="true" />
                 </button>
-              )).slice(Math.max(0, page - 2), page + 3)}
-              <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
-                className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
-                <ChevronRight className="w-4 h-4 text-slate-600" />
-              </button>
-            </div>
-          </div>
+                {Array.from({ length: totalPages }, (_, i) => i)
+                  .slice(Math.max(0, safePage - 2), safePage + 3)
+                  .map((i) => (
+                    <button key={i} type="button" onClick={() => setPage(i)}
+                      aria-label={`Page ${i + 1}`}
+                      aria-current={i === safePage ? 'page' : undefined}
+                      className={`w-11 h-11 sm:w-9 sm:h-9 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+                        i === safePage ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                      }`}>
+                      {i + 1}
+                    </button>
+                  ))}
+                <button type="button" onClick={() => setPage(safePage + 1)} disabled={safePage >= totalPages - 1}
+                  aria-label="Page suivante"
+                  className="w-11 h-11 sm:w-9 sm:h-9 flex items-center justify-center rounded-md hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <ChevronRight className="w-4 h-4 text-slate-600" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+          </nav>
         )}
       </div>
 
       {/* ─── Stats business compactes (en pied de dashboard) ──────── */}
       <div className="mt-8 pt-6 border-t border-slate-200/70">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Statistiques du jour</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 mb-3">Statistiques du jour</p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: "Tickets aujourd'hui", value: extraKpis.todayCount, icon: Sparkles, color: 'text-brand-600', bg: 'bg-brand-500/10' },
             { label: 'En attente', value: extraKpis.enAttente, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-500/10' },
-            { label: 'CA estimé', value: formatPrix(extraKpis.ca), icon: Euro, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
-            { label: 'Taux de réparation', value: `${extraKpis.taux}%`, icon: Percent, color: 'text-violet-600', bg: 'bg-violet-500/10' },
+            { label: 'CA estimé (en cours)', value: extraKpis.ca === null ? '—' : formatPrix(extraKpis.ca), icon: Euro, color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+            { label: 'Prêts à rendre', value: extraKpis.prets, icon: CheckCircle2, color: 'text-violet-600', bg: 'bg-violet-500/10' },
           ].map(({ label, value, icon: Icon, color, bg }) => (
             <div key={label} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/60 border border-slate-100">
-              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
-                <Icon className={`w-4 h-4 ${color}`} aria-hidden="true" />
+              <div className={`w-8 h-8 rounded-lg ${bg} flex items-center justify-center shrink-0`} aria-hidden="true">
+                <Icon className={`w-4 h-4 ${color}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400 truncate">{label}</p>
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 truncate">{label}</p>
                 <p className="text-base font-bold text-slate-800 tracking-tight truncate">{value}</p>
               </div>
             </div>

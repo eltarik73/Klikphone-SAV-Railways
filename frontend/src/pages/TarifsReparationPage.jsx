@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Lock, Unlock, Pencil } from 'lucide-react';
 import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
+import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
+
+const PRINT_MARGIN_MM = 1;
 
 const COLUMNS = [
   { key: 'ecran_generique', label: 'Écran Générique', shortLabel: 'Générique', headerBg: 'bg-blue-600' },
@@ -45,6 +48,10 @@ export default function TarifsReparationPage() {
   const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
   const [printPages, setPrintPages] = useState(2);
+  const [printZoom, setPrintZoom] = useState('fit');
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  const [overflowPages, setOverflowPages] = useState({});
+  const printCanvasRef = useRef(null);
   const [newModele, setNewModele] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
@@ -64,6 +71,15 @@ export default function TarifsReparationPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const el = printCanvasRef.current;
+    if (!printMode || !el) return undefined;
+    setCanvasWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([e]) => setCanvasWidth(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [printMode, loading]);
   useEffect(() => { if (editCell && inputRef.current) inputRef.current.focus(); }, [editCell]);
   useEffect(() => { if (showAdd && addRef.current) addRef.current.focus(); }, [showAdd]);
 
@@ -177,7 +193,9 @@ export default function TarifsReparationPage() {
     const onePage = printPages === 1;
     const S = onePage
       ? { font: 7, price: 8, barre: 5.5, model: 7, header: 6, padY: '0px', padX: '1px', title: 11, logo: 26, pagePad: '1mm 2mm', gap: 4 }
-      : { font: 13, price: 17, barre: 10, model: 13, header: 12, padY: '5px', padX: '4px', title: 18, logo: 44, pagePad: '4mm 5mm', gap: 8 };
+      : { font: 13, price: 17, barre: 10, model: 13, header: 12, padY: '5px', padX: '4px', title: 18, logo: 44, pagePad: '1mm 2mm', gap: 8 };
+    const year = new Date().getFullYear();
+    const zoom = printZoom === 'fit' ? computeFitZoom(canvasWidth - 32, mmToPx(PAPERS.a4l.w), 1.5) : printZoom;
 
     // Split en N pages equilibrees (2 pages = moitie/moitie ~17 modeles chacune)
     const pages = [];
@@ -188,30 +206,57 @@ export default function TarifsReparationPage() {
       pages.push(tarifs.slice(0, perPage));
       pages.push(tarifs.slice(perPage));
     }
+    const overflowList = Object.keys(overflowPages).map(Number).filter((i) => overflowPages[i] && i < pages.length).map((i) => i + 1);
 
     return (
-      <div className="min-h-screen bg-white">
-        <div className="no-print sticky top-0 z-50 bg-slate-900 text-white flex items-center gap-3 px-4 py-2">
-          <button onClick={() => setPrintMode(false)} className="p-1.5 rounded-lg hover:bg-white/10">
-            <X className="w-5 h-5" />
+      <div className="kp-print-root min-h-screen bg-slate-200">
+        <div className="no-print sticky top-0 z-50 bg-slate-900 text-white flex flex-wrap items-center gap-2 px-3 py-2">
+          <button onClick={() => setPrintMode(false)} aria-label="Fermer l'aperçu"
+            className="inline-flex items-center justify-center w-11 h-11 rounded-lg hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
           <span className="font-medium text-sm">Aperçu A4 paysage — {pages.length} page(s)</span>
-          <div className="flex items-center gap-1 ml-4 bg-white/10 rounded-lg overflow-hidden">
-            <button onClick={() => setPrintPages(1)} className={`px-3 py-1 text-xs font-bold ${printPages === 1 ? 'bg-brand-600' : 'hover:bg-white/10'}`}>1 page</button>
-            <button onClick={() => setPrintPages(2)} className={`px-3 py-1 text-xs font-bold ${printPages === 2 ? 'bg-brand-600' : 'hover:bg-white/10'}`}>2 pages</button>
+          <div role="group" aria-label="Nombre de pages" className="flex items-center gap-1 sm:ml-2 bg-white/10 rounded-lg overflow-hidden">
+            {[1, 2].map((n) => (
+              <button key={n} onClick={() => setPrintPages(n)} aria-pressed={printPages === n}
+                className={`h-11 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printPages === n ? 'bg-brand-600' : 'hover:bg-white/10'}`}>
+                {n === 1 ? '1 page' : '2 pages'}
+              </button>
+            ))}
           </div>
-          <button onClick={() => window.print()} className="ml-auto flex items-center gap-2 px-4 py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg text-sm font-bold">
-            <Printer className="w-4 h-4" /> Imprimer
+          <div role="group" aria-label="Zoom" className="flex items-center gap-1 bg-white/10 rounded-lg overflow-hidden">
+            {[['fit', 'Ajuster'], [1, '100 %']].map(([value, label]) => (
+              <button key={label} onClick={() => setPrintZoom(value)} aria-pressed={printZoom === value}
+                className={`h-11 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printZoom === value ? 'bg-white text-slate-900' : 'hover:bg-white/10'}`}>
+                {label}
+              </button>
+            ))}
+            <span className="px-2 text-xs tabular-nums text-slate-200" aria-hidden="true">{Math.round(zoom * 100)} %</span>
+          </div>
+          <button onClick={() => window.print()} className="ml-auto flex items-center gap-2 h-11 px-4 bg-brand-600 hover:bg-brand-700 rounded-lg text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <Printer className="w-4 h-4" aria-hidden="true" /> Imprimer
           </button>
         </div>
 
+        {overflowList.length > 0 && (
+          <p role="status" className="no-print mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {overflowList.length > 1 ? 'Pages' : 'Page'} {overflowList.join(', ')} : le contenu dépasse la feuille A4 et sera coupé.
+            {printPages === 1 && ' Passez en 2 pages.'}
+          </p>
+        )}
+
+        <div ref={printCanvasRef} className="kp-print-canvas flex flex-col gap-6 overflow-x-auto px-4 py-6">
         {pages.map((pageRows, pageIdx) => (
-          <div key={pageIdx} className="print-page" style={{ padding: S.pagePad, pageBreakAfter: pageIdx < pages.length - 1 ? 'always' : 'auto' }}>
+          <PaperFrame key={pageIdx} paper={PAPERS.a4l} zoom={zoom} marginMm={PRINT_MARGIN_MM}
+            className="mx-auto shrink-0"
+            style={{ breakAfter: pageIdx < pages.length - 1 ? 'page' : 'auto' }}
+            onOverflowChange={(over) => setOverflowPages((p) => ({ ...p, [pageIdx]: over }))}>
+          <div className="print-page" style={{ padding: S.pagePad }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: S.gap, marginBottom: onePage ? 1 : 3 }}>
               <img src="/logo_k.png" alt="K" style={{ width: S.logo, height: S.logo, objectFit: 'contain' }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: S.title, fontWeight: 900, color: '#1e293b' }}>
-                  KLIKPHONE — Grille Tarifs Réparation iPhone — 2025
+                  KLIKPHONE — Grille Tarifs Réparation iPhone — {year}
                 </div>
                 <div style={{ fontSize: onePage ? 5.5 : 7, color: '#64748b' }}>
                   Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min
@@ -263,15 +308,20 @@ export default function TarifsReparationPage() {
               Tarifs TTC — Main d'oeuvre incluse — Pièces garanties — Réparation express 30 min — klikphone.com
             </div>
           </div>
+          </PaperFrame>
         ))}
+        </div>
 
         <style>{`
           @media print {
-            @page { size: A4 landscape; margin: 1mm; }
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; }
+            @page { size: A4 landscape; margin: ${PRINT_MARGIN_MM}mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; background: #fff !important; }
             .no-print, aside { display: none !important; }
             main { padding-left: 0 !important; padding-top: 0 !important; }
-            .print-page { padding: 1mm 2mm !important; }
+            .kp-print-root { background: #fff !important; min-height: 0 !important; }
+            .kp-print-canvas { display: block !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+            .kp-paper { width: auto !important; height: auto !important; box-shadow: none !important; margin: 0 !important; }
+            .kp-paper-inner { transform: none !important; width: auto !important; height: auto !important; padding: 0 !important; overflow: visible !important; }
           }
         `}</style>
       </div>
@@ -307,6 +357,7 @@ export default function TarifsReparationPage() {
             <button
               onClick={() => {
                 localStorage.removeItem('klikphone_admin');
+                api.clearAdminToken();
                 setIsAdmin(false);
                 setEditCell(null);
                 setShowAdd(false);
@@ -346,7 +397,7 @@ export default function TarifsReparationPage() {
           <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
             <FileSpreadsheet className="w-4 h-4" /> CSV
           </button>
-          <button onClick={() => setPrintMode(true)} className="flex items-center gap-1.5 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
+          <button onClick={() => setPrintMode(true)} className="flex items-center gap-1.5 min-h-11 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
             <Printer className="w-4 h-4" /> Impression
           </button>
         </div>

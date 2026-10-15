@@ -2,16 +2,24 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { SettingsProvider } from './hooks/useSettings';
-import Navbar from './components/Navbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
-import ChatWidget from './components/ChatWidget';
-import ScanListener from './components/ScanListener';
+import ScanListener, { QuickScanMount } from './components/ScanListener';
 import { ShieldX, ArrowLeft, RefreshCw, Home, Loader2 } from 'lucide-react';
 
+// Accueil et suivi client (QR) restent dans le chunk d'entrée : premier affichage sans
+// aller-retour réseau de plus. Connexion et shell staff sont chargés à la demande.
 import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
 import SuiviPage from './pages/SuiviPage';
+
+const loadLoginPage = () => import('./pages/LoginPage');
+const LoginPage = lazy(loadLoginPage);
+const loadNavbar = () => import('./components/Navbar');
+const Navbar = lazy(loadNavbar);
+const loadChatWidget = () => import('./components/ChatWidget');
+const ChatWidget = lazy(loadChatWidget);
+// Palette de recherche du personnel : hors chunk d'entrée, montée seulement une fois connecté
+const SearchPalette = lazy(() => import('./components/SearchPalette'));
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const TicketDetailPage = lazy(() => import('./pages/TicketDetailPage'));
@@ -37,22 +45,40 @@ const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
 const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
 const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage'));
 
-// Preload only the most frequent pages after initial render.
-// AdminPage (378 kB) and Community/AvisGoogle are NOT preloaded — loaded on demand.
-const preloadPages = () => {
-  // Dashboard is the landing page after auth → highest priority
+// Shell et pages staff les plus fréquentes, préchargés au repos UNIQUEMENT pour un utilisateur
+// connecté : un client sur /, /suivi ou /deposer ne télécharge aucun chunk réservé au personnel.
+// AdminPage (378 kB) et Community/AvisGoogle restent chargées à la demande.
+const preloadStaffPages = () => {
+  loadNavbar();
+  loadChatWidget();
   import('./pages/DashboardPage');
-  // TicketDetailPage is reached from nearly every dashboard interaction
   import('./pages/TicketDetailPage');
-  // Clients is also very frequent
   import('./pages/ClientsPage');
 };
-if (typeof window !== 'undefined') {
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(preloadPages, { timeout: 3000 });
-  } else {
-    setTimeout(preloadPages, 2000);
-  }
+let staffPreloadScheduled = false;
+function scheduleStaffPreload() {
+  if (staffPreloadScheduled || typeof window === 'undefined') return;
+  staffPreloadScheduled = true;
+  if ('requestIdleCallback' in window) window.requestIdleCallback(preloadStaffPages, { timeout: 3000 });
+  else setTimeout(preloadStaffPages, 2000);
+}
+
+function StaffPreload() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user) scheduleStaffPreload();
+  }, [user]);
+  return null;
+}
+
+// Réserve la place de la sidebar (et de la barre mobile) pendant le chargement du shell : pas de saut
+function NavbarPlaceholder({ collapsed }) {
+  return (
+    <>
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 z-40" aria-hidden="true" />
+      <div className={`hidden lg:block fixed top-0 left-0 bottom-0 bg-slate-900 z-50 ${collapsed ? 'w-[72px]' : 'w-64'}`} aria-hidden="true" />
+    </>
+  );
 }
 
 // ─── Access Denied page (replaces blank page) ──────────────
@@ -122,8 +148,9 @@ function FloatingBackButton() {
 }
 
 // ─── Protected Route ────────────────────────────────────────
+// La session est reprise du stockage dès le premier rendu (useAuth) : pas d'écran d'attente ici
 function ProtectedRoute({ children, allowedTargets }) {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('kp_sidebar_collapsed') === '1'
   );
@@ -134,22 +161,14 @@ function ProtectedRoute({ children, allowedTargets }) {
     return () => window.removeEventListener('sidebar-toggle', handler);
   }, []);
 
-  if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-4">
-      <div className="fixed inset-x-0 top-0 z-[9999]">
-        <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
-      </div>
-      <img src="/logo_k.png" alt="Klikphone" className="w-12 h-12 rounded-2xl object-contain animate-pulse" />
-      <p className="text-sm text-slate-400 font-medium">Chargement...</p>
-    </div>
-  );
-
   if (!user) return <Navigate to="/" replace />;
   if (allowedTargets && !allowedTargets.includes(user.target)) return <Navigate to="/" replace />;
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <Navbar />
+      <Suspense fallback={<NavbarPlaceholder collapsed={sidebarCollapsed} />}>
+        <Navbar />
+      </Suspense>
       <main className={`pt-14 lg:pt-0 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}>
         <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
@@ -174,16 +193,27 @@ function AdminGuard({ children }) {
 
 const AG = ({ children, targets }) => <P targets={targets}><AdminGuard>{children}</AdminGuard></P>;
 
+function SearchOverlay() {
+  const { user } = useAuth();
+  if (!user) return null;
+  return (
+    <Suspense fallback={null}>
+      <SearchPalette />
+    </Suspense>
+  );
+}
+
 function ChatOverlay() {
   const { user } = useAuth();
   const location = useLocation();
   if (!user) return null;
-  // Masquer le chat sur les pages vitrine publique (affichage boutique / partage)
-  const hiddenOn = ['/site-tarifs-iphone', '/demo-design'];
-  if (hiddenOn.some(p => location.pathname === p || location.pathname.startsWith(p + '/'))) {
-    return null;
-  }
-  return <ChatWidget />;
+  // Écrans staff uniquement : ni pages publiques, ni kiosque (/client, /deposer), ni vitrine
+  if (!/^\/(accueil|tech)(\/|$)/.test(location.pathname)) return null;
+  return (
+    <Suspense fallback={null}>
+      <ChatWidget />
+    </Suspense>
+  );
 }
 
 // Loader visible pendant le téléchargement d'une page lazy : sans lui, l'écran
@@ -271,7 +301,10 @@ function AppRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatOverlay />
+      <StaffPreload />
       <ScanListener />
+      <QuickScanMount />
+      <SearchOverlay />
       </Suspense>
     </ErrorBoundary>
   );

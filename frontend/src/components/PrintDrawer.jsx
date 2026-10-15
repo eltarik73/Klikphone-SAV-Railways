@@ -1,337 +1,242 @@
-import { useState, useRef, useEffect } from 'react';
-import { X, Printer, ExternalLink, FileText, Receipt, ClipboardList, Copy as CopyIcon, Send, MessageCircle, Mail, ChevronDown, Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  Receipt, ClipboardList, Copy as CopyIcon, FileText, Send, MessageCircle, Mail, ChevronDown, Loader2, Lock, RefreshCw,
+} from 'lucide-react';
 import api from '../lib/api';
 import { waLink, smsLink } from '../lib/utils';
+import PrintPreview, { nextFrame, cancelFrame } from './PrintPreview';
 
-const PRINT_TYPES = [
-  { type: 'client', label: 'Client', desc: 'Reçu de dépôt', icon: Receipt },
-  { type: 'staff', label: 'Atelier', desc: 'Fiche technicien', icon: ClipboardList },
-  { type: 'combined', label: 'Double', desc: 'Client + Atelier', icon: CopyIcon },
-  { type: 'devis', label: 'Devis', desc: 'Devis détaillé', icon: FileText },
-  { type: 'recu', label: 'Reçu', desc: 'Reçu de paiement', icon: Receipt },
+// shareable:false → la fiche atelier (PIN, schéma, notes internes) ne part jamais chez le client
+export const TICKET_DOCUMENTS = [
+  { id: 'client', label: 'Client', desc: 'Reçu de dépôt', shareLabel: 'reçu de dépôt', icon: Receipt, shareable: true, pdf: false },
+  { id: 'staff', label: 'Atelier', desc: 'Fiche technicien (interne)', icon: ClipboardList, shareable: false, pdf: false },
+  { id: 'combined', label: 'Double', desc: 'Ticket client + fiche atelier', icon: CopyIcon, shareable: false, pdf: false },
+  { id: 'devis', label: 'Devis', desc: 'Devis détaillé', shareLabel: 'devis', icon: FileText, shareable: true, pdf: true },
+  { id: 'recu', label: 'Reçu', desc: 'Reçu de paiement', shareLabel: 'reçu de paiement', icon: Receipt, shareable: true, pdf: true },
 ];
 
-// Devis/Recu support both thermal and PDF — default is thermal like all others
-const PDF_TYPES = new Set(['devis', 'recu']);
+export function buildTicketDocuments(ticketId, ticketCode) {
+  return TICKET_DOCUMENTS.map((d) => {
+    const formats = {
+      thermal: {
+        paper: 'thermal80',
+        label: 'Ticket 80 mm',
+        load: (signal) => api.getPrintHtml(ticketId, d.id, { signal }).then((html) => ({ kind: 'html', html })),
+      },
+    };
+    if (d.pdf) {
+      formats.a4 = {
+        paper: 'a4',
+        kind: 'pdf',
+        label: 'A4 (PDF)',
+        load: (signal) => api.getPdfBlob(ticketId, d.id, { signal })
+          .then((blob) => ({ kind: 'pdf', blob, filename: `${d.id}_${ticketCode || ticketId}.pdf` })),
+      };
+    }
+    return { ...d, formats };
+  });
+}
 
-export default function PrintDrawer({ open, onClose, ticketId, ticketCode, clientTel, clientEmail }) {
-  const [activeType, setActiveType] = useState('client');
-  const iframeRef = useRef(null);
-  const [iframeLoading, setIframeLoading] = useState(true);
-  const [printing, setPrinting] = useState(false);
-  const [sendOpen, setSendOpen] = useState(false);
+export function isAbsoluteHttpUrl(url) {
+  if (typeof url !== 'string' || !url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export function pickShareUrl(links, docId, formatKey) {
+  const doc = TICKET_DOCUMENTS.find((d) => d.id === docId);
+  if (!links || !doc?.shareable) return null;
+  const url = formatKey === 'a4' && doc.pdf ? links[`${docId}_pdf`] : links[docId];
+  return isAbsoluteHttpUrl(url) ? url : null;
+}
+
+export function canEmailDocument(docId) {
+  return !!TICKET_DOCUMENTS.find((d) => d.id === docId)?.shareable;
+}
+
+export function buildShareMessage(channel, { label, ticketCode, url }) {
+  if (channel === 'sms') return `Klikphone - ${label}${ticketCode ? ` ${ticketCode}` : ''} : ${url}`;
+  return `Bonjour, voici votre ${label} Klikphone${ticketCode ? ` pour le ticket ${ticketCode}` : ''} :\n${url}`;
+}
+
+const LINKS_IDLE = { status: 'idle', data: null, error: null };
+const ITEM_CLS = 'flex w-full min-h-11 items-center gap-2.5 px-3 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 focus-visible:bg-slate-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-slate-500';
+
+function ShareMenu({ doc, formatKey, ticketId, ticketCode, clientTel, clientEmail, links, onNeedLinks, notify, escapeRef }) {
+  const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [useA4, setUseA4] = useState(false);
+  const wrapRef = useRef(null);
+  const menuRef = useRef(null);
+  const triggerRef = useRef(null);
+  const menuId = useId();
 
-  const printUrl = api.getPrintUrl(ticketId, activeType);
-  const currentType = PRINT_TYPES.find(p => p.type === activeType);
-  const canPdf = PDF_TYPES.has(activeType);
-  const hasPdf = canPdf && useA4;
+  useEffect(() => { setOpen(false); }, [doc.id, formatKey]);
 
-  // Reset to thermal tab each time drawer opens
   useEffect(() => {
-    if (open) {
-      setActiveType('client');
-      setUseA4(false);
-      setToast(null);
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
-  }, [open]);
+    escapeRef.current = open ? () => { setOpen(false); triggerRef.current?.focus(); return true; } : null;
+    return () => { escapeRef.current = null; };
+  }, [open, escapeRef]);
 
-  // Reload iframe when tab changes — reset to thermal
   useEffect(() => {
-    if (open) { setIframeLoading(true); setUseA4(false); }
-  }, [activeType]);
+    if (!open) return undefined;
+    if (clientTel && (links.status === 'idle' || links.status === 'error')) onNeedLinks();
+    const onDown = (e) => { if (!wrapRef.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    const raf = nextFrame(() => {
+      menuRef.current?.querySelector('[role="menuitem"]:not([disabled])')?.focus();
+    });
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      cancelFrame(raf);
+    };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload iframe when format changes
-  useEffect(() => {
-    if (open) setIframeLoading(true);
-  }, [useA4]);
+  const shareUrl = pickShareUrl(links.data, doc.id, formatKey);
+  const label = doc.shareLabel || doc.desc.toLowerCase();
+  const waHref = clientTel && shareUrl ? waLink(clientTel, buildShareMessage('whatsapp', { label, ticketCode, url: shareUrl })) : null;
+  const smsHref = clientTel && shareUrl ? smsLink(clientTel, buildShareMessage('sms', { label, ticketCode, url: shareUrl })) : null;
+  const notes = [];
+  if (!clientTel) notes.push('Aucun téléphone client');
+  else if (links.status === 'loading' || links.status === 'idle') notes.push('Préparation du lien…');
+  else if (links.status === 'ready' && !shareUrl) notes.push('Lien de partage invalide (URL non absolue)');
+  if (!clientEmail) notes.push('Aucun email client');
 
-  // Auto-dismiss toast
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
-  // Print via window.open — works reliably across browsers
-  const handlePrint = async () => {
-    setPrinting(true);
-    try {
-      const res = await fetch(printUrl);
-      const html = await res.text();
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        window.open(printUrl, '_blank');
-        return;
-      }
-      printWindow.document.write(html);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 300);
-    } catch {
-      window.open(printUrl, '_blank');
-    } finally {
-      setPrinting(false);
-    }
+  const onMenuKeyDown = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End') return;
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitem"]:not([disabled])') || [])];
+    if (!items.length) return;
+    e.preventDefault();
+    const idx = items.indexOf(document.activeElement);
+    let next = 0;
+    if (e.key === 'ArrowDown') next = (idx + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = (idx - 1 + items.length) % items.length;
+    else if (e.key === 'End') next = items.length - 1;
+    items[next].focus();
   };
 
-  const handleOpenTab = () => {
-    window.open(printUrl, '_blank');
-  };
-
-  const handleOpenPdf = () => {
-    window.open(api.getPdfUrl(ticketId, activeType), '_blank');
-  };
-
-  // Share URLs — PDF for devis/recu, print HTML for others
-  const getShareUrl = () => {
-    if (hasPdf) return api.getSharePdfUrl(ticketId, activeType);
-    return api.getSharePrintUrl(ticketId, activeType);
-  };
-
-  const handleSendWhatsApp = () => {
-    if (!clientTel) return;
-    const url = getShareUrl();
-    const msg = `Bonjour, voici votre ${currentType?.desc || 'document'} pour le ticket ${ticketCode}.\n\n${url.trim()}`;
-    window.open(waLink(clientTel, msg), '_blank');
-    setSendOpen(false);
-  };
-
-  const handleSendSMS = () => {
-    if (!clientTel) return;
-    const url = getShareUrl();
-    const msg = `Klikphone - ${currentType?.desc || 'document'} ${ticketCode}\n${url.trim()}`;
-    window.open(smsLink(clientTel, msg), '_blank');
-    setSendOpen(false);
-  };
-
-  const handleSendEmail = async () => {
-    if (!clientEmail) return;
+  const handleEmail = async () => {
+    if (!clientEmail || sending || !canEmailDocument(doc.id)) return;
     setSending(true);
     try {
-      const res = await api.sendDocument(ticketId, activeType, clientEmail);
-      if (res.status === 'ok') {
-        setSendOpen(false);
-        setToast({ type: 'success', message: `Email envoyé avec succès à ${clientEmail}` });
+      const res = await api.sendDocument(ticketId, doc.id, clientEmail);
+      if (res?.status === 'ok') {
+        setOpen(false);
+        notify('success', `Email envoyé à ${clientEmail}`);
       } else {
-        setToast({ type: 'error', message: res.detail || "Erreur lors de l'envoi de l'email" });
+        notify('error', res?.detail || "Erreur lors de l'envoi de l'email");
       }
-    } catch {
-      setToast({ type: 'error', message: "Erreur lors de l'envoi de l'email" });
+    } catch (err) {
+      notify('error', err?.message || "Erreur lors de l'envoi de l'email");
     } finally {
       setSending(false);
     }
   };
 
-  if (!open) return null;
+  const linkItem = (href, Icon, iconCls, text) => (href ? (
+    <a role="menuitem" href={href} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} className={ITEM_CLS}>
+      <Icon className={`h-4 w-4 ${iconCls}`} aria-hidden="true" /> {text}
+    </a>
+  ) : (
+    <button type="button" role="menuitem" disabled className={ITEM_CLS}>
+      <Icon className="h-4 w-4" aria-hidden="true" /> {text}
+      {clientTel && links.status === 'loading' && <Loader2 className="ml-auto h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+    </button>
+  ));
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Drawer */}
-      <div className="fixed inset-y-0 right-0 w-full sm:w-[520px] lg:w-[600px] bg-white shadow-2xl z-50 flex flex-col animate-in"
-        style={{ animationName: 'slideInRight', animationDuration: '300ms' }}>
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-          <div>
-            <h2 className="text-base font-display font-bold text-slate-900">Impression</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Ticket {ticketCode}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Type tabs */}
-        <div className="flex gap-1 px-5 py-3 border-b border-slate-100 overflow-x-auto scrollbar-none shrink-0 bg-slate-50/50">
-          {PRINT_TYPES.map(({ type, label, icon: Icon }) => (
-            <button
-              key={type}
-              onClick={() => { setActiveType(type); setIframeLoading(true); }}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                activeType === type
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/25'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700 hover:shadow-sm'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-              <span className={`text-[9px] px-1 py-0.5 rounded ${
-                activeType === type ? 'bg-white/20' : 'bg-slate-200 text-slate-500'
-              }`}>{(activeType === type && useA4 && PDF_TYPES.has(type)) ? 'A4' : '80mm'}</span>
+    <div ref={wrapRef} className="relative">
+      <button ref={triggerRef} type="button" onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        className="btn-secondary min-h-11 px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+        <Send className="h-4 w-4" aria-hidden="true" />
+        Envoyer
+        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-30 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          <p aria-hidden="true" className="px-3 pt-1.5 pb-1 text-xs font-semibold text-slate-600">Envoyer au client : {label}</p>
+          <div ref={menuRef} id={menuId} role="menu" aria-label={`Envoyer le ${label} au client`} onKeyDown={onMenuKeyDown}>
+            {linkItem(waHref, MessageCircle, 'text-green-700', 'WhatsApp')}
+            {linkItem(smsHref, Send, 'text-blue-700', 'SMS')}
+            <button type="button" role="menuitem" onClick={handleEmail} disabled={!clientEmail || sending} className={ITEM_CLS}>
+              {sending ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4 text-red-700" aria-hidden="true" />}
+              {sending ? 'Envoi…' : doc.pdf ? 'Email (PDF A4)' : 'Email'}
             </button>
-          ))}
-        </div>
-
-        {/* Preview area */}
-        <div className="flex-1 relative bg-slate-100 overflow-hidden">
-          {/* Format indicator + toggle */}
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-            <span className="text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm bg-slate-800 text-white">
-              {hasPdf ? 'PDF A4' : 'THERMIQUE 80mm'}
-            </span>
-            {canPdf && (
-              <button
-                onClick={() => { setUseA4(!useA4); setIframeLoading(true); }}
-                className={`text-[10px] font-semibold px-2 py-1 rounded-md shadow-sm transition-colors ${useA4 ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
-              >
-                {useA4 ? 'Passer en 80mm' : 'Passer en A4'}
+            {clientTel && links.status === 'error' && (
+              <button type="button" role="menuitem" onClick={onNeedLinks} className={`${ITEM_CLS} text-brand-700`}>
+                <RefreshCw className="h-4 w-4" aria-hidden="true" /> Lien indisponible : réessayer
               </button>
             )}
           </div>
-
-          {/* Loading */}
-          {iframeLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-100 z-10">
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm text-slate-400">Chargement de l'aperçu...</p>
-              </div>
-            </div>
-          )}
-
-          {/* Iframe container */}
-          <div className="h-full overflow-auto flex justify-center pt-4 pb-8">
-            <div className={`bg-white shadow-xl rounded-lg overflow-hidden shrink-0 ${hasPdf ? 'w-[480px]' : 'w-[320px]'}`}>
-              <iframe
-                ref={iframeRef}
-                src={hasPdf ? api.getPdfUrl(ticketId, activeType) : printUrl}
-                className="w-full h-full border-0"
-                style={{ minHeight: '600px' }}
-                title={`Aperçu ${currentType?.label}`}
-                onLoad={() => setIframeLoading(false)}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Footer actions */}
-        <div className="px-5 py-4 border-t border-slate-100 bg-white shrink-0">
-          <div className="flex items-center gap-2">
-            {/* Print button (thermal) */}
-            <button
-              onClick={handlePrint}
-              disabled={printing}
-              className={`flex-1 justify-center ${hasPdf ? 'btn-ghost border border-slate-200' : 'btn-primary shadow-lg shadow-brand-600/20'}`}
-            >
-              <Printer className="w-4 h-4" />
-              {printing ? 'Ouverture...' : 'Imprimer 80mm'}
-            </button>
-
-            {/* PDF A4 button — for devis/recu when in A4 mode */}
-            {canPdf && (
-              <button
-                onClick={handleOpenPdf}
-                className={`${hasPdf ? 'btn-primary shadow-lg shadow-brand-600/20' : 'btn-ghost border border-slate-200'} flex-1 justify-center`}
-              >
-                <Download className="w-4 h-4" />
-                PDF A4
-              </button>
-            )}
-
-            {/* Send dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setSendOpen(!sendOpen)}
-                className="btn-ghost border border-slate-200 px-3 gap-1"
-              >
-                <Send className="w-4 h-4" />
-                <ChevronDown className="w-3 h-3" />
-              </button>
-              {sendOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50">
-                  <button
-                    onClick={handleSendWhatsApp}
-                    disabled={!clientTel}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    <MessageCircle className="w-4 h-4 text-green-600" />
-                    WhatsApp
-                  </button>
-                  <button
-                    onClick={handleSendSMS}
-                    disabled={!clientTel}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    <Send className="w-4 h-4 text-blue-600" />
-                    SMS
-                  </button>
-                  <button
-                    onClick={handleSendEmail}
-                    disabled={!clientEmail || sending}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                  >
-                    <Mail className="w-4 h-4 text-red-500" />
-                    {sending ? 'Envoi...' : hasPdf ? 'Email (PDF)' : 'Email'}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={handleOpenTab}
-              className="btn-ghost border border-slate-200 px-3"
-              title="Ouvrir dans un nouvel onglet"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </button>
-          </div>
-          <p className="text-[10px] text-slate-400 text-center mt-2">
-            {hasPdf ? 'Document PDF format A4 professionnel' : 'Format optimisé pour imprimante thermique 80mm'}
-          </p>
-        </div>
-      </div>
-
-      {/* Toast notification — inside drawer, above footer */}
-      {toast && (
-        <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center pointer-events-none">
-          <div className={`pointer-events-auto flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl border transition-all ${
-            toast.type === 'success'
-              ? 'bg-emerald-600 border-emerald-700 text-white'
-              : 'bg-red-600 border-red-700 text-white'
-          }`}
-            style={{ animation: 'toastIn 300ms ease-out' }}
-          >
-            {toast.type === 'success'
-              ? <CheckCircle className="w-5 h-5 shrink-0" />
-              : <AlertCircle className="w-5 h-5 shrink-0" />
-            }
-            <span className="text-sm font-semibold">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="ml-2 p-0.5 rounded hover:bg-white/20">
-              <X className="w-4 h-4" />
-            </button>
+          <div className="px-3 pb-1.5 text-xs text-slate-600" aria-live="polite">
+            {notes.map((n) => <p key={n}>{n}</p>)}
+            {clientTel && links.status === 'error' && <p>{links.error}</p>}
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Animation keyframe */}
-      <style>{`
-        @keyframes slideInRight {
-          from { transform: translateX(100%); }
-          to { transform: translateX(0); }
-        }
-        @keyframes toastIn {
-          from { transform: translateY(20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-      `}</style>
-    </>
+export default function PrintDrawer({
+  open, onClose, ticketId, ticketCode, clientTel, clientEmail,
+  initialDocId = 'client', beforeOpen, onBeforePrint, reloadKey, onPrinted,
+}) {
+  const documents = useMemo(() => buildTicketDocuments(ticketId, ticketCode), [ticketId, ticketCode]);
+  const [links, setLinks] = useState(LINKS_IDLE);
+  const linksSeq = useRef(0);
+  const escapeRef = useRef(null);
+
+  const loadLinks = useCallback(() => {
+    if (ticketId == null) return;
+    const seq = ++linksSeq.current;
+    setLinks((l) => ({ ...l, status: 'loading', error: null }));
+    api.getShareLinks(ticketId).then(
+      (data) => { if (seq === linksSeq.current) setLinks({ status: 'ready', data, error: null }); },
+      (err) => { if (seq === linksSeq.current) setLinks({ status: 'error', data: null, error: err?.message || 'erreur' }); },
+    );
+  }, [ticketId]);
+
+  // Les liens sont préparés à l'avance : le clic WhatsApp/SMS reste un lien direct (pas de popup bloquée)
+  useEffect(() => {
+    linksSeq.current += 1;
+    setLinks(LINKS_IDLE);
+    if (!open || ticketId == null || !clientTel) return undefined;
+    const t = setTimeout(loadLinks, 800);
+    return () => clearTimeout(t);
+  }, [open, ticketId, clientTel, loadLinks]);
+
+  const onEscape = useCallback(() => (escapeRef.current ? escapeRef.current() : false), []);
+
+  const renderActions = ({ doc, formatKey, notify }) => (doc.shareable ? (
+    <ShareMenu doc={doc} formatKey={formatKey} ticketId={ticketId} ticketCode={ticketCode}
+      clientTel={clientTel} clientEmail={clientEmail} links={links} onNeedLinks={loadLinks}
+      notify={notify} escapeRef={escapeRef} />
+  ) : (
+    <span className="inline-flex min-h-11 items-center gap-1.5 px-1 text-xs font-medium text-slate-600">
+      <Lock className="h-3.5 w-3.5" aria-hidden="true" /> Document interne, non envoyable
+    </span>
+  ));
+
+  return (
+    <PrintPreview
+      variant="dialog"
+      open={!!open && ticketId != null}
+      onClose={onClose}
+      title="Impression"
+      subtitle={ticketCode ? `Ticket ${ticketCode}` : undefined}
+      documents={documents}
+      initialDocId={initialDocId}
+      beforeLoad={beforeOpen || onBeforePrint}
+      reloadKey={reloadKey}
+      prefetchIds={initialDocId === 'client' ? ['staff'] : []}
+      onEscape={onEscape}
+      onPrinted={onPrinted}
+      renderActions={renderActions}
+    />
   );
 }

@@ -23,7 +23,9 @@ from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
 from app.database import get_cursor
-from app.api.auth import get_current_user  # noqa: F401 (si besoin plus tard)
+from app.api.auth import (
+    client_ip, exiger_elevation, get_current_user, noter_echec, noter_succes, verifier_essais, verifier_secret,
+)
 # Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque
 from app.api.smartphones_tarifs import _fetch_image_for_pdf
 # Reutilise le rate limiter public (protection anti-spam)
@@ -87,13 +89,18 @@ async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...), user:
     - Sauve dans UPLOADS_DIR avec hash pour eviter collisions
     - Met a jour image_url de l'iphone_tarifs vers la route /image-upload/{filename}
     """
-    # Valide existence du tarif
-    with get_cursor() as cur:
-        cur.execute("SELECT id, slug FROM iphone_tarifs WHERE id = %s", (tarif_id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Tarif non trouvé")
-        slug = row["slug"] if isinstance(row, dict) else row[1]
+    from starlette.concurrency import run_in_threadpool
+
+    # Valide existence du tarif (SQL synchrone : hors de la boucle d'événements)
+    def _lire_slug():
+        with get_cursor() as cur:
+            cur.execute("SELECT id, slug FROM iphone_tarifs WHERE id = %s", (tarif_id,))
+            return cur.fetchone()
+
+    row = await run_in_threadpool(_lire_slug)
+    if not row:
+        raise HTTPException(404, "Tarif non trouvé")
+    slug = row["slug"] if isinstance(row, dict) else row[1]
 
     # Valide le type + taille (5MB max)
     content = await file.read()
@@ -119,15 +126,18 @@ async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...), user:
     h = hashlib.sha256(content).hexdigest()[:12]
     filename = f"{slug}_{h}.{ext}"
     path = UPLOADS_DIR / filename
-    path.write_bytes(content)
-
-    # Patch image_url pour pointer vers cette photo uploadee
     image_url = f"/api/iphone-tarifs/image-upload/{filename}"
-    with get_cursor() as cur:
-        cur.execute(
-            "UPDATE iphone_tarifs SET image_url = %s, updated_at = NOW() WHERE id = %s",
-            (image_url, tarif_id),
-        )
+
+    def _enregistrer():
+        path.write_bytes(content)
+        # Patch image_url pour pointer vers cette photo uploadee
+        with get_cursor() as cur:
+            cur.execute(
+                "UPDATE iphone_tarifs SET image_url = %s, updated_at = NOW() WHERE id = %s",
+                (image_url, tarif_id),
+            )
+
+    await run_in_threadpool(_enregistrer)
 
     # Invalide cache in-memory
     try:
@@ -667,42 +677,11 @@ def count_nouvelles(user: dict = Depends(get_current_user)):
     return {"count": row["n"] if row else 0}
 
 
-# Rate limiter dedie a la verif admin password (anti brute-force).
-# Plus strict que le rate-limit public : 5 tentatives / 5 min / IP.
-_ADMIN_VERIFY_BUCKETS: "_AdminBuckets" = None  # init lazy ci-dessous
-
-
-def _rate_limit_admin_verify(request: Request):
-    from collections import defaultdict, deque
-    from time import time as _now_t
-    global _ADMIN_VERIFY_BUCKETS
-    if _ADMIN_VERIFY_BUCKETS is None:
-        _ADMIN_VERIFY_BUCKETS = defaultdict(deque)
-    ip = request.client.host if request.client else "unknown"
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        ip = xff.split(",")[0].strip()
-    now = _now_t()
-    bucket = _ADMIN_VERIFY_BUCKETS[ip]
-    while bucket and (now - bucket[0]) > 300:  # fenetre 5 min
-        bucket.popleft()
-    if len(bucket) >= 5:
-        raise HTTPException(
-            429, "Trop de tentatives. Reessayez dans quelques minutes."
-        )
-    bucket.append(now)
-
-
 def _audit_log(cur, *, user, action, target_type, target_id, details, request):
     """Insere une trace dans admin_audit_log."""
-    login = (user.get("utilisateur") or "") if isinstance(user, dict) else ""
+    login = (user.get("sub") or user.get("utilisateur") or "") if isinstance(user, dict) else ""
     target = (user.get("target") or "") if isinstance(user, dict) else ""
-    ip = "unknown"
-    if request and request.client:
-        ip = request.client.host
-    xff = request.headers.get("x-forwarded-for", "") if request else ""
-    if xff:
-        ip = xff.split(",")[0].strip()
+    ip = client_ip(request) if request else "unknown"
     ip_hash = hashlib.sha256(("kp:" + ip).encode("utf-8")).hexdigest()[:16]
     try:
         cur.execute(
@@ -732,32 +711,28 @@ def delete_demande_commande(
     - Header X-Admin-Password (pas dans le body, pour eviter qu'un proxy
       le strip — RFC 7231 dit que les bodies sur DELETE n'ont pas de
       semantique definie)
-    - Rate limit 5 tentatives / 5 min / IP (anti brute-force)
+    - Anti brute-force partagé avec /api/admin/verify (cible « admin », IP réelle)
     - Comparaison constant-time (secrets.compare_digest) anti timing-attack
+    - Sans code : jeton d'élévation X-Admin-Token accepté
     - Audit log dans admin_audit_log avant de supprimer (trace user + IP)
     - Meme message d'erreur que ce soit 'code KO' ou 'demande inexistante'
       pour ne pas faciliter la reconnaissance d'IDs valides
     """
-    _rate_limit_admin_verify(request)
-
     if not x_admin_password:
-        raise HTTPException(403, "Code admin requis")
-
-    # Lecture du password stocke
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
-        row = cur.fetchone()
-    stored = row["valeur"] if row else None
-    if not stored:
-        raise HTTPException(503, "Code admin non configure")
-
-    # Comparaison constant-time pour eviter le timing attack
-    ok = secrets.compare_digest(
-        x_admin_password.encode("utf-8"),
-        stored.encode("utf-8"),
-    )
-    if not ok:
-        raise HTTPException(403, "Code admin incorrect ou demande introuvable")
+        exiger_elevation(request, user)  # 403 sans jeton d'élévation valide
+    else:
+        verifier_essais(request, "admin")
+        with get_cursor() as cur:
+            cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
+            row = cur.fetchone()
+        stored = row["valeur"] if row else None
+        if not stored:
+            raise HTTPException(503, "Code admin non configure")
+        # Comparaison constant-time ; ADMIN_PASSWORD peut être haché (bcrypt)
+        if not verifier_secret(x_admin_password, stored):
+            noter_echec(request, "admin")
+            raise HTTPException(403, "Code admin incorrect ou demande introuvable")
+        noter_succes(request, "admin")
 
     # Audit + delete dans la meme transaction (un seul context cursor)
     with get_cursor() as cur:

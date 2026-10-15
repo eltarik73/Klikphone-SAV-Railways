@@ -3,39 +3,69 @@ API Dépôt à Distance — pré-enregistrement public + validation/refus par ac
 """
 
 from datetime import datetime
+from html import escape
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
 )
+from app.services.prestations import PRESTATIONS, cle_panne, normaliser
 
 router = APIRouter(prefix="/api/depot-distance", tags=["depot-distance"])
 
 
 # ─── MODELS ──────────────────────────────────────────────────
 
+_SYMPTOME_PAR_CLE = {cle: sympt for cle, sympt, *_ in PRESTATIONS if sympt}
+
+
+def panne_catalogue(panne: str, panne_detail: str = "") -> tuple:
+    """(panne, panne_detail) ramenés à la liste du kiosque, sans jamais rejeter.
+
+    Une ancienne valeur (« Écran casse », page chargée avant une mise à jour)
+    devient le symptôme du catalogue ; une valeur hors liste devient « Autre »
+    et le texte du client est gardé en tête du détail.
+    """
+    brut = " ".join(str(panne or "").split())
+    detail = str(panne_detail or "").strip()
+    if not brut:
+        return "", detail
+    sympt = _SYMPTOME_PAR_CLE.get(cle_panne(brut))
+    if sympt:
+        return sympt, detail
+    if normaliser(brut) == "autre":
+        return "Autre", detail
+    return "Autre", f"{brut} — {detail}" if detail else brut
+
+
 class DepotDistanceRequest(BaseModel):
-    nom: str
-    prenom: Optional[str] = ""
-    telephone: str
-    email: Optional[str] = ""
-    categorie: str = ""
-    marque: str = ""
-    modele: Optional[str] = ""
-    modele_autre: Optional[str] = ""
-    panne: str = ""
-    panne_detail: Optional[str] = ""
-    notes_client: Optional[str] = ""
+    nom: str = Field(..., max_length=100)
+    prenom: Optional[str] = Field("", max_length=100)
+    telephone: str = Field(..., max_length=30)
+    email: Optional[str] = Field("", max_length=254)
+    categorie: str = Field("", max_length=50)
+    marque: str = Field("", max_length=80)
+    modele: Optional[str] = Field("", max_length=120)
+    modele_autre: Optional[str] = Field("", max_length=120)
+    panne: str = Field("", max_length=120)
+    panne_detail: Optional[str] = Field("", max_length=1000)
+    notes_client: Optional[str] = Field("", max_length=2000)
     carte_camby: Optional[int] = 0
+
+    @field_validator("nom", "prenom", "telephone", "email", "categorie", "marque",
+                     "modele", "modele_autre", "panne", "panne_detail", "notes_client")
+    @classmethod
+    def _sans_espaces_superflus(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
 
 class RefusMotif(BaseModel):
-    motif: Optional[str] = ""
+    motif: Optional[str] = Field("", max_length=500)
 
 
 # ─── PUBLIC: Créer un pré-enregistrement ─────────────────────
@@ -48,11 +78,15 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
         raise HTTPException(400, "Le nom est requis")
     if not data.telephone or not data.telephone.strip():
         raise HTTPException(400, "Le téléphone est requis")
+    panne, panne_detail = panne_catalogue(data.panne, data.panne_detail)
 
     # Vérifier si le module est actif
     actif = _get_param("DEPOT_DISTANCE_ACTIF")
     if actif == "false":
         raise HTTPException(400, "Le dépôt à distance n'est pas disponible actuellement.")
+
+    # Littéral non typé : accepté que carte_camby soit INTEGER (prod) ou BOOLEAN (schéma neuf)
+    camby = "1" if data.carte_camby else "0"
 
     with get_cursor() as cur:
         # Créer ou récupérer le client
@@ -70,12 +104,12 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
                     email = COALESCE(NULLIF(%s, ''), email),
                     carte_camby = %s
                 WHERE id = %s
-            """, (data.nom, data.prenom, data.email, data.carte_camby, client_id))
+            """, (data.nom, data.prenom, data.email, camby, client_id))
         else:
             cur.execute("""
                 INSERT INTO clients (nom, prenom, telephone, email, carte_camby)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
-            """, (data.nom, data.prenom, data.telephone, data.email, data.carte_camby))
+            """, (data.nom, data.prenom, data.telephone, data.email, camby))
             client_id = cur.fetchone()["id"]
 
         # Créer le ticket en statut "Pré-enregistré"
@@ -88,14 +122,18 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             RETURNING id
         """, (
             client_id, data.categorie, data.marque, data.modele,
-            data.modele_autre, data.panne, data.panne_detail,
+            data.modele_autre, panne, panne_detail,
             data.notes_client,
         ))
         row = cur.fetchone()
         tid = row["id"]
 
         code = f"KP-{tid:06d}"
-        cur.execute("UPDATE tickets SET ticket_code = %s WHERE id = %s", (code, tid))
+        from app.api.public_documents import nouveau_jeton
+        cur.execute(
+            "UPDATE tickets SET ticket_code = %s, suivi_token = %s WHERE id = %s",
+            (code, nouveau_jeton(), tid),
+        )
 
     # Notifications en arrière-plan (ne bloque pas la réponse)
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
@@ -108,7 +146,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             {"name": "Ticket", "value": code, "inline": True},
             {"name": "Client", "value": f"{data.prenom} {data.nom}", "inline": True},
             {"name": "Appareil", "value": appareil or "-", "inline": True},
-            {"name": "Panne", "value": data.panne or "-", "inline": False},
+            {"name": "Panne", "value": panne or "-", "inline": False},
             {"name": "Téléphone", "value": data.telephone, "inline": True},
         ],
         notif_type="depot_distance",
@@ -116,7 +154,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     if data.email:
         bg.add_task(
             _envoyer_email_confirmation,
-            data.email, data.prenom or data.nom, code, appareil, data.panne,
+            data.email, data.prenom or data.nom, code, appareil, panne,
         )
 
     return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré"}
@@ -125,14 +163,14 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
 # ─── AUTH: Valider un pré-enregistrement ─────────────────────
 
 @router.put("/{ticket_id}/valider")
-def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
+def valider_depot(ticket_id: int, bg: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Valide un pré-enregistrement → passe en 'En attente de diagnostic'."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
 
     with get_cursor() as cur:
         cur.execute(
-            "SELECT statut, ticket_code, client_id FROM tickets WHERE id = %s",
+            "SELECT statut, ticket_code, client_id FROM tickets WHERE id = %s FOR UPDATE",
             (ticket_id,),
         )
         row = cur.fetchone()
@@ -141,7 +179,8 @@ def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
         if row["statut"] != "Pré-enregistré":
             raise HTTPException(400, "Ce ticket n'est pas en pré-enregistrement")
 
-        historique_entry = f"[{ts}] Statut: Pré-enregistré → En attente de diagnostic (Validé)"
+        auteur = (user or {}).get("sub") or "Staff"
+        historique_entry = f"[{ts}] Statut: Pré-enregistré → En attente de diagnostic (Validé) — par {auteur}"
         cur.execute("""
             UPDATE tickets SET
                 statut = 'En attente de diagnostic',
@@ -150,22 +189,19 @@ def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
             WHERE id = %s
         """, (now, '\n' + historique_entry, ticket_id))
 
-        # Historique structuré
-        try:
-            cur.execute(
-                "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
-                (ticket_id, "Pré-enregistrement validé → En attente de diagnostic"),
-            )
-        except Exception:
-            pass
+        cur.execute(
+            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
+            (ticket_id, f"Pré-enregistrement validé → En attente de diagnostic — par {auteur}"),
+        )
 
         # Récupérer info client pour notification
         cur.execute("SELECT email, nom, prenom FROM clients WHERE id = %s", (row["client_id"],))
         client = cur.fetchone()
 
-    # Notification email au client
+    # Notification email au client (SMTP hors du chemin de la réponse)
     if client and client.get("email"):
-        _envoyer_email_validation(
+        bg.add_task(
+            _envoyer_email_validation,
             client["email"],
             client.get("prenom") or client.get("nom", ""),
             row["ticket_code"],
@@ -180,16 +216,18 @@ def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
 def refuser_depot(
     ticket_id: int,
     data: RefusMotif,
+    bg: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ):
     """Refuse un pré-enregistrement → passe en 'Clôturé'."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
-    motif = data.motif or "Non précisé"
+    motif = (data.motif or "").strip() or "Non précisé"
+    auteur = (user or {}).get("sub") or "Staff"
 
     with get_cursor() as cur:
         cur.execute(
-            "SELECT statut, ticket_code, client_id FROM tickets WHERE id = %s",
+            "SELECT statut, ticket_code, client_id FROM tickets WHERE id = %s FOR UPDATE",
             (ticket_id,),
         )
         row = cur.fetchone()
@@ -198,7 +236,7 @@ def refuser_depot(
         if row["statut"] != "Pré-enregistré":
             raise HTTPException(400, "Ce ticket n'est pas en pré-enregistrement")
 
-        historique_entry = f"[{ts}] Pré-enregistrement refusé — Motif: {motif}"
+        historique_entry = f"[{ts}] Pré-enregistrement refusé — Motif: {motif} — par {auteur}"
         cur.execute("""
             UPDATE tickets SET
                 statut = 'Clôturé',
@@ -210,20 +248,18 @@ def refuser_depot(
         """, (now, now, '\n' + historique_entry,
               f"\n[{ts}] Dépôt à distance refusé — {motif}", ticket_id))
 
-        try:
-            cur.execute(
-                "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
-                (ticket_id, f"Pré-enregistrement refusé: {motif}"),
-            )
-        except Exception:
-            pass
+        cur.execute(
+            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
+            (ticket_id, f"Pré-enregistrement refusé: {motif} — par {auteur}"),
+        )
 
         cur.execute("SELECT email, nom, prenom FROM clients WHERE id = %s", (row["client_id"],))
         client = cur.fetchone()
 
-    # Notification email
+    # Notification email (SMTP hors du chemin de la réponse)
     if client and client.get("email"):
-        _envoyer_email_refus(
+        bg.add_task(
+            _envoyer_email_refus,
             client["email"],
             client.get("prenom") or client.get("nom", ""),
             row["ticket_code"],
@@ -287,6 +323,7 @@ def _envoyer_email_confirmation(email: str, prenom: str, code: str, appareil: st
         tel = _get_param("tel_boutique") or "04 79 60 89 22"
 
         sujet = f"{nom_boutique} — Votre numéro de suivi {code}"
+        html = html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne)
         message = f"""Bonjour {prenom},
 
 Votre demande de réparation a bien été pré-enregistrée.
@@ -305,7 +342,17 @@ Votre dossier est déjà créé, l'accueil sera plus rapide.
 {adresse}
 {tel}"""
 
-        html = f"""<!DOCTYPE html>
+        envoyer_email(email, sujet, message, html_content=html)
+    except Exception:
+        pass
+
+
+def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne) -> str:
+    """Gabarit HTML de l'email : toutes les valeurs sont échappées (champs saisis par le public)."""
+    nom_boutique, adresse, tel, prenom, code, appareil, panne = (
+        escape(str(v or "")) for v in (nom_boutique, adresse, tel, prenom, code, appareil, panne)
+    )
+    return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f1f5f9;">
 <div style="max-width:500px;margin:20px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
@@ -348,10 +395,6 @@ Votre dossier est déjà créé, l'accueil sera plus rapide.
   </div>
 </div>
 </body></html>"""
-
-        envoyer_email(email, sujet, message, html_content=html)
-    except Exception:
-        pass
 
 
 def _envoyer_email_validation(email: str, prenom: str, code: str):

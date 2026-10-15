@@ -547,8 +547,8 @@ def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
         # Create client if needed
         client_id = devis.get("client_id")
         if not client_id and devis.get("client_tel"):
-            cur.execute("SELECT id FROM clients WHERE telephone = %s", (devis["client_tel"],))
-            row = cur.fetchone()
+            from app.api.clients import find_client_by_phone
+            row = find_client_by_phone(cur, devis["client_tel"])
             if row:
                 client_id = row["id"]
             else:
@@ -622,9 +622,13 @@ def duplicate_devis(devis_id: int, user: dict = Depends(get_current_user)):
 # ─── PRINT DEVIS ───────────────────────────────────────────
 
 @router.get("/{devis_id}/print")
-def print_devis(devis_id: int):
-    """Génère un HTML imprimable pour le devis."""
+def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
+    """Génère un HTML imprimable pour le devis (session staff requise)."""
+    from html import escape
     from fastapi.responses import HTMLResponse
+
+    def e(v):
+        return "" if v is None else escape(str(v), quote=True)
 
     with get_cursor() as cur:
         cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
@@ -645,24 +649,24 @@ def print_devis(devis_id: int):
                 devis["client_tel"] = c["telephone"]
                 devis["client_email"] = c.get("email")
 
-    # Shop info
-    try:
-        with get_cursor() as cur:
+        # Shop info
+        try:
             cur.execute("SELECT cle, valeur FROM params WHERE cle IN ('NOM_BOUTIQUE', 'ADRESSE_BOUTIQUE', 'TEL_BOUTIQUE', 'EMAIL_BOUTIQUE', 'SIRET_BOUTIQUE')")
             params = {r["cle"]: r["valeur"] for r in cur.fetchall()}
-    except Exception:
-        params = {}
+        except Exception:
+            params = {}
 
-    nom_boutique = params.get("NOM_BOUTIQUE", "KLIKPHONE")
-    adresse = params.get("ADRESSE_BOUTIQUE", "79 Place Saint-Léger, 73000 Chambéry")
-    tel = params.get("TEL_BOUTIQUE", "04 79 60 89 22")
-    email_boutique = params.get("EMAIL_BOUTIQUE", "")
-    siret = params.get("SIRET_BOUTIQUE", "")
+    nom_boutique = e(params.get("NOM_BOUTIQUE") or "KLIKPHONE")
+    adresse = e(params.get("ADRESSE_BOUTIQUE") or "79 Place Saint-Léger, 73000 Chambéry")
+    tel = e(params.get("TEL_BOUTIQUE") or "04 79 60 89 22")
+    email_boutique = e(params.get("EMAIL_BOUTIQUE"))
+    siret = e(params.get("SIRET_BOUTIQUE"))
 
     def fp(v):
-        if v is None:
+        try:
+            return f"{float(v or 0):,.2f}".replace(",", " ").replace(".", ",")
+        except (TypeError, ValueError):
             return "0,00"
-        return f"{float(v):,.2f}".replace(",", " ").replace(".", ",")
 
     date_creation = devis["date_creation"]
     if hasattr(date_creation, "strftime"):
@@ -674,26 +678,38 @@ def print_devis(devis_id: int):
     for l in lignes:
         lignes_html += f"""
         <tr>
-            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0">{l['description']}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center">{l['quantite']}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0">{e(l['description'])}</td>
+            <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center">{e(l['quantite'])}</td>
             <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right">{fp(l['prix_unitaire'])} €</td>
             <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:600">{fp(l['total'])} €</td>
         </tr>"""
 
+    numero = e(devis.get("numero"))
+    validite = e(30 if devis.get("validite_jours") is None else devis["validite_jours"])
+    client_nom = e(" ".join(str(p) for p in (devis.get("client_prenom"), devis.get("client_nom")) if p))
+    client_contact = e(devis.get("client_tel"))
+    if devis.get("client_email"):
+        client_contact += " — " + e(devis["client_email"])
+    appareil_html = f"<div style='margin-top:6px;font-size:12px'><b>Appareil :</b> {e(devis['appareil'])}</div>" if devis.get("appareil") else ""
+    description_html = f"<div style='margin-top:4px;font-size:12px;color:#64748b;white-space:pre-wrap'>{e(devis['description'])}</div>" if devis.get("description") else ""
+    remise_html = f"<div class='total-row'><span>Remise</span><span>-{fp(devis['remise'])} €</span></div>" if float(devis.get("remise") or 0) > 0 else ""
+    notes_html = f"<div style='margin-top:24px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;color:#92400e;white-space:pre-wrap'><b>Notes :</b> {e(devis['notes'])}</div>" if devis.get("notes") else ""
+
     html = f"""<!DOCTYPE html>
-<html><head>
+<html lang="fr"><head>
 <meta charset="utf-8">
-<title>Devis {devis['numero']}</title>
+<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; base-uri 'none'">
+<title>Devis {numero}</title>
 <style>
     @page {{ size: A4; margin: 15mm; }}
-    body {{ font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; color: #1e293b; margin: 0; padding: 20px; }}
-    .header {{ display: flex; justify-content: space-between; margin-bottom: 30px; }}
+    body {{ font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; color: #1e293b; margin: 0; padding: 20px; overflow-wrap: anywhere; }}
+    .header {{ display: flex; justify-content: space-between; gap: 24px; margin-bottom: 30px; }}
     .shop {{ font-size: 12px; color: #64748b; line-height: 1.6; }}
     .shop-name {{ font-size: 20px; font-weight: 800; color: #7c3aed; margin-bottom: 4px; }}
     .devis-info {{ text-align: right; }}
     .devis-num {{ font-size: 18px; font-weight: 700; color: #1e293b; }}
     .client-box {{ background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 24px; }}
-    .client-label {{ font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }}
+    .client-label {{ font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 6px; font-weight: 600; }}
     table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; }}
     th {{ background: #7c3aed; color: white; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }}
     th:nth-child(2), th:nth-child(3), th:last-child {{ text-align: center; }}
@@ -701,9 +717,9 @@ def print_devis(devis_id: int):
     .totals {{ margin-left: auto; width: 280px; }}
     .total-row {{ display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }}
     .total-final {{ font-size: 18px; font-weight: 800; color: #7c3aed; border-top: 2px solid #7c3aed; padding-top: 8px; margin-top: 4px; }}
-    .footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; }}
+    .footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; }}
     .status-badge {{ display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }}
-    @media print {{ body {{ padding: 0; }} }}
+    @media print {{ body {{ padding: 0; }} * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }} }}
 </style>
 </head><body>
 <div class="header">
@@ -711,28 +727,25 @@ def print_devis(devis_id: int):
         <div class="shop-name">{nom_boutique}</div>
         <div class="shop">{adresse}<br>{tel}
         {"<br>" + email_boutique if email_boutique else ""}
-        {"<br>SIRET: " + siret if siret else ""}
+        {"<br>SIRET : " + siret if siret else ""}
         </div>
     </div>
     <div class="devis-info">
-        <div class="devis-num">{devis['numero']}</div>
-        <div style="color:#64748b;font-size:12px;margin-top:4px">Date: {date_str}</div>
-        <div style="color:#64748b;font-size:12px">Validité: {devis.get('validite_jours', 30)} jours</div>
+        <div class="devis-num">{numero}</div>
+        <div style="color:#64748b;font-size:12px;margin-top:4px">Date : {e(date_str)}</div>
+        <div style="color:#64748b;font-size:12px">Validité : {validite} jours</div>
         <div style="margin-top:8px">
-            <span class="status-badge" style="background:#f1f5f9;color:#475569">{devis['statut']}</span>
+            <span class="status-badge" style="background:#f1f5f9;color:#475569">{e(devis.get('statut'))}</span>
         </div>
     </div>
 </div>
 
 <div class="client-box">
     <div class="client-label">Client</div>
-    <div style="font-weight:600;font-size:14px">{devis.get('client_prenom', '')} {devis.get('client_nom', '')}</div>
-    <div style="color:#64748b;font-size:12px;margin-top:2px">
-        {devis.get('client_tel', '')}
-        {' — ' + devis.get('client_email', '') if devis.get('client_email') else ''}
-    </div>
-    {"<div style='margin-top:6px;font-size:12px'><b>Appareil:</b> " + devis['appareil'] + "</div>" if devis.get('appareil') else ''}
-    {"<div style='margin-top:4px;font-size:12px;color:#64748b'>" + devis['description'] + "</div>" if devis.get('description') else ''}
+    <div style="font-weight:600;font-size:14px">{client_nom}</div>
+    <div style="color:#64748b;font-size:12px;margin-top:2px">{client_contact}</div>
+    {appareil_html}
+    {description_html}
 </div>
 
 <table>
@@ -744,17 +757,20 @@ def print_devis(devis_id: int):
 
 <div class="totals">
     <div class="total-row"><span>Sous-total HT</span><span>{fp(devis['total_ht'])} €</span></div>
-    {"<div class='total-row'><span>Remise</span><span>-" + fp(devis['remise']) + " €</span></div>" if float(devis.get('remise') or 0) > 0 else ''}
+    {remise_html}
     <div class="total-row"><span>TVA ({fp(devis['tva'])}%)</span><span>{fp(float(devis['total_ttc'] or 0) - float(devis['total_ht'] or 0))} €</span></div>
     <div class="total-row total-final"><span>Total TTC</span><span>{fp(devis['total_ttc'])} €</span></div>
 </div>
 
-{"<div style='margin-top:24px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;color:#92400e'><b>Notes:</b> " + devis['notes'] + "</div>" if devis.get('notes') else ''}
+{notes_html}
 
 <div class="footer">
-    <p>Devis valable {devis.get('validite_jours', 30)} jours à compter de la date d'émission.</p>
+    <p>Devis valable {validite} jours à compter de la date d'émission.</p>
     <p>{nom_boutique} — {adresse} — {tel}</p>
 </div>
 </body></html>"""
 
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=html, headers={
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data: https:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        "Cache-Control": "no-store",
+    })

@@ -15,6 +15,7 @@ from email.utils import formataddr
 import httpx
 
 from app.database import get_cursor
+from app.services.montants import calculer_montants, format_euros
 
 
 # ─── HELPERS ────────────────────────────────────────────────────
@@ -25,6 +26,14 @@ def _get_param(key: str) -> str:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
         row = cur.fetchone()
     return row["valeur"] if row else ""
+
+
+def _get_params(*keys: str) -> dict:
+    """Plusieurs paramètres en une seule requête ({cle: valeur}, "" si absent)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (list(keys),))
+        lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+    return {k: lus.get(k) or "" for k in keys}
 
 
 # ─── DISCORD (EMBEDS) ──────────────────────────────────────────
@@ -41,22 +50,21 @@ DISCORD_COLORS = {
 }
 
 
-def _is_notif_enabled(notif_type: str) -> bool:
-    """Vérifie si un type de notification Discord est activé."""
-    val = _get_param(f"discord_notif_{notif_type}")
-    # Par défaut activé si le param n'existe pas
-    return val != "0"
-
-
 def envoyer_discord_embed(title: str, description: str, color: int = 0x3B82F6, fields: list = None, notif_type: str = ""):
-    """Envoie une notification Discord avec un embed riche."""
+    """Envoie une notification Discord avec un embed riche.
+
+    Appel réseau synchrone (jusqu'à 5 s) : depuis une route, toujours via
+    BackgroundTasks, jamais dans le chemin de la réponse.
+    """
     try:
-        webhook_url = _get_param("DISCORD_WEBHOOK")
+        cle_type = f"discord_notif_{notif_type}" if notif_type else None
+        params = _get_params("DISCORD_WEBHOOK", *([cle_type] if cle_type else []))
+        webhook_url = params["DISCORD_WEBHOOK"]
         if not webhook_url:
             return False
 
-        # Vérifier si ce type de notification est activé
-        if notif_type and not _is_notif_enabled(notif_type):
+        # Type de notification désactivé (activé par défaut si le param n'existe pas)
+        if cle_type and params[cle_type] == "0":
             return False
 
         embed = {
@@ -435,14 +443,17 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
     if not template:
         return ""
 
-    appareil = ticket.get("modele_autre") or f"{ticket.get('marque', '')} {ticket.get('modele', '')}".strip()
-    prix = ticket.get("tarif_final") or ticket.get("devis_estime") or 0
+    appareil = ticket.get("modele_autre") or f"{ticket.get('marque') or ''} {ticket.get('modele') or ''}".strip()
+    # Mêmes lignes et même total que les documents imprimés et la caisse
+    montants = calculer_montants(ticket)
+    reparation = " + ".join(r["label"] for r in montants["lignes"] if r["label"]) or ticket.get("panne", "")
+    prix = format_euros(montants["total"])
 
     # Config variables from params table
-    adresse = _get_param("adresse") or "79 Place Saint Léger, 73000 Chambéry"
-    horaires = _get_param("horaires") or "Lundi-Samedi 10h-19h"
-    tel_boutique = _get_param("tel_boutique") or "04 79 60 89 22"
-    nom_boutique = _get_param("nom_boutique") or "Klikphone"
+    cfg = _get_params("adresse", "horaires", "tel_boutique")
+    adresse = cfg["adresse"] or "79 Place Saint Léger, 73000 Chambéry"
+    horaires = cfg["horaires"] or "Lundi-Samedi 10h-19h"
+    tel_boutique = cfg["tel_boutique"] or "04 79 60 89 22"
 
     msg = template["message"]
     # Replace config placeholders in hardcoded template text
@@ -452,10 +463,13 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
     msg = msg.replace("Lundi-Samedi 10h-19h", horaires)
 
     return msg.format(
-        prenom=client.get("prenom") or client.get("nom", ""),
+        # Ligne ticket + client jointe : colonnes client_prenom / client_nom
+        prenom=(client.get("prenom") or client.get("client_prenom")
+                or client.get("nom") or client.get("client_nom") or ""),
         appareil=appareil,
         panne=ticket.get("panne", ""),
-        reparation=ticket.get("panne", ""),
+        reparation=reparation,
+        prestation=reparation,
         prix=prix,
         ticket_code=ticket.get("ticket_code", ""),
     )

@@ -27,6 +27,79 @@ def _get_param(cur, key: str, default: str = "") -> str:
     return row["valeur"] if row else default
 
 
+_PARAMS_DEFAUT = {
+    "fidelite_active": "1",
+    "fidelite_points_par_euro": "10",
+    "fidelite_palier_film": "1000",
+    "fidelite_palier_reduction": "5000",
+    "fidelite_montant_reduction": "10",
+}
+
+
+def _params(cur) -> dict:
+    """Paramètres fidélité en une seule requête (valeurs par défaut si absents ou vides)."""
+    cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (list(_PARAMS_DEFAUT),))
+    lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+    return {k: (lus.get(k) or d) for k, d in _PARAMS_DEFAUT.items()}
+
+
+def _entier(valeur, defaut: int) -> int:
+    try:
+        return int(float(valeur))
+    except (TypeError, ValueError):
+        return defaut
+
+
+def crediter_ticket(cur, ticket_id: int, client_id: int, montant: float) -> Optional[dict]:
+    """Crédite UNE fois les points d'un ticket payé, dans la transaction de l'appelant.
+
+    Seule fonction de crédit (paiement, restitution, /crediter). L'appelant
+    verrouille la ligne du ticket (SELECT ... FOR UPDATE) : deux paiements
+    simultanés ne peuvent pas créditer deux fois. Le SAVEPOINT isole une
+    erreur fidélité : sans lui, la transaction avortée ferait annuler en
+    silence le paiement au COMMIT. Renvoie None si rien n'est crédité.
+    """
+    cur.execute("SAVEPOINT fidelite_credit")
+    try:
+        p = _params(cur)
+        montant = round(float(montant or 0), 2)
+        points = int(montant * _entier(p["fidelite_points_par_euro"], 10))
+        resultat = None
+        if p["fidelite_active"] != "0" and client_id and points > 0:
+            cur.execute(
+                "SELECT 1 FROM fidelite_historique WHERE ticket_id = %s AND type = 'gain' LIMIT 1",
+                (ticket_id,),
+            )
+            if not cur.fetchone():
+                cur.execute("""
+                    UPDATE clients
+                    SET points_fidelite = COALESCE(points_fidelite, 0) + %s,
+                        total_depense = COALESCE(total_depense, 0) + %s
+                    WHERE id = %s
+                    RETURNING points_fidelite
+                """, (points, montant, client_id))
+                row = cur.fetchone()
+                if row:
+                    cur.execute("""
+                        INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
+                        VALUES (%s, %s, 'gain', %s, %s)
+                    """, (client_id, ticket_id, points,
+                          f"Réparation {montant:.2f}€ — +{points} pts"))
+                    total = row["points_fidelite"] or 0
+                    resultat = {
+                        "points_gagnes": points,
+                        "total_points": total,
+                        "palier_film": total >= _entier(p["fidelite_palier_film"], 1000),
+                        "palier_reduction": total >= _entier(p["fidelite_palier_reduction"], 5000),
+                    }
+        cur.execute("RELEASE SAVEPOINT fidelite_credit")
+        return resultat
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT fidelite_credit")
+        print(f"[fidelite] crédit ticket {ticket_id} ignoré : {e}")
+        return None
+
+
 # ─── MODELS ─────────────────────────────────────────────
 
 class CrediterRequest(BaseModel):
@@ -44,56 +117,30 @@ class UtiliserRequest(BaseModel):
 
 @router.post("/crediter")
 def crediter_points(data: CrediterRequest, user: dict = Depends(get_current_user)):
-    """Crédite les points quand un ticket est payé."""
+    """Crédite les points quand un ticket est payé (une seule fois par ticket)."""
 
     with get_cursor() as cur:
-        pts_par_euro = int(_get_param(cur, "fidelite_points_par_euro", "10"))
-        fidelite_active = _get_param(cur, "fidelite_active", "1")
-        if fidelite_active == "0":
-            return {"points_gagnes": 0, "total_points": 0, "palier_film": False, "palier_reduction": False}
-
-        points_gagnes = int(data.montant * pts_par_euro)
-        if points_gagnes <= 0:
-            return {"points_gagnes": 0, "total_points": 0, "palier_film": False, "palier_reduction": False}
-
-        # Vérifier que ce ticket n'a pas déjà crédité des points
-        cur.execute(
-            "SELECT id FROM fidelite_historique WHERE ticket_id = %s AND type = 'gain'",
-            (data.ticket_id,),
-        )
-        if cur.fetchone():
-            # Déjà crédité, retourner l'état actuel
-            cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (data.client_id,))
-            row = cur.fetchone()
-            pts = row["points_fidelite"] if row else 0
-            return {"points_gagnes": 0, "total_points": pts, "palier_film": pts >= 1000, "palier_reduction": pts >= 5000}
-
-        cur.execute("""
-            UPDATE clients
-            SET points_fidelite = COALESCE(points_fidelite, 0) + %s,
-                total_depense = COALESCE(total_depense, 0) + %s
-            WHERE id = %s
-            RETURNING points_fidelite
-        """, (points_gagnes, data.montant, data.client_id))
+        cur.execute("SELECT client_id FROM tickets WHERE id = %s FOR UPDATE", (data.ticket_id,))
+        ticket = cur.fetchone()
+        if not ticket:
+            raise HTTPException(404, "Ticket non trouvé")
+        if ticket["client_id"] != data.client_id:
+            raise HTTPException(400, "Ce ticket n'appartient pas à ce client")
+        resultat = crediter_ticket(cur, data.ticket_id, data.client_id, data.montant)
+        if resultat:
+            return resultat
+        p = _params(cur)
+        cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (data.client_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Client non trouvé")
-        nouveau_total = row["points_fidelite"]
-
-        cur.execute("""
-            INSERT INTO fidelite_historique (client_id, ticket_id, type, points, description)
-            VALUES (%s, %s, 'gain', %s, %s)
-        """, (data.client_id, data.ticket_id, points_gagnes,
-              f"Réparation {data.montant:.2f}€ — +{points_gagnes} pts"))
-
-        palier_film = int(_get_param(cur, "fidelite_palier_film", "1000"))
-        palier_reduction = int(_get_param(cur, "fidelite_palier_reduction", "5000"))
+        pts = row["points_fidelite"] or 0
 
     return {
-        "points_gagnes": points_gagnes,
-        "total_points": nouveau_total,
-        "palier_film": nouveau_total >= palier_film,
-        "palier_reduction": nouveau_total >= palier_reduction,
+        "points_gagnes": 0,
+        "total_points": pts,
+        "palier_film": pts >= _entier(p["fidelite_palier_film"], 1000),
+        "palier_reduction": pts >= _entier(p["fidelite_palier_reduction"], 5000),
     }
 
 
@@ -107,7 +154,8 @@ def utiliser_points(data: UtiliserRequest, user: dict = Depends(get_current_user
         palier_film = int(_get_param(cur, "fidelite_palier_film", "1000"))
         palier_reduction = int(_get_param(cur, "fidelite_palier_reduction", "5000"))
 
-        cur.execute("SELECT points_fidelite FROM clients WHERE id = %s", (data.client_id,))
+        # Verrou : un double clic ne consomme pas deux fois le palier
+        cur.execute("SELECT points_fidelite FROM clients WHERE id = %s FOR UPDATE", (data.client_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Client non trouvé")
@@ -149,7 +197,7 @@ def consommer_bon_grattage(data: ConsommerBonRequest, user: dict = Depends(get_c
     Clear la colonne bon_grattage + insert dans fidelite_historique pour trace."""
     with get_cursor() as cur:
         cur.execute(
-            "SELECT bon_grattage FROM clients WHERE id = %s",
+            "SELECT bon_grattage FROM clients WHERE id = %s FOR UPDATE",
             (data.client_id,),
         )
         row = cur.fetchone()
@@ -177,11 +225,12 @@ def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
     """Récupère les infos fidélité d'un client."""
 
     with get_cursor() as cur:
-        fidelite_active = _get_param(cur, "fidelite_active", "1")
-        palier_film = int(_get_param(cur, "fidelite_palier_film", "1000"))
-        palier_reduction = int(_get_param(cur, "fidelite_palier_reduction", "5000"))
-        montant_reduction = _get_param(cur, "fidelite_montant_reduction", "10")
-        pts_par_euro = int(_get_param(cur, "fidelite_points_par_euro", "10"))
+        p = _params(cur)
+        fidelite_active = p["fidelite_active"]
+        palier_film = _entier(p["fidelite_palier_film"], 1000)
+        palier_reduction = _entier(p["fidelite_palier_reduction"], 5000)
+        montant_reduction = p["fidelite_montant_reduction"]
+        pts_par_euro = _entier(p["fidelite_points_par_euro"], 10)
 
         cur.execute(
             "SELECT points_fidelite, total_depense, bon_grattage FROM clients WHERE id = %s",

@@ -577,5 +577,5 @@ export default function AdminPage() {
     return <AdminLogin onLogin={(data) => setAuth(data)} />;
   }
 
-  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); localStorage.removeItem('klikphone_admin'); setAuth(null); }} />;
+  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); localStorage.removeItem('klikphone_admin'); api.clearAdminToken(); setAuth(null); }} />;
 }

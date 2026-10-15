@@ -1,119 +1,127 @@
 """
-Service d'intégration avec caisse.enregistreuse.fr
 Integration avec caisse.enregistreuse.fr.
+
+Montant et libellé de la vente sont calculés côté serveur à partir du ticket
+(services/montants.py et services/prestations.py), comme sur les documents.
 """
 
 import httpx
+
 from app.database import get_cursor
+from app.services.montants import calculer_montants
+
+API_URL = "https://caisse.enregistreuse.fr/workers/webapp.php"
+_LIBELLE_MAX = 150
 
 
-def _get_param(key: str) -> str:
+def config_caisse() -> dict:
+    """Paramètres caisse en une requête ; la base prime, sinon les variables Railway."""
+    from app.api.config import CAISSE_DEFAULTS
+    cles = list(CAISSE_DEFAULTS) + ["CAISSE_DELIVERY_METHOD", "CAISSE_RAYON_ID"]
     with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-        row = cur.fetchone()
-    return row["valeur"] if row else ""
+        cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (cles,))
+        lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+    cfg = {k: str(lus.get(k) or CAISSE_DEFAULTS.get(k, "") or "").strip() for k in cles}
+    if not cfg["CAISSE_ID"].isdigit():
+        cfg["CAISSE_ID"] = "49343"
+    if not cfg["CAISSE_USER_ID"].isdigit():
+        cfg["CAISSE_USER_ID"] = "42867"
+    if not cfg["CAISSE_DELIVERY_METHOD"].isdigit():
+        cfg["CAISSE_DELIVERY_METHOD"] = "4"
+    return cfg
+
+
+def _appareil(ticket: dict) -> str:
+    autre = str(ticket.get("modele_autre") or "").strip()
+    if autre:
+        return autre
+    return " ".join(str(p).strip() for p in (ticket.get("marque"), ticket.get("modele")) if p and str(p).strip())
+
+
+def vente_ticket(ticket: dict) -> tuple:
+    """(montant TTC, libellé) de la vente : « lignes - appareil [type écran] ».
+
+    Le montant est le TOTAL du ticket, acompte compris (comme avant) : si l'acompte
+    a déjà été saisi au POS au dépôt, il y est compté deux fois. À trancher avec la
+    gérance avant de passer au reste dû.
+    """
+    m = calculer_montants(ticket)
+    lignes = [r for r in m["lignes"] if r["label"]]
+    libelle = " + ".join(r["label"] for r in lignes) or str(ticket.get("panne") or "Réparation").strip()
+    appareil = _appareil(ticket)
+    if appareil:
+        libelle = f"{libelle} - {appareil}"
+    if ticket.get("type_ecran"):
+        libelle += f" [{ticket['type_ecran']}]"
+    # « _ » sépare les champs de l'article côté caisse
+    libelle = " ".join(libelle.replace("_", " ").split())
+    if len(libelle) > _LIBELLE_MAX:
+        libelle = libelle[: _LIBELLE_MAX - 3].rstrip() + "..."
+    return m["total"], libelle
+
+
+def poster_vente(cfg: dict, montant: float, libelle: str, ticket_code: str = "",
+                 client: dict = None, payment: str = "-1") -> tuple:
+    """POST de la vente (jusqu'à 15 s) → (ok, message, order_id)."""
+    rayon_id = cfg.get("CAISSE_RAYON_ID", "")
+    titre = (libelle or "Réparation").replace("_", " ")
+    if rayon_id.isdigit():
+        item = f"-{rayon_id}_{montant:.2f}_{titre}"   # TVA du rayon configuré dans le POS
+    else:
+        item = f"Free_{montant:.2f}_{titre}"
+    shopid = cfg["CAISSE_SHOPID"]
+    payload = [
+        ("shopID", shopid),
+        ("idboutique", shopid),
+        ("key", cfg["CAISSE_APIKEY"]),
+        ("idUser", cfg["CAISSE_USER_ID"]),
+        ("idcaisse", cfg["CAISSE_ID"]),
+        ("payment", str(payment)),
+        ("deliveryMethod", cfg["CAISSE_DELIVERY_METHOD"]),
+        ("publicComment", f"Ticket: {ticket_code}"),
+        ("itemsList[]", item),
+    ]
+    client = client or {}
+    if client.get("nom") or client.get("prenom"):
+        payload += [
+            ("client[nom]", client.get("nom") or ""),
+            ("client[prenom]", client.get("prenom") or ""),
+            ("client[telephone]", client.get("telephone") or ""),
+        ]
+        if client.get("email"):
+            payload.append(("client[email]", client["email"]))
+
+    try:
+        with httpx.Client(timeout=15) as http:
+            res = http.post(API_URL, data=payload)
+    except Exception as e:
+        return False, f"Caisse injoignable : {e}", None
+    try:
+        data = res.json()
+    except Exception:
+        txt = (res.text or "").strip()
+        if res.status_code == 200 and (txt.isdigit() or "OK" in txt.upper()):
+            return True, f"Vente créée ! Commande #{txt}", txt
+        return False, f"Réponse caisse : {txt[:200] or res.status_code}", None
+    if isinstance(data, dict) and str(data.get("result", "")).upper() == "OK":
+        order_id = str(data.get("orderID", "") or "")
+        return True, f"Vente créée ! Commande #{order_id}", order_id
+    detail = data.get("errorMessage", data) if isinstance(data, dict) else data
+    return False, f"Erreur caisse : {str(detail)[:200]}", None
 
 
 def envoyer_vers_caisse(ticket: dict, payment_override: int = None):
-    """Envoie un ticket de réparation vers caisse.enregistreuse.fr"""
-    try:
-        apikey = _get_param("CAISSE_APIKEY")
-        shopid = _get_param("CAISSE_SHOPID")
-        if not apikey or not shopid:
-            return False, "Configuration API manquante (APIKEY ou SHOPID)"
-
-        caisse_id = (_get_param("CAISSE_ID") or "49343").strip()
-        user_id = (_get_param("CAISSE_USER_ID") or "42867").strip()
-
-        if not caisse_id.isdigit():
-            return False, f"CAISSE_ID invalide: '{caisse_id}'"
-        if not user_id.isdigit():
-            return False, f"CAISSE_USER_ID invalide: '{user_id}'"
-
-        delivery_method = (_get_param("CAISSE_DELIVERY_METHOD") or "4").strip()
-        if not delivery_method.isdigit():
-            delivery_method = "4"
-
-        payment_mode = str(payment_override) if payment_override is not None else "-1"
-
-        # Calculate total with reduction (tarif_final already includes reduction)
-        tarif_final = float(ticket.get("tarif_final") or 0)
-        if tarif_final > 0:
-            total = tarif_final
-        else:
-            devis = float(ticket.get("devis_estime") or 0)
-            prix_supp = float(ticket.get("prix_supp") or 0)
-            subtotal = devis + prix_supp
-            red_pct = float(ticket.get("reduction_pourcentage") or 0)
-            red_mnt = float(ticket.get("reduction_montant") or 0)
-            reduction = subtotal * (red_pct / 100) if red_pct > 0 else red_mnt
-            total = max(0, subtotal - reduction)
-        if total <= 0:
-            return False, "Montant total à 0 : rien à envoyer"
-
-        modele_txt = f"{ticket.get('marque', '')} {ticket.get('modele', '')}".strip()
-        panne_txt = (ticket.get("panne") or "").strip()
-        if ticket.get("panne_detail"):
-            panne_txt += f" ({ticket['panne_detail']})"
-
-        description = f"Reparation {modele_txt} - {panne_txt}".strip()
-        if ticket.get("type_ecran"):
-            description += f" [{ticket['type_ecran']}]"
-        description = description.replace("_", " ")
-
-        # Rayon ID pour rattacher la TVA (configuré dans le POS)
-        rayon_id = (_get_param("CAISSE_RAYON_ID") or "").strip()
-
-        api_url = "https://caisse.enregistreuse.fr/workers/webapp.php"
-
-        # Format: -[idRayon]_[prix]_[titre] pour avoir la TVA du rayon
-        #         Free_[prix]_[titre] si pas de rayon configuré
-        def _item(prix, titre):
-            if rayon_id and rayon_id.isdigit():
-                return f"-{rayon_id}_{prix:.2f}_{titre}"
-            return f"Free_{prix:.2f}_{titre}"
-
-        # Tout dans le POST body (format tuples pour PHP)
-        payload = [
-            ("shopID", shopid),
-            ("idboutique", shopid),
-            ("key", apikey),
-            ("idUser", user_id),
-            ("idcaisse", caisse_id),
-            ("payment", payment_mode),
-            ("deliveryMethod", delivery_method),
-            ("publicComment", f"Ticket: {ticket.get('ticket_code', '')}"),
-        ]
-
-        if ticket.get("client_nom") or ticket.get("client_prenom"):
-            payload += [
-                ("client[nom]", ticket.get("client_nom", "")),
-                ("client[prenom]", ticket.get("client_prenom", "")),
-                ("client[telephone]", ticket.get("client_tel", "")),
-            ]
-            if ticket.get("client_email"):
-                payload.append(("client[email]", ticket.get("client_email")))
-
-        payload.append(("itemsList[]", _item(total, description)))
-
-        with httpx.Client(timeout=15) as client:
-            res = client.post(api_url, data=payload)
-
-        if res.status_code != 200:
-            return False, f"HTTP {res.status_code}: {res.text[:300]}"
-
-        try:
-            data = res.json()
-            result = str(data.get("result", "")).upper()
-            if result == "OK":
-                order_id = data.get("orderID", "")
-                return True, f"✅ Vente créée ! Commande #{order_id}"
-            return False, f"Erreur API: {data.get('errorMessage', data)}"
-        except Exception:
-            txt = (res.text or "").strip()
-            if txt.isdigit() or "OK" in txt.upper():
-                return True, f"✅ Vente créée ! ID: {txt}"
-            return False, f"Réponse: {txt[:300]}"
-
-    except Exception as e:
-        return False, f"Erreur: {e}"
+    """Envoie un ticket de réparation vers caisse.enregistreuse.fr → (ok, message)."""
+    cfg = config_caisse()
+    if not cfg["CAISSE_APIKEY"] or not cfg["CAISSE_SHOPID"]:
+        return False, "Configuration API manquante (APIKEY ou SHOPID)"
+    montant, libelle = vente_ticket(ticket)
+    if montant <= 0:
+        return False, "Montant total à 0 : rien à envoyer"
+    client = {
+        "nom": ticket.get("client_nom"), "prenom": ticket.get("client_prenom"),
+        "telephone": ticket.get("client_tel"), "email": ticket.get("client_email"),
+    }
+    payment = str(payment_override) if payment_override is not None else "-1"
+    ok, message, _ = poster_vente(cfg, montant, libelle, ticket.get("ticket_code", ""), client, payment)
+    return ok, message

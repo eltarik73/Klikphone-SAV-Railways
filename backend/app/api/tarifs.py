@@ -682,10 +682,22 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
     """Scrape Mobilax category pages to check stock for all tarifs."""
     import httpx
     import asyncio
+    from starlette.concurrency import run_in_threadpool
 
-    with get_cursor() as cur:
-        cur.execute("SELECT id, marque, modele, type_piece, qualite, en_stock FROM tarifs")
-        all_tarifs = [dict(r) for r in cur.fetchall()]
+    # SQL et parsing HTML synchrones : hors de la boucle d'événements
+    def _lire_tarifs():
+        with get_cursor() as cur:
+            cur.execute("SELECT id, marque, modele, type_piece, qualite, en_stock FROM tarifs")
+            return [dict(r) for r in cur.fetchall()]
+
+    def _maj_stock(tarif_id, stock):
+        with get_cursor() as cur:
+            cur.execute(
+                "UPDATE tarifs SET en_stock = %s, updated_at = NOW() WHERE id = %s",
+                (stock, tarif_id),
+            )
+
+    all_tarifs = await run_in_threadpool(_lire_tarifs)
 
     # Group by model
     models = {}
@@ -728,7 +740,7 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
             if not html:
                 continue
 
-            products = _extract_products(html)
+            products = await run_in_threadpool(_extract_products, html)
             if not products:
                 continue
 
@@ -740,11 +752,7 @@ async def check_stock_mobilax(user: dict = Depends(get_current_user)):
                     results["tarifs_checked"] += 1
                     old_stock = tarif["en_stock"] if tarif["en_stock"] is not None else True
                     if stock != old_stock:
-                        with get_cursor() as cur:
-                            cur.execute(
-                                "UPDATE tarifs SET en_stock = %s, updated_at = NOW() WHERE id = %s",
-                                (stock, tarif["id"]),
-                            )
+                        await run_in_threadpool(_maj_stock, tarif["id"], stock)
                         results["tarifs_updated"] += 1
                         if stock:
                             results["now_in_stock"] += 1

@@ -23,8 +23,284 @@ from fastapi.staticfiles import StaticFiles
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking, notifications_center
 from app.services.catalog_seed import seed_catalog
+from app.api import search as search_api
+from app.api import public_documents
 
 logger = logging.getLogger("klikphone.startup")
+
+
+def _migrations_recherche():
+    """Recherche staff (app/services/search.py) : pg_trgm, fonctions IMMUTABLE kp_*, index.
+
+    Chaque instruction est isolée : un échec (droits, extension absente) est
+    journalisé sans bloquer le démarrage, et la recherche marche sans pg_trgm.
+    Les extensions peuvent vivre dans « public » ou « extensions » (Supabase) :
+    le schéma est lu dans pg_extension, jamais supposé.
+    """
+    from psycopg2 import sql as psql
+    from app.database import get_cursor
+    from app.services import search as S
+
+    def run(label, stmt):
+        try:
+            with get_cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '3s'")
+                cur.execute(stmt)
+            return True
+        except Exception as e:
+            print(f"Warning recherche ({label}): {e}")
+            return False
+
+    def fetch(stmt, params=None):
+        try:
+            with get_cursor() as cur:
+                cur.execute(stmt, params)
+                return cur.fetchone()
+        except Exception as e:
+            print(f"Warning recherche (lecture catalogue): {e}")
+            return None
+
+    def ext_schema(name):
+        return fetch(
+            "SELECT n.nspname AS ns, quote_ident(n.nspname) AS qns FROM pg_extension e"
+            " JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = %s",
+            (name,),
+        )
+
+    if not ext_schema("pg_trgm"):
+        in_ext = fetch("SELECT 1 AS ok FROM pg_namespace WHERE nspname = 'extensions'")
+        run("pg_trgm", "CREATE EXTENSION IF NOT EXISTS pg_trgm" + (" WITH SCHEMA extensions" if in_ext else ""))
+    ua, trgm = ext_schema("unaccent"), ext_schema("pg_trgm")
+
+    if ua:
+        # Forme à 2 arguments (dictionnaire explicite) : seule enveloppe IMMUTABLE fiable.
+        unaccent_body = psql.SQL("SELECT {}({}::regdictionary, $1)").format(
+            psql.Identifier(ua["ns"], "unaccent"), psql.Literal(ua["qns"] + ".unaccent"),
+        )
+    else:
+        src, dst = "ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿ", "AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyy"
+        unaccent_body = psql.SQL(
+            "SELECT translate(replace(replace(replace(replace($1, 'œ', 'oe'), 'Œ', 'OE'), 'æ', 'ae'), 'ß', 'ss'), {}, {})"
+        ).format(psql.Literal(src), psql.Literal(dst))
+    # Ne jamais changer un corps sans REINDEX : les index sur ces expressions
+    # deviendraient silencieusement faux (géré ci-dessous via `changed`).
+    funcs = [
+        ("kp_unaccent", unaccent_body, "IMMUTABLE PARALLEL SAFE STRICT"),
+        ("kp_doc", psql.SQL(
+            "SELECT ' ' || regexp_replace(lower(public.kp_unaccent(coalesce($1, ''))), '[^a-z0-9]+', ' ', 'g') || ' '"
+        ), "IMMUTABLE PARALLEL SAFE"),
+        ("kp_alnum", psql.SQL("SELECT regexp_replace(lower(coalesce($1, '')), '[^a-z0-9]+', '', 'g')"),
+         "IMMUTABLE PARALLEL SAFE"),
+        ("kp_phone_digits", psql.SQL("SELECT regexp_replace(coalesce($1, ''), '[^0-9]+', '', 'g')"),
+         "IMMUTABLE PARALLEL SAFE"),
+        ("kp_phone_key", psql.SQL("SELECT right(public.kp_phone_digits($1), 9)"), "IMMUTABLE PARALLEL SAFE"),
+    ]
+    changed = False
+    for name, body, flags in funcs:
+        try:
+            with get_cursor() as cur:
+                src_sql = body.as_string(cur)
+                cur.execute(
+                    "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
+                    " WHERE n.nspname = 'public' AND p.proname = %s",
+                    (name,),
+                )
+                row = cur.fetchone()
+                if row and row["prosrc"].strip() == src_sql.strip():
+                    continue
+                cur.execute("SET LOCAL lock_timeout = '3s'")
+                cur.execute(psql.SQL(
+                    "CREATE OR REPLACE FUNCTION public.{}(text) RETURNS text LANGUAGE sql " + flags + " AS $kp$ {} $kp$"
+                ).format(psql.Identifier(name), psql.SQL(src_sql)))
+                changed = changed or row is not None
+        except Exception as e:
+            print(f"Warning recherche (fonction {name}): {e}")
+    if trgm:
+        # STABLE (comme l'opérateur, qui lit pg_trgm.word_similarity_threshold) et non
+        # STRICT : PostgreSQL l'inline, et « mot <% document » profite des index GIN.
+        run("kp_word_match", psql.SQL(
+            "CREATE OR REPLACE FUNCTION public.kp_word_match(text, text) RETURNS boolean LANGUAGE sql"
+            " STABLE PARALLEL SAFE AS $kp$ SELECT $1 OPERATOR({}.<%) $2 $kp$"
+        ).format(psql.Identifier(trgm["ns"])))
+
+    dev = S.doc_sql("", S.T_DEVICE_COLS)
+    indexes = [
+        ("idx_clients_phone_key", "clients", "btree", "public.kp_phone_key(telephone)", ""),
+        ("idx_tickets_imei_alnum", "tickets", "btree", "public.kp_alnum(imei)", "imei <> ''"),
+        ("idx_tickets_pret_imei_alnum", "tickets", "btree", "public.kp_alnum(telephone_pret_imei)",
+         "telephone_pret_imei <> ''"),
+    ]
+    if trgm:
+        indexes += [
+            ("idx_tickets_device_trgm_v1", "tickets", "gin", dev, ""),
+            ("idx_tickets_device_compact_trgm_v1", "tickets", "gin", S.compact_sql(dev), ""),
+            ("idx_tickets_work_trgm_v1", "tickets", "gin", S.doc_sql("", S.T_WORK_COLS), ""),
+            ("idx_tickets_panne_trgm_v1", "tickets", "gin", S.doc_sql("", S.T_PANNE_COLS), ""),
+            # Fragments d'IMEI : sans eux, le OR d'un mot numérique force un seq scan
+            ("idx_tickets_imei_trgm", "tickets", "gin", "public.kp_alnum(imei)", ""),
+            ("idx_tickets_pret_imei_trgm", "tickets", "gin", "public.kp_alnum(telephone_pret_imei)", ""),
+            ("idx_clients_doc_trgm_v1", "clients", "gin", S.doc_sql("", S.C_COLS), ""),
+            ("idx_clients_phone_digits_trgm", "clients", "gin", "public.kp_phone_digits(telephone)", ""),
+            ("idx_notes_tickets_doc_trgm_v1", "notes_tickets", "gin", S.doc_sql("", S.NOTE_COLS),
+             "type_note IN ('note', 'message_client', 'avis_client')"),
+            ("idx_devis_doc_trgm_v1", "devis", "gin", S.doc_sql("", S.DEVIS_COLS), ""),
+            ("idx_commandes_doc_trgm_v1", "commandes_pieces", "gin", S.doc_sql("", S.CMD_COLS), ""),
+        ]
+    analyze = set()
+    for name, table, method, expr, where in indexes:
+        existing = fetch("SELECT to_regclass(%s) IS NOT NULL AS ok", ("public." + name,))
+        if existing and existing["ok"]:
+            if changed:
+                run(f"reindex {name}", psql.SQL("REINDEX INDEX {}").format(psql.Identifier(name)))
+            continue
+        if method == "gin":
+            stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING gin (({}) {})").format(
+                psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
+                psql.Identifier(trgm["ns"], "gin_trgm_ops"),
+            )
+        else:
+            stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (({}))").format(
+                psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
+            )
+        if where:
+            stmt = stmt + psql.SQL(" WHERE " + where)
+        if run(f"index {name}", stmt):
+            analyze.add(table)
+    # Statistiques des nouvelles expressions indexées, sinon le planner les ignore
+    for table in sorted(analyze):
+        run(f"analyze {table}", psql.SQL("ANALYZE {}").format(psql.Identifier(table)))
+
+
+MIGRATION_FORFAITS_LIGNES = "MIGRATION_FICHE_FORFAITS_LIGNES"
+
+
+def _migrations_fiche():
+    """Fiche ticket : colonnes de restitution, pannes accentuées, lignes JSON en forfaits.
+
+    Chaque bloc tient dans un get_cursor (idempotent, échec journalisé sans
+    bloquer le démarrage). date_maj n'est jamais touchée.
+    """
+    import json
+    from datetime import datetime
+    from psycopg2.extras import execute_values
+    from app.database import get_cursor
+    from app.services import prestations as P
+
+    def run(label, fn):
+        try:
+            with get_cursor() as cur:
+                cur.execute("SET LOCAL lock_timeout = '3s'")
+                fn(cur)
+        except Exception as e:
+            print(f"Warning fiche ({label}): {e}")
+
+    def colonnes(cur):
+        # TEXT comme date_cloture (format '%Y-%m-%d %H:%M:%S')
+        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS date_rendu TEXT")
+        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rendu_par TEXT")
+        # Issue distincte du statut : 'refus_devis' (devis refusé, rendu sans réparation)
+        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS issue TEXT")
+
+    renommees = list(P.PANNES_RENOMMEES)   # [(nouvelle, ancienne)]
+
+    def pannes(cur):
+        execute_values(
+            cur,
+            "UPDATE tickets t SET panne = v.nouv FROM (VALUES %s) AS v(nouv, anc) WHERE t.panne = v.anc",
+            renommees,
+        )
+        # Le seed recrée « Écran cassé » à chaque démarrage : on fusionne les compteurs puis on supprime
+        execute_values(
+            cur,
+            """INSERT INTO autocompletion (categorie, terme, compteur, derniere_utilisation)
+               SELECT 'panne', v.nouv, COALESCE(SUM(a.compteur), 0), MAX(a.derniere_utilisation)
+               FROM (VALUES %s) AS v(nouv, anc)
+               JOIN autocompletion a ON a.categorie = 'panne' AND a.terme = v.anc
+               GROUP BY v.nouv
+               ON CONFLICT (categorie, terme) DO UPDATE
+               SET compteur = autocompletion.compteur + EXCLUDED.compteur,
+                   derniere_utilisation = GREATEST(autocompletion.derniere_utilisation,
+                                                   EXCLUDED.derniere_utilisation)""",
+            renommees,
+        )
+        execute_values(
+            cur,
+            "DELETE FROM autocompletion a USING (VALUES %s) AS v(nouv, anc)"
+            " WHERE a.categorie = 'panne' AND a.terme = v.anc",
+            renommees,
+        )
+
+    def lignes_forfaits(cur):
+        """Une seule fois : lignes JSON des tickets en cours égales à un symptôme → forfait.
+
+        Exclus : tickets terminés, rendus, clôturés, payés ou facturés (document
+        déjà remis), et les lignes rattachées à une commande de pièce (même libellé).
+        """
+        cur.execute("SELECT 1 FROM params WHERE cle = %s", (MIGRATION_FORFAITS_LIGNES,))
+        if cur.fetchone():
+            return
+        symptomes = {
+            P.normaliser(v)
+            for _cle, sympt, _presta, _court, alias in P.PRESTATIONS
+            for v in (sympt, *alias) if v
+        }
+        symptomes |= {P.normaliser(anc) for _nouv, anc in renommees}
+        symptomes.add("autre")
+        cur.execute("""
+            SELECT id, panne_detail, reparation_supp FROM tickets
+            WHERE ltrim(reparation_supp) LIKE '[%'
+              AND COALESCE(statut, '') NOT IN ('Réparation terminée', 'Rendu au client', 'Clôturé')
+              AND COALESCE(type_document, '') <> 'facture'
+              AND COALESCE(paye, 0) = 0
+            FOR UPDATE
+        """)
+        tickets = cur.fetchall()
+        commandes = {}
+        if tickets:
+            cur.execute(
+                "SELECT ticket_id, description FROM commandes_pieces WHERE ticket_id = ANY(%s)",
+                ([r["id"] for r in tickets],),
+            )
+            for c in cur.fetchall():
+                commandes.setdefault(c["ticket_id"], set()).add((c["description"] or "").strip())
+        maj = []
+        for r in tickets:
+            try:
+                lignes = json.loads(r["reparation_supp"])
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(lignes, list):
+                continue
+            change = False
+            for ligne in lignes:
+                if not isinstance(ligne, dict):
+                    continue
+                label = str(ligne.get("label") or "").strip()
+                if not label or label in commandes.get(r["id"], ()) or P.normaliser(label) not in symptomes:
+                    continue
+                forfait = P.libelle_prestation(label, r["panne_detail"])
+                if forfait != label:
+                    ligne["label"] = forfait
+                    change = True
+            if change:
+                # Même sérialisation que JSON.stringify côté fiche
+                maj.append((r["id"], json.dumps(lignes, ensure_ascii=False, separators=(",", ":"))))
+        if maj:
+            execute_values(
+                cur,
+                "UPDATE tickets t SET reparation_supp = v.rs FROM (VALUES %s) AS v(id, rs) WHERE t.id = v.id",
+                maj,
+            )
+        cur.execute(
+            "INSERT INTO params (cle, valeur) VALUES (%s, %s) ON CONFLICT (cle) DO NOTHING",
+            (MIGRATION_FORFAITS_LIGNES, f"{datetime.now():%Y-%m-%d %H:%M:%S} — {len(maj)} ticket(s)"),
+        )
+        if maj:
+            print(f"Forfaits : {len(maj)} ticket(s) en cours mis à niveau")
+
+    run("colonnes", colonnes)
+    run("pannes accentuées", pannes)
+    run("lignes en forfaits", lignes_forfaits)
 
 
 @asynccontextmanager
@@ -76,7 +352,7 @@ async def lifespan(app: FastAPI):
             societe TEXT,
             points_fidelite INTEGER DEFAULT 0,
             total_depense DECIMAL(10,2) DEFAULT 0,
-            carte_camby BOOLEAN DEFAULT FALSE,
+            carte_camby INTEGER DEFAULT 0,
             cree_par TEXT DEFAULT '',
             date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
@@ -350,7 +626,29 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
         "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_document TEXT DEFAULT 'devis'",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS carte_camby BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS carte_camby INTEGER DEFAULT 0",
+        # Base créée avec l'ancien schéma (BOOLEAN) : le modèle et la prod sont en INTEGER 0/1
+        """DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = current_schema() AND table_name = 'clients'
+                         AND column_name = 'carte_camby' AND data_type = 'boolean') THEN
+                ALTER TABLE clients ALTER COLUMN carte_camby DROP DEFAULT;
+                ALTER TABLE clients ALTER COLUMN carte_camby TYPE INTEGER
+                    USING (CASE WHEN carte_camby THEN 1 ELSE 0 END);
+                ALTER TABLE clients ALTER COLUMN carte_camby SET DEFAULT 0;
+            END IF;
+        END $$""",
+        # date_cloture est du TEXTE : cast tolérant pour les durées des stats admin
+        # (« 2026-02-30 » passe une regex mais ferait échouer toute la requête).
+        # Pas PARALLEL SAFE : le bloc EXCEPTION ouvre une sous-transaction.
+        """CREATE OR REPLACE FUNCTION public.kp_try_ts(text) RETURNS timestamp
+            LANGUAGE plpgsql STABLE STRICT AS $kp$
+        BEGIN
+            RETURN $1::timestamp;
+        EXCEPTION WHEN others THEN
+            RETURN NULL;
+        END
+        $kp$""",
         # Colonnes tickets écrites par le code mais absentes des migrations
         # historiques (toggle_paye, update_ticket, parts auto-sync). Sans elles,
         # une fresh DB crashe au premier paiement / PATCH ticket.
@@ -369,6 +667,8 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS devis_estime DECIMAL(10,2) DEFAULT 0",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tarif_final DECIMAL(10,2) DEFAULT 0",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS acompte DECIMAL(10,2) DEFAULT 0",
+        # Jeton aléatoire des liens de partage client (/api/public/documents/{jeton})
+        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS suivi_token TEXT",
         # Catalogue : ordre d'affichage, suppression logique, année de sortie
         "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 100",
         "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
@@ -425,12 +725,35 @@ async def lifespan(app: FastAPI):
         "CREATE INDEX IF NOT EXISTS idx_chat_private_pair ON chat_messages(sender, recipient, created_at DESC) WHERE is_private = TRUE",
         # Index notifications_center : unread-count polé /12s par NotificationCenter.
         "CREATE INDEX IF NOT EXISTS idx_notifc_target_created ON notifications_center(target_user, created_at DESC)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_suivi_token ON tickets(suivi_token)",
     ]:
         try:
             with get_cursor() as cur:
                 cur.execute(sql)
         except Exception as e:
             print(f"Warning CREATE INDEX: {e}\n{traceback.format_exc()}")
+
+    # Rattrapage des jetons de partage manquants (tickets antérieurs, ou créés
+    # par la conversion de devis / le dépôt à distance). Idempotent.
+    try:
+        import secrets
+        from psycopg2.extras import execute_values
+        with get_cursor() as cur:
+            cur.execute("SELECT id FROM tickets WHERE suivi_token IS NULL")
+            manquants = [(r["id"], secrets.token_urlsafe(16)) for r in cur.fetchall()]
+            if manquants:
+                execute_values(
+                    cur,
+                    "UPDATE tickets t SET suivi_token = v.jeton FROM (VALUES %s) AS v(id, jeton) "
+                    "WHERE t.id = v.id AND t.suivi_token IS NULL",
+                    manquants, page_size=1000,
+                )
+                print(f"suivi_token : {len(manquants)} ticket(s) rattrapé(s)")
+    except Exception as e:
+        print(f"Warning suivi_token: {e}\n{traceback.format_exc()}")
+
+    # Recherche staff : après les ALTER, pour que toutes les colonnes indexées existent
+    _migrations_recherche()
 
     # Purge de rétention : chat_messages et notifications_center grossissent sans
     # limite (miroir notif → chat). On borne à 90 jours pour que les requêtes
@@ -484,6 +807,9 @@ async def lifespan(app: FastAPI):
             """)
     except Exception as e:
         print(f"Warning autocompletion seed: {e}\n{traceback.format_exc()}")
+
+    # Fiche ticket : après le seed, pour fusionner « Écran casse » dans « Écran cassé »
+    _migrations_fiche()
 
     # Default admin password — lu depuis env var DEFAULT_ADMIN_PASSWORD.
     # Si absent, on ne seed PAS de mot de passe en clair (security).
@@ -600,6 +926,7 @@ app.include_router(parts.router)
 app.include_router(catalog.router)
 app.include_router(notifications.router)
 app.include_router(print_tickets.router)
+app.include_router(public_documents.router)
 app.include_router(caisse_api.router)
 app.include_router(attestation.router)
 app.include_router(admin.router)
@@ -619,6 +946,7 @@ app.include_router(iphones_stock.router)
 app.include_router(smartphones_tarifs.router)
 app.include_router(tracking.router)
 app.include_router(notifications_center.router)
+app.include_router(search_api.router)
 
 
 # --- HEALTH CHECK ---

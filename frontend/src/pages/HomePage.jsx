@@ -1,17 +1,18 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone, Tag } from 'lucide-react';
 
+// Page de connexion chargée à la demande : on l'anticipe dès que la souris ou le doigt
+// s'approche d'un bouton « Accès staff » (le clic n'attend alors plus le réseau).
+const preloadLogin = () => { import('./LoginPage').catch(() => {}); };
+const staffProps = { onMouseEnter: preloadLogin, onFocus: preloadLogin, onTouchStart: preloadLogin };
+
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
 
   // Auto-redirect si déjà connecté
-  if (!loading && user) {
-    const dest = user.target === 'tech' ? '/tech' : '/accueil';
-    navigate(dest, { replace: true });
-    return null;
-  }
+  if (user) return <Navigate to={user.target === 'tech' ? '/tech' : '/accueil'} replace />;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-brand-900 flex flex-col">
@@ -102,14 +103,14 @@ export default function HomePage() {
 
         {/* Staff */}
         <div className="mt-12 w-full max-w-sm">
-          <p className="text-center text-[11px] text-slate-500 uppercase tracking-widest font-medium mb-3">Accès staff</p>
+          <p className="text-center text-[11px] text-slate-400 uppercase tracking-widest font-medium mb-3">Accès staff</p>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => navigate('/login/accueil')}
-              className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
+            <button onClick={() => navigate('/login/accueil')} {...staffProps}
+              className="min-h-[44px] flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
               <Monitor className="w-4 h-4 text-sky-400" /> Accueil
             </button>
-            <button onClick={() => navigate('/login/tech')}
-              className="flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
+            <button onClick={() => navigate('/login/tech')} {...staffProps}
+              className="min-h-[44px] flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
               <Wrench className="w-4 h-4 text-violet-400" /> Technicien
             </button>
           </div>
@@ -117,7 +118,7 @@ export default function HomePage() {
       </div>
 
       {/* Footer */}
-      <footer className="py-4 text-center text-xs text-slate-600 flex flex-wrap items-center justify-center gap-2 px-4">
+      <footer className="py-4 text-center text-xs text-slate-400 flex flex-wrap items-center justify-center gap-2 px-4">
         <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</span>
         <span className="hidden sm:block">·</span>
         <span className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</span>

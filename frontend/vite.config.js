@@ -33,7 +33,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom', 'scheduler'],
+          'vendor-react': ['react', 'react-dom', 'react/jsx-runtime', 'react-router-dom', 'scheduler'],
           'vendor-icons': ['lucide-react'],
           'vendor-charts': ['recharts'],
           'vendor-dnd': ['@hello-pangea/dnd'],

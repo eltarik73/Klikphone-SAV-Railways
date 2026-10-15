@@ -5,6 +5,7 @@ import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
 import { normKey, searchModeles, parseModelesEnMasse, sansPrefixeMarque, MARQUE_AUTRE } from '../lib/catalog';
+import { useAdminElevation } from '../hooks/useAdminElevation';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
@@ -16,6 +17,26 @@ import {
 const CATALOG_CATEGORIES = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
 // Limite du backend ; pas de découpage : l'ordre (rang dans la liste) repartirait de zéro à chaque envoi
 const BULK_MAX = 500;
+
+// Secrets : l'API ne les renvoie plus en clair (absents ou masqués « •••• »). Une valeur masquée
+// n'est jamais renvoyée au serveur : seule une nouvelle saisie remplace le secret enregistré.
+const isMasked = (v) => typeof v === 'string' && (v.includes('••') || /^\*{3,}/.test(v.trim()));
+
+function SecretInput({ id, value, onChange, placeholder, className = 'input', reveal = false }) {
+  const masked = isMasked(value);
+  return (
+    <input
+      id={id}
+      type={reveal ? 'text' : 'password'}
+      value={masked ? '' : (value || '')}
+      onChange={e => onChange(e.target.value)}
+      placeholder={masked ? '•••••••• enregistré (laisser vide pour conserver)' : placeholder}
+      autoComplete="new-password"
+      spellCheck={false}
+      className={className}
+    />
+  );
+}
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
 
@@ -66,12 +87,21 @@ export default function ConfigPage() {
 
   // Caisse
   const [caisseConfig, setCaisseConfig] = useState({});
+  const caisseInitRef = useRef({});
   const [caisseSaving, setCaisseSaving] = useState(false);
   const [caisseTesting, setCaisseTesting] = useState(false);
 
   // SMTP email test
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpTestEmail, setSmtpTestEmail] = useState('');
+
+  // Sauvegarde
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+
+  // Élévation admin : une action sensible refusée faute de jeton (valable 10 min) rouvre
+  // l'identification admin, puis est rejouée une fois. Plusieurs refus simultanés attendent ensemble.
+  const { sensible, adminPrompt } = useAdminElevation();
 
   // Track unsaved config changes
   const initialConfigRef = useRef({});
@@ -189,7 +219,9 @@ export default function ConfigPage() {
         .catch(() => {});
     }
     if (activeTab === 'caisse') {
-      api.getCaisseConfig().then(setCaisseConfig).catch(() => {});
+      sensible(() => api.getCaisseConfig())
+        .then(c => { caisseInitRef.current = { ...(c || {}) }; setCaisseConfig(c || {}); })
+        .catch(err => { if (err?.code !== 'admin_cancelled') toast.error(err?.message || 'Configuration caisse indisponible'); });
     }
     if (activeTab === 'messages') {
       api.getMessageTemplates().then(data => {
@@ -202,8 +234,12 @@ export default function ConfigPage() {
   const handleSaveConfig = async () => {
     setSaving(true);
     try {
-      const params = Object.entries(config).map(([cle, valeur]) => ({ cle, valeur: valeur || '' }));
-      await api.setParams(params);
+      // Seules les valeurs modifiées partent ; un secret masqué (non modifié) jamais
+      const init = initialConfigRef.current;
+      const params = Object.entries(config)
+        .filter(([cle, valeur]) => (valeur || '') !== (init[cle] || '') && !isMasked(valeur))
+        .map(([cle, valeur]) => ({ cle, valeur: valeur || '' }));
+      if (params.length > 0) await sensible(() => api.setParams(params));
       initialConfigRef.current = { ...config };
       // Rafraîchit l'entrée de cache 'config:main' avec les valeurs sauvegardées
       // (sinon le cache frais avec les ANCIENNES valeurs écrase l'écran au retour
@@ -211,8 +247,10 @@ export default function ConfigPage() {
       mutateConfig(prev => prev ? { ...prev, config: { ...config } } : prev);
       invalidateCache('config');
       toast.success('Configuration enregistrée');
+      return true;
     } catch (err) {
-      toast.error('Erreur sauvegarde');
+      toast.error(err?.message || 'Erreur sauvegarde');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -220,6 +258,31 @@ export default function ConfigPage() {
 
   const updateConfig = (key, value) => {
     setConfig(c => ({ ...c, [key]: value }));
+  };
+  // Champ secret vidé : on revient à la valeur masquée enregistrée (le secret est conservé)
+  const updateSecret = (key, value) => {
+    const init = initialConfigRef.current[key];
+    setConfig(c => ({ ...c, [key]: value === '' && isMasked(init) ? init : value }));
+  };
+  const updateCaisseSecret = (key, value) => {
+    const init = caisseInitRef.current[key];
+    setCaisseConfig(c => ({ ...c, [key]: value === '' && isMasked(init) ? init : value }));
+  };
+  const caissePayload = () => Object.fromEntries(Object.entries(caisseConfig).filter(([, v]) => !isMasked(v)));
+  const saveCaisse = () => sensible(() => api.saveCaisseConfig(caissePayload()));
+
+  // Interrupteur enregistré immédiatement (modules, autocomplétion)
+  const saveParamNow = async (cle, valeur, message) => {
+    setConfig(c => ({ ...c, [cle]: valeur }));
+    try {
+      await sensible(() => api.setParam(cle, valeur));
+      initialConfigRef.current = { ...initialConfigRef.current, [cle]: valeur };
+      invalidateCache('config');
+      toast.success(message);
+    } catch (err) {
+      setConfig(c => ({ ...c, [cle]: initialConfigRef.current[cle] }));
+      toast.error(err?.message || 'Erreur sauvegarde');
+    }
   };
 
   // Team
@@ -240,9 +303,9 @@ export default function ConfigPage() {
     }
     try {
       if (editingMember) {
-        await api.updateTeamMember(editingMember.id, teamForm, isManager ? code : undefined);
+        await sensible(() => api.updateTeamMember(editingMember.id, teamForm, isManager ? code : undefined));
       } else {
-        await api.createTeamMember(teamForm, isManager ? code : undefined);
+        await sensible(() => api.createTeamMember(teamForm, isManager ? code : undefined));
       }
       resetTeamForm();
       setShowAdminCodeModal(false);
@@ -273,11 +336,11 @@ export default function ConfigPage() {
   const handleDeleteMember = async (id) => {
     if (!confirm('Supprimer ce membre ?')) return;
     try {
-      await api.deleteTeamMember(id);
+      await sensible(() => api.deleteTeamMember(id));
       invalidateCache('config', 'team');
       toast.success('Membre supprimé');
     } catch (err) {
-      toast.error('Erreur suppression');
+      toast.error(err?.message || 'Erreur suppression');
     }
   };
 
@@ -285,7 +348,7 @@ export default function ConfigPage() {
   const handleChangePin = async () => {
     setPinChanging(true);
     try {
-      await api.changePin(pinForm.target, pinForm.old_pin, pinForm.new_pin);
+      await sensible(() => api.changePin(pinForm.target, pinForm.old_pin, pinForm.new_pin));
       setPinForm({ target: pinForm.target, old_pin: '', new_pin: '' });
       toast.success('PIN modifié');
     } catch (err) {
@@ -307,7 +370,7 @@ export default function ConfigPage() {
     }
     setAdminPwdChanging(true);
     try {
-      await api.changeAdminPassword(adminPwdForm.old_password, adminPwdForm.new_password);
+      await sensible(() => api.changeAdminPassword(adminPwdForm.old_password, adminPwdForm.new_password));
       setAdminPwdForm({ old_password: '', new_password: '', confirm: '' });
       toast.success('Mot de passe admin modifié');
     } catch (err) {
@@ -430,9 +493,12 @@ export default function ConfigPage() {
   const bulkApercu = parseModelesEnMasse(bulkText, newModele.marque);
 
   // Backup
+  // Export lourd : un seul appel (pas de relance automatique), bouton bloqué pendant l'export
   const handleDownloadBackup = async () => {
+    if (backupBusy) return;
+    setBackupBusy(true);
     try {
-      const data = await api.getBackup();
+      const data = await sensible(() => api.getBackup());
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -442,7 +508,9 @@ export default function ConfigPage() {
       URL.revokeObjectURL(url);
       toast.success('Backup téléchargé');
     } catch (err) {
-      toast.error('Erreur backup');
+      toast.error(err?.message ? `Erreur backup : ${err.message}` : 'Erreur backup');
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -466,7 +534,7 @@ export default function ConfigPage() {
 
   const handleImportBackup = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || importBusy) return;
     try {
       const text = await file.text();
       const data = JSON.parse(text);
@@ -475,7 +543,8 @@ export default function ConfigPage() {
         return;
       }
       if (!confirm(`Restaurer le backup du ${data.backup_date?.slice(0, 10) || '?'} ? Cela remplacera TOUTES les données actuelles.`)) return;
-      const result = await api.importBackup(data);
+      setImportBusy(true);
+      const result = await sensible(() => api.importBackup(data));
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
       toast.success(`Backup restauré : ${total} enregistrements importés`);
       // Une restauration remplace TOUTES les données : on vide tout le cache
@@ -485,6 +554,7 @@ export default function ConfigPage() {
     } catch (err) {
       toast.error(err.message || 'Erreur import backup');
     } finally {
+      setImportBusy(false);
       e.target.value = '';
     }
   };
@@ -513,6 +583,7 @@ export default function ConfigPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-4xl">
+      {adminPrompt}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Configuration</h1>
@@ -1050,9 +1121,9 @@ export default function ConfigPage() {
                 onClick={async () => {
                   setMsgSaving(true);
                   try {
-                    await api.saveMessageTemplates(msgTemplates);
+                    await sensible(() => api.saveMessageTemplates(msgTemplates));
                     toast.success('Templates sauvegardes');
-                  } catch { toast.error('Erreur sauvegarde'); }
+                  } catch (err) { toast.error(err?.message || 'Erreur sauvegarde'); }
                   finally { setMsgSaving(false); }
                 }}
                 disabled={msgSaving}
@@ -1078,17 +1149,17 @@ export default function ConfigPage() {
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Discord Webhook</h2>
             <div className="space-y-4">
               <div>
-                <label className="input-label">URL du webhook</label>
+                <label className="input-label" htmlFor="cfg-discord">URL du webhook</label>
                 <div className="flex gap-2">
-                  <input value={config.DISCORD_WEBHOOK || ''} onChange={e => updateConfig('DISCORD_WEBHOOK', e.target.value)}
+                  <SecretInput id="cfg-discord" reveal value={config.DISCORD_WEBHOOK} onChange={v => updateSecret('DISCORD_WEBHOOK', v)}
                     className="input font-mono text-xs flex-1" placeholder="https://discord.com/api/webhooks/..." />
                   <button
                     onClick={async () => {
                       setDiscordTesting(true);
                       try {
                         // Save first to make sure the URL is stored
-                        await handleSaveConfig();
-                        await api.testDiscord();
+                        if (!(await handleSaveConfig())) return;
+                        await sensible(() => api.testDiscord());
                         toast.success('Webhook Discord fonctionnel !');
                       } catch (err) {
                         toast.error(err.message || 'Erreur webhook');
@@ -1096,7 +1167,7 @@ export default function ConfigPage() {
                         setDiscordTesting(false);
                       }
                     }}
-                    disabled={discordTesting || !config.DISCORD_WEBHOOK}
+                    disabled={discordTesting}
                     className="btn-primary px-3 py-2 text-xs whitespace-nowrap"
                   >
                     {discordTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Tester'}
@@ -1144,8 +1215,8 @@ export default function ConfigPage() {
 
             <div className="space-y-3 mb-4">
               <div>
-                <label className="input-label">Clé API Resend</label>
-                <input value={config.RESEND_API_KEY || ''} onChange={e => updateConfig('RESEND_API_KEY', e.target.value)}
+                <label className="input-label" htmlFor="cfg-resend">Clé API Resend</label>
+                <SecretInput id="cfg-resend" value={config.RESEND_API_KEY} onChange={v => updateSecret('RESEND_API_KEY', v)}
                   className="input font-mono text-xs" placeholder="re_xxxxxxxx..." />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1173,8 +1244,8 @@ export default function ConfigPage() {
                   <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="input-label">Mot de passe SMTP</label>
-                  <input type="password" value={config.SMTP_PASSWORD || ''} onChange={e => updateConfig('SMTP_PASSWORD', e.target.value)} className="input" />
+                  <label className="input-label" htmlFor="cfg-smtp-pwd">Mot de passe SMTP</label>
+                  <SecretInput id="cfg-smtp-pwd" value={config.SMTP_PASSWORD} onChange={v => updateSecret('SMTP_PASSWORD', v)} className="input" />
                 </div>
               </div>
             </details>
@@ -1194,8 +1265,8 @@ export default function ConfigPage() {
                     if (!smtpTestEmail.trim()) { toast.error('Saisissez une adresse email de test'); return; }
                     setSmtpTesting(true);
                     try {
-                      await handleSaveConfig();
-                      const res = await api.testSmtpEmail(smtpTestEmail.trim());
+                      if (!(await handleSaveConfig())) return;
+                      const res = await sensible(() => api.testSmtpEmail(smtpTestEmail.trim()));
                       if (res.status === 'ok') toast.success(res.message || 'Email de test envoyé !');
                       else toast.error(res.message || 'Erreur envoi');
                     } catch (err) {
@@ -1218,8 +1289,8 @@ export default function ConfigPage() {
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Chat & Assistant IA</h2>
             <div className="space-y-3">
               <div>
-                <label className="input-label">Cle API Anthropic</label>
-                <input type="password" value={config.ANTHROPIC_API_KEY || ''} onChange={e => updateConfig('ANTHROPIC_API_KEY', e.target.value)}
+                <label className="input-label" htmlFor="cfg-anthropic">Cle API Anthropic</label>
+                <SecretInput id="cfg-anthropic" value={config.ANTHROPIC_API_KEY} onChange={v => updateSecret('ANTHROPIC_API_KEY', v)}
                   className="input font-mono text-xs" placeholder="sk-ant-..." />
                 <p className="text-[10px] text-slate-400 mt-1">Necessaire pour l'assistant IA. Obtenir sur console.anthropic.com</p>
               </div>
@@ -1337,12 +1408,12 @@ export default function ConfigPage() {
                 <input value={caisseConfig.CAISSE_LOGIN || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_LOGIN: e.target.value }))} className="input" />
               </div>
               <div>
-                <label className="input-label">Token API (APIKEY)</label>
-                <input value={caisseConfig.CAISSE_APIKEY || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_APIKEY: e.target.value }))} className="input font-mono text-xs" />
+                <label className="input-label" htmlFor="cfg-caisse-apikey">Token API (APIKEY)</label>
+                <SecretInput id="cfg-caisse-apikey" value={caisseConfig.CAISSE_APIKEY} onChange={v => updateCaisseSecret('CAISSE_APIKEY', v)} className="input font-mono text-xs" />
               </div>
               <div>
-                <label className="input-label">Mot de passe</label>
-                <input type="password" value={caisseConfig.CAISSE_PASSWORD || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_PASSWORD: e.target.value }))} className="input" />
+                <label className="input-label" htmlFor="cfg-caisse-pwd">Mot de passe</label>
+                <SecretInput id="cfg-caisse-pwd" value={caisseConfig.CAISSE_PASSWORD} onChange={v => updateCaisseSecret('CAISSE_PASSWORD', v)} className="input" />
               </div>
               <div>
                 <label className="input-label">ID Boutique (SHOPID)</label>
@@ -1372,8 +1443,8 @@ export default function ConfigPage() {
                     type="button"
                     onClick={async () => {
                       try {
-                        await api.saveCaisseConfig(caisseConfig);
-                        const rayons = await api.getCaisseRayons();
+                        await saveCaisse();
+                        const rayons = await sensible(() => api.getCaisseRayons());
                         const list = Array.isArray(rayons) ? rayons : [];
                         if (list.length === 0) { toast.error('Aucun rayon trouvé — vérifiez la config'); return; }
                         const options = list.map(r => `${r.id || r.ID} — ${r.name || r.nom || r.title || r.label || 'Sans nom'}`).join('\n');
@@ -1399,8 +1470,8 @@ export default function ConfigPage() {
                 onClick={async () => {
                   setCaisseTesting(true);
                   try {
-                    await api.saveCaisseConfig(caisseConfig);
-                    const res = await api.testCaisseConnexion();
+                    await saveCaisse();
+                    const res = await sensible(() => api.testCaisseConnexion());
                     if (res.status === 'ok') toast.success(res.message || 'Connexion réussie');
                     else toast.error(res.message || 'Erreur connexion');
                   } catch (err) {
@@ -1419,10 +1490,11 @@ export default function ConfigPage() {
                 onClick={async () => {
                   setCaisseSaving(true);
                   try {
-                    await api.saveCaisseConfig(caisseConfig);
+                    await saveCaisse();
+                    caisseInitRef.current = { ...caisseConfig };
                     toast.success('Configuration caisse enregistrée');
                   } catch (err) {
-                    toast.error('Erreur sauvegarde');
+                    toast.error(err?.message || 'Erreur sauvegarde');
                   } finally {
                     setCaisseSaving(false);
                   }
@@ -1532,14 +1604,11 @@ export default function ConfigPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Gestion complète des devis clients avec statuts, impression et conversion en ticket</p>
               </div>
               <button
-                onClick={async () => {
+                onClick={() => {
                   const newVal = config.MODULE_DEVIS_VISIBLE === 'true' ? 'false' : 'true';
-                  setConfig(c => ({ ...c, MODULE_DEVIS_VISIBLE: newVal }));
-                  try {
-                    await api.setParam('MODULE_DEVIS_VISIBLE', newVal);
-                    toast.success(newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
-                  } catch { toast.error('Erreur sauvegarde'); }
+                  saveParamNow('MODULE_DEVIS_VISIBLE', newVal, newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
                 }}
+                role="switch" aria-checked={config.MODULE_DEVIS_VISIBLE === 'true'} aria-label="Module Devis"
                 className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -1555,14 +1624,11 @@ export default function ConfigPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Consultation rapide des prix de réparation et catalogue de téléphones en vente</p>
               </div>
               <button
-                onClick={async () => {
+                onClick={() => {
                   const newVal = config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'false' : 'true';
-                  setConfig(c => ({ ...c, MODULE_DEVIS_FLASH_VISIBLE: newVal }));
-                  try {
-                    await api.setParam('MODULE_DEVIS_FLASH_VISIBLE', newVal);
-                    toast.success(newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
-                  } catch { toast.error('Erreur sauvegarde'); }
+                  saveParamNow('MODULE_DEVIS_FLASH_VISIBLE', newVal, newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
                 }}
+                role="switch" aria-checked={config.MODULE_DEVIS_FLASH_VISIBLE === 'true'} aria-label="Module Devis Flash"
                 className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -1606,14 +1672,11 @@ export default function ConfigPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Suggestions dans les formulaires de modification de tickets</p>
               </div>
               <button
-                onClick={async () => {
+                onClick={() => {
                   const newVal = config.AFFICHER_AUTOCOMPLETION === 'false' ? 'true' : 'false';
-                  setConfig(c => ({ ...c, AFFICHER_AUTOCOMPLETION: newVal }));
-                  try {
-                    await api.setParam('AFFICHER_AUTOCOMPLETION', newVal);
-                    toast.success(newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
-                  } catch { toast.error('Erreur sauvegarde'); }
+                  saveParamNow('AFFICHER_AUTOCOMPLETION', newVal, newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
                 }}
+                role="switch" aria-checked={config.AFFICHER_AUTOCOMPLETION !== 'false'} aria-label="Autocomplétion intelligente"
                 className={`relative w-11 h-6 rounded-full transition-colors ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'bg-brand-600' : 'bg-slate-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'translate-x-5' : 'translate-x-0'}`} />
@@ -1648,8 +1711,9 @@ export default function ConfigPage() {
               Téléchargez un backup JSON complet de la base de données (clients, tickets, config, équipe, catalogue).
             </p>
             <div className="flex gap-2">
-              <button onClick={handleDownloadBackup} className="btn-primary">
-                <Database className="w-4 h-4" /> Télécharger le backup (JSON)
+              <button onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary min-h-[44px]">
+                {backupBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Database className="w-4 h-4" aria-hidden="true" />}
+                {backupBusy ? 'Export en cours… (peut prendre une minute)' : 'Télécharger le backup (JSON)'}
               </button>
             </div>
           </div>
@@ -1659,9 +1723,10 @@ export default function ConfigPage() {
             <p className="text-sm text-slate-500 mb-3">
               Importez un fichier JSON de backup pour restaurer les données. Attention : cela remplacera toutes les données actuelles.
             </p>
-            <label className="btn-primary cursor-pointer inline-flex">
-              <Upload className="w-4 h-4" /> Importer un backup (.json)
-              <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+            <label className={`btn-primary min-h-[44px] inline-flex focus-within:ring-2 focus-within:ring-brand-400 focus-within:ring-offset-2 ${importBusy ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}>
+              {importBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Upload className="w-4 h-4" aria-hidden="true" />}
+              {importBusy ? 'Restauration en cours…' : 'Importer un backup (.json)'}
+              <input type="file" accept=".json" onChange={handleImportBackup} disabled={importBusy} className="sr-only" />
             </label>
           </div>
         </div>

@@ -12,13 +12,35 @@ Pas d'auth obligatoire — le scoping se fait par paramètre `user` (cohérent a
 
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services.poll_cache import PollCache, cached_json
 
 router = APIRouter(prefix="/api/notifications-center", tags=["notifications-center"])
+
+# Liste + compteur pollés toutes les 12 s par poste : lecture partagée 3 s
+_CACHE = PollCache(ttl=3)
+
+_COLONNES = (
+    "id, type, title, message, important, target_user, related_ticket_id,"
+    " related_devis_id, action_url, icon, read_by, created_at"
+)
+_VISIBLE = "(target_user IS NULL OR target_user = %(u)s)"
+_NON_LU = "(read_by IS NULL OR read_by = '' OR read_by NOT LIKE %(ul)s)"
+
+
+def invalider_cache_notifications():
+    _CACHE.invalidate()
+
+
+def _invalider_tout():
+    _CACHE.invalidate()
+    # push_notification écrit aussi dans chat_messages
+    from app.api.chat import invalider_cache_chat
+    invalider_cache_chat()
 
 
 # ─── Init / Migration ─────────────────────────────────────
@@ -145,7 +167,8 @@ def push_notification(
                     import traceback
                     traceback.print_exc()
 
-            return notif_id
+        _invalider_tout()
+        return notif_id
     except Exception as e:
         print(f"[notifications_center] push_notification FAILED: {e}")
         import traceback
@@ -172,43 +195,18 @@ class NotificationOut(BaseModel):
 
 # ─── Endpoints REST ───────────────────────────────────────
 
-@router.get("")
-def list_notifications(
-    unread_only: bool = False,
-    limit: int = Query(30, le=100),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    Liste les notifs visibles pour le membre connecté (dérivé du JWT).
-    - target_user IS NULL → visible par tous
-    - target_user = user → visible uniquement par lui
-    Le paramètre Query 'user' éventuellement envoyé par d'anciens bundles est ignoré.
-    """
-    user = current_user["sub"]
-    _ensure_table()
+def _lister(user: str, unread_only: bool, limit: int):
+    p = {"u": user, "ul": f"%,{user},%", "limit": limit}
     with get_cursor() as cur:
-        if unread_only:
-            cur.execute(
-                """
-                SELECT * FROM notifications_center
-                WHERE (target_user IS NULL OR target_user = %s)
-                  AND (read_by NOT LIKE %s OR read_by = '' OR read_by IS NULL)
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (user, f"%,{user},%", limit),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT * FROM notifications_center
-                WHERE target_user IS NULL OR target_user = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (user, limit),
-            )
+        cur.execute(
+            f"SELECT {_COLONNES} FROM notifications_center WHERE {_VISIBLE}"
+            + (f" AND {_NON_LU}" if unread_only else "")
+            + " ORDER BY created_at DESC LIMIT %(limit)s",
+            p,
+        )
         rows = cur.fetchall() or []
+        cur.execute(f"SELECT COUNT(*) AS count FROM notifications_center WHERE {_VISIBLE} AND {_NON_LU}", p)
+        count = (cur.fetchone() or {"count": 0})["count"]
 
     result = []
     for r in rows:
@@ -219,25 +217,47 @@ def list_notifications(
         if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
             d["created_at"] = d["created_at"].isoformat()
         result.append(d)
-    return result
+    return result, {"X-Unread-Count": str(count)}
 
 
-@router.get("/unread-count")
-def unread_count(current_user: dict = Depends(get_current_user)):
-    """Renvoie le nombre de notifs non lues pour le membre connecté (JWT)."""
+@router.get("")
+def list_notifications(
+    request: Request,
+    unread_only: bool = False,
+    limit: int = Query(30, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Liste les notifs visibles pour le membre connecté (dérivé du JWT).
+    - target_user IS NULL → visible par tous
+    - target_user = user → visible uniquement par lui
+    Le paramètre Query 'user' éventuellement envoyé par d'anciens bundles est ignoré.
+    En-tête X-Unread-Count : nombre de non lues (évite l'appel /unread-count).
+    """
     user = current_user["sub"]
     _ensure_table()
+    return cached_json(
+        request, _CACHE, ("liste", user, unread_only, limit),
+        lambda: _lister(user, unread_only, limit), with_headers=True,
+    )
+
+
+def _compter(user: str) -> dict:
     with get_cursor() as cur:
         cur.execute(
-            """
-            SELECT COUNT(*) AS count FROM notifications_center
-            WHERE (target_user IS NULL OR target_user = %s)
-              AND (read_by NOT LIKE %s OR read_by = '' OR read_by IS NULL)
-            """,
-            (user, f"%,{user},%"),
+            f"SELECT COUNT(*) AS count FROM notifications_center WHERE {_VISIBLE} AND {_NON_LU}",
+            {"u": user, "ul": f"%,{user},%"},
         )
         row = cur.fetchone() or {"count": 0}
     return {"count": row["count"]}
+
+
+@router.get("/unread-count")
+def unread_count(request: Request, current_user: dict = Depends(get_current_user)):
+    """Renvoie le nombre de notifs non lues pour le membre connecté (JWT)."""
+    user = current_user["sub"]
+    _ensure_table()
+    return cached_json(request, _CACHE, ("compte", user), lambda: _compter(user))
 
 
 @router.post("/{notif_id}/read")
@@ -262,6 +282,7 @@ def mark_read(notif_id: int, current_user: dict = Depends(get_current_user)):
             "UPDATE notifications_center SET read_by = %s WHERE id = %s",
             (new_read_by, notif_id),
         )
+    _CACHE.invalidate()
     return {"ok": True}
 
 
@@ -286,6 +307,7 @@ def mark_all_read(current_user: dict = Depends(get_current_user)):
             (user, user, user, f"%,{user},%"),
         )
         marked = cur.rowcount
+    _CACHE.invalidate()
     return {"ok": True, "marked": marked}
 
 
@@ -295,4 +317,5 @@ def delete_notification(notif_id: int, current_user: dict = Depends(get_current_
     _ensure_table()
     with get_cursor() as cur:
         cur.execute("DELETE FROM notifications_center WHERE id = %s", (notif_id,))
+    _CACHE.invalidate()
     return {"ok": True}

@@ -1,15 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
+import { usePolling } from '../hooks/usePolling';
 import AdminLoginModal from './AdminLoginModal';
 import NotificationCenter from './NotificationCenter';
+import { openSearchPalette, shortcutLabel } from './SearchPalette';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
-  Menu, X, Search, PanelLeftClose,
+  Menu, X, Search, PanelLeftClose, QrCode,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
   Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv,
 } from 'lucide-react';
+
+// Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
+// Demandes de commande et avis Google, moins urgents, toutes les 2 et 5 minutes. Les avis
+// (route réservée au rôle admin) ne sont interrogés que pour un membre de rôle admin.
+const BADGES_POLL_MS = 60_000;
+const DEMANDES_EVERY_MS = 2 * 60_000;
+const AVIS_EVERY_MS = 5 * 60_000;
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -33,38 +42,35 @@ export default function Navbar() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [pendingAdminPath, setPendingAdminPath] = useState(null);
 
+  // Pause onglet masqué, rafraîchissement immédiat au retour (usePolling)
+  const lastSlowRef = useRef({ demandes: 0, avis: 0 });
+  const isRoleAdmin = user?.role === 'admin';
+  usePolling(() => {
+    const now = Date.now();
+    const last = lastSlowRef.current;
+    const demandes = now - last.demandes >= DEMANDES_EVERY_MS;
+    const avis = isRoleAdmin && now - last.avis >= AVIS_EVERY_MS;
+    if (demandes) last.demandes = now;
+    if (avis) last.avis = now;
+    return api.background(() => Promise.all([
+      api.getKPI().then(kpi => setPendingCount(kpi?.total_actifs || 0)).catch(() => {}),
+      api.getInteractions().then(d => setInteractionCount(d?.total_actions ?? 0)).catch(() => {}),
+      demandes && api.countDemandesCommandesNouvelles().then(d => setDemandesCmdNew(d?.count ?? 0)).catch(() => {}),
+      avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch(() => {}),
+    ]));
+  }, BADGES_POLL_MS, { enabled: Boolean(user?.utilisateur) });
+
+  // Visibilité des modules : une fois par session (liste [{cle, valeur}] ou objet {cle: valeur})
   useEffect(() => {
-    if (!user) return;
-    const fetchKpi = () => {
-      api.getKPI()
-        .then(kpi => setPendingCount(kpi?.total_actifs || 0))
-        .catch(() => {});
-      api.getAvisGoogleStats()
-        .then(s => setAvisNonRepondus(s?.non_repondus || 0))
-        .catch(() => {});
-      api.getInteractions()
-        .then(d => setInteractionCount(d?.total_actions ?? 0))
-        .catch(() => {});
-      api.countDemandesCommandesNouvelles()
-        .then(d => setDemandesCmdNew(d?.count ?? 0))
-        .catch(() => {});
-    };
-    fetchKpi();
-    let interval;
-    const start = () => { clearInterval(interval); interval = setInterval(fetchKpi, 30000); };
-    const stop = () => clearInterval(interval);
-    const onVisibility = () => document.hidden ? stop() : start();
-    document.addEventListener('visibilitychange', onVisibility);
-    start();
-    // Load module visibility
+    if (!user?.utilisateur) return;
     api.getConfig().then(cfg => {
       const map = {};
-      (Array.isArray(cfg) ? cfg : []).forEach(p => { map[p.cle] = p.valeur; });
+      if (Array.isArray(cfg)) cfg.forEach(p => { map[p.cle] = p.valeur; });
+      else Object.assign(map, cfg || {});
       setModuleDevis(map.MODULE_DEVIS_VISIBLE === 'true');
       setModuleDevisFlash(map.MODULE_DEVIS_FLASH_VISIBLE === 'true');
     }).catch(() => {});
-    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [user]);
+  }, [user?.utilisateur]);
 
   const toggleCollapse = () => {
     const next = !collapsed;
@@ -76,6 +82,7 @@ export default function Navbar() {
   if (!user) return null;
 
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
+  const searchShortcut = shortcutLabel();
 
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
@@ -83,7 +90,7 @@ export default function Navbar() {
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: pendingCount },
     { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag, badge: demandesCmdNew },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
-    { path: '/suivi', label: 'Suivi client', icon: Search },
+    { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
   ];
 
   const adminItems = [
@@ -131,6 +138,8 @@ export default function Navbar() {
 
   const lockAdmin = () => {
     localStorage.removeItem('klikphone_admin');
+    // Verrouiller retire aussi l'élévation (10 min) : plus aucune action sensible sans code
+    api.clearAdminToken();
     setIsAdminMode(false);
     if (isOnAdminPage) {
       navigate(basePath, { replace: true });
@@ -252,18 +261,26 @@ export default function Navbar() {
     <>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 border-b border-white/10 flex items-center px-4 z-40">
-        <button onClick={() => setMobileOpen(true)} className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors">
-          <Menu className="w-5 h-5" />
+        <button type="button" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu"
+          className="w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-slate-300 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+          <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
-        <div className="flex items-center gap-2.5 ml-2">
+        <div className="flex items-center gap-2.5 ml-1 min-w-0">
           <img src="/logo_k.png" alt="Klikphone" className="w-7 h-7 rounded-lg object-contain" />
           <span className="text-white font-display font-bold tracking-tight">KLIKPHONE</span>
         </div>
-        {pendingCount > 0 && (
-          <span className="ml-auto bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-            {pendingCount}
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          <button type="button" onClick={() => openSearchPalette()} aria-label="Rechercher un ticket, un client…"
+            className="w-11 h-11 flex items-center justify-center rounded-lg text-slate-200 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+            <Search className="w-5 h-5" aria-hidden="true" />
+          </button>
+          {pendingCount > 0 && (
+            <span className="bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
+              aria-label={`${pendingCount} tickets actifs`}>
+              {pendingCount}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Backdrop */}
@@ -292,9 +309,9 @@ export default function Navbar() {
             <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none whitespace-nowrap">KLIKPHONE</h1>
             <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-1 whitespace-nowrap">Service après-vente</p>
           </div>
-          <button onClick={() => setMobileOpen(false)}
-            className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fermer le menu"
+            className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
 
@@ -307,8 +324,31 @@ export default function Navbar() {
             scrollbarColor: 'rgba(255,255,255,0.08) transparent',
           }}
         >
+          {/* Recherche globale (palette Ctrl/Cmd+K) */}
+          <div className={`mb-3 ${collapsed ? 'flex justify-center' : ''}`}>
+            <Tooltip label={`Rechercher (${searchShortcut})`}>
+              <button type="button"
+                onClick={() => { setMobileOpen(false); openSearchPalette(); }}
+                aria-label={`Rechercher un ticket, un client, un devis ou une commande (${searchShortcut})`}
+                aria-keyshortcuts="Control+K Meta+K /"
+                className={`flex items-center rounded-lg bg-white/[0.07] ring-1 ring-white/10 text-slate-200
+                  hover:text-white hover:bg-white/[0.12] hover:ring-brand-400/40 transition-colors duration-150
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
+                  ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-[44px] gap-2.5 px-3'}`}
+              >
+                <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+                {!collapsed && <span className="flex-1 text-left text-[13px] font-medium">Rechercher…</span>}
+                {!collapsed && (
+                  <kbd className="font-sans text-[10px] font-semibold text-slate-200 bg-white/10 rounded px-1.5 py-0.5" aria-hidden="true">
+                    {searchShortcut}
+                  </kbd>
+                )}
+              </button>
+            </Tooltip>
+          </div>
+
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-[0.14em]">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-[0.14em]">
               Menu principal
             </p>
           )}

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { Monitor, Wrench, ArrowLeft, Loader2, Lock, MapPin, Phone, RefreshCw } from 'lucide-react';
@@ -102,13 +101,9 @@ export default function LoginPage() {
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[640px] h-[640px] rounded-full bg-gradient-to-br from-brand-400/20 via-fuchsia-300/10 to-amber-200/10 blur-3xl" />
         <div className="absolute bottom-[-15%] right-[10%] w-[420px] h-[420px] rounded-full bg-gradient-to-br from-sky-300/15 to-violet-300/15 blur-3xl" />
       </div>
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-md relative z-10">
+      <div className="w-full max-w-md relative z-10 animate-fade-up">
         <button onClick={() => isSwitchMode ? navigate(-1) : navigate('/')}
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 mb-8 transition-colors">
+          className="min-h-[44px] -ml-1 px-1 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 mb-6 transition-colors rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
           <ArrowLeft className="w-4 h-4" /> Retour
         </button>
 
@@ -128,7 +123,7 @@ export default function LoginPage() {
                 : <>Espace <span className="font-editorial text-brand-600">Technicien</span></>
             }
           </h1>
-          <p className="text-sm text-slate-400 text-center mb-8">
+          <p className="text-sm text-slate-500 text-center mb-8">
             {isSwitchMode ? 'Sélectionnez votre profil' : 'Entrez votre PIN pour continuer'}
           </p>
 
@@ -136,20 +131,20 @@ export default function LoginPage() {
             /* ─── Switch mode: user selector only ─── */
             <div className="space-y-5">
               <div>
-                <label className="input-label">Utilisateur</label>
+                <label className="input-label" htmlFor="login-user">Utilisateur</label>
                 {teamLoading ? (
-                  <div className="input flex items-center justify-center">
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  <div className="input flex items-center justify-center" role="status" aria-label="Chargement de l'équipe">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" aria-hidden="true" />
                   </div>
                 ) : (
-                  <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
                     {team.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-600 font-medium text-center animate-in">
+                <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700 font-medium text-center animate-in">
                   {error}
                 </div>
               )}
@@ -165,23 +160,24 @@ export default function LoginPage() {
             /* ─── Normal login mode ─── */
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="input-label">Utilisateur</label>
+                <label className="input-label" htmlFor="login-user">Utilisateur</label>
                 {teamLoading ? (
-                  <div className="input flex items-center justify-center">
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                  <div className="input flex items-center justify-center" role="status" aria-label="Chargement de l'équipe">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" aria-hidden="true" />
                   </div>
                 ) : (
-                  <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
                     {team.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
               </div>
 
               <div>
-                <label className="input-label">Code PIN</label>
-                <div className="flex gap-3 justify-center">
+                <span className="input-label" id="login-pin-label">Code PIN</span>
+                <div className="flex gap-3 justify-center" role="group" aria-labelledby="login-pin-label">
                   {digits.map((d, i) => (
                     <input key={i} ref={refs[i]} type="password" inputMode="numeric" maxLength={1}
+                      aria-label={`Chiffre ${i + 1} sur 4`} autoComplete="off"
                       value={d}
                       onChange={e => handleDigit(i, e.target.value)}
                       onKeyDown={e => handleKeyDown(i, e)}
@@ -193,7 +189,7 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-600 font-medium text-center animate-in">
+                <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700 font-medium text-center animate-in">
                   {error}
                 </div>
               )}
@@ -208,11 +204,11 @@ export default function LoginPage() {
           )}
         </div>
 
-        <div className="text-center text-xs text-slate-400 mt-6 space-y-1">
+        <div className="text-center text-xs text-slate-500 mt-6 space-y-1">
           <p className="font-medium">Klikphone SAV</p>
           <p className="flex items-center justify-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</p>
           <p className="flex items-center justify-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</p>
-          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#A1A1AA' }}>
+          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#71717A' }}>
             Propulsé par{' '}
             <span style={{ fontWeight: 800, fontSize: 11 }}>
               <span style={{ color: '#7C3AED' }}>Tk</span>
@@ -224,7 +220,7 @@ export default function LoginPage() {
             <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

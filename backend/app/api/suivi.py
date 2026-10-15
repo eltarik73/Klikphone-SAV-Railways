@@ -1,27 +1,49 @@
 """
-API Suivi client — endpoints publics (sans auth).
-Message client, validation devis, avis, interactions dashboard.
+API Suivi client — endpoints publics (sans auth), sauf les interactions du dashboard.
+Message client, validation devis, avis.
+
+La consultation reste possible avec le seul code (champs publics restreints, cf.
+GET /api/tickets/code/{code}). Agir sur le ticket (devis, message, avis) exige
+en plus le jeton du lien de suivi (`t`, QR et liens envoyés) ou, à défaut, les
+4 derniers chiffres du téléphone du client (`tel4`) : les codes KP-000123 sont
+séquentiels, donc devinables.
 """
 
+import re
+import secrets
 from datetime import datetime
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_cursor
+from app.api.auth import client_ip, get_current_user, noter_echec, noter_succes, verifier_essais
 from app.api.notifications_center import push_notification
+from app.api.public_documents import LimiteurDebit
+from app.services.poll_cache import PollCache, cached_json
 
 router = APIRouter(prefix="/api/suivi", tags=["suivi"])
 
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+_TEL4_RE = re.compile(r"^\d{4}$")
+_LIMITEUR = LimiteurDebit(limite=20, fenetre=60)
+# Interactions du dashboard (pollées toutes les 30 s par poste) : lecture partagée 5 s
+_CACHE_INTERACTIONS = PollCache(ttl=5, max_entries=4)
 
-class MessageBody(BaseModel):
+
+class AccesSuivi(BaseModel):
+    t: Optional[str] = None      # jeton du lien de suivi
+    tel4: Optional[str] = None   # 4 derniers chiffres du téléphone du client
+
+
+class MessageBody(AccesSuivi):
     message: str
 
 
-class DevisValidation(BaseModel):
+class DevisValidation(AccesSuivi):
     accepte: bool
 
 
-class AvisBody(BaseModel):
+class AvisBody(AccesSuivi):
     note: int
     commentaire: Optional[str] = ""
 
@@ -34,9 +56,58 @@ def _get_ticket_by_code(cur, code: str):
     return row
 
 
+def _refus(code: str, message: str):
+    # 403 et non 401 : le front renvoie vers l'accueil sur tout 401
+    raise HTTPException(403, {"code": code, "message": message})
+
+
+def _ticket_autorise(cur, request: Request, ticket_code: str, acces: AccesSuivi, t_query, tel4_query) -> dict:
+    """Ticket désigné par le code, si le visiteur prouve qu'il en est le client."""
+    _LIMITEUR.verifier(client_ip(request))
+    code = (ticket_code or "").strip().upper()
+    jeton = (acces.t or t_query or "").strip()
+    tel4 = re.sub(r"\D", "", acces.tel4 or tel4_query or "")
+    cible = f"suivi:{code}"
+
+    cur.execute("""
+        SELECT t.id, t.statut, t.ticket_code, t.suivi_token, c.telephone AS client_tel
+        FROM tickets t LEFT JOIN clients c ON c.id = t.client_id
+        WHERE t.ticket_code = %s
+    """, (code,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Ticket non trouvé")
+
+    if jeton and _TOKEN_RE.match(jeton) and row.get("suivi_token") and secrets.compare_digest(
+            jeton.encode(), str(row["suivi_token"]).encode()):
+        return row
+
+    if tel4:
+        verifier_essais(request, cible)
+        chiffres = re.sub(r"\D", "", row.get("client_tel") or "")
+        if _TEL4_RE.match(tel4) and len(chiffres) >= 4 and secrets.compare_digest(tel4, chiffres[-4:]):
+            noter_succes(request, cible)
+            return row
+        noter_echec(request, cible)
+        _refus("verification_echouee", "Les 4 derniers chiffres ne correspondent pas au téléphone de ce ticket.")
+
+    if jeton:
+        _refus("lien_invalide", "Ce lien de suivi n'est plus valide. Saisissez les 4 derniers chiffres de votre téléphone.")
+    _refus(
+        "verification_requise",
+        "Pour agir sur ce ticket, ouvrez le lien de suivi reçu ou saisissez les 4 derniers chiffres de votre téléphone.",
+    )
+
+
 # ─── MESSAGE CLIENT ──────────────────────────────────────
 @router.post("/{ticket_code}/message")
-def send_client_message(ticket_code: str, body: MessageBody):
+def send_client_message(
+    ticket_code: str,
+    body: MessageBody,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel4: Optional[str] = Query(None),
+):
     """Le client envoie un message depuis la page de suivi.
 
     En plus de la note 'message_client', on déclenche une notification
@@ -46,14 +117,17 @@ def send_client_message(ticket_code: str, body: MessageBody):
     msg = body.message.strip()
     if not msg:
         raise HTTPException(400, "Message vide")
+    if len(msg) > 2000:
+        raise HTTPException(400, "Message trop long (2000 caractères maximum)")
 
     ticket_id = None
     technicien = None
     client_label = "Client"
 
     with get_cursor() as cur:
-        t = _get_ticket_by_code(cur, ticket_code)
-        ticket_id = t["id"]
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
+        ticket_id = tk["id"]
+        ticket_code = tk["ticket_code"]
 
         # Récupère détails ticket + client pour la notif
         cur.execute(
@@ -77,6 +151,7 @@ def send_client_message(ticket_code: str, body: MessageBody):
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note)
             VALUES (%s, 'Client', %s, 'message_client')
         """, (ticket_id, msg))
+    _CACHE_INTERACTIONS.invalidate()
 
     # Notif in-app après commit — préfixée "Client : " pour distinction visuelle
     try:
@@ -99,7 +174,13 @@ def send_client_message(ticket_code: str, body: MessageBody):
 
 # ─── VALIDATION DEVIS ────────────────────────────────────
 @router.post("/{ticket_code}/valider-devis")
-def valider_devis(ticket_code: str, body: DevisValidation):
+def valider_devis(
+    ticket_code: str,
+    body: DevisValidation,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel4: Optional[str] = Query(None),
+):
     """Le client accepte ou refuse le devis depuis la page de suivi."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
@@ -109,8 +190,9 @@ def valider_devis(ticket_code: str, body: DevisValidation):
     panne = ""
 
     with get_cursor() as cur:
-        t = _get_ticket_by_code(cur, ticket_code)
-        ticket_id = t["id"]
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
+        ticket_id = tk["id"]
+        ticket_code = tk["ticket_code"]
 
         # Récupère détails ticket + client pour la notif (+ statut courant)
         cur.execute(
@@ -120,6 +202,7 @@ def valider_devis(ticket_code: str, body: DevisValidation):
             FROM tickets t
             LEFT JOIN clients c ON c.id = t.client_id
             WHERE t.id = %s
+            FOR UPDATE OF t
             """,
             (ticket_id,),
         )
@@ -163,6 +246,7 @@ def valider_devis(ticket_code: str, body: DevisValidation):
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note)
             VALUES (%s, 'Client', %s, 'validation_devis')
         """, (ticket_id, contenu))
+    _CACHE_INTERACTIONS.invalidate()
 
     # ─── Push notif après commit : UNIQUEMENT validation positive ────
     if body.accepte:
@@ -189,70 +273,71 @@ def valider_devis(ticket_code: str, body: DevisValidation):
 
 # ─── AVIS CLIENT ─────────────────────────────────────────
 @router.post("/{ticket_code}/avis")
-def laisser_avis(ticket_code: str, body: AvisBody):
+def laisser_avis(
+    ticket_code: str,
+    body: AvisBody,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel4: Optional[str] = Query(None),
+):
     """Le client laisse un avis (étoiles + commentaire)."""
     if body.note < 1 or body.note > 5:
         raise HTTPException(400, "Note entre 1 et 5")
+    commentaire_saisi = (body.commentaire or "").strip()
+    if len(commentaire_saisi) > 2000:
+        raise HTTPException(400, "Commentaire trop long (2000 caractères maximum)")
     with get_cursor() as cur:
-        t = _get_ticket_by_code(cur, ticket_code)
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
         # Vérifier qu'il n'a pas déjà laissé un avis
         cur.execute(
             "SELECT id FROM notes_tickets WHERE ticket_id = %s AND type_note = 'avis_client' LIMIT 1",
-            (t["id"],),
+            (tk["id"],),
         )
         if cur.fetchone():
             raise HTTPException(400, "Avis déjà soumis pour ce ticket")
         stars = "⭐" * body.note
-        commentaire = f" — {body.commentaire}" if body.commentaire and body.commentaire.strip() else ""
+        commentaire = f" — {commentaire_saisi}" if commentaire_saisi else ""
         contenu = f"{stars} ({body.note}/5){commentaire}"
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note)
             VALUES (%s, 'Client', %s, 'avis_client')
-        """, (t["id"], contenu))
+        """, (tk["id"], contenu))
+    _CACHE_INTERACTIONS.invalidate()
     return {"ok": True}
 
 
 # ─── DASHBOARD INTERACTIONS ──────────────────────────────
-@router.get("/dashboard/interactions")
-def get_interactions():
-    """4 catégories d'interactions non lues : accord_client (tout), accord_client_valide
-    (validations positives uniquement, pour point vert dashboard), messages, avis."""
+def _interactions() -> dict:
+    # Une seule requête (au lieu de 4). LEFT JOIN : mêmes résultats que les
+    # requêtes séparées, y compris pour les notes d'un ticket supprimé.
     with get_cursor() as cur:
-        # Accord client (validation_devis non lues — toutes : validation + refus)
         cur.execute("""
-            SELECT DISTINCT ticket_id FROM notes_tickets
-            WHERE type_note = 'validation_devis' AND (is_read = FALSE OR is_read IS NULL)
-        """)
-        accord_ids = [r["ticket_id"] for r in cur.fetchall()]
-
-        # Accord client VALIDÉ : tous les tickets ayant une note 'validation_devis'
-        # commençant par ✅, ET dont le ticket est encore actif (pas rendu/clôturé).
-        # → Le point vert dashboard reste donc visible toute la phase de réparation,
-        # même après que le staff a ouvert le ticket (ce qui marque is_read=TRUE).
-        cur.execute("""
-            SELECT DISTINCT n.ticket_id
+            SELECT
+                array_agg(DISTINCT n.ticket_id) FILTER (
+                    WHERE n.type_note = 'validation_devis' AND (n.is_read = FALSE OR n.is_read IS NULL)
+                ) AS accord,
+                array_agg(DISTINCT n.ticket_id) FILTER (
+                    WHERE n.type_note = 'validation_devis' AND n.contenu LIKE %(valide)s
+                      AND t.statut NOT IN ('Rendu au client', 'Clôturé')
+                ) AS accord_valide,
+                array_agg(DISTINCT n.ticket_id) FILTER (
+                    WHERE n.type_note = 'message_client' AND (n.is_read = FALSE OR n.is_read IS NULL)
+                ) AS messages,
+                array_agg(DISTINCT n.ticket_id) FILTER (
+                    WHERE n.type_note = 'avis_client' AND (n.is_read = FALSE OR n.is_read IS NULL)
+                ) AS avis
             FROM notes_tickets n
-            JOIN tickets t ON t.id = n.ticket_id
-            WHERE n.type_note = 'validation_devis'
-              AND n.contenu LIKE %s
-              AND t.statut NOT IN ('Rendu au client', 'Clôturé')
-        """, ("✅%",))
-        accord_valide_ids = [r["ticket_id"] for r in cur.fetchall()]
+            LEFT JOIN tickets t ON t.id = n.ticket_id
+            WHERE (n.type_note IN ('validation_devis', 'message_client', 'avis_client')
+                   AND (n.is_read = FALSE OR n.is_read IS NULL))
+               OR (n.type_note = 'validation_devis' AND n.contenu LIKE %(valide)s)
+        """, {"valide": "✅%"})
+        row = cur.fetchone() or {}
 
-        # Messages clients non lus
-        cur.execute("""
-            SELECT DISTINCT ticket_id FROM notes_tickets
-            WHERE type_note = 'message_client' AND (is_read = FALSE OR is_read IS NULL)
-        """)
-        message_ids = [r["ticket_id"] for r in cur.fetchall()]
-
-        # Avis clients non lus
-        cur.execute("""
-            SELECT DISTINCT ticket_id FROM notes_tickets
-            WHERE type_note = 'avis_client' AND (is_read = FALSE OR is_read IS NULL)
-        """)
-        avis_ids = [r["ticket_id"] for r in cur.fetchall()]
-
+    accord_ids = list(row.get("accord") or [])
+    accord_valide_ids = list(row.get("accord_valide") or [])
+    message_ids = list(row.get("messages") or [])
+    avis_ids = list(row.get("avis") or [])
     total = len(accord_ids) + len(message_ids) + len(avis_ids)
     return {
         "accord_client": {"count": len(accord_ids), "ticket_ids": accord_ids},
@@ -263,10 +348,23 @@ def get_interactions():
     }
 
 
+def invalider_interactions():
+    _CACHE_INTERACTIONS.invalidate()
+
+
+@router.get("/dashboard/interactions")
+def get_interactions(request: Request, user: dict = Depends(get_current_user)):
+    """4 catégories d'interactions non lues : accord_client (tout), accord_client_valide
+    (validations positives uniquement, pour point vert dashboard), messages, avis.
+    Réservé au staff (pollé par la Navbar)."""
+    return cached_json(request, _CACHE_INTERACTIONS, "interactions", _interactions)
+
+
 # ─── CHECK AVIS EXISTS ──────────────────────────────────
 @router.get("/{ticket_code}/has-avis")
-def has_avis(ticket_code: str):
+def has_avis(ticket_code: str, request: Request):
     """Vérifie si un avis a déjà été laissé."""
+    _LIMITEUR.verifier(client_ip(request))
     with get_cursor() as cur:
         t = _get_ticket_by_code(cur, ticket_code)
         cur.execute(

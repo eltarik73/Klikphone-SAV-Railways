@@ -4,15 +4,19 @@ Endpoints d'analytics : stats globales, réparations par tech, affluence,
 répartition marques/pannes, évolution CA, temps réparation, conversion, top clients.
 """
 
-import secrets
+import calendar
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..database import get_cursor
-from .auth import get_current_user
+from .auth import (
+    ADMIN_TOKEN_MINUTES, controler_admin_password, create_admin_token, ecrire_admin_password,
+    get_current_user, noter_echec, verifier_essais,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -31,54 +35,42 @@ def _require_admin(user: dict = Depends(get_current_user)):
 # ============================================================
 # ADMIN VERIFY / CHANGE PASSWORD
 # ============================================================
+# Mauvais code : 403 (un 401 déconnecterait l'employé côté front).
 @router.post("/verify")
-def verify_admin(data: dict, user: dict = Depends(get_current_user)):
-    """Vérifie les identifiants admin (login + mot de passe stocké en BDD)."""
-    login = data.get("login", "")
-    password = data.get("password", "")
+def verify_admin(data: dict, request: Request, user: dict = Depends(get_current_user)):
+    """Vérifie les identifiants admin et délivre un jeton d'élévation de 10 min
+    (en-tête X-Admin-Token des actions sensibles)."""
+    login = str(data.get("login", ""))
+    password = str(data.get("password", ""))
 
     if login != "admin":
-        raise HTTPException(401, "Identifiants incorrects")
+        verifier_essais(request, "admin")
+        noter_echec(request, "admin")
+        raise HTTPException(403, "Identifiants incorrects")
+    if not controler_admin_password(request, password):
+        raise HTTPException(403, "Identifiants incorrects")
 
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
-        row = cur.fetchone()
-    stored = row["valeur"] if row else None
-
-    # Fail-closed : si aucun mot de passe admin n'est configuré, on refuse
-    # (plus de fallback hardcodé 'caramail').
-    if not stored:
-        raise HTTPException(503, "Code admin non configuré — définir ADMIN_PASSWORD")
-    if not secrets.compare_digest(str(password), str(stored)):
-        raise HTTPException(401, "Identifiants incorrects")
-
-    return {"success": True}
+    return {
+        "success": True,
+        "admin_token": create_admin_token(user),
+        "expires_in": ADMIN_TOKEN_MINUTES * 60,
+    }
 
 
 @router.post("/change-password")
-def change_admin_password(data: dict, user: dict = Depends(get_current_user)):
-    """Change le mot de passe admin."""
-    old_password = data.get("old_password", "")
-    new_password = data.get("new_password", "")
+def change_admin_password(data: dict, request: Request, user: dict = Depends(get_current_user)):
+    """Change le mot de passe admin (stocké haché)."""
+    old_password = str(data.get("old_password", ""))
+    new_password = str(data.get("new_password", ""))
 
     if not new_password or len(new_password) < 4:
         raise HTTPException(400, "Le nouveau mot de passe doit faire au moins 4 caractères")
 
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = 'ADMIN_PASSWORD'")
-        row = cur.fetchone()
-    stored = row["valeur"] if row else None
-
-    if not stored:
-        raise HTTPException(503, "Code admin non configuré — définir ADMIN_PASSWORD")
-    if not secrets.compare_digest(str(old_password), str(stored)):
-        raise HTTPException(401, "Mot de passe actuel incorrect")
+    if not controler_admin_password(request, old_password):
+        raise HTTPException(403, "Mot de passe actuel incorrect")
 
     with get_cursor() as cur:
-        cur.execute("""
-            INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', %s)
-            ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
-        """, (new_password,))
+        ecrire_admin_password(cur, new_password)
 
     return {"success": True, "message": "Mot de passe modifié"}
 
@@ -108,6 +100,50 @@ def _resolve_dates(date_start, date_end):
     return date_start or start, date_end or end
 
 
+# date_cloture est du TEXTE ('AAAA-MM-JJ HH:MM:SS') : comparaisons de chaînes,
+# jamais de ::date (une valeur mal formée ferait échouer toute la requête).
+_JOUR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_CLOTURE_OK = "date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}'"
+# Durées : seul cas où un horodatage est nécessaire. kp_try_ts (main.py) renvoie NULL
+# pour une date impossible (« 2026-02-30 ») au lieu de faire échouer la requête.
+_CLOTURE_TS = f"(CASE WHEN {_CLOTURE_OK} THEN public.kp_try_ts(date_cloture) END)"
+
+
+def _jour(valeur: str) -> str:
+    try:
+        if _JOUR_RE.match(valeur or ""):
+            datetime.strptime(valeur, "%Y-%m-%d")
+            return valeur
+    except ValueError:
+        pass
+    raise HTTPException(400, "Date invalide (format AAAA-MM-JJ attendu)")
+
+
+def _lendemain(jour: str) -> str:
+    """Borne haute exclusive : date_cloture < lendemain couvre toute la journée."""
+    return (datetime.strptime(jour, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def _il_y_a_mois(n: int) -> str:
+    """Équivalent texte de NOW() - INTERVAL 'n months'."""
+    now = datetime.now()
+    y, m = divmod(now.year * 12 + now.month - 1 - n, 12)
+    dernier = calendar.monthrange(y, m + 1)[1]
+    return now.replace(year=y, month=m + 1, day=min(now.day, dernier)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _demain() -> str:
+    """Borne haute des périodes « jusqu'à aujourd'hui » : écarte aussi un texte non daté."""
+    return _lendemain(datetime.now().strftime("%Y-%m-%d"))
+
+
+def _jour_court(valeur):
+    try:
+        return datetime.strptime(str(valeur)[:10], "%Y-%m-%d").strftime("%d/%m")
+    except ValueError:
+        return None
+
+
 # ============================================================
 # 2. STATS OVERVIEW (6 KPI cards)
 # ============================================================
@@ -122,18 +158,20 @@ def get_stats_overview(
     """
     today = datetime.now().strftime("%Y-%m-%d")
     first_of_month = datetime.now().strftime("%Y-%m-01")
-    ds = date_start or first_of_month
-    de = date_end or today
+    ds = _jour(date_start) if date_start else first_of_month
+    de = _jour(date_end) if date_end else today
 
+    # reparations_jour : tickets clôturés aujourd'hui (date_cloture n'est posée
+    # qu'à la clôture, l'ancien filtre statut = 'Réparation terminée' donnait 0).
     with get_cursor() as cur:
         cur.execute("""
             SELECT
                 COALESCE(SUM(tarif_final) FILTER (
-                    WHERE date_cloture::date = %(today)s::date AND paye = 1
+                    WHERE date_cloture LIKE %(today_like)s AND paye = 1
                 ), 0) AS ca_jour,
 
                 COALESCE(SUM(tarif_final) FILTER (
-                    WHERE date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date AND paye = 1
+                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s AND paye = 1
                 ), 0) AS ca_mois,
 
                 COALESCE(SUM(devis_estime) FILTER (
@@ -142,21 +180,15 @@ def get_stats_overview(
                 ), 0) AS ca_potentiel,
 
                 COUNT(*) FILTER (
-                    WHERE statut = 'Réparation terminée'
-                      AND date_cloture::date = %(today)s::date
+                    WHERE date_cloture LIKE %(today_like)s
                 ) AS reparations_jour,
 
                 COUNT(*) FILTER (
-                    WHERE statut = 'Réparation terminée'
-                      AND date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date
-                ) AS reparations_mois_termine,
-
-                COUNT(*) FILTER (
-                    WHERE date_cloture::date >= %(ds)s::date AND date_cloture::date <= %(de)s::date
+                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s
                 ) AS reparations_mois
 
             FROM tickets
-        """, {"today": today, "first": first_of_month, "ds": ds, "de": de})
+        """, {"today_like": today + "%", "ds": ds, "de_next": _lendemain(de)})
         row = cur.fetchone()
 
     ca_mois = _safe_float(row["ca_mois"])
@@ -194,25 +226,24 @@ def get_reparations_par_tech(
     Retourne [{ jour: "05/02", tech1: 3, tech2: 2 }, ...]
     + liste des techniciens avec couleurs.
     """
-    ds = date_start or (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    de = date_end or datetime.now().strftime("%Y-%m-%d")
+    ds = _jour(date_start) if date_start else (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    de = _jour(date_end) if date_end else datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Get repairs per tech per day
         cur.execute("""
             SELECT
-                date_cloture::date AS jour,
+                LEFT(date_cloture, 10) AS jour,
                 COALESCE(technicien_assigne, 'Non assigné') AS tech,
                 COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL
-              AND date_cloture::date >= %(start)s::date
-              AND date_cloture::date <= %(end_d)s::date
+            WHERE date_cloture >= %(start)s
+              AND date_cloture < %(end_next)s
               AND technicien_assigne IS NOT NULL
               AND technicien_assigne != ''
-            GROUP BY date_cloture::date, technicien_assigne
+            GROUP BY LEFT(date_cloture, 10), technicien_assigne
             ORDER BY jour
-        """, {"start": ds, "end_d": de})
+        """, {"start": ds, "end_next": _lendemain(de)})
         rows = cur.fetchall()
 
         # Get team colors (fallback silencieux si la table est absente)
@@ -226,7 +257,9 @@ def get_reparations_par_tech(
     techs = set()
     day_data = {}
     for r in rows:
-        jour_str = r["jour"].strftime("%d/%m")
+        jour_str = _jour_court(r["jour"])
+        if not jour_str:
+            continue
         tech = r["tech"]
         techs.add(tech)
         if jour_str not in day_data:
@@ -266,8 +299,8 @@ def get_affluence_heure(
     """
     Nombre moyen de dépôts par heure.
     """
-    ds = date_start or (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-    de = date_end or datetime.now().strftime("%Y-%m-%d")
+    ds = _jour(date_start) if date_start else (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    de = _jour(date_end) if date_end else datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Count distinct days in period
@@ -321,8 +354,8 @@ def get_affluence_jour(
     """
     Nombre moyen de dépôts par jour de la semaine.
     """
-    ds = date_start or (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-    de = date_end or datetime.now().strftime("%Y-%m-%d")
+    ds = _jour(date_start) if date_start else (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    de = _jour(date_end) if date_end else datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
         # Count weeks in period per day of week
@@ -374,10 +407,10 @@ def get_repartition_marques(
         p = {}
         if date_start:
             df += " AND date_depot::date >= %(ds)s::date"
-            p["ds"] = date_start
+            p["ds"] = _jour(date_start)
         if date_end:
             df += " AND date_depot::date <= %(de)s::date"
-            p["de"] = date_end
+            p["de"] = _jour(date_end)
         cur.execute(f"""
             SELECT COALESCE(NULLIF(TRIM(marque), ''), 'Inconnu') AS marque,
                    COUNT(*) AS count
@@ -429,10 +462,10 @@ def get_repartition_pannes(
         p = {}
         if date_start:
             df += " AND date_depot::date >= %(ds)s::date"
-            p["ds"] = date_start
+            p["ds"] = _jour(date_start)
         if date_end:
             df += " AND date_depot::date <= %(de)s::date"
-            p["de"] = date_end
+            p["de"] = _jour(date_end)
         cur.execute(f"""
             SELECT COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné') AS panne,
                    COUNT(*) AS count
@@ -465,15 +498,14 @@ def get_evolution_ca(
         # CA encaissé par mois
         cur.execute("""
             SELECT
-                TO_CHAR(DATE_TRUNC('month', date_cloture::timestamp), 'YYYY-MM') AS mois,
+                LEFT(date_cloture, 7) AS mois,
                 COALESCE(SUM(tarif_final), 0) AS ca_encaisse
             FROM tickets
-            WHERE date_cloture IS NOT NULL
-              AND paye = 1
-              AND date_cloture::timestamp >= NOW() - INTERVAL '12 months'
-            GROUP BY DATE_TRUNC('month', date_cloture::timestamp)
-            ORDER BY DATE_TRUNC('month', date_cloture::timestamp)
-        """)
+            WHERE paye = 1
+              AND date_cloture >= %s AND date_cloture < %s
+            GROUP BY LEFT(date_cloture, 7)
+            ORDER BY LEFT(date_cloture, 7)
+        """, (_il_y_a_mois(12), _demain()))
         encaisse_raw = {r["mois"]: _safe_float(r["ca_encaisse"]) for r in cur.fetchall()}
 
         # CA potentiel par mois (devis des tickets créés ce mois, non clôturés)
@@ -528,10 +560,10 @@ def get_temps_reparation(
                 COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné') AS panne,
                 COUNT(*) AS nb,
                 ROUND(AVG(
-                    EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 3600
+                    EXTRACT(EPOCH FROM (""" + _CLOTURE_TS + """ - date_depot::timestamp)) / 3600
                 )::numeric, 1) AS temps_moyen_heures
             FROM tickets
-            WHERE date_cloture IS NOT NULL
+            WHERE """ + _CLOTURE_OK + """
               AND date_depot IS NOT NULL
               AND panne IS NOT NULL AND TRIM(panne) != ''
             GROUP BY COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné')
@@ -621,21 +653,21 @@ def get_top_clients(
         p = {}
         if date_start:
             df += " AND t.date_depot::date >= %(ds)s::date"
-            p["ds"] = date_start
+            p["ds"] = _jour(date_start)
         if date_end:
             df += " AND t.date_depot::date <= %(de)s::date"
-            p["de"] = date_end
+            p["de"] = _jour(date_end)
         cur.execute(f"""
             SELECT
-                COALESCE(c.nom, t.nom_client, 'Inconnu') AS nom,
-                COALESCE(c.telephone, t.telephone, '') AS tel,
+                COALESCE(c.nom, 'Inconnu') AS nom,
+                COALESCE(c.telephone, '') AS tel,
                 COUNT(*) AS nb_reparations,
                 COALESCE(SUM(t.tarif_final) FILTER (WHERE t.paye = 1), 0) AS ca_total
             FROM tickets t
             LEFT JOIN clients c ON t.client_id = c.id
             WHERE 1=1 {df}
-            GROUP BY COALESCE(c.nom, t.nom_client, 'Inconnu'),
-                     COALESCE(c.telephone, t.telephone, '')
+            GROUP BY COALESCE(c.nom, 'Inconnu'),
+                     COALESCE(c.telephone, '')
             HAVING COUNT(*) >= 2
             ORDER BY nb_reparations DESC, ca_total DESC
             LIMIT 10
@@ -668,7 +700,7 @@ def get_reparations_legacy(
     date_start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
     extra_conditions = ""
-    params: dict = {"date_start": date_start}
+    params: dict = {"date_start": date_start, "depuis_12m": _il_y_a_mois(12), "fin": _demain()}
     if marque:
         extra_conditions += " AND marque = %(marque)s"
         params["marque"] = marque
@@ -678,32 +710,30 @@ def get_reparations_legacy(
 
     with get_cursor() as cur:
         cur.execute(f"""
-            SELECT date_cloture::date AS date, COUNT(*) AS count
+            SELECT LEFT(date_cloture, 10) AS date, COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL
-              AND date_cloture::date >= %(date_start)s::date
+            WHERE date_cloture >= %(date_start)s AND date_cloture < %(fin)s
               {extra_conditions}
-            GROUP BY date_cloture::date
-            ORDER BY date_cloture::date
+            GROUP BY LEFT(date_cloture, 10)
+            ORDER BY LEFT(date_cloture, 10)
         """, params)
-        par_jour = [{"date": r["date"].strftime("%Y-%m-%d"), "count": r["count"]} for r in cur.fetchall()]
+        par_jour = [{"date": r["date"], "count": r["count"]} for r in cur.fetchall()]
 
         cur.execute(f"""
-            SELECT TO_CHAR(DATE_TRUNC('month', date_cloture::timestamp), 'YYYY-MM') AS mois,
+            SELECT LEFT(date_cloture, 7) AS mois,
                    COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL
-              AND date_cloture::timestamp >= NOW() - INTERVAL '12 months'
+            WHERE date_cloture >= %(depuis_12m)s AND date_cloture < %(fin)s
               {extra_conditions}
-            GROUP BY DATE_TRUNC('month', date_cloture::timestamp)
-            ORDER BY DATE_TRUNC('month', date_cloture::timestamp)
+            GROUP BY LEFT(date_cloture, 7)
+            ORDER BY LEFT(date_cloture, 7)
         """, params)
         par_mois = [{"mois": r["mois"], "count": r["count"]} for r in cur.fetchall()]
 
         cur.execute(f"""
             SELECT COALESCE(marque, 'Inconnu') AS marque, COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL AND date_cloture::date >= %(date_start)s::date
+            WHERE date_cloture >= %(date_start)s AND date_cloture < %(fin)s
               {extra_conditions}
             GROUP BY marque ORDER BY count DESC
         """, params)
@@ -712,7 +742,7 @@ def get_reparations_legacy(
         cur.execute(f"""
             SELECT COALESCE(technicien_assigne, 'Non assigné') AS technicien, COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL AND date_cloture::date >= %(date_start)s::date
+            WHERE date_cloture >= %(date_start)s AND date_cloture < %(fin)s
               {extra_conditions}
             GROUP BY technicien_assigne ORDER BY count DESC
         """, params)
@@ -721,7 +751,7 @@ def get_reparations_legacy(
         cur.execute(f"""
             SELECT COALESCE(panne, 'Non renseigné') AS panne, COUNT(*) AS count
             FROM tickets
-            WHERE date_cloture IS NOT NULL AND date_cloture::date >= %(date_start)s::date
+            WHERE date_cloture >= %(date_start)s AND date_cloture < %(fin)s
               {extra_conditions}
             GROUP BY panne ORDER BY count DESC LIMIT 20
         """, params)
@@ -777,7 +807,7 @@ def get_performance_tech(user: dict = Depends(_require_admin)):
             SELECT
                 COALESCE(technicien_assigne, 'Non assigné') AS technicien,
                 COUNT(*) AS reparations,
-                COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 60)), 0)::int AS temps_moyen_minutes,
+                COALESCE(ROUND(AVG(EXTRACT(EPOCH FROM (""" + _CLOTURE_TS + """ - date_depot::timestamp)) / 60)), 0)::int AS temps_moyen_minutes,
                 COALESCE(SUM(tarif_final) FILTER (WHERE paye = 1), 0) AS ca_genere
             FROM tickets
             WHERE date_cloture IS NOT NULL AND technicien_assigne IS NOT NULL AND technicien_assigne != ''
@@ -807,13 +837,13 @@ def get_evolution_legacy(
     with get_cursor() as cur:
         if metric == "ca":
             cur.execute("""
-                SELECT TO_CHAR(DATE_TRUNC('month', date_cloture::timestamp), 'YYYY-MM') AS date,
+                SELECT LEFT(date_cloture, 7) AS date,
                        COALESCE(SUM(tarif_final), 0) AS value
-                FROM tickets WHERE date_cloture IS NOT NULL AND paye = 1
-                  AND date_cloture::timestamp >= NOW() - (%(months)s || ' months')::INTERVAL
-                GROUP BY DATE_TRUNC('month', date_cloture::timestamp)
-                ORDER BY DATE_TRUNC('month', date_cloture::timestamp)
-            """, {"months": months})
+                FROM tickets WHERE paye = 1
+                  AND date_cloture >= %(depuis)s AND date_cloture < %(fin)s
+                GROUP BY LEFT(date_cloture, 7)
+                ORDER BY LEFT(date_cloture, 7)
+            """, {"depuis": _il_y_a_mois(months), "fin": _demain()})
         else:
             cur.execute("""
                 SELECT TO_CHAR(DATE_TRUNC('month', date_depot::timestamp), 'YYYY-MM') AS date,

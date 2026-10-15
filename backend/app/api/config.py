@@ -4,27 +4,95 @@ API Config — gestion des paramètres boutique (table params).
 
 import json
 import os
+import re
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.database import get_cursor
 from app.models import ParamUpdate, ParamOut
-from app.api.auth import get_current_user
+from app.api.auth import (
+    ecrire_admin_password, exiger_elevation, get_current_user, noter_echec, noter_succes,
+    require_admin, verifier_essais, verifier_secret,
+)
 from app.api.catalog import clear_catalog_cache
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 
+# ─── SECRETS ─────────────────────────────────────────────────────
+# Jamais renvoyés en clair : « •••• » indique seulement qu'ils sont définis.
+MASQUE = "••••"
+SECRET_KEYS = frozenset({
+    "PIN_ACCUEIL", "PIN_TECH", "ADMIN_PASSWORD", "CAISSE_PASSWORD", "CAISSE_APIKEY",
+    "DISCORD_WEBHOOK", "RESEND_API_KEY", "SMTP_PASSWORD", "ANTHROPIC_API_KEY",
+    "TOGETHER_API_KEY", "LATE_API_KEY", "GOOGLE_PLACES_API_KEY", "JWT_SECRET",
+})
+_SECRET_RE = re.compile(
+    r"^(PIN_|ADMIN_)|PASSWORD|PASSWD|MOT_?DE_?PASSE|(^|_)MDP($|_)|SECRET|TOKEN|API_?KEY"
+    r"|WEBHOOK|PRIVATE|CREDENTIAL|(^|_)KEY$",
+    re.IGNORECASE,
+)
+
+
+def est_secret(cle: str) -> bool:
+    return bool(cle) and (cle.upper() in SECRET_KEYS or bool(_SECRET_RE.search(cle)))
+
+
+def _masquer(cle: str, valeur):
+    if not est_secret(cle):
+        return valeur
+    return MASQUE if valeur else ""
+
+
+def _valeur_masquee(valeur) -> bool:
+    """Vide ou « •••• » renvoyé tel quel par le formulaire : ne remplace pas le secret."""
+    v = (valeur or "").strip()
+    return not v or set(v) <= {"•", "*"}
+
+
+def _ecrire_param(cur, cle: str, valeur: str):
+    if cle == "ADMIN_PASSWORD":
+        ecrire_admin_password(cur, valeur)
+        return
+    cur.execute("""
+        INSERT INTO params (cle, valeur) VALUES (%s, %s)
+        ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+    """, (cle, valeur))
+
+
+def _controler_secret(cle: str, valeur: str):
+    if cle.upper().startswith("PIN_") and not re.fullmatch(r"\d{4}", valeur.strip()):
+        raise HTTPException(400, "Le PIN doit être composé de 4 chiffres")
+    if cle == "ADMIN_PASSWORD" and len(valeur) < 4:
+        raise HTTPException(400, "Le mot de passe admin doit faire au moins 4 caractères")
+
+
+def _ecritures(request: Request, user: dict, params: list) -> list:
+    """Paires (clé, valeur) à écrire ; l'écriture d'un secret exige l'élévation admin."""
+    ecritures, secret = [], False
+    for p in params:
+        if est_secret(p.cle):
+            if _valeur_masquee(p.valeur):
+                continue
+            _controler_secret(p.cle, p.valeur)
+            secret = True
+        ecritures.append((p.cle, p.valeur))
+    if secret:
+        exiger_elevation(request, user)
+    return ecritures
+
+
 @router.get("", response_model=list[ParamOut])
 def list_params(user: dict = Depends(get_current_user)):
-    """Liste tous les paramètres."""
+    """Liste les paramètres ; les secrets sont masqués."""
     with get_cursor() as cur:
         cur.execute("SELECT cle, valeur FROM params ORDER BY cle")
-        return cur.fetchall()
+        rows = cur.fetchall() or []
+    return [{"cle": r["cle"], "valeur": _masquer(r["cle"], r["valeur"])} for r in rows]
 
 
 @router.get("/public")
@@ -44,28 +112,28 @@ def get_public_params():
 
 
 @router.put("")
-def set_param(data: ParamUpdate, user: dict = Depends(get_current_user)):
-    """Crée ou met à jour un paramètre."""
-    with get_cursor() as cur:
-        cur.execute("""
-            INSERT INTO params (cle, valeur) VALUES (%s, %s)
-            ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
-        """, (data.cle, data.valeur))
+def set_param(data: ParamUpdate, request: Request, user: dict = Depends(get_current_user)):
+    """Crée ou met à jour un paramètre (secret : élévation admin requise)."""
+    ecritures = _ecritures(request, user, [data])
+    if ecritures:
+        with get_cursor() as cur:
+            for cle, valeur in ecritures:
+                _ecrire_param(cur, cle, valeur)
     return {"ok": True}
 
 
 @router.put("/batch")
 def set_params_batch(
     params: list[ParamUpdate],
+    request: Request,
     user: dict = Depends(get_current_user),
 ):
-    """Met à jour plusieurs paramètres en une fois."""
-    with get_cursor() as cur:
-        for p in params:
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES (%s, %s)
-                ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
-            """, (p.cle, p.valeur))
+    """Met à jour plusieurs paramètres en une fois (tout ou rien)."""
+    ecritures = _ecritures(request, user, params)
+    if ecritures:
+        with get_cursor() as cur:
+            for cle, valeur in ecritures:
+                _ecrire_param(cur, cle, valeur)
     return {"ok": True}
 
 
@@ -76,19 +144,24 @@ class PinChangeRequest(BaseModel):
 
 
 @router.post("/change-pin")
-def change_pin(data: PinChangeRequest, user: dict = Depends(get_current_user)):
-    """Change le PIN d'accès."""
+def change_pin(data: PinChangeRequest, request: Request, user: dict = Depends(require_admin)):
+    """Change le PIN d'accès (élévation admin + ancien PIN)."""
     if data.target not in ("accueil", "tech"):
         raise HTTPException(400, "Target invalide")
     if len(data.new_pin) != 4 or not data.new_pin.isdigit():
         raise HTTPException(400, "Le PIN doit être composé de 4 chiffres")
 
+    cible = f"pin:{data.target}"
+    verifier_essais(request, cible)
     param_key = f"PIN_{data.target.upper()}"
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (param_key,))
         row = cur.fetchone()
-        if not row or row["valeur"] != data.old_pin:
-            raise HTTPException(401, "Ancien PIN incorrect")
+        if not row or not verifier_secret(data.old_pin, row["valeur"]):
+            noter_echec(request, cible)
+            # 403 et non 401 : le front déconnecte sur tout 401
+            raise HTTPException(403, "Ancien PIN incorrect")
+        noter_succes(request, cible)
         cur.execute(
             "UPDATE params SET valeur = %s WHERE cle = %s",
             (data.new_pin, param_key),
@@ -117,7 +190,7 @@ def _safe_ident(name: str) -> str:
 
 
 @router.get("/backup")
-def export_backup(user: dict = Depends(get_current_user)):
+def export_backup(user: dict = Depends(require_admin)):
     """Exporte toute la BDD au format JSON pour backup."""
     tables = {}
     with get_cursor() as cur:
@@ -144,7 +217,7 @@ def export_backup(user: dict = Depends(get_current_user)):
 
 
 @router.post("/backup/import")
-def import_backup(backup: dict, user: dict = Depends(get_current_user)):
+def import_backup(backup: dict, user: dict = Depends(require_admin)):
     """Importe un backup JSON complet. Remplace toutes les données existantes."""
     tables = backup.get("tables", {})
     if not tables:
@@ -194,6 +267,10 @@ def import_backup(backup: dict, user: dict = Depends(get_current_user)):
                 pass
 
     clear_catalog_cache()
+    from app.api.chat import invalider_cache_chat
+    from app.api.notifications_center import invalider_cache_notifications
+    invalider_cache_chat()
+    invalider_cache_notifications()
     return {"ok": True, "imported": counts}
 
 
@@ -261,7 +338,7 @@ CAISSE_KEYS = list(CAISSE_DEFAULTS.keys())
 
 @router.get("/caisse")
 def get_caisse_config(user: dict = Depends(get_current_user)):
-    """Récupère la config caisse enregistreuse."""
+    """Récupère la config caisse enregistreuse (mot de passe et clé API masqués)."""
     with get_cursor() as cur:
         cur.execute(
             "SELECT cle, valeur FROM params WHERE cle = ANY(%s)",
@@ -269,19 +346,23 @@ def get_caisse_config(user: dict = Depends(get_current_user)):
         )
         rows = cur.fetchall()
     existing = {row["cle"]: row["valeur"] for row in rows}
-    return {k: existing.get(k, CAISSE_DEFAULTS.get(k, "")) for k in CAISSE_KEYS}
+    return {k: _masquer(k, existing.get(k, CAISSE_DEFAULTS.get(k, ""))) for k in CAISSE_KEYS}
 
 
 @router.put("/caisse")
-def save_caisse_config(data: dict, user: dict = Depends(get_current_user)):
-    """Sauvegarde la config caisse enregistreuse."""
+def save_caisse_config(data: dict, user: dict = Depends(require_admin)):
+    """Sauvegarde la config caisse enregistreuse (élévation admin requise)."""
     with get_cursor() as cur:
         for key, value in data.items():
-            if key in CAISSE_KEYS:
-                cur.execute("""
-                    INSERT INTO params (cle, valeur) VALUES (%s, %s)
-                    ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
-                """, (key, str(value)))
+            if key not in CAISSE_KEYS:
+                continue
+            value = "" if value is None else str(value)
+            if est_secret(key) and _valeur_masquee(value):
+                continue
+            cur.execute("""
+                INSERT INTO params (cle, valeur) VALUES (%s, %s)
+                ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
+            """, (key, value))
     return {"ok": True}
 
 
@@ -311,13 +392,16 @@ def test_caisse_connexion(user: dict = Depends(get_current_user)):
         else:
             return {"status": "error", "message": f"Erreur HTTP {response.status_code}"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        # Le message d'erreur httpx peut contenir l'URL, donc la clé API
+        return {"status": "error", "message": str(e).replace(apikey, MASQUE)}
 
 
 @router.get("/{cle}")
 def get_param(cle: str, user: dict = Depends(get_current_user)):
-    """Récupère un paramètre par clé."""
+    """Récupère un paramètre par clé (secret : masqué)."""
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (cle,))
         row = cur.fetchone()
-    return {"cle": cle, "valeur": row["valeur"] if row else None}
+    if not row:
+        return {"cle": cle, "valeur": None}
+    return {"cle": cle, "valeur": _masquer(cle, row["valeur"])}
