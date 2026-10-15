@@ -568,7 +568,7 @@ def _save_attestation(data: AttestationRequest, user: dict, email_envoye: bool =
 
 
 @router.post("/generate")
-async def generate_attestation(
+def generate_attestation(
     data: AttestationRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -590,7 +590,7 @@ def _safe_filename(data: AttestationRequest, ext: str) -> str:
 
 
 @router.post("/email")
-async def email_attestation(
+def email_attestation(
     data: AttestationRequest,
     destinataire: str,
     format: str = Query("pdf", description="pdf ou word"),
@@ -630,7 +630,7 @@ async def email_attestation(
 
 
 @router.post("/pdf")
-async def download_attestation_pdf(
+def download_attestation_pdf(
     data: AttestationRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -645,7 +645,7 @@ async def download_attestation_pdf(
 
 
 @router.post("/docx")
-async def download_attestation_docx(
+def download_attestation_docx(
     data: AttestationRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -660,7 +660,7 @@ async def download_attestation_docx(
 
 
 @router.get("/history")
-async def list_attestations(
+def list_attestations(
     client_id: Optional[int] = Query(None),
     limit: int = Query(50, le=200),
     user: dict = Depends(get_current_user),
@@ -688,7 +688,7 @@ async def list_attestations(
 
 
 @router.get("/history/{attestation_id}")
-async def get_attestation(
+def get_attestation(
     attestation_id: int,
     user: dict = Depends(get_current_user),
 ):

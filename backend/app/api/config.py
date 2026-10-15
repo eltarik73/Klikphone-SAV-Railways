@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 
 
 @router.get("", response_model=list[ParamOut])
-async def list_params(user: dict = Depends(get_current_user)):
+def list_params(user: dict = Depends(get_current_user)):
     """Liste tous les paramètres."""
     with get_cursor() as cur:
         cur.execute("SELECT cle, valeur FROM params ORDER BY cle")
@@ -28,7 +28,7 @@ async def list_params(user: dict = Depends(get_current_user)):
 
 
 @router.get("/public")
-async def get_public_params():
+def get_public_params():
     """Paramètres publics (pour le formulaire client et le suivi)."""
     public_keys = [
         "NOM_BOUTIQUE", "TEL_BOUTIQUE", "ADRESSE_BOUTIQUE",
@@ -44,7 +44,7 @@ async def get_public_params():
 
 
 @router.put("")
-async def set_param(data: ParamUpdate, user: dict = Depends(get_current_user)):
+def set_param(data: ParamUpdate, user: dict = Depends(get_current_user)):
     """Crée ou met à jour un paramètre."""
     with get_cursor() as cur:
         cur.execute("""
@@ -55,7 +55,7 @@ async def set_param(data: ParamUpdate, user: dict = Depends(get_current_user)):
 
 
 @router.put("/batch")
-async def set_params_batch(
+def set_params_batch(
     params: list[ParamUpdate],
     user: dict = Depends(get_current_user),
 ):
@@ -76,7 +76,7 @@ class PinChangeRequest(BaseModel):
 
 
 @router.post("/change-pin")
-async def change_pin(data: PinChangeRequest, user: dict = Depends(get_current_user)):
+def change_pin(data: PinChangeRequest, user: dict = Depends(get_current_user)):
     """Change le PIN d'accès."""
     if data.target not in ("accueil", "tech"):
         raise HTTPException(400, "Target invalide")
@@ -117,7 +117,7 @@ def _safe_ident(name: str) -> str:
 
 
 @router.get("/backup")
-async def export_backup(user: dict = Depends(get_current_user)):
+def export_backup(user: dict = Depends(get_current_user)):
     """Exporte toute la BDD au format JSON pour backup."""
     tables = {}
     with get_cursor() as cur:
@@ -144,7 +144,7 @@ async def export_backup(user: dict = Depends(get_current_user)):
 
 
 @router.post("/backup/import")
-async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
+def import_backup(backup: dict, user: dict = Depends(get_current_user)):
     """Importe un backup JSON complet. Remplace toutes les données existantes."""
     tables = backup.get("tables", {})
     if not tables:
@@ -198,7 +198,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
 
 
 @router.post("/test-discord")
-async def test_discord(user: dict = Depends(get_current_user)):
+def test_discord(user: dict = Depends(get_current_user)):
     """Teste le webhook Discord configuré."""
     from app.services.notifications import test_discord_webhook
     with get_cursor() as cur:
@@ -214,7 +214,7 @@ async def test_discord(user: dict = Depends(get_current_user)):
 
 
 @router.get("/message-templates")
-async def get_message_templates(user: dict = Depends(get_current_user)):
+def get_message_templates(user: dict = Depends(get_current_user)):
     """Récupère les templates de messages (depuis params ou défaut)."""
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = 'message_templates'")
@@ -228,7 +228,7 @@ async def get_message_templates(user: dict = Depends(get_current_user)):
 
 
 @router.put("/message-templates")
-async def save_message_templates(data: dict, user: dict = Depends(get_current_user)):
+def save_message_templates(data: dict, user: dict = Depends(get_current_user)):
     """Sauvegarde les templates de messages."""
     templates = data.get("templates", [])
     val = json.dumps(templates, ensure_ascii=False)
@@ -260,7 +260,7 @@ CAISSE_KEYS = list(CAISSE_DEFAULTS.keys())
 
 
 @router.get("/caisse")
-async def get_caisse_config(user: dict = Depends(get_current_user)):
+def get_caisse_config(user: dict = Depends(get_current_user)):
     """Récupère la config caisse enregistreuse."""
     with get_cursor() as cur:
         cur.execute(
@@ -273,7 +273,7 @@ async def get_caisse_config(user: dict = Depends(get_current_user)):
 
 
 @router.put("/caisse")
-async def save_caisse_config(data: dict, user: dict = Depends(get_current_user)):
+def save_caisse_config(data: dict, user: dict = Depends(get_current_user)):
     """Sauvegarde la config caisse enregistreuse."""
     with get_cursor() as cur:
         for key, value in data.items():
@@ -286,7 +286,7 @@ async def save_caisse_config(data: dict, user: dict = Depends(get_current_user))
 
 
 @router.post("/caisse/test")
-async def test_caisse_connexion(user: dict = Depends(get_current_user)):
+def test_caisse_connexion(user: dict = Depends(get_current_user)):
     """Teste la connexion à caisse.enregistreuse.fr."""
     import httpx
     with get_cursor() as cur:
@@ -315,7 +315,7 @@ async def test_caisse_connexion(user: dict = Depends(get_current_user)):
 
 
 @router.get("/{cle}")
-async def get_param(cle: str, user: dict = Depends(get_current_user)):
+def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé."""
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (cle,))

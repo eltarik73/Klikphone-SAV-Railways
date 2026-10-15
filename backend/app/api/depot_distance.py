@@ -41,7 +41,7 @@ class RefusMotif(BaseModel):
 # ─── PUBLIC: Créer un pré-enregistrement ─────────────────────
 
 @router.post("")
-async def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
+def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     """Pré-enregistre un appareil à distance (public, pas d'auth)."""
     # Validation basique
     if not data.nom or not data.nom.strip():
@@ -125,7 +125,7 @@ async def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
 # ─── AUTH: Valider un pré-enregistrement ─────────────────────
 
 @router.put("/{ticket_id}/valider")
-async def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
+def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
     """Valide un pré-enregistrement → passe en 'En attente de diagnostic'."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
@@ -177,7 +177,7 @@ async def valider_depot(ticket_id: int, user: dict = Depends(get_current_user)):
 # ─── AUTH: Refuser un pré-enregistrement ─────────────────────
 
 @router.put("/{ticket_id}/refuser")
-async def refuser_depot(
+def refuser_depot(
     ticket_id: int,
     data: RefusMotif,
     user: dict = Depends(get_current_user),
@@ -236,7 +236,7 @@ async def refuser_depot(
 # ─── PUBLIC: Liste pré-enregistrements (pour dashboard) ──────
 
 @router.get("/pending")
-async def get_pending_depots(user: dict = Depends(get_current_user)):
+def get_pending_depots(user: dict = Depends(get_current_user)):
     """Retourne les pré-enregistrements en attente de validation."""
     with get_cursor() as cur:
         cur.execute("""
@@ -256,7 +256,7 @@ async def get_pending_depots(user: dict = Depends(get_current_user)):
 # ─── PUBLIC: Suivi enrichi ───────────────────────────────────
 
 @router.get("/suivi/{ticket_code}")
-async def suivi_public(ticket_code: str):
+def suivi_public(ticket_code: str):
     """Retourne les infos publiques d'un ticket pour le suivi client."""
     with get_cursor() as cur:
         cur.execute("""

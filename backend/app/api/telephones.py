@@ -130,7 +130,7 @@ def _run_sync_background():
 
 
 @router.post("/sync")
-async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Lance la synchronisation avec LCD-Phone en arrière-plan."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
@@ -159,7 +159,7 @@ async def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends
 
 
 @router.get("/sync-status")
-async def sync_status(user: dict = Depends(get_current_user)):
+def sync_status(user: dict = Depends(get_current_user)):
     """Vérifie l'état de la synchronisation."""
     return {
         "running": _sync_status["running"],
@@ -170,7 +170,7 @@ async def sync_status(user: dict = Depends(get_current_user)):
 
 
 @router.get("/probe")
-async def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
+def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
     """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
     from app.services.scraper_lcdphone import probe_lcdphone
     return probe_lcdphone()
@@ -183,7 +183,7 @@ _CATALOGUE_COLS = (
 
 
 @router.get("/catalogue")
-async def liste_telephones(
+def liste_telephones(
     marque: Optional[str] = None,
     type_produit: Optional[str] = None,
     grade: Optional[str] = None,
@@ -244,7 +244,7 @@ async def liste_telephones(
 
 
 @router.get("/stats")
-async def stats_catalogue(user: dict = Depends(get_current_user)):
+def stats_catalogue(user: dict = Depends(get_current_user)):
     """Statistiques du catalogue (cached 5 min)."""
     cached = _cache.get("stats")
     if cached:
@@ -279,7 +279,7 @@ async def stats_catalogue(user: dict = Depends(get_current_user)):
 
 
 @router.get("/marques")
-async def liste_marques(user: dict = Depends(get_current_user)):
+def liste_marques(user: dict = Depends(get_current_user)):
     """Liste des marques disponibles (cached 5 min)."""
     cached = _cache.get("marques")
     if cached:

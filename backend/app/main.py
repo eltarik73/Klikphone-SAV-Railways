@@ -628,7 +628,7 @@ async def health():
 
 
 @app.get("/health/db")
-async def health_db():
+def health_db():
     try:
         from app.database import get_cursor
         with get_cursor() as cur:

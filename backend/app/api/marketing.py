@@ -300,7 +300,7 @@ def _row_to_dict(row):
 # ═════════════════════════════════════════════════════════
 
 @router.get("/avis")
-async def list_avis(
+def list_avis(
     repondu: Optional[bool] = Query(None),
     note_min: Optional[int] = Query(None),
     note_max: Optional[int] = Query(None),
@@ -333,7 +333,7 @@ async def list_avis(
 
 
 @router.get("/avis/stats")
-async def avis_stats(user: dict = Depends(_require_admin_marketing)):
+def avis_stats(user: dict = Depends(_require_admin_marketing)):
     """Statistiques des avis Google."""
     _ensure_tables()
     with get_cursor() as cur:
@@ -503,7 +503,7 @@ async def sync_avis(user: dict = Depends(_require_admin_marketing)):
 
 
 @router.post("/avis/{avis_id}/generer-reponse")
-async def generer_reponse_avis(avis_id: int, user: dict = Depends(_require_admin_marketing)):
+def generer_reponse_avis(avis_id: int, user: dict = Depends(_require_admin_marketing)):
     """Génère une suggestion de réponse IA pour un avis Google."""
     _ensure_tables()
 
@@ -584,7 +584,7 @@ def _fallback_reponse_avis(prenom: str, note: int, texte: str) -> str:
 
 
 @router.post("/avis/{avis_id}/publier-reponse")
-async def publier_reponse_avis(
+def publier_reponse_avis(
     avis_id: int,
     body: AvisReponsePublier,
     user: dict = Depends(_require_admin_marketing),
@@ -613,7 +613,7 @@ async def publier_reponse_avis(
 
 
 @router.put("/avis/{avis_id}/reponse")
-async def update_reponse_avis(
+def update_reponse_avis(
     avis_id: int,
     body: AvisReponsePublier,
     user: dict = Depends(_require_admin_marketing),
@@ -646,7 +646,7 @@ async def update_reponse_avis(
 # ═════════════════════════════════════════════════════════
 
 @router.get("/posts")
-async def list_posts(
+def list_posts(
     plateforme: Optional[str] = Query(None),
     statut: Optional[str] = Query(None),
     type_contenu: Optional[str] = Query(None),
@@ -682,7 +682,7 @@ async def list_posts(
 
 
 @router.post("/posts")
-async def create_post(body: PostCreate, user: dict = Depends(_require_admin_marketing)):
+def create_post(body: PostCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un nouveau post marketing."""
     _ensure_tables()
     utilisateur = user.get("sub", "Inconnu")
@@ -704,7 +704,7 @@ async def create_post(body: PostCreate, user: dict = Depends(_require_admin_mark
 
 
 @router.put("/posts/{post_id}")
-async def update_post(
+def update_post(
     post_id: int,
     body: PostUpdate,
     user: dict = Depends(_require_admin_marketing),
@@ -758,7 +758,7 @@ async def update_post(
 
 
 @router.delete("/posts/{post_id}")
-async def delete_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
+def delete_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
     """Supprime un post (uniquement si brouillon)."""
     _ensure_tables()
 
@@ -965,7 +965,7 @@ async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketi
 
 
 @router.post("/posts/{post_id}/programmer")
-async def programmer_post(
+def programmer_post(
     post_id: int,
     body: PostProgrammer,
     user: dict = Depends(_require_admin_marketing),
@@ -1019,7 +1019,7 @@ def _store_image(img_bytes: bytes) -> str:
 
 
 @router.get("/images/{image_id}")
-async def serve_generated_image(image_id: str):
+def serve_generated_image(image_id: str):
     """Sert une image générée stockée en mémoire."""
     from fastapi.responses import Response
     # Accepte image_id avec ou sans extension
@@ -1202,7 +1202,7 @@ async def generer_image(body: ImageGenerer, user: dict = Depends(_require_admin_
 
 
 @router.post("/posts/generer")
-async def generer_post(body: PostGenerer, user: dict = Depends(_require_admin_marketing)):
+def generer_post(body: PostGenerer, user: dict = Depends(_require_admin_marketing)):
     """Génère un post avec Claude AI."""
     _ensure_tables()
 
@@ -1344,7 +1344,7 @@ def _fallback_post_genere(plateforme: str, type_contenu: str) -> dict:
 # ═════════════════════════════════════════════════════════
 
 @router.get("/calendrier")
-async def list_calendrier(
+def list_calendrier(
     date_debut: Optional[str] = Query(None),
     date_fin: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
@@ -1380,7 +1380,7 @@ async def list_calendrier(
 
 
 @router.post("/calendrier")
-async def create_calendrier(body: CalendrierCreate, user: dict = Depends(_require_admin_marketing)):
+def create_calendrier(body: CalendrierCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un événement dans le calendrier marketing."""
     _ensure_tables()
 
@@ -1402,7 +1402,7 @@ async def create_calendrier(body: CalendrierCreate, user: dict = Depends(_requir
 
 
 @router.put("/calendrier/{event_id}")
-async def update_calendrier(
+def update_calendrier(
     event_id: int,
     body: CalendrierUpdate,
     user: dict = Depends(_require_admin_marketing),
@@ -1463,7 +1463,7 @@ async def update_calendrier(
 
 
 @router.delete("/calendrier/{event_id}")
-async def delete_calendrier(event_id: int, user: dict = Depends(_require_admin_marketing)):
+def delete_calendrier(event_id: int, user: dict = Depends(_require_admin_marketing)):
     """Supprime un événement du calendrier."""
     _ensure_tables()
 
@@ -1482,7 +1482,7 @@ async def delete_calendrier(event_id: int, user: dict = Depends(_require_admin_m
 # ═════════════════════════════════════════════════════════
 
 @router.get("/templates")
-async def list_templates(user: dict = Depends(_require_admin_marketing)):
+def list_templates(user: dict = Depends(_require_admin_marketing)):
     """Liste tous les templates marketing actifs."""
     _ensure_tables()
 
@@ -1496,7 +1496,7 @@ async def list_templates(user: dict = Depends(_require_admin_marketing)):
 
 
 @router.post("/templates")
-async def create_template(body: TemplateCreate, user: dict = Depends(_require_admin_marketing)):
+def create_template(body: TemplateCreate, user: dict = Depends(_require_admin_marketing)):
     """Crée un nouveau template marketing."""
     _ensure_tables()
 
@@ -1518,7 +1518,7 @@ async def create_template(body: TemplateCreate, user: dict = Depends(_require_ad
 
 
 @router.put("/templates/{template_id}")
-async def update_template(
+def update_template(
     template_id: int,
     body: TemplateUpdate,
     user: dict = Depends(_require_admin_marketing),
@@ -1580,7 +1580,7 @@ async def update_template(
 # ═════════════════════════════════════════════════════════
 
 @router.get("/analytics/overview")
-async def analytics_overview(user: dict = Depends(_require_admin_marketing)):
+def analytics_overview(user: dict = Depends(_require_admin_marketing)):
     """Vue d'ensemble des analytics marketing."""
     _ensure_tables()
 
@@ -1629,7 +1629,7 @@ async def analytics_overview(user: dict = Depends(_require_admin_marketing)):
 
 
 @router.get("/analytics/posts")
-async def analytics_posts(user: dict = Depends(_require_admin_marketing)):
+def analytics_posts(user: dict = Depends(_require_admin_marketing)):
     """Liste des posts publiés avec leurs métriques d'engagement."""
     _ensure_tables()
 

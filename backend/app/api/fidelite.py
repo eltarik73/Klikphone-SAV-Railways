@@ -43,7 +43,7 @@ class UtiliserRequest(BaseModel):
 # ─── CREDITER POINTS ────────────────────────────────────
 
 @router.post("/crediter")
-async def crediter_points(data: CrediterRequest, user: dict = Depends(get_current_user)):
+def crediter_points(data: CrediterRequest, user: dict = Depends(get_current_user)):
     """Crédite les points quand un ticket est payé."""
 
     with get_cursor() as cur:
@@ -100,7 +100,7 @@ async def crediter_points(data: CrediterRequest, user: dict = Depends(get_curren
 # ─── UTILISER POINTS ────────────────────────────────────
 
 @router.post("/utiliser")
-async def utiliser_points(data: UtiliserRequest, user: dict = Depends(get_current_user)):
+def utiliser_points(data: UtiliserRequest, user: dict = Depends(get_current_user)):
     """Utilise des points pour une récompense."""
 
     with get_cursor() as cur:
@@ -144,7 +144,7 @@ class ConsommerBonRequest(BaseModel):
 
 
 @router.post("/consommer-bon")
-async def consommer_bon_grattage(data: ConsommerBonRequest, user: dict = Depends(get_current_user)):
+def consommer_bon_grattage(data: ConsommerBonRequest, user: dict = Depends(get_current_user)):
     """L'admin applique le bon de grattage du client au paiement.
     Clear la colonne bon_grattage + insert dans fidelite_historique pour trace."""
     with get_cursor() as cur:
@@ -173,7 +173,7 @@ async def consommer_bon_grattage(data: ConsommerBonRequest, user: dict = Depends
 # ─── GET FIDELITE ───────────────────────────────────────
 
 @router.get("/{client_id}")
-async def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
+def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
     """Récupère les infos fidélité d'un client."""
 
     with get_cursor() as cur:
@@ -239,7 +239,7 @@ async def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
 # ─── GET FIDELITE BY TICKET CODE (public) ──────────────
 
 @router.get("/ticket/{ticket_code}")
-async def get_fidelite_by_ticket(ticket_code: str):
+def get_fidelite_by_ticket(ticket_code: str):
     """Récupère les infos fidélité à partir d'un code ticket (pour suivi public)."""
 
     with get_cursor() as cur:
@@ -249,7 +249,7 @@ async def get_fidelite_by_ticket(ticket_code: str):
             raise HTTPException(404, "Ticket non trouvé")
         client_id = row["client_id"]
 
-    return await get_fidelite(client_id)
+    return get_fidelite(client_id, None)
 
 
 # ═════════════════════════════════════════════════════════
@@ -257,7 +257,7 @@ async def get_fidelite_by_ticket(ticket_code: str):
 # ═════════════════════════════════════════════════════════
 
 @router.get("/grattage/{ticket_code}")
-async def get_grattage(ticket_code: str):
+def get_grattage(ticket_code: str):
     """Vérifie l'état du grattage pour un ticket."""
 
     with get_cursor() as cur:
@@ -288,7 +288,7 @@ async def get_grattage(ticket_code: str):
 
 
 @router.post("/grattage/{ticket_code}")
-async def gratter(ticket_code: str):
+def gratter(ticket_code: str):
     """Effectue le grattage d'un ticket."""
 
     with get_cursor() as cur:

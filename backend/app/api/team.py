@@ -27,7 +27,7 @@ def _check_manager_code(admin_code: str):
 
 
 @router.get("", response_model=list[MembreEquipeOut])
-async def list_members(user: dict = Depends(get_current_user)):
+def list_members(user: dict = Depends(get_current_user)):
     """Liste les membres de l'équipe."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM membres_equipe ORDER BY nom")
@@ -35,7 +35,7 @@ async def list_members(user: dict = Depends(get_current_user)):
 
 
 @router.get("/active", response_model=list[MembreEquipeOut])
-async def list_active_members():
+def list_active_members():
     """Liste les membres actifs uniquement (public — utilisé par la page login)."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM membres_equipe WHERE actif = 1 ORDER BY nom")
@@ -43,7 +43,7 @@ async def list_active_members():
 
 
 @router.post("", response_model=dict)
-async def create_member(
+def create_member(
     data: MembreEquipeCreate,
     admin_code: str = Query(default="", description="Code admin requis pour le rôle Manager"),
     user: dict = Depends(get_current_user),
@@ -61,7 +61,7 @@ async def create_member(
 
 
 @router.patch("/{membre_id}", response_model=dict)
-async def update_member(
+def update_member(
     membre_id: int,
     data: MembreEquipeUpdate,
     admin_code: str = Query(default="", description="Code admin requis pour le rôle Manager"),
@@ -84,7 +84,7 @@ async def update_member(
 
 
 @router.delete("/{membre_id}", response_model=dict)
-async def delete_member(membre_id: int, user: dict = Depends(get_current_user)):
+def delete_member(membre_id: int, user: dict = Depends(get_current_user)):
     """Supprime un membre de l'équipe."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM membres_equipe WHERE id = %s", (membre_id,))

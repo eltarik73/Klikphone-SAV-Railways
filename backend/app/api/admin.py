@@ -32,7 +32,7 @@ def _require_admin(user: dict = Depends(get_current_user)):
 # ADMIN VERIFY / CHANGE PASSWORD
 # ============================================================
 @router.post("/verify")
-async def verify_admin(data: dict, user: dict = Depends(get_current_user)):
+def verify_admin(data: dict, user: dict = Depends(get_current_user)):
     """Vérifie les identifiants admin (login + mot de passe stocké en BDD)."""
     login = data.get("login", "")
     password = data.get("password", "")
@@ -56,7 +56,7 @@ async def verify_admin(data: dict, user: dict = Depends(get_current_user)):
 
 
 @router.post("/change-password")
-async def change_admin_password(data: dict, user: dict = Depends(get_current_user)):
+def change_admin_password(data: dict, user: dict = Depends(get_current_user)):
     """Change le mot de passe admin."""
     old_password = data.get("old_password", "")
     new_password = data.get("new_password", "")
@@ -112,7 +112,7 @@ def _resolve_dates(date_start, date_end):
 # 2. STATS OVERVIEW (6 KPI cards)
 # ============================================================
 @router.get("/stats/overview")
-async def get_stats_overview(
+def get_stats_overview(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -175,15 +175,15 @@ async def get_stats_overview(
 
 # Keep old /stats endpoint for backward compat
 @router.get("/stats")
-async def get_stats_legacy(period: Optional[str] = Query(None, pattern="^(7d|30d|90d|12m)$"), user: dict = Depends(_require_admin)):
-    return await get_stats_overview()
+def get_stats_legacy(period: Optional[str] = Query(None, pattern="^(7d|30d|90d|12m)$"), user: dict = Depends(_require_admin)):
+    return get_stats_overview(date_start=None, date_end=None, user=user)
 
 
 # ============================================================
 # 3. RÉPARATIONS PAR TECHNICIEN PAR JOUR (stacked bar)
 # ============================================================
 @router.get("/stats/reparations-par-tech")
-async def get_reparations_par_tech(
+def get_reparations_par_tech(
     days: int = Query(7, ge=1, le=365),
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
@@ -258,7 +258,7 @@ async def get_reparations_par_tech(
 # 4. AFFLUENCE PAR HEURE (moyenne)
 # ============================================================
 @router.get("/stats/affluence-heure")
-async def get_affluence_heure(
+def get_affluence_heure(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -313,7 +313,7 @@ JOURS_SEMAINE = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "D
 
 
 @router.get("/stats/affluence-jour")
-async def get_affluence_jour(
+def get_affluence_jour(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -363,7 +363,7 @@ async def get_affluence_jour(
 # 6. RÉPARTITION PAR MARQUE (top 8 + Autres)
 # ============================================================
 @router.get("/stats/repartition-marques")
-async def get_repartition_marques(
+def get_repartition_marques(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -418,7 +418,7 @@ async def get_repartition_marques(
 # 7. RÉPARTITION PAR TYPE DE PANNE (top 10)
 # ============================================================
 @router.get("/stats/repartition-pannes")
-async def get_repartition_pannes(
+def get_repartition_pannes(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -451,7 +451,7 @@ async def get_repartition_pannes(
 # 8. ÉVOLUTION CA (2 courbes : encaissé + potentiel)
 # ============================================================
 @router.get("/stats/evolution-ca")
-async def get_evolution_ca(
+def get_evolution_ca(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -513,7 +513,7 @@ async def get_evolution_ca(
 # 9. TEMPS MOYEN DE RÉPARATION PAR PANNE
 # ============================================================
 @router.get("/stats/temps-reparation")
-async def get_temps_reparation(
+def get_temps_reparation(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -555,7 +555,7 @@ async def get_temps_reparation(
 # 10. TAUX DE CONVERSION DEVIS
 # ============================================================
 @router.get("/stats/taux-conversion")
-async def get_taux_conversion(
+def get_taux_conversion(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -610,7 +610,7 @@ async def get_taux_conversion(
 # 11. TOP CLIENTS
 # ============================================================
 @router.get("/stats/top-clients")
-async def get_top_clients(
+def get_top_clients(
     date_start: Optional[str] = Query(None),
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
@@ -657,7 +657,7 @@ async def get_top_clients(
 # LEGACY ENDPOINTS (keep backward compat)
 # ============================================================
 @router.get("/reparations")
-async def get_reparations_legacy(
+def get_reparations_legacy(
     period: str = Query("30d", pattern="^(7d|30d|90d|12m)$"),
     marque: Optional[str] = None,
     tech: Optional[str] = None,
@@ -737,7 +737,7 @@ async def get_reparations_legacy(
 
 
 @router.get("/flux-clients")
-async def get_flux_clients_legacy(user: dict = Depends(_require_admin)):
+def get_flux_clients_legacy(user: dict = Depends(_require_admin)):
     """Legacy: flux de dépôts clients."""
     with get_cursor() as cur:
         cur.execute("""
@@ -770,7 +770,7 @@ async def get_flux_clients_legacy(user: dict = Depends(_require_admin)):
 
 
 @router.get("/performance-tech")
-async def get_performance_tech(user: dict = Depends(_require_admin)):
+def get_performance_tech(user: dict = Depends(_require_admin)):
     """Legacy: performance par technicien."""
     with get_cursor() as cur:
         cur.execute("""
@@ -797,7 +797,7 @@ async def get_performance_tech(user: dict = Depends(_require_admin)):
 
 
 @router.get("/evolution")
-async def get_evolution_legacy(
+def get_evolution_legacy(
     metric: str = Query("ca", pattern="^(ca|flux)$"),
     period: str = Query("12m", pattern="^(6m|12m)$"),
     user: dict = Depends(_require_admin),

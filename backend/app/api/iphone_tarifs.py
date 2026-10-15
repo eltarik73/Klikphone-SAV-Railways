@@ -458,7 +458,7 @@ def _clean_for_email(s: str) -> str:
 
 
 @router.post("/passer-commande")
-async def passer_commande(payload: PasserCommandeRequest, request: Request):
+def passer_commande(payload: PasserCommandeRequest, request: Request):
     """Client clique 'Passer commande' sur la vitrine. On :
     1. Valide les données (rate-limite 30/min/IP anti-spam)
     2. Dedup anti-spam (meme tel+modele+prix dans les 60 dernieres secondes)
@@ -576,7 +576,7 @@ async def passer_commande(payload: PasserCommandeRequest, request: Request):
 
 
 @router.get("/demandes-commandes")
-async def list_demandes_commandes(
+def list_demandes_commandes(
     statut: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
@@ -614,7 +614,7 @@ class UpdateDemandeCommandeRequest(BaseModel):
 
 
 @router.patch("/demandes-commandes/{demande_id}")
-async def update_demande_commande(
+def update_demande_commande(
     demande_id: int,
     payload: UpdateDemandeCommandeRequest,
     user: dict = Depends(get_current_user),
@@ -659,7 +659,7 @@ async def update_demande_commande(
 
 
 @router.get("/demandes-commandes/count-nouvelles")
-async def count_nouvelles(user: dict = Depends(get_current_user)):
+def count_nouvelles(user: dict = Depends(get_current_user)):
     """Compte les demandes avec statut='nouvelle' (pour badge dashboard)."""
     with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) AS n FROM demandes_commandes WHERE statut = 'nouvelle'")
@@ -718,7 +718,7 @@ def _audit_log(cur, *, user, action, target_type, target_id, details, request):
 
 
 @router.delete("/demandes-commandes/{demande_id}")
-async def delete_demande_commande(
+def delete_demande_commande(
     demande_id: int,
     request: Request,
     x_admin_password: Optional[str] = Header(None, alias="X-Admin-Password"),
@@ -799,7 +799,7 @@ class DemandeDevisRequest(BaseModel):
 
 
 @router.post("/demande-devis")
-async def demande_devis(payload: DemandeDevisRequest, request: Request):
+def demande_devis(payload: DemandeDevisRequest, request: Request):
     """Endpoint public : un visiteur de la vitrine demande un tarif ou
     souhaite commander un modele. Envoie un email a la boutique et
     enregistre aussi dans params pour trace.

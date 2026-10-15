@@ -94,7 +94,7 @@ def _gen_numero(cur):
 # ─── LIST ──────────────────────────────────────────────────
 
 @router.get("")
-async def list_devis(
+def list_devis(
     statut: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = Query(50, le=200),
@@ -140,7 +140,7 @@ async def list_devis(
 # ─── CREATE ────────────────────────────────────────────────
 
 @router.post("")
-async def create_devis(data: DevisCreate, user: dict = Depends(get_current_user)):
+def create_devis(data: DevisCreate, user: dict = Depends(get_current_user)):
     lignes_dicts = [l.model_dump() for l in data.lignes]
     for ld in lignes_dicts:
         ld["total"] = round(ld["quantite"] * ld["prix_unitaire"], 2)
@@ -190,7 +190,7 @@ async def create_devis(data: DevisCreate, user: dict = Depends(get_current_user)
 # ─── STATS ─────────────────────────────────────────────────
 
 @router.get("/stats/overview")
-async def devis_stats(user: dict = Depends(get_current_user)):
+def devis_stats(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("""
             SELECT
@@ -257,7 +257,7 @@ def devis_flash_search(
 # ─── TELEPHONES VENTE — CRUD ──────────────────────────────
 
 @router.get("/telephones-vente")
-async def list_telephones_vente(
+def list_telephones_vente(
     search: Optional[str] = None,
     marque: Optional[str] = None,
     etat: Optional[str] = None,
@@ -301,7 +301,7 @@ async def list_telephones_vente(
 
 
 @router.get("/telephones-vente/stats")
-async def telephones_vente_stats(user: dict = Depends(get_current_user)):
+def telephones_vente_stats(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("""
             SELECT
@@ -317,14 +317,14 @@ async def telephones_vente_stats(user: dict = Depends(get_current_user)):
 
 
 @router.get("/telephones-vente/marques")
-async def telephones_vente_marques(user: dict = Depends(get_current_user)):
+def telephones_vente_marques(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("SELECT DISTINCT marque FROM telephones_vente ORDER BY marque")
         return [r["marque"] for r in cur.fetchall()]
 
 
 @router.post("/telephones-vente")
-async def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
+def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
     fields = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "notes"]
     vals = {k: data.get(k) for k in fields if k in data}
     if not vals.get("marque") or not vals.get("modele"):
@@ -341,7 +341,7 @@ async def create_telephone_vente(data: dict, user: dict = Depends(get_current_us
 
 
 @router.patch("/telephones-vente/{tel_id}")
-async def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(get_current_user)):
+def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(get_current_user)):
     allowed = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "en_stock", "notes"]
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
@@ -353,7 +353,7 @@ async def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(g
 
 
 @router.delete("/telephones-vente/{tel_id}")
-async def delete_telephone_vente(tel_id: int, user: dict = Depends(get_current_user)):
+def delete_telephone_vente(tel_id: int, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("DELETE FROM telephones_vente WHERE id = %s", (tel_id,))
     return {"ok": True}
@@ -367,7 +367,7 @@ async def delete_telephone_vente(tel_id: int, user: dict = Depends(get_current_u
 # ─── GET ONE ───────────────────────────────────────────────
 
 @router.get("/{devis_id}")
-async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
+def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
         devis = cur.fetchone()
@@ -400,7 +400,7 @@ async def get_devis(devis_id: int, user: dict = Depends(get_current_user)):
 # ─── UPDATE ────────────────────────────────────────────────
 
 @router.patch("/{devis_id}")
-async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(get_current_user)):
+def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(get_current_user)):
     updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k != "lignes"}
 
     # Pour le trigger de notification après commit
@@ -507,7 +507,7 @@ async def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(ge
 # ─── DELETE ────────────────────────────────────────────────
 
 @router.delete("/{devis_id}")
-async def delete_devis(devis_id: int, user: dict = Depends(get_current_user)):
+def delete_devis(devis_id: int, user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("DELETE FROM devis_lignes WHERE devis_id = %s", (devis_id,))
         cur.execute("DELETE FROM devis WHERE id = %s", (devis_id,))
@@ -517,7 +517,7 @@ async def delete_devis(devis_id: int, user: dict = Depends(get_current_user)):
 # ─── CONVERT TO TICKET ────────────────────────────────────
 
 @router.post("/{devis_id}/convert")
-async def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
+def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
     """Convertit un devis accepté en ticket SAV.
     Idempotent et protégé : un devis déjà converti renvoie son ticket existant,
     et seul un devis 'Accepté' (ou 'Envoyé') peut être converti — empêche les
@@ -586,7 +586,7 @@ async def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user
 # ─── DUPLICATE ─────────────────────────────────────────────
 
 @router.post("/{devis_id}/duplicate")
-async def duplicate_devis(devis_id: int, user: dict = Depends(get_current_user)):
+def duplicate_devis(devis_id: int, user: dict = Depends(get_current_user)):
     """Duplique un devis existant."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM devis WHERE id = %s", (devis_id,))
@@ -622,7 +622,7 @@ async def duplicate_devis(devis_id: int, user: dict = Depends(get_current_user))
 # ─── PRINT DEVIS ───────────────────────────────────────────
 
 @router.get("/{devis_id}/print")
-async def print_devis(devis_id: int):
+def print_devis(devis_id: int):
     """Génère un HTML imprimable pour le devis."""
     from fastapi.responses import HTMLResponse
 

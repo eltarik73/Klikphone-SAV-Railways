@@ -71,7 +71,7 @@ async def get_optional_user(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest):
+def login(req: LoginRequest):
     """Authentification par PIN.
     
     Vérifie le PIN contre la table params (PIN_ACCUEIL ou PIN_TECH).
@@ -107,7 +107,7 @@ class SwitchUserRequest(BaseModel):
 
 
 @router.post("/switch-user", response_model=TokenResponse)
-async def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
+def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
     """Change d'utilisateur sans re-saisir le PIN (le token courant est valide)."""
     target = user["target"]
     token = create_token(target, req.utilisateur)
@@ -119,7 +119,7 @@ async def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_u
 
 
 @router.get("/me")
-async def get_me(user: dict = Depends(get_current_user)):
+def get_me(user: dict = Depends(get_current_user)):
     """Retourne les infos de l'utilisateur connecté."""
     role = ""
     try:

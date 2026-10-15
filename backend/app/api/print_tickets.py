@@ -839,7 +839,7 @@ def _recu_html(t: dict) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/{ticket_id}/print/client", response_class=HTMLResponse)
-async def print_client(ticket_id: int):
+def print_client(ticket_id: int):
     t = _get_ticket_full(ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
@@ -847,7 +847,7 @@ async def print_client(ticket_id: int):
 
 
 @router.get("/{ticket_id}/print/staff", response_class=HTMLResponse)
-async def print_staff(ticket_id: int):
+def print_staff(ticket_id: int):
     t = _get_ticket_full(ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
@@ -855,7 +855,7 @@ async def print_staff(ticket_id: int):
 
 
 @router.get("/{ticket_id}/print/combined", response_class=HTMLResponse)
-async def print_combined(ticket_id: int):
+def print_combined(ticket_id: int):
     t = _get_ticket_full(ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
@@ -872,7 +872,7 @@ async def print_combined(ticket_id: int):
 
 
 @router.get("/{ticket_id}/print/devis", response_class=HTMLResponse)
-async def print_devis(ticket_id: int):
+def print_devis(ticket_id: int):
     t = _get_ticket_full(ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
@@ -880,7 +880,7 @@ async def print_devis(ticket_id: int):
 
 
 @router.get("/{ticket_id}/print/recu", response_class=HTMLResponse)
-async def print_recu(ticket_id: int):
+def print_recu(ticket_id: int):
     t = _get_ticket_full(ticket_id)
     if not t:
         raise HTTPException(404, "Ticket non trouvé")
@@ -1558,7 +1558,7 @@ def generate_pdf(ticket_id: int, doc_type: str) -> tuple:
 
 
 @router.get("/{ticket_id}/pdf/{doc_type}")
-async def download_pdf(ticket_id: int, doc_type: str):
+def download_pdf(ticket_id: int, doc_type: str):
     """Télécharge le PDF A4 d'un devis ou reçu."""
     if doc_type not in ("devis", "recu"):
         raise HTTPException(400, "Type non supporté. Utilisez 'devis' ou 'recu'.")

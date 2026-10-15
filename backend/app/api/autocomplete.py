@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/autocomplete", tags=["autocomplete"])
 
 
 @router.get("/search")
-async def search(
+def search(
     categorie: str = Query(...),
     q: str = Query(""),
     limit: int = Query(8, le=50),
@@ -122,7 +122,7 @@ async def search(
 
 
 @router.post("/learn")
-async def learn(body: dict):
+def learn(body: dict):
     """Enregistre un terme pour l'autocomplétion (upsert compteur)."""
     categorie = body.get("categorie")
     terme = body.get("terme")

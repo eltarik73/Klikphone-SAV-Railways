@@ -78,7 +78,7 @@ STATUTS = [
 
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
 @router.get("/stats/dashboard")
-async def get_dashboard(
+def get_dashboard(
     search: Optional[str] = None,
     statut: Optional[str] = None,
     limit: int = Query(200, ge=1, le=500),
@@ -147,7 +147,7 @@ async def get_dashboard(
 
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
 @router.get("/stats/kpi")
-async def get_kpi(user: dict = Depends(get_current_user)):
+def get_kpi(user: dict = Depends(get_current_user)):
     """Récupère les KPI du dashboard."""
     today = datetime.now().strftime("%Y-%m-%d")
 
@@ -175,7 +175,7 @@ async def get_kpi(user: dict = Depends(get_current_user)):
 
 # ─── FILE D'ATTENTE RÉPARATION ────────────────────────────────────
 @router.get("/queue/repair")
-async def get_repair_queue(
+def get_repair_queue(
     tech: Optional[str] = None,
     limit: int = Query(20, ge=1, le=50),
     user: dict = Depends(get_current_user),
@@ -230,7 +230,7 @@ async def get_repair_queue(
 
 # ─── LISTE / RECHERCHE ─────────────────────────────────────────
 @router.get("", response_model=list[TicketFull])
-async def list_tickets(
+def list_tickets(
     statut: Optional[str] = None,
     tel: Optional[str] = None,
     code: Optional[str] = None,
@@ -290,7 +290,7 @@ async def list_tickets(
 
 # ─── TICKET UNIQUE ─────────────────────────────────────────────
 @router.get("/{ticket_id}")
-async def get_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
+def get_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
     """Récupère un ticket par ID avec les infos client + retour SAV enrichi."""
     with get_cursor() as cur:
         cur.execute("""
@@ -341,7 +341,7 @@ async def get_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/phone/{telephone}")
-async def get_tickets_by_phone(telephone: str, request: Request):
+def get_tickets_by_phone(telephone: str, request: Request):
     """Récupère les tickets par téléphone client (public — pour suivi client)."""
     _rate_limit_public_lookup(request)
     with get_cursor() as cur:
@@ -359,7 +359,7 @@ async def get_tickets_by_phone(telephone: str, request: Request):
 
 
 @router.get("/code/{ticket_code}")
-async def get_ticket_by_code(ticket_code: str, request: Request):
+def get_ticket_by_code(ticket_code: str, request: Request):
     """Récupère un ticket par code (public — pour suivi client).
 
     ⚠️ Endpoint SANS auth, accessible à quiconque possède le code (imprimé sur
@@ -386,7 +386,7 @@ async def get_ticket_by_code(ticket_code: str, request: Request):
 
 # ─── CRÉATION ───────────────────────────────────────────────────
 @router.post("", response_model=dict)
-async def create_ticket(data: TicketCreate):
+def create_ticket(data: TicketCreate):
     """Crée un nouveau ticket (accessible sans auth — formulaire client)."""
     # Si retour SAV, vérifier que le ticket original existe et appartient au même client
     if data.est_retour_sav and data.ticket_original_id:
@@ -436,7 +436,7 @@ async def create_ticket(data: TicketCreate):
 
 # ─── MISE À JOUR ────────────────────────────────────────────────
 @router.patch("/{ticket_id}", response_model=dict)
-async def update_ticket(
+def update_ticket(
     ticket_id: int,
     data: TicketUpdate,
     user: dict = Depends(get_current_user),
@@ -473,7 +473,7 @@ async def update_ticket(
 
 # ─── TOGGLE PAYÉ ────────────────────────────────────────────────
 @router.patch("/{ticket_id}/paye", response_model=dict)
-async def toggle_paye(
+def toggle_paye(
     ticket_id: int,
     user: dict = Depends(get_current_user),
 ):
@@ -568,7 +568,7 @@ async def toggle_paye(
 
 # ─── CHANGEMENT DE STATUT ───────────────────────────────────────
 @router.patch("/{ticket_id}/statut", response_model=dict)
-async def change_status(
+def change_status(
     ticket_id: int,
     data: StatusChange,
     user: dict = Depends(get_current_user),
@@ -715,7 +715,7 @@ async def change_status(
 
 # ─── HISTORIQUE (structured table) ───────────────────────────────
 @router.get("/{ticket_id}/historique")
-async def get_historique(ticket_id: int, user: dict = Depends(get_current_user)):
+def get_historique(ticket_id: int, user: dict = Depends(get_current_user)):
     """Retourne l'historique structuré d'un ticket."""
     with get_cursor() as cur:
         try:
@@ -733,7 +733,7 @@ async def get_historique(ticket_id: int, user: dict = Depends(get_current_user))
 
 # ─── HISTORIQUE (legacy text field) ──────────────────────────────
 @router.post("/{ticket_id}/historique", response_model=dict)
-async def add_history(
+def add_history(
     ticket_id: int,
     texte: str = Query(...),
     user: dict = Depends(get_current_user),
@@ -758,7 +758,7 @@ async def add_history(
 
 # ─── NOTE INTERNE ────────────────────────────────────────────────
 @router.post("/{ticket_id}/note", response_model=dict)
-async def add_note(
+def add_note(
     ticket_id: int,
     note: str = Query(...),
     user: dict = Depends(get_current_user),
@@ -786,7 +786,7 @@ async def add_note(
 
 # ─── NOTES PRIVÉES ─────────────────────────────────────────────────
 @router.get("/{ticket_id}/notes")
-async def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
+def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
     """Récupère les notes privées d'un ticket."""
     with get_cursor() as cur:
         try:
@@ -804,7 +804,7 @@ async def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.post("/{ticket_id}/notes")
-async def add_private_note(
+def add_private_note(
     ticket_id: int,
     auteur: str = Query(...),
     contenu: str = Query(...),
@@ -823,7 +823,7 @@ async def add_private_note(
 
 
 @router.delete("/{ticket_id}/notes/{note_id}")
-async def delete_private_note(
+def delete_private_note(
     ticket_id: int,
     note_id: int,
     user: dict = Depends(get_current_user),
@@ -835,7 +835,7 @@ async def delete_private_note(
 
 
 @router.patch("/{ticket_id}/notes/{note_id}")
-async def update_private_note(
+def update_private_note(
     ticket_id: int,
     note_id: int,
     important: Optional[bool] = Query(None),
@@ -853,7 +853,7 @@ async def update_private_note(
 
 # ─── MARK INTERACTIONS READ ───────────────────────────────────────
 @router.put("/{ticket_id}/mark-read")
-async def mark_ticket_read(ticket_id: int, user: dict = Depends(get_current_user)):
+def mark_ticket_read(ticket_id: int, user: dict = Depends(get_current_user)):
     """Marque toutes les interactions client (message, devis, avis) comme lues."""
     with get_cursor() as cur:
         cur.execute("""
@@ -866,7 +866,7 @@ async def mark_ticket_read(ticket_id: int, user: dict = Depends(get_current_user
 
 # ─── LOG MESSAGE ENVOYÉ ──────────────────────────────────────────
 @router.post("/{ticket_id}/message-log", response_model=dict)
-async def log_message(
+def log_message(
     ticket_id: int,
     auteur: str = Query(...),
     contenu: str = Query(...),
@@ -885,7 +885,7 @@ async def log_message(
 
 # ─── SUPPRESSION ─────────────────────────────────────────────────
 @router.delete("/{ticket_id}", response_model=dict)
-async def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
+def delete_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
     """Supprime un ticket et toutes ses données liées (cascade).
     Idempotent : retourne toujours {"ok": true} même si le ticket n'existe pas.
     """

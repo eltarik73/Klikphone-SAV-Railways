@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
 @router.get("/templates")
-async def list_templates():
+def list_templates():
     """Liste les templates de messages prédéfinis."""
     return [
         {"key": k, "titre": v["titre"]}
@@ -30,7 +30,7 @@ async def list_templates():
 
 
 @router.post("/generate-message")
-async def generate_message(
+def generate_message(
     ticket_id: int,
     template_key: str,
     user: dict = Depends(get_current_user),
@@ -57,7 +57,7 @@ async def generate_message(
 
 
 @router.post("/whatsapp")
-async def send_whatsapp(
+def send_whatsapp(
     ticket_id: int,
     message: str,
     user: dict = Depends(get_current_user),
@@ -83,7 +83,7 @@ async def send_whatsapp(
 
 
 @router.post("/sms")
-async def send_sms(
+def send_sms(
     ticket_id: int,
     message: str,
     user: dict = Depends(get_current_user),

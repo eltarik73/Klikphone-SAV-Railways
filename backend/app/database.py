@@ -5,6 +5,7 @@ Compatible avec la base existante Klikphone SAV.
 """
 
 import os
+import threading
 import psycopg2
 import psycopg2.pool
 import psycopg2.extras
@@ -12,6 +13,12 @@ from contextlib import contextmanager
 
 # Pool de connexions global
 _pool = None
+_MINCONN = 10
+_MAXCONN = 10
+# Les routes `def` tournent dans le threadpool (40 threads) : sans file d'attente,
+# ThreadedConnectionPool lève « connection pool exhausted » dès 11 requêtes simultanées.
+_slots = threading.BoundedSemaphore(_MAXCONN)
+_SLOT_TIMEOUT = 30
 
 
 def get_pool():
@@ -27,12 +34,12 @@ def get_pool():
             sep = "&" if "?" in database_url else "?"
             database_url = f"{database_url}{sep}sslmode=require"
 
-        # Pool sizing Railway : minconn=2 pour warm-start, maxconn=10 pour
-        # rester sous la limite Supabase (free=60, paid=200 par project) en
-        # laissant de la marge pour workers parallèles.
+        # maxconn=10 : sous la limite Supabase (free=60, paid=200 par projet).
+        # minconn=4 : psycopg2 ferme toute connexion rendue au-delà de minconn
+        # connexions inactives ; trop bas, chaque rafale rouvre des connexions TLS.
         _pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=10,
+            minconn=_MINCONN,
+            maxconn=_MAXCONN,
             dsn=database_url,
             connect_timeout=10,
             keepalives=1,
@@ -75,16 +82,21 @@ def get_db():
                 cur.execute("SELECT ...")
     """
     pool = get_pool()
-    conn = _checked_conn(pool)
+    if not _slots.acquire(timeout=_SLOT_TIMEOUT):
+        raise RuntimeError("Base de données saturée : aucune connexion libre depuis 30 s")
     try:
-        yield conn
-        conn.commit()
-    except Exception:
-        if not conn.closed:
-            conn.rollback()
-        raise
+        conn = _checked_conn(pool)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            if not conn.closed:
+                conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn, close=bool(conn.closed))
     finally:
-        pool.putconn(conn, close=bool(conn.closed))
+        _slots.release()
 
 
 @contextmanager

@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/clients", tags=["clients"])
 
 
 @router.get("", response_model=list[ClientOut])
-async def list_clients(
+def list_clients(
     search: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
@@ -46,7 +46,7 @@ async def list_clients(
 
 # ─── EXPORT routes (MUST be before /{client_id}) ──────────────
 @router.get("/export/csv")
-async def export_clients_csv(user: dict = Depends(get_current_user)):
+def export_clients_csv(user: dict = Depends(get_current_user)):
     """Exporte tous les clients au format CSV avec nb de tickets."""
     with get_cursor() as cur:
         cur.execute("""
@@ -75,7 +75,7 @@ async def export_clients_csv(user: dict = Depends(get_current_user)):
 
 
 @router.get("/export/excel")
-async def export_clients_excel(user: dict = Depends(get_current_user)):
+def export_clients_excel(user: dict = Depends(get_current_user)):
     """Exporte tous les clients au format Excel (.xlsx) avec nb de tickets."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -139,7 +139,7 @@ async def export_clients_excel(user: dict = Depends(get_current_user)):
 
 
 @router.get("/{client_id}", response_model=ClientOut)
-async def get_client(client_id: int, user: dict = Depends(get_current_user)):
+def get_client(client_id: int, user: dict = Depends(get_current_user)):
     """Récupère un client par ID."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM clients WHERE id = %s", (client_id,))
@@ -150,7 +150,7 @@ async def get_client(client_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/tel/{telephone}")
-async def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
+def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
     """Recherche un client par téléphone (réservé au staff — renvoie la fiche complète)."""
     with get_cursor() as cur:
         cur.execute("SELECT * FROM clients WHERE telephone = %s", (telephone,))
@@ -159,7 +159,7 @@ async def get_client_by_tel(telephone: str, user: dict = Depends(get_current_use
 
 
 @router.post("", response_model=ClientOut)
-async def create_or_get_client(data: ClientCreate):
+def create_or_get_client(data: ClientCreate):
     """Crée un client ou retourne l'existant si le téléphone existe déjà.
     
     Compatible avec get_or_create_client.
@@ -199,7 +199,7 @@ async def create_or_get_client(data: ClientCreate):
 
 
 @router.patch("/{client_id}", response_model=dict)
-async def update_client(
+def update_client(
     client_id: int,
     data: ClientUpdate,
     user: dict = Depends(get_current_user),
@@ -219,7 +219,7 @@ async def update_client(
 
 
 @router.delete("/{client_id}", response_model=dict)
-async def delete_client(client_id: int, user: dict = Depends(get_current_user)):
+def delete_client(client_id: int, user: dict = Depends(get_current_user)):
     """Supprime un client (vérifie qu'il n'a pas de tickets). Idempotent."""
     with get_cursor() as cur:
         cur.execute("SELECT COUNT(*) as cnt FROM tickets WHERE client_id = %s", (client_id,))
@@ -233,7 +233,7 @@ async def delete_client(client_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/{client_id}/tickets", response_model=list)
-async def get_client_tickets(client_id: int, user: dict = Depends(get_current_user)):
+def get_client_tickets(client_id: int, user: dict = Depends(get_current_user)):
     """Récupère tous les tickets d'un client avec info retour SAV."""
     with get_cursor() as cur:
         cur.execute("""

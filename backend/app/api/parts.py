@@ -16,7 +16,7 @@ STATUTS_TERMINAUX = ["Donné au client", "Clôturé"]
 
 
 @router.get("")
-async def list_parts(
+def list_parts(
     ticket_id: Optional[int] = None,
     statut: Optional[str] = None,
     search: Optional[str] = None,
@@ -77,7 +77,7 @@ async def list_parts(
 
 
 @router.post("", response_model=dict)
-async def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user)):
+def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user)):
     """Crée une commande de pièce."""
     ticket_id = data.ticket_id
 
@@ -110,7 +110,7 @@ async def create_part(data: CommandePieceCreate, user: dict = Depends(get_curren
 
 
 @router.post("/auto", response_model=dict)
-async def create_part_auto(data: dict):
+def create_part_auto(data: dict):
     """Crée une commande de pièce automatiquement lors du dépôt (sans auth)."""
     ticket_id = data.get("ticket_id")
     if not ticket_id:
@@ -145,7 +145,7 @@ async def create_part_auto(data: dict):
 
 
 @router.patch("/{commande_id}", response_model=dict)
-async def update_part(
+def update_part(
     commande_id: int,
     data: CommandePieceUpdate,
     user: dict = Depends(get_current_user),
@@ -198,7 +198,7 @@ async def update_part(
 
 
 @router.delete("/{commande_id}", response_model=dict)
-async def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
+def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
     """Supprime une commande de pièce."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM commandes_pieces WHERE id = %s", (commande_id,))
@@ -207,7 +207,7 @@ async def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
 
 # ─── PUBLIC ENDPOINT (for suivi page) ──────────────────────────
 @router.get("/public/{ticket_code}")
-async def get_commandes_public(ticket_code: str):
+def get_commandes_public(ticket_code: str):
     """Retourne les commandes liées à un ticket (public, infos limitées)."""
     with get_cursor() as cur:
         cur.execute("""

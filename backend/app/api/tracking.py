@@ -34,7 +34,7 @@ def _hash_ip(ip: str) -> str:
 
 
 @router.post("/event")
-async def track_event(data: TrackEventRequest, request: Request):
+def track_event(data: TrackEventRequest, request: Request):
     """Enregistre un event public (clic, view). Rate-limite 30/min/IP."""
     _rate_limit_public_lookup(request)
 
@@ -63,7 +63,7 @@ async def track_event(data: TrackEventRequest, request: Request):
 
 
 @router.get("/stats")
-async def tracking_stats(
+def tracking_stats(
     event_type: Optional[str] = None,
     days: int = 30,
     user: dict = Depends(get_current_user),

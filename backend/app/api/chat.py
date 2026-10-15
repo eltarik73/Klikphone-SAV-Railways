@@ -440,7 +440,7 @@ async def chat_ai(msg: AIChatRequest, current_user: dict = Depends(get_current_u
 
 
 @router.delete("/ai/conversation/{conv_id}")
-async def clear_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
+def clear_conversation(conv_id: str, current_user: dict = Depends(get_current_user)):
     """Efface une conversation IA."""
     _conversations.pop(conv_id, None)
     return {"status": "ok"}
@@ -451,7 +451,7 @@ async def clear_conversation(conv_id: str, current_user: dict = Depends(get_curr
 # ═════════════════════════════════════════════════════════
 
 @router.post("/team/send")
-async def send_team_message(msg: TeamMessageCreate, current_user: dict = Depends(get_current_user)):
+def send_team_message(msg: TeamMessageCreate, current_user: dict = Depends(get_current_user)):
     """Envoie un message d'equipe (general ou prive).
     L'expéditeur est TOUJOURS dérivé du JWT (msg.sender du body est ignoré)."""
     _ensure_table()
@@ -468,7 +468,7 @@ async def send_team_message(msg: TeamMessageCreate, current_user: dict = Depends
 
 
 @router.get("/team/messages")
-async def get_team_messages(
+def get_team_messages(
     channel: str = Query("all", description="'general' pour messages publics, 'all' pour tout"),
     limit: int = Query(50, le=200),
     current_user: dict = Depends(get_current_user),
@@ -526,7 +526,7 @@ async def get_team_messages(
 
 
 @router.get("/team/contacts")
-async def get_contacts(current_user: dict = Depends(get_current_user)):
+def get_contacts(current_user: dict = Depends(get_current_user)):
     """Liste des contacts avec dernier message et nombre de non lus (pour onglet Prive)."""
     user = current_user["sub"]
     _ensure_table()
@@ -583,7 +583,7 @@ async def get_contacts(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/team/conversation")
-async def get_conversation(contact: str = Query(alias="with"), current_user: dict = Depends(get_current_user)):
+def get_conversation(contact: str = Query(alias="with"), current_user: dict = Depends(get_current_user)):
     """Recupere les messages prives entre l'utilisateur connecté (JWT) et un contact."""
     user = current_user["sub"]
     _ensure_table()
@@ -606,7 +606,7 @@ async def get_conversation(contact: str = Query(alias="with"), current_user: dic
 
 
 @router.put("/team/read")
-async def mark_as_read(contact: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+def mark_as_read(contact: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Marque les messages comme lus. Si contact fourni, seulement la conv privee."""
     user = current_user["sub"]
     _ensure_table()
@@ -653,7 +653,7 @@ async def mark_as_read(contact: Optional[str] = None, current_user: dict = Depen
 
 
 @router.get("/team/unread")
-async def get_unread_count(current_user: dict = Depends(get_current_user)):
+def get_unread_count(current_user: dict = Depends(get_current_user)):
     """Nombre de messages non lus pour cet utilisateur (general seulement)."""
     user = current_user["sub"]
     _ensure_table()
@@ -678,7 +678,7 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/team/unread/total")
-async def get_total_unread(current_user: dict = Depends(get_current_user)):
+def get_total_unread(current_user: dict = Depends(get_current_user)):
     """Nombre total de messages non lus (general + prive)."""
     user = current_user["sub"]
     _ensure_table()

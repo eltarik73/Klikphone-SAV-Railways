@@ -52,7 +52,7 @@ def _compute_previous_period(debut, fin):
 # MAIN ENDPOINT
 # ============================================================
 @router.get("")
-async def get_reporting(
+def get_reporting(
     debut: Optional[str] = Query(None),
     fin: Optional[str] = Query(None),
     granularite: Optional[str] = Query("jour"),

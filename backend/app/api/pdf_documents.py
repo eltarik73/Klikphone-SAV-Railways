@@ -692,7 +692,7 @@ def generate_pdf(ticket_id: int, doc_type: str) -> tuple:
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/{ticket_id}/pdf/{doc_type}")
-async def download_pdf(ticket_id: int, doc_type: str):
+def download_pdf(ticket_id: int, doc_type: str):
     """Télécharge le PDF A4 d'un devis ou reçu."""
     if doc_type not in ("devis", "recu"):
         raise HTTPException(400, "Type de document non supporté. Utilisez 'devis' ou 'recu'.")

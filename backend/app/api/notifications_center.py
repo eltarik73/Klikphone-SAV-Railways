@@ -173,7 +173,7 @@ class NotificationOut(BaseModel):
 # ─── Endpoints REST ───────────────────────────────────────
 
 @router.get("")
-async def list_notifications(
+def list_notifications(
     unread_only: bool = False,
     limit: int = Query(30, le=100),
     current_user: dict = Depends(get_current_user),
@@ -223,7 +223,7 @@ async def list_notifications(
 
 
 @router.get("/unread-count")
-async def unread_count(current_user: dict = Depends(get_current_user)):
+def unread_count(current_user: dict = Depends(get_current_user)):
     """Renvoie le nombre de notifs non lues pour le membre connecté (JWT)."""
     user = current_user["sub"]
     _ensure_table()
@@ -241,7 +241,7 @@ async def unread_count(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/{notif_id}/read")
-async def mark_read(notif_id: int, current_user: dict = Depends(get_current_user)):
+def mark_read(notif_id: int, current_user: dict = Depends(get_current_user)):
     """Marque une notif comme lue par le membre connecté (JWT)."""
     user = current_user["sub"]
     _ensure_table()
@@ -266,7 +266,7 @@ async def mark_read(notif_id: int, current_user: dict = Depends(get_current_user
 
 
 @router.post("/mark-all-read")
-async def mark_all_read(current_user: dict = Depends(get_current_user)):
+def mark_all_read(current_user: dict = Depends(get_current_user)):
     """Marque toutes les notifs visibles comme lues par le membre connecté.
     Un seul UPDATE (au lieu d'une boucle SELECT+UPDATE) — le format ',u1,u2,'
     est préservé : read_by non vide commence et finit toujours par ','."""
@@ -290,7 +290,7 @@ async def mark_all_read(current_user: dict = Depends(get_current_user)):
 
 
 @router.delete("/{notif_id}")
-async def delete_notification(notif_id: int, current_user: dict = Depends(get_current_user)):
+def delete_notification(notif_id: int, current_user: dict = Depends(get_current_user)):
     """Supprime une notification (réservé au staff connecté)."""
     _ensure_table()
     with get_cursor() as cur:

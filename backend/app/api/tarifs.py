@@ -272,7 +272,7 @@ class TarifImportRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("")
-async def list_tarifs(
+def list_tarifs(
     q: Optional[str] = Query(None, description="Recherche sur marque ou modele"),
     marque: Optional[str] = Query(None, description="Filtre exact sur marque"),
     user: dict = Depends(get_current_user),
@@ -313,7 +313,7 @@ async def list_tarifs(
 
 
 @router.get("/stats")
-async def get_stats():
+def get_stats():
     """Retourne des statistiques sur les tarifs (cached 5 min)."""
     cached = _cache.get("tarifs_stats")
     if cached:
@@ -335,7 +335,7 @@ async def get_stats():
 
 
 @router.post("/import")
-async def import_tarifs(
+def import_tarifs(
     body: TarifImportRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -378,7 +378,7 @@ async def import_tarifs(
 
 
 @router.post("/recalculate")
-async def recalculate_tarifs(user: dict = Depends(get_current_user)):
+def recalculate_tarifs(user: dict = Depends(get_current_user)):
     """Recalcule tous les prix_client a partir de prix_fournisseur_ht."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
@@ -410,7 +410,7 @@ async def recalculate_tarifs(user: dict = Depends(get_current_user)):
 
 
 @router.patch("/{tarif_id}/stock")
-async def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
+def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
     """Inverse le statut en_stock d'un tarif."""
     with get_cursor() as cur:
         cur.execute(
@@ -424,7 +424,7 @@ async def toggle_stock(tarif_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/clear")
-async def clear_tarifs(user: dict = Depends(get_current_user)):
+def clear_tarifs(user: dict = Depends(get_current_user)):
     """Vide la table tarifs."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
@@ -450,7 +450,7 @@ class AppleDeviceImportRequest(BaseModel):
 
 
 @router.get("/apple-devices")
-async def list_apple_devices(user: dict = Depends(get_current_user)):
+def list_apple_devices(user: dict = Depends(get_current_user)):
     """Liste iPad/MacBook. Prix HT masques si non-admin (target != accueil)."""
     with get_cursor() as cur:
         cur.execute(
@@ -470,7 +470,7 @@ async def list_apple_devices(user: dict = Depends(get_current_user)):
 
 
 @router.post("/apple-devices/import")
-async def import_apple_devices(
+def import_apple_devices(
     body: AppleDeviceImportRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -516,7 +516,7 @@ async def import_apple_devices(
 
 
 @router.delete("/apple-devices/clear")
-async def clear_apple_devices(user: dict = Depends(get_current_user)):
+def clear_apple_devices(user: dict = Depends(get_current_user)):
     """Vide la table tarifs_apple_devices."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
@@ -770,7 +770,7 @@ TARIF_REP_ALL_COLS = TARIF_REP_COLS + TARIF_REP_BARRE_COLS
 
 
 @router.get("/reparation")
-async def list_tarifs_reparation():
+def list_tarifs_reparation():
     """Liste tous les tarifs reparation iPhone (public)."""
     with get_cursor() as cur:
         cur.execute("""
@@ -790,7 +790,7 @@ async def list_tarifs_reparation():
 
 
 @router.put("/reparation/{tarif_id}")
-async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any], user: dict = Depends(get_current_user)):
+def update_tarif_reparation(tarif_id: int, body: Dict[str, Any], user: dict = Depends(get_current_user)):
     """Met a jour un tarif reparation. Seuls les champs envoyes sont modifies."""
     updates = []
     params = []
@@ -815,7 +815,7 @@ async def update_tarif_reparation(tarif_id: int, body: Dict[str, Any], user: dic
 
 
 @router.post("/reparation/bulk")
-async def bulk_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
+def bulk_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
     """Remplace tous les tarifs reparation par le tableau fourni."""
     all_cols = TARIF_REP_COLS + TARIF_REP_BARRE_COLS
     col_names = ", ".join(all_cols)
@@ -837,7 +837,7 @@ async def bulk_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depend
 
 
 @router.post("/reparation/add")
-async def add_tarif_reparation(body: Dict[str, Any], user: dict = Depends(get_current_user)):
+def add_tarif_reparation(body: Dict[str, Any], user: dict = Depends(get_current_user)):
     """Ajoute un nouveau modele dans la grille tarifs."""
     modele = body.get("modele", "").strip()
     if not modele:
@@ -857,7 +857,7 @@ async def add_tarif_reparation(body: Dict[str, Any], user: dict = Depends(get_cu
 
 
 @router.delete("/reparation/{tarif_id}")
-async def delete_tarif_reparation(tarif_id: int, user: dict = Depends(get_current_user)):
+def delete_tarif_reparation(tarif_id: int, user: dict = Depends(get_current_user)):
     """Supprime un modele de la grille tarifs."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM tarifs_reparation WHERE id = %s RETURNING id", (tarif_id,))
@@ -868,7 +868,7 @@ async def delete_tarif_reparation(tarif_id: int, user: dict = Depends(get_curren
 
 
 @router.post("/reparation/reorder")
-async def reorder_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
+def reorder_tarifs_reparation(body: List[Dict[str, Any]], user: dict = Depends(get_current_user)):
     """Reordonne les tarifs. Body = [{id, ordre}, ...]"""
     with get_cursor() as cur:
         for item in body:

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/caisse", tags=["caisse"])
 
 
 @router.post("/send")
-async def send_to_caisse(
+def send_to_caisse(
     ticket_id: int,
     payment_mode: int = -1,
     user: dict = Depends(get_current_user),
@@ -40,7 +40,7 @@ async def send_to_caisse(
 
 
 @router.post("/envoyer")
-async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
+def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
     """Envoie une vente vers caisse.enregistreuse.fr (sans mode de paiement)."""
     import httpx
 
@@ -140,7 +140,7 @@ async def envoyer_caisse(data: dict, user: dict = Depends(get_current_user)):
 
 
 @router.get("/rayons")
-async def get_rayons(user: dict = Depends(get_current_user)):
+def get_rayons(user: dict = Depends(get_current_user)):
     """Récupère la liste des rayons/départements depuis caisse.enregistreuse.fr."""
     import httpx
 

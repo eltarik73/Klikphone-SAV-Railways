@@ -36,7 +36,7 @@ def _get_ticket_by_code(cur, code: str):
 
 # ─── MESSAGE CLIENT ──────────────────────────────────────
 @router.post("/{ticket_code}/message")
-async def send_client_message(ticket_code: str, body: MessageBody):
+def send_client_message(ticket_code: str, body: MessageBody):
     """Le client envoie un message depuis la page de suivi.
 
     En plus de la note 'message_client', on déclenche une notification
@@ -99,7 +99,7 @@ async def send_client_message(ticket_code: str, body: MessageBody):
 
 # ─── VALIDATION DEVIS ────────────────────────────────────
 @router.post("/{ticket_code}/valider-devis")
-async def valider_devis(ticket_code: str, body: DevisValidation):
+def valider_devis(ticket_code: str, body: DevisValidation):
     """Le client accepte ou refuse le devis depuis la page de suivi."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ts = datetime.now().strftime("%d/%m %H:%M")
@@ -189,7 +189,7 @@ async def valider_devis(ticket_code: str, body: DevisValidation):
 
 # ─── AVIS CLIENT ─────────────────────────────────────────
 @router.post("/{ticket_code}/avis")
-async def laisser_avis(ticket_code: str, body: AvisBody):
+def laisser_avis(ticket_code: str, body: AvisBody):
     """Le client laisse un avis (étoiles + commentaire)."""
     if body.note < 1 or body.note > 5:
         raise HTTPException(400, "Note entre 1 et 5")
@@ -214,7 +214,7 @@ async def laisser_avis(ticket_code: str, body: AvisBody):
 
 # ─── DASHBOARD INTERACTIONS ──────────────────────────────
 @router.get("/dashboard/interactions")
-async def get_interactions():
+def get_interactions():
     """4 catégories d'interactions non lues : accord_client (tout), accord_client_valide
     (validations positives uniquement, pour point vert dashboard), messages, avis."""
     with get_cursor() as cur:
@@ -265,7 +265,7 @@ async def get_interactions():
 
 # ─── CHECK AVIS EXISTS ──────────────────────────────────
 @router.get("/{ticket_code}/has-avis")
-async def has_avis(ticket_code: str):
+def has_avis(ticket_code: str):
     """Vérifie si un avis a déjà été laissé."""
     with get_cursor() as cur:
         t = _get_ticket_by_code(cur, ticket_code)
