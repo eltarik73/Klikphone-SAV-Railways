@@ -730,15 +730,17 @@ if STATIC_DIR.exists():
     async def serve_index():
         return FileResponse(str(STATIC_DIR / "index.html"))
 
+    _STATIC_ROOT = STATIC_DIR.resolve()
+
     # SPA catch-all: any path not matched by API routers → serve index.html
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
         # Don't serve index.html for API paths or docs
         if full_path.startswith("api/") or full_path.startswith("generated-videos/") or full_path in ("docs", "redoc", "openapi.json", "health", "health/db"):
             return JSONResponse({"detail": "Not found"}, 404)
-        # Check if it's a real static file
-        file_path = STATIC_DIR / full_path
-        if file_path.exists() and file_path.is_file():
+        # resolve() + is_relative_to : un chemin encodé (..%2F) ne doit jamais sortir de static/
+        file_path = (STATIC_DIR / full_path).resolve()
+        if file_path.is_relative_to(_STATIC_ROOT) and file_path.is_file():
             return FileResponse(str(file_path))
         return FileResponse(str(STATIC_DIR / "index.html"))
 else:

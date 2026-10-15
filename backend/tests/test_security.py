@@ -65,3 +65,19 @@ def test_fidelite_crediter_requires_auth(client):
         "client_id": 1, "ticket_id": 1, "montant": 100.0
     })
     assert r.status_code == 401
+
+
+# ── Fallback SPA : pas de lecture hors de backend/static ─────
+
+TRAVERSAL_PATHS = [
+    "/..%2Fapp%2Fmain.py",
+    "/%2e%2e/app/main.py",
+    "/%2e%2e%2fapp%2fdatabase.py",
+    "/assets%2F..%2F..%2Fapp%2Fmain.py",
+]
+
+
+@pytest.mark.parametrize("path", TRAVERSAL_PATHS)
+def test_spa_fallback_refuse_path_traversal(client, path):
+    r = client.get(path)
+    assert "get_cursor" not in r.text and "FastAPI" not in r.text, f"{path} a servi un fichier hors de static/"

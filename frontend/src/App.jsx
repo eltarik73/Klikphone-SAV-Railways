@@ -7,7 +7,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ChatWidget from './components/ChatWidget';
 import ScanListener from './components/ScanListener';
-import { ShieldX, ArrowLeft, RefreshCw, Home } from 'lucide-react';
+import { ShieldX, ArrowLeft, RefreshCw, Home, Loader2 } from 'lucide-react';
 
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -152,7 +152,9 @@ function ProtectedRoute({ children, allowedTargets }) {
       <Navbar />
       <main className={`pt-14 lg:pt-0 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}>
         <ErrorBoundary>
-          {children}
+          <Suspense fallback={<PageLoader />}>
+            {children}
+          </Suspense>
         </ErrorBoundary>
       </main>
       <FloatingBackButton />
@@ -184,26 +186,40 @@ function ChatOverlay() {
   return <ChatWidget />;
 }
 
-// Deferred loader: only appears if the lazy chunk takes >100ms,
-// avoiding UI flicker on fast (cached) navigations.
-const LazyFallback = () => {
+// Loader visible pendant le téléchargement d'une page lazy : sans lui, l'écran
+// restait vide plusieurs secondes quand le serveur est chargé (« page blanche »).
+// Délai de 150 ms pour éviter le flash quand le chunk est déjà en cache.
+function PageLoader({ fullScreen = false }) {
   const [visible, setVisible] = useState(false);
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
-    const id = setTimeout(() => setVisible(true), 100);
-    return () => clearTimeout(id);
+    const showId = setTimeout(() => setVisible(true), 150);
+    const slowId = setTimeout(() => setSlow(true), 12000);
+    return () => { clearTimeout(showId); clearTimeout(slowId); };
   }, []);
   if (!visible) return null;
   return (
-    <div className="fixed inset-x-0 top-0 z-[9999] pointer-events-none">
-      <div className="h-[3px] bg-brand-600 animate-progress-bar rounded-r-full" />
+    <div role="status" aria-live="polite"
+      className={`${fullScreen ? 'min-h-screen bg-slate-50' : 'min-h-[60vh]'} flex flex-col items-center justify-center gap-3 px-6 text-slate-500`}>
+      <Loader2 className="w-6 h-6 text-brand-600 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      <p className="text-sm font-medium">Chargement…</p>
+      {slow && (
+        <div className="text-center text-sm max-w-xs">
+          <p>Le chargement prend plus de temps que prévu.</p>
+          <button type="button" onClick={() => window.location.reload()}
+            className="mt-3 min-h-[44px] px-5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2">
+            Recharger
+          </button>
+        </div>
+      )}
     </div>
   );
-};
+}
 
 function AppRoutes() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<LazyFallback />}>
+      <Suspense fallback={<PageLoader fullScreen />}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/login/:target" element={<LoginPage />} />

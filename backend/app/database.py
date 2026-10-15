@@ -43,6 +43,28 @@ def get_pool():
     return _pool
 
 
+def _checked_conn(pool):
+    """Connexion du pool, validée par le SET statement_timeout (1 seul aller-retour).
+
+    Une connexion coupée côté Supabase (idle timeout) est rendue au pool avec
+    close=True : sans ce putconn elle resterait comptée comme utilisée et le
+    pool finirait en « connection pool exhausted ». Les connexions inactives
+    meurent souvent ensemble : on peut en jeter jusqu'à minconn avant d'en
+    ouvrir une neuve.
+    """
+    attempts = pool.minconn + 1
+    for attempt in range(attempts):
+        conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET statement_timeout = '30s'")
+            return conn
+        except Exception:
+            pool.putconn(conn, close=True)
+            if attempt == attempts - 1:
+                raise
+
+
 @contextmanager
 def get_db():
     """Context manager pour obtenir une connexion du pool.
@@ -53,24 +75,16 @@ def get_db():
                 cur.execute("SELECT ...")
     """
     pool = get_pool()
-    conn = pool.getconn()
+    conn = _checked_conn(pool)
     try:
-        # Validate connection is still alive (Supabase idle timeout)
-        try:
-            conn.cursor().execute("SELECT 1")
-        except Exception:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            conn = pool.getconn()
         yield conn
         conn.commit()
     except Exception:
-        conn.rollback()
+        if not conn.closed:
+            conn.rollback()
         raise
     finally:
-        pool.putconn(conn)
+        pool.putconn(conn, close=bool(conn.closed))
 
 
 @contextmanager
@@ -85,7 +99,6 @@ def get_cursor(dict_cursor=True):
     with get_db() as conn:
         cursor_factory = psycopg2.extras.RealDictCursor if dict_cursor else None
         with conn.cursor(cursor_factory=cursor_factory) as cur:
-            cur.execute("SET statement_timeout = '30s'")
             yield cur
 
 

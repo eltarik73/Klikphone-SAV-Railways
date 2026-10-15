@@ -23,7 +23,37 @@
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Écran de chargement affiché dès le HTML : sans lui, l'écran reste vide tant que
+           le JS n'est pas téléchargé (plusieurs secondes quand le serveur est chargé).
+           React remplace ce contenu au premier rendu. -->
+      <div id="kp-boot" role="status" aria-live="polite">
+        <style>
+          #kp-boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#f8fafc;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#64748b}
+          #kp-boot .kp-mark{width:48px;height:48px;border-radius:16px;background:linear-gradient(135deg,#7C3AED,#4F46E5);color:#fff;font-weight:800;font-size:24px;display:flex;align-items:center;justify-content:center}
+          #kp-boot .kp-spin{width:22px;height:22px;border:3px solid #ddd6fe;border-top-color:#7C3AED;border-radius:50%;animation:kp-spin .8s linear infinite}
+          #kp-boot .kp-slow{display:none;text-align:center;max-width:280px;font-size:14px;line-height:1.4}
+          #kp-boot.kp-is-slow .kp-slow{display:block}
+          #kp-boot button{margin-top:12px;min-height:44px;padding:10px 20px;border:0;border-radius:12px;background:#6D28D9;color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+          #kp-boot button:focus-visible{outline:3px solid #a78bfa;outline-offset:2px}
+          @keyframes kp-spin{to{transform:rotate(360deg)}}
+          @media (prefers-reduced-motion:reduce){#kp-boot .kp-spin{animation-duration:2.4s}}
+        </style>
+        <div class="kp-mark" aria-hidden="true">K</div>
+        <div class="kp-spin" aria-hidden="true"></div>
+        <p style="margin:0;font-size:14px;font-weight:600">Chargement…</p>
+        <div class="kp-slow">
+          Le chargement prend plus de temps que prévu.
+          <br /><button type="button" onclick="location.reload()">Recharger</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      setTimeout(function () {
+        var b = document.getElementById('kp-boot');
+        if (b) b.className = 'kp-is-slow';
+      }, 12000);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
