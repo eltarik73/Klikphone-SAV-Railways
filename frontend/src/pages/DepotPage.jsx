@@ -3,6 +3,9 @@ import api from '../lib/api';
 import { invalidateCache } from '../hooks/useApi';
 import { useToast } from '../components/Toast';
 import PatternGrid from '../components/PatternGrid';
+import ModelCombobox from '../components/ModelCombobox';
+import { useCatalog } from '../hooks/useCatalog';
+import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
   Lock, Shield, Plus, RotateCcw,
@@ -32,11 +35,10 @@ export default function DepotPage() {
   const timerRef = useRef(null);
 
   const [categories, setCategories] = useState([]);
-  const [marques, setMarques] = useState([]);
-  const [modeles, setModeles] = useState([]);
   const [pannes, setPannes] = useState([]);
 
   const [form, setForm] = useState({ ...INITIAL_FORM });
+  const catalogue = useCatalog(form.categorie || null, form.marque);
 
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
@@ -45,14 +47,12 @@ export default function DepotPage() {
 
   useEffect(() => {
     if (form.categorie) {
-      api.getMarques(form.categorie).then(setMarques).catch(() => setMarques([]));
       setForm(f => ({ ...f, marque: '', modele: '', modele_autre: '' }));
     }
   }, [form.categorie]);
 
   useEffect(() => {
     if (form.categorie && form.marque) {
-      api.getModeles(form.categorie, form.marque).then(setModeles).catch(() => setModeles([]));
       setForm(f => ({ ...f, modele: '', modele_autre: '' }));
     }
   }, [form.marque]);
@@ -83,8 +83,6 @@ export default function DepotPage() {
     setStep(0);
     setCreatedCode(null);
     setCountdown(null);
-    setMarques([]);
-    setModeles([]);
   };
 
   const updateForm = (field, value) => {
@@ -100,8 +98,12 @@ export default function DepotPage() {
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
-    if (step === 2 && (form.marque === 'Autre' || form.modele === 'Autre') && !form.modele_autre.trim()) {
-      errs.modele_autre = 'Veuillez préciser le modèle';
+    if (step === 2) {
+      if (!form.marque) errs.marque = 'Choisissez la marque';
+      else if (modeleManquant(form)) {
+        if (form.marque === MARQUE_AUTRE) errs.modele_autre = 'Veuillez préciser le modèle';
+        else errs.modele = 'Choisissez votre modèle';
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -122,8 +124,7 @@ export default function DepotPage() {
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
         marque: form.marque,
-        modele: (form.marque === 'Autre' || form.modele === 'Autre') ? '' : form.modele,
-        modele_autre: (form.marque === 'Autre' || form.modele === 'Autre') ? form.modele_autre : '',
+        ...champsModele(form.marque, form.modele, form.modele_autre),
         panne: form.panne,
         panne_detail: form.panne_detail, pin: form.pin,
         pattern: form.pattern, notes_client: form.notes_client,
@@ -142,7 +143,7 @@ export default function DepotPage() {
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
     if (step === 1) return form.categorie;
-    if (step === 2) return form.marque && (form.marque !== 'Autre' && form.modele !== 'Autre' || form.modele_autre.trim());
+    if (step === 2) return form.marque && !modeleManquant(form);
     if (step === 3) return form.panne;
     if (step === 4) return true;
     return true;
@@ -295,29 +296,33 @@ export default function DepotPage() {
               </div>
 
               <div>
-                <label className="input-label">Marque *</label>
-                <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
-                  <option value="">Sélectionner...</option>
-                  {marques.map(m => <option key={m} value={m}>{m}</option>)}
-                  <option value="Autre">Autre</option>
+                <label htmlFor="borne-marque" className="input-label">Marque *</label>
+                <select id="borne-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
+                  <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
+                  {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value={MARQUE_AUTRE}>Autre</option>
                 </select>
+                <FieldError field="marque" />
               </div>
 
-              {form.marque && form.marque !== 'Autre' && modeles.length > 0 && (
-                <div>
-                  <label className="input-label">Modèle</label>
-                  <select value={form.modele} onChange={e => updateForm('modele', e.target.value)} className="input">
-                    <option value="">Sélectionner...</option>
-                    {modeles.map(m => <option key={m} value={m}>{m}</option>)}
-                    <option value="Autre">Autre</option>
-                  </select>
-                </div>
+              {form.marque && form.marque !== MARQUE_AUTRE && (
+                <ModelCombobox
+                  id="borne-modele"
+                  label="Modèle"
+                  required={modeleRequis(form.categorie)}
+                  marque={form.marque}
+                  modeles={catalogue.modelesDe(form.marque)}
+                  loading={catalogue.loading}
+                  value={form.modele}
+                  onChange={(texte) => updateForm('modele', texte)}
+                  error={errors.modele}
+                />
               )}
 
-              {(form.marque === 'Autre' || form.modele === 'Autre') && (
+              {form.marque === MARQUE_AUTRE && (
                 <div>
-                  <label className="input-label">Préciser marque / modèle *</label>
-                  <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
+                  <label htmlFor="borne-modele-autre" className="input-label">Préciser marque / modèle *</label>
+                  <input id="borne-modele-autre" value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
                     className={`input ${errors.modele_autre ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Ex: Samsung Galaxy S24" autoFocus />
                   <FieldError field="modele_autre" />
                 </div>

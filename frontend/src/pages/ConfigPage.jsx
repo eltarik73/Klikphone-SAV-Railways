@@ -4,6 +4,7 @@ import { useApi, invalidateCache, clearCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
+import { normKey, searchModeles, parseModelesEnMasse, sansPrefixeMarque, MARQUE_AUTRE } from '../lib/catalog';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
@@ -11,6 +12,10 @@ import {
   BookOpen, ChevronDown, ChevronRight, AlertTriangle, Monitor,
   Zap, CreditCard, AtSign, Mail, Search, FileText, Package,
 } from 'lucide-react';
+
+const CATALOG_CATEGORIES = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
+// Limite du backend ; pas de découpage : l'ordre (rang dans la liste) repartirait de zéro à chaque envoi
+const BULK_MAX = 500;
 
 const COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#06B6D4', '#6366F1', '#64748B'];
 
@@ -88,12 +93,20 @@ export default function ConfigPage() {
   }, [hasUnsavedChanges]);
 
   // Catalog
-  const [catalog, setCatalog] = useState({ marques: [], modeles: [] });
+  const [catalogCategories, setCatalogCategories] = useState(CATALOG_CATEGORIES);
+  const [catalogCategorie, setCatalogCategorie] = useState('Smartphone');
+  const [catalog, setCatalog] = useState({ marques: [], version: null, repli: false });
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogMarqueFiltre, setCatalogMarqueFiltre] = useState('');
   const [catalogExpanded, setCatalogExpanded] = useState({});
-  const [newMarque, setNewMarque] = useState({ categorie: 'Smartphone', marque: '' });
-  const [newModele, setNewModele] = useState({ categorie: 'Smartphone', marque: '', modele: '' });
-
-  const categories = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
+  const [newMarque, setNewMarque] = useState('');
+  const [newModele, setNewModele] = useState({ marque: '', modele: '', annee: '' });
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkResult, setBulkResult] = useState(null);
+  const catalogReqRef = useRef(0);
 
   const { data: configData, loading, mutate: mutateConfig } = useApi(
     'config:main',
@@ -118,17 +131,63 @@ export default function ConfigPage() {
     }
   }, [configData]);
 
-  const loadCatalog = async () => {
+  // Même tri que les formulaires (/tree) ; repli sur /all (ordre alphabétique) si /tree échoue.
+  // Vue admin : toujours revalidée auprès du serveur (modifs faites depuis un autre poste comprises).
+  const loadCatalog = async (cat = catalogCategorie) => {
+    const req = ++catalogReqRef.current;
+    setCatalogLoading(true);
+    let data;
     try {
-      const data = await api.getAllCatalog();
-      setCatalog(data);
-    } catch (err) {
-      console.error(err);
+      const tree = await api.getCatalogTree(cat, { fresh: true });
+      data = {
+        marques: (Array.isArray(tree?.marques) ? tree.marques : [])
+          .filter(x => x?.marque && x.marque !== MARQUE_AUTRE)
+          .map(x => ({ marque: x.marque, modeles: (x.modeles || []).map(y => ({ m: y.m, a: y.a ?? null })) })),
+        version: tree?.version ?? null,
+        repli: false,
+      };
+    } catch {
+      try {
+        const all = await api.getAllCatalog();
+        const marques = [...new Set((all?.marques || []).filter(m => m.categorie === cat).map(m => m.marque))];
+        data = {
+          marques: marques.map(marque => ({
+            marque,
+            modeles: (all?.modeles || []).filter(m => m.categorie === cat && m.marque === marque).map(m => ({ m: m.modele, a: m.annee ?? null })),
+          })),
+          version: null,
+          repli: true,
+        };
+      } catch (err) {
+        console.error(err);
+        data = { marques: [], version: null, repli: true };
+        if (req === catalogReqRef.current) toast.error('Catalogue indisponible');
+      }
     }
+    if (req !== catalogReqRef.current) return;
+    setCatalog(data);
+    setCatalogLoading(false);
+  };
+
+  const selectCatalogCategorie = (cat) => {
+    setCatalogCategorie(cat);
+    setCatalogMarqueFiltre('');
+    setCatalogExpanded({});
+    setNewModele({ marque: '', modele: '', annee: '' });
+    setBulkResult(null);
+    loadCatalog(cat);
   };
 
   useEffect(() => {
-    if (activeTab === 'catalog') loadCatalog();
+    if (activeTab === 'catalog') {
+      loadCatalog();
+      api.getCategories()
+        .then(list => {
+          if (!Array.isArray(list)) return;
+          setCatalogCategories([...new Set([...list.filter(c => typeof c === 'string' && c.trim()), ...CATALOG_CATEGORIES])]);
+        })
+        .catch(() => {});
+    }
     if (activeTab === 'caisse') {
       api.getCaisseConfig().then(setCaisseConfig).catch(() => {});
     }
@@ -259,50 +318,116 @@ export default function ConfigPage() {
   };
 
   // Catalog
+  const anneeCatalogue = () => {
+    const n = Number.parseInt(newModele.annee, 10);
+    return Number.isInteger(n) && n >= 1990 && n <= 2100 ? n : null;
+  };
+
+  const envoyerModeles = async (marque, modeles, annee) => {
+    const res = await api.bulkAddModeles({ categorie: catalogCategorie, marque, annee, modeles });
+    return { ajoutes: res?.ajoutes || 0, reactives: res?.reactives || 0 };
+  };
+
   const handleAddMarque = async () => {
-    if (!newMarque.marque.trim()) return;
+    const marque = newMarque.replace(/\s+/g, ' ').trim();
+    if (!marque) return;
+    if (normKey(marque) === normKey(MARQUE_AUTRE)) { toast.error('« Autre » est réservé à la saisie libre'); return; }
+    if (catalog.marques.some(x => normKey(x.marque) === normKey(marque))) { toast.error('Cette marque existe déjà'); return; }
+    setCatalogBusy(true);
     try {
-      await api.addMarque(newMarque.categorie, newMarque.marque.trim());
-      setNewMarque(f => ({ ...f, marque: '' }));
+      await api.addMarque(catalogCategorie, marque);
+      setNewMarque('');
+      setNewModele(f => ({ ...f, marque }));
       await loadCatalog();
       toast.success('Marque ajoutée');
     } catch (err) {
-      toast.error('Erreur');
+      toast.error(err.message || 'Erreur');
+    } finally {
+      setCatalogBusy(false);
     }
   };
 
   const handleAddModele = async () => {
-    if (!newModele.modele.trim() || !newModele.marque) return;
+    const { marque } = newModele;
+    const modele = sansPrefixeMarque(marque, newModele.modele);
+    if (!marque || !modele) return;
+    if (modele.length > 80) { toast.error('80 caractères maximum'); return; }
+    if (normKey(modele) === normKey(MARQUE_AUTRE)) { toast.error('« Autre » n\'est pas un modèle'); return; }
+    setCatalogBusy(true);
     try {
-      await api.addModele(newModele.categorie, newModele.marque, newModele.modele.trim());
+      const { ajoutes, reactives } = await envoyerModeles(marque, [modele], anneeCatalogue());
       setNewModele(f => ({ ...f, modele: '' }));
       await loadCatalog();
-      toast.success('Modèle ajouté');
+      toast.success(ajoutes ? 'Modèle ajouté' : reactives ? 'Modèle réactivé' : 'Modèle déjà présent');
     } catch (err) {
-      toast.error('Erreur');
+      toast.error(err.message || 'Erreur');
+    } finally {
+      setCatalogBusy(false);
     }
   };
 
-  const handleDeleteMarque = async (categorie, marque) => {
-    if (!confirm(`Supprimer ${marque} et tous ses modèles ?`)) return;
+  const handleBulkAdd = async () => {
+    const { marque } = newModele;
+    const { modeles, tropLongs } = parseModelesEnMasse(bulkText, marque);
+    if (!marque || modeles.length === 0 || modeles.length > BULK_MAX) return;
+    setCatalogBusy(true);
+    setBulkResult(null);
     try {
-      await api.deleteMarque(categorie, marque);
+      const res = await envoyerModeles(marque, modeles, anneeCatalogue());
+      setBulkResult({ ...res, marque, envoyes: modeles.length, ignores: tropLongs.length });
+      setBulkText('');
+      await loadCatalog();
+      toast.success(`${res.ajoutes} modèle${res.ajoutes > 1 ? 's' : ''} ajouté${res.ajoutes > 1 ? 's' : ''}`);
+    } catch (err) {
+      toast.error(err.message || 'Erreur lors de l\'ajout en masse');
+    } finally {
+      setCatalogBusy(false);
+    }
+  };
+
+  const handleDeleteMarque = async (marque, nbModeles) => {
+    if (!confirm(`Supprimer la marque ${marque} et ses ${nbModeles} modèle${nbModeles > 1 ? 's' : ''} (${catalogCategorie}) ?`)) return;
+    setCatalogBusy(true);
+    try {
+      await api.deleteMarque(catalogCategorie, marque);
+      if (catalogMarqueFiltre === marque) setCatalogMarqueFiltre('');
+      if (newModele.marque === marque) setNewModele(f => ({ ...f, marque: '' }));
       await loadCatalog();
       toast.success('Marque supprimée');
     } catch (err) {
-      toast.error('Erreur');
+      toast.error(err.message || 'Erreur');
+    } finally {
+      setCatalogBusy(false);
     }
   };
 
-  const handleDeleteModele = async (categorie, marque, modele) => {
+  const handleDeleteModele = async (marque, modele) => {
+    if (!confirm(`Supprimer le modèle ${marque} ${modele} ?`)) return;
+    setCatalogBusy(true);
     try {
-      await api.deleteModele(categorie, marque, modele);
+      await api.deleteModele(catalogCategorie, marque, modele);
       await loadCatalog();
       toast.success('Modèle supprimé');
     } catch (err) {
-      toast.error('Erreur');
+      toast.error(err.message || 'Erreur');
+    } finally {
+      setCatalogBusy(false);
     }
   };
+
+  // Vue filtrée : l'ordre de l'API est conservé, la recherche ne fait que masquer
+  const catalogQuery = normKey(catalogSearch);
+  const catalogFiltreActif = !!catalogQuery || !!catalogMarqueFiltre;
+  const catalogVue = catalog.marques
+    .filter(x => !catalogMarqueFiltre || x.marque === catalogMarqueFiltre)
+    .map(x => {
+      if (!catalogQuery || normKey(x.marque).startsWith(catalogQuery)) return { ...x, visibles: x.modeles };
+      const hits = new Set(searchModeles(x.modeles, x.marque, catalogSearch, Infinity));
+      return { ...x, visibles: x.modeles.filter(m => hits.has(m)) };
+    })
+    .filter(x => !catalogQuery || x.visibles.length > 0);
+  const catalogNbModeles = catalog.marques.reduce((n, x) => n + x.modeles.length, 0);
+  const bulkApercu = parseModelesEnMasse(bulkText, newModele.marque);
 
   // Backup
   const handleDownloadBackup = async () => {
@@ -630,88 +755,264 @@ export default function ConfigPage() {
       {/* ═══ Catalog tab ═══ */}
       {activeTab === 'catalog' && (
         <div className="space-y-5">
-          {/* Add marque */}
+          {/* Catégorie */}
           <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter une marque</h2>
-            <div className="flex gap-2">
-              <select value={newMarque.categorie} onChange={e => setNewMarque(f => ({ ...f, categorie: e.target.value }))} className="input w-40">
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <input value={newMarque.marque} onChange={e => setNewMarque(f => ({ ...f, marque: e.target.value }))}
-                className="input flex-1" placeholder="Nom de la marque" onKeyDown={e => e.key === 'Enter' && handleAddMarque()} />
-              <button onClick={handleAddMarque} disabled={!newMarque.marque.trim()} className="btn-primary px-3">
-                <Plus className="w-4 h-4" />
-              </button>
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <h2 className="text-sm font-semibold text-slate-800">Catégorie</h2>
+              <p className="text-xs text-slate-500" aria-live="polite">
+                {catalogLoading ? 'Chargement…' : `${catalog.marques.length} marque${catalog.marques.length > 1 ? 's' : ''} · ${catalogNbModeles} modèle${catalogNbModeles > 1 ? 's' : ''}`}
+                {catalog.version && <span className="ml-2 font-mono">v{catalog.version}</span>}
+              </p>
             </div>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Catégorie du catalogue">
+              {catalogCategories.map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  aria-pressed={catalogCategorie === cat}
+                  onClick={() => selectCatalogCategorie(cat)}
+                  className={`min-h-11 px-4 rounded-xl text-sm font-semibold border motion-safe:transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1
+                    ${catalogCategorie === cat
+                      ? 'bg-brand-600 border-brand-600 text-white'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            {catalog.repli && !catalogLoading && (
+              <p className="mt-3 text-xs text-amber-700">Affichage de secours (ordre alphabétique, sans années) : l'arbre du catalogue est indisponible.</p>
+            )}
           </div>
 
-          {/* Add modele */}
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter un modèle</h2>
-            <div className="flex gap-2 flex-wrap">
-              <select value={newModele.categorie} onChange={e => setNewModele(f => ({ ...f, categorie: e.target.value, marque: '' }))} className="input w-36">
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={newModele.marque} onChange={e => setNewModele(f => ({ ...f, marque: e.target.value }))} className="input w-40">
-                <option value="">— Marque —</option>
-                {[...new Set(catalog.marques.filter(m => m.categorie === newModele.categorie).map(m => m.marque))].map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-              <input value={newModele.modele} onChange={e => setNewModele(f => ({ ...f, modele: e.target.value }))}
-                className="input flex-1" placeholder="Nom du modèle" onKeyDown={e => e.key === 'Enter' && handleAddModele()} />
-              <button onClick={handleAddModele} disabled={!newModele.modele.trim() || !newModele.marque} className="btn-primary px-3">
-                <Plus className="w-4 h-4" />
-              </button>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* Add marque */}
+            <div className="card p-5">
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter une marque <span className="font-normal text-slate-500">({catalogCategorie})</span></h2>
+              <div className="flex gap-2">
+                <label htmlFor="catalog-new-marque" className="sr-only">Nom de la marque</label>
+                <input
+                  id="catalog-new-marque"
+                  value={newMarque}
+                  onChange={e => setNewMarque(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddMarque(); } }}
+                  className="input flex-1 min-h-11"
+                  placeholder="Nom de la marque"
+                  autoComplete="off"
+                />
+                <button type="button" onClick={handleAddMarque} disabled={catalogBusy || !newMarque.trim()} className="btn-primary min-h-11 min-w-11 px-3" aria-label="Ajouter la marque">
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Catalog tree */}
-          <div className="card overflow-hidden">
-            <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100">
-              <span className="table-header">Catalogue ({catalog.marques.length} marques, {catalog.modeles.length} modèles)</span>
-            </div>
-            {categories.map(cat => {
-              const catMarques = [...new Set(catalog.marques.filter(m => m.categorie === cat).map(m => m.marque))];
-              if (catMarques.length === 0) return null;
-              return (
-                <div key={cat}>
-                  <button onClick={() => setCatalogExpanded(e => ({ ...e, [cat]: !e[cat] }))}
-                    className="w-full flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                    {catalogExpanded[cat] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    {cat} <span className="text-xs text-slate-400 font-normal">({catMarques.length})</span>
+            {/* Add modele(s) */}
+            <div className="card p-5">
+              <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter des modèles</h2>
+              <div className="grid grid-cols-[1fr_8rem] gap-2">
+                <div>
+                  <label htmlFor="catalog-new-modele-marque" className="input-label">Marque</label>
+                  <select
+                    id="catalog-new-modele-marque"
+                    value={newModele.marque}
+                    onChange={e => { setNewModele(f => ({ ...f, marque: e.target.value })); setBulkResult(null); }}
+                    className="input min-h-11"
+                  >
+                    <option value="">— Marque —</option>
+                    {catalog.marques.map(x => <option key={x.marque} value={x.marque}>{x.marque}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="catalog-new-modele-annee" className="input-label">Année</label>
+                  <input
+                    id="catalog-new-modele-annee"
+                    type="number"
+                    inputMode="numeric"
+                    min={1990}
+                    max={2100}
+                    value={newModele.annee}
+                    onChange={e => setNewModele(f => ({ ...f, annee: e.target.value }))}
+                    className="input min-h-11"
+                    placeholder="Optionnel"
+                    aria-describedby="catalog-annee-help"
+                  />
+                </div>
+              </div>
+              <p id="catalog-annee-help" className="mt-1 text-xs text-slate-500">Sans année, le modèle est classé en fin de liste.</p>
+
+              <div className="flex gap-2 mt-3">
+                <label htmlFor="catalog-new-modele" className="sr-only">Nom du modèle</label>
+                <input
+                  id="catalog-new-modele"
+                  value={newModele.modele}
+                  onChange={e => setNewModele(f => ({ ...f, modele: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddModele(); } }}
+                  className="input flex-1 min-h-11"
+                  placeholder={newModele.marque ? `Nom du modèle (sans « ${newModele.marque} »)` : 'Choisissez d\'abord la marque'}
+                  disabled={!newModele.marque}
+                  maxLength={80}
+                  autoComplete="off"
+                />
+                <button type="button" onClick={handleAddModele} disabled={catalogBusy || !newModele.modele.trim() || !newModele.marque} className="btn-primary min-h-11 min-w-11 px-3" aria-label="Ajouter le modèle">
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setBulkOpen(o => !o)}
+                aria-expanded={bulkOpen}
+                aria-controls="catalog-bulk"
+                className="mt-3 inline-flex items-center gap-1.5 min-h-11 px-2 -ml-2 rounded-lg text-sm font-semibold text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              >
+                {bulkOpen ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
+                Ajout en masse
+              </button>
+
+              {bulkOpen && (
+                <div id="catalog-bulk" className="mt-2 space-y-2">
+                  <label htmlFor="catalog-bulk-text" className="input-label">Un modèle par ligne, du plus récent au plus ancien</label>
+                  <textarea
+                    id="catalog-bulk-text"
+                    value={bulkText}
+                    onChange={e => { setBulkText(e.target.value); setBulkResult(null); }}
+                    rows={8}
+                    className="input font-mono text-sm resize-y"
+                    placeholder={'Galaxy S25 Ultra\nGalaxy S25+\nGalaxy S25'}
+                    disabled={!newModele.marque}
+                    aria-describedby="catalog-bulk-help"
+                  />
+                  <p id="catalog-bulk-help" className="text-xs text-slate-500">
+                    {newModele.marque
+                      ? <>
+                          {bulkApercu.modeles.length} modèle{bulkApercu.modeles.length > 1 ? 's' : ''} {newModele.marque}
+                          {anneeCatalogue() ? ` · année ${anneeCatalogue()}` : ' · sans année'}
+                          {bulkApercu.tropLongs.length > 0 && <span className="text-amber-700"> · {bulkApercu.tropLongs.length} ligne{bulkApercu.tropLongs.length > 1 ? 's' : ''} de plus de 80 caractères ignorée{bulkApercu.tropLongs.length > 1 ? 's' : ''}</span>}
+                          {bulkApercu.modeles.length > BULK_MAX && <span className="text-amber-700"> · {BULK_MAX} modèles maximum par envoi</span>}
+                          . Doublons, lignes vides et préfixe « {newModele.marque} » retirés.
+                        </>
+                      : 'Choisissez d\'abord la marque.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleBulkAdd}
+                    disabled={catalogBusy || !newModele.marque || bulkApercu.modeles.length === 0 || bulkApercu.modeles.length > BULK_MAX}
+                    className="btn-primary min-h-11"
+                  >
+                    {catalogBusy ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Upload className="w-4 h-4" aria-hidden="true" />}
+                    Ajouter {bulkApercu.modeles.length || ''} modèle{bulkApercu.modeles.length > 1 ? 's' : ''}
                   </button>
-                  {catalogExpanded[cat] && (
-                    <div className="pl-8 pr-5 pb-2">
-                      {catMarques.map(marque => {
-                        const modeles = catalog.modeles.filter(m => m.categorie === cat && m.marque === marque);
-                        return (
-                          <div key={marque} className="mb-2">
-                            <div className="flex items-center gap-2 py-1">
-                              <span className="text-xs font-semibold text-slate-600">{marque}</span>
-                              <span className="text-[10px] text-slate-400">({modeles.length} modèles)</span>
-                              <button onClick={() => handleDeleteMarque(cat, marque)} className="ml-auto btn-ghost p-1">
-                                <Trash2 className="w-3 h-3 text-red-400" />
-                              </button>
-                            </div>
-                            <div className="flex flex-wrap gap-1 ml-3">
-                              {modeles.map(m => (
-                                <span key={m.modele} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-xs text-slate-600">
-                                  {m.modele}
-                                  <button onClick={() => handleDeleteModele(cat, marque, m.modele)} className="hover:text-red-500">
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  {bulkResult && (
+                    <p className="text-sm text-emerald-700" role="status">
+                      {bulkResult.marque} : {bulkResult.ajoutes} ajouté{bulkResult.ajoutes > 1 ? 's' : ''}
+                      {bulkResult.reactives > 0 && `, ${bulkResult.reactives} réactivé${bulkResult.reactives > 1 ? 's' : ''}`}
+                      {bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives > 0 && `, ${bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives} déjà présent${bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives > 1 ? 's' : ''}`}
+                      {bulkResult.ignores > 0 && `, ${bulkResult.ignores} ignoré${bulkResult.ignores > 1 ? 's' : ''} (trop long)`}.
+                    </p>
                   )}
                 </div>
-              );
-            })}
+              )}
+            </div>
+          </div>
+
+          {/* Catalog list */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-wrap items-center gap-2">
+              <span className="table-header mr-auto">Catalogue {catalogCategorie}</span>
+              <div className="relative flex-1 min-w-[12rem] sm:flex-none sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
+                <label htmlFor="catalog-search" className="sr-only">Rechercher un modèle</label>
+                <input
+                  id="catalog-search"
+                  type="search"
+                  value={catalogSearch}
+                  onChange={e => setCatalogSearch(e.target.value)}
+                  className="input min-h-11 pl-9"
+                  placeholder="Rechercher (ex. s24u, 15 pro)"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <label htmlFor="catalog-filtre-marque" className="sr-only">Filtrer par marque</label>
+              <select
+                id="catalog-filtre-marque"
+                value={catalogMarqueFiltre}
+                onChange={e => setCatalogMarqueFiltre(e.target.value)}
+                className="input min-h-11 w-auto"
+              >
+                <option value="">Toutes les marques</option>
+                {catalog.marques.map(x => <option key={x.marque} value={x.marque}>{x.marque}</option>)}
+              </select>
+            </div>
+
+            {!catalogLoading && catalogVue.length === 0 && (
+              <p className="px-5 py-6 text-sm text-slate-500">
+                {catalogFiltreActif ? 'Aucun résultat pour ce filtre.' : 'Aucune marque dans cette catégorie.'}
+              </p>
+            )}
+
+            <ul className="divide-y divide-slate-100">
+              {catalogVue.map(({ marque, modeles, visibles }) => {
+                const ouvert = catalogFiltreActif || !!catalogExpanded[marque];
+                const panelId = `catalog-marque-${normKey(marque).replace(/ /g, '-') || 'x'}`;
+                return (
+                  <li key={marque}>
+                    <div className="flex items-center gap-1 pl-3 pr-2">
+                      <button
+                        type="button"
+                        onClick={() => setCatalogExpanded(e => ({ ...e, [marque]: !e[marque] }))}
+                        aria-expanded={ouvert}
+                        aria-controls={panelId}
+                        disabled={catalogFiltreActif}
+                        className="flex-1 min-w-0 flex items-center gap-2 min-h-11 px-2 rounded-lg text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      >
+                        {ouvert ? <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />}
+                        <span className="truncate">{marque}</span>
+                        <span className="text-xs font-normal text-slate-500 shrink-0">
+                          {visibles.length !== modeles.length ? `${visibles.length} / ${modeles.length}` : modeles.length} modèle{modeles.length > 1 ? 's' : ''}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMarque(marque, modeles.length)}
+                        disabled={catalogBusy}
+                        aria-label={`Supprimer la marque ${marque}`}
+                        title={`Supprimer la marque ${marque}`}
+                        className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                    {ouvert && (
+                      <div id={panelId} className="px-5 pb-3">
+                        {visibles.length === 0 ? (
+                          <p className="text-xs text-slate-500 py-2">Aucun modèle — ajoutez-en via « Ajouter des modèles ».</p>
+                        ) : (
+                          <ul className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+                            {visibles.map(({ m, a }) => (
+                              <li key={m} className="flex items-center gap-2 pl-3 rounded-lg bg-slate-50 border border-slate-100">
+                                <span className="flex-1 min-w-0 truncate text-sm text-slate-800" title={m}>{m}</span>
+                                {a && <span className="text-xs text-slate-500 tabular-nums shrink-0">{a}</span>}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteModele(marque, m)}
+                                  disabled={catalogBusy}
+                                  aria-label={`Supprimer le modèle ${marque} ${m}`}
+                                  title="Supprimer"
+                                  className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                >
+                                  <X className="w-4 h-4" aria-hidden="true" />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
       )}

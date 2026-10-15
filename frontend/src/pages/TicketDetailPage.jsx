@@ -14,6 +14,9 @@ import LiveCountdown from '../components/LiveCountdown';
 import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
 import AutocompleteField from '../components/AutocompleteField';
+import ModelCombobox from '../components/ModelCombobox';
+import { useCatalog } from '../hooks/useCatalog';
+import { MARQUE_AUTRE } from '../lib/catalog';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { useToast } from '../components/Toast';
@@ -98,6 +101,8 @@ export default function TicketDetailPage() {
   const [deviceForm, setDeviceForm] = useState({});
   const [clientForm, setClientForm] = useState({});
   const [pricingForm, setPricingForm] = useState({});
+  // Catégorie/marque enregistrées (déjà débouncées par l'auto-save) : pas de requête à chaque frappe
+  const catalogueAppareil = useCatalog(editingDevice ? (ticket?.categorie || null) : null, ticket?.marque || '');
 
   // Repair lines (parsed from reparation_supp JSON or legacy)
   const [repairLines, setRepairLines] = useState([]);
@@ -1130,8 +1135,27 @@ export default function TicketDetailPage() {
           >
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div><label className="input-label">Catégorie</label><input value={deviceForm.categorie} onChange={e => updateDeviceForm({ categorie: e.target.value })} className="input" /></div>
-              <div><label className="input-label">Marque</label><input value={deviceForm.marque} onChange={e => updateDeviceForm({ marque: e.target.value })} className="input" /></div>
-              <div><label className="input-label">Modèle</label><input value={deviceForm.modele} onChange={e => updateDeviceForm({ modele: e.target.value })} className="input" /></div>
+              <div>
+                <label htmlFor="ticket-marque" className="input-label">Marque</label>
+                <input id="ticket-marque" list="ticket-marques" value={deviceForm.marque} onChange={e => updateDeviceForm({ marque: e.target.value })} className="input" autoComplete="off" />
+                <datalist id="ticket-marques">
+                  {catalogueAppareil.marques.map(m => <option key={m} value={m} />)}
+                  <option value={MARQUE_AUTRE} />
+                </datalist>
+              </div>
+              {/* Toute édition vide modele_autre (prioritaire sur les impressions), sauf marque « Autre » où il porte le modèle */}
+              <ModelCombobox
+                id="ticket-modele"
+                label="Modèle"
+                marque={deviceForm.marque}
+                modeles={catalogueAppareil.modelesDe(deviceForm.marque)}
+                loading={catalogueAppareil.loading}
+                commitOnClose
+                value={(deviceForm.modele && deviceForm.modele !== 'Autre') ? deviceForm.modele : (deviceForm.modele_autre || '')}
+                onChange={(texte) => updateDeviceForm(deviceForm.marque === MARQUE_AUTRE
+                  ? { modele: '', modele_autre: texte }
+                  : { modele: texte, modele_autre: '' })}
+              />
               <div><AutocompleteField label="Panne" categorie="panne" value={deviceForm.panne} onChange={v => updateDeviceForm({ panne: v })} onSelect={s => updateDeviceForm({ panne: s.value })} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
               <div><label className="input-label">IMEI</label><input value={deviceForm.imei} onChange={e => updateDeviceForm({ imei: e.target.value })} className="input font-mono" /></div>
               <div><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => updateDeviceForm({ panne_detail: v })} onSelect={s => updateDeviceForm({ panne_detail: s.value })} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>

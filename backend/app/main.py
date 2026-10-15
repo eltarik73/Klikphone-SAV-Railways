@@ -22,72 +22,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import close_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking, notifications_center
+from app.services.catalog_seed import seed_catalog
 
 logger = logging.getLogger("klikphone.startup")
-
-
-def _seed_catalog_models():
-    """Seed Samsung & Xiaomi models into catalog (ON CONFLICT DO NOTHING)."""
-    from app.database import get_cursor
-    samsung_smartphones = [
-        "Galaxy S24", "Galaxy S24+", "Galaxy S24 Ultra",
-        "Galaxy S23", "Galaxy S23+", "Galaxy S23 Ultra", "Galaxy S23 FE",
-        "Galaxy S22", "Galaxy S22+", "Galaxy S22 Ultra",
-        "Galaxy S21", "Galaxy S21+", "Galaxy S21 Ultra", "Galaxy S21 FE",
-        "Galaxy Z Fold 5", "Galaxy Z Fold 4", "Galaxy Z Fold 3",
-        "Galaxy Z Flip 5", "Galaxy Z Flip 4", "Galaxy Z Flip 3",
-        "Galaxy A55", "Galaxy A54", "Galaxy A53", "Galaxy A52", "Galaxy A52s",
-        "Galaxy A35", "Galaxy A34", "Galaxy A33",
-        "Galaxy A25", "Galaxy A24", "Galaxy A23",
-        "Galaxy A15", "Galaxy A14", "Galaxy A13",
-        "Galaxy A05", "Galaxy A05s",
-        "Galaxy M55", "Galaxy M54", "Galaxy M34", "Galaxy M14",
-    ]
-    samsung_tablets = [
-        "Galaxy Tab S9", "Galaxy Tab S9+", "Galaxy Tab S9 Ultra",
-        "Galaxy Tab S9 FE", "Galaxy Tab S9 FE+",
-        "Galaxy Tab A9", "Galaxy Tab A9+",
-    ]
-    xiaomi_smartphones = [
-        "Xiaomi 14", "Xiaomi 14 Pro", "Xiaomi 14 Ultra",
-        "Xiaomi 13", "Xiaomi 13 Pro", "Xiaomi 13 Ultra", "Xiaomi 13T", "Xiaomi 13T Pro",
-        "Xiaomi 12", "Xiaomi 12 Pro", "Xiaomi 12T", "Xiaomi 12T Pro",
-        "Redmi Note 13", "Redmi Note 13 Pro", "Redmi Note 13 Pro+",
-        "Redmi Note 12", "Redmi Note 12 Pro", "Redmi Note 12 Pro+",
-        "Redmi Note 11", "Redmi Note 11 Pro", "Redmi Note 11 Pro+",
-        "Redmi 13", "Redmi 13C",
-        "Redmi 12", "Redmi 12C",
-        "Redmi A3", "Redmi A2", "Redmi A2+",
-        "POCO X6", "POCO X6 Pro",
-        "POCO X5", "POCO X5 Pro",
-        "POCO M6", "POCO M6 Pro",
-        "POCO F5", "POCO F5 Pro",
-    ]
-    xiaomi_tablets = ["Xiaomi Pad 6", "Xiaomi Pad 6 Pro"]
-
-    with get_cursor() as cur:
-        # Ensure marques exist
-        for cat, marque in [("Smartphone", "Samsung"), ("Tablette", "Samsung"),
-                            ("Smartphone", "Xiaomi"), ("Tablette", "Xiaomi")]:
-            cur.execute(
-                "INSERT INTO catalog_marques (categorie, marque) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (cat, marque),
-            )
-        # Insert models
-        rows = []
-        for m in samsung_smartphones:
-            rows.append(("Smartphone", "Samsung", m))
-        for m in samsung_tablets:
-            rows.append(("Tablette", "Samsung", m))
-        for m in xiaomi_smartphones:
-            rows.append(("Smartphone", "Xiaomi", m))
-        for m in xiaomi_tablets:
-            rows.append(("Tablette", "Xiaomi", m))
-        for cat, marque, modele in rows:
-            cur.execute(
-                "INSERT INTO catalog_modeles (categorie, marque, modele) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-                (cat, marque, modele),
-            )
 
 
 @asynccontextmanager
@@ -432,6 +369,13 @@ async def lifespan(app: FastAPI):
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS devis_estime DECIMAL(10,2) DEFAULT 0",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tarif_final DECIMAL(10,2) DEFAULT 0",
         "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS acompte DECIMAL(10,2) DEFAULT 0",
+        # Catalogue : ordre d'affichage, suppression logique, année de sortie
+        "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 100",
+        "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS annee SMALLINT",
+        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 0",
+        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manuel'",
     ]:
         try:
             with get_cursor() as cur:
@@ -565,9 +509,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning ADMIN_PASSWORD default: {e}\n{traceback.format_exc()}")
 
-    # Seed Samsung & Xiaomi models
+    # Catalogue marques/modèles : seed versionné (no-op si déjà appliqué)
     try:
-        _seed_catalog_models()
+        seed_catalog()
     except Exception as e:
         print(f"Warning catalog seed: {e}\n{traceback.format_exc()}")
 

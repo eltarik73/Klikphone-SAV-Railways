@@ -45,6 +45,11 @@ class ApiClient {
     this.token = localStorage.getItem('kp_token') || null;
     // In-memory GET cache: Map<url, { ts, data }>
     this._cache = new Map();
+    // GET en cours : Map<url, { promise, stale, fresh }> (stale → la réponse ne sera pas mise en cache)
+    this._inflight = new Map();
+    // Compteur de modifications du catalogue et dernier compteur relu par chemin /tree
+    this._catalogRev = 0;
+    this._catalogRevLue = new Map();
   }
 
   setToken(token) {
@@ -53,29 +58,52 @@ class ApiClient {
     else localStorage.removeItem('kp_token');
     // Auth change → drop any cached data
     this._cache.clear();
+    for (const entry of this._inflight.values()) entry.stale = true;
+    this._inflight.clear();
   }
 
   // Invalidate cache entries whose path starts with `prefix`.
   // Called automatically on non-GET requests.
   _invalidate(prefix) {
-    if (!prefix || this._cache.size === 0) return;
+    if (!prefix) return;
     // Normalize: only keep the path up to '?' to match regardless of query
     const base = prefix.split('?')[0];
     for (const key of this._cache.keys()) {
       if (key.startsWith(base)) this._cache.delete(key);
     }
+    // Un GET lancé avant la mutation ne doit pas remettre l'ancienne réponse en cache
+    for (const [key, entry] of this._inflight) {
+      if (key.startsWith(base)) {
+        entry.stale = true;
+        this._inflight.delete(key);
+      }
+    }
   }
 
   // Public wrapper: cached GET with configurable TTL.
-  getCached(path, ttl = DEFAULT_CACHE_TTL) {
-    const hit = this._cache.get(path);
-    if (hit && (Date.now() - hit.ts) < ttl) {
-      return Promise.resolve(hit.data);
+  // `fresh` : ignore le cache mémoire et revalide auprès du serveur (cache HTTP du navigateur compris).
+  getCached(path, ttl = DEFAULT_CACHE_TTL, { fresh = false } = {}) {
+    if (!fresh) {
+      const hit = this._cache.get(path);
+      if (hit && (Date.now() - hit.ts) < ttl) {
+        return Promise.resolve(hit.data);
+      }
     }
-    return this.get(path).then((data) => {
-      this._cache.set(path, { ts: Date.now(), data });
-      return data;
-    });
+    // Une requête en cours ne sert une lecture `fresh` que si elle revalide elle aussi
+    const pending = this._inflight.get(path);
+    if (pending && (pending.fresh || !fresh)) return pending.promise;
+    if (pending) pending.stale = true;
+    const entry = { stale: false, fresh, promise: null };
+    entry.promise = this.request(path, fresh ? { cache: 'no-cache' } : {})
+      .then((data) => {
+        if (!entry.stale) this._cache.set(path, { ts: Date.now(), data });
+        return data;
+      })
+      .finally(() => {
+        if (this._inflight.get(path) === entry) this._inflight.delete(path);
+      });
+    this._inflight.set(path, entry);
+    return entry.promise;
   }
 
   async request(path, options = {}, timeoutMs = 10000) {
@@ -209,11 +237,35 @@ class ApiClient {
   getPannes() { return this.get('/api/catalog/pannes'); }
   getMarques(categorie) { return this.get(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}`); }
   getModeles(categorie, marque) { return this.get(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
+  // Arbre marques → modèles d'une catégorie (public, mis en cache 10 min).
+  // Après une modification du catalogue, la relecture suivante de chaque arbre contourne le cache HTTP.
+  getCatalogTree(categorie, { fresh = false } = {}) {
+    const path = `/api/catalog/tree?categorie=${encodeURIComponent(categorie)}`;
+    const rev = this._catalogRev;
+    const revalider = fresh || (this._catalogRevLue.get(path) ?? 0) < rev;
+    return this.getCached(path, 10 * 60_000, { fresh: revalider }).then((data) => {
+      if (revalider && (this._catalogRevLue.get(path) ?? 0) < rev) this._catalogRevLue.set(path, rev);
+      return data;
+    });
+  }
   getAllCatalog() { return this.get('/api/catalog/all'); }
-  addMarque(categorie, marque) { return this.post(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
-  addModele(categorie, marque, modele) { return this.post(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`); }
-  deleteMarque(categorie, marque) { return this.delete(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`); }
-  deleteModele(categorie, marque, modele) { return this.delete(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`); }
+  addMarque(categorie, marque) { return this._mutateCatalog(this.post(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`)); }
+  addModele(categorie, marque, modele) { return this._mutateCatalog(this.post(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`)); }
+  // payload : { categorie, marque, annee: number|null, modeles: string[] (≤ 500) } → { ok, ajoutes, reactives }
+  bulkAddModeles(payload) { return this._mutateCatalog(this.post('/api/catalog/modeles/bulk', payload)); }
+  deleteMarque(categorie, marque) { return this._mutateCatalog(this.delete(`/api/catalog/marques?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}`)); }
+  deleteModele(categorie, marque, modele) { return this._mutateCatalog(this.delete(`/api/catalog/modeles?categorie=${encodeURIComponent(categorie)}&marque=${encodeURIComponent(marque)}&modele=${encodeURIComponent(modele)}`)); }
+  // post/delete n'invalident que leur propre chemin : on purge tout /api/catalog/ (dont /tree),
+  // aussi après la réponse pour écarter un arbre relu pendant la mutation.
+  async _mutateCatalog(request) {
+    this._invalidate('/api/catalog/');
+    try {
+      return await request;
+    } finally {
+      this._catalogRev += 1;
+      this._invalidate('/api/catalog/');
+    }
+  }
 
   // ─── AUTOCOMPLETE ───────────────────────────
   searchAutocomplete(categorie, q, limit = 8) {

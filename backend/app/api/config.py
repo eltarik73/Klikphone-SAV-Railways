@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.database import get_cursor
 from app.models import ParamUpdate, ParamOut
 from app.api.auth import get_current_user
+from app.api.catalog import clear_catalog_cache
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -192,6 +193,7 @@ async def import_backup(backup: dict, user: dict = Depends(get_current_user)):
             except Exception:
                 pass
 
+    clear_catalog_cache()
     return {"ok": True, "imported": counts}
 
 

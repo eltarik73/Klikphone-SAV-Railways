@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import ModelCombobox from '../components/ModelCombobox';
+import { useCatalog } from '../hooks/useCatalog';
+import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
   Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle,
@@ -22,8 +25,6 @@ export default function DeposerPage() {
   const [createdCode, setCreatedCode] = useState(null);
 
   const [categories, setCategories] = useState([]);
-  const [marques, setMarques] = useState([]);
-  const [modeles, setModeles] = useState([]);
   const [pannes, setPannes] = useState([]);
 
   const [form, setForm] = useState({
@@ -32,6 +33,7 @@ export default function DeposerPage() {
     panne: '', panne_detail: '', notes_client: '',
     carte_camby: false,
   });
+  const catalogue = useCatalog(form.categorie || null, form.marque);
 
   useEffect(() => {
     api.getCategories().then(setCategories).catch(() => {});
@@ -40,17 +42,11 @@ export default function DeposerPage() {
 
   useEffect(() => {
     if (form.categorie) {
-      api.getMarques(form.categorie).then(setMarques).catch(() => setMarques([]));
       setForm(f => ({ ...f, marque: '', modele: '', modele_autre: '' }));
     }
   }, [form.categorie]);
 
   useEffect(() => {
-    if (form.categorie && form.marque && form.marque !== 'Autre') {
-      api.getModeles(form.categorie, form.marque).then(setModeles).catch(() => setModeles([]));
-    } else {
-      setModeles([]);
-    }
     setForm(f => ({ ...f, modele: '', modele_autre: '' }));
   }, [form.marque]);
 
@@ -70,8 +66,9 @@ export default function DeposerPage() {
     if (step === 1) {
       if (!form.categorie) errs.categorie = 'La catégorie est requise';
       if (!form.marque) errs.marque = 'La marque est requise';
-      if (form.marque === 'Autre' && !form.modele_autre.trim()) {
-        errs.modele_autre = 'Veuillez préciser le modèle';
+      else if (modeleManquant(form)) {
+        if (form.marque === MARQUE_AUTRE) errs.modele_autre = 'Veuillez préciser le modèle';
+        else errs.modele = 'Choisissez votre modèle';
       }
     }
     if (step === 2) {
@@ -83,7 +80,7 @@ export default function DeposerPage() {
 
   const canNext = () => {
     if (step === 0) return form.nom && form.telephone;
-    if (step === 1) return form.categorie && form.marque && (form.marque !== 'Autre' || form.modele_autre.trim());
+    if (step === 1) return form.categorie && form.marque && !modeleManquant(form);
     if (step === 2) return form.panne;
     return true;
   };
@@ -99,8 +96,7 @@ export default function DeposerPage() {
         carte_camby: form.carte_camby ? 1 : 0,
         categorie: form.categorie,
         marque: form.marque,
-        modele: form.marque === 'Autre' ? '' : form.modele,
-        modele_autre: form.marque === 'Autre' ? form.modele_autre.trim() : '',
+        ...champsModele(form.marque, form.modele, form.modele_autre),
         panne: form.panne,
         panne_detail: (form.panne_detail || '').trim(),
         notes_client: (form.notes_client || '').trim(),
@@ -360,40 +356,35 @@ export default function DeposerPage() {
 
             {form.categorie && (
               <div>
-                <label className="input-label">Marque *</label>
-                <select value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
-                  <option value="">Sélectionner...</option>
-                  {marques.map(m => <option key={m} value={m}>{m}</option>)}
-                  <option value="Autre">Autre</option>
+                <label htmlFor="distance-marque" className="input-label">Marque *</label>
+                <select id="distance-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input text-base">
+                  <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
+                  {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value={MARQUE_AUTRE}>Autre</option>
                 </select>
                 <FieldError field="marque" />
               </div>
             )}
 
-            {form.marque && form.marque !== 'Autre' && (
-              <div>
-                <label className="input-label">Modèle</label>
-                <input
-                  type="text"
-                  list="modeles-list"
-                  value={form.modele}
-                  onChange={e => updateForm('modele', e.target.value)}
-                  className="input"
-                  placeholder={`Ex: ${form.marque === 'Apple' ? 'iPhone 14 Pro' : form.marque === 'Samsung' ? 'Galaxy S24' : 'Tapez le modèle...'}`}
-                  autoComplete="off"
-                />
-                <datalist id="modeles-list">
-                  {modeles.filter(m => m !== 'Autre').map(m => <option key={m} value={m} />)}
-                </datalist>
-                <p className="text-xs text-slate-400 mt-1">Tapez pour chercher ou saisissez librement</p>
-              </div>
+            {form.marque && form.marque !== MARQUE_AUTRE && (
+              <ModelCombobox
+                id="distance-modele"
+                label="Modèle"
+                required={modeleRequis(form.categorie)}
+                marque={form.marque}
+                modeles={catalogue.modelesDe(form.marque)}
+                loading={catalogue.loading}
+                value={form.modele}
+                onChange={(texte) => updateForm('modele', texte)}
+                error={errors.modele}
+              />
             )}
 
-            {form.marque === 'Autre' && (
+            {form.marque === MARQUE_AUTRE && (
               <div>
-                <label className="input-label">Préciser marque / modèle *</label>
-                <input value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
-                  className={`input ${errors.modele_autre ? 'border-red-300' : ''}`} placeholder="Ex: Samsung Galaxy S24" />
+                <label htmlFor="distance-modele-autre" className="input-label">Préciser marque / modèle *</label>
+                <input id="distance-modele-autre" value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
+                  className={`input text-base ${errors.modele_autre ? 'border-red-300' : ''}`} placeholder="Ex: Samsung Galaxy S24" />
                 <FieldError field="modele_autre" />
               </div>
             )}

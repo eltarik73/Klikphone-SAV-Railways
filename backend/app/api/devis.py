@@ -210,19 +210,29 @@ async def devis_stats(user: dict = Depends(get_current_user)):
 # ─── DEVIS FLASH — SEARCH TARIFS (grouped by model) ──────
 
 @router.get("/flash/search")
-async def devis_flash_search(
-    q: str = Query(..., min_length=1),
-    limit: int = Query(20, le=50),
-    user: Optional[dict] = None,
+def devis_flash_search(
+    q: str = Query(..., min_length=1, max_length=100),
+    limit: int = Query(20, ge=1, le=50),
+    user: dict = Depends(get_current_user),
 ):
     """Recherche dans tarifs, résultats groupés par modèle."""
+    motif = f"%{q}%"
     with get_cursor() as cur:
+        # LIMIT sur les modèles (pas sur les lignes) : chaque modèle garde toutes ses réparations
         cur.execute("""
-            SELECT marque, modele, type_piece, qualite, prix_client, en_stock
-            FROM tarifs
-            WHERE (modele ILIKE %s OR marque ILIKE %s)
-            ORDER BY marque, modele, type_piece, qualite
-        """, (f"%{q}%", f"%{q}%"))
+            WITH m AS (
+                SELECT marque, modele
+                FROM tarifs
+                WHERE modele ILIKE %s OR marque ILIKE %s
+                GROUP BY marque, modele
+                ORDER BY marque, modele
+                LIMIT %s
+            )
+            SELECT t.marque, t.modele, t.type_piece, t.qualite, t.prix_client, t.en_stock
+            FROM tarifs t
+            JOIN m ON m.marque = t.marque AND m.modele = t.modele
+            ORDER BY t.marque, t.modele, t.type_piece, t.qualite
+        """, (motif, motif, limit))
         rows = cur.fetchall()
 
     models = {}
@@ -241,8 +251,7 @@ async def devis_flash_search(
             "en_stock": bool(r.get("en_stock", True)),
         })
 
-    result = list(models.values())[:limit]
-    return result
+    return list(models.values())
 
 
 # ─── TELEPHONES VENTE — CRUD ──────────────────────────────

@@ -3,6 +3,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import ModelCombobox from '../components/ModelCombobox';
+import { useCatalog } from '../hooks/useCatalog';
+import { normKey } from '../lib/catalog';
 import { waLink } from '../lib/utils';
 import {
   FileText, Send, Mail, Printer, AlertTriangle, Search,
@@ -48,11 +51,11 @@ export default function AttestationPage() {
   // Catalog data
   const [categories] = useState(['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre']);
   const [selectedCategorie, setSelectedCategorie] = useState('Smartphone');
-  const [marques, setMarques] = useState([]);
-  const [modeles, setModeles] = useState([]);
-  // Saisie manuelle (option "Autre") pour marque / modèle
+  // Marque hors catalogue (option "Autre") : marque et modèle en saisie libre
   const [marqueManual, setMarqueManual] = useState(false);
-  const [modeleManual, setModeleManual] = useState(false);
+  const catalogue = useCatalog(selectedCategorie, marqueManual ? '' : form.marque);
+  // Marque d'une attestation rechargée, rapprochée du catalogue une fois celui-ci chargé
+  const [marqueARapprocher, setMarqueARapprocher] = useState(null);
   // Format d'envoi par email : 'pdf' ou 'word'
   const [emailFormat, setEmailFormat] = useState('pdf');
 
@@ -60,18 +63,16 @@ export default function AttestationPage() {
 
   const updateForm = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-  // Load marques when category changes
+  // Les attestations ne stockent pas de catégorie : rapprochement sur la catégorie affichée.
+  // Marque connue (casse ignorée) → liste, avec le libellé du catalogue ; sinon saisie libre.
   useEffect(() => {
-    if (!selectedCategorie) return;
-    api.getMarques(selectedCategorie).then(setMarques).catch(() => setMarques([]));
-    setModeles([]);
-  }, [selectedCategorie]);
-
-  // Load modeles when marque changes
-  useEffect(() => {
-    if (!selectedCategorie || !form.marque) { setModeles([]); return; }
-    api.getModeles(selectedCategorie, form.marque).then(setModeles).catch(() => setModeles([]));
-  }, [selectedCategorie, form.marque]);
+    if (marqueARapprocher === null || catalogue.loading) return;
+    const key = normKey(marqueARapprocher);
+    const connue = key ? catalogue.marques.find(m => normKey(m) === key) : null;
+    setMarqueManual(!!key && !connue);
+    if (connue && connue !== marqueARapprocher) setForm(f => ({ ...f, marque: connue }));
+    setMarqueARapprocher(null);
+  }, [marqueARapprocher, catalogue.loading, catalogue.marques]);
 
   // Client search with debounce
   useEffect(() => {
@@ -145,10 +146,8 @@ export default function AttestationPage() {
       marque: att.marque || '', modele: att.modele || '', imei: att.imei || '',
       etat: att.etat || '', motif: att.motif || '', compte_rendu: att.compte_rendu || '',
     });
-    // En rechargement, on affiche marque/modèle en saisie libre pré-remplie
-    // (on ne peut pas garantir que la valeur est dans le catalogue courant).
-    setMarqueManual(!!att.marque);
-    setModeleManual(!!att.modele);
+    // Le modèle hors catalogue bascule seul en saisie libre dans ModelCombobox
+    setMarqueARapprocher(att.marque || '');
     setEmail(att.email || '');
     setTelephone(att.telephone || att.client_telephone || '');
     try {
@@ -425,7 +424,7 @@ export default function AttestationPage() {
             <div className="flex flex-wrap gap-1.5 mb-4">
               {categories.map(cat => (
                 <button key={cat}
-                  onClick={() => { setSelectedCategorie(cat); setMarqueManual(false); setModeleManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
+                  onClick={() => { setSelectedCategorie(cat); setMarqueManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
                     ${selectedCategorie === cat
                       ? 'bg-brand-600 text-white'
@@ -439,10 +438,11 @@ export default function AttestationPage() {
             <div className="grid grid-cols-2 gap-3">
               {/* ─── Marque (catalogue ou saisie libre via "Autre") ─── */}
               <div>
-                <label className="input-label">Marque *</label>
+                <label htmlFor="attestation-marque" className="input-label">Marque *</label>
                 {marqueManual ? (
                   <div className="flex gap-1.5">
                     <input
+                      id="attestation-marque"
                       value={form.marque}
                       onChange={e => updateForm('marque', e.target.value)}
                       className="input flex-1"
@@ -452,21 +452,23 @@ export default function AttestationPage() {
                     <button
                       type="button"
                       title="Revenir à la liste"
-                      onClick={() => { setMarqueManual(false); setModeleManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
-                      className="px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0"
+                      aria-label="Revenir à la liste des marques"
+                      onClick={() => { setMarqueManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
+                      className="w-11 min-h-11 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-4 h-4" aria-hidden="true" />
                     </button>
                   </div>
                 ) : (
                   <div className="relative">
                     <select
+                      id="attestation-marque"
                       value={form.marque}
                       onChange={e => {
                         const v = e.target.value;
                         if (v === '__autre__') {
-                          // Saisie libre : marque ET modèle (pas de catalogue pour une marque hors liste)
-                          setMarqueManual(true); setModeleManual(true);
+                          // Marque hors liste : marque ET modèle en saisie libre
+                          setMarqueManual(true);
                           updateForm('marque', ''); updateForm('modele', '');
                         } else {
                           updateForm('marque', v); updateForm('modele', '');
@@ -474,8 +476,8 @@ export default function AttestationPage() {
                       }}
                       className="input appearance-none pr-8"
                     >
-                      <option value="">Sélectionner...</option>
-                      {marques.map(m => <option key={m} value={m}>{m}</option>)}
+                      <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
+                      {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
                       <option value="__autre__">✏️ Autre (saisie manuelle)</option>
                     </select>
                     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -483,48 +485,20 @@ export default function AttestationPage() {
                 )}
               </div>
 
-              {/* ─── Modèle (catalogue ou saisie libre via "Autre") ─── */}
-              <div>
-                <label className="input-label">Modèle *</label>
-                {modeleManual ? (
-                  <div className="flex gap-1.5">
-                    <input
-                      value={form.modele}
-                      onChange={e => updateForm('modele', e.target.value)}
-                      className="input flex-1"
-                      placeholder="Saisir le modèle"
-                    />
-                    {!marqueManual && (
-                      <button
-                        type="button"
-                        title="Revenir à la liste"
-                        onClick={() => { setModeleManual(false); updateForm('modele', ''); }}
-                        className="px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <select
-                      value={form.modele}
-                      onChange={e => {
-                        const v = e.target.value;
-                        if (v === '__autre__') { setModeleManual(true); updateForm('modele', ''); }
-                        else updateForm('modele', v);
-                      }}
-                      className="input appearance-none pr-8"
-                      disabled={!form.marque}
-                    >
-                      <option value="">Sélectionner...</option>
-                      {modeles.map(m => <option key={m} value={m}>{m}</option>)}
-                      <option value="__autre__">✏️ Autre (saisie manuelle)</option>
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
-                )}
-              </div>
+              {/* ─── Modèle : recherche dans le catalogue ou saisie libre ─── */}
+              <ModelCombobox
+                id="attestation-modele"
+                label="Modèle"
+                required
+                marque={marqueManual ? '' : form.marque}
+                modeles={marqueManual ? [] : catalogue.modelesDe(form.marque)}
+                loading={!marqueManual && !!form.marque && catalogue.loading}
+                value={form.modele}
+                onChange={(texte) => updateForm('modele', texte)}
+                commitOnClose
+                disabled={!marqueManual && !form.marque}
+                placeholder={!marqueManual && !form.marque ? 'Choisissez d\'abord la marque' : undefined}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3">
               <div>
