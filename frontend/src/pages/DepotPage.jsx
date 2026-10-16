@@ -6,9 +6,10 @@ import PatternGrid from '../components/PatternGrid';
 import ModelCombobox from '../components/ModelCombobox';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
+import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Lock, Shield, Plus, RotateCcw,
+  Lock, Shield, Plus, RotateCcw, Clock,
 } from 'lucide-react';
 
 // Validation helpers
@@ -22,7 +23,7 @@ const INITIAL_FORM = {
   nom: '', prenom: '', telephone: '', email: '', societe: '',
   categorie: '', marque: '', modele: '', modele_autre: '',
   panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
-  imei: '',
+  imei: '', consentement_marketing: false, attente_boutique: false,
 };
 
 export default function DepotPage() {
@@ -120,6 +121,7 @@ export default function DepotPage() {
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
         societe: form.societe,
+        rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
       });
       const result = await api.createTicket({
         client_id: client.id, categorie: form.categorie,
@@ -128,6 +130,7 @@ export default function DepotPage() {
         panne: form.panne,
         panne_detail: form.panne_detail, pin: form.pin,
         pattern: form.pattern, notes_client: form.notes_client,
+        ...(form.attente_boutique ? { priorite: 'attente' } : {}),
       });
       setCreatedCode(result.ticket_code);
       setStep(5);
@@ -249,6 +252,9 @@ export default function DepotPage() {
                 <label className="input-label">Société</label>
                 <input value={form.societe} onChange={e => updateForm('societe', e.target.value)} className="input" placeholder="optionnel" />
               </div>
+              <ConsentementMarketing id="borne-consentement" checked={form.consentement_marketing}
+                onChange={(v) => updateForm('consentement_marketing', v)} />
+              <MentionRgpd kiosque />
             </div>
           )}
 
@@ -380,6 +386,21 @@ export default function DepotPage() {
                   placeholder="Informations complémentaires (accessoires, état cosmétique...)"
                 />
               </div>
+
+              <label htmlFor="borne-attente" className="flex items-start gap-3 p-4 min-h-[44px] rounded-xl border-2 border-slate-200 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 cursor-pointer transition-colors">
+                <input id="borne-attente" type="checkbox" checked={form.attente_boutique}
+                  onChange={e => updateForm('attente_boutique', e.target.checked)}
+                  aria-describedby="borne-attente-aide"
+                  className="mt-0.5 w-6 h-6 shrink-0 rounded border-slate-400 text-brand-600 focus:ring-2 focus:ring-brand-500" />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                    <Clock className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Je patiente en boutique
+                  </span>
+                  <span id="borne-attente-aide" className="block text-sm text-slate-600 mt-0.5">
+                    L'atelier traite en priorité les clients qui attendent sur place.
+                  </span>
+                </span>
+              </label>
             </div>
           )}
 

@@ -7,9 +7,10 @@ import PatternGrid from '../components/PatternGrid';
 import ModelCombobox from '../components/ModelCombobox';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
+import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Lock, Shield, FileText, Send, Package, ShoppingBag,
+  Lock, Shield, FileText, Send, Package, ShoppingBag, Clock,
 } from 'lucide-react';
 
 // Flow = ordered list of step IDs
@@ -49,7 +50,7 @@ export default function ClientFormPage() {
     nom: '', prenom: '', telephone: '', email: '', societe: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
-    imei: '', carte_camby: false,
+    imei: '', carte_camby: false, consentement_marketing: false, attente_boutique: false,
   });
 
   // Pièce à commander (for regular tickets with piece checkbox)
@@ -79,7 +80,7 @@ export default function ClientFormPage() {
       nom: '', prenom: '', telephone: '', email: '', societe: '',
       categorie: '', marque: '', modele: '', modele_autre: '',
       panne: '', panne_detail: '', pin: '', pattern: '', notes_client: '',
-      imei: '',
+      imei: '', consentement_marketing: false, attente_boutique: false,
     });
     setPieceACommander(false);
     setPieceNom('');
@@ -184,6 +185,7 @@ export default function ClientFormPage() {
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
+        rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
       });
 
       if (isAchat) {
@@ -225,6 +227,7 @@ export default function ClientFormPage() {
           pattern: form.pattern,
           notes_client: form.notes_client,
           commande_piece: (isCommande || pieceACommander) ? 1 : 0,
+          ...(!isCommande && form.attente_boutique ? { priorite: 'attente' } : {}),
         });
 
         // Auto-create commande for "Commande" type
@@ -382,6 +385,9 @@ export default function ClientFormPage() {
                 className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
               <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
             </label>
+            <ConsentementMarketing id="depot-consentement" checked={form.consentement_marketing}
+              onChange={(v) => updateForm('consentement_marketing', v)} />
+            <MentionRgpd kiosque />
           </div>
         )}
 
@@ -569,6 +575,21 @@ export default function ClientFormPage() {
                     placeholder="Informations complémentaires (accessoires, état cosmétique...)"
                   />
                 </div>
+
+                <label htmlFor="depot-attente" className="flex items-start gap-3 p-4 min-h-[44px] rounded-xl border-2 border-slate-200 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 cursor-pointer transition-colors">
+                  <input id="depot-attente" type="checkbox" checked={form.attente_boutique}
+                    onChange={e => updateForm('attente_boutique', e.target.checked)}
+                    aria-describedby="depot-attente-aide"
+                    className="mt-0.5 w-6 h-6 shrink-0 rounded border-slate-400 text-brand-600 focus:ring-2 focus:ring-brand-500" />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                      <Clock className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Je patiente en boutique
+                    </span>
+                    <span id="depot-attente-aide" className="block text-sm text-slate-600 mt-0.5">
+                      L'atelier traite en priorité les clients qui attendent sur place.
+                    </span>
+                  </span>
+                </label>
 
                 {/* Pièce à commander */}
                 <div className="border-t border-slate-100 pt-4">

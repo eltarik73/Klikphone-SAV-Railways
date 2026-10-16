@@ -10,16 +10,16 @@ from time import time
 from typing import Literal, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, Request
-from psycopg2 import sql as psql
+from psycopg2 import errors as pg_errors, sql as psql
 from pydantic import BaseModel, Field
 
 from app.database import get_cursor
 from app.api.autocomplete import learn_terms
-from app.api.auth import client_ip, get_current_user, require_admin
+from app.api.auth import client_ip, get_current_user, get_optional_user, require_admin
 from app.api.fidelite import crediter_ticket
 from app.services.montants import calculer_montants, format_euros, statut_paiement
 from app.models import (
-    TicketCreate, TicketUpdate, TicketOut, TicketFull,
+    PRIORITES, TicketCreate, TicketUpdate, TicketOut, TicketFull,
     StatusChange, KPIResponse,
 )
 from app.services.notifications import (
@@ -272,7 +272,70 @@ def _kpi(row) -> dict:
     return {**KPIResponse(**data).model_dump(), "pre_enregistres": pre}
 
 
+# Fiche de réception (table ticket_controles, déclarée dans le schéma du démarrage).
+# Table absente (migration en échec) : le dashboard reste lisible, drapeau à FALSE,
+# nouvel essai après _RECEPTION_REESSAI secondes.
+_RECEPTION_SQL = ("EXISTS(SELECT 1 FROM ticket_controles tc WHERE tc.ticket_id = t.id "
+                  "AND tc.phase = 'entree' AND tc.complete) AS reception_complete")
+_RECEPTION_REESSAI = 300
+_reception_absente_le = 0.0
+
+
+def _colonne_reception() -> str:
+    if _reception_absente_le and time() - _reception_absente_le < _RECEPTION_REESSAI:
+        return "FALSE AS reception_complete"
+    return _RECEPTION_SQL
+
+
+# File atelier : client sur place, express, pro, puis normal
+_ORDRE_PRIORITE_SQL = """CASE t.priorite
+                    WHEN 'attente' THEN 0
+                    WHEN 'express' THEN 1
+                    WHEN 'pro' THEN 2
+                    ELSE 3
+                END"""
+# Heure promise : date_recuperation est du TEXTE libre ; seule une valeur qui
+# commence par AAAA-MM-JJ est ordonnée (comparaison de texte, « T » ramené à l'espace
+# pour que les deux saisies d'un même jour se comparent), les autres passent après.
+_HEURE_PROMISE_SQL = (r"CASE WHEN t.date_recuperation ~ '^\d{4}-\d{2}-\d{2}' "
+                      r"THEN replace(left(t.date_recuperation, 19), 'T', ' ') END")
+
+
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
+def _lire_dashboard(today, colonne_reception, colonnes_etagere, where, order, params_tickets, limit, offset):
+    with get_cursor() as cur:
+        # KPI in one query
+        cur.execute(_KPI_SQL, (today + "%", today))
+        kpi_row = cur.fetchone()
+
+        # Tickets list
+        cur.execute(f"""
+            SELECT t.*,
+                   c.nom as client_nom, c.prenom as client_prenom,
+                   c.telephone as client_tel, c.email as client_email,
+                   c.societe as client_societe, c.carte_camby as client_carte_camby,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
+                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email,
+                   {colonne_reception}
+                   {colonnes_etagere}
+            FROM tickets t
+            JOIN clients c ON t.client_id = c.id
+            {where}
+            ORDER BY {order}
+            LIMIT %(limit)s OFFSET %(offset)s
+        """, params_tickets)
+        tickets = cur.fetchall() or []
+        # COUNT séparé et seulement si la page est pleine : un COUNT(*) OVER ()
+        # empêcherait de lire les 200 premiers tickets par l'index date_depot.
+        total = offset + len(tickets)
+        if len(tickets) == limit or (offset and not tickets):
+            cur.execute(f"SELECT COUNT(*) AS n FROM tickets t JOIN clients c ON t.client_id = c.id {where}", params_tickets)
+            row = cur.fetchone()
+            total = row["n"] if row else 0
+    return kpi_row, tickets, total
+
+
 @router.get("/stats/dashboard")
 def get_dashboard(
     search: Optional[str] = None,
@@ -293,8 +356,17 @@ def get_dashboard(
 
     Vue a_recuperer (étagère, services/etagere) : « Réparation terminée » et
     « Rendu au client » non payés, terminés d'abord, du plus ancien au plus récent
-    depuis la fin de réparation ; chaque ticket porte fin_reparation, jours_attente
-    et reste_du, la réponse delai_abandon_jours.
+    depuis la fin de réparation ; chaque ticket porte fin_reparation, jours_attente,
+    reste_du, emplacement (appareils en boutique seulement : None une fois rendu),
+    nb_relances et derniere_relance (messages tracés depuis la fin de réparation) et
+    relance_due (palier ETAGERE_RELANCE_PALIERS atteint, rien envoyé depuis 3 jours) ;
+    la réponse porte delai_abandon_jours (ETAGERE_DELAI_ABANDON_JOURS, 365 par défaut,
+    jamais moins : minimum de la loi du 31/12/1903).
+
+    Toutes vues : chaque ticket porte aussi les colonnes de t.* dont emplacement et
+    priorite (normal / express / attente = client sur place / pro, models.PRIORITES),
+    et reception_complete (fiche de réception d'entrée complète, table ticket_controles ;
+    FALSE pendant 5 min si la table manque).
     """
     today = datetime.now().strftime("%Y-%m-%d")
     for value in (date_from, date_to):
@@ -330,45 +402,27 @@ def get_dashboard(
             order = search_engine.ticket_order_sql(pq, sp)
     colonnes_etagere = ""
     if vue == "a_recuperer":
-        colonnes_etagere = f", {etagere.fin_reparation_sql(sp, 't')} AS fin_reparation"
+        colonnes_etagere = etagere.colonnes_sql(sp, "t")
         order = etagere.ORDRE_SQL
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
     params_tickets = {**sp.values, "limit": limit, "offset": offset}
 
-    with get_cursor() as cur:
-        # KPI in one query
-        cur.execute(_KPI_SQL, (today + "%", today))
-        kpi_row = cur.fetchone()
-
-        # Tickets list
-        cur.execute(f"""
-            SELECT t.*,
-                   c.nom as client_nom, c.prenom as client_prenom,
-                   c.telephone as client_tel, c.email as client_email,
-                   c.societe as client_societe, c.carte_camby as client_carte_camby,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
-                   {colonnes_etagere}
-            FROM tickets t
-            JOIN clients c ON t.client_id = c.id
-            {where}
-            ORDER BY {order}
-            LIMIT %(limit)s OFFSET %(offset)s
-        """, params_tickets)
-        tickets = cur.fetchall() or []
-        # COUNT séparé et seulement si la page est pleine : un COUNT(*) OVER ()
-        # empêcherait de lire les 200 premiers tickets par l'index date_depot.
-        total = offset + len(tickets)
-        if len(tickets) == limit or (offset and not tickets):
-            cur.execute(f"SELECT COUNT(*) AS n FROM tickets t JOIN clients c ON t.client_id = c.id {where}", params_tickets)
-            row = cur.fetchone()
-            total = row["n"] if row else 0
+    global _reception_absente_le
+    colonne_reception = _colonne_reception()
+    try:
+        kpi_row, tickets, total = _lire_dashboard(today, colonne_reception, colonnes_etagere,
+                                                  where, order, params_tickets, limit, offset)
+    except pg_errors.UndefinedTable:
+        if colonne_reception != _RECEPTION_SQL:
+            raise
+        _reception_absente_le = time()
+        kpi_row, tickets, total = _lire_dashboard(today, _colonne_reception(), colonnes_etagere,
+                                                  where, order, params_tickets, limit, offset)
 
     if vue == "a_recuperer":
         return {"kpi": _kpi(kpi_row), "tickets": etagere.enrichir(tickets), "total": total,
-                "delai_abandon_jours": etagere.DELAI_ABANDON_JOURS}
+                "delai_abandon_jours": etagere.delai_abandon_jours()}
     return {"kpi": _kpi(kpi_row), "tickets": tickets, "total": total}
 
 
@@ -392,7 +446,9 @@ def get_repair_queue(
     limit: int = Query(20, ge=1, le=50),
     user: dict = Depends(get_current_user),
 ):
-    """Retourne les tickets en attente de réparation, triés par priorité."""
+    """Tickets à réparer, triés : priorité (client sur place, express, pro, normal),
+    heure promise (date_recuperation au format AAAA-MM-JJ…, la plus proche d'abord),
+    statut (en cours, pièce reçue, diagnostic, accord, pièce attendue), date de dépôt."""
     with get_cursor() as cur:
         conditions = [
             "t.statut IN ('En attente de diagnostic', 'En attente de pièce', "
@@ -410,12 +466,14 @@ def get_repair_queue(
         cur.execute(f"""
             SELECT t.id, t.ticket_code, t.statut, t.marque, t.modele, t.panne,
                    t.technicien_assigne, t.date_recuperation, t.date_depot,
-                   t.reparation_debut, t.reparation_duree,
+                   t.reparation_debut, t.reparation_duree, t.priorite,
                    c.nom AS client_nom, c.prenom AS client_prenom
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
             {where}
             ORDER BY
+                {_ORDRE_PRIORITE_SQL},
+                {_HEURE_PROMISE_SQL} ASC NULLS LAST,
                 CASE t.statut
                     WHEN 'En cours de réparation' THEN 1
                     WHEN 'Pièce reçue' THEN 2
@@ -581,8 +639,23 @@ def get_ticket_by_code(ticket_code: str, request: Request):
 
 # ─── CRÉATION ───────────────────────────────────────────────────
 @router.post("", response_model=dict)
-def create_ticket(data: TicketCreate, background_tasks: BackgroundTasks):
-    """Crée un nouveau ticket (accessible sans auth — formulaire client)."""
+def create_ticket(
+    data: TicketCreate,
+    background_tasks: BackgroundTasks,
+    user: Optional[dict] = Depends(get_optional_user),
+):
+    """Crée un nouveau ticket (accessible sans auth — formulaire client).
+
+    Sans session staff, la borne du magasin (/client, /depot) peut seulement déclarer
+    que le client attend sur place ; express et pro restent réservés au personnel,
+    et un dépôt à distance ne passe jamais devant la file.
+    """
+    if user:
+        priorite = data.priorite
+    elif data.priorite == "attente" and (data.source or "boutique") == "boutique":
+        priorite = "attente"
+    else:
+        priorite = "normal"
     # Si retour SAV, vérifier que le ticket original existe et appartient au même client
     if data.est_retour_sav and data.ticket_original_id:
         with get_cursor() as cur:
@@ -603,15 +676,15 @@ def create_ticket(data: TicketCreate, background_tasks: BackgroundTasks):
             INSERT INTO tickets
             (client_id, categorie, marque, modele, modele_autre, imei,
              panne, panne_detail, pin, pattern, notes_client,
-             commande_piece, statut, est_retour_sav, ticket_original_id, source)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             commande_piece, statut, est_retour_sav, ticket_original_id, source, priorite)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             data.client_id, data.categorie, data.marque, data.modele,
             data.modele_autre, data.imei, data.panne, data.panne_detail,
             data.pin, data.pattern, data.notes_client, data.commande_piece,
             statut_initial, data.est_retour_sav or False, data.ticket_original_id,
-            data.source or "boutique",
+            data.source or "boutique", priorite,
         ))
         row = cur.fetchone()
         tid = row["id"]
@@ -698,6 +771,13 @@ def update_ticket(
                 updates.pop("statut_paiement", None)
                 updates.pop("reste_a_payer", None)
 
+            ancienne_priorite = avant.get("priorite") or "normal"
+            if "priorite" in updates and updates["priorite"] != ancienne_priorite:
+                texte = (f"Priorité : {PRIORITES.get(ancienne_priorite, ancienne_priorite)}"
+                         f" → {PRIORITES[updates['priorite']]}")
+                lignes = _historiser(cur, ticket_id, ts, _auteur(user), [texte])
+                updates["historique"] = _journal(updates.get("historique", avant.get("historique")), lignes)
+
             updates["date_maj"] = now
             _maj_ticket(cur, ticket_id, updates)
         ticket = _ticket_complet(cur, ticket_id)
@@ -755,6 +835,8 @@ def toggle_paye(
             if statut == "Rendu au client":
                 sets.update(statut="Clôturé", date_cloture=t.get("date_cloture") or now)
                 textes.append("Statut: Rendu au client → Clôturé")
+                # Rendu avant le branchement de la libération : l'étagère se vide aussi ici
+                sets.update(etagere.liberer_emplacement(t, "Clôturé", textes))
         else:
             sets = {"paye": 0, "statut_paiement": statut_paiement(m), "reste_a_payer": m["reste"], "date_maj": now}
             _rouvrir_si_cloture(t, sets, textes)
@@ -820,10 +902,13 @@ def change_status(
                 _conflit("utiliser_restitution", blocage[0], blocage[1])
 
         refus_devis = ancien == "En attente d'accord client" and nouveau == "Réparation terminée"
-        texte = f"Statut: {ancien} → {nouveau}" + (" (devis refusé par le client)" if refus_devis else "")
+        textes = [f"Statut: {ancien} → {nouveau}" + (" (devis refusé par le client)" if refus_devis else "")]
+        # Rendu / clôturé : l'appareil quitte l'étagère (« Emplacement B3 libéré »)
+        liberation = etagere.liberer_emplacement(t, nouveau, textes)
         sets = {
             "statut": nouveau, "date_maj": now,
-            "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, [texte])),
+            "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes)),
+            **liberation,
         }
         if nouveau == "Clôturé":
             # Re-clôturer ne déplace pas le CA vers un autre jour
@@ -972,10 +1057,12 @@ def restituer_ticket(
                           + (f" — motif : {motif}" if motif else ""))
         if final == "Clôturé":
             textes.append("Statut: Rendu au client → Clôturé")
+        liberation = etagere.liberer_emplacement(t, final, textes)
 
         sets = {
             "statut": final, "date_maj": now,
             "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes)),
+            **liberation,
         }
         if "date_rendu" in t:
             sets.update(date_rendu=now, rendu_par=auteur)

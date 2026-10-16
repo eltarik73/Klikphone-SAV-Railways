@@ -36,7 +36,10 @@ except Exception:  # image sans base tz : repli sur la règle d'heure d'été UE
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services import etagere
+from app.services import mentions
 from app.services import params as params_cache
+from app.api.reception import TESTS as TESTS_RECEPTION, resume_reception
 from app.services.montants import calculer_montants, lignes_dues
 from app.services.pdf_text import _pdf_safe
 from app.services.prestations import detail_public, index_ligne_ecran, lignes_reparation
@@ -47,17 +50,18 @@ router = APIRouter(prefix="/api/tickets", tags=["print"])
 _FRONTEND_URL_DEFAULT = "https://klikphone-sav-v2-production.up.railway.app"
 _FRONTEND_URL_ENV = os.getenv("FRONTEND_URL", "")
 
+# Identité et mentions légales : services/mentions (jamais écrites ici)
 _DEFAUTS = {
-    "adresse": "79 Place Saint Léger, 73000 Chambéry",
-    "tel_boutique": "04 79 60 89 22",
     "horaires": "Lundi-Samedi 10h-19h",
+    "message_ticket": "Merci de votre confiance !",
     "tva": "20",
-    "SIRET": "",
     "URL_SUIVI": "",
     "fidelite_active": "1",
     "fidelite_palier_film": "1000",
     "fidelite_palier_reduction": "5000",
     "fidelite_montant_reduction": "10",
+    # Délai de retrait imprimé dans les conditions (services/mentions.mention_abandon)
+    etagere.PARAM_DELAI_ABANDON: "",
 }
 
 # En-tête HTTP des documents ouverts directement (onglet, lien de partage) ;
@@ -71,12 +75,24 @@ _META_CSP = "script-src 'none'; object-src 'none'; base-uri 'none'"
 
 
 def _get_configs(keys=None) -> dict:
-    """Paramètres boutique (cache services/params), complétés par les valeurs par défaut."""
+    """Paramètres boutique (cache services/params), complétés par les valeurs par défaut.
+
+    Sans `keys` : aussi l'identité et les mentions légales (services/mentions.lire).
+    """
+    complet = keys is None
     keys = list(keys or _DEFAUTS)
     try:
-        return params_cache.get_params(keys, _DEFAUTS)
+        cfg = params_cache.get_params(keys, _DEFAUTS)
     except Exception:
-        return {k: _DEFAUTS.get(k, "") for k in keys}
+        cfg = {k: _DEFAUTS.get(k, "") for k in keys}
+    if complet:
+        cfg.update(mentions.lire())
+    return cfg
+
+
+def _avec_mentions(cfg: dict) -> dict:
+    """cfg complété par l'identité et les mentions légales s'il ne les porte pas déjà."""
+    return cfg if "BOUTIQUE_NOM" in cfg else {**cfg, **mentions.lire()}
 
 
 def _get_config(key: str, default: str = "") -> str:
@@ -114,7 +130,9 @@ _SELECT_TICKET = _COLONNES_TICKET + _FROM_TICKET
 _SELECT_TICKET_STAFF = _COLONNES_TICKET + """,
            (SELECT COALESCE(json_agg(n ORDER BY n.date_creation DESC), '[]'::json) FROM (
                SELECT contenu, auteur, important, date_creation FROM notes_tickets
-               WHERE ticket_id = t.id ORDER BY date_creation DESC LIMIT 3) n) AS notes_impression""" + _FROM_TICKET
+               WHERE ticket_id = t.id ORDER BY date_creation DESC LIMIT 3) n) AS notes_impression,
+           (SELECT json_build_object('items', tc.items, 'complete', tc.complete) FROM ticket_controles tc
+             WHERE tc.ticket_id = t.id AND tc.phase = 'entree') AS reception_impression""" + _FROM_TICKET
 
 
 def _get_ticket_full(ticket_id: int) -> dict:
@@ -173,6 +191,20 @@ def _fd(d):
     if isinstance(d, date):
         return d.strftime("%d/%m/%Y")
     return str(d)
+
+
+_DATE_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def _date_recu(t: dict) -> str:
+    """Date du reçu, la même à chaque réimpression : remise de l'appareil (date_rendu), sinon
+    clôture (date_cloture), toutes deux TEXTE lues si elles commencent par AAAA-MM-JJ ;
+    à défaut seulement, le jour de l'impression."""
+    for col in ("date_rendu", "date_cloture"):
+        m = _DATE_ISO.match(str(t.get(col) or "").strip())
+        if m:
+            return f"{m.group(3)}/{m.group(2)}/{m.group(1)}"
+    return _maintenant_paris().strftime("%d/%m/%Y")
 
 
 def _fd_court(d) -> str:
@@ -396,6 +428,9 @@ h1 { font-size:26px; font-weight:900; letter-spacing:4px; }
   display:inline-block; border:2px solid #000; padding:0 6px; margin-left:4px;
   font-size:12px; font-weight:700; white-space:nowrap;
 }
+.emplacement { border:4px solid #000; text-align:center; padding:4px 6px 6px; margin:8px 0; }
+.emplacement-titre { font-size:12px; font-weight:900; letter-spacing:3px; }
+.emplacement-valeur { font-size:44px; font-weight:900; line-height:1.1; letter-spacing:2px; }
 """
 
 
@@ -444,9 +479,85 @@ def _logo_thermique_uri() -> str:
         return ""
 
 
-def _logo_html(base: str, cls: str = "logo-img") -> str:
+def _logo_html(base: str, cls: str = "logo-img", alt: str = "") -> str:
     src = _logo_thermique_uri() or f"{base}/logo_k.png"
-    return f'<img src="{_e(src)}" class="{cls}" alt="Klikphone">'
+    return f'<img src="{_e(src)}" class="{cls}" alt="{_e(alt or "Logo")}">'
+
+
+# ═══════════════════════════════════════════════════════════════
+# MENTIONS LÉGALES ET RÉCEPTION (blocs communs)
+# ═══════════════════════════════════════════════════════════════
+
+def _pied_legal_html(cfg: dict) -> str:
+    """Raison sociale (gras), SIRET et RCS, TVA : l'adresse est déjà en tête du document."""
+    lignes = mentions.lignes_legales(cfg)
+    return f"<b>{_e(mentions.raison_sociale(cfg))}</b>" + "".join(f"<br>{_e(x)}" for x in lignes)
+
+
+def _mention_abandon(cfg: dict, courte: bool) -> str:
+    """Clause de retrait (loi du 31/12/1903) au délai ETAGERE_DELAI_ABANDON_JOURS, texte brut :
+    courte sur papier thermique, longue en A4 et PDF."""
+    jours = etagere.lire_delai_abandon(cfg.get(etagere.PARAM_DELAI_ABANDON))
+    return mentions.mention_abandon(jours, courte=courte)
+
+
+def _emplacement_staff(t: dict) -> str:
+    """Fiche atelier : emplacement d'étagère (« B3 ») en très gros, s'il est renseigné."""
+    emplacement = " ".join(str(t.get("emplacement") or "").split())
+    if not emplacement:
+        return ""
+    return ('<div class="emplacement"><div class="emplacement-titre">EMPLACEMENT</div>'
+            f'<div class="emplacement-valeur">{_e(emplacement)}</div></div>')
+
+
+def _ligne_info(label: str, valeur: str, size: int = 13) -> str:
+    return f'<div style="font-size:{size}px"><strong>{_e(label)} :</strong> {_e(valeur)}</div>'
+
+
+def _depot_constate(t: dict) -> str:
+    """Ticket client : accessoires déposés et état constaté, si la réception est saisie."""
+    r = resume_reception(t.get("reception_impression"))
+    if not r or not (r["accessoires"] or r["etat"]):
+        return ""
+    inner = _ligne_info("Accessoires déposés", ", ".join(r["accessoires"]) or "aucun", 12)
+    if r["etat"]:
+        inner += _ligne_info("État constaté", " · ".join(r["etat"]), 12)
+    return _box("Dépôt constaté", inner)
+
+
+def _reception_staff(t: dict) -> str:
+    """Fiche atelier : encadré Réception (accessoires, état, tests KO). Rien si la donnée
+    n'a pas été lue avec le ticket (_get_ticket_full la lit toujours)."""
+    if "reception_impression" not in t:
+        return ""
+    r = resume_reception(t.get("reception_impression"))
+    if r is None:
+        return _box("Réception", '<div style="font-size:13px;font-weight:700">Fiche de réception non remplie</div>')
+    inner = ""
+    if not r["complete"]:
+        inner += ('<div class="center" style="font-size:12px;font-weight:900;border:1px solid #000;'
+                  'padding:2px;margin-bottom:4px">À COMPLÉTER</div>')
+    inner += _ligne_info("Accessoires", ", ".join(r["accessoires"]) or "aucun")
+    if r["etat"]:
+        inner += _ligne_info("État", " · ".join(r["etat"]))
+    if r["notes"]:
+        inner += f'<div class="pre" style="font-size:12px">{_e(r["notes"])}</div>'
+    if r["tests_ko"]:
+        inner += ('<div style="font-size:13px;font-weight:900;padding:2px 6px;margin:4px 0;background:#000;color:#fff">'
+                  f'Tests KO : {_e(", ".join(r["tests_ko"]))}</div>')
+    elif len(r["non_testes"]) < len(TESTS_RECEPTION):
+        inner += _ligne_info("Tests KO", "aucun")
+    if len(r["non_testes"]) == len(TESTS_RECEPTION):
+        inner += _ligne_info("Tests", "non réalisés", 12)
+    elif r["non_testes"]:
+        inner += _ligne_info("Non testés", ", ".join(r["non_testes"]), 12)
+    if r["eteint"]:
+        inner += '<div style="font-size:12px;font-weight:700">Appareil éteint à la réception</div>'
+    if r["sauvegarde"]:
+        inner += '<div style="font-size:12px;font-weight:700">Sauvegarde conseillée au client</div>'
+    if r["imei"]:
+        inner += f'<div style="font-size:12px"><strong>IMEI vérifié :</strong> <span class="mono">{_e(r["imei"])}</span></div>'
+    return _box("Réception", inner)
 
 
 def _retour_sav_banner(t: dict) -> str:
@@ -514,6 +625,7 @@ def _totaux(t: dict) -> tuple:
 # ═══════════════════════════════════════════════════════════════
 
 def _client_body(t: dict, cfg: dict) -> str:
+    cfg = _avec_mentions(cfg)
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
     lignes, tot = _totaux(t)
@@ -550,13 +662,21 @@ def _client_body(t: dict, cfg: dict) -> str:
     detail = _row("Détail :", _e(detail_txt)) if detail_txt else ""
     imei = _row("IMEI :", f'<span class="mono">{_e(t["imei"])}</span>') if t.get("imei") else ""
 
+    nom = cfg["BOUTIQUE_NOM"]
+    conditions = " ".join(x for x in (
+        _e_br(cfg.get("CGV_DEPOT")), _e(_mention_abandon(cfg, courte=True)), _e(mentions.mention_garantie(cfg))) if x)
+    conditions_html = (
+        '<div class="section tiny" style="padding:4px 0">'
+        f'<b style="font-size:11px">CONDITIONS GÉNÉRALES</b><br><br>{conditions}</div>'
+    ) if conditions else ""
+
     return _section("client", f"""
 <div class="center">
-  {_logo_html(base)}
-  <h1>KLIKPHONE</h1>
+  {_logo_html(base, alt=nom)}
+  <h1>{_e(nom)}</h1>
   <div class="small">Spécialiste Apple &amp; Multimarque</div>
-  <div class="small">{_e(cfg.get("adresse"))}</div>
-  <div class="small">Tél : {_e(cfg.get("tel_boutique"))}</div>
+  <div class="small">{_e(cfg.get("BOUTIQUE_ADRESSE"))}</div>
+  <div class="small">Tél : {_e(cfg.get("BOUTIQUE_TEL"))}</div>
 </div>
 <hr class="sep-bold">
 <div class="banner">TICKET DE DÉPÔT</div>
@@ -572,22 +692,20 @@ def _client_body(t: dict, cfg: dict) -> str:
       + _row("Catégorie :", _e(t.get("categorie") or "—"))
       + _row("Motif :", _e(t.get("panne")))
       + detail + imei)}
+{_depot_constate(t)}
 {tarif_html}
 {note_html}
 <div class="qr"><img src="{_e(_qr_data_uri(code, base, t.get("suivi_token")))}" alt="QR code de suivi"></div>
 <div class="center" style="font-weight:900;font-size:12px">Scannez pour suivre votre<br>réparation en ligne</div>
 <hr class="sep">
-<div class="section tiny" style="padding:4px 0">
-  <b style="font-size:11px">CONDITIONS GÉNÉRALES</b><br><br>
-  Klikphone ne consulte ni n'accède aux données de votre appareil. Sauvegardez
-  vos données avant le dépôt. Nous ne pouvons être tenus responsables d'une perte
-  de données ou dysfonctionnement post-réparation. Garantie 6 mois sur les réparations.
-</div>
+{conditions_html}
+<div class="tiny" style="padding:2px 0">{_e(mentions.mention_rgpd_courte(cfg, base))}</div>
 <hr class="sep-bold">
 <div class="center" style="margin-top:8px;font-size:13px">
-  <b>Merci de votre confiance !</b><br>
-  <div style="font-size:15px;font-weight:900;letter-spacing:3px;margin-top:4px">KLIKPHONE</div>
+  <b>{_e(cfg.get("message_ticket") or _DEFAUTS["message_ticket"])}</b><br>
+  <div style="font-size:15px;font-weight:900;letter-spacing:3px;margin-top:4px">{_e(nom)}</div>
   <div class="small">{_e(cfg.get("horaires"))}</div>
+  <div class="tiny" style="margin-top:6px">{_pied_legal_html(cfg)}</div>
 </div>""")
 
 
@@ -601,6 +719,7 @@ def _ticket_client_html(t: dict, cfg: dict = None) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 def _staff_body(t: dict, cfg: dict) -> str:
+    cfg = _avec_mentions(cfg)
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
     tech = t.get("technicien_assigne") or "Non assigné"
@@ -675,12 +794,13 @@ def _staff_body(t: dict, cfg: dict) -> str:
     imei = f'<div><strong>IMEI :</strong> <span class="mono">{_e(t["imei"])}</span></div>' if t.get("imei") else ""
     detail = f'<div class="pre" style="font-size:12px;margin-top:4px">{_e(t["panne_detail"])}</div>' if t.get("panne_detail") else ""
 
+    nom = cfg["BOUTIQUE_NOM"]
     return _section("staff", f"""
-<div class="center" style="margin-bottom:8px">{_logo_html(base)}</div>
+<div class="center" style="margin-bottom:8px">{_logo_html(base, alt=nom)}</div>
 <div class="center" style="font-size:11px;margin-bottom:10px;line-height:1.3">
-  <div style="font-size:16px;font-weight:900;letter-spacing:2px">KLIKPHONE</div>
-  <div>{_e(cfg.get("adresse"))}</div>
-  <div>Tél : {_e(cfg.get("tel_boutique"))}</div>
+  <div style="font-size:16px;font-weight:900;letter-spacing:2px">{_e(nom)}</div>
+  <div>{_e(cfg.get("BOUTIQUE_ADRESSE"))}</div>
+  <div>Tél : {_e(cfg.get("BOUTIQUE_TEL"))}</div>
 </div>
 <div class="banner" style="font-size:18px">TICKET STAFF</div>
 {_retour_sav_banner(t)}
@@ -691,6 +811,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
     <div><strong>Récup :</strong> {_e(date_recup)}</div>
   </div>
 </div>
+{_emplacement_staff(t)}
 {_box("Client",
       f'<div style="font-size:16px;font-weight:900">{_e(_nom_client(t))}</div>'
       f'<div style="font-size:14px;margin-top:2px">Tél : {_e(t.get("client_tel"))}</div>')}
@@ -698,6 +819,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
       f'<div style="font-size:16px;font-weight:900">{_e(_appareil(t) or "Appareil non renseigné")}</div>'
       f'<div style="font-size:13px;margin-top:4px"><div><strong>Catégorie :</strong> {_e(t.get("categorie") or "—")}</div>'
       f'{imei}{qualite}</div>')}
+{_reception_staff(t)}
 {_box("Panne",
       f'<div style="font-size:14px;font-weight:700">{_e(t.get("panne") or "Non renseignée")}</div>{detail}')}
 {_box("Réparations", repairs)}
@@ -710,7 +832,8 @@ def _staff_body(t: dict, cfg: dict) -> str:
   <div style="font-size:11px;font-weight:700">Scanner pour ouvrir la fiche</div>
 </div>
 <div class="center" style="font-size:10px;margin-top:12px;padding-top:8px;border-top:2px solid #000">
-  KLIKPHONE — Document interne<br>Ne pas remettre au client
+  {_e(nom)} — Document interne<br>Ne pas remettre au client
+  <div class="tiny" style="margin-top:6px">{_pied_legal_html(cfg)}<br>{_e(mentions.mention_garantie(cfg))}</div>
 </div>""")
 
 
@@ -745,6 +868,7 @@ def _lignes_ht(t: dict, lignes: list, tot: dict, tva_rate: float) -> str:
 
 
 def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
+    cfg = _avec_mentions(cfg)
     is_devis = doc_type == "devis"
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
@@ -752,9 +876,8 @@ def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
     lignes, tot = _totaux(t)
     tva = round(tot["total"] * tva_rate / (100 + tva_rate), 2)
     total_ht = round(tot["total"] - tva, 2)
-    date_doc = _fd(t.get("date_depot")) if is_devis else _maintenant_paris().strftime("%d/%m/%Y")
-    siret = cfg.get("SIRET")
-    siret_line = f'<div class="small">SIRET : {_e(siret)}</div>' if siret else ""
+    date_doc = _fd(t.get("date_depot")) if is_devis else _date_recu(t)
+    nom = cfg["BOUTIQUE_NOM"]
 
     acompte_html = ""
     if tot["acompte"] > 0:
@@ -764,21 +887,25 @@ def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
         )
     if is_devis:
         statut_html = f'<div class="stamp" style="margin:6px 0">RESTE À PAYER : {_fp(tot["reste"])} €</div>' if tot["acompte"] > 0 else ""
-        mention = "Devis valable 30 jours."
+        mention = " ".join(x for x in (
+            "Devis valable 30 jours.", _mention_abandon(cfg, courte=True), mentions.mention_garantie(cfg)) if x)
         extra = ""
     else:
         statut_html = (
             '<div class="stamp paid" style="margin:6px 0">PAYÉ</div>' if tot["paye"]
             else f'<div class="stamp" style="margin:6px 0">RESTE À PAYER : {_fp(tot["reste"])} €</div>'
         )
-        mention = "Ce ticket de garantie ne fait pas office de facture."
+        mention = " ".join(x for x in (
+            "Ce ticket de garantie ne fait pas office de facture.", _mention_abandon(cfg, courte=True),
+            mentions.mention_garantie(cfg)) if x)
         extra = _fidelite_section(t, cfg)
 
     return _section(doc_type, f"""
 <div class="center">
-  {_logo_html(base)}
-  <h1>KLIKPHONE</h1>
-  <div class="small">{_e(cfg.get("adresse"))}</div>
+  {_logo_html(base, alt=nom)}
+  <h1>{_e(nom)}</h1>
+  <div class="small">{_e(cfg.get("BOUTIQUE_ADRESSE"))}</div>
+  <div class="small">Tél : {_e(cfg.get("BOUTIQUE_TEL"))}</div>
 </div>
 <hr class="sep-bold">
 <div class="banner" style="letter-spacing:4px">{"D E V I S" if is_devis else "R E Ç U"}</div>
@@ -795,10 +922,10 @@ def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
 {acompte_html}
 {statut_html}
 <hr class="sep">
-<div class="tiny" style="padding:2px 0">{mention}</div>
+<div class="tiny" style="padding:2px 0">{_e(mention)}</div>
 {extra}
 <hr class="sep">
-<div class="center small"><b>KLIKPHONE SARL</b><br>{siret_line}</div>""")
+<div class="center tiny">{_pied_legal_html(cfg)}</div>""")
 
 
 def _fidelite_section(t: dict, cfg: dict = None) -> str:
@@ -938,8 +1065,9 @@ def _a4_document(t: dict, doc_type: str) -> str:
     categorie = t.get("categorie")
     panne = _e(detail_public(t) or t.get("panne"))
     imei = t.get("imei")
-    adresse = _e(cfg.get("adresse"))
-    tel_boutique = _e(cfg.get("tel_boutique"))
+    nom = cfg["BOUTIQUE_NOM"]
+    emetteur = "<br>".join(_e(x) for x in mentions.lignes_identite(cfg)[1:])
+    pied_legal = " &middot; ".join(_e(x) for x in mentions.lignes_legales(cfg))
     tva_rate = _num(cfg.get("tva"), 20.0)
     client_nom = _e(_nom_client(t))
     client_tel = _e(t.get("client_tel"))
@@ -957,7 +1085,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
 
     date_depot = _e(_fd(t.get("date_depot")))
     date_recup = _e(t.get("date_recuperation") or "—")
-    date_doc = date_depot if is_devis else _maintenant_paris().strftime("%d/%m/%Y")
+    date_doc = date_depot if is_devis else _date_recu(t)
     doc_title = "DEVIS" if is_devis else "REÇU"
 
     idx_ecran = index_ligne_ecran(repair_lines) if type_ecran else None
@@ -993,11 +1121,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
         if pts is not None:
             fidel = f'<div class="fidel"><span class="fl">Programme Fidélité</span><span class="fp">{pts} points</span></div>'
 
-    if is_devis:
-        cond_text = "Devis valable 30 jours. Klikphone ne peut être tenu responsable de la perte de données. Un acompte de 30% est demandé à la validation du devis."
-    else:
-        cond_text = "Garantie pièces et main d'oeuvre : 6 mois. Tout matériel non récupéré sous 3 mois sera considéré comme abandonné. Klikphone ne peut être tenu responsable de la perte de données."
-
+    cond_text = _e(_conditions_document(cfg, is_devis))
     societe_row = f'<div class="nm">{_e(client_societe)}</div>' if client_societe else ""
     email_row = f"<br>Email : {_e(client_email)}" if client_email else ""
     imei_html = f'<div class="ai">IMEI : {_e(imei)}</div>' if imei else ""
@@ -1057,12 +1181,12 @@ table.rt{width:100%;border-collapse:collapse}
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>{css}</style></head><body>
 <div class="pg"><div class="tb"></div><div class="ct">
-<div class="hdr"><div class="hl"><div class="lk">K</div><div><div class="cn">KLIKPHONE</div>
+<div class="hdr"><div class="hl"><div class="lk">K</div><div><div class="cn">{_e(nom)}</div>
 <div class="cs">Spécialiste réparation Apple &amp; Multimarque</div></div></div>
 <div class="hr"><div class="dt">{doc_title}</div><div class="dn">N° {code}</div><div class="dd">Date : {date_doc}</div></div></div>
 {paye}
-<div class="g2"><div><div class="bl">ÉMETTEUR</div><div class="crd"><div class="nm">KLIKPHONE</div>
-<div class="dl">{adresse}<br>Tél : {tel_boutique}<br>SIRET : 81396114100013</div></div></div>
+<div class="g2"><div><div class="bl">ÉMETTEUR</div><div class="crd"><div class="nm">{_e(mentions.raison_sociale(cfg))}</div>
+<div class="dl">{emetteur}</div></div></div>
 <div><div class="bl">CLIENT</div><div class="crd">{societe_row}<div class="nm">{client_nom}</div>
 <div class="dl">Tél : {client_tel}{email_row}</div></div></div></div>
 <div class="apc"><div><div class="am">{appareil}{cat_str}</div><div class="ap">{panne}</div></div>{imei_html}</div>
@@ -1077,9 +1201,21 @@ table.rt{width:100%;border-collapse:collapse}
 <div class="mc"><div class="ml">Date récup.</div><div class="mv">{date_recup}</div></div></div>
 <div class="cond"><div class="cdt">Conditions</div><div class="cdx">{cond_text}</div></div>
 </div>
-<div class="ftr"><span>SIRET : 81396114100013 &middot; TVA non applicable, art. 293B du CGI</span>
+<div class="ftr"><span>{pied_legal}</span>
 <span>Propulsé par TkS&infin;26 &mdash; une solution Klik&amp;Dev</span></div>
 </div></body></html>"""
+
+
+def _conditions_document(cfg: dict, is_devis: bool) -> str:
+    """Conditions du devis ou du reçu A4 et PDF (texte brut), clause de retrait en version longue."""
+    donnees = f"{cfg['BOUTIQUE_NOM']} ne peut être tenu responsable de la perte de données."
+    garantie = mentions.mention_garantie(cfg)
+    abandon = _mention_abandon(cfg, courte=False)
+    if is_devis:
+        return " ".join(x for x in (
+            "Devis valable 30 jours.", garantie, donnees,
+            "Un acompte de 30% est demandé à la validation du devis.", abandon) if x)
+    return " ".join(x for x in (garantie, donnees, abandon) if x)
 
 
 def _devis_a4_html(t: dict) -> str:
@@ -1130,8 +1266,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     if len(panne) > 60:
         panne = panne[:57] + "..."
     imei = _pdf_safe(t.get("imei"))
-    adresse = _pdf_safe(cfg.get("adresse"))
-    tel_boutique = _pdf_safe(cfg.get("tel_boutique"))
+    nom_boutique = _pdf_safe(cfg["BOUTIQUE_NOM"])
     tva_rate = _num(cfg.get("tva"), 20.0)
     client_nom = _pdf_safe(_nom_client(t))
     client_tel = _pdf_safe(t.get("client_tel"))
@@ -1152,7 +1287,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
 
     date_depot = _pdf_safe(_fd(t.get("date_depot")))
     date_recup = _pdf_safe(t.get("date_recuperation") or "-")
-    date_doc = date_depot if is_devis else _maintenant_paris().strftime("%d/%m/%Y")
+    date_doc = date_depot if is_devis else _date_recu(t)
 
     pdf = FPDF()
     pdf.add_page()
@@ -1195,7 +1330,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     pdf.set_xy(logo_x + logo_size + 4, hdr_y + 1)
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(*TEXT)
-    pdf.cell(0, 7, "KLIKPHONE")
+    pdf.cell(0, 7, nom_boutique)
     pdf.set_xy(logo_x + logo_size + 4, hdr_y + 9)
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*TEXT_GRAY)
@@ -1253,12 +1388,8 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
             pdf.cell(w - 8, 4, _fit(txt, w - 8))
         return h
 
-    em_lines = [
-        ("KLIKPHONE", True),
-        (adresse, False),
-        (f"Tél : {tel_boutique}", False),
-        ("SIRET : 81396114100013", False),
-    ]
+    identite = [_pdf_safe(x) for x in mentions.lignes_identite(cfg)]
+    em_lines = [(identite[0], True)] + [(x, False) for x in identite[1:]]
     cl_lines = []
     if client_societe:
         cl_lines.append((client_societe, True))
@@ -1456,15 +1587,16 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
 
     # ── 8. CONDITIONS ──
     cy = pdf.get_y()
-    if is_devis:
-        cond = "Devis valable 30 jours. Klikphone ne peut être tenu responsable de la perte de données. Un acompte de 30% est demandé à la validation du devis."
-    else:
-        cond = "Garantie pièces et main d'oeuvre : 6 mois. Tout matériel non récupéré sous 3 mois sera considéré comme abandonné. Klikphone ne peut être tenu responsable de la perte de données."
+    cond = _pdf_safe(_conditions_document(cfg, is_devis))
 
     cond_w = pw - 8
     pdf.set_font("Helvetica", "", 7)
-    nb_lines = max(1, len(cond) // 90 + 1)
+    nb_lines = max(1, len(pdf.multi_cell(cond_w, 3.5, cond, dry_run=True, output="LINES")))
     cond_h = 8 + nb_lines * 3.5
+    # Encadré d'un seul tenant : sinon le texte déborde sous le cadre, à la page suivante
+    if cy + cond_h > pdf.h - pdf.b_margin:
+        pdf.add_page()
+        cy = pdf.get_y()
 
     pdf.set_fill_color(*CARD_BG)
     pdf.set_draw_color(*CARD_BD)
@@ -1480,16 +1612,19 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
 
     # ── 9. FOOTER ──
     pdf.set_auto_page_break(auto=False)
-    ft_h = 10
+    ft_h = 12
     footer_y = pdf.h - ft_h
     pdf.set_fill_color(*DARK)
     pdf.rect(0, footer_y, pdf.w, ft_h, "F")
-    pdf.set_xy(LM, footer_y + 3)
     pdf.set_font("Helvetica", "", 6.5)
     pdf.set_text_color(*TEXT_GRAY)
-    pdf.cell(pw * 0.6, 4, "SIRET : 81396114100013 · TVA non applicable, art. 293B du CGI")
-    pdf.set_xy(LM + pw * 0.4, footer_y + 3)
-    pdf.cell(pw * 0.6, 4, "Propulsé par TkS26 - une solution Klik&Dev", align="R")
+    pdf.set_xy(LM, footer_y + 2)
+    legal = " · ".join([mentions.raison_sociale(cfg), *mentions.lignes_legales(cfg)])
+    pdf.cell(pw, 4, _fit(legal, pw))
+    pdf.set_xy(LM, footer_y + 6.5)
+    pdf.cell(pw * 0.5, 4, _fit(f"{'Devis' if is_devis else 'Reçu'} n° {code} du {date_doc}", pw * 0.5))
+    pdf.set_xy(LM + pw * 0.5, footer_y + 6.5)
+    pdf.cell(pw * 0.5, 4, "Propulsé par TkS26 - une solution Klik&Dev", align="R")
 
     return bytes(pdf.output())
 

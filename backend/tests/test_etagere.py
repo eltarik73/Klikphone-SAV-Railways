@@ -84,7 +84,7 @@ def test_dashboard_vue_a_recuperer(client, auth_headers):
                        params={"vue": "a_recuperer", "limit": 50})
     assert r.status_code == 200
     body = r.json()
-    assert body["delai_abandon_jours"] == 90 and body["kpi"]["a_recuperer"] == 3
+    assert body["delai_abandon_jours"] == 365 and body["kpi"]["a_recuperer"] == 3
     t = body["tickets"][0]
     assert t["reste_du"] == 120 and t["jours_attente"] >= 45 and t["fin_reparation"].startswith("2026-09-01")
 
@@ -205,7 +205,7 @@ def test_etagere_sur_base_reelle(reel):
     par_id = {t["id"]: t for t in body["tickets"]}
     # Terminés d'abord, du plus ancien au plus récent ; puis les rendus non payés
     assert [t["id"] for t in body["tickets"]] == [sans_historique, ancien, recent, rendu_du]
-    assert body["total"] == 4 and body["delai_abandon_jours"] == 90
+    assert body["total"] == 4 and body["delai_abandon_jours"] == 365
     assert par_id[sans_historique]["fin_reparation"].startswith("2026-08-01T10:00")
     assert par_id[ancien]["fin_reparation"].startswith("2026-09-20T10:00")
     assert par_id[rendu_du]["fin_reparation"].startswith("2026-10-01T10:00")

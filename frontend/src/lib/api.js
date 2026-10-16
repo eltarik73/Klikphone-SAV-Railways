@@ -487,6 +487,26 @@ class ApiClient {
     return this.get(`/api/tickets/queue/repair${qs}`);
   }
 
+  // ─── GRILLE TARIFAIRE + FICHE DE RÉCEPTION (fiche ticket) ───
+  // → { modele_trouve, suggestions: [{ source, id, label, type_piece, qualite, prix (TTC client), stock, cout_ht }] }
+  // cout_ht n'est renseigné que pour le rôle admin (null sinon)
+  getGrilleSuggestions({ marque, modele, categorie, q, limit = 20 } = {}) {
+    return this.get(`/api/grille/suggestions${buildQuery({ marque, modele, categorie, q, limit })}`);
+  }
+  // → { items: object | null, complete, auteur, date_maj } (phase d'entrée)
+  getReception(ticketId) { return this.get(`/api/tickets/${ticketId}/reception`); }
+  // data : { items, complete } → même objet. keepalive : envoi à la fermeture de l'onglet, sans réponse.
+  saveReception(ticketId, data, { keepalive = false } = {}) {
+    const path = `/api/tickets/${ticketId}/reception`;
+    if (!keepalive) return this.put(path, data);
+    this._invalidate(path);
+    const headers = { 'Content-Type': 'application/json' };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    return fetch(`${API_URL}${path}`, {
+      method: 'PUT', keepalive: true, headers, body: JSON.stringify(data),
+    }).then((r) => r.ok, () => false);
+  }
+
   // ─── RECHERCHE (staff) ─────────────────────
   // Recherche globale groupée : { q, resolved, groups: { tickets, clients, devis, commandes } }
   search(q, limit = 8) {
@@ -511,6 +531,25 @@ class ApiClient {
   updateClient(id, data) { return this.patch(`/api/clients/${id}`, data); }
   deleteClient(id) { return this.delete(`/api/clients/${id}`); }
   getClientTickets(id) { return this.get(`/api/clients/${id}/tickets`); }
+
+  // ─── RGPD ──────────────────────────────────
+  // Politique de confidentialité (publique) : ni session ni élévation
+  getConfidentialite() { return this.get('/api/public/confidentialite', { auth: false }); }
+  // Routes admin (élévation) : jamais servies depuis un cache, jamais relancées
+  rgpdExport(clientId) {
+    return this.request(`/api/rgpd/clients/${clientId}/export`, { retries: 0, cache: 'no-store' }, 30000);
+  }
+  rgpdAnonymiser(clientId) {
+    this._invalidate('/api/clients');
+    this._invalidate('/api/tickets');
+    return this.post(`/api/rgpd/clients/${clientId}/anonymiser`, {});
+  }
+  rgpdRetentionApercu() { return this.request('/api/rgpd/retention/apercu', { retries: 0, cache: 'no-store' }); }
+  rgpdRetentionAppliquer() {
+    this._invalidate('/api/clients');
+    this._invalidate('/api/tickets');
+    return this.request('/api/rgpd/retention/appliquer', { method: 'POST', body: '{}' }, 60000);
+  }
 
   // ─── CATALOG ───────────────────────────────
   getCategories() { return this.get('/api/catalog/categories'); }
@@ -848,6 +887,22 @@ class ApiClient {
   saveMessageTemplates(templates) { return this.put('/api/config/message-templates', { templates }); }
   logMessage(ticketId, auteur, contenu, canal) {
     return this.post(`/api/tickets/${ticketId}/message-log?auteur=${encodeURIComponent(auteur)}&contenu=${encodeURIComponent(contenu)}&canal=${encodeURIComponent(canal)}`);
+  }
+
+  // ─── ÉTAGÈRE (emplacement, relances, mise en demeure) ─────────────
+  // { emplacements: [str], delai_abandon_jours, relance_paliers: [int] } (paramètres ETAGERE_*)
+  getEtagereConfig({ fresh = false } = {}) { return this.getCached('/api/etagere/config', 5 * 60_000, { fresh }); }
+  // emplacement null = retiré → { emplacement }
+  setEmplacement(ticketId, emplacement) {
+    return this.put(`/api/etagere/${ticketId}/emplacement`, { emplacement: emplacement || null });
+  }
+  // canal : 'sms' | 'whatsapp' | 'email' | 'appel' → { nb_relances, derniere_relance }
+  logRelance(ticketId, canal, contenu) { return this.post(`/api/etagere/${ticketId}/relance`, { canal, contenu }); }
+  // Message déjà rendu (palier selon les jours d'attente) → { message, jours }
+  getMessageRelance(ticketId) { return this.get(`/api/etagere/${ticketId}/message-relance`); }
+  // Courrier A4 (impression comme getPrintHtml : jeton requis, affiché en srcdoc par PrintPreview)
+  getMiseEnDemeureHtml(ticketId, { signal } = {}) {
+    return this.requestRaw(`/api/etagere/${ticketId}/mise-en-demeure`, { signal });
   }
 
   // ─── NOTES PRIVÉES ────────────────────────────

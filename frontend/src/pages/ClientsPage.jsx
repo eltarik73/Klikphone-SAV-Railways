@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { formatDateShort } from '../lib/utils';
@@ -12,9 +13,79 @@ import {
   Search, Users, Phone, Mail, ChevronRight, Plus,
   Smartphone, Trash2, Edit3, X, Save, ChevronLeft,
   ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, AlertCircle,
+  Download, UserX, ShieldCheck, Loader2,
 } from 'lucide-react';
 
 const SORT_LABELS = { nom: 'nom', telephone: 'téléphone', email: 'email', date_creation: 'date de création' };
+
+export const MOT_CONFIRMATION_ANONYMISER = 'ANONYMISER';
+
+/** Fichier JSON des données d'un client (droit d'accès / portabilité), téléchargé par le navigateur. */
+export function telechargerJson(data, nomFichier) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nomFichier;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Badge du consentement aux offres (rien si le serveur ne renvoie pas le champ). */
+function BadgeConsentement({ client }) {
+  if (!client || client.anonymise_le || !('consentement_marketing' in client)) return null;
+  const oui = Boolean(client.consentement_marketing);
+  const date = oui && client.consentement_marketing_le ? ` le ${formatDateShort(client.consentement_marketing_le)}` : '';
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${oui ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+      {oui ? `Offres acceptées${date}` : 'Pas d’offres commerciales'}
+    </span>
+  );
+}
+
+function AnonymiserDialog({ client, busy, onCancel, onConfirm }) {
+  const boxRef = useRef(null);
+  const [saisie, setSaisie] = useState('');
+  const ok = saisie.trim().toUpperCase() === MOT_CONFIRMATION_ANONYMISER;
+  useFocusTrap(boxRef, Boolean(client), { initialFocus: '#anonymiser-saisie', onEscape: () => { if (!busy) onCancel(); } });
+  if (!client) return null;
+  const nom = `${client.prenom || ''} ${client.nom || ''}`.trim() || `client n° ${client.id}`;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4" onClick={() => { if (!busy) onCancel(); }}>
+      <form ref={boxRef} role="alertdialog" aria-modal="true" aria-labelledby="anonymiser-titre" aria-describedby="anonymiser-texte"
+        onClick={e => e.stopPropagation()}
+        onSubmit={e => { e.preventDefault(); if (ok && !busy) onConfirm(); }}
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0" aria-hidden="true">
+            <UserX className="w-5 h-5 text-red-700" />
+          </div>
+          <h2 id="anonymiser-titre" className="text-base font-bold text-slate-900">Anonymiser {nom} ?</h2>
+        </div>
+        <div id="anonymiser-texte" className="space-y-2 text-sm text-slate-700">
+          <p><strong>Effacés définitivement :</strong> nom, prénom, téléphone, e-mail, société et codes de déverrouillage de ses appareils.</p>
+          <p><strong>Conservés :</strong> ses réparations et leurs montants (obligation comptable), sans lien possible avec la personne.</p>
+          <p className="font-semibold text-red-800">Action irréversible.</p>
+        </div>
+        <label htmlFor="anonymiser-saisie" className="input-label mt-4">
+          Tapez {MOT_CONFIRMATION_ANONYMISER} pour confirmer
+        </label>
+        <input id="anonymiser-saisie" value={saisie} onChange={e => setSaisie(e.target.value)}
+          autoComplete="off" autoCapitalize="characters" spellCheck={false}
+          className="input min-h-[44px] font-mono uppercase" />
+        <div className="flex flex-wrap justify-end gap-2 mt-5">
+          <button type="button" onClick={onCancel} disabled={busy} className="btn-secondary min-h-[44px]">Annuler</button>
+          <button type="submit" disabled={!ok || busy} aria-busy={busy} className="btn-danger min-h-[44px]">
+            {busy ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <UserX className="w-4 h-4" aria-hidden="true" />}
+            Anonymiser définitivement
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function sortClientTickets(list) {
   return [...list].sort((a, b) => {
@@ -50,6 +121,10 @@ export default function ClientsPage() {
   const toast = useToast();
   // Suppression d'un client : élévation admin (10 min), redemandée si besoin puis action rejouée
   const { sensible, adminPrompt } = useAdminElevation();
+  const [exportBusy, setExportBusy] = useState(false);
+  const [anonymiserCible, setAnonymiserCible] = useState(null);
+  const [anonymiserBusy, setAnonymiserBusy] = useState(false);
+  const [consentBusy, setConsentBusy] = useState(false);
 
   // Debounced search (300ms)
   useEffect(() => {
@@ -227,6 +302,62 @@ export default function ClientsPage() {
     }
   };
 
+  const handleExportRgpd = async (client) => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      const data = await sensible(() => api.rgpdExport(client.id));
+      telechargerJson(data, `donnees_client_${client.id}_${new Date().toISOString().slice(0, 10)}.json`);
+      toast.success('Données du client exportées');
+    } catch (err) {
+      if (err?.code !== 'admin_cancelled') toast.error(err?.message || 'Export impossible');
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  // Accord recueilli au comptoir ou retrait (art. 7.3 : aussi simple que l'accord) ; date posée par le serveur
+  const handleConsentement = async () => {
+    const client = selectedClient;
+    if (!client || consentBusy || client.anonymise_le) return;
+    const accord = !client.consentement_marketing;
+    setConsentBusy(true);
+    try {
+      await api.updateClient(client.id, { consentement_marketing: accord });
+      invalidateCache('clients');
+      const frais = await api.getClient(client.id).catch(() => null);
+      setSelectedClient(prev => (prev?.id === client.id
+        ? (frais || { ...prev, consentement_marketing: accord, consentement_marketing_le: accord ? new Date().toISOString() : null })
+        : prev));
+      toast.success(accord ? 'Accord aux offres enregistré' : 'Accord aux offres retiré');
+    } catch (err) {
+      toast.error(err?.message || 'Enregistrement impossible');
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const handleAnonymiser = async () => {
+    const client = anonymiserCible;
+    if (!client || anonymiserBusy) return;
+    setAnonymiserBusy(true);
+    try {
+      await sensible(() => api.rgpdAnonymiser(client.id));
+      setAnonymiserCible(null);
+      invalidateCache('clients', 'tickets', 'dashboard');
+      const frais = await api.getClient(client.id).catch(() => null);
+      setSelectedClient(prev => (prev?.id === client.id
+        ? (frais || { ...prev, nom: '', prenom: '', telephone: '', email: '', societe: '', anonymise_le: new Date().toISOString() })
+        : prev));
+      setEditMode(false);
+      toast.success('Client anonymisé');
+    } catch (err) {
+      if (err?.code !== 'admin_cancelled') toast.error(err?.message || 'Anonymisation impossible');
+    } finally {
+      setAnonymiserBusy(false);
+    }
+  };
+
   const orderedTickets = useMemo(() => sortClientTickets(clientTickets), [clientTickets]);
   const ticketStats = useMemo(() => {
     let actifs = 0;
@@ -294,6 +425,8 @@ export default function ClientsPage() {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {adminPrompt}
+      <AnonymiserDialog key={anonymiserCible?.id ?? 'aucun'} client={anonymiserCible} busy={anonymiserBusy}
+        onCancel={() => setAnonymiserCible(null)} onConfirm={handleAnonymiser} />
       {/* Header */}
       <div ref={headerRef} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
@@ -478,6 +611,14 @@ export default function ClientsPage() {
                       </h2>
                       {selectedClient.societe && <p className="text-xs text-slate-500">{selectedClient.societe}</p>}
                       {selectedClient.carte_camby ? <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">🎫 Camby</span> : null}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <BadgeConsentement client={selectedClient} />
+                        {selectedClient.anonymise_le && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-800 text-white text-[11px] font-semibold">
+                            Anonymisé le {formatDateShort(selectedClient.anonymise_le)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -605,6 +746,46 @@ export default function ClientsPage() {
                     })}
                   </ul>
                 )}
+              </div>
+
+              {/* RGPD : droit d'accès (export) et d'effacement (anonymisation) — élévation admin */}
+              <div className="card p-5">
+                <h3 className="flex items-center gap-2 text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                  <ShieldCheck className="w-4 h-4 text-brand-700" aria-hidden="true" /> Données personnelles
+                </h3>
+                <button type="button" onClick={handleConsentement}
+                  disabled={consentBusy || Boolean(selectedClient.anonymise_le)}
+                  aria-pressed={Boolean(selectedClient.consentement_marketing)}
+                  aria-describedby="client-consentement-aide" aria-busy={consentBusy}
+                  className="w-full flex items-center justify-between gap-3 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                  <span className="text-sm font-medium text-slate-800">Accepte les offres (SMS, e-mail)</span>
+                  <span className="flex items-center gap-2 shrink-0" aria-hidden="true">
+                    {consentBusy && <Loader2 className="w-4 h-4 text-slate-500 motion-safe:animate-spin" />}
+                    <span className="text-xs font-semibold text-slate-700">{selectedClient.consentement_marketing ? 'Oui' : 'Non'}</span>
+                    <span className={`relative inline-flex h-6 w-11 rounded-full transition-colors motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'bg-emerald-600' : 'bg-slate-500'}`}>
+                      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'translate-x-5' : ''}`} />
+                    </span>
+                  </span>
+                </button>
+                <p id="client-consentement-aide" className="text-xs text-slate-600 mt-1.5 mb-4">
+                  À activer seulement avec l'accord exprès du client. Le retrait s'applique tout de suite.
+                </p>
+                <p className="text-xs text-slate-600 mb-3">
+                  Demande du client : export de ses données (fichier JSON) ou anonymisation. Code administrateur requis.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+                  <button type="button" onClick={() => handleExportRgpd(selectedClient)} disabled={exportBusy}
+                    aria-busy={exportBusy} className="btn-secondary text-xs min-h-[44px]">
+                    {exportBusy ? <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" /> : <Download className="w-3.5 h-3.5" aria-hidden="true" />}
+                    Exporter ses données
+                  </button>
+                  <button type="button" onClick={() => setAnonymiserCible(selectedClient)}
+                    disabled={Boolean(selectedClient.anonymise_le)}
+                    className="btn-secondary text-xs min-h-[44px] text-red-700 border-red-200 hover:bg-red-50 hover:border-red-300">
+                    <UserX className="w-3.5 h-3.5" aria-hidden="true" />
+                    {selectedClient.anonymise_le ? 'Déjà anonymisé' : 'Anonymiser'}
+                  </button>
+                </div>
               </div>
 
               {/* Delete */}

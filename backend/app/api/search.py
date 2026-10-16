@@ -24,6 +24,7 @@ logger = logging.getLogger("klikphone.search")
 TICKET_FIELDS = (
     "id", "ticket_code", "statut", "client_id", "client_nom", "client_prenom", "client_tel",
     "marque", "modele", "modele_autre", "panne", "imei", "date_depot", "technicien_assigne", "paye",
+    "emplacement",
 )
 CLIENT_FIELDS = (
     "id", "nom", "prenom", "telephone", "email", "societe",
@@ -37,7 +38,7 @@ _TICKET_SELECT = """
     c.nom AS client_nom, c.prenom AS client_prenom, c.telephone AS client_tel,
     c.societe AS client_societe, c.email AS client_email,
     t.marque, t.modele, t.modele_autre, t.categorie, t.imei, t.date_depot,
-    t.technicien_assigne, t.paye, t.telephone_pret, t.telephone_pret_imei,
+    t.technicien_assigne, t.paye, t.telephone_pret, t.telephone_pret_imei, t.emplacement,
     t.panne, t.panne_detail, t.reparation_supp, t.type_ecran, t.notes_internes,
     t.notes_client, t.commentaire_client, t.attention
 """

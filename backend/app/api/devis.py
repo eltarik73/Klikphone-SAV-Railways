@@ -3,14 +3,16 @@ API Devis — Gestion des devis clients.
 CRUD complet, changement de statut, conversion en ticket, impression.
 """
 
+import json
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.services import mentions
 from app.services import params as params_cache
 from app.api.auth import get_current_user
 from app.api.notifications_center import push_notification
@@ -65,7 +67,8 @@ def _calc_totals(lignes, tva_pct, remise):
     total_ht -= float(remise or 0)
     if total_ht < 0:
         total_ht = 0
-    total_ttc = total_ht * (1 + float(tva_pct or 20) / 100)
+    # TVA 0 (franchise, art. 293 B du CGI) est un taux valide : 20 % seulement si absent
+    total_ttc = total_ht * (1 + float(20 if tva_pct is None else tva_pct) / 100)
     return round(total_ht, 2), round(total_ttc, 2)
 
 
@@ -563,14 +566,24 @@ def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
         if not client_id:
             raise HTTPException(400, "Impossible de créer le ticket sans client")
 
+        cur.execute(
+            "SELECT description, quantite, prix_unitaire, total FROM devis_lignes WHERE devis_id = %s ORDER BY ordre, id",
+            (devis_id,),
+        )
+        lignes, reduction = _lignes_ticket(cur.fetchall() or [], devis)
+        appareil = _appareil_ticket(cur, devis.get("appareil"))
+
         # Create ticket
         panne = devis.get("description") or "Réparation (devis)"
         cur.execute("""
-            INSERT INTO tickets (client_id, panne, devis_estime, statut, notes_internes)
-            VALUES (%s, %s, %s, 'En attente de diagnostic', %s)
+            INSERT INTO tickets (client_id, categorie, marque, modele, modele_autre, panne,
+                                 devis_estime, reparation_supp, reduction_montant, statut, notes_internes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'En attente de diagnostic', %s)
             RETURNING id
-        """, (client_id, panne, devis.get("total_ttc", 0),
-              f"Créé depuis devis {devis.get('numero', '')}"))
+        """, (client_id, appareil["categorie"], appareil["marque"], appareil["modele"], appareil["modele_autre"],
+              panne, devis.get("total_ttc", 0),
+              json.dumps(lignes, ensure_ascii=False, separators=(",", ":")) if lignes else None,
+              reduction, f"Créé depuis devis {devis.get('numero', '')}"))
         ticket_id = cur.fetchone()["id"]
         code = f"KP-{ticket_id:06d}"
         cur.execute("UPDATE tickets SET ticket_code = %s WHERE id = %s", (code, ticket_id))
@@ -581,7 +594,82 @@ def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
             (ticket_id, devis_id),
         )
 
+    # Transaction séparée, comme à la création : le lien de suivi se rattrape à la demande
+    from app.api.public_documents import jeton_suivi
+    try:
+        jeton_suivi(ticket_id)
+    except Exception as e:
+        print(f"[devis] jeton de suivi non créé pour le ticket {ticket_id} : {e}")
+
     return {"ok": True, "ticket_id": ticket_id, "ticket_code": code}
+
+
+def _cents(v) -> Decimal:
+    try:
+        d = Decimal(str(v if v is not None else 0))
+    except (InvalidOperation, ValueError):
+        return Decimal(0)
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if d.is_finite() else Decimal(0)
+
+
+def _lignes_ticket(lignes_devis, devis) -> tuple:
+    """Lignes du devis (HT) → lignes du ticket (TTC, format de la fiche) et réduction TTC.
+
+    La somme des lignes moins la réduction redonne le total TTC du devis : la remise
+    (HT) devient la réduction du ticket ; sans remise, l'écart d'arrondi va sur la
+    dernière ligne.
+    """
+    taux = 1 + _cents(devis.get("tva") if devis.get("tva") is not None else 20) / 100
+    lignes = []
+    for l in lignes_devis:
+        label = " ".join(str(l.get("description") or "").split())
+        if not label:
+            continue
+        qte = l.get("quantite") or 1
+        total_ht = l.get("total") if l.get("total") is not None else _cents(l.get("prix_unitaire")) * qte
+        if qte > 1:
+            label = f"{label} (x{qte})"
+        lignes.append({"label": label, "prix": _cents(_cents(total_ht) * taux), "source": "devis"})
+    if not lignes:
+        return [], 0
+    somme = sum((l["prix"] for l in lignes), Decimal(0))
+    total_ttc = _cents(devis.get("total_ttc"))
+    reduction = Decimal(0)
+    if _cents(devis.get("remise")) > 0:
+        reduction = max(Decimal(0), somme - total_ttc)
+    elif somme != total_ttc and abs(somme - total_ttc) <= Decimal("0.05") * len(lignes):
+        lignes[-1]["prix"] += total_ttc - somme
+    for l in lignes:
+        l["prix"] = float(l["prix"])
+    return lignes, float(reduction)
+
+
+def _appareil_ticket(cur, appareil) -> dict:
+    """devis.appareil (texte libre) → catégorie/marque/modèle du catalogue, sinon modele_autre."""
+    texte = " ".join(str(appareil or "").split())
+    vide = {"categorie": None, "marque": None, "modele": None, "modele_autre": None}
+    if not texte:
+        return vide
+    cur.execute("""
+        SELECT categorie, marque, modele FROM catalog_modeles
+        WHERE lower(marque || ' ' || modele) = lower(%s) OR lower(modele) = lower(%s)
+        ORDER BY (lower(marque || ' ' || modele) = lower(%s)) DESC,
+                 (actif IS NOT FALSE) DESC, (categorie = 'Smartphone') DESC, id
+        LIMIT 1
+    """, (texte, texte, texte))
+    row = cur.fetchone()
+    if row:
+        return {"categorie": row["categorie"], "marque": row["marque"], "modele": row["modele"], "modele_autre": ""}
+    # Appareil hors catalogue : « Autre » + texte libre, catégorie de la marque citée en tête si connue
+    cur.execute("""
+        SELECT categorie FROM catalog_marques
+        WHERE lower(marque) = lower(split_part(%s, ' ', 1))
+        ORDER BY (categorie = 'Smartphone') DESC, id
+        LIMIT 1
+    """, (texte,))
+    row = cur.fetchone()
+    return {"categorie": row["categorie"] if row else "Autre", "marque": "Autre", "modele": "",
+            "modele_autre": texte}
 
 
 # ─── DUPLICATE ─────────────────────────────────────────────
@@ -650,18 +738,16 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
                 devis["client_tel"] = c["telephone"]
                 devis["client_email"] = c.get("email")
 
-        # Shop info
-        try:
-            params = params_cache.get_params(
-                ["NOM_BOUTIQUE", "ADRESSE_BOUTIQUE", "TEL_BOUTIQUE", "EMAIL_BOUTIQUE", "SIRET_BOUTIQUE"], cur=cur)
-        except Exception:
-            params = {}
+        # Identité et mentions légales : services/mentions (aucune valeur écrite ici)
+        ident = mentions.lire(cur=cur)
 
-    nom_boutique = e(params.get("NOM_BOUTIQUE") or "KLIKPHONE")
-    adresse = e(params.get("ADRESSE_BOUTIQUE") or "79 Place Saint-Léger, 73000 Chambéry")
-    tel = e(params.get("TEL_BOUTIQUE") or "04 79 60 89 22")
-    email_boutique = e(params.get("EMAIL_BOUTIQUE"))
-    siret = e(params.get("SIRET_BOUTIQUE"))
+    nom_boutique = e(ident["BOUTIQUE_NOM"])
+    lignes_emetteur = mentions.lignes_identite(ident)
+    if not ident.get("BOUTIQUE_FORME"):
+        lignes_emetteur = lignes_emetteur[1:]   # raison sociale = nom déjà en titre
+    emetteur = "<br>".join(e(x) for x in lignes_emetteur)
+    pied_legal = " · ".join(e(x) for x in (mentions.raison_sociale(ident), *mentions.lignes_legales(ident)))
+    garantie = e(mentions.mention_garantie(ident))
 
     def fp(v):
         try:
@@ -726,10 +812,7 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
 <div class="header">
     <div>
         <div class="shop-name">{nom_boutique}</div>
-        <div class="shop">{adresse}<br>{tel}
-        {"<br>" + email_boutique if email_boutique else ""}
-        {"<br>SIRET : " + siret if siret else ""}
-        </div>
+        <div class="shop">{emetteur}</div>
     </div>
     <div class="devis-info">
         <div class="devis-num">{numero}</div>
@@ -766,8 +849,9 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
 {notes_html}
 
 <div class="footer">
-    <p>Devis valable {validite} jours à compter de la date d'émission.</p>
-    <p>{nom_boutique} — {adresse} — {tel}</p>
+    <p>Devis n° {numero} du {e(date_str)}, valable {validite} jours à compter de sa date d'émission.</p>
+    <p>{garantie}</p>
+    <p>{pied_legal}</p>
 </div>
 </body></html>"""
 

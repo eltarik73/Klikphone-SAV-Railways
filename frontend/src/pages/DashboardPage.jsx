@@ -10,12 +10,13 @@ import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../componen
 import { openQuickScan } from '../components/ScanListener';
 import { useToast } from '../components/Toast';
 import EtagereARecuperer from '../components/EtagereARecuperer';
+import { PrioriteBadge, PRIORITES, comparerPriorite, normaliserPriorite } from '../components/PrioriteBadge';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
   SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
-  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck,
+  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck, ClipboardList, Hourglass,
 } from 'lucide-react';
 
 // Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
@@ -91,6 +92,37 @@ export async function executerStatutGroupe(plan, statut, changeStatus, concurren
 
 const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
 
+// date_recuperation est du texte libre : seule une valeur AAAA-MM-JJ… est ordonnée (comme texte)
+const heurePromise = (t) => {
+  const v = typeof t?.date_recuperation === 'string' ? t.date_recuperation.trim() : '';
+  return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 19).replace('T', ' ') : null;
+};
+
+/** Ordre atelier : priorité (sur place, express, pro, normal), heure promise, puis dépôt le plus ancien. */
+export function comparerUrgence(a, b) {
+  const p = comparerPriorite(a?.priorite, b?.priorite);
+  if (p) return p;
+  const ha = heurePromise(a);
+  const hb = heurePromise(b);
+  if (ha !== hb) {
+    if (ha === null) return 1;
+    if (hb === null) return -1;
+    return ha < hb ? -1 : 1;
+  }
+  return String(a?.date_depot || '').localeCompare(String(b?.date_depot || ''));
+}
+
+// Appareil présent en boutique et pas encore réparé : la fiche de réception est attendue
+const STATUTS_RECEPTION = new Set([
+  'En attente de diagnostic', 'En attente de pièce', 'Pièce reçue',
+  "En attente d'accord client", 'En cours de réparation',
+]);
+/** Badge « Réception à compléter » : seulement si le serveur renvoie reception_complete === false. */
+export function receptionACompleter(t) {
+  return t?.reception_complete === false && STATUTS_RECEPTION.has(t.statut)
+    && !['Achat', 'Commande'].includes(t.categorie);
+}
+
 /** « 2 clôturés · 3 à traiter un par un · 1 en échec » */
 export function resumeStatutGroupe(r) {
   const n = r.faits.length;
@@ -142,6 +174,7 @@ export default function DashboardPage() {
   const bulkMenuRef = useRef(null);
   const bulkMenuId = useId();
   const [filterTech, setFilterTech] = useState(initial.tech);
+  const [filterPriorite, setFilterPriorite] = useState('');
   const [interactionFilter, setInteractionFilter] = useState(null); // 'accord_client' | 'messages' | 'avis' | null
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
   const [sortField, setSortField] = useState('date_depot');
@@ -156,7 +189,7 @@ export default function DashboardPage() {
   // La page revient à 0 dès qu'un filtre, un onglet, un KPI ou le tri change (sans requête intermédiaire)
   const filterSig = JSON.stringify([
     debouncedSearch, filterStatut, showArchived, interactionFilter, activeKpi,
-    sortField, sortDir, dateFrom, dateTo, filterTech, pageSize,
+    sortField, sortDir, dateFrom, dateTo, filterTech, filterPriorite, pageSize,
   ]);
   const [pageState, setPageState] = useState({ sig: filterSig, page: 0 });
   const page = pageState.sig === filterSig ? pageState.page : 0;
@@ -470,8 +503,17 @@ export default function DashboardPage() {
     if (interactionTicketIds) {
       list = list.filter(t => interactionTicketIds.has(t.id));
     }
+    if (filterPriorite) {
+      list = list.filter(t => normaliserPriorite(t.priorite) === filterPriorite);
+    }
     return list;
-  }, [tickets, filterTech, techOnServer, mineOnly, techName, interactionTicketIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tickets, filterTech, techOnServer, mineOnly, techName, interactionTicketIds, filterPriorite]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clients qui attendent en boutique (vue des actifs : liste complète)
+  const nbAttenteSurPlace = useMemo(() => {
+    if (vue !== 'actifs') return 0;
+    return tickets.filter(t => normaliserPriorite(t.priorite) === 'attente' && !ARCHIVE_STATUTS.includes(t.statut)).length;
+  }, [tickets, vue]);
 
   const filteredTickets = useMemo(
     () => (searchMode && filterStatut ? baseTickets.filter(t => t.statut === filterStatut) : baseTickets),
@@ -488,7 +530,7 @@ export default function DashboardPage() {
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
 
   // Compteurs du bandeau : KPI serveur (toute la base), indépendants de la recherche
-  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds);
+  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds || filterPriorite);
   // CA estimé : calculé seulement sur la liste complète des actifs (sans recherche ni filtre serveur),
   // puis conservé tel quel pendant qu'on filtre.
   const caActifs = useMemo(() => {
@@ -536,6 +578,9 @@ export default function DashboardPage() {
         }
         case 'statut':
           cmp = (a.statut || '').localeCompare(b.statut || '');
+          break;
+        case 'priorite':
+          cmp = comparerUrgence(a, b);
           break;
         default:
           cmp = 0;
@@ -628,7 +673,7 @@ export default function DashboardPage() {
 
   // État vide explicite : ne jamais afficher « Aucun ticket » quand des résultats existent ailleurs
   const emptyState = (() => {
-    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); };
+    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); setFilterPriorite(''); };
     if (searchMode) {
       if (filterStatut && baseTickets.length > 0) {
         return {
@@ -640,7 +685,7 @@ export default function DashboardPage() {
       if (tickets.length > 0) {
         return {
           title: 'Résultats masqués par un filtre',
-          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien ou interactions.`,
+          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien, priorité ou interactions.`,
           action: { label: 'Retirer ces filtres', onClick: resetFilters },
         };
       }
@@ -841,8 +886,18 @@ export default function DashboardPage() {
       )}
 
       {/* ★ Barre actions compacte — regroupe commandes, dépôts distants, interactions */}
-      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0)) && (
+      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0) && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
+          {nbAttenteSurPlace > 0 && (
+            <button type="button" onClick={() => setFilterPriorite(f => (f === 'attente' ? '' : 'attente'))}
+              aria-pressed={filterPriorite === 'attente'}
+              className={`inline-flex items-center gap-2 pl-2 pr-3 min-h-[44px] rounded-full border text-xs transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 ${
+                filterPriorite === 'attente' ? 'bg-red-100 border-red-500 ring-2 ring-red-200' : 'bg-red-50 border-red-200 hover:border-red-400'
+              }`}>
+              <span className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center"><Hourglass className="w-3.5 h-3.5 text-white" aria-hidden="true" /></span>
+              <span className="text-red-800"><span className="font-bold">{nbAttenteSurPlace}</span> client{nbAttenteSurPlace > 1 ? 's' : ''} sur place</span>
+            </button>
+          )}
           {commandesEnCours > 0 && (
             <button onClick={() => navigate(`${basePath}/commandes`)}
               className="group inline-flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 hover:border-amber-400 hover:shadow-sm transition-all text-xs">
@@ -940,6 +995,11 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
+            <select value={filterPriorite} onChange={e => setFilterPriorite(e.target.value)} aria-label="Filtrer par priorité atelier"
+              className="min-h-[44px] px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
+              <option value="">Toutes priorités</option>
+              {PRIORITES.map(p => <option key={p.valeur} value={p.valeur}>{p.libelle}</option>)}
+            </select>
             {teamList.length > 0 && (
               <select value={filterTech} onChange={e => setFilterTech(e.target.value)} aria-label="Filtrer par technicien"
                 className="min-h-[44px] px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 min-w-[140px]">
@@ -1023,12 +1083,13 @@ export default function DashboardPage() {
           { label: 'Nom client', value: 'nom' },
           { label: 'Récupération', value: 'date_recuperation' },
           { label: 'Statut', value: 'statut' },
+          { label: 'Priorité', value: 'priorite' },
         ].map(({ label, value }) => (
           <button key={value} type="button"
             aria-pressed={sortField === value}
             onClick={() => {
               if (sortField === value) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-              else { setSortField(value); setSortDir(value === 'nom' ? 'asc' : 'desc'); }
+              else { setSortField(value); setSortDir(value === 'nom' || value === 'priorite' ? 'asc' : 'desc'); }
             }}
             className={`px-2 py-1 min-h-[44px] sm:min-h-[32px] rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               sortField === value ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:bg-slate-100'
@@ -1229,7 +1290,7 @@ export default function DashboardPage() {
 
                 {/* Ticket code */}
                 <div className="cursor-pointer" onClick={() => openTicket(t.id)}>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     {t.attention && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Attention" />}
                     <a href={`${basePath}/ticket/${t.id}`} data-ticket-link=""
                       onClick={(e) => openTicketLink(e, t.id)}
@@ -1295,6 +1356,17 @@ export default function DashboardPage() {
                       <p className="text-[11px] text-slate-500 font-mono truncate" title={t.client_tel || ''}>{t.client_tel || ''}</p>
                     </div>
                   </div>
+                  {(normaliserPriorite(t.priorite) !== 'normal' || receptionACompleter(t)) && (
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                      <PrioriteBadge priorite={t.priorite} court />
+                      {receptionACompleter(t) && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ring-1 ring-amber-400 bg-amber-50 text-amber-900 text-[10px] font-bold leading-tight"
+                          title="Fiche de réception (accessoires, état, tests) à compléter">
+                          <ClipboardList className="w-3 h-3 shrink-0" aria-hidden="true" /> Réception à compléter
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Appareil */}

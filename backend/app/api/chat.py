@@ -253,7 +253,7 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
                     q = f"%{search_engine.esc_like(saisie)}%"
                     where, params = "c.nom ILIKE %s OR c.prenom ILIKE %s OR c.telephone LIKE %s", (q, q, q)
                 cur.execute("""
-                    SELECT c.id, c.nom, c.prenom, c.telephone, c.email,
+                    SELECT c.id, c.nom, c.prenom, c.telephone,
                            COUNT(t.id) as nb_tickets
                     FROM clients c
                     LEFT JOIN tickets t ON t.client_id = c.id
@@ -266,17 +266,19 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
 
             elif tool_name == "get_ticket":
                 code = tool_input["ticket_code"].strip().upper()
+                # Envoyé au fournisseur d'IA : jamais le code de déverrouillage ni les
+                # coordonnées (minimisation) ; le prénom et le nom suffisent à l'équipe
                 cur.execute("""
                     SELECT t.id, t.ticket_code, t.statut, t.categorie,
                            t.marque, t.modele, t.modele_autre, t.imei,
-                           t.panne, t.panne_detail, t.pin, t.pattern,
+                           t.panne, t.panne_detail,
+                           (COALESCE(t.pin, '') <> '' OR COALESCE(t.pattern, '') <> '') AS code_deverrouillage_fourni,
                            t.devis_estime, t.tarif_final, t.acompte, t.prix_supp,
                            t.reparation_supp, t.technicien_assigne, t.personne_charge,
                            t.date_depot, t.date_maj, t.date_recuperation, t.date_cloture,
                            t.notes_internes, t.notes_client, t.attention,
                            t.paye, t.client_contacte, t.client_accord,
-                           c.nom as client_nom, c.prenom as client_prenom,
-                           c.telephone as client_tel, c.email as client_email
+                           c.nom as client_nom, c.prenom as client_prenom
                     FROM tickets t
                     LEFT JOIN clients c ON c.id = t.client_id
                     WHERE t.ticket_code = %s OR CAST(t.id AS TEXT) = %s

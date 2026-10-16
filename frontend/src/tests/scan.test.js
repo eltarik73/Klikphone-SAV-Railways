@@ -649,9 +649,15 @@ describe('montants et garde-fous du panneau', () => {
     const ids = (t, role) => actionsTicket(t, role).map((a) => `${a.id}${a.primary ? '*' : ''}`);
     expect(ids(ticketFixture(), 'accueil')).toEqual(['rendre*']);
     expect(ids(ticketFixture(), 'tech')).toEqual(['rendre*']);
-    expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'tech')).toEqual(['terminer*', 'rendre']);
-    expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'accueil')).toEqual(['rendre']);
-    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'tech')).toEqual(['demarrer*', 'rendre']);
+    expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'tech')).toEqual(['terminer*', 'terminer_seul', 'rendre']);
+    // Celui qui scanne l'appareil réparé prévient le client, accueil compris
+    expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'accueil')).toEqual(['terminer*', 'terminer_seul', 'rendre']);
+    // Réparation express sans « Démarrer » : terminer directement (technicien)
+    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'tech')).toEqual(['demarrer*', 'terminer', 'rendre']);
+    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'accueil')).toEqual(['rendre']);
+    expect(actionsTicket(ticketFixture({ statut: 'En attente de pièce' }), 'tech')[1]).toMatchObject({ id: 'terminer', warn: { ok: 'Oui, terminer' } });
+    // Accord client → terminé = devis refusé pour le serveur : jamais proposé
+    expect(ids(ticketFixture({ statut: "En attente d'accord client" }), 'tech')).toEqual(['demarrer*', 'rendre']);
     expect(actionsTicket(ticketFixture({ statut: "En attente d'accord client" }), 'tech')[0].warn).toBeTruthy();
     expect(ids(ticketFixture({ statut: 'Clôturé', paye: 1 }), 'accueil')).toEqual([]);
     expect(ids(ticketFixture({ statut: 'Rendu au client' }), 'accueil')).toEqual(['encaisser*']);
@@ -915,7 +921,7 @@ describe('QuickScanPanel', () => {
     renderPanel();
     emit();
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Réparation terminée/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Terminé \+ prévenir le client/ }));
     fireEvent.keyDown(within(dialog).getByRole('button', { name: 'Annuler' }), { key: 'Escape' });
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
@@ -943,7 +949,7 @@ describe('QuickScanPanel', () => {
     const { rerender } = renderPanel();
     emit();
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Réparation terminée/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Terminé sans prévenir/ }));
     auth.user = { target: 'tech', utilisateur: 'Hugo' };
     rerender(panelTree());
     expect(await screen.findByText(/« Réparation terminée » non enregistré \(session fermée\)/)).toBeInTheDocument();

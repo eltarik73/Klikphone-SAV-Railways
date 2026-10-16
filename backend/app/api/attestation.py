@@ -19,6 +19,7 @@ from fpdf import FPDF
 import httpx
 
 from app.database import get_cursor
+from app.services import mentions
 from app.services import params as params_cache
 from app.api.auth import get_current_user
 from app.services.notifications import envoyer_email, envoyer_email_avec_pdf
@@ -81,10 +82,32 @@ def _get_param(key: str) -> str:
     return params_cache.get_param(key, "")
 
 
+def _identite() -> dict:
+    """Identité et mentions légales de la boutique (services/mentions, jamais écrites ici)."""
+    ident = mentions.lire()
+    contact = " - ".join(x for x in (ident.get("BOUTIQUE_TEL"), ident.get("BOUTIQUE_EMAIL")) if x)
+    return {
+        **ident,
+        "raison": mentions.raison_sociale(ident),
+        "contact": contact,
+        "legal": " - ".join(mentions.lignes_legales(ident)),
+        "ville": mentions.ville(ident),
+    }
+
+
+def _date_lieu(ident: dict, date_fr: str) -> str:
+    return f"{ident['ville']}, le {date_fr}" if ident["ville"] else f"Le {date_fr}"
+
+
+def _fait_a(ident: dict, date_fr: str) -> str:
+    return f"Fait à {ident['ville']}, le {date_fr}" if ident["ville"] else f"Fait le {date_fr}"
+
+
 def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     """Genere un PDF A4 professionnel de l'attestation - tient sur 1 page."""
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+    ident = _identite()
     LM = 18
     RM = 192
     # Champs utilisateur nettoyés pour la police Latin-1
@@ -112,15 +135,13 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     pdf.set_x(LM + 40)
     pdf.set_font("Helvetica", "B", 14)
     pdf.set_text_color(30, 30, 30)
-    pdf.cell(0, 7, "KLIKPHONE", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_x(LM + 40)
+    pdf.cell(0, 7, _pdf_safe(ident["BOUTIQUE_NOM"]), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 4, "Specialiste Apple & Multimarque", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_x(LM + 40)
-    pdf.cell(0, 4, "79 Place Saint Leger, 73000 Chambery", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_x(LM + 40)
-    pdf.cell(0, 4, "04 79 60 89 22 - www.klikphone.com - SIREN: 813 901 191", new_x="LMARGIN", new_y="NEXT")
+    for ligne in ("Specialiste Apple & Multimarque", ident["BOUTIQUE_ADRESSE"], ident["contact"], ident["legal"]):
+        if ligne:
+            pdf.set_x(LM + 40)
+            pdf.multi_cell(RM - LM - 40, 4, _pdf_safe(ligne), new_x="LMARGIN", new_y="NEXT")
     pdf.set_y(max(pdf.get_y(), y_start + 30))
     pdf.ln(3)
 
@@ -141,16 +162,16 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     # ── Date ──
     pdf.set_font("Helvetica", "I", 10)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(0, 5, f"Chambery, le {date_fr}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _pdf_safe(_date_lieu(ident, date_fr)), align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
     # ── Intro ──
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(0, 0, 0)
-    pdf.multi_cell(0, 5.5,
-        "Je soussigne, KLIKPHONE, professionnel de la reparation d'appareils electroniques, "
+    pdf.multi_cell(0, 5.5, _pdf_safe(
+        f"Je soussigne, {ident['raison']}, professionnel de la reparation d'appareils electroniques, "
         "atteste par la presente que l'appareil decrit ci-dessous a ete examine dans nos "
-        "ateliers et declare non reparable pour les raisons indiquees.")
+        "ateliers et declare non reparable pour les raisons indiquees."))
     pdf.ln(4)
 
     # ── Helpers ──
@@ -212,7 +233,7 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
     # ── Signature + tampon ──
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 5, f"Fait a Chambery, le {date_fr}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, _pdf_safe(_fait_a(ident, date_fr)), new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 5, "Signature et cachet :", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
@@ -221,14 +242,15 @@ def _generate_attestation_pdf(data: AttestationRequest) -> bytes:
         pdf.image(str(tampon_path), x=LM, w=50)
 
     # ── Footer ──
-    pdf.set_y(-12)
+    pdf.set_y(-15)
     pdf.set_draw_color(180, 180, 180)
     pdf.set_line_width(0.2)
     pdf.line(LM, pdf.get_y(), RM, pdf.get_y())
     pdf.ln(2)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(150, 150, 150)
-    pdf.cell(0, 3, "KLIKPHONE - 79 Place Saint Leger, 73000 Chambery - SIREN: 813 901 191 - 04 79 60 89 22", align="C")
+    pied = " - ".join(x for x in (ident["raison"], ident["BOUTIQUE_ADRESSE"], ident["legal"], ident["BOUTIQUE_TEL"]) if x)
+    pdf.multi_cell(0, 3, _pdf_safe(pied), align="C")
 
     # bytes() explicite : fpdf2 renvoie un bytearray que Starlette ne sait pas
     # toujours sérialiser tel quel dans une Response.
@@ -285,6 +307,15 @@ def _e_br(v) -> str:
 def _generate_attestation_html(data: AttestationRequest) -> str:
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+    ident = _identite()
+    nom = _e(ident["BOUTIQUE_NOM"])
+    entete = "<br>".join(_e(x) for x in (
+        f"{ident['BOUTIQUE_NOM']} — Spécialiste Apple & Multimarque", ident["BOUTIQUE_ADRESSE"],
+        " — ".join(x for x in (ident["BOUTIQUE_TEL"] and f"Tél : {ident['BOUTIQUE_TEL']}",
+                                ident["BOUTIQUE_EMAIL"]) if x),
+        *mentions.lignes_legales(ident),
+    ) if x)
+    pied = " — ".join(_e(x) for x in (ident["raison"], ident["BOUTIQUE_ADRESSE"], *mentions.lignes_legales(ident)) if x)
 
     motif_html = _e_br(data.motif) if data.motif else '—'
     cr_html = _e_br(data.compte_rendu) if data.compte_rendu else ''
@@ -324,20 +355,16 @@ def _generate_attestation_html(data: AttestationRequest) -> str:
   @media print {{ body {{ padding: 0; }} }}
 </style></head><body>
 
-<div class="logo"><img src="/logo_k.png" width="80" height="80" alt="Klikphone"></div>
+<div class="logo"><img src="/logo_k.png" width="80" height="80" alt="{nom}"></div>
 
-<div class="entete">
-  KLIKPHONE — Spécialiste Apple &amp; Multimarque<br>
-  79 Place Saint Léger, 73000 Chambéry — Tél : 04 79 60 89 22<br>
-  www.klikphone.com — SIREN : 813 901 191
-</div>
+<div class="entete">{entete}</div>
 
 <h1>Attestation de Non-Réparabilité</h1>
 
-<p class="date">Chambéry, le {date_fr}</p>
+<p class="date">{_e(_date_lieu(ident, date_fr))}</p>
 
 <div>
-  <p>Je soussigné, <strong>KLIKPHONE</strong>, professionnel de la réparation d'appareils électroniques,
+  <p>Je soussigné, <strong>{_e(ident["raison"])}</strong>, professionnel de la réparation d'appareils électroniques,
   atteste par la présente que l'appareil décrit ci-dessous a été examiné dans nos ateliers et
   <strong>déclaré non réparable</strong> pour les raisons indiquées.</p>
 
@@ -366,12 +393,12 @@ def _generate_attestation_html(data: AttestationRequest) -> str:
 </div>
 
 <div class="signature">
-  <p>Fait à Chambéry, le {date_fr}</p>
+  <p>{_e(_fait_a(ident, date_fr))}</p>
   <p><strong>Signature et cachet :</strong></p>
-  <img src="/tampon_klikphone.png" width="170" height="96" alt="Cachet Klikphone">
+  <img src="/tampon_klikphone.png" width="170" height="96" alt="Cachet {nom}">
 </div>
 
-<div class="pied">KLIKPHONE — 79 Place Saint Léger, 73000 Chambéry — SIREN : 813 901 191</div>
+<div class="pied">{pied}</div>
 </body></html>"""
 
 
@@ -383,6 +410,7 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
 
     now = datetime.now()
     date_fr = f"{now.day} {MOIS_FR[now.month - 1]} {now.year}"
+    ident = _identite()
 
     doc = Document()
     # Marges A4 resserrées pour tenir sur une seule page
@@ -418,11 +446,10 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
     # ─── En-tête boutique ───
     head = _tight(doc.add_paragraph(), 0, 4)
     head.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = head.add_run(
-        "KLIKPHONE — Spécialiste Apple & Multimarque\n"
-        "79 Place Saint Léger, 73000 Chambéry — Tél: 04 79 60 89 22\n"
-        "www.klikphone.com — SIREN: 813 901 191"
-    )
+    r = head.add_run("\n".join(x for x in (
+        f"{ident['BOUTIQUE_NOM']} — Spécialiste Apple & Multimarque", ident["BOUTIQUE_ADRESSE"],
+        ident["contact"], ident["legal"],
+    ) if x))
     r.font.size = Pt(8)
     r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
 
@@ -436,14 +463,14 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
     # ─── Date ───
     dp = _tight(doc.add_paragraph(), 0, 4)
     dp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    dr = dp.add_run(f"Chambéry, le {date_fr}")
+    dr = dp.add_run(_date_lieu(ident, date_fr))
     dr.italic = True
     dr.font.size = Pt(9)
 
     # ─── Corps ───
     intro = _tight(doc.add_paragraph(), 0, 4)
     intro.add_run(
-        "Je soussigné, KLIKPHONE, professionnel de la réparation d'appareils "
+        f"Je soussigné, {ident['raison']}, professionnel de la réparation d'appareils "
         "électroniques, atteste par la présente que l'appareil décrit ci-dessous "
         "a été examiné dans nos ateliers et déclaré non réparable pour les raisons indiquées."
     ).font.size = Pt(10)
@@ -496,7 +523,7 @@ def _generate_attestation_docx(data: AttestationRequest) -> bytes:
 
     # ─── Signature ───
     sig = _tight(doc.add_paragraph(), 2, 1)
-    sig.add_run(f"Fait à Chambéry, le {date_fr} — Signature et cachet :").font.size = Pt(9)
+    sig.add_run(f"{_fait_a(ident, date_fr)} — Signature et cachet :").font.size = Pt(9)
     tampon_path = STATIC_DIR / "tampon_klikphone.png"
     if tampon_path.exists():
         sp = _tight(doc.add_paragraph(), 0, 0)
@@ -573,12 +600,13 @@ def email_attestation(
         filename = _safe_filename(data, "pdf")
         subtype = "pdf"
 
+    ident = _identite()
     sujet = f"Attestation de non-reparabilite - {data.marque} {data.modele}"
     message = (
         f"Bonjour {data.prenom} {data.nom},\n\n"
         f"Veuillez trouver ci-joint l'attestation de non-reparabilite "
         f"de votre appareil {data.marque} {data.modele}.\n\n"
-        f"Cordialement,\nKLIKPHONE - 04 79 60 89 22"
+        "Cordialement,\n" + " - ".join(x for x in (ident["BOUTIQUE_NOM"], ident["BOUTIQUE_TEL"]) if x)
     )
 
     # Essaie Resend (format-agnostique : base64 + nom de fichier) puis SMTP en fallback

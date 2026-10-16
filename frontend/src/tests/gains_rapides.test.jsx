@@ -95,7 +95,8 @@ describe('étagère : badge J+N et délai d’abandon', () => {
   it('délai d’abandon des conditions du ticket (3 mois)', () => {
     expect(formatDelai(90)).toBe('3 mois');
     expect(formatDelai(45)).toBe('45 jours');
-    expect(formatDelai(undefined)).toBe('3 mois');
+    // Repli : délai légal d'un an (loi du 31 décembre 1903), voir etagere_chantier.test.jsx
+    expect(formatDelai(undefined)).toBe('1 an');
     expect(situationAbandon(90, 90)).toEqual({ atteint: true, restant: 0 });
     expect(situationAbandon(60, 90)).toEqual({ atteint: false, restant: 30 });
     expect(situationAbandon(null, 90)).toBeNull();
@@ -295,45 +296,77 @@ describe('QuickScanPanel : message « prêt » proposé après la fin de répara
   });
   afterEach(() => { auth.user = { target: 'accueil', utilisateur: 'Sophie' }; });
 
-  it('panneau ouvert : le message pré-rempli s’affiche en tête, « Plus tard » le retire', async () => {
+  // « Terminé + prévenir le client » (SMS serveur non configuré ici) : détail dans prevenir_client.test.jsx
+  it('panneau ouvert : la carte « Prévenir » s’affiche avec le SMS prêt, « Plus tard » la replie', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     apiMock.changeStatus.mockResolvedValue({ ok: true, proposer_message: true });
     renderPanel();
     scanner();
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Réparation terminée/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Terminé \+ prévenir le client/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Valider maintenant' }));
     await waitFor(() => expect(apiMock.changeStatus).toHaveBeenCalledWith(42, 'Réparation terminée'));
 
-    const proposition = await within(dialog).findByRole('region', { name: 'Prévenir Léa ?' });
-    expect(await within(proposition).findByText(/est pret !/)).toBeInTheDocument();
-    expect(document.activeElement).toBe(within(proposition).getByRole('heading', { name: 'Prévenir Léa ?' }));
+    const carte = await within(dialog).findByRole('region', { name: 'Prévenir Léa' });
+    expect(await within(carte).findByText(/est pret!/)).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(within(carte).getByRole('button', { name: 'SMS' })));
     expect(apiMock.logMessage).not.toHaveBeenCalled();
-    fireEvent.click(within(proposition).getByRole('button', { name: 'Plus tard' }));
-    expect(within(dialog).queryByRole('region', { name: 'Prévenir Léa ?' })).not.toBeInTheDocument();
+    expect(open).not.toHaveBeenCalled();
+    fireEvent.click(within(carte).getByRole('button', { name: 'Plus tard' }));
+    expect(within(carte).getByRole('button', { name: 'Prévenir…' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(carte).queryByRole('button', { name: 'SMS' })).not.toBeInTheDocument();
   });
 
-  it('statut hors NOTIFICATIONS_STATUTS : aucune proposition', async () => {
+  it('« Terminé sans prévenir » : aucune proposition, même si le serveur en propose une', async () => {
+    apiMock.changeStatus.mockResolvedValue({ ok: true, proposer_message: true });
+    renderPanel();
+    scanner();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Terminé sans prévenir/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Valider maintenant' }));
+    expect(await screen.findByText('KP-000042 : Réparation terminée')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('region', { name: /Prévenir/ })).not.toBeInTheDocument();
+    expect(apiMock.logMessage).not.toHaveBeenCalled();
+  });
+
+  it('autre statut hors NOTIFICATIONS_STATUTS (démarrer) : aucune proposition', async () => {
+    apiMock.getTicket.mockResolvedValue(ticket({ statut: 'Pièce reçue', technicien_assigne: 'Karim' }));
     apiMock.changeStatus.mockResolvedValue({ ok: true, proposer_message: false });
     renderPanel();
     scanner();
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Réparation terminée/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Démarrer la réparation/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Valider maintenant' }));
-    expect(await screen.findByText('KP-000042 : Réparation terminée')).toBeInTheDocument();
+    expect(await screen.findByText('KP-000042 : En cours de réparation')).toBeInTheDocument();
     expect(within(dialog).queryByRole('region', { name: /Prévenir/ })).not.toBeInTheDocument();
+    expect(apiMock.logMessage).not.toHaveBeenCalled();
   });
 
-  it('panneau fermé avant l’envoi : la notification le rouvre sur le message', async () => {
+  it('autre statut dans NOTIFICATIONS_STATUTS (démarrer) : message pré-rempli proposé, rien ne part seul', async () => {
+    apiMock.getTicket.mockResolvedValue(ticket({ statut: 'Pièce reçue', technicien_assigne: 'Karim' }));
     apiMock.changeStatus.mockResolvedValue({ ok: true, proposer_message: true });
     renderPanel();
     scanner();
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Réparation terminée/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Démarrer la réparation/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Valider maintenant' }));
+    const proposition = await within(dialog).findByRole('region', { name: 'Prévenir Léa ?' });
+    // Aperçu complet et version SMS courte
+    expect(await within(proposition).findAllByText(/la reparation de votre Apple iPhone 13 est en cours/)).toHaveLength(2);
+    expect(apiMock.logMessage).not.toHaveBeenCalled();
+  });
+
+  it('panneau fermé avant l’envoi : la notification le rouvre sur la carte', async () => {
+    apiMock.changeStatus.mockResolvedValue({ ok: true, proposer_message: true });
+    renderPanel();
+    scanner();
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Terminé \+ prévenir le client/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Fermer le panneau' }));
-    const notif = await screen.findByText('KP-000042 : Réparation terminée — prévenir le client ?');
+    const notif = await screen.findByText('KP-000042 : Terminé — prévenir le client ?');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     fireEvent.click(notif);
     const rouvert = await screen.findByRole('dialog');
-    expect(await within(rouvert).findByRole('region', { name: 'Prévenir Léa ?' })).toBeInTheDocument();
+    expect(await within(rouvert).findByRole('region', { name: 'Prévenir Léa' })).toBeInTheDocument();
   });
 });

@@ -18,11 +18,17 @@ import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
 import AutocompleteField from '../components/AutocompleteField';
 import ModelCombobox from '../components/ModelCombobox';
+import TarifPicker from '../components/TarifPicker';
+import ReceptionCard from '../components/ReceptionCard';
+import EmplacementInput from '../components/EmplacementInput';
+import PrevenirClient from '../components/PrevenirClient';
+import { normaliserEmplacement } from '../lib/etagere';
+import { PrioriteBadge, PrioriteSelecteur, normaliserPriorite } from '../components/PrioriteBadge';
 import { useCatalog } from '../hooks/useCatalog';
 import { MARQUE_AUTRE } from '../lib/catalog';
 import {
   chargerPrestations, cataloguePrestations, lignesFiche, libelleCourt, rattachementCommandes,
-  formatJson, indexLigneEcran, prixNombre,
+  formatJson, indexLigneEcran, prixNombre, normaliser, clePanne, memeElement,
 } from '../lib/prestations';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
@@ -35,12 +41,15 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar, Clock,
   Zap, Edit3, X, CheckCircle2, Sparkles,
-  Flag, PhoneCall, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck,
+  Flag, PhoneCall, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
+  MapPin,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 
 const ANIM_ENTREE = 'motion-safe:animate-[fadeIn_0.3s_ease-out_forwards]';
 const STATUTS_REMISE = new Set(['Rendu au client', 'Clôturé']);
+// Appareil prêt, en attente du client : message « prêt » en 1 clic (carte PrevenirClient)
+const STATUT_TERMINE = 'Réparation terminée';
 const SOURCES_MONTANTS = new Set(['devis_estime', 'acompte', 'reduction_montant', 'reduction_pourcentage']);
 const CHAMPS_CLIENT = {
   nom: 'client_nom', prenom: 'client_prenom', telephone: 'client_tel', email: 'client_email', societe: 'client_societe',
@@ -103,6 +112,58 @@ function lignesComptees(lignes) {
   return (lignes || []).filter(l => String(l?.label ?? '').trim());
 }
 
+// Origine d'une ligne choisie dans la grille tarifaire : conservée par le serveur, ignorée des montants
+const META_GRILLE = ['source', 'tarif_id', 'qualite'];
+
+function ligneEnregistree(l) {
+  const ligne = { label: String(l.label).trim(), prix: prixNombre(l.prix) };
+  for (const k of META_GRILLE) {
+    const v = l?.[k];
+    if (v !== undefined && v !== null && String(v).trim()) ligne[k] = String(v);
+  }
+  return ligne;
+}
+
+/** lignesFiche() ne garde que libellé et prix : l'origine grille est relue dans le JSON enregistré. */
+function avecOrigineGrille(lignes, t) {
+  if (!formatJson(t)) return lignes;
+  let brut;
+  try { brut = JSON.parse(String(t.reparation_supp).trim()); } catch { return lignes; }
+  if (!Array.isArray(brut)) return lignes;
+  const valides = brut.filter(r => r && typeof r === 'object' && !Array.isArray(r) && String(r.label ?? '').trim());
+  if (valides.length !== lignes.length) return lignes;
+  return lignes.map((l, i) => {
+    const r = valides[i];
+    if (String(r.label).trim() !== String(l.label ?? '').trim() || !META_GRILLE.some(k => r[k] != null && r[k] !== '')) return l;
+    const meta = {};
+    for (const k of META_GRILLE) if (r[k] != null && r[k] !== '') meta[k] = String(r[k]);
+    return { ...l, ...meta };
+  });
+}
+
+// « Forfait remplacement écran (OLED) » : la qualité entre parenthèses ne change pas la prestation
+const SUFFIXE_QUALITE = /\s*\([^()]*\)\s*$/;
+
+function clePrestation(label, cat) {
+  const texte = String(label ?? '');
+  return clePanne(texte, cat) || clePanne(texte.replace(SUFFIXE_QUALITE, ''), cat);
+}
+
+/**
+ * Ligne choisie dans la grille → index de la ligne qu'elle remplace, -1 pour l'ajouter à la fin.
+ * Remplacée : la ligne de la même prestation ; sinon la ligne par défaut jamais enregistrée
+ * (symptôme du dépôt, au devis estimé) sauf si elle chiffre une autre prestation ; sinon une ligne vide.
+ */
+export function indexRemplaceGrille(lignes, ligne, suggestion, { enregistrees = true, cat } = {}) {
+  const liste = Array.isArray(lignes) ? lignes : [];
+  const cle = clePanne(suggestion?.type_piece, cat) || clePrestation(ligne?.label, cat);
+  const meme = liste.findIndex(l => memeElement(l?.label, ligne?.label, cat) || (!!cle && clePrestation(l?.label, cat) === cle));
+  if (meme >= 0) return meme;
+  if (!enregistrees && liste.length === 1 && !liste[0]?.source
+    && (!clePrestation(liste[0]?.label, cat) || prixNombre(liste[0]?.prix) === 0)) return 0;
+  return liste.findIndex(l => !String(l?.label ?? '').trim() && prixNombre(l?.prix) === 0);
+}
+
 function calculMontants(form, lignes, mode) {
   const somme = lignesComptees(lignes).reduce((s, l) => s + prixNombre(l.prix), 0);
   const devis = prixNombre(form.devis_estime);
@@ -131,7 +192,7 @@ function patchTarif(form, lignes, mode, changes, paye) {
   const net = Math.max(0, m.base - m.reduction);
   const reste = Math.max(0, net - m.acompte);
   Object.assign(patch, {
-    reparation_supp: JSON.stringify(lignesComptees(lignes).map(l => ({ label: String(l.label).trim(), prix: prixNombre(l.prix) }))),
+    reparation_supp: JSON.stringify(lignesComptees(lignes).map(ligneEnregistree)),
     prix_supp: m.somme,
     devis_estime: m.devis,
     tarif_final: net,
@@ -240,6 +301,7 @@ function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit
 }
 
 // ─── Modale accessible (Échap, focus piégé puis rendu à l'élément d'origine) ─────
+// busy : Échap sans effet ; booléen, ou fonction lue à l'appui (état tenu par un composant enfant)
 function Modal({ labelledBy, onClose, busy = false, panelClassName = 'max-w-md p-6', children }) {
   const panelRef = useRef(null);
   const closeRef = useRef(onClose);
@@ -254,7 +316,8 @@ function Modal({ labelledBy, onClose, busy = false, panelClassName = 'max-w-md p
     const onKey = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        if (!busyRef.current) closeRef.current?.();
+        const occupe = typeof busyRef.current === 'function' ? busyRef.current() : busyRef.current;
+        if (!occupe) closeRef.current?.();
       } else if (e.key === 'Tab' && panel) {
         const focusables = [...panel.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
         if (focusables.length === 0) return;
@@ -522,10 +585,25 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
 
 // ─── Layout Config ────────────────────────────────────────────
 const DEFAULT_LAYOUT = {
-  left: ['client', 'device', 'dates', 'messages', 'notes'],
+  left: ['client', 'device', 'reception', 'dates', 'messages', 'notes'],
   right: ['reparation', 'status', 'queue', 'fidelite'],
 };
 const ALL_WIDGET_IDS = new Set([...DEFAULT_LAYOUT.left, ...DEFAULT_LAYOUT.right]);
+
+/** Disposition enregistrée + widgets apparus depuis (réception…), placés après leur voisin par défaut. */
+export function completerLayout(left, right) {
+  const res = { left: [...left], right: [...right] };
+  const place = (wid) => res.left.includes(wid) || res.right.includes(wid);
+  for (const col of ['left', 'right']) {
+    DEFAULT_LAYOUT[col].forEach((wid, i) => {
+      if (place(wid)) return;
+      const voisin = DEFAULT_LAYOUT[col].slice(0, i).reverse().find(place);
+      const cible = voisin ? (res.left.includes(voisin) ? 'left' : 'right') : col;
+      res[cible].splice(voisin ? res[cible].indexOf(voisin) + 1 : 0, 0, wid);
+    });
+  }
+  return res;
+}
 
 export default function TicketDetailPage() {
   const { id } = useParams();
@@ -570,6 +648,9 @@ function TicketDetail({ id }) {
   const catalogueAppareil = useCatalog(editingDevice ? (ticket?.categorie || null) : null, ticket?.marque || '');
 
   const [showPrintDrawer, setShowPrintDrawer] = useState(false);
+  const [showTarifPicker, setShowTarifPicker] = useState(false);
+  // Fiche de réception (chargée par ReceptionCard) : { charge, complete }
+  const [receptionEtat, setReceptionEtat] = useState(null);
 
   // Accord client modal state
   const [showAccordModal, setShowAccordModal] = useState(false);
@@ -591,8 +672,16 @@ function TicketDetail({ id }) {
   const [paiement, setPaiement] = useState(null);
   const [paying, setPaying] = useState(false);
   const [statutEnCours, setStatutEnCours] = useState(false);
-  // Message au client proposé après un changement de statut (réponse proposer_message) : { statut }
+  // Message au client proposé après un changement de statut (réponse proposer_message) :
+  // { statut, ranger } — ranger : « Réparation terminée » sans emplacement noté à l'ouverture
   const [propositionMessage, setPropositionMessage] = useState(null);
+  // « Réparation terminée » : la modale porte le titre de la carte « Prévenir … » (id posé par la carte)
+  const [titreCarteId, setTitreCarteId] = useState(undefined);
+  const titreCarteRef = useCallback((el) => { if (el?.id) setTitreCarteId(el.id); }, []);
+  // La carte « Prévenir » ne remonte pas son envoi en cours : son aria-busy (et celui de l'emplacement)
+  // fait foi, lu à l'appui sur Échap — la modale reste ouverte jusqu'au résultat affiché sur la carte
+  const prevenirRef = useRef(null);
+  const prevenirOccupe = useCallback(() => !!prevenirRef.current?.querySelector('[aria-busy="true"]'), []);
   // IMEI du prêt quitté une fois : l'erreur de saisie s'affiche dès lors
   const [pretImeiVu, setPretImeiVu] = useState(false);
   const [envoiCaisse, setEnvoiCaisse] = useState(false);
@@ -770,23 +859,44 @@ function TicketDetail({ id }) {
     onError: () => toast.error('Prix non enregistrés : vérifiez la connexion puis « Réessayer »'),
   });
 
-  savesRef.current = { device: deviceSave, client: clientSave, pricing: pricingSave };
+  // Priorité atelier : PATCH partiel, à part pour son indicateur et son message d'erreur
+  const prioriteSave = useAutoSave(useCallback(async (patch) => {
+    const res = await api.updateTicket(id, patch);
+    fusionnerTicket(res.ticket, clesEnAttente('priorite'));
+    return res;
+  }, [id, fusionnerTicket, clesEnAttente]), {
+    delay: 0,
+    onUnload: (patch) => { api.updateTicket(id, patch, { keepalive: true }).then(invaliderListes); },
+    onError: () => toast.error('Priorité non enregistrée : vérifiez la connexion puis « Réessayer »'),
+  });
+
+  savesRef.current = { device: deviceSave, client: clientSave, pricing: pricingSave, priorite: prioriteSave };
   const flushDevice = deviceSave.flush;
   const flushClient = clientSave.flush;
   const flushPricing = pricingSave.flush;
+  const flushPriorite = prioriteSave.flush;
+  // Fiche de réception : { flush, ouvrir } posé par ReceptionCard (son propre auto-save)
+  const receptionCtrlRef = useRef(null);
 
-  // Avant une impression, un changement de statut, la caisse ou la remise : tout doit être en base
-  const toutEnregistrer = useCallback(async () => {
-    const res = await Promise.allSettled([flushDevice(), flushClient(), flushPricing()]);
-    const echec = res.find(r => r.status === 'rejected');
+  // Avant une impression, un changement de statut, la caisse ou la remise : tout doit être en base.
+  // La réception est envoyée aussi, mais son échec n'est bloquant que pour imprimer (les
+  // documents la lisent) : un paiement ou une remise n'en dépendent pas.
+  const toutEnregistrer = useCallback(async ({ reception = false } = {}) => {
+    const flushReception = receptionCtrlRef.current?.flush;
+    const res = await Promise.allSettled([
+      flushDevice(), flushClient(), flushPricing(), flushPriorite(), flushReception ? flushReception() : null,
+    ]);
+    const echec = res.slice(0, reception ? res.length : -1).find(r => r.status === 'rejected');
     if (echec) throw echec.reason || new Error('Enregistrement impossible');
-  }, [flushDevice, flushClient, flushPricing]);
+  }, [flushDevice, flushClient, flushPricing, flushPriorite]);
+  const avantImpression = useCallback(() => toutEnregistrer({ reception: true }), [toutEnregistrer]);
 
   // Les listes (dashboard, file d'attente) sont rafraîchies à la sortie de la fiche, pas à chaque frappe
   const listesPerimeesRef = useRef(false);
   useEffect(() => {
-    if (deviceSave.status === 'saved' || pricingSave.status === 'saved' || clientSave.status === 'saved') listesPerimeesRef.current = true;
-  }, [deviceSave.status, pricingSave.status, clientSave.status]);
+    if (deviceSave.status === 'saved' || pricingSave.status === 'saved' || clientSave.status === 'saved'
+      || prioriteSave.status === 'saved') listesPerimeesRef.current = true;
+  }, [deviceSave.status, pricingSave.status, clientSave.status, prioriteSave.status]);
   useEffect(() => () => {
     if (listesPerimeesRef.current) invalidateCache('tickets', 'dashboard', 'interactions', 'clients');
   }, []);
@@ -825,7 +935,7 @@ function TicketDetail({ id }) {
     }
     if (force || !saves.pricing?.hasPending()) {
       majPricingForm(formulaireTarif(data));
-      majRepairLines(lignesFiche(data, cat));
+      majRepairLines(avecOrigineGrille(lignesFiche(data, cat), data));
       majMode(modeReduction(data));
     }
     setShowAttention(!!(data.attention || (data.notes_internes || '').includes('[ATTENTION]')));
@@ -940,13 +1050,10 @@ function TicketDetail({ id }) {
       const saved = localStorage.getItem(`kp_layout_${user.utilisateur}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.left && parsed.right) {
-          const allSaved = [...parsed.left, ...parsed.right];
+        if (Array.isArray(parsed.left) && Array.isArray(parsed.right)) {
           const validLeft = parsed.left.filter(wid => ALL_WIDGET_IDS.has(wid));
           const validRight = parsed.right.filter(wid => ALL_WIDGET_IDS.has(wid));
-          const savedSet = new Set(allSaved.filter(wid => ALL_WIDGET_IDS.has(wid)));
-          const missing = [...ALL_WIDGET_IDS].filter(wid => !savedSet.has(wid));
-          setLayout({ left: validLeft, right: [...validRight, ...missing] });
+          setLayout(completerLayout(validLeft, validRight));
         }
       }
     } catch {}
@@ -1087,6 +1194,35 @@ function TicketDetail({ id }) {
     repairLinesRef.current.map((l, i) => (i === idx ? { ...l, [field]: value } : l)),
     { wait: field === 'label' ? 800 : 500 },
   );
+
+  const ajouterDepuisGrille = (ligne, suggestion) => {
+    if (!String(ligne?.label ?? '').trim()) return;
+    const lignes = repairLinesRef.current;
+    // Lignes du ticket jamais écrites en JSON : seule la ligne par défaut (symptôme) est affichée
+    const idx = indexRemplaceGrille(lignes, ligne, suggestion, {
+      enregistrees: formatJson(ticketRef.current), cat: prestationsRef.current,
+    });
+    const ancien = idx >= 0 ? String(lignes[idx]?.label ?? '').trim() : '';
+    updateRepairLines(idx >= 0 ? lignes.map((l, i) => (i === idx ? ligne : l)) : [...lignes, ligne], { wait: 0 });
+    toast.success(!ancien ? `Ligne ajoutée : ${ligne.label}`
+      : ancien === ligne.label ? `Ligne mise à jour : ${ligne.label}` : `Ligne remplacée : ${ancien} → ${ligne.label}`);
+  };
+
+  // Court délai : les flèches du clavier dans le groupe radio ne font qu'un envoi (et une ligne d'historique)
+  const changerPriorite = (valeur) => {
+    const v = normaliserPriorite(valeur);
+    if (!ticketRef.current || v === normaliserPriorite(ticketRef.current.priorite)) return;
+    fusionnerTicket({ priorite: v }, null);
+    prioriteSave.schedule({ priorite: v }, { wait: 400 });
+  };
+
+  const allerReception = () => {
+    const el = document.getElementById(`${uid}-reception`);
+    if (!el) return;
+    receptionCtrlRef.current?.ouvrir();
+    el.scrollIntoView?.({ behavior: reduireAnimations ? 'auto' : 'smooth', block: 'start' });
+    el.focus?.({ preventScroll: true });
+  };
 
   const flushSilencieux = (save) => () => { save.flush().catch(() => {}); };
 
@@ -1250,7 +1386,13 @@ function TicketDetail({ id }) {
         await loadTicket(false);
         if (!silencieux) toast.success(`Statut changé : ${statut}`);
         // Proposé, jamais envoyé : le message part seulement sur un clic (WhatsApp, SMS, email)
-        if (res?.proposer_message && !silencieux && mountedRef.current) setPropositionMessage({ statut });
+        if (res?.proposer_message && !silencieux && mountedRef.current) {
+          // Fixé à l'ouverture : le champ « Rangé où ? » reste affiché après l'enregistrement
+          setPropositionMessage({
+            statut,
+            ranger: statut === STATUT_TERMINE && !normaliserEmplacement(ticketRef.current?.emplacement),
+          });
+        }
         return true;
       } catch (err) {
         const dejaRemis = STATUTS_REMISE.has(ticketRef.current?.statut);
@@ -2180,6 +2322,21 @@ function TicketDetail({ id }) {
           </EditableSection>
         );
 
+      case 'reception':
+        return (
+          <ReceptionCard
+            id={`${uid}-reception`}
+            ticketId={id}
+            imeiTicket={t.imei || ''}
+            remis={remis}
+            statut={t.statut}
+            dateDepot={t.date_depot}
+            controleRef={receptionCtrlRef}
+            onEtat={setReceptionEtat}
+            onUtiliserImei={(imei) => updateDeviceForm({ imei }, { wait: 0 })}
+          />
+        );
+
       case 'dates':
         return (
           <div className="card p-5">
@@ -2278,6 +2435,8 @@ function TicketDetail({ id }) {
                   : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-800', label: 'SMS' }
                   : tn === 'sms_echec' ? { bg: 'bg-red-100 text-red-800 ring-1 ring-red-300', label: 'SMS non envoyé' }
                   : tn === 'email' ? { bg: 'bg-amber-100 text-amber-800', label: 'Email' }
+                  // Relance hors message (appel au client) notée depuis l'étagère « À récupérer »
+                  : tn === 'relance' ? { bg: 'bg-violet-100 text-violet-800', label: 'Relance' }
                   : tn === 'validation_devis' ? { bg: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300', label: '✅ ACCORD' }
                   : tn === 'avis_client' ? { bg: 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300', label: '⭐ AVIS' }
                   : null;
@@ -2404,9 +2563,15 @@ function TicketDetail({ id }) {
               <div className="space-y-4">
                 {/* 1. Lignes de réparation */}
                 <div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex flex-wrap items-center justify-between gap-1 mb-2">
                     <span className="input-label mb-0">Lignes de réparation</span>
-                    <button type="button" onClick={addRepairLine} className="btn-ghost text-xs px-3 min-h-11"><Plus className="w-3 h-3" aria-hidden="true" /> Ajouter</button>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button type="button" onClick={() => setShowTarifPicker(true)} aria-haspopup="dialog"
+                        className="btn-ghost text-xs px-3 min-h-11 text-emerald-800 hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
+                        <Tag className="w-3 h-3" aria-hidden="true" /> Ajouter depuis la grille
+                      </button>
+                      <button type="button" onClick={addRepairLine} className="btn-ghost text-xs px-3 min-h-11"><Plus className="w-3 h-3" aria-hidden="true" /> Ajouter</button>
+                    </div>
                   </div>
                   <datalist id={`${uid}-prestations`}>
                     {(prestations?.prestations || []).map(p => <option key={p.cle} value={p.prestation} />)}
@@ -2449,6 +2614,11 @@ function TicketDetail({ id }) {
                           </div>
                           {!label && prixNombre(line.prix) > 0 && (
                             <p className="text-[11px] text-amber-800 ml-1">Ajoutez une description : sans elle, cette ligne n'est ni comptée ni imprimée.</p>
+                          )}
+                          {label && line.source && (
+                            <span className="inline-flex items-center gap-1 ml-1 mr-2 text-[11px] font-semibold text-emerald-800">
+                              <Tag className="w-3 h-3" aria-hidden="true" />Grille{line.qualite ? ` · ${line.qualite}` : ''}
+                            </span>
                           )}
                           {label && (
                             <label className="inline-flex items-center gap-1.5 ml-1 min-h-11 cursor-pointer">
@@ -2614,6 +2784,10 @@ function TicketDetail({ id }) {
                           {t.type_ecran && i === indexEcran && (
                             <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded">{t.type_ecran}</span>
                           )}
+                          {line.qualite && !normaliser(line.label).includes(normaliser(line.qualite))
+                            && !(t.type_ecran && i === indexEcran && t.type_ecran === line.qualite) && (
+                            <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">{line.qualite}</span>
+                          )}
                           {badgeCommande(commandeDe(line.label), true)}
                         </div>
                         {prixLigne(line.prix)}
@@ -2749,6 +2923,21 @@ function TicketDetail({ id }) {
             >
               {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            {/* Emplacement sur l'étagère : appareil en boutique, modifiable jusqu'à la remise (libéré par le serveur au rendu) */}
+            {peutRendre && (
+              <div className={`mt-3 rounded-xl p-3 ring-1 ${t.statut === STATUT_TERMINE ? 'bg-emerald-50 ring-emerald-200' : 'bg-slate-50 ring-slate-200'}`}>
+                {t.statut === STATUT_TERMINE && !normaliserEmplacement(t.emplacement) && (
+                  <p className="mb-2 text-xs font-semibold text-emerald-900">
+                    Appareil prêt : notez où il est rangé pour le retrouver quand le client passe.
+                  </p>
+                )}
+                <EmplacementInput
+                  ticketId={id}
+                  value={t.emplacement}
+                  onSaved={(e) => { fusionnerTicket({ emplacement: e }); invaliderListes(); }}
+                />
+              </div>
+            )}
             {proposerRemise && <div className="mt-3">{boutonRendre('grand')}</div>}
             {t.statut === 'Rendu au client' && !t.paye && (
               <button type="button" onClick={() => ouvrirPaiement({ cloturer: true })}
@@ -2835,6 +3024,15 @@ function TicketDetail({ id }) {
                 >
                   {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> : <Copy className="w-4 h-4 text-slate-300" aria-hidden="true" />}
                 </button>
+                <PrioriteBadge priorite={t.priorite} taille="md" />
+                {!remis && normaliserEmplacement(t.emplacement) && (
+                  <span className="liquid-glass px-2.5 py-1 rounded-full text-white text-xs font-bold flex items-center gap-1"
+                    title="Emplacement sur l’étagère">
+                    <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span className="sr-only">Emplacement</span>
+                    <span className="font-mono tracking-wide">{normaliserEmplacement(t.emplacement)}</span>
+                  </span>
+                )}
                 {t.est_retour_sav && (
                   <span className="liquid-glass px-2.5 py-1 rounded-full text-red-300 text-xs font-bold flex items-center gap-1">
                     <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> SAV
@@ -3129,8 +3327,41 @@ function TicketDetail({ id }) {
         </Modal>
       )}
 
-      {/* Message proposé après un changement de statut (NOTIFICATIONS_STATUTS) : rien ne part sans clic */}
-      {propositionMessage && (
+      {/* Message proposé après un changement de statut (NOTIFICATIONS_STATUTS) : rien ne part sans clic.
+          « Réparation terminée » : carte « Prévenir » (message prêt en 1 clic, déjà prévenu, autre message),
+          précédée de « Rangé où ? » si aucun emplacement n'était noté (même geste que le scan comptoir) */}
+      {propositionMessage?.statut === STATUT_TERMINE && (
+        <Modal labelledBy={titreCarteId} onClose={() => setPropositionMessage(null)} busy={prevenirOccupe}
+          panelClassName="max-w-lg p-4 sm:p-6">
+          <div ref={prevenirRef}>
+            <p className="mb-3 text-sm text-slate-700">
+              {t.ticket_code} est « {STATUT_TERMINE} ». Rien n’est envoyé sans votre clic.
+            </p>
+            {propositionMessage.ranger && !remis && (
+              <div className="mb-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+                <EmplacementInput
+                  ticketId={id}
+                  value={t.emplacement}
+                  label="Rangé où ?"
+                  onSaved={(e) => { fusionnerTicket({ emplacement: e }); invaliderListes(); }}
+                />
+              </div>
+            )}
+            <PrevenirClient
+              ticket={t}
+              notes={privateNotes}
+              smsServeur={smsServeur}
+              auteur={user?.utilisateur || 'Accueil'}
+              ouverte
+              onReplier={() => setPropositionMessage(null)}
+              onEnvoye={() => { loadNotes(); setPropositionMessage(null); }}
+              onNotesChange={() => loadNotes()}
+              titreRef={titreCarteRef}
+            />
+          </div>
+        </Modal>
+      )}
+      {propositionMessage && propositionMessage.statut !== STATUT_TERMINE && (
         <Modal labelledBy={`${uid}-message-titre`} onClose={() => setPropositionMessage(null)} panelClassName="max-w-lg p-6">
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0" aria-hidden="true">
@@ -3388,6 +3619,21 @@ function TicketDetail({ id }) {
       )}
 
       <div className="px-4 sm:px-6 lg:px-8">
+      {/* Priorité atelier + état de la réception */}
+      <div className={`card p-4 mb-5 flex flex-wrap items-end justify-between gap-3 ${
+        normaliserPriorite(t.priorite) === 'attente' ? 'ring-2 ring-red-500 border-red-200 bg-red-50/60' : ''}`}>
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2 min-w-0">
+          <PrioriteSelecteur value={t.priorite} onChange={changerPriorite} />
+          {prioriteSave.status && <span className="min-h-11 inline-flex items-center"><AutoSaveIndicator etat={prioriteSave} /></span>}
+        </div>
+        {receptionEtat?.charge === 'ok' && !receptionEtat.complete && !remis && t.statut !== 'Pré-enregistré' && (
+          <button type="button" onClick={allerReception}
+            className="inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-xl bg-amber-100 text-amber-900 border-2 border-amber-300 text-sm font-bold hover:bg-amber-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2">
+            <ClipboardCheck className="w-4 h-4" aria-hidden="true" /> Réception à compléter
+          </button>
+        )}
+      </div>
+
       {/* Attention card — shows when important private notes exist */}
       {(() => {
         const importantNotes = privateNotes.filter(n => n.important);
@@ -3528,7 +3774,17 @@ function TicketDetail({ id }) {
         ticketCode={t.ticket_code}
         clientTel={t.client_tel}
         clientEmail={t.client_email}
-        onBeforePrint={toutEnregistrer}
+        onBeforePrint={avantImpression}
+      />
+
+      <TarifPicker
+        open={showTarifPicker}
+        onClose={() => setShowTarifPicker(false)}
+        onChoisir={ajouterDepuisGrille}
+        marque={t.marque || ''}
+        modele={(t.modele && t.modele !== 'Autre' ? t.modele : t.modele_autre) || ''}
+        categorie={t.categorie || ''}
+        isAdmin={user?.role === 'admin'}
       />
 
       {/* Personnaliser panel */}

@@ -4,23 +4,11 @@ import { envoyerSms, messageSmsEnvoye, versionCourteSms, smsSegments } from '../
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useToast } from './Toast';
 import { useAuth } from '../hooks/useAuth';
-import { modelePourStatut } from '../lib/messages';
+import {
+  modelePourStatut, DEFAULT_TEMPLATES, LIEN_AVIS_DEFAUT, contexteMessage, remplirModele, ajouterLienSuivi, ligneJournal,
+  lienWhatsApp,
+} from '../lib/messages';
 import { MessageCircle, Send, Mail, Check } from 'lucide-react';
-
-const DEFAULT_TEMPLATES = [
-  { id: 1, label: "Appareil recu", message: "Bonjour {prenom}, votre {appareil} a bien ete pris en charge sous le numero {code}. Nous vous tiendrons informe de l'avancement. Klikphone 04 79 60 89 22" },
-  { id: 2, label: "Diagnostic en cours", message: "Bonjour {prenom}, le diagnostic de votre {appareil} est en cours. Nous reviendrons vers vous rapidement. Klikphone" },
-  { id: 3, label: "Devis a valider", message: "Bonjour {prenom}, le devis pour votre {appareil} est de {montant} EUR. Merci de nous confirmer votre accord. Klikphone 04 79 60 89 22" },
-  { id: 4, label: "En cours de reparation", message: "Bonjour {prenom}, la reparation de votre {appareil} est en cours. Klikphone" },
-  { id: 5, label: "Attente piece", message: "Bonjour {prenom}, nous sommes en attente d'une piece pour votre {appareil}. Nous vous previendrons des reception. Klikphone" },
-  { id: 6, label: "Appareil pret", message: "Bonjour {prenom}, votre {appareil} est pret ! Vous pouvez venir le recuperer a la boutique. Montant : {montant} EUR. Klikphone 79 Place Saint Leger, Chambery" },
-  { id: 7, label: "Commande arrivee", message: "Bonjour {prenom}, la piece commandee pour votre {appareil} est arrivee. Nous lancons la reparation. Klikphone 04 79 60 89 22" },
-  { id: 8, label: "Non reparable", message: "Bonjour {prenom}, malheureusement votre {appareil} n'est pas reparable. Vous pouvez passer recuperer votre appareil en boutique. Klikphone" },
-  { id: 9, label: "Rappel RDV", message: "Bonjour {prenom}, nous vous rappelons votre rendez-vous demain pour votre {appareil}. Klikphone 79 Place Saint Leger, Chambery" },
-  { id: 10, label: "Personnalise", message: "" },
-  { id: 11, label: "Demander avis Google", message: "Bonjour {prenom},\n\nMerci d'avoir fait confiance à Klikphone pour la réparation de votre {appareil} ! 🙏\n\nSi vous êtes satisfait de nos services, nous serions très reconnaissants si vous pouviez nous laisser un avis Google :\n\n👉 {lien_avis}\n\nVotre avis nous aide énormément ! Merci et à bientôt 😊\n\nL'équipe Klikphone" },
-  { id: 12, label: "Demande d'accord", message: "Bonjour {prenom}, le devis pour la réparation de votre {marque} {modele} est de {montant} €. Vous pouvez accepter ou refuser directement en cliquant ici : {lien_suivi}. Merci, l'équipe Klikphone" },
-];
 
 const TEMPLATE_ICONS = {
   1: '📱', 2: '🔍', 3: '📋', 4: '🔧', 5: '⏳',
@@ -40,7 +28,7 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   const [selectedId, setSelectedId] = useState(() => modelePourStatut(DEFAULT_TEMPLATES, statutPropose));
   const [customText, setCustomText] = useState('');
   const [sending, setSending] = useState(null);
-  const [googleReviewLink, setGoogleReviewLink] = useState('https://g.page/r/Cf6adrBONrj3EAE/review');
+  const [googleReviewLink, setGoogleReviewLink] = useState(LIEN_AVIS_DEFAUT);
   // Modèle choisi à la main : les modèles de la boutique, arrivés après, ne le remplacent pas
   const choixManuelRef = useRef(false);
   const [choixManuel, setChoixManuel] = useState(false);
@@ -67,60 +55,10 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   }, []);
 
   const t = ticket;
-  const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim() || 'appareil';
-
-  // Calculate montant from repair lines if available, else tarif_final, else devis_estime
-  const acompte = parseFloat(t.acompte) || 0;
-  const redPct = parseFloat(t.reduction_pourcentage) || 0;
-  const redMnt = parseFloat(t.reduction_montant) || 0;
-
-  // Parse repair lines to get the real total (most up-to-date)
-  let linesTotal = 0;
-  try {
-    const reps = t.reparation_supp && t.reparation_supp.startsWith('[') ? JSON.parse(t.reparation_supp) : [];
-    linesTotal = reps.reduce((s, r) => s + (parseFloat(r.prix) || 0), 0);
-  } catch { /* ignore */ }
-
-  // Best source of truth: lines total with reduction > tarif_final > devis_estime
-  let totalAvantAcompte;
-  if (linesTotal > 0) {
-    const reduction = redPct > 0 ? linesTotal * (redPct / 100) : redMnt;
-    totalAvantAcompte = Math.max(0, linesTotal - reduction);
-  } else if (parseFloat(t.tarif_final) > 0) {
-    totalAvantAcompte = parseFloat(t.tarif_final);
-  } else {
-    const devis = parseFloat(t.devis_estime) || 0;
-    const reduction = redPct > 0 ? devis * (redPct / 100) : redMnt;
-    totalAvantAcompte = Math.max(0, devis - reduction);
-  }
-
-  // Montants du serveur (services/montants : forfaits, devis refusé, acompte) quand la fiche les a
-  const serveur = t.montants && Number.isFinite(Number(t.montants.reste)) ? t.montants : null;
-  const montant = serveur ? Number(serveur.reste) : (t.paye ? 0 : Math.max(0, totalAvantAcompte - acompte));
-  const totalTicket = serveur ? Number(serveur.total) || 0 : totalAvantAcompte;
-
-  const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
-
-  const replaceVars = (msg) => {
-    return msg
-      .replace(/\{prenom\}/g, t.client_prenom || '')
-      .replace(/\{nom\}/g, t.client_nom || '')
-      .replace(/\{appareil\}/g, appareil)
-      .replace(/\{marque\}/g, t.marque || '')
-      .replace(/\{modele\}/g, t.modele_autre || t.modele || '')
-      .replace(/\{code\}/g, t.ticket_code || '')
-      .replace(/\{montant\}/g, montant.toFixed(2))
-      .replace(/\{adresse\}/g, '79 Place Saint Leger, 73000 Chambery')
-      .replace(/\{horaires\}/g, 'Lundi-Samedi 10h-19h')
-      .replace(/\{tel_boutique\}/g, '04 79 60 89 22')
-      .replace(/\{lien_avis\}/g, googleReviewLink)
-      .replace(/\{lien_suivi\}/g, suiviUrl);
-  };
-
-  const appendSuiviLink = (msg) => {
-    if (!t.ticket_code || msg.includes(suiviUrl)) return msg;
-    return `${msg}\n\n📱 Suivez votre réparation : ${suiviUrl}`;
-  };
+  // Variables et montants partagés avec le scan comptoir (lib/messages)
+  const { vars, totalTicket, suiviUrl } = contexteMessage(t, { lienAvis: googleReviewLink });
+  const replaceVars = (msg) => remplirModele(msg, vars);
+  const appendSuiviLink = (msg) => ajouterLienSuivi(msg, t, suiviUrl);
 
   const selected = templates.find(tp => tp.id === selectedId);
   const isCustom = selectedId === 10;
@@ -130,12 +68,9 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   const smsText = versionCourteSms(rawText);
   const smsInfo = smsSegments(smsText);
 
+  // Normalisation du numéro partagée avec la carte « Prévenir le client » (lib/messages)
   const sendWhatsApp = (telephone, message) => {
-    let tel = telephone.replace(/[\s\-\.]/g, '');
-    if (tel.startsWith('0')) tel = '33' + tel.substring(1);
-    if (!tel.startsWith('+') && !tel.startsWith('33')) tel = '33' + tel;
-    tel = tel.replace('+', '');
-    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`, '_blank');
+    window.open(lienWhatsApp(telephone, message), '_blank');
   };
 
   // Check if the selected template uses {montant}
@@ -177,7 +112,7 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
 
       // Log to DB
       const auteur = user?.utilisateur || 'Accueil';
-      const logText = `[${label}] ${previewText.substring(0, 120)}${previewText.length > 120 ? '...' : ''}`;
+      const logText = ligneJournal(label, previewText);
       if (isAvisTemplate) {
         await api.addPrivateNote(t.id, auteur, `[Demande avis Google] Envoyé par ${canal}`);
       }

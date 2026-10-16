@@ -3,16 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import {
   X, Volume2, VolumeX, ScanLine, Phone, MessageCircle, Smartphone, UserRound, Wallet,
   StickyNote, Printer, ExternalLink, PackageCheck, Play, CircleCheckBig, AlertTriangle,
-  Loader2, Clock, ShieldCheck, HandCoins, Info, Receipt,
+  Loader2, Clock, ShieldCheck, HandCoins, Info, Receipt, Send, MapPin,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useToast } from './Toast';
 import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { formatDateShort, formatPrix, getStatusConfig, waLink } from '../lib/utils';
 import { SCAN_EVENT } from '../lib/scan';
+import { messageSmsEnvoye } from '../lib/sms';
+import {
+  canalPrevenir, numeroSms, raisonSansCanal, messagePret, ligneJournal, emailValide, erreurEnvoi, SMS_IMPOSSIBLE,
+} from '../lib/messages';
 import StatusBadge from './StatusBadge';
 import ProgressTracker from './ProgressTracker';
+import PrevenirClient, { chargerContexteMessage } from './PrevenirClient';
+import EmplacementInput from './EmplacementInput';
+import { listeEmplacements, normaliserEmplacement } from '../lib/etagere';
 import { isScanSoundOn, setScanSoundOn, playScanSound, takePendingScan } from './ScanListener';
 
 const PrintDrawer = lazy(() => import('./PrintDrawer'));
@@ -144,22 +152,46 @@ export function modeleTicket(t) {
   return [t?.marque, modele].filter((v) => String(v ?? '').trim()).join(' ') || t?.categorie || 'Appareil';
 }
 
+/**
+ * Fin de réparation depuis le scan : le client est prévenu dans la foulée (SMS, sinon e-mail).
+ * Sans portable ni e-mail, un simple « Réparation terminée » (la carte dira pourquoi).
+ */
+function actionTerminer(t, extra = {}) {
+  const joignable = !!canalPrevenir(t);
+  return {
+    id: 'terminer',
+    statut: TERMINE,
+    label: joignable ? 'Terminé + prévenir le client' : 'Réparation terminée',
+    icon: joignable ? 'terminer' : 'terminer_seul',
+    prevenir: true,
+    ...extra,
+  };
+}
+
 /** Actions proposées selon le rôle et le statut (la première « primary » est mise en avant). */
 export function actionsTicket(t, role, notes = []) {
   const statut = t?.statut || '';
   const out = [];
-  if (role === 'tech') {
-    if (statut === EN_COURS) {
-      out.push({ id: 'terminer', statut: TERMINE, label: 'Réparation terminée', primary: true });
-    } else if (DEMARRABLES.includes(statut)) {
-      let warn = null;
-      if (statut === 'En attente de pièce') {
-        warn = { text: 'La pièce n’est pas encore marquée reçue. Démarrer la réparation quand même ?', ok: 'Oui, démarrer' };
-      } else if (statut === "En attente d'accord client") {
-        // Le serveur enregistre alors le devis comme accepté au comptoir
-        warn = { text: 'Le client a-t-il accepté le devis ? Démarrer l’enregistre comme validé au comptoir.', ok: 'Oui, devis accepté' };
-      }
-      out.push({ id: 'demarrer', statut: EN_COURS, label: 'Démarrer la réparation', primary: true, warn });
+  if (statut === EN_COURS) {
+    // Accueil comme technicien : celui qui scanne l'appareil réparé prévient le client
+    out.push(actionTerminer(t, { primary: true }));
+    if (canalPrevenir(t)) out.push({ id: 'terminer_seul', statut: TERMINE, label: 'Terminé sans prévenir', sansPrevenir: true });
+  } else if (role === 'tech' && DEMARRABLES.includes(statut)) {
+    let warn = null;
+    if (statut === 'En attente de pièce') {
+      warn = { text: 'La pièce n’est pas encore marquée reçue. Démarrer la réparation quand même ?', ok: 'Oui, démarrer' };
+    } else if (statut === "En attente d'accord client") {
+      // Le serveur enregistre alors le devis comme accepté au comptoir
+      warn = { text: 'Le client a-t-il accepté le devis ? Démarrer l’enregistre comme validé au comptoir.', ok: 'Oui, devis accepté' };
+    }
+    out.push({ id: 'demarrer', statut: EN_COURS, label: 'Démarrer la réparation', primary: true, warn });
+    // Réparation express faite sans « Démarrer » : terminer directement (jamais depuis l'accord client,
+    // que le serveur lirait comme un devis refusé)
+    if (statut !== "En attente d'accord client") {
+      const warnFin = statut === 'En attente de pièce'
+        ? { text: 'La pièce n’est pas encore marquée reçue. Terminer la réparation quand même ?', ok: 'Oui, terminer' }
+        : null;
+      out.push(actionTerminer(t, { warn: warnFin }));
     }
   }
   if (!estRendu(t) && statut !== 'Pré-enregistré') {
@@ -191,6 +223,28 @@ export function actionsTicket(t, role, notes = []) {
     });
   }
   return out;
+}
+
+/**
+ * Sous-titre de « Terminé + prévenir le client » : par où le client sera prévenu, ou pourquoi
+ * il ne le sera pas (avant le clic, pas une fois le ticket terminé). templates : modèles de la
+ * boutique (le blocage « tarif à 0 € » ne vaut que si le modèle « prêt » cite {montant}).
+ */
+export function indicationPrevenir(t, smsServeur = false, templates = null) {
+  const canal = canalPrevenir(t);
+  if (!canal) return `Client non joignable : ${raisonSansCanal(t)}`;
+  if (messagePret(templates, t).sansTarif) return 'Tarif à 0 € : message non envoyé, renseignez le tarif';
+  if (canal === 'sms') return `SMS au ${numeroSms(t.client_tel).affichage}${smsServeur ? '' : ' · à valider dans Messages'}`;
+  return `E-mail à ${String(t.client_email).trim()}`;
+}
+
+/** Libellé de la barre « annulable » pendant les quelques secondes avant l'enregistrement. */
+export function libelleDiffere(t, action) {
+  if (!action?.prevenir) return `Passage en « ${action?.statut} »`;
+  const canal = canalPrevenir(t);
+  if (canal === 'sms' && action.manuel) return `« ${action.statut} » puis SMS à envoyer depuis Messages`;
+  const suite = canal === 'sms' ? '+ SMS au client' : canal === 'email' ? '+ e-mail au client' : '(client non prévenu)';
+  return `« ${action.statut} » ${suite}`;
 }
 
 export const CONSEILS_FACTURATION = {
@@ -345,6 +399,30 @@ function errorData(err) {
   return err?.data && typeof err.data === 'object' && !Array.isArray(err.data) ? err.data : null;
 }
 
+// Écran tactile (tablette du comptoir) : un focus donné par le code ouvrirait le clavier virtuel
+// par-dessus le panneau ; on y touche directement les boutons d'emplacement
+function ecranTactile() {
+  try {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Emplacement à afficher : celui enregistré depuis ce panneau (une relecture de la fiche partie
+ * avant l'enregistrement ne doit pas le masquer), sinon celui de la fiche.
+ */
+export function emplacementAffiche(t, saisi) {
+  return normaliserEmplacement(saisi !== undefined ? saisi : t?.emplacement);
+}
+
+/** Bloc « Rangé en B3 » / « Pas d'emplacement noté » en tête du panneau (jamais une fois l'appareil rendu). */
+export function rangementVisible(t, { emplacement = null, rendu = false, edition = false } = {}) {
+  if (rendu || estRendu(t)) return false;
+  return !!emplacement || t?.statut === TERMINE || edition;
+}
+
 // ─── Panneau ─────────────────────────────────────────────────────────────────
 
 export default function QuickScanPanel() {
@@ -374,6 +452,30 @@ function QuickScanHost({ user }) {
   const wizardRef = useRef(false);
   const deferredRef = useRef(null);
   const tvaRef = useRef(false);
+  // Emplacements proposés en boutons (GET /api/etagere/config) : lus une fois pour la session
+  // du panneau, au premier scan ; en cas d'échec, simple champ libre et nouvel essai au scan suivant
+  const [emplacements, setEmplacements] = useState(null);
+  const emplacementsRef = useRef(false);
+
+  const chargerEmplacements = useCallback(() => {
+    if (emplacementsRef.current) return;
+    emplacementsRef.current = true;
+    // Erreur synchrone comprise (ancien client d'API) : jamais d'exception jusqu'au panneau
+    Promise.resolve()
+      .then(() => api.getEtagereConfig())
+      .then((c) => setEmplacements(listeEmplacements(c)))
+      .catch(() => {
+        emplacementsRef.current = false;
+        setEmplacements((e) => e || []);
+      });
+  }, []);
+
+  // Emplacement enregistré depuis le panneau (PUT /api/etagere/{id}/emplacement déjà fait)
+  const majEmplacement = useCallback((id, valeur) => {
+    setView((v) => (v && v.id === id ? { ...v, emplacementSaisi: valeur } : v));
+    invalidateCache('tickets', 'dashboard');
+    notifyTicketUpdated(id);
+  }, []);
 
   const loadTva = useCallback(() => {
     if (tvaRef.current) return;
@@ -401,31 +503,204 @@ function QuickScanHost({ user }) {
     } catch { /* on garde l'affichage courant */ }
   }, [fetchTicket]);
 
-  const runStatus = useCallback(async ({ id, code, statut, assign }) => {
+  // Statut en cours d'enregistrement : le pied du panneau ne repropose pas l'action (pas de double envoi)
+  const marquerEnvoi = useCallback((id, on) => {
+    setView((v) => (v && v.id === id && !!v.envoiStatut !== on ? { ...v, envoiStatut: on } : v));
+  }, []);
+
+  // État de la carte « Prévenir le client » (issue de « Terminé + prévenir ») ; focus : la carte
+  // se déplie et prend le focus (pas pour une étape intermédiaire « Envoi… »)
+  const afficherAuto = useCallback((id, auto, { focus = true } = {}) => {
+    setView((v) => (v && v.id === id
+      ? { ...v, proposition: TERMINE, auto, carteN: focus ? (v.carteN || 0) + 1 : v.carteN } : v));
+  }, []);
+
+  /**
+   * « Terminé + prévenir le client », une fois le statut enregistré : message « appareil prêt »
+   * par SMS (portable ; serveur Brevo) sinon par e-mail ; SMS impossible pour l'instant (crédits
+   * épuisés, clé ou IP refusée) : repli sur l'e-mail. Jamais de lien sms: ici : après un await le
+   * navigateur le bloquerait, la carte « Prévenir » propose alors le bouton SMS.
+   * Ne lève jamais : le ticket reste terminé quoi qu'il arrive à l'envoi.
+   */
+  const prevenirApresTermine = useCallback(async (d) => {
+    const { id, code } = d;
+    const t = d.ticket || {};
+    const ouvert = () => viewRef.current?.id === id;
+    const afficher = (auto, opts) => afficherAuto(id, auto, opts);
+    const rouvrir = (auto) => () => showTicketRef.current?.(id, { label: code, proposition: TERMINE, auto });
+    // Résultat : dans la carte si le panneau est ouvert, sinon la notification le rouvre sur la carte
+    const signaler = (type, message, auto) => {
+      if (ouvert()) {
+        afficher(auto);
+        toast[type](message);
+      } else if (auto.etat === 'envoye') {
+        toast[type](message);
+      } else {
+        toast[type](message, { duration: 10_000, onClick: rouvrir(auto) });
+      }
+    };
+
     try {
-      const res = await api.changeStatus(id, statut);
+      const canal = canalPrevenir(t);
+      if (!canal) {
+        const raison = raisonSansCanal(t);
+        signaler('warning', `${code} : Terminé — client non prévenu : ${raison}`,
+          { etat: 'impossible', message: `Client non prévenu : ${raison}.` });
+        return;
+      }
+      const ctx = await chargerContexteMessage();
+      const msg = messagePret(ctx.templates, t, { lienAvis: ctx.lienAvis });
+      if (msg.sansTarif) {
+        signaler('warning', `${code} : Terminé — message non envoyé : renseignez d’abord le tarif`,
+          { etat: 'sans_tarif', message: 'Message non envoyé : montant à 0 €, renseignez le tarif sur la fiche.' });
+        return;
+      }
+      const email = String(t.client_email ?? '').trim();
+      const aEmail = emailValide(email);
+
+      const manuel = () => {
+        const auto = {
+          etat: 'manuel',
+          canal: 'sms',
+          message: `Envoi automatique des SMS désactivé : appuyez sur « SMS » pour l’envoyer depuis Messages${aEmail ? ', ou sur « E-mail »' : ''}.`,
+        };
+        if (ouvert()) {
+          afficher(auto);
+          toast.success(`${code} : Terminé — appuyez sur SMS pour prévenir le client`);
+        } else {
+          toast.success(`${code} : Terminé — prévenir le client ?`, { duration: 10_000, onClick: rouvrir(auto) });
+        }
+      };
+
+      // avant : « SMS impossible (crédits épuisés) » quand l'e-mail remplace un SMS refusé
+      const parEmail = async (avant = '') => {
+        if (ouvert()) afficher({ etat: 'envoi', canal: 'email', message: `Envoi de l’e-mail à ${email}…` }, { focus: false });
+        const debut = avant ? `${avant}. ` : '';
+        try {
+          const r = await api.envoyerEmail(email, msg.sujet, msg.texte);
+          if (r?.status !== 'ok') throw new Error(r?.message || 'erreur d’envoi');
+        } catch (err) {
+          playScanSound('error');
+          const e = erreurEnvoi(err);
+          if (e.incertain) {
+            signaler('warning', `${code} : Terminé — ${avant ? `${avant} ; ` : ''}envoi de l’e-mail incertain (${e.raison}) : vérifiez avant de renvoyer`,
+              { etat: 'echec', canal: 'email', incertain: true, message: `${debut}Envoi de l’e-mail incertain (${e.raison}) : vérifiez avant de le renvoyer.` });
+          } else {
+            signaler('error', `${code} : Terminé — ${avant ? `${avant} ; ` : ''}e-mail non envoyé : ${e.raison}`,
+              { etat: 'echec', canal: 'email', message: `${debut}E-mail non envoyé : ${e.raison}. Réessayez ou choisissez un autre canal.` });
+          }
+          return;
+        }
+        try {
+          await api.logMessage(t.id, user.utilisateur || 'Accueil', ligneJournal(msg.libelle, msg.texte), 'email');
+        } catch {
+          toast.warning(`${code} : e-mail envoyé mais non noté sur le ticket.`);
+        }
+        signaler('success', avant ? `${code} : Terminé · ${avant} → e-mail envoyé à ${email}` : `${code} : Terminé · e-mail envoyé`,
+          { etat: 'envoye', canal: 'email', message: avant ? `${avant} : e-mail envoyé à ${email}` : `E-mail envoyé à ${email}` });
+      };
+
+      if (canal !== 'sms') {
+        await parEmail();
+        return;
+      }
+      let serveur = false;
+      try {
+        serveur = !!(await api.getSmsEtat())?.disponible;
+      } catch { /* état illisible : envoi manuel */ }
+      if (!serveur) {
+        manuel();
+        return;
+      }
+      const dest = numeroSms(t.client_tel).affichage;
+      if (ouvert()) afficher({ etat: 'envoi', canal: 'sms', message: `Envoi du SMS au ${dest}…` }, { focus: false });
+      try {
+        const r = await api.envoyerSms(t.id, msg.sms, msg.libelle);
+        const envoye = messageSmsEnvoye(r);
+        signaler('success', `${code} : Terminé · ${envoye}`, { etat: 'envoye', canal: 'sms', message: envoye });
+      } catch (err) {
+        if (err?.code === 'sms_non_configure') {
+          Promise.resolve().then(() => api.getSmsEtat({ fresh: true })).catch(() => {});
+          manuel();
+          return;
+        }
+        const e = erreurEnvoi(err);
+        // Refus qui se répétera (crédits, clé, IP) : l'e-mail prévient le client à la place
+        if (!e.incertain && SMS_IMPOSSIBLE[err?.code] && aEmail) {
+          await parEmail(`SMS impossible (${SMS_IMPOSSIBLE[err.code]})`);
+          return;
+        }
+        playScanSound('error');
+        if (e.incertain) {
+          // Le SMS a pu partir : pas de repli ni de renvoi sans vérifier (notes relues ensuite)
+          signaler('warning', `${code} : Terminé — envoi du SMS incertain (${e.raison}) : vérifiez avant de renvoyer`,
+            { etat: 'echec', canal: 'sms', incertain: true, message: `Envoi du SMS incertain (${e.raison}) : vérifiez les notes du ticket avant de le renvoyer.` });
+        } else {
+          signaler('error', `${code} : Terminé — SMS non envoyé : ${e.raison}`,
+            { etat: 'echec', canal: 'sms', message: `SMS non envoyé : ${e.raison}. ${aEmail ? 'Envoyez-le par e-mail ou réessayez.' : 'Réessayez ou choisissez un autre canal.'}` });
+        }
+      }
+    } catch (err) {
+      // Imprévu : le ticket reste terminé, la carte n'est pas laissée verrouillée sur « Envoi… »
+      signaler('error', `${code} : Terminé — message non envoyé : ${err?.message || 'erreur inattendue'}`,
+        { etat: 'echec', canal: null, message: 'Message non envoyé : réessayez depuis cette carte.' });
+    }
+  }, [toast, user.utilisateur, afficherAuto]);
+
+  const runStatus = useCallback(async (d) => {
+    const { id, code, statut, assign } = d;
+    marquerEnvoi(id, true);
+    let res;
+    try {
+      res = await api.changeStatus(id, statut);
       if (assign) await api.updateTicket(id, { technicien_assigne: assign }).catch(() => {});
       invalidateCache('tickets', 'dashboard');
       notifyTicketUpdated(id);
-      if (!res?.proposer_message) {
-        toast.success(`${code} : ${statut}`);
-      } else if (viewRef.current?.id === id) {
-        // Panneau ouvert sur ce ticket : le message pré-rempli s'affiche en tête (rien n'est envoyé seul)
-        toast.success(`${code} : ${statut}`);
-        setView((v) => (v && v.id === id ? { ...v, proposition: statut } : v));
-      } else {
-        // Panneau fermé entre-temps : la notification le rouvre sur la proposition
-        toast.success(`${code} : ${statut} — prévenir le client ?`, {
-          duration: 10_000,
-          onClick: () => showTicketRef.current?.(id, { label: code, proposition: statut }),
-        });
-      }
     } catch (err) {
       playScanSound('error');
       toast.error(`${code} : ${err?.message || 'changement de statut impossible'}`);
+      marquerEnvoi(id, false);
+      if (viewRef.current?.id === id) reload(id);
+      return;
     }
+    // Réparation terminée et enregistrée : le panneau propose de ranger l'appareil (« Rangé où ? »)
+    if (statut === TERMINE) {
+      setView((v) => (v && v.id === id ? { ...v, ranger: (v.ranger || 0) + 1 } : v));
+    }
+    if (d.prevenir) {
+      if (viewRef.current?.id === id) {
+        // Carte verrouillée (« Préparation du message… ») avant même la relecture de la fiche :
+        // ses boutons ne peuvent pas lancer un second envoi pendant celui-ci
+        afficherAuto(id, { etat: 'envoi', canal: canalPrevenir(d.ticket), message: 'Préparation du message…' });
+        // Fiche relue (« Réparation terminée ») avant de rendre la main : pas de second « Terminé + prévenir »,
+        // et la remise reste possible pendant l'envoi du message
+        await reload(id);
+      }
+      marquerEnvoi(id, false);
+      await prevenirApresTermine(d);
+      if (viewRef.current?.id === id) reload(id);
+      return;
+    }
+    if (d.sansPrevenir) {
+      // Choix explicite : pas de proposition, la carte « Prévenir » reste disponible, repliée
+      toast.success(`${code} : ${statut}`);
+      setView((v) => (v && v.id === id ? { ...v, carteRepliee: (v.carteRepliee || 0) + 1 } : v));
+    } else if (!res?.proposer_message) {
+      toast.success(`${code} : ${statut}`);
+    } else if (viewRef.current?.id === id) {
+      // Panneau ouvert sur ce ticket : le message pré-rempli s'affiche en tête (rien n'est envoyé seul)
+      toast.success(`${code} : ${statut}`);
+      setView((v) => (v && v.id === id ? { ...v, proposition: statut } : v));
+    } else {
+      // Panneau fermé entre-temps : la notification le rouvre sur la proposition
+      toast.success(`${code} : ${statut} — prévenir le client ?`, {
+        duration: 10_000,
+        onClick: () => showTicketRef.current?.(id, { label: code, proposition: statut }),
+      });
+    }
+    marquerEnvoi(id, false);
     if (viewRef.current?.id === id) reload(id);
-  }, [toast, reload]);
+  }, [toast, reload, marquerEnvoi, prevenirApresTermine, afficherAuto]);
 
   const commitDeferred = useCallback(() => {
     const d = deferredRef.current;
@@ -453,7 +728,11 @@ function QuickScanHost({ user }) {
       code: t.ticket_code,
       statut: action.statut,
       assign,
-      label: `Passage en « ${action.statut} »`,
+      prevenir: !!action.prevenir,
+      sansPrevenir: !!action.sansPrevenir,
+      // Fiche telle qu'affichée au clic : destinataire et montant du message « prêt »
+      ticket: action.prevenir ? t : null,
+      label: libelleDiffere(t, action),
       until: Date.now() + UNDO_MS,
     };
     d.timer = setTimeout(() => {
@@ -493,7 +772,7 @@ function QuickScanHost({ user }) {
   }, [commitDeferred]);
 
   const showTicket = useCallback(async (id, {
-    seq = ++seqRef.current, label = '', silent = false, proposition = null,
+    seq = ++seqRef.current, label = '', silent = false, proposition = null, auto = null,
   } = {}) => {
     setLookup((l) => l || { label: label || `#${id}` });
     try {
@@ -502,7 +781,11 @@ function QuickScanHost({ user }) {
       if (!data.ticket?.montants) loadTva();
       wizardRef.current = false;
       if (!silent) playScanSound('ok');
-      setView({ n: seq, id, ...data, verified: false, mismatch: null, proposition });
+      setView({
+        n: seq, id, ...data, verified: false, mismatch: null, proposition, auto,
+        // Rouvert depuis une notification « prévenir le client » : la carte est dépliée et prend le focus
+        carteN: proposition === TERMINE || auto ? 1 : 0,
+      });
     } catch (err) {
       if (seq !== seqRef.current) return;
       playScanSound('error');
@@ -522,6 +805,10 @@ function QuickScanHost({ user }) {
       toast.warning('Remise en cours d’enregistrement : patientez avant de scanner.');
       return;
     }
+    // Scan pendant une saisie « Rangé où ? » (la douchette a laissé le champ tel qu'avant le scan) :
+    // la sortie du champ enregistre l'emplacement tapé avant que le panneau passe au scan suivant
+    const actif = typeof document !== 'undefined' ? document.activeElement : null;
+    if (actif?.closest?.('[data-rangement]') && typeof actif.blur === 'function') actif.blur();
     commitDeferred();
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       playScanSound('error');
@@ -696,6 +983,9 @@ function QuickScanHost({ user }) {
           onEncaisser={encaisserSolde}
           onPretRecupere={pretRecupere}
           onShowTicket={(id, label) => showTicket(id, { label })}
+          emplacements={emplacements}
+          onBesoinEmplacements={chargerEmplacements}
+          onEmplacement={majEmplacement}
           onDismissMismatch={() => setView((v) => (v ? { ...v, mismatch: null } : v))}
           onDismissProposition={() => setView((v) => (v ? { ...v, proposition: null } : v))}
           onWizardChange={(open) => { wizardRef.current = open; }}
@@ -757,12 +1047,30 @@ function ScanDialog({
   view, role, tva, userName, deferred, onClose, onReload, onOpenTicket, onOpenClient, onPrint,
   onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onPretRecupere, onShowTicket,
   onDismissMismatch, onDismissProposition, onWizardChange,
+  emplacements = null, onBesoinEmplacements = () => {}, onEmplacement = () => {},
 }) {
   const toast = useToast();
+  const { actif: smsServeur } = useSmsServeur();
   const t = view.ticket || {};
   const m = useMemo(() => montantsTicket(t, tva), [t, tva]);
   const alertes = useMemo(() => alertesTicket(t, m, view.notes), [t, m, view.notes]);
-  const actions = useMemo(() => actionsTicket(t, role, view.notes), [t, role, view.notes]);
+  // Statut en cours d'enregistrement : rien à reproposer tant que la fiche n'est pas relue
+  const actionsBase = useMemo(
+    () => (view.envoiStatut ? [] : actionsTicket(t, role, view.notes)),
+    [t, role, view.notes, view.envoiStatut],
+  );
+  const aPrevenir = actionsBase.some((a) => a.prevenir);
+  // Modèles de la boutique : le sous-titre de « Terminé + prévenir » annonce un blocage « tarif à 0 € » avant le clic
+  const [modeles, setModeles] = useState(null);
+  useEffect(() => {
+    if (!aPrevenir || modeles) return undefined;
+    let vivant = true;
+    chargerContexteMessage().then((c) => { if (vivant) setModeles(c.templates); });
+    return () => { vivant = false; };
+  }, [aPrevenir, modeles]);
+  const actions = useMemo(() => actionsBase.map((a) => (a.prevenir
+    ? { ...a, hint: indicationPrevenir(t, smsServeur, modeles), manuel: !smsServeur }
+    : a)), [actionsBase, t, smsServeur, modeles]);
   const verifier = montantAVerifier(t, m, view.notes);
   const notes = useMemo(() => (view.notes || []).filter((n) => n.important).slice(0, 3), [view.notes]);
   const cfg = getStatusConfig(t.statut);
@@ -782,6 +1090,59 @@ function ScanDialog({
   const [done, setDone] = useState(null);
   const alertesVisibles = done ? alertes.filter((a) => a.id !== 'rendu') : alertes;
   const [soundOn, setSoundOn] = useState(isScanSoundOn);
+
+  // Carte « Prévenir le client » : ticket terminé, ou juste après « Terminé + prévenir »
+  const carteTitreRef = useRef(null);
+  const carteBoutonRef = useRef(null);
+  const carteVisible = !wizard && !done && !estRendu(t)
+    && (t.statut === TERMINE || view.proposition === TERMINE || !!view.auto);
+  // Dépliée juste après « Terminé + prévenir » (ou rouverte depuis sa notification). Simple scan d'un
+  // ticket terminé : souvent la remise, client au comptoir — une ligne « Pas encore prévenu · Prévenir… »
+  const [carteOuverte, setCarteOuverte] = useState(() => (
+    view.proposition === TERMINE || (!!view.auto && view.auto.etat !== 'envoye')
+  ));
+  const [focusCarte, setFocusCarte] = useState(null);
+  // Focus de la carte demandé mais pas encore posé (il arrive au rendu suivant)
+  const focusCarteAttenteRef = useRef(false);
+
+  // Rangement : « Rangé où ? » proposé après « Terminé » (view.ranger), ou ouvert à la demande
+  const rangementDescId = useId();
+  const rangementEditeurRef = useRef(null);
+  const rangementBoutonRef = useRef(null);
+  const [rangementManuel, setRangementManuel] = useState(false);
+  // Valeur de view.ranger quand la proposition a été fermée (enregistrée ou « Plus tard »)
+  const [inviteFermee, setInviteFermee] = useState(0);
+  const [annonceRangement, setAnnonceRangement] = useState('');
+  const rangerVuRef = useRef(view.ranger || 0);
+  // 'invite' (après « Terminé ») ou 'manuel' (clic) : focus à poser dans l'éditeur
+  const focusRangerRef = useRef(null);
+  const retourRangementRef = useRef(false);
+  const emplacement = emplacementAffiche(t, view.emplacementSaisi);
+  const inviteRangement = !!view.ranger && view.ranger !== inviteFermee;
+  const blocRangement = rangementVisible(t, {
+    emplacement, rendu: !!done, edition: inviteRangement || rangementManuel,
+  });
+  // Pendant la remise : l'emplacement reste affiché, sans saisie
+  const editionRangement = blocRangement && !wizard
+    ? (inviteRangement ? 'invite' : rangementManuel ? 'manuel' : null) : null;
+
+  useEffect(() => { onBesoinEmplacements(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fermerRangement = useCallback(({ rendreFocus = true } = {}) => {
+    if (view.ranger) setInviteFermee(view.ranger);
+    setRangementManuel(false);
+    focusRangerRef.current = null;
+    if (rendreFocus) retourRangementRef.current = true;
+  }, [view.ranger]);
+
+  const rangementEnregistre = (valeur) => {
+    // Enregistré au clic ou à l'Entrée (focus dans l'éditeur) : le focus revient sur « Modifier » ;
+    // enregistré en quittant le champ vers une autre action : il y reste
+    const dedans = !!rangementEditeurRef.current?.contains(document.activeElement);
+    onEmplacement(view.id, valeur);
+    setAnnonceRangement(valeur ? `Rangé en ${valeur}` : 'Emplacement retiré');
+    fermerRangement({ rendreFocus: dedans });
+  };
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -818,11 +1179,88 @@ function ScanDialog({
   }, [view.verifiedAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Message proposé après le changement de statut : affiché en tête, le focus y va
+  // (« Réparation terminée » : la carte « Prévenir le client » s'en charge)
   useEffect(() => {
-    if (!view.proposition) return;
+    if (!view.proposition || view.proposition === TERMINE) return;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     propositionRef.current?.focus({ preventScroll: true });
   }, [view.proposition]);
+
+  // « Terminé + prévenir » ou notification rouverte : carte dépliée (réduite une fois le message parti)
+  // et focus dessus — sur le bouton à utiliser quand il reste un geste à faire : SMS à envoyer depuis
+  // Messages, ou autre canal après un refus (jamais après un envoi incertain : vérifier d'abord)
+  useEffect(() => {
+    if (!view.carteN) return;
+    const etat = view.auto?.etat;
+    setCarteOuverte(etat !== 'envoye');
+    const geste = etat === 'manuel' || (etat === 'echec' && !view.auto?.incertain);
+    focusCarteAttenteRef.current = true;
+    setFocusCarte({ cible: geste ? 'bouton' : 'titre', n: view.carteN });
+  }, [view.carteN]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (view.carteRepliee) setCarteOuverte(false);
+  }, [view.carteRepliee]);
+
+  useEffect(() => {
+    if (!focusCarte) return;
+    focusCarteAttenteRef.current = false;
+    const titre = carteTitreRef.current;
+    const bouton = carteBoutonRef.current;
+    const el = focusCarte.cible === 'bouton' && bouton && !bouton.disabled && bouton.isConnected ? bouton : titre;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const scroller = scrollRef.current;
+    if (scroller && titre) {
+      const top = titre.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 12;
+      scroller.scrollTop = Math.max(0, top);
+    }
+  }, [focusCarte]);
+
+  // Rangement (après les focus de la carte, avant le repli sur le titre ci-dessous) :
+  // - éditeur refermé : le focus revient sur « Modifier » / « Noter l'emplacement » ;
+  // - ouvert au clic : focus dans le champ (tablette : sur un bouton d'emplacement, sans clavier virtuel) ;
+  // - « Rangé où ? » après « Terminé » : focus dans le champ seulement s'il ne prend la place
+  //   d'aucune action en cours (barre d'annulation, remise, confirmation, carte « Prévenir » qui
+  //   attend un geste ou un envoi) et si le focus n'a été posé que par le panneau lui-même.
+  //   La douchette reste utilisable : ScanListener retire le scan du champ et bloque son Entrée.
+  useEffect(() => {
+    if (view.ranger && view.ranger !== rangerVuRef.current) {
+      rangerVuRef.current = view.ranger;
+      focusRangerRef.current = 'invite';
+    }
+    if (retourRangementRef.current) {
+      retourRangementRef.current = false;
+      const active = document.activeElement;
+      if (!active || active === document.body || !dialogRef.current?.contains(active)) {
+        rangementBoutonRef.current?.focus({ preventScroll: true });
+      }
+    }
+    const demande = focusRangerRef.current;
+    if (!demande) return;
+    const editeur = rangementEditeurRef.current;
+    if (demande === 'manuel') {
+      if (!editeur) return;
+      focusRangerRef.current = null;
+      // Tablette : premier bouton d'emplacement (pas de clavier virtuel), sinon le champ
+      const cible = (ecranTactile() && editeur.querySelector('button[aria-pressed]:not([disabled])'))
+        || editeur.querySelector('input') || editeur;
+      cible.focus({ preventScroll: true });
+      return;
+    }
+    const etat = view.auto?.etat;
+    if (!editeur || wizard || confirm || deferred || ecranTactile() || (etat && etat !== 'envoi' && etat !== 'envoye')) {
+      focusRangerRef.current = null;
+      return;
+    }
+    // Statut ou message en cours d'enregistrement, focus de la carte pas encore posé : on attend
+    if (view.envoiStatut || etat === 'envoi' || focusCarteAttenteRef.current) return;
+    focusRangerRef.current = null;
+    const active = document.activeElement;
+    const libre = !active || active === document.body || active === titleRef.current
+      || active === carteTitreRef.current || editeur.contains(active);
+    if (libre) editeur.querySelector('input')?.focus({ preventScroll: true });
+  });
 
   // Un bouton qui disparaît (annulation, retour) ne doit pas laisser le focus sur la page derrière
   useEffect(() => {
@@ -971,6 +1409,8 @@ function ScanDialog({
 
   const primary = actions.filter((a) => a.primary);
   const secondary = actions.filter((a) => !a.primary);
+  // « Rangé en B3 » lu avec le résumé à l'ouverture du panneau
+  const descriptionPanneau = blocRangement && !editionRangement ? `${descId} ${rangementDescId}` : descId;
 
   return (
     // z-[100] comme la bulle de chat (rendue avant) et les toasts (rendus après) : l'ordre du DOM
@@ -982,57 +1422,78 @@ function ScanDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={descId}
+        aria-describedby={descriptionPanneau}
         onKeyDown={onKeyDown}
         className="relative flex max-h-[94vh] w-full flex-col overflow-hidden supports-[overflow:clip]:overflow-clip rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl"
       >
         <div className="h-1.5 shrink-0" style={{ backgroundColor: cfg.color }} aria-hidden="true" />
 
-        <header className="flex shrink-0 items-start gap-3 border-b border-slate-100 px-4 pb-3 pt-3 sm:px-6">
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
-              <ScanLine className="h-4 w-4" aria-hidden="true" /> Scan comptoir
-            </p>
-            <h2 id={titleId} ref={titleRef} tabIndex={-1}
-              className="mt-0.5 rounded font-mono text-3xl font-extrabold tracking-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-              {t.ticket_code || `#${view.id}`}
-            </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <StatusBadge statut={t.statut} size="lg" />
-              {t.est_retour_sav && (
-                <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800">Retour SAV</span>
-              )}
-              {view.verified && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
-                  <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> {VERIFIED_LABELS[view.verified] || VERIFIED_LABELS.ticket}
-                </span>
-              )}
+        <header className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3 sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                <ScanLine className="h-4 w-4" aria-hidden="true" /> Scan comptoir
+              </p>
+              <h2 id={titleId} ref={titleRef} tabIndex={-1}
+                className="mt-0.5 rounded font-mono text-3xl font-extrabold tracking-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                {t.ticket_code || `#${view.id}`}
+              </h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <StatusBadge statut={t.statut} size="lg" />
+                {t.est_retour_sav && (
+                  <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800">Retour SAV</span>
+                )}
+                {view.verified && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                    <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> {VERIFIED_LABELS[view.verified] || VERIFIED_LABELS.ticket}
+                  </span>
+                )}
+              </div>
+              <p id={descId} className="mt-2 text-sm text-slate-600">
+                {modeleTicket(t)}
+                {t.date_depot ? ` · déposé le ${formatDateShort(t.date_depot)}` : ''}
+                {jours != null && (
+                  <span className={jours > 30 ? 'font-bold text-red-700' : ''}>
+                    {jours === 0 ? ' (aujourd’hui)' : jours === 1 ? ' (hier)' : ` (il y a ${jours} j)`}
+                  </span>
+                )}
+              </p>
             </div>
-            <p id={descId} className="mt-2 text-sm text-slate-600">
-              {modeleTicket(t)}
-              {t.date_depot ? ` · déposé le ${formatDateShort(t.date_depot)}` : ''}
-              {jours != null && (
-                <span className={jours > 30 ? 'font-bold text-red-700' : ''}>
-                  {jours === 0 ? ' (aujourd’hui)' : jours === 1 ? ' (hier)' : ` (il y a ${jours} j)`}
-                </span>
-              )}
-            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={toggleSound} aria-pressed={soundOn}
+                aria-label="Son de la douchette" title={soundOn ? 'Son activé' : 'Son coupé'}
+                className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 ${FOCUS_RING}`}>
+                {soundOn ? <Volume2 className="h-5 w-5" aria-hidden="true" /> : <VolumeX className="h-5 w-5" aria-hidden="true" />}
+              </button>
+              <button type="button" onClick={onClose} disabled={busy} aria-label="Fermer le panneau"
+                className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 disabled:opacity-50 ${FOCUS_RING}`}>
+                <X className="h-6 w-6" aria-hidden="true" />
+              </button>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button type="button" onClick={toggleSound} aria-pressed={soundOn}
-              aria-label="Son de la douchette" title={soundOn ? 'Son activé' : 'Son coupé'}
-              className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 ${FOCUS_RING}`}>
-              {soundOn ? <Volume2 className="h-5 w-5" aria-hidden="true" /> : <VolumeX className="h-5 w-5" aria-hidden="true" />}
-            </button>
-            <button type="button" onClick={onClose} disabled={busy} aria-label="Fermer le panneau"
-              className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 disabled:opacity-50 ${FOCUS_RING}`}>
-              <X className="h-6 w-6" aria-hidden="true" />
-            </button>
-          </div>
+          {blocRangement && (
+            <Rangement
+              ticketId={view.id}
+              emplacement={emplacement}
+              emplacements={emplacements}
+              edition={editionRangement}
+              modifiable={!wizard}
+              descId={rangementDescId}
+              annonce={annonceRangement}
+              editeurRef={rangementEditeurRef}
+              boutonRef={rangementBoutonRef}
+              onOuvrir={() => {
+                setRangementManuel(true);
+                focusRangerRef.current = 'manuel';
+              }}
+              onFermer={() => fermerRangement()}
+              onSaved={rangementEnregistre}
+            />
+          )}
         </header>
 
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
-          {view.proposition && !wizard && (
+          {view.proposition && view.proposition !== TERMINE && !wizard && (
             <section aria-labelledby={propositionId} className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -1107,6 +1568,30 @@ function ScanDialog({
                 </li>
               ))}
             </ul>
+          )}
+
+          {carteVisible && (
+            <PrevenirClient
+              ticket={t}
+              notes={view.notes}
+              auto={view.auto}
+              smsServeur={smsServeur}
+              auteur={userName}
+              ouverte={carteOuverte}
+              onOuvrir={() => setCarteOuverte(true)}
+              onReplier={() => {
+                setCarteOuverte(false);
+                if (view.proposition === TERMINE) onDismissProposition();
+              }}
+              onEnvoye={() => {
+                setCarteOuverte(false);
+                setFocusCarte({ cible: 'titre', n: Date.now() });
+                onReload(view.id);
+              }}
+              onNotesChange={() => onReload(view.id)}
+              titreRef={carteTitreRef}
+              boutonRef={carteBoutonRef}
+            />
           )}
 
           {wizard && (
@@ -1278,6 +1763,24 @@ function ScanDialog({
                 </button>
               </div>
             </div>
+          ) : view.envoiStatut ? (
+            <p role="status" className="flex min-h-[52px] items-center justify-center gap-2 text-sm font-semibold text-slate-700">
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Enregistrement…
+            </p>
+          ) : primary.length + secondary.length > 2 ? (
+            // Action principale sur toute la largeur, les autres en dessous
+            <div className="space-y-2">
+              <div className="grid gap-2 sm:grid-flow-col sm:auto-cols-fr">
+                {primary.map((a) => (
+                  <ActionButton key={a.id} action={a} onClick={() => startAction(a)} primary />
+                ))}
+              </div>
+              <div className={`grid gap-2 ${secondary.length === 2 ? 'grid-cols-2' : 'sm:grid-flow-col sm:auto-cols-fr'}`}>
+                {secondary.map((a) => (
+                  <ActionButton key={a.id} action={a} onClick={() => startAction(a)} />
+                ))}
+              </div>
+            </div>
           ) : (
             (primary.length > 0 || secondary.length > 0) && (
               <div className="grid gap-2 sm:grid-flow-col sm:auto-cols-fr">
@@ -1313,27 +1816,106 @@ function ScanDialog({
   );
 }
 
+/**
+ * Emplacement de l'appareil, en tête du panneau (visible pendant la remise) : « Rangé en B3 » en
+ * très gros pour aller le chercher, « Pas d'emplacement noté » sur un ticket terminé, ou l'éditeur
+ * « Rangé où ? » (EmplacementInput, boutons des emplacements configurés). Facultatif, jamais bloquant.
+ */
+function Rangement({
+  ticketId, emplacement, emplacements, edition, modifiable, descId, annonce,
+  editeurRef, boutonRef, onOuvrir, onFermer, onSaved,
+}) {
+  // Lisible de loin : plus le nom est long, plus la police est petite (20 caractères au plus)
+  const taille = !emplacement || emplacement.length <= 4 ? 'text-5xl'
+    : emplacement.length <= 8 ? 'text-4xl' : 'text-2xl';
+  const bouton = 'inline-flex min-h-[44px] shrink-0 items-center rounded-xl px-3 text-sm font-bold';
+
+  let contenu;
+  if (edition) {
+    contenu = (
+      // Hauteur bornée (téléphone à l'horizontale) : le pied du panneau reste visible
+      <div ref={editeurRef} data-rangement="" tabIndex={-1}
+        className="flex max-h-[38vh] items-start gap-2 overflow-y-auto overscroll-contain rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 focus:outline-none">
+        <EmplacementInput ticketId={ticketId} value={emplacement} emplacements={emplacements || []}
+          label="Rangé où ?" onSaved={onSaved} className="min-w-0 flex-1" />
+        <button type="button" onClick={onFermer} data-rangement-fermer=""
+          aria-label={edition === 'invite' ? 'Ranger l’appareil plus tard' : 'Fermer la saisie de l’emplacement'}
+          className={`${bouton} bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-slate-100 ${FOCUS_RING}`}>
+          {edition === 'invite' ? 'Plus tard' : 'Fermer'}
+        </button>
+      </div>
+    );
+  } else if (emplacement) {
+    contenu = (
+      <div className="flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-2 text-white">
+        <MapPin className="h-7 w-7 shrink-0 text-amber-300" aria-hidden="true" />
+        <p id={descId} className="min-w-0 flex-1">
+          <span className="block text-xs font-bold uppercase tracking-wide text-slate-300">Rangé en</span>{' '}
+          <span className={`block break-words font-mono font-black leading-none tracking-wide ${taille}`}>{emplacement}</span>
+        </p>
+        {modifiable && (
+          <button ref={boutonRef} type="button" onClick={onOuvrir} aria-label="Modifier l’emplacement"
+            className={`${bouton} bg-white/10 text-white ring-1 ring-white/40 hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900`}>
+            Modifier
+          </button>
+        )}
+      </div>
+    );
+  } else {
+    contenu = (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-1.5">
+        <MapPin className="h-5 w-5 shrink-0 text-slate-600" aria-hidden="true" />
+        {/* Téléphone : le bouton passe à la ligne plutôt que d'écraser le texte */}
+        <p id={descId} className="min-w-[12rem] flex-1 text-base font-bold text-slate-800">Pas d’emplacement noté</p>
+        {modifiable && (
+          <button ref={boutonRef} type="button" onClick={onOuvrir}
+            className={`${bouton} bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-slate-100 ${FOCUS_RING}`}>
+            Noter l’emplacement
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      {contenu}
+      {/* Annonce discrète après un enregistrement (l'éditeur, refermé aussitôt, ne la ferait pas) */}
+      <p role="status" aria-live="polite" className="sr-only">{annonce}</p>
+    </div>
+  );
+}
+
 const ACTION_ICONS = {
-  rendre: PackageCheck, demarrer: Play, terminer: CircleCheckBig, encaisser: HandCoins, facturer: Receipt, pret: Smartphone,
+  rendre: PackageCheck, demarrer: Play, terminer: Send, terminer_seul: CircleCheckBig,
+  encaisser: HandCoins, facturer: Receipt, pret: Smartphone,
 };
 const ACTION_COLORS = {
   rendre: 'bg-emerald-700 hover:bg-emerald-800 text-white',
   facturer: 'bg-amber-700 hover:bg-amber-800 text-white',
   pret: 'bg-amber-700 hover:bg-amber-800 text-white',
   terminer: 'bg-emerald-700 hover:bg-emerald-800 text-white',
+  terminer_seul: 'bg-emerald-700 hover:bg-emerald-800 text-white',
   demarrer: 'bg-blue-700 hover:bg-blue-800 text-white',
   encaisser: 'bg-brand-600 hover:bg-brand-700 text-white',
 };
 
 function ActionButton({ action, onClick, primary = false }) {
-  const Icon = ACTION_ICONS[action.id] || Play;
+  const Icon = ACTION_ICONS[action.icon || action.id] || Play;
   const cls = primary
     ? `${ACTION_COLORS[action.id] || ACTION_COLORS.rendre} min-h-[56px] text-lg`
     : 'bg-white text-slate-800 ring-2 ring-slate-300 hover:bg-slate-50 min-h-[52px] text-base';
   return (
     <button type="button" onClick={onClick}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 font-bold ${cls} ${FOCUS_RING}`}>
-      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" /> {action.label}
+      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-1.5 font-bold ${cls} ${FOCUS_RING}`}>
+      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      {action.hint ? (
+        // Par où le client sera prévenu, sous le libellé
+        <span className="flex min-w-0 flex-col items-start text-left leading-tight">
+          <span>{action.label}</span>
+          <span className="break-words text-sm font-semibold">{action.hint}</span>
+        </span>
+      ) : action.label}
     </button>
   );
 }

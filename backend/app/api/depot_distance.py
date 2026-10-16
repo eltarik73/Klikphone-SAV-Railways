@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
-from app.api.clients import find_client_by_phone
+from app.api.clients import enregistrer_consentements, find_client_by_phone, meme_personne
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
 )
@@ -58,6 +58,8 @@ class DepotDistanceRequest(BaseModel):
     panne_detail: Optional[str] = Field("", max_length=1000)
     notes_client: Optional[str] = Field("", max_length=2000)
     carte_camby: Optional[int] = 0
+    rgpd_informe: Optional[bool] = None
+    consentement_marketing: Optional[bool] = None
 
     @field_validator("nom", "prenom", "telephone", "email", "categorie", "marque",
                      "modele", "modele_autre", "panne", "panne_detail", "notes_client")
@@ -110,12 +112,16 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
                     carte_camby = CASE WHEN %s = '1' THEN 1 ELSE carte_camby END
                 WHERE id = %s
             """, (data.nom, data.prenom, camby, client_id))
+            # Numéro connu : l'accord marketing exige la même identité (règle de /api/clients)
+            accord = data.consentement_marketing and meme_personne(existing, data.nom, data.prenom)
         else:
             cur.execute("""
                 INSERT INTO clients (nom, prenom, telephone, email, carte_camby)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
             """, (data.nom, data.prenom, data.telephone, data.email, camby))
             client_id = cur.fetchone()["id"]
+            accord = data.consentement_marketing
+        enregistrer_consentements(cur, client_id, data.rgpd_informe, accord, canal="depot_distance")
 
         # Créer le ticket en statut "Pré-enregistré"
         cur.execute("""

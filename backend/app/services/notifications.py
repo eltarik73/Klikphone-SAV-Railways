@@ -4,6 +4,7 @@ Gestion des notifications Discord, Email, WhatsApp, SMS.
 """
 
 import os
+import re
 import smtplib
 import urllib.parse
 from email.mime.text import MIMEText
@@ -379,19 +380,46 @@ N'oubliez pas votre pièce d'identité.
 À bientôt !
 L'équipe Klikphone""",
     },
+    # Texte selon les jours d'attente (paliers de l'étagère) : aimable, puis plus ferme
+    # à J+30, puis rappel des conditions de garde (loi du 31/12/1903) à partir de J+90
     "relance": {
         "titre": "🔔 Relance - Appareil à récupérer",
         "message": """Bonjour {prenom},
 
-Votre {appareil} vous attend chez Klikphone depuis plusieurs jours.
+Petit rappel : votre {appareil} est prêt et vous attend chez Klikphone depuis {jours} jours.
 
-Merci de passer le récupérer à votre convenance.
-
+Vous pouvez passer le récupérer quand cela vous arrange :
 📍 79 Place Saint Léger, Chambéry
-🕐 Lundi-Samedi 10h-19h
+🕐 {horaires}
+
+À très bientôt !
+L'équipe Klikphone""",
+        "paliers": (
+            (30, """Bonjour {prenom},
+
+Votre {appareil} (ticket {ticket_code}) est prêt depuis {jours} jours et n'a toujours pas été récupéré.
+
+Merci de venir le retirer dans les meilleurs délais :
+📍 79 Place Saint Léger, Chambéry
+🕐 {horaires}
+
+En cas d'empêchement, appelez-nous au 04 79 60 89 22.
 
 Cordialement,
-L'équipe Klikphone""",
+L'équipe Klikphone"""),
+            (90, """Bonjour {prenom},
+
+Votre {appareil} (ticket {ticket_code}) attend son retrait depuis {jours} jours.
+
+Nous vous rappelons nos conditions de garde : selon la loi du 31 décembre 1903, un appareil confié pour réparation et non retiré dans le délai d'un an peut être vendu, uniquement sur autorisation du juge, pour régler les sommes dues.
+
+Merci de venir le récupérer au plus vite ou de nous appeler au 04 79 60 89 22 :
+📍 79 Place Saint Léger, Chambéry
+🕐 {horaires}
+
+Cordialement,
+L'équipe Klikphone"""),
+        ),
     },
     "non_reparable": {
         "titre": "❌ Non réparable",
@@ -431,11 +459,34 @@ L'équipe Klikphone
 }
 
 
-def generer_message(template_key: str, ticket: dict, client: dict) -> str:
-    """Génère un message à partir d'un template et des données du ticket."""
+def _texte_modele(template: dict, jours) -> str:
+    """Texte du modèle ; avec des paliers, celui du plus haut palier atteint par `jours`."""
+    msg = template["message"]
+    if jours is not None:
+        for seuil, texte in template.get("paliers", ()):
+            if jours >= seuil:
+                msg = texte
+    if jours is None:
+        return msg.replace("{jours} jours", "plusieurs jours")
+    if jours == 0:
+        return msg.replace("{jours} jours", "quelques heures")
+    if jours == 1:
+        return msg.replace("{jours} jours", "1 jour")
+    return msg
+
+
+def generer_message(template_key: str, ticket: dict, client: dict, jours=None) -> str:
+    """Génère un message à partir d'un template et des données du ticket.
+
+    jours : jours d'attente depuis la fin de réparation (variable {jours}, palier de la
+    relance) ; à défaut ticket["jours_attente"] (vue étagère), sinon « plusieurs jours ».
+    """
     template = MESSAGES_PREDEFINIES.get(template_key)
     if not template:
         return ""
+    if jours is None:
+        jours = ticket.get("jours_attente")
+    jours = None if jours is None else max(0, int(jours))
 
     appareil = ticket.get("modele_autre") or f"{ticket.get('marque') or ''} {ticket.get('modele') or ''}".strip()
     # Mêmes lignes et même total que les documents imprimés et la caisse
@@ -449,11 +500,11 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
     horaires = cfg["horaires"] or "Lundi-Samedi 10h-19h"
     tel_boutique = cfg["tel_boutique"] or "04 79 60 89 22"
 
-    msg = template["message"]
+    msg = _texte_modele(template, jours)
     # Replace config placeholders in hardcoded template text
     msg = msg.replace("04 79 60 89 22", tel_boutique)
-    msg = msg.replace("79 Place Saint Léger, Chambéry", adresse)
-    msg = msg.replace("79 Place Saint Léger", adresse)
+    # Une seule passe : une adresse qui commence par « 79 Place Saint Léger » n'est pas doublée
+    msg = re.sub(r"79 Place Saint Léger(?:, Chambéry)?", lambda _: adresse, msg)
     msg = msg.replace("Lundi-Samedi 10h-19h", horaires)
 
     return msg.format(
@@ -466,4 +517,6 @@ def generer_message(template_key: str, ticket: dict, client: dict) -> str:
         prestation=reparation,
         prix=prix,
         ticket_code=ticket.get("ticket_code", ""),
+        jours="" if jours is None else jours,
+        horaires=horaires,
     )

@@ -19,6 +19,9 @@ from app.api.auth import (
     require_admin, verifier_essais, verifier_secret,
 )
 from app.api.catalog import clear_catalog_cache
+from app.api import rgpd
+from app.services import etagere
+from app.services import mentions
 from app.services import params as params_cache
 from app.services import sms
 
@@ -84,8 +87,120 @@ def _controler_sms(cle: str, valeur: str):
         raise HTTPException(400, "Expéditeur SMS : 11 lettres ou chiffres maximum, sans espace ni accent")
 
 
+def _controler_mention(cle: str, valeur: str) -> str:
+    try:
+        return mentions.valider(cle, valeur)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _controler_retention(cle: str, valeur: str):
+    """RGPD_RETENTION_AUTO : '1' active l'anonymisation automatique, '0' la coupe. Date de début
+    (activation + 7 jours) et dernier passage : écrits par le serveur seul (rgpd.py)."""
+    if cle != rgpd.PARAM_AUTO:
+        raise HTTPException(400, f"{cle} : géré par le serveur (activez ou coupez {rgpd.PARAM_AUTO})")
+    if valeur not in ("0", "1"):
+        raise HTTPException(400, f"{cle} vaut 0 ou 1")
+
+
+# Étagère (services/etagere) : non secrets ; le délai d'abandon, imprimé dans les conditions
+# de dépôt, exige l'élévation admin
+ETAGERE_KEYS = frozenset({etagere.PARAM_DELAI_ABANDON, etagere.PARAM_PALIERS, etagere.PARAM_EMPLACEMENTS})
+# Jamais moins d'un an (loi du 31/12/1903), comme la page Config et les impressions
+DELAI_ABANDON_BORNES = (mentions.ABANDON_JOURS_LEGAL, 3650)
+EMPLACEMENTS_MAX = 40
+
+
+def _controler_etagere(cle: str, valeur: str) -> str:
+    """Valeur normalisée : délai « 365 », paliers « 3, 10, 30 », emplacements « A1, B3 » (comme la page Config)."""
+    v = (valeur or "").strip()
+    if cle == etagere.PARAM_DELAI_ABANDON:
+        mini, maxi = DELAI_ABANDON_BORNES
+        if not re.fullmatch(r"[0-9]{1,5}", v) or not mini <= int(v) <= maxi:
+            raise HTTPException(400, f"Délai d'abandon : nombre entier de jours entre {mini} "
+                                     f"(un an, minimum légal) et {maxi}")
+        return str(int(v))
+    if cle == etagere.PARAM_PALIERS:
+        jetons = [j for j in re.split(r"[,;\s]+", v) if j]
+        if not all(re.fullmatch(r"[0-9]{1,5}", j) and 0 < int(j) <= DELAI_ABANDON_BORNES[1] for j in jetons):
+            raise HTTPException(400, f"Paliers de relance : jours entiers entre 1 et {DELAI_ABANDON_BORNES[1]}, "
+                                     "séparés par des virgules")
+        paliers = [int(j) for j in jetons]
+        if any(a >= b for a, b in zip(paliers, paliers[1:])):
+            raise HTTPException(400, "Paliers de relance : jours en ordre croissant, sans doublon (ex. 3,10,30)")
+        return ", ".join(str(p) for p in paliers)
+    emplacements = []
+    for brut in v.split(","):
+        try:
+            e = etagere.normaliser_emplacement(brut)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+        if e and e not in emplacements:
+            emplacements.append(e)
+    if len(emplacements) > EMPLACEMENTS_MAX:
+        raise HTTPException(400, f"Emplacements : {EMPLACEMENTS_MAX} au maximum")
+    return ", ".join(emplacements)
+
+
+def _reponse(ecritures: list) -> dict:
+    """{"ok": True}, plus « avertissements » si un CGV_DEPOT écrit garde une ancienne clause de
+    retrait en 3 mois : enregistré tel quel (texte de l'admin), mais signalé."""
+    avertissements = [mentions.AVERTISSEMENT_CGV_ABANDON for cle, valeur in ecritures
+                      if cle == "CGV_DEPOT" and mentions.clause_abandon_obsolete(valeur)][:1]
+    return {"ok": True, "avertissements": avertissements} if avertissements else {"ok": True}
+
+
+def _noter_activation_retention(cur, ecritures: list):
+    """Avant l'écriture : l'activation de la rétention automatique date son début (J+7)."""
+    lot = dict(ecritures)
+    if rgpd.PARAM_AUTO in lot:
+        rgpd.noter_activation(cur, lot[rgpd.PARAM_AUTO])
+
+
+_FRANCHISE_TVA = re.compile(r"293\s*B", re.IGNORECASE)
+
+
+def _controler_coherence(cur, ecritures: list):
+    """État final (base + lot), seulement pour les règles que le lot touche : la franchise de
+    TVA va avec un taux nul (et l'inverse) ; la conservation n'est jamais plus courte que la
+    garantie (un client encore garanti serait anonymisé)."""
+    lot = dict(ecritures)
+    tva_touchee = bool({"tva", "TVA_MENTION"} & set(lot))
+    durees_touchees = bool({"GARANTIE_MOIS", "RGPD_RETENTION_MOIS"} & set(lot))
+    if not tva_touchee and not durees_touchees:
+        return
+    cles = mentions.cles_lues()
+    cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (cles,))
+    valeurs = {r["cle"]: r["valeur"] for r in cur.fetchall() or []}
+    valeurs.update(lot)
+    ident = mentions.lire(valeurs)
+    if tva_touchee:
+        franchise = bool(_FRANCHISE_TVA.search(ident["TVA_MENTION"]))
+        taux_nul = mentions.taux_nul(valeurs.get("tva") or "20")
+        if franchise and not taux_nul:
+            raise HTTPException(400, "TVA : la mention « TVA non applicable, art. 293 B » exige un taux de TVA "
+                                     "à 0 %. Corrigez le taux ou la mention.")
+        if taux_nul and not ident["TVA_MENTION"]:
+            raise HTTPException(400, "TVA à 0 % : indiquez la mention légale "
+                                     "(ex. « TVA non applicable, art. 293 B du CGI »).")
+    if durees_touchees:
+        conservation = mentions.nombre(ident, "RGPD_RETENTION_MOIS")
+        garantie = mentions.nombre(ident, "GARANTIE_MOIS")
+        if conservation < garantie:
+            raise HTTPException(400, f"Conservation des données ({conservation} mois) plus courte que la garantie "
+                                     f"({garantie} mois) : un client encore sous garantie serait anonymisé.")
+
+
+def _avec_anciennes_cles(ecritures: list) -> list:
+    """Une clé d'identité canonique (BOUTIQUE_TEL…) réécrit aussi ses anciennes clés, encore
+    lues par les notifications, le devis et le dépôt à distance (sauf celles du même lot)."""
+    deja = {cle for cle, _ in ecritures}
+    return ecritures + [(a, v) for cle, v in ecritures for a in mentions.cles_alias(cle) if a not in deja]
+
+
 def _ecritures(request: Request, user: dict, params: list) -> list:
-    """Paires (clé, valeur) à écrire ; un secret ou un réglage sensible exige l'élévation admin."""
+    """Paires (clé, valeur) à écrire ; un secret ou un réglage sensible exige l'élévation admin :
+    identité légale imprimée et durées RGPD (elles pilotent une anonymisation irréversible) aussi."""
     ecritures, elevation = [], False
     for p in params:
         if est_secret(p.cle):
@@ -97,10 +212,20 @@ def _ecritures(request: Request, user: dict, params: list) -> list:
             p = p.model_copy(update={"valeur": (p.valeur or "").strip()})
             _controler_sms(p.cle, p.valeur)
             elevation = True
+        elif p.cle in mentions.CLES:
+            p = p.model_copy(update={"valeur": _controler_mention(p.cle, p.valeur)})
+            elevation = True
+        elif p.cle in rgpd.PARAMS_RETENTION:
+            p = p.model_copy(update={"valeur": (p.valeur or "").strip()})
+            _controler_retention(p.cle, p.valeur)
+            elevation = True
+        elif p.cle in ETAGERE_KEYS:
+            p = p.model_copy(update={"valeur": _controler_etagere(p.cle, p.valeur)})
+            elevation = elevation or p.cle == etagere.PARAM_DELAI_ABANDON
         ecritures.append((p.cle, p.valeur))
     if elevation:
         exiger_elevation(request, user)
-    return ecritures
+    return _avec_anciennes_cles(ecritures)
 
 
 @router.get("", response_model=list[ParamOut])
@@ -112,20 +237,17 @@ def list_params(user: dict = Depends(get_current_user)):
     return [{"cle": r["cle"], "valeur": _masquer(r["cle"], r["valeur"])} for r in rows]
 
 
+PUBLIC_KEYS = ("NOM_BOUTIQUE", "TEL_BOUTIQUE", "ADRESSE_BOUTIQUE", "HORAIRES_BOUTIQUE", "URL_SUIVI")
+
+
 @router.get("/public")
 def get_public_params():
-    """Paramètres publics (pour le formulaire client et le suivi)."""
-    public_keys = [
-        "NOM_BOUTIQUE", "TEL_BOUTIQUE", "ADRESSE_BOUTIQUE",
-        "HORAIRES_BOUTIQUE", "URL_SUIVI",
-    ]
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT cle, valeur FROM params WHERE cle = ANY(%s)",
-            (public_keys,),
-        )
-        rows = cur.fetchall()
-    return {row["cle"]: row["valeur"] for row in rows}
+    """Paramètres publics (formulaire client, suivi, confidentialité) : anciennes clés
+    présentes, puis identité et mentions légales effectives (services/mentions)."""
+    valeurs = params_cache.get_params(PUBLIC_KEYS, dict.fromkeys(PUBLIC_KEYS))
+    out = {cle: v for cle, v in valeurs.items() if v is not None}
+    out.update({cle: v for cle, v in mentions.lire().items() if not est_secret(cle)})
+    return out
 
 
 @router.put("")
@@ -134,10 +256,12 @@ def set_param(data: ParamUpdate, request: Request, user: dict = Depends(get_curr
     ecritures = _ecritures(request, user, [data])
     if ecritures:
         with get_cursor() as cur:
+            _controler_coherence(cur, ecritures)
+            _noter_activation_retention(cur, ecritures)
             for cle, valeur in ecritures:
                 _ecrire_param(cur, cle, valeur)
         params_cache.invalidate()
-    return {"ok": True}
+    return _reponse(ecritures)
 
 
 @router.put("/batch")
@@ -150,10 +274,12 @@ def set_params_batch(
     ecritures = _ecritures(request, user, params)
     if ecritures:
         with get_cursor() as cur:
+            _controler_coherence(cur, ecritures)
+            _noter_activation_retention(cur, ecritures)
             for cle, valeur in ecritures:
                 _ecrire_param(cur, cle, valeur)
         params_cache.invalidate()
-    return {"ok": True}
+    return _reponse(ecritures)
 
 
 class PinChangeRequest(BaseModel):

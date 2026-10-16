@@ -76,6 +76,19 @@ class ClientOut(BaseModel):
 # ============================================================
 # TICKETS
 # ============================================================
+# Priorité atelier (file /api/tickets/queue/repair) : 'attente' = client qui attend sur place
+PRIORITES = {"normal": "Normal", "express": "Express", "attente": "Client attend sur place", "pro": "Pro"}
+
+
+def _priorite_valide(v):
+    if v is None:
+        return "normal"
+    p = str(v).strip().lower()
+    if p not in PRIORITES:
+        raise ValueError(f"Priorité invalide (valeurs : {', '.join(PRIORITES)})")
+    return p
+
+
 class TicketCreate(BaseModel):
     client_id: int
     categorie: str
@@ -92,6 +105,9 @@ class TicketCreate(BaseModel):
     est_retour_sav: Optional[bool] = False
     ticket_original_id: Optional[int] = None
     source: Optional[str] = "boutique"
+    priorite: Optional[str] = "normal"
+
+    _priorite = field_validator("priorite")(_priorite_valide)
 
 
 class TicketUpdate(BaseModel):
@@ -134,6 +150,9 @@ class TicketUpdate(BaseModel):
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = None
     type_document: Optional[str] = None
+    priorite: Optional[str] = None
+
+    _priorite = field_validator("priorite")(_priorite_valide)
 
     @field_validator("telephone_pret_imei")
     @classmethod
@@ -208,6 +227,8 @@ class TicketOut(BaseModel):
     ticket_original_id: Optional[int] = None
     source: Optional[str] = "boutique"
     type_document: Optional[str] = "devis"
+    priorite: Optional[str] = "normal"
+    emplacement: Optional[str] = None
 
     @field_validator("date_cloture", mode="wrap")
     @classmethod

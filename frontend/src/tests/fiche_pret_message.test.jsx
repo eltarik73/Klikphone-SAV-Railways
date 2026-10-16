@@ -90,7 +90,7 @@ describe('Fiche : message proposé après le changement de statut', () => {
     fireEvent.change(select, { target: { value: statut } });
   };
 
-  it('« Réparation terminée » : modale pré-remplie « prêt », rien n’est envoyé, « Plus tard » la ferme', async () => {
+  it('« Réparation terminée » : carte « Prévenir » pré-remplie « prêt », rien n’est envoyé, « Plus tard » la ferme', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     apiMock.changeStatus.mockImplementation(async (id, statut) => {
       courant = { ...courant, statut };
@@ -99,13 +99,28 @@ describe('Fiche : message proposé après le changement de statut', () => {
     renderFiche();
     await changerStatut('Réparation terminée');
     await waitFor(() => expect(apiMock.changeStatus).toHaveBeenCalledWith('42', 'Réparation terminée'));
-    const modale = await screen.findByRole('dialog', { name: 'Prévenir Léa ?' });
+    const modale = await screen.findByRole('dialog', { name: 'Prévenir Léa' });
     expect(within(modale).getByText(/KP-000042 est « Réparation terminée »/)).toBeInTheDocument();
-    expect(within(modale).getByText(/votre Apple iPhone 13 est pret !.*Montant : 89\.00 EUR/)).toBeInTheDocument();
+    // Aperçu du SMS court (version GSM du modèle « Appareil pret »)
+    expect(within(modale).getByText(/votre Apple iPhone 13 est pret ?!.*Montant : 89\.00 EUR/)).toBeInTheDocument();
     expect(open).not.toHaveBeenCalled();
     expect(apiMock.logMessage).not.toHaveBeenCalled();
     fireEvent.click(within(modale).getByRole('button', { name: 'Plus tard' }));
-    expect(screen.queryByRole('dialog', { name: 'Prévenir Léa ?' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Prévenir Léa' })).not.toBeInTheDocument();
+  });
+
+  it('autre statut proposé : grille de messages pré-remplie (comportement inchangé)', async () => {
+    apiMock.changeStatus.mockImplementation(async (id, statut) => {
+      courant = { ...courant, statut };
+      return { ok: true, proposer_message: true };
+    });
+    renderFiche();
+    await changerStatut('Pièce reçue');
+    const modale = await screen.findByRole('dialog', { name: 'Prévenir Léa ?' });
+    expect(within(modale).getByText(/KP-000042 est « Pièce reçue »/)).toBeInTheDocument();
+    expect(within(modale).queryByText('Choisir un autre message')).not.toBeInTheDocument();
+    fireEvent.click(within(modale).getByRole('button', { name: 'Plus tard' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('statut sans proposition (réponse du serveur) : pas de modale', async () => {

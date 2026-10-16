@@ -44,6 +44,7 @@ const AdminTarifsSmartphonesPage = lazy(() => import('./pages/AdminTarifsSmartph
 const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
 const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
 const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage'));
+const ConfidentialitePage = lazy(() => import('./pages/ConfidentialitePage'));
 
 // Shell et pages staff les plus fréquentes, préchargés au repos UNIQUEMENT pour un utilisateur
 // connecté : un client sur /, /suivi ou /deposer ne télécharge aucun chunk réservé au personnel.
@@ -257,6 +258,7 @@ function AppRoutes() {
         <Route path="/depot" element={<DepotPage />} />
         <Route path="/suivi" element={<SuiviPage />} />
         <Route path="/deposer" element={<DeposerPage />} />
+        <Route path="/confidentialite" element={<ConfidentialitePage />} />
         <Route path="/demo-design" element={<DemoDesignPage />} />
         <Route path="/site-tarifs-iphone" element={<AdminSiteTarifsPage />} />
 

@@ -18,6 +18,18 @@ from urllib.parse import unquote
 MAX_QUERY_LEN = 100
 MAX_WORDS = 6
 TRGM_THRESHOLD = 0.5
+# Miroir de services/etagere.EMPLACEMENT_MAX (longueur maximale d'un emplacement « B3 »)
+EMPLACEMENT_MAX = 20
+# Juste après code ticket explicite (1000) et IMEI (900 / 800), avant le téléphone (700)
+EMPLACEMENT_SCORE = 750
+# Expression couverte par idx_tickets_emplacement (main.py, _DDL_INDEXES, partiel
+# « emplacement IS NOT NULL ») : la comparaison de base doit rester exactement celle-ci.
+EMPLACEMENT_INDEX_EXPR = "upper(emplacement)"
+# Lettres accentuées repliées par translate() (natif, IMMUTABLE, sans appel de fonction SQL
+# par ligne) : « etagere 2 » trouve « ÉTAGÈRE 2 ». Miroir Python : emplacement_cle().
+_EMPL_ACCENTS = "ÀÁÂÃÄÅÇÈÉÊËÌÍÎÏÑÒÓÔÕÖÙÚÛÜÝŸàáâãäåçèéêëìíîïñòóôõöùúûüýÿ"
+_EMPL_ASCII = "AAAAAACEEEEIIIINOOOOOUUUUYYaaaaaaceeeeiiiinooooouuuuyy"
+_EMPL_FOLD = str.maketrans(_EMPL_ACCENTS, _EMPL_ASCII)
 
 STATUTS_ARCHIVES = ("Rendu au client", "Clôturé")
 NOTE_TYPES_CHERCHABLES = ("note", "message_client", "avis_client")
@@ -390,10 +402,13 @@ class ParsedQuery:
     fuzzy: bool = False
     # Code ticket + autres mots (« KP-000123 dupont ») : le code ET chaque mot
     code_and: bool = False
+    # Saisie entière comparée à tickets.emplacement (« b3 » → « B3 »), voir emplacement_terme()
+    emplacement: Optional[str] = None
 
     @property
     def empty(self) -> bool:
-        return not (self.words or self.ticket_id or self.code_prefix or self.imei or self.phone_key)
+        return not (self.words or self.ticket_id or self.code_prefix or self.imei or self.phone_key
+                    or self.emplacement)
 
     @property
     def ticket_code(self) -> Optional[str]:
@@ -462,6 +477,25 @@ def _code_token(raw: str):
     return ref, _CODE_TOKEN_RE.sub(" ", raw).strip()
 
 
+def emplacement_terme(raw) -> Optional[str]:
+    """Saisie entière lue comme un emplacement d'étagère, normalisée comme
+    services/etagere.normaliser_emplacement (« b3 » → « B3 », « Étagère  2 » → « ÉTAGÈRE 2 »).
+
+    None hors 1-20 caractères, sans lettre ni chiffre (« _ ») ou avec un caractère
+    non imprimable (un NUL ferait échouer psycopg2).
+    """
+    v = " ".join(str(raw or "").split()).upper()
+    if not 1 <= len(v) <= EMPLACEMENT_MAX or not v.isprintable() or not any(ch.isalnum() for ch in v):
+        return None
+    return v
+
+
+def emplacement_cle(value) -> str:
+    """Miroir de upper(translate(…)) dans _emplacement_sql : accents repliés puis majuscules
+    (« étagère 2 », « ETAGERE 2 » et « ÉTAGÈRE 2 » → « ETAGERE 2 »)."""
+    return str(value or "").translate(_EMPL_FOLD).upper()
+
+
 def parse_query(q) -> ParsedQuery:
     raw = descramble_scan(str(q or "")[:500])
     url_code = suivi_code(raw)
@@ -475,6 +509,7 @@ def parse_query(q) -> ParsedQuery:
     if ref:
         pq.ticket_id, pq.ticket_explicit, pq.code_prefix = ref.ticket_id, ref.explicit, ref.code_prefix
         if not numeric:
+            # Code KP-… / #… / QR : pas d'emplacement, la recherche reste servie par les index
             return pq
 
     if numeric:
@@ -487,6 +522,9 @@ def parse_query(q) -> ParsedQuery:
             pq.phone_full = phone_full_variants(d)
         if len(d) >= 2:
             pq.words = [make_word(d)]
+        if not (pq.imei or pq.phone_key):
+            # « 12 » peut être un emplacement ; un téléphone ou un IMEI complet, jamais
+            pq.emplacement = emplacement_terme(raw)
         return pq
 
     code_ref, rest = _code_token(raw)
@@ -495,6 +533,8 @@ def parse_query(q) -> ParsedQuery:
             code_ref.ticket_id, code_ref.explicit, code_ref.code_prefix)
         pq.code_and = True
         raw = rest
+    else:
+        pq.emplacement = emplacement_terme(raw)
     pq.imei = serial_number(raw)
     pq.words = [make_word(t) for t in tokenize(raw)]
     return pq
@@ -612,6 +652,33 @@ def _imei_exact_sql(alias: str, col: str, ph: str) -> str:
     return f"({alias}.{col} <> '' AND public.kp_alnum({alias}.{col}) = {ph})"
 
 
+def _emplacement_replie(pq: ParsedQuery) -> bool:
+    """Accents repliés seulement si le terme a une lettre et que des mots sont cherchés : leurs
+    sous-requêtes OR imposent déjà un parcours de tickets, le repli n'y est qu'un filtre de
+    plus. Sans mot (« 7 », « a b »), la condition reste upper() = upper(), servie par
+    idx_tickets_emplacement."""
+    return bool(pq.words) and any(ch.isalpha() for ch in pq.emplacement or "")
+
+
+def _emplacement_sql(pq: ParsedQuery, t: str, ph: str) -> str:
+    # upper() des deux côtés : tolère un emplacement saisi hors API (« b3 »)
+    cond = f"upper({t}.emplacement) = upper({ph})"
+    if not _emplacement_replie(pq):
+        return cond
+    fold = f"'{_EMPL_ACCENTS}', '{_EMPL_ASCII}'"
+    return f"({cond} OR upper(translate({t}.emplacement, {fold})) = upper(translate({ph}, {fold})))"
+
+
+def _emplacement_trouve(pq: ParsedQuery, row: dict) -> bool:
+    """Miroir de _emplacement_sql ; row doit contenir t.emplacement."""
+    v = row.get("emplacement")
+    if not (pq.emplacement and v):
+        return False
+    if _emplacement_replie(pq):
+        return emplacement_cle(v) == emplacement_cle(pq.emplacement)
+    return str(v).upper() == pq.emplacement
+
+
 def _tid_sql(pq: ParsedQuery, P: SqlParams, t: str) -> str:
     return f"({t}.id = {P.add(pq.ticket_id)} OR {t}.ticket_code = {P.add(pq.ticket_code)})"
 
@@ -653,7 +720,8 @@ def _with_homonyms(cond: str, pq: ParsedQuery, P: SqlParams, client_id: str) -> 
 
 
 def ticket_where_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> str:
-    """Condition de recherche sur tickets t JOIN clients c."""
+    """Condition de recherche sur tickets t JOIN clients c (code, IMEI, téléphone,
+    emplacement d'étagère, mots)."""
     words = "(" + " AND ".join(_ticket_word_sql(w, P, t, c) for w in pq.words) + ")" if pq.words else None
     ors = _code_sql(pq, P, t)
     if _code_and(pq):
@@ -666,6 +734,8 @@ def ticket_where_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") 
         # Sous-requête indexée plutôt que kp_phone_key(c.telephone) recalculé à chaque jointure
         ors.append(f"{t}.client_id IN (SELECT y.id FROM clients y"
                    f" WHERE public.kp_phone_key(y.telephone) = {P.add(pq.phone_key)})")
+    if pq.emplacement:
+        ors.append(_emplacement_sql(pq, t, P.add(pq.emplacement)))
     if words:
         ors.append(words)
     return _with_homonyms("(" + " OR ".join(ors) + ")" if ors else "FALSE", pq, P, f"{t}.client_id")
@@ -707,6 +777,9 @@ def ticket_score_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") 
     if pq.phone_key:
         parts.append(f"CASE WHEN public.kp_phone_key({c}.telephone) = {P.add(pq.phone_key)} THEN 700 ELSE 0 END")
         parts.append(_phone_full_score(pq, P, c))
+    if pq.emplacement:
+        parts.append(f"CASE WHEN {_emplacement_sql(pq, t, P.add(pq.emplacement))}"
+                     f" THEN {EMPLACEMENT_SCORE} ELSE 0 END")
     phones, imeis, prefixes = _all(pq.words, "phone"), _all(pq.words, "imei"), _all(pq.words, "prefixes")
     if phones:
         parts.append(f"CASE WHEN {_any(f'public.kp_phone_digits({c}.telephone)', P.add(phones))} THEN 300 ELSE 0 END")
@@ -855,7 +928,9 @@ _WORK_FIELDS = (("panne", "panne"), ("panne_detail", "détail panne"), ("reparat
                 ("commentaire_client", "commentaire"), ("attention", "attention"))
 
 
-def _word_label(w: Word, row: dict) -> str:
+def _word_label(w: Word, row: dict, fallback: bool = True) -> Optional[str]:
+    """Champ où le mot a été trouvé ; sinon « note » (notes_tickets, absentes de row),
+    ou None si fallback=False."""
     def hit(value, patterns):
         doc = doc_text(value)
         return any(like_match(p, doc) for p in patterns)
@@ -880,6 +955,8 @@ def _word_label(w: Word, row: dict) -> str:
     for key, label in _WORK_FIELDS:
         if hit(row.get(key), w.patterns):
             return label
+    if not fallback:
+        return None
     return "approché" if w.trgm else "note"
 
 
@@ -897,9 +974,15 @@ def ticket_match_label(pq: ParsedQuery, row: dict) -> str:
             labels.append("IMEI prêt")
     if pq.phone_key and phone_key(row.get("client_tel")) == pq.phone_key:
         labels.append("téléphone")
+    emplacement = _emplacement_trouve(pq, row)
+    if emplacement:
+        labels.append("emplacement")
     if not labels or pq.code_and or not (pq.numeric or pq.ticket_id):
         for w in pq.words:
-            labels.append(_word_label(w, row))
+            # Trouvé par l'emplacement : un mot sans champ correspondant n'est pas « note »
+            lab = _word_label(w, row, fallback=not emplacement)
+            if lab:
+                labels.append(lab)
     out = []
     for lab in labels:
         if lab not in out:

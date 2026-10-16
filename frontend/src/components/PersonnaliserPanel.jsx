@@ -3,6 +3,7 @@ import { X, Timer, Clock, ListOrdered, RotateCcw, Info, Shuffle } from 'lucide-r
 const WIDGET_META = {
   client: { label: 'Client' },
   device: { label: 'Appareil' },
+  reception: { label: 'Réception' },
   dates: { label: 'Dates' },
   reparation: { label: 'Réparation & Tarifs' },
   status: { label: 'Statut' },

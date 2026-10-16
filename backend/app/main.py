@@ -31,6 +31,11 @@ from app.services.catalog_seed import seed_catalog
 from app.services import params as params_cache
 from app.api import search as search_api
 from app.api import public_documents
+from app.api import etagere as etagere_api
+from app.api import grille
+from app.api import reception as reception_api
+from app.api import rgpd as rgpd_api
+from app.services import mentions
 
 logger = logging.getLogger("klikphone.startup")
 
@@ -281,6 +286,18 @@ _DDL_TABLES = [
         read_by TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )""",
+    # Fiche de réception (phase 'entree') et contrôle de sortie ('sortie') : app/api/reception.py
+    """CREATE TABLE IF NOT EXISTS ticket_controles (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+        phase TEXT NOT NULL CHECK (phase IN ('entree', 'sortie')),
+        items JSONB,
+        complete BOOLEAN DEFAULT FALSE,
+        auteur TEXT,
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (ticket_id, phase)
+    )""",
     # Postes (lignée de session, cf. auth.py) qui ont saisi le code admin
     """CREATE TABLE IF NOT EXISTS sessions_admin (
         sid TEXT PRIMARY KEY,
@@ -373,6 +390,17 @@ _DDL_ALTERS = [
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rendu_par TEXT",
     # Issue distincte du statut : 'refus_devis' (devis refusé, rendu sans réparation)
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS issue TEXT",
+    # Étagère : emplacement physique de l'appareil terminé (« B3 », app/api/etagere.py)
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS emplacement TEXT",
+    # Priorité atelier : 'normal' | 'express' | 'attente' (client sur place) | 'pro' (contrôle : app/models.py)
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priorite TEXT NOT NULL DEFAULT 'normal'",
+    # RGPD (app/api/rgpd.py) : information, consentement marketing, anonymisation
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS rgpd_informe_le TIMESTAMP",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing_le TIMESTAMP",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing_retire_le TIMESTAMP",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing_source TEXT",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS anonymise_le TIMESTAMP",
 ]
 
 # Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
@@ -419,6 +447,8 @@ _DDL_INDEXES = [
     # Index notifications_center : unread-count polé /12s par NotificationCenter.
     "CREATE INDEX IF NOT EXISTS idx_notifc_target_created ON notifications_center(target_user, created_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_suivi_token ON tickets(suivi_token)",
+    # Recherche par emplacement d'étagère (« b3 » → upper(t.emplacement) = 'B3', services/search)
+    "CREATE INDEX IF NOT EXISTS idx_tickets_emplacement ON tickets (upper(emplacement)) WHERE emplacement IS NOT NULL",
 ]
 
 
@@ -664,6 +694,14 @@ _DONNEES_FIXES = [
     """INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
     ON CONFLICT (cle) DO UPDATE SET valeur = 'https://klikphone-sav-v2-production.up.railway.app'
     WHERE params.valeur != 'https://klikphone-sav-v2-production.up.railway.app'""",
+    # Identité et mentions légales : clés canoniques remplies une fois depuis les anciennes
+    mentions.SQL_MIGRATION,
+    mentions.SQL_MIGRATION_FLAG,
+    # CGV_DEPOT semé avec l'ancienne clause « 3 mois » (loi de 1903 : un an, juge) : phrase retirée
+    mentions.SQL_MIGRATION_ABANDON,
+    mentions.SQL_MIGRATION_ABANDON_FLAG,
+    # Rétention RGPD automatique : désactivée par défaut, jamais de date de début sans activation
+    rgpd_api.SQL_DEBUT_SANS_ACTIVATION,
 ]
 
 
@@ -1051,6 +1089,37 @@ def _marquer_schema_verifie():
         setattr(mod, drapeau, True)
 
 
+# Délais (s) des nouveaux essais en fond quand le DDL du démarrage a échoué : pendant un
+# déploiement, l'instance sortante tient des verrous sur tickets au-delà du lock_timeout.
+_RELANCES_SCHEMA = (30, 60, 120)
+
+
+def _relancer_schema(empreinte: str, arret: threading.Event, delais=_RELANCES_SCHEMA) -> bool:
+    """Rejoue le schéma (puis les données qui en dépendent) sans attendre le prochain démarrage."""
+    for essai, delai in enumerate(delais, 1):
+        if arret.wait(delai):   # arrêt de l'application : plus de DDL
+            return False
+        try:
+            ok = appliquer_schema()
+        except Exception as e:
+            ok = False
+            print(f"Warning nouvel essai du schéma: {e}")
+        if ok:
+            _ecrire_version(empreinte)
+            for etape in (_donnees_de_demarrage, _migrations_recherche, _migrations_fiche):
+                try:
+                    etape()
+                except Exception as e:
+                    print(f"Warning {etape.__name__}: {e}")
+            tickets._reception_absente_le = 0.0   # repli du dashboard levé tout de suite
+            params_cache.invalidate()
+            print(f"Schéma appliqué au nouvel essai {essai} ({empreinte[:12]})")
+            return True
+        print(f"Schéma toujours incomplet (essai {essai}/{len(delais)})")
+    print("Schéma toujours incomplet : nouvel essai au prochain démarrage")
+    return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Démarrage : schéma (si son empreinte a changé), données, puis service ; pool fermé à l'arrêt."""
@@ -1062,6 +1131,8 @@ async def lifespan(app: FastAPI):
         print(f"Warning état initial: {e}\n{traceback.format_exc()}")
         version = None
     force = os.getenv("KP_FORCE_SCHEMA") == "1"
+    schema_incomplet = False
+    arret_relance = threading.Event()
     if version == empreinte and not force:
         _marquer_schema_verifie()
         print(f"Schéma à jour ({empreinte[:12]}) : DDL sauté")
@@ -1070,7 +1141,8 @@ async def lifespan(app: FastAPI):
             _ecrire_version(empreinte)
             print(f"Schéma appliqué ({empreinte[:12]})")
         else:
-            print("Schéma appliqué avec des erreurs : empreinte non enregistrée, nouvel essai au prochain démarrage")
+            schema_incomplet = True
+            print("Schéma appliqué avec des erreurs : empreinte non enregistrée, nouveaux essais en fond")
 
     # Données : après le schéma (colonnes et tables présentes)
     _donnees_de_demarrage()
@@ -1085,12 +1157,19 @@ async def lifespan(app: FastAPI):
         print(f"Warning catalog seed: {e}\n{traceback.format_exc()}")
     # Backfill + catalogue iPhones en arrière-plan (ne retarde pas le démarrage)
     iphones_stock.lancer_init_differee()
+    # Rétention RGPD : vérification horaire en tâche de fond, sans effet tant qu'un admin ne l'a
+    # pas activée (RGPD_RETENTION_AUTO = '1', premier passage 7 jours après l'activation)
+    rgpd_api.demarrer_retention_quotidienne()
     params_cache.invalidate()
     # Connexions du pool ouvertes en tâche de fond (une seule a servi au démarrage)
     threading.Thread(target=_prechauffer_pool, daemon=True, name="pool_prechauffage").start()
+    if schema_incomplet:
+        threading.Thread(target=_relancer_schema, args=(empreinte, arret_relance),
+                         daemon=True, name="schema_relance").start()
     print(f"Démarrage : {time.perf_counter() - debut:.2f} s")
 
     yield
+    arret_relance.set()
     close_pool()
 
 
@@ -1176,6 +1255,7 @@ app.include_router(catalog.router)
 app.include_router(notifications.router)
 app.include_router(print_tickets.router)
 app.include_router(public_documents.router)
+app.include_router(etagere_api.router)
 app.include_router(caisse_api.router)
 app.include_router(attestation.router)
 app.include_router(admin.router)
@@ -1196,6 +1276,9 @@ app.include_router(smartphones_tarifs.router)
 app.include_router(tracking.router)
 app.include_router(notifications_center.router)
 app.include_router(search_api.router)
+app.include_router(grille.router)
+app.include_router(reception_api.router)
+app.include_router(rgpd_api.router)
 
 
 # --- HEALTH CHECK ---

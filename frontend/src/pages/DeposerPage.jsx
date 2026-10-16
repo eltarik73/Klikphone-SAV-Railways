@@ -4,6 +4,7 @@ import api from '../lib/api';
 import ModelCombobox from '../components/ModelCombobox';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
+import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
   Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle,
@@ -31,7 +32,7 @@ export default function DeposerPage() {
     nom: '', prenom: '', telephone: '', email: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', notes_client: '',
-    carte_camby: false,
+    carte_camby: false, consentement_marketing: false,
   });
   const catalogue = useCatalog(form.categorie || null, form.marque);
 
@@ -94,6 +95,7 @@ export default function DeposerPage() {
         telephone: form.telephone.trim(),
         email: (form.email || '').trim(),
         carte_camby: form.carte_camby ? 1 : 0,
+        rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
         categorie: form.categorie,
         marque: form.marque,
         ...champsModele(form.marque, form.modele, form.modele_autre),
@@ -319,6 +321,9 @@ export default function DeposerPage() {
                 className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
               <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
             </label>
+            <ConsentementMarketing id="distance-consentement" checked={form.consentement_marketing}
+              onChange={(v) => updateForm('consentement_marketing', v)} />
+            <MentionRgpd codes={false} />
           </div>
         )}
 

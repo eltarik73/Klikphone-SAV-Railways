@@ -1,9 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Play, Wrench, Clock, AlertTriangle, ChevronDown } from 'lucide-react';
 import api from '../lib/api';
 import { useApi } from '../hooks/useApi';
 import { getStatusConfig } from '../lib/utils';
+import { PrioriteBadge, comparerPriorite } from './PrioriteBadge';
+
+// Le serveur trie déjà (priorité, heure promise, statut, dépôt) ; tri stable de secours sur la
+// seule priorité, qui garde l'ordre serveur à priorité égale.
+export function trierFile(tickets) {
+  return [...(tickets || [])].sort((a, b) => comparerPriorite(a?.priorite, b?.priorite));
+}
 
 function parseDateForCountdown(str) {
   if (!str) return null;
@@ -38,8 +45,9 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
         return (
           <button
             key={t.id}
+            type="button"
             onClick={() => { onClose(); navigate(`${basePath}/ticket/${t.id}`); }}
-            className={`w-full text-left p-3 rounded-xl transition-all ${
+            className={`w-full text-left p-3 rounded-xl transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               isCurrent
                 ? 'bg-violet-50 ring-2 ring-violet-400'
                 : isInProgress
@@ -55,16 +63,16 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                     ? 'bg-red-500 text-white'
                     : 'bg-slate-200 text-slate-500'
               }`}>
-                {isInProgress ? <Play className="w-3 h-3 fill-current" /> : i + 1}
+                {isInProgress ? <Play className="w-3 h-3 fill-current" aria-hidden="true" /> : i + 1}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[11px] font-semibold text-slate-400 font-mono">{t.ticket_code}</span>
+                  <span className="text-[11px] font-semibold text-slate-500 font-mono">{t.ticket_code}</span>
                   <span className="text-[13px] font-bold text-slate-800 truncate">
                     {t.client_prenom} {t.client_nom}
                   </span>
                   {isUrgent && (
-                    <span className="shrink-0 bg-red-50 text-red-500 text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
+                    <span className="shrink-0 bg-red-50 text-red-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                       Urgent
                     </span>
                   )}
@@ -73,8 +81,9 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                   {t.modele || t.marque} {t.panne ? `• ${t.panne}` : ''}
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  <PrioriteBadge priorite={t.priorite} court />
                   {!isTech && t.technicien_assigne && (
-                    <span className="text-[10px] text-slate-400">{t.technicien_assigne}</span>
+                    <span className="text-[10px] text-slate-600">{t.technicien_assigne}</span>
                   )}
                   <span
                     className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
@@ -84,12 +93,12 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                   </span>
                   {countdownMs !== null && (
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      isOverdue ? 'bg-red-50 text-red-500' : isUrgent ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                      isOverdue ? 'bg-red-50 text-red-700' : isUrgent ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'
                     }`}>
                       {isOverdue ? (
-                        <><AlertTriangle className="w-2.5 h-2.5 inline" /> Dépassé</>
+                        <><AlertTriangle className="w-2.5 h-2.5 inline" aria-hidden="true" /> Dépassé</>
                       ) : (
-                        <><Clock className="w-2.5 h-2.5 inline" /> {formatShortCountdown(countdownMs)}</>
+                        <><Clock className="w-2.5 h-2.5 inline" aria-hidden="true" /> {formatShortCountdown(countdownMs)}</>
                       )}
                     </span>
                   )}
@@ -123,9 +132,9 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose, inline]);
 
-  if (!open) return null;
+  const queue = useMemo(() => trierFile(tickets), [tickets]);
 
-  const queue = tickets || [];
+  if (!open) return null;
 
   // ─── Inline widget mode ─────────────────────────────────────
   if (inline) {
@@ -133,11 +142,13 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
       <div className="card overflow-hidden">
         {/* Header */}
         <button
+          type="button"
           onClick={() => setCollapsed(c => !c)}
-          className="w-full px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-900 flex items-center justify-between"
+          aria-expanded={!collapsed}
+          className="w-full px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-900 flex items-center justify-between focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
         >
           <div className="flex items-center gap-2.5">
-            <Wrench className="w-4 h-4 text-white/80" />
+            <Wrench className="w-4 h-4 text-white/80" aria-hidden="true" />
             <span className="text-white text-sm font-bold">
               {isTech ? 'Mes réparations' : "File d'attente"}
             </span>
@@ -147,7 +158,7 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
               </span>
             )}
           </div>
-          <ChevronDown className={`w-4 h-4 text-white/60 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`} />
+          <ChevronDown className={`w-4 h-4 text-white/60 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
         </button>
 
         {/* Content */}
@@ -159,8 +170,8 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
               </div>
             ) : queue.length === 0 ? (
               <div className="text-center py-8">
-                <Wrench className="w-7 h-7 text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-400 font-medium">Aucune réparation en attente</p>
+                <Wrench className="w-7 h-7 text-slate-300 mx-auto mb-2" aria-hidden="true" />
+                <p className="text-sm text-slate-500 font-medium">Aucune réparation en attente</p>
               </div>
             ) : (
               <QueueList
@@ -177,7 +188,7 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
 
         {/* Footer */}
         {!collapsed && (
-          <div className="px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-400 text-center">
+          <div className="px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-500 text-center">
             {isTech ? 'Vos tickets assignés en cours' : 'Tous les tickets en attente de traitement'}
           </div>
         )}
@@ -189,10 +200,11 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
   return (
     <>
       <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-40" onClick={onClose} />
-      <div className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-white shadow-2xl z-50 flex flex-col animate-in">
+      <div role="dialog" aria-label={isTech ? 'Mes réparations' : "File d'attente"}
+        className="fixed inset-y-0 right-0 w-full sm:w-[400px] bg-white shadow-2xl z-50 flex flex-col animate-in">
         <div className="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-900 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <Wrench className="w-4 h-4 text-white/80" />
+            <Wrench className="w-4 h-4 text-white/80" aria-hidden="true" />
             <span className="text-white text-sm font-bold">
               {isTech ? 'Mes réparations' : "File d'attente"}
             </span>
@@ -202,8 +214,9 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
               </span>
             )}
           </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
-            <X className="w-5 h-5" />
+          <button type="button" onClick={onClose} aria-label="Fermer la file d'attente"
+            className="w-11 h-11 -mr-3 inline-flex items-center justify-center rounded-lg text-white/70 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
@@ -213,8 +226,8 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
             </div>
           ) : queue.length === 0 ? (
             <div className="text-center py-12">
-              <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-400 font-medium">Aucune réparation en attente</p>
+              <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" aria-hidden="true" />
+              <p className="text-sm text-slate-500 font-medium">Aucune réparation en attente</p>
             </div>
           ) : (
             <QueueList
@@ -227,7 +240,7 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
             />
           )}
         </div>
-        <div className="px-5 py-3 border-t border-slate-100 text-[11px] text-slate-400 text-center shrink-0">
+        <div className="px-5 py-3 border-t border-slate-100 text-[11px] text-slate-500 text-center shrink-0">
           {isTech ? 'Vos tickets assignés en cours' : 'Tous les tickets en attente de traitement'}
         </div>
       </div>
