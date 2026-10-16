@@ -19,6 +19,9 @@ _MAXCONN = 10
 # ThreadedConnectionPool lève « connection pool exhausted » dès 11 requêtes simultanées.
 _slots = threading.BoundedSemaphore(_MAXCONN)
 _SLOT_TIMEOUT = 30
+# Visible dans pg_stat_activity : le démarrage ne coupe que les sessions bloquées
+# de cette application, jamais celles d'un autre client de la base.
+APPLICATION_NAME = os.getenv("DB_APPLICATION_NAME", "klikphone-sav-api")
 
 
 def get_pool():
@@ -35,19 +38,54 @@ def get_pool():
             database_url = f"{database_url}{sep}sslmode=require"
 
         # maxconn=10 : sous la limite Supabase (free=60, paid=200 par projet).
-        # minconn=4 : psycopg2 ferme toute connexion rendue au-delà de minconn
+        # minconn : psycopg2 ferme toute connexion rendue au-delà de minconn
         # connexions inactives ; trop bas, chaque rafale rouvre des connexions TLS.
+        # Une seule connexion ouverte à la création (le démarrage n'attend pas
+        # 10 ouvertures TLS) : les autres à la demande ou par prechauffer_pool(),
+        # puis gardées jusqu'à _MINCONN inactives.
+        extra = {} if "application_name=" in database_url else {"application_name": APPLICATION_NAME}
         _pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=_MINCONN,
+            minconn=1,
             maxconn=_MAXCONN,
             dsn=database_url,
             connect_timeout=10,
+            **extra,
             keepalives=1,
             keepalives_idle=30,
             keepalives_interval=10,
             keepalives_count=5,
         )
+        _pool.minconn = _MINCONN
     return _pool
+
+
+def prechauffer_pool():
+    """Ouvre les connexions manquantes jusqu'à _MINCONN (thread de fond, après le démarrage).
+
+    Chaque connexion passe par le sémaphore : jamais plus de _MAXCONN en tout,
+    une requête n'est jamais privée d'une place. S'arrête dès que le pool est occupé.
+    Seulement un pool déjà ouvert par le démarrage (jamais de connexion nouvelle
+    vers DATABASE_URL quand get_cursor est simulé, en test).
+    """
+    pool = _pool
+    if pool is None:
+        return
+    pris = []
+    try:
+        for _ in range(_MINCONN):
+            if not _slots.acquire(blocking=False):
+                break
+            try:
+                pris.append(pool.getconn())
+            except Exception:
+                _slots.release()
+                break
+    finally:
+        for conn in pris:
+            try:
+                pool.putconn(conn, close=bool(conn.closed))
+            finally:
+                _slots.release()
 
 
 def _checked_conn(pool):

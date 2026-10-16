@@ -406,12 +406,17 @@ def _deferred_init():
         logger.warning("Normalize conditions: %s", e)
 
 
+def lancer_init_differee():
+    """Backfill + catalogue en background pour ne pas bloquer le boot Railway."""
+    threading.Thread(target=_deferred_init, daemon=True, name="iphones_deferred_init").start()
+
+
 def init_iphones_stock():
-    """Appelé au startup. Table + seed inline (rapide), reste en thread."""
+    """Table + seed inline (rapide), reste en thread. Le démarrage (main.py) appelle
+    ces étapes séparément : la table seulement quand le schéma a changé."""
     _ensure_table()
     _seed_default()
-    # Backfill + catalogue lancés en background pour ne pas bloquer le boot Railway
-    threading.Thread(target=_deferred_init, daemon=True, name="iphones_deferred_init").start()
+    lancer_init_differee()
 
 
 # ---------------------------------------------------------------------------

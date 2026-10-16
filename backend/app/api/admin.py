@@ -13,23 +13,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..database import get_cursor
+from ..services import params as params_cache
 from .auth import (
     ADMIN_TOKEN_MINUTES, controler_admin_password, create_admin_token, ecrire_admin_password,
-    get_current_user, noter_echec, verifier_essais,
+    exiger_role_admin, get_current_user, noter_echec, noter_preuve_admin, revoquer_preuve_admin,
+    verifier_essais,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def _require_admin(user: dict = Depends(get_current_user)):
-    """Dependency: vérifie que l'utilisateur est admin (lookup DB)."""
-    with get_cursor() as cur:
-        cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user.get("sub", ""),))
-        row = cur.fetchone()
-    if not row or row.get("role") != "admin":
-        raise HTTPException(403, "Admin requis")
-    user["role"] = "admin"
-    return user
+def _require_admin(request: Request, user: dict = Depends(get_current_user)):
+    """Dépendance : rôle admin du membre ET code admin saisi sur ce poste (auth.exiger_role_admin)."""
+    return exiger_role_admin(request, user)
 
 
 # ============================================================
@@ -49,12 +45,22 @@ def verify_admin(data: dict, request: Request, user: dict = Depends(get_current_
         raise HTTPException(403, "Identifiants incorrects")
     if not controler_admin_password(request, password):
         raise HTTPException(403, "Identifiants incorrects")
+    # Les routes du rôle admin (stats, marketing) reconnaissent désormais ce poste
+    noter_preuve_admin(user.get("sid"))
 
     return {
         "success": True,
         "admin_token": create_admin_token(user),
         "expires_in": ADMIN_TOKEN_MINUTES * 60,
     }
+
+
+@router.post("/lock")
+def lock_admin(user: dict = Depends(get_current_user)):
+    """Verrouille le mode admin du poste : la lignée de session devra ressaisir le code
+    pour les stats et le marketing (le jeton d'élévation est oublié côté navigateur)."""
+    revoquer_preuve_admin(user.get("sid"))
+    return {"success": True}
 
 
 @router.post("/change-password")
@@ -71,6 +77,7 @@ def change_admin_password(data: dict, request: Request, user: dict = Depends(get
 
     with get_cursor() as cur:
         ecrire_admin_password(cur, new_password)
+    params_cache.invalidate()
 
     return {"success": True, "message": "Mot de passe modifié"}
 

@@ -7,21 +7,15 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
-
 async function openPdf({ ids = null, marque = null } = {}) {
-  const token = localStorage.getItem('kp_token');
   let qs = '';
   if (ids && ids.length) {
     qs = `?ids=${ids.join(',')}`;
   } else if (marque) {
     qs = `?marque=${encodeURIComponent(marque)}`;
   }
-  const res = await fetch(`${API_URL}/api/smartphones-tarifs/pdf${qs}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Erreur ${res.status}`);
-  const blob = await res.blob();
+  // Via l'ApiClient : message d'erreur du serveur plutôt que « Erreur 404 »
+  const blob = await api.requestRaw(`/api/smartphones-tarifs/pdf${qs}`, { as: 'blob', timeoutMs: 60_000 });
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);

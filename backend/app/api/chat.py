@@ -21,6 +21,7 @@ import httpx
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services import params as params_cache
 from app.services import search as search_engine
 from app.services.poll_cache import PollCache, cached_json
 
@@ -84,10 +85,7 @@ class ReadConversation(BaseModel):
 
 def _get_param(key: str) -> str:
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-            row = cur.fetchone()
-        return row["valeur"] if row else ""
+        return params_cache.get_param(key, "")
     except Exception:
         return ""
 

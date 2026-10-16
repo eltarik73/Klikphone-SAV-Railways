@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Sparkles, Send, Edit3, RotateCcw, TrendingUp, Copy, ExternalLink, Check } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
+import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useToast } from '../components/Toast';
 
 // ─── Helpers ────────────────────────────────────
 
@@ -37,12 +39,18 @@ function getInitiales(nom) {
 // ─── Composant principal ────────────────────────
 
 export default function AvisGoogle() {
-  const { data: avisData, loading, isRevalidating, mutate: mutateAvis } = useApi(
+  const toast = useToast();
+  // Routes marketing : rôle admin ET code admin saisi sur ce poste (403 admin_requis sinon)
+  const { sensible, adminPrompt } = useAdminElevation();
+  const signalerErreur = (err, defaut) => {
+    if (err?.code !== 'admin_cancelled') toast.error(err?.message || defaut);
+  };
+  const { data: avisData, error: loadError, loading, isRevalidating, mutate: mutateAvis } = useApi(
     'avis-google',
-    async () => {
+    () => sensible(async () => {
       const [a, s] = await Promise.all([api.getAvisGoogle(), api.getAvisGoogleStats()]);
       return { avis: a, stats: s };
-    },
+    }),
     { tags: ['marketing'], ttl: 120_000 }
   );
   const avis = avisData?.avis ?? [];
@@ -58,10 +66,10 @@ export default function AvisGoogle() {
   async function handleSync() {
     setSyncing(true);
     try {
-      await api.syncAvisGoogle();
+      await sensible(() => api.syncAvisGoogle());
       invalidateCache('marketing');
     } catch (e) {
-      console.error('Erreur synchronisation:', e);
+      signalerErreur(e, 'Synchronisation impossible');
     } finally {
       setSyncing(false);
     }
@@ -70,7 +78,7 @@ export default function AvisGoogle() {
   async function handleGenerate(id) {
     setGeneratingId(id);
     try {
-      const result = await api.genererReponseAvis(id);
+      const result = await sensible(() => api.genererReponseAvis(id));
       const suggestion = result.ia_suggestion || result.suggestion || result.reponse;
       mutateAvis(prev => prev ? {
         ...prev,
@@ -79,7 +87,7 @@ export default function AvisGoogle() {
         )
       } : prev);
     } catch (e) {
-      console.error('Erreur génération IA:', e);
+      signalerErreur(e, 'Génération de la réponse impossible');
     } finally {
       setGeneratingId(null);
     }
@@ -87,13 +95,13 @@ export default function AvisGoogle() {
 
   async function handleApprove(id, text) {
     try {
-      await api.publierReponseAvis(id, {
+      await sensible(() => api.publierReponseAvis(id, {
         reponse_texte: text,
         reponse_par: localStorage.getItem('kp_user') || 'Accueil',
-      });
+      }));
       invalidateCache('marketing');
     } catch (e) {
-      console.error('Erreur publication:', e);
+      signalerErreur(e, 'Publication impossible');
     }
   }
 
@@ -104,12 +112,12 @@ export default function AvisGoogle() {
 
   async function handleSaveEdit(id) {
     try {
-      await api.updateReponseAvis(id, { reponse_texte: editText });
+      await sensible(() => api.updateReponseAvis(id, { reponse_texte: editText }));
       setEditingId(null);
       setEditText('');
       invalidateCache('marketing');
     } catch (e) {
-      console.error('Erreur mise à jour:', e);
+      signalerErreur(e, 'Enregistrement impossible');
     }
   }
 
@@ -163,6 +171,7 @@ export default function AvisGoogle() {
 
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
+      {adminPrompt}
       {/* Header sticky */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
@@ -194,6 +203,19 @@ export default function AvisGoogle() {
 
       {/* Contenu */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {loadError && !avisData && !loading && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+            <p className="flex-1 min-w-0">
+              {loadError.code === 'admin_cancelled'
+                ? 'Code admin requis pour afficher les avis.'
+                : `Avis indisponibles : ${loadError.message || 'erreur du serveur'}`}
+            </p>
+            <button type="button" onClick={() => mutateAvis()}
+              className="min-h-[44px] px-4 rounded-lg bg-white border border-red-300 font-semibold text-red-800 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+              Réessayer
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />

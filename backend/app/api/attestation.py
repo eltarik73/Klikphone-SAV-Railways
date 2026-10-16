@@ -19,6 +19,7 @@ from fpdf import FPDF
 import httpx
 
 from app.database import get_cursor
+from app.services import params as params_cache
 from app.api.auth import get_current_user
 from app.services.notifications import envoyer_email, envoyer_email_avec_pdf
 from app.api.email_api import _send_resend_html
@@ -77,10 +78,7 @@ class AttestationRequest(BaseModel):
 
 
 def _get_param(key: str) -> str:
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-        row = cur.fetchone()
-    return row["valeur"] if row else ""
+    return params_cache.get_param(key, "")
 
 
 def _generate_attestation_pdf(data: AttestationRequest) -> bytes:

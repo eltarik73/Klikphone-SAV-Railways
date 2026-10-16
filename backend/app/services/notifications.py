@@ -14,26 +14,20 @@ from email.utils import formataddr
 
 import httpx
 
-from app.database import get_cursor
+from app.services import params as params_cache
 from app.services.montants import calculer_montants, format_euros
 
 
 # ─── HELPERS ────────────────────────────────────────────────────
 
 def _get_param(key: str) -> str:
-    """Récupère un paramètre de la table params."""
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-        row = cur.fetchone()
-    return row["valeur"] if row else ""
+    """Paramètre de la table params (cache services/params, "" si absent)."""
+    return params_cache.get_param(key, "")
 
 
 def _get_params(*keys: str) -> dict:
-    """Plusieurs paramètres en une seule requête ({cle: valeur}, "" si absent)."""
-    with get_cursor() as cur:
-        cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (list(keys),))
-        lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
-    return {k: lus.get(k) or "" for k in keys}
+    """Plusieurs paramètres ({cle: valeur}, "" si absent) depuis le cache."""
+    return {k: v or "" for k, v in params_cache.get_params(keys).items()}
 
 
 # ─── DISCORD (EMBEDS) ──────────────────────────────────────────

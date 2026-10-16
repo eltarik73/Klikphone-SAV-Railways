@@ -107,6 +107,17 @@ function emitScan(detail) {
   pendingScan = payload.accepted ? null : { detail, at: Date.now() };
 }
 
+/**
+ * Ouvre le panneau d'action rapide sur un ticket connu, par le même événement qu'un scan
+ * (remise au client demandée depuis le dashboard). ticketId : pas de résolution du code,
+ * pas de bip, jamais compté comme « 2e scan identique ».
+ */
+export function openQuickScan({ id, code }) {
+  if (!id) return;
+  const label = String(code || `#${id}`);
+  emitScan({ kind: 'ticket', code: label, query: label, label, ticketId: id, source: 'manuel' });
+}
+
 // ─── Champs de saisie ────────────────────────────────────────────────────────
 
 function isTextField(el) {

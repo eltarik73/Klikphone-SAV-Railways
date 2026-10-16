@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.services import params as params_cache
 from app.api.auth import get_current_user
 from app.api.notifications_center import push_notification
 
@@ -651,8 +652,8 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
 
         # Shop info
         try:
-            cur.execute("SELECT cle, valeur FROM params WHERE cle IN ('NOM_BOUTIQUE', 'ADRESSE_BOUTIQUE', 'TEL_BOUTIQUE', 'EMAIL_BOUTIQUE', 'SIRET_BOUTIQUE')")
-            params = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+            params = params_cache.get_params(
+                ["NOM_BOUTIQUE", "ADRESSE_BOUTIQUE", "TEL_BOUTIQUE", "EMAIL_BOUTIQUE", "SIRET_BOUTIQUE"], cur=cur)
         except Exception:
             params = {}
 

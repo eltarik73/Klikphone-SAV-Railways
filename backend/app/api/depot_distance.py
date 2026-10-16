@@ -11,10 +11,12 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.api.clients import find_client_by_phone
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
 )
 from app.services.prestations import PRESTATIONS, cle_panne, normaliser
+from app.services.search import phone_canonical
 
 router = APIRouter(prefix="/api/depot-distance", tags=["depot-distance"])
 
@@ -63,6 +65,12 @@ class DepotDistanceRequest(BaseModel):
     def _sans_espaces_superflus(cls, v):
         return v.strip() if isinstance(v, str) else v
 
+    # Même forme stockée que /api/clients (0612345678, +41…) : pas de fiche en double
+    @field_validator("telephone")
+    @classmethod
+    def _telephone_canonique(cls, v):
+        return phone_canonical(v)
+
 
 class RefusMotif(BaseModel):
     motif: Optional[str] = Field("", max_length=500)
@@ -89,22 +97,19 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     camby = "1" if data.carte_camby else "0"
 
     with get_cursor() as cur:
-        # Créer ou récupérer le client
-        cur.execute(
-            "SELECT id FROM clients WHERE telephone = %s",
-            (data.telephone,),
-        )
-        existing = cur.fetchone()
+        # Client existant quel que soit le format du numéro (06 12…, +33 6…)
+        existing = find_client_by_phone(cur, data.telephone)
         if existing:
             client_id = existing["id"]
+            # Formulaire public (règle de /api/clients sans jeton) : nom et prénom
+            # seulement complétés, jamais l'email ; la carte se déclare, ne se retire pas
             cur.execute("""
                 UPDATE clients SET
-                    nom = COALESCE(NULLIF(%s, ''), nom),
-                    prenom = COALESCE(NULLIF(%s, ''), prenom),
-                    email = COALESCE(NULLIF(%s, ''), email),
-                    carte_camby = %s
+                    nom = CASE WHEN COALESCE(nom, '') = '' THEN NULLIF(%s, '') ELSE nom END,
+                    prenom = CASE WHEN COALESCE(prenom, '') = '' THEN NULLIF(%s, '') ELSE prenom END,
+                    carte_camby = CASE WHEN %s = '1' THEN 1 ELSE carte_camby END
                 WHERE id = %s
-            """, (data.nom, data.prenom, data.email, camby, client_id))
+            """, (data.nom, data.prenom, camby, client_id))
         else:
             cur.execute("""
                 INSERT INTO clients (nom, prenom, telephone, email, carte_camby)

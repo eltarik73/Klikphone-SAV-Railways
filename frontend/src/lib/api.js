@@ -73,7 +73,7 @@ const PYDANTIC_FR = [
 ];
 
 function traduireMessage(msg) {
-  const s = String(msg || '').trim();
+  const s = typeof msg === 'string' ? msg.trim() : '';
   for (const [re, fr] of PYDANTIC_FR) {
     const m = s.match(re);
     if (m) return typeof fr === 'function' ? fr(...m) : fr;
@@ -88,7 +88,7 @@ export function formatErrorDetail(detail, status) {
     const parts = detail.slice(0, 3).map((d) => {
       if (typeof d === 'string') return d;
       const loc = Array.isArray(d?.loc)
-        ? d.loc.filter((x) => !['body', 'query', 'path', 'header'].includes(x) && typeof x !== 'number')
+        ? d.loc.filter((x) => typeof x === 'string' && !['body', 'query', 'path', 'header'].includes(x))
         : [];
       const msg = traduireMessage(d?.msg);
       return loc.length ? `${loc.join('.')} : ${msg}` : msg;
@@ -96,8 +96,27 @@ export function formatErrorDetail(detail, status) {
     const reste = detail.length > 3 ? ` (+${detail.length - 3})` : '';
     return `Données invalides — ${parts.join(' ; ')}${reste}`;
   }
-  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message;
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    for (const k of ['message', 'msg', 'detail']) {
+      if (typeof detail[k] === 'string' && detail[k].trim()) return detail[k];
+    }
+    if (typeof detail.code === 'string' && detail.code) return `${status ? `Erreur ${status}` : 'Erreur'} (${detail.code})`;
+  }
   return status ? `Erreur ${status}` : 'Erreur';
+}
+
+// Erreur HTTP : message lisible, status, code métier (detail.code), detail brut (data : ancien nom)
+export function httpError(status, detail, headers) {
+  const err = new Error(formatErrorDetail(detail, status));
+  err.status = status;
+  err.detail = detail ?? null;
+  err.data = err.detail;
+  if (detail && typeof detail === 'object' && !Array.isArray(detail) && typeof detail.code === 'string' && detail.code) {
+    err.code = detail.code;
+  }
+  const retry = parseInt(headers?.get?.('retry-after') ?? '', 10);
+  if (Number.isFinite(retry) && retry >= 0) err.retryAfter = retry;
+  return err;
 }
 
 // Expiration (ms) d'un JWT, sans vérifier sa signature (le serveur s'en charge)
@@ -329,11 +348,9 @@ class ApiClient {
       return res.json();
     }
     const body = typeof res.json === 'function' ? await res.json().catch(() => ({})) : {};
-    // detail peut être un objet {code, message, …} (409 métier) : err.data le conserve
+    // detail peut être un objet {code, message, …} (409 métier, 403 d'élévation) ou le tableau 422
     const detail = body?.detail;
-    const err = new Error(formatErrorDetail(detail, res.status));
-    err.status = res.status;
-    err.data = detail ?? null;
+    const err = httpError(res.status, detail, res.headers);
     if (res.status !== 401 && res.status !== 403) throw err;
 
     // Élévation admin absente ou expirée : on la redemande, la session reste ouverte.
@@ -390,6 +407,7 @@ class ApiClient {
   async login(pin, target, utilisateur) {
     const data = await this.post('/api/auth/login', { pin, target, utilisateur });
     this.setToken(data.access_token);
+    this.forgetAdminMode();
     localStorage.setItem('kp_target', data.target);
     localStorage.setItem('kp_user', data.utilisateur);
     return data;
@@ -397,8 +415,20 @@ class ApiClient {
 
   logout() {
     this.setToken(null);
+    this.forgetAdminMode();
     localStorage.removeItem('kp_target');
     localStorage.removeItem('kp_user');
+  }
+
+  // Mode admin de l'interface (Navbar, AdminGuard, reporting) : propre à la lignée de session.
+  // Une connexion par PIN en ouvre une nouvelle, que le serveur ne reconnaît qu'après le code
+  // admin (auth.exiger_role_admin) ; switch-user la conserve et ne passe pas par ici.
+  forgetAdminMode() {
+    try {
+      localStorage.removeItem('klikphone_admin');
+      localStorage.removeItem('kp_admin_auth');
+    } catch { /* stockage indisponible */ }
+    this.clearAdminToken();
   }
 
   // ─── TICKETS ───────────────────────────────
@@ -434,6 +464,7 @@ class ApiClient {
       method: 'PATCH', keepalive: true, headers, body: JSON.stringify(data),
     }).then((r) => r.ok, () => false);
   }
+  // « Rendu au client » / « Clôturé » d'un ticket non réglé ou au prêt sorti : 409, err.code = 'utiliser_restitution'
   changeStatus(id, statut) { return this.patch(`/api/tickets/${id}/statut`, { statut }); }
   deleteTicket(id) { return this.delete(`/api/tickets/${id}`); }
   getKPI() { return this.get('/api/tickets/stats/kpi'); }
@@ -449,7 +480,7 @@ class ApiClient {
   setPaye(id, paye) { return this.patch(`/api/tickets/${id}/paye`, { paye: !!paye }); }
   // Remise au client atomique. body : { paiement: 'deja_paye'|'encaisser'|'non_paye', mode_paiement,
   // montant, motif_non_paye, pret_restitue, confirmer_non_termine } → { ok, deja_rendu, ticket, points_fidelite }
-  // 409 : err.data = { code: 'reste_a_payer'|'pret_non_restitue'|'non_termine'|'motif_requis', message, reste }
+  // 409 : err.code = 'reste_a_payer'|'pret_non_restitue'|'non_termine'|'motif_requis', err.detail = { code, message, reste }
   restitution(id, body) { return this.post(`/api/tickets/${id}/restitution`, body); }
   getRepairQueue(tech) {
     const qs = tech ? `?tech=${encodeURIComponent(tech)}` : '';
@@ -567,7 +598,10 @@ class ApiClient {
     const headers = {};
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
     const res = await fetch(url, { headers });
-    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw httpError(res.status, body?.detail, res.headers);
+    }
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -616,7 +650,7 @@ class ApiClient {
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(typeof body.detail === 'string' ? body.detail : `Erreur ${res.status}`);
+        throw httpError(res.status, body?.detail, res.headers);
       }
       return as === 'blob' ? await res.blob() : await res.text();
     } catch (err) {

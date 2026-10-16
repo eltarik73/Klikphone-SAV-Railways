@@ -4,8 +4,13 @@ Point d'entrée principal.
 Last frontend bundle: index-Bevv2zlk.js (2026-05-17).
 """
 
+import hashlib
+import inspect
 import logging
 import os
+import re
+import threading
+import time
 import traceback
 from contextlib import asynccontextmanager
 
@@ -20,186 +25,889 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import close_pool
+from app.database import APPLICATION_NAME, close_pool, prechauffer_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking, notifications_center
 from app.services.catalog_seed import seed_catalog
+from app.services import params as params_cache
 from app.api import search as search_api
 from app.api import public_documents
 
 logger = logging.getLogger("klikphone.startup")
 
 
+# ═══ SCHÉMA (DDL) ═══════════════════════════════════════════════
+# Rejoué seulement quand son empreinte change (SCHEMA_DDL_VERSION dans params) :
+# toute instruction ajoutée ou modifiée ci-dessous, ou dans une fonction de
+# _ddl_modules(), change l'empreinte. Incrémenter _SCHEMA_DDL_REV force un
+# nouveau passage ; KP_FORCE_SCHEMA=1 aussi (base restaurée à la main…).
+SCHEMA_DDL_PARAM = "SCHEMA_DDL_VERSION"
+_SCHEMA_DDL_REV = 1
+
+_DDL_TABLES = [
+    "CREATE EXTENSION IF NOT EXISTS unaccent",
+    # ─── TABLES COEUR ────────────────────────────────────────────
+    # Historiquement créées à la main sur la prod ; déclarées ici pour que
+    # le schéma soit reproductible sur une fresh DB (test, restauration).
+    # IF NOT EXISTS → no-op sur la prod existante.
+    """CREATE TABLE IF NOT EXISTS params (
+        cle TEXT PRIMARY KEY,
+        valeur TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS membres_equipe (
+        id SERIAL PRIMARY KEY,
+        nom TEXT NOT NULL,
+        role TEXT DEFAULT 'Technicien',
+        couleur TEXT DEFAULT '#94A3B8',
+        actif INTEGER DEFAULT 1
+    )""",
+    """CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        nom TEXT,
+        prenom TEXT,
+        telephone TEXT,
+        email TEXT,
+        societe TEXT,
+        points_fidelite INTEGER DEFAULT 0,
+        total_depense DECIMAL(10,2) DEFAULT 0,
+        carte_camby INTEGER DEFAULT 0,
+        cree_par TEXT DEFAULT '',
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS tickets (
+        id SERIAL PRIMARY KEY,
+        ticket_code TEXT,
+        client_id INTEGER REFERENCES clients(id),
+        categorie TEXT,
+        marque TEXT,
+        modele TEXT,
+        modele_autre TEXT,
+        imei TEXT,
+        panne TEXT,
+        panne_detail TEXT,
+        pin TEXT,
+        pattern TEXT,
+        notes_client TEXT,
+        notes_internes TEXT,
+        commentaire_client TEXT,
+        type_ecran TEXT,
+        statut TEXT DEFAULT 'En attente de diagnostic',
+        statut_paiement TEXT DEFAULT 'Non payé',
+        paye INTEGER DEFAULT 0,
+        devis_estime DECIMAL(10,2) DEFAULT 0,
+        tarif_final DECIMAL(10,2) DEFAULT 0,
+        acompte DECIMAL(10,2) DEFAULT 0,
+        reste_a_payer DECIMAL(10,2) DEFAULT 0,
+        reparation_supp TEXT,
+        prix_supp DECIMAL(10,2) DEFAULT 0,
+        technicien_assigne TEXT,
+        historique TEXT,
+        commande_piece INTEGER DEFAULT 0,
+        msg_whatsapp INTEGER DEFAULT 0,
+        msg_sms INTEGER DEFAULT 0,
+        msg_email INTEGER DEFAULT 0,
+        date_depot TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_cloture TEXT,
+        date_recuperation TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS commandes_pieces (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+        ticket_code TEXT DEFAULT '',
+        description TEXT,
+        fournisseur TEXT,
+        reference TEXT,
+        prix DECIMAL(10,2),
+        statut TEXT DEFAULT 'En attente',
+        notes TEXT,
+        date_commande TEXT,
+        date_reception TEXT,
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS catalog_marques (
+        id SERIAL PRIMARY KEY,
+        categorie TEXT NOT NULL,
+        marque TEXT NOT NULL,
+        UNIQUE(categorie, marque)
+    )""",
+    """CREATE TABLE IF NOT EXISTS catalog_modeles (
+        id SERIAL PRIMARY KEY,
+        categorie TEXT NOT NULL,
+        marque TEXT NOT NULL,
+        modele TEXT NOT NULL,
+        UNIQUE(categorie, marque, modele)
+    )""",
+    # Audit log : actions admin sensibles (suppression, etc.)
+    # Permet de tracer qui a fait quoi (ne pas truster aveuglement le staff).
+    """CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id SERIAL PRIMARY KEY,
+        user_login TEXT DEFAULT '',
+        user_target TEXT DEFAULT '',
+        action TEXT NOT NULL,
+        target_type TEXT DEFAULT '',
+        target_id INTEGER DEFAULT NULL,
+        details TEXT DEFAULT '',
+        ip_hash TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_audit_action_date ON admin_audit_log(action, created_at DESC)""",
+    # Demandes de commande passees depuis la vitrine publique
+    # /site-tarifs-iphone (bouton 'Passer commande').
+    # Statut : nouvelle / en_cours / confirmee / annulee
+    """CREATE TABLE IF NOT EXISTS demandes_commandes (
+        id SERIAL PRIMARY KEY,
+        nom TEXT NOT NULL,
+        telephone TEXT NOT NULL,
+        email TEXT DEFAULT '',
+        marque TEXT DEFAULT '',
+        modele TEXT NOT NULL,
+        stockage TEXT DEFAULT '',
+        prix INTEGER DEFAULT 0,
+        message TEXT DEFAULT '',
+        statut TEXT DEFAULT 'nouvelle',
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        admin_notes TEXT DEFAULT ''
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_demandes_commandes_statut ON demandes_commandes(statut, date_creation DESC)""",
+    # Tracking events : clics sur liens publics (compteurs admin reporting)
+    """CREATE TABLE IF NOT EXISTS tracking_events (
+        id SERIAL PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        source TEXT DEFAULT '',
+        target TEXT DEFAULT '',
+        ip_hash TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE INDEX IF NOT EXISTS idx_tracking_type_date ON tracking_events(event_type, created_at)""",
+    """CREATE TABLE IF NOT EXISTS historique (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+        type TEXT DEFAULT 'statut',
+        contenu TEXT,
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS chat_messages (
+        id SERIAL PRIMARY KEY,
+        sender TEXT NOT NULL,
+        recipient TEXT DEFAULT 'all',
+        message TEXT NOT NULL,
+        is_private BOOLEAN DEFAULT FALSE,
+        read_by TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS fidelite_historique (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id),
+        ticket_id INTEGER REFERENCES tickets(id),
+        type TEXT NOT NULL,
+        points INTEGER NOT NULL,
+        description TEXT,
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS notes_tickets (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
+        auteur TEXT NOT NULL,
+        contenu TEXT NOT NULL,
+        important BOOLEAN DEFAULT FALSE,
+        date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS autocompletion (
+        id SERIAL PRIMARY KEY,
+        categorie VARCHAR(50) NOT NULL,
+        terme VARCHAR(255) NOT NULL,
+        compteur INTEGER DEFAULT 1,
+        derniere_utilisation TIMESTAMP DEFAULT NOW(),
+        UNIQUE(categorie, terme)
+    )""",
+    """CREATE TABLE IF NOT EXISTS devis (
+        id SERIAL PRIMARY KEY,
+        numero TEXT UNIQUE,
+        client_id INTEGER REFERENCES clients(id),
+        client_nom TEXT,
+        client_prenom TEXT,
+        client_tel TEXT,
+        client_email TEXT,
+        appareil TEXT,
+        description TEXT,
+        statut TEXT DEFAULT 'Brouillon',
+        total_ht DECIMAL(10,2) DEFAULT 0,
+        tva DECIMAL(5,2) DEFAULT 20,
+        total_ttc DECIMAL(10,2) DEFAULT 0,
+        remise DECIMAL(10,2) DEFAULT 0,
+        notes TEXT,
+        validite_jours INTEGER DEFAULT 30,
+        date_creation TIMESTAMP DEFAULT NOW(),
+        date_maj TIMESTAMP DEFAULT NOW(),
+        date_acceptation TIMESTAMP,
+        date_refus TIMESTAMP,
+        ticket_id INTEGER
+    )""",
+    """CREATE TABLE IF NOT EXISTS devis_lignes (
+        id SERIAL PRIMARY KEY,
+        devis_id INTEGER REFERENCES devis(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        quantite INTEGER DEFAULT 1,
+        prix_unitaire DECIMAL(10,2) DEFAULT 0,
+        total DECIMAL(10,2) DEFAULT 0,
+        ordre INTEGER DEFAULT 0
+    )""",
+    """CREATE TABLE IF NOT EXISTS telephones_vente (
+        id SERIAL PRIMARY KEY,
+        marque TEXT NOT NULL,
+        modele TEXT NOT NULL,
+        capacite TEXT,
+        couleur TEXT,
+        etat TEXT DEFAULT 'Occasion',
+        prix_achat DECIMAL(10,2) DEFAULT 0,
+        prix_vente DECIMAL(10,2) DEFAULT 0,
+        imei TEXT,
+        en_stock BOOLEAN DEFAULT TRUE,
+        notes TEXT,
+        date_ajout TIMESTAMP DEFAULT NOW()
+    )""",
+    """CREATE TABLE IF NOT EXISTS notifications_center (
+        id SERIAL PRIMARY KEY,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        important BOOLEAN DEFAULT FALSE,
+        target_user TEXT,
+        related_ticket_id INTEGER,
+        related_devis_id INTEGER,
+        action_url TEXT,
+        icon TEXT,
+        read_by TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )""",
+    # Postes (lignée de session, cf. auth.py) qui ont saisi le code admin
+    """CREATE TABLE IF NOT EXISTS sessions_admin (
+        sid TEXT PRIMARY KEY,
+        origine TEXT DEFAULT 'code',
+        prouve_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expire TIMESTAMP NOT NULL
+    )""",
+]
+
+# ADD COLUMN déjà présente : écartée avant exécution (l'ALTER prendrait quand
+# même l'AccessExclusiveLock sur la table)
+_DDL_ALTERS = [
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
+    # Bon de grattage disponible : 'film', 'reduction' ou NULL. Valable pour
+    # la PROCHAINE reparation (consome au paiement par l'admin).
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS bon_grattage TEXT DEFAULT NULL",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_montant DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_pourcentage DECIMAL(5,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_imei TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_rendu BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS ticket_code TEXT DEFAULT ''",
+    "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS type_note TEXT DEFAULT 'note'",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_debut TIMESTAMP",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_fin TIMESTAMP",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_duree INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS est_retour_sav BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_original_id INTEGER",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
+    "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_document TEXT DEFAULT 'devis'",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS carte_camby INTEGER DEFAULT 0",
+    # Base créée avec l'ancien schéma (BOOLEAN) : le modèle et la prod sont en INTEGER 0/1
+    """DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = 'clients'
+                     AND column_name = 'carte_camby' AND data_type = 'boolean') THEN
+            ALTER TABLE clients ALTER COLUMN carte_camby DROP DEFAULT;
+            ALTER TABLE clients ALTER COLUMN carte_camby TYPE INTEGER
+                USING (CASE WHEN carte_camby THEN 1 ELSE 0 END);
+            ALTER TABLE clients ALTER COLUMN carte_camby SET DEFAULT 0;
+        END IF;
+    END $$""",
+    # date_cloture est du TEXTE : cast tolérant pour les durées des stats admin
+    # (« 2026-02-30 » passe une regex mais ferait échouer toute la requête).
+    # Pas PARALLEL SAFE : le bloc EXCEPTION ouvre une sous-transaction.
+    """CREATE OR REPLACE FUNCTION public.kp_try_ts(text) RETURNS timestamp
+        LANGUAGE plpgsql STABLE STRICT AS $kp$
+    BEGIN
+        RETURN $1::timestamp;
+    EXCEPTION WHEN others THEN
+        RETURN NULL;
+    END
+    $kp$""",
+    # Colonnes tickets écrites par le code mais absentes des migrations
+    # historiques (toggle_paye, update_ticket, parts auto-sync). Sans elles,
+    # une fresh DB crashe au premier paiement / PATCH ticket.
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS statut_paiement TEXT DEFAULT 'Non payé'",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reste_a_payer DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commentaire_client TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_ecran TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_whatsapp INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_sms INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_email INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS historique TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commande_piece INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_supp TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS prix_supp DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS paye INTEGER DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS devis_estime DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tarif_final DECIMAL(10,2) DEFAULT 0",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS acompte DECIMAL(10,2) DEFAULT 0",
+    # Jeton aléatoire des liens de partage client (/api/public/documents/{jeton})
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS suivi_token TEXT",
+    # Catalogue : ordre d'affichage, suppression logique, année de sortie
+    "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 100",
+    "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS annee SMALLINT",
+    "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 0",
+    "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
+    "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manuel'",
+    # Fiche ticket : restitution (TEXT comme date_cloture, '%Y-%m-%d %H:%M:%S')
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS date_rendu TEXT",
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rendu_par TEXT",
+    # Issue distincte du statut : 'refus_devis' (devis refusé, rendu sans réparation)
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS issue TEXT",
+]
+
+# Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
+# le ShareLock de la table avant de tester le nom)
+_DDL_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_statut ON tickets(statut)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_date_depot ON tickets(date_depot DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_clients_telephone ON clients(telephone)",
+    "CREATE INDEX IF NOT EXISTS idx_notes_tickets_ticket_id ON notes_tickets(ticket_id)",
+    "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_id ON commandes_pieces(ticket_id)",
+    "CREATE INDEX IF NOT EXISTS idx_historique_ticket_id ON historique(ticket_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_client ON fidelite_historique(client_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_ticket ON fidelite_historique(ticket_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_technicien ON tickets(technicien_assigne)",
+    "CREATE INDEX IF NOT EXISTS idx_autocompletion_categorie ON autocompletion(categorie)",
+    "CREATE INDEX IF NOT EXISTS idx_autocompletion_compteur ON autocompletion(categorie, compteur DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_devis_client_id ON devis(client_id)",
+    "CREATE INDEX IF NOT EXISTS idx_devis_statut ON devis(statut)",
+    "CREATE INDEX IF NOT EXISTS idx_devis_date ON devis(date_creation DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_devis_lignes_devis_id ON devis_lignes(devis_id)",
+    "CREATE INDEX IF NOT EXISTS idx_telephones_vente_marque ON telephones_vente(marque)",
+    "CREATE INDEX IF NOT EXISTS idx_telephones_vente_stock ON telephones_vente(en_stock)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_cree_par ON tickets(cree_par)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_date_cloture ON tickets(date_cloture DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_retour_sav ON tickets(est_retour_sav) WHERE est_retour_sav = true",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_original_id ON tickets(ticket_original_id) WHERE ticket_original_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tickets_source ON tickets(source)",
+    # Performance indexes — ticket_code lookups, commandes, clients
+    "CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code)",
+    "CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)",
+    "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_code ON commandes_pieces(ticket_code)",
+    "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_statut ON commandes_pieces(statut)",
+    "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type ON notes_tickets(ticket_id, type_note)",
+    # Index pour le filtre type_note SEUL (dashboard interactions, polées /30s)
+    # — l'index composite ci-dessus a ticket_id en tête, inutilisable ici.
+    "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_note ON notes_tickets(type_note)",
+    "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_unread ON notes_tickets(type_note, ticket_id) WHERE (is_read = FALSE OR is_read IS NULL)",
+    # Index chat_messages : unread (recipient) + conversations privées,
+    # polées toutes les 5-8s par poste — sinon seq scan complet à chaque poll.
+    "CREATE INDEX IF NOT EXISTS idx_chat_recipient_created ON chat_messages(recipient, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_private_pair ON chat_messages(sender, recipient, created_at DESC) WHERE is_private = TRUE",
+    # Index notifications_center : unread-count polé /12s par NotificationCenter.
+    "CREATE INDEX IF NOT EXISTS idx_notifc_target_created ON notifications_center(target_user, created_at DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_suivi_token ON tickets(suivi_token)",
+]
+
+
+def _ddl_modules():
+    """Tables créées par les modules (chacune dans sa transaction)."""
+    return [
+        ("tarifs", tarifs._ensure_table),
+        ("iphone_tarifs", iphone_tarifs._ensure_table),
+        ("iphones_stock", iphones_stock._ensure_table),
+        ("smartphones_tarifs", smartphones_tarifs._ensure_table),
+        ("attestations", attestation._ensure_attestation_table),
+        ("marketing", marketing._ensure_tables),
+        ("telephones", telephones._ensure_table),
+        ("notifications_center", notifications_center._ensure_table),
+        ("chat", chat._ensure_table),
+    ]
+
+
+# Modules à création paresseuse (« déjà vérifié ») : ils avalent leurs erreurs,
+# le drapeau dit si leur DDL est passé.
+_DRAPEAUX_SCHEMA = (
+    (marketing, "_tables_checked"),
+    (telephones, "_table_checked"),
+    (notifications_center, "_TABLE_CHECKED"),
+    (chat, "_table_checked"),
+)
+
+
+def _source(fn) -> str:
+    try:
+        return inspect.getsource(fn)
+    except (OSError, TypeError):
+        return repr(fn.__code__.co_code) + repr(fn.__code__.co_consts)
+
+
+def schema_empreinte() -> str:
+    contenu = repr((_SCHEMA_DDL_REV, _DDL_TABLES, _DDL_ALTERS, _DDL_INDEXES,
+                    [(nom, _source(fn)) for nom, fn in _ddl_modules()]))
+    return hashlib.sha1(contenu.encode("utf-8")).hexdigest()
+
+
+_RE_ADD_COLUMN = r"^ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+)\b"
+_RE_INDEX = r"^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS (\w+)\b"
+
+
+def _deja_present(stmt: str, existant: set) -> bool:
+    s = " ".join(stmt.split())
+    m = re.match(_RE_ADD_COLUMN, s, re.IGNORECASE)
+    if m:
+        return f"c:{m.group(1).lower()}.{m.group(2).lower()}" in existant
+    m = re.match(_RE_INDEX, s, re.IGNORECASE)
+    return bool(m) and f"i:{m.group(1).lower()}" in existant
+
+
+# lock_timeout, statement_timeout
+_DELAIS_DEPASSES = {"55P03", "57014"}
+
+
+def _executer_lot(cur, label: str, stmts: list) -> bool:
+    """Instructions dans la transaction de `cur`, chacune isolée par un SAVEPOINT.
+
+    Tout passe : un seul aller-retour. Sinon le lot est rejoué instruction par
+    instruction : seules les fautives sont écartées (journalisées). Un délai de
+    verrou (55P03) ou d'instruction (57014) dépassé arrête le lot sans second essai :
+    la même attente recommencerait (rejoué au prochain démarrage). True si tout est passé.
+    """
+    stmts = [s.strip().rstrip(";") for s in stmts if s and s.strip()]
+    if not stmts:
+        return True
+    try:
+        cur.execute("SAVEPOINT kp_lot;\n" + ";\n".join(stmts) + ";\nRELEASE SAVEPOINT kp_lot")
+        return True
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT kp_lot; RELEASE SAVEPOINT kp_lot")
+        if getattr(e, "pgcode", None) in _DELAIS_DEPASSES:
+            print(f"Warning {label}: {' '.join(str(e).split())[:300]}")
+            return False
+    ok = True
+    for stmt in stmts:
+        try:
+            cur.execute("SAVEPOINT kp_ddl;\n" + stmt + ";\nRELEASE SAVEPOINT kp_ddl")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT kp_ddl; RELEASE SAVEPOINT kp_ddl")
+            ok = False
+            print(f"Warning {label}: {' '.join(str(e).split())[:300]} — {' '.join(stmt.split())[:120]}")
+            if getattr(e, "pgcode", None) in _DELAIS_DEPASSES:
+                break
+    return ok
+
+
+def _groupe_ddl(label: str, stmts: list, existant: set) -> bool:
+    """Un groupe DDL = une transaction (verrous relâchés au COMMIT du groupe).
+
+    lock_timeout de 3 s pour chaque groupe : un CREATE INDEX (ShareLock), un ALTER ou
+    une clé étrangère vers tickets qui attend son verrou fait patienter derrière lui
+    toutes les écritures de l'instance encore en service.
+    """
+    from app.database import get_cursor
+    a_faire = [s for s in stmts if not _deja_present(s, existant)]
+    if not a_faire:
+        return True
+    try:
+        with get_cursor() as cur:
+            # Deux instances qui démarrent ensemble : l'une attend l'autre (avant le lock_timeout)
+            cur.execute("SELECT pg_advisory_xact_lock(727001);\nSET LOCAL lock_timeout = '3s'")
+            return _executer_lot(cur, label, a_faire)
+    except Exception as e:
+        print(f"Warning {label}: {e}\n{traceback.format_exc()}")
+        return False
+
+
+def _objets_existants() -> set:
+    """Colonnes (c:table.colonne) et index (i:nom) du schéma courant, en une requête."""
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT 'c:' || lower(table_name) || '.' || lower(column_name) AS k
+                FROM information_schema.columns WHERE table_schema = current_schema()
+                UNION ALL
+                SELECT 'i:' || lower(indexname) FROM pg_indexes WHERE schemaname = current_schema()
+            """)
+            return {r["k"] for r in cur.fetchall() or []}
+    except Exception as e:
+        print(f"Warning lecture du schéma: {e}")
+        return set()
+
+
+def appliquer_schema() -> bool:
+    """Tables, tables des modules, colonnes, fonctions, index. True si tout est passé."""
+    ok = _groupe_ddl("CREATE TABLE", _DDL_TABLES, _objets_existants())
+    for mod, drapeau in _DRAPEAUX_SCHEMA:
+        setattr(mod, drapeau, False)
+    for nom, fn in _ddl_modules():
+        try:
+            fn()
+        except Exception as e:
+            ok = False
+            print(f"Warning table {nom}: {e}\n{traceback.format_exc()}")
+    ok = ok and all(getattr(mod, drapeau, False) for mod, drapeau in _DRAPEAUX_SCHEMA)
+    existant = _objets_existants()
+    ok = _groupe_ddl("ALTER TABLE", _DDL_ALTERS, existant) and ok
+    ok = _groupe_ddl("CREATE INDEX", _DDL_INDEXES, existant) and ok
+    return ok
+
+
+def _etat_initial():
+    """Une transaction : sessions bloquées de CETTE application, puis version du schéma.
+
+    Seules les connexions « klikphone » restées « idle in transaction » depuis
+    plus de 10 min sont coupées (transaction oubliée qui bloquerait un ALTER) :
+    jamais les connexions saines de l'instance encore en service pendant un déploiement.
+    """
+    from app.database import get_cursor
+    version = None
+    with get_cursor() as cur:
+        try:
+            cur.execute("""
+                SAVEPOINT kp_init;
+                SELECT count(pg_terminate_backend(pid)) AS n FROM pg_stat_activity
+                WHERE application_name = %s AND state = 'idle in transaction'
+                  AND state_change < NOW() - INTERVAL '10 minutes' AND pid <> pg_backend_pid()
+            """, (APPLICATION_NAME,))
+            n = (cur.fetchone() or {}).get("n") or 0
+            if n:
+                print(f"Sessions « idle in transaction » de plus de 10 min coupées : {n}")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT kp_init")
+            print(f"Warning sessions bloquées: {e}")
+        try:
+            cur.execute("SAVEPOINT kp_version; SELECT valeur FROM params WHERE cle = %s", (SCHEMA_DDL_PARAM,))
+            row = cur.fetchone()
+            version = row["valeur"] if row else None
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT kp_version")   # base neuve : pas encore de params
+    return version
+
+
+def _ecrire_version(empreinte: str):
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "INSERT INTO params (cle, valeur) VALUES (%s, %s)"
+                " ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur",
+                (SCHEMA_DDL_PARAM, empreinte),
+            )
+    except Exception as e:
+        print(f"Warning version du schéma: {e}")
+
+
+# ═══ DONNÉES (à chaque démarrage, chacune avec sa garde) ════════
+
+_SEED_AUTOCOMPLETION = """
+    INSERT INTO autocompletion (categorie, terme, compteur) VALUES
+        ('panne', 'Écran cassé', 100),
+        ('panne', 'Batterie HS', 80),
+        ('panne', 'Ne charge plus', 60),
+        ('panne', 'Connecteur de charge', 45),
+        ('panne', 'Écran qui clignote', 40),
+        ('panne', 'Vitre arrière cassée', 35),
+        ('panne', 'Bouton power HS', 30),
+        ('panne', 'Caméra arrière HS', 25),
+        ('panne', 'Désoxydation', 25),
+        ('panne', 'Tactile ne répond plus', 22),
+        ('panne', 'Caméra avant HS', 20),
+        ('panne', 'Haut-parleur HS', 20),
+        ('panne', 'Face ID HS', 20),
+        ('panne', 'LCD tâche noire', 18),
+        ('panne', 'Micro HS', 15),
+        ('panne', 'Touch ID HS', 15),
+        ('panne', 'Écouteur interne HS', 12),
+        ('panne', 'Batterie qui gonfle', 10),
+        ('panne', 'Wifi / Bluetooth HS', 10),
+        ('panne', 'Nappe volume HS', 8)
+    ON CONFLICT (categorie, terme) DO NOTHING
+"""
+
+_DONNEES_FIXES = [
+    # Rétention : chat_messages et notifications_center grossissent sans limite
+    # (miroir notif → chat). Bornés à 90 jours pour garder rapides les requêtes
+    # unread polées toutes les 8-12 s.
+    "DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '90 days'",
+    "DELETE FROM notifications_center WHERE created_at < NOW() - INTERVAL '90 days'",
+    _SEED_AUTOCOMPLETION,
+    """INSERT INTO params (cle, valeur) VALUES
+        ('AFFICHER_AUTOCOMPLETION', 'true'),
+        ('MODULE_DEVIS_VISIBLE', 'false'),
+        ('MODULE_DEVIS_FLASH_VISIBLE', 'false'),
+        ('DEPOT_DISTANCE_ACTIF', 'true'),
+        ('NOTIFICATIONS_EMAIL_ACTIF', 'true'),
+        ('NOTIFICATIONS_STATUTS', 'Réparation terminée,En attente de pièce,En cours de réparation'),
+        ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
+    ON CONFLICT (cle) DO NOTHING""",
+    """INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
+    ON CONFLICT (cle) DO UPDATE SET valeur = 'https://klikphone-sav-v2-production.up.railway.app'
+    WHERE params.valeur != 'https://klikphone-sav-v2-production.up.railway.app'""",
+]
+
+
+def _donnees_de_demarrage():
+    """Seeds des tables vides, jetons de suivi manquants, rétention, paramètres par défaut.
+
+    Une requête dit ce qui manque ; seul le nécessaire est exécuté.
+    """
+    from app.database import get_cursor
+    besoins = None
+    try:
+        with get_cursor() as cur:
+            try:
+                cur.execute("""
+                    SAVEPOINT kp_besoins;
+                    SELECT NOT EXISTS (SELECT 1 FROM iphone_tarifs) AS iphone_tarifs,
+                           NOT EXISTS (SELECT 1 FROM iphones_stock) AS iphones_stock,
+                           NOT EXISTS (SELECT 1 FROM smartphones_tarifs) AS smartphones_tarifs,
+                           NOT EXISTS (SELECT 1 FROM templates_marketing) AS templates_marketing,
+                           NOT EXISTS (SELECT 1 FROM membres_equipe WHERE nom = 'Système') AS systeme,
+                           EXISTS (SELECT 1 FROM tickets WHERE suivi_token IS NULL) AS jetons
+                """)
+                besoins = dict(cur.fetchone())
+            except Exception as e:
+                cur.execute("ROLLBACK TO SAVEPOINT kp_besoins")
+                print(f"Warning état des données: {e}")
+            _executer_lot(cur, "données de démarrage", _DONNEES_FIXES)
+            # Mot de passe admin initial (variable DEFAULT_ADMIN_PASSWORD) : jamais
+            # de valeur en clair dans le code ni dans les journaux, l'existant est conservé
+            defaut_admin = os.environ.get("DEFAULT_ADMIN_PASSWORD")
+            if defaut_admin:
+                try:
+                    cur.execute(
+                        "SAVEPOINT kp_admin; INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', %s)"
+                        " ON CONFLICT (cle) DO NOTHING; RELEASE SAVEPOINT kp_admin",
+                        (defaut_admin,),
+                    )
+                except Exception:
+                    cur.execute("ROLLBACK TO SAVEPOINT kp_admin")
+                    print("Warning ADMIN_PASSWORD par défaut non enregistré")
+    except Exception as e:
+        print(f"Warning données de démarrage: {e}\n{traceback.format_exc()}")
+
+    tout = besoins is None   # état illisible : chaque seed vérifie lui-même
+    seeds = [
+        ("iphone_tarifs", iphone_tarifs._seed_default_data),
+        ("iphones_stock", iphones_stock._seed_default),
+        ("smartphones_tarifs", smartphones_tarifs._seed_default),
+        ("templates_marketing", marketing._seed_templates),
+    ]
+    for cle, fn in seeds:
+        if tout or besoins.get(cle):
+            try:
+                fn()
+            except Exception as e:
+                print(f"Warning seed {cle}: {e}")
+    if tout or besoins.get("systeme"):
+        notifications_center._TABLE_CHECKED = False
+        notifications_center._ensure_table()   # crée le membre « Système » du chat
+    if tout or besoins.get("jetons"):
+        _rattraper_jetons()
+
+
+def _rattraper_jetons():
+    """Jetons de partage manquants (tickets antérieurs, conversion de devis…)."""
+    import secrets
+    from psycopg2.extras import execute_values
+    from app.database import get_cursor
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT id FROM tickets WHERE suivi_token IS NULL")
+            manquants = [(r["id"], secrets.token_urlsafe(16)) for r in cur.fetchall()]
+            if manquants:
+                execute_values(
+                    cur,
+                    "UPDATE tickets t SET suivi_token = v.jeton FROM (VALUES %s) AS v(id, jeton) "
+                    "WHERE t.id = v.id AND t.suivi_token IS NULL",
+                    manquants, page_size=1000,
+                )
+                print(f"suivi_token : {len(manquants)} ticket(s) rattrapé(s)")
+    except Exception as e:
+        print(f"Warning suivi_token: {e}\n{traceback.format_exc()}")
+
+
 def _migrations_recherche():
     """Recherche staff (app/services/search.py) : pg_trgm, fonctions IMMUTABLE kp_*, index.
 
-    Chaque instruction est isolée : un échec (droits, extension absente) est
-    journalisé sans bloquer le démarrage, et la recherche marche sans pg_trgm.
-    Les extensions peuvent vivre dans « public » ou « extensions » (Supabase) :
-    le schéma est lu dans pg_extension, jamais supposé.
+    Une requête lit l'état (extensions, corps des fonctions, index présents) ;
+    seul ce qui manque ou a changé est exécuté, chaque instruction isolée par un
+    SAVEPOINT : un échec (droits, extension absente) est journalisé sans bloquer
+    le démarrage, et la recherche marche sans pg_trgm. Les extensions peuvent
+    vivre dans « public » ou « extensions » (Supabase) : le schéma est lu dans
+    pg_extension, jamais supposé.
     """
     from psycopg2 import sql as psql
     from app.database import get_cursor
     from app.services import search as S
 
-    def run(label, stmt):
+    noms_fonctions = ["kp_unaccent", "kp_doc", "kp_alnum", "kp_phone_digits", "kp_phone_key", "kp_word_match"]
+    dev = S.doc_sql("", S.T_DEVICE_COLS)
+    index_btree = [
+        ("idx_clients_phone_key", "clients", "public.kp_phone_key(telephone)", ""),
+        ("idx_tickets_imei_alnum", "tickets", "public.kp_alnum(imei)", "imei <> ''"),
+        ("idx_tickets_pret_imei_alnum", "tickets", "public.kp_alnum(telephone_pret_imei)",
+         "telephone_pret_imei <> ''"),
+    ]
+    index_gin = [
+        ("idx_tickets_device_trgm_v1", "tickets", dev, ""),
+        ("idx_tickets_device_compact_trgm_v1", "tickets", S.compact_sql(dev), ""),
+        ("idx_tickets_work_trgm_v1", "tickets", S.doc_sql("", S.T_WORK_COLS), ""),
+        ("idx_tickets_panne_trgm_v1", "tickets", S.doc_sql("", S.T_PANNE_COLS), ""),
+        # Fragments d'IMEI : sans eux, le OR d'un mot numérique force un seq scan
+        ("idx_tickets_imei_trgm", "tickets", "public.kp_alnum(imei)", ""),
+        ("idx_tickets_pret_imei_trgm", "tickets", "public.kp_alnum(telephone_pret_imei)", ""),
+        ("idx_clients_doc_trgm_v1", "clients", S.doc_sql("", S.C_COLS), ""),
+        ("idx_clients_phone_digits_trgm", "clients", "public.kp_phone_digits(telephone)", ""),
+        ("idx_notes_tickets_doc_trgm_v1", "notes_tickets", S.doc_sql("", S.NOTE_COLS),
+         "type_note IN ('note', 'message_client', 'avis_client')"),
+        ("idx_devis_doc_trgm_v1", "devis", S.doc_sql("", S.DEVIS_COLS), ""),
+        ("idx_commandes_doc_trgm_v1", "commandes_pieces", S.doc_sql("", S.CMD_COLS), ""),
+    ]
+    noms_index = [n for n, *_ in index_btree + index_gin]
+
+    def etat(cur):
+        cur.execute("""
+            SELECT
+              (SELECT json_object_agg(e.extname, json_build_object('ns', n.nspname, 'qns', quote_ident(n.nspname)))
+                 FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+                WHERE e.extname IN ('pg_trgm', 'unaccent')) AS ext,
+              EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') AS ns_extensions,
+              (SELECT json_object_agg(p.proname, p.prosrc) FROM pg_proc p
+                 JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname = 'public' AND p.proname = ANY(%s)) AS fonctions,
+              (SELECT array_agg(c.relname::text) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relname = ANY(%s)) AS index
+        """, (noms_fonctions, noms_index))
+        r = cur.fetchone()
+        return r["ext"] or {}, r["ns_extensions"], r["fonctions"] or {}, set(r["index"] or [])
+
+    def essayer(cur, label, stmt) -> bool:
+        texte = stmt if isinstance(stmt, str) else stmt.as_string(cur)
         try:
-            with get_cursor() as cur:
-                cur.execute("SET LOCAL lock_timeout = '3s'")
-                cur.execute(stmt)
+            cur.execute("SAVEPOINT kp_r;\n" + texte + ";\nRELEASE SAVEPOINT kp_r")
             return True
         except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT kp_r; RELEASE SAVEPOINT kp_r")
             print(f"Warning recherche ({label}): {e}")
             return False
 
-    def fetch(stmt, params=None):
-        try:
-            with get_cursor() as cur:
-                cur.execute(stmt, params)
-                return cur.fetchone()
-        except Exception as e:
-            print(f"Warning recherche (lecture catalogue): {e}")
-            return None
-
-    def ext_schema(name):
-        return fetch(
-            "SELECT n.nspname AS ns, quote_ident(n.nspname) AS qns FROM pg_extension e"
-            " JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = %s",
-            (name,),
-        )
-
-    if not ext_schema("pg_trgm"):
-        in_ext = fetch("SELECT 1 AS ok FROM pg_namespace WHERE nspname = 'extensions'")
-        run("pg_trgm", "CREATE EXTENSION IF NOT EXISTS pg_trgm" + (" WITH SCHEMA extensions" if in_ext else ""))
-    ua, trgm = ext_schema("unaccent"), ext_schema("pg_trgm")
-
-    if ua:
-        # Forme à 2 arguments (dictionnaire explicite) : seule enveloppe IMMUTABLE fiable.
-        unaccent_body = psql.SQL("SELECT {}({}::regdictionary, $1)").format(
-            psql.Identifier(ua["ns"], "unaccent"), psql.Literal(ua["qns"] + ".unaccent"),
-        )
-    else:
-        src, dst = "ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿ", "AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyy"
-        unaccent_body = psql.SQL(
-            "SELECT translate(replace(replace(replace(replace($1, 'œ', 'oe'), 'Œ', 'OE'), 'æ', 'ae'), 'ß', 'ss'), {}, {})"
-        ).format(psql.Literal(src), psql.Literal(dst))
-    # Ne jamais changer un corps sans REINDEX : les index sur ces expressions
-    # deviendraient silencieusement faux (géré ci-dessous via `changed`).
-    funcs = [
-        ("kp_unaccent", unaccent_body, "IMMUTABLE PARALLEL SAFE STRICT"),
-        ("kp_doc", psql.SQL(
-            "SELECT ' ' || regexp_replace(lower(public.kp_unaccent(coalesce($1, ''))), '[^a-z0-9]+', ' ', 'g') || ' '"
-        ), "IMMUTABLE PARALLEL SAFE"),
-        ("kp_alnum", psql.SQL("SELECT regexp_replace(lower(coalesce($1, '')), '[^a-z0-9]+', '', 'g')"),
-         "IMMUTABLE PARALLEL SAFE"),
-        ("kp_phone_digits", psql.SQL("SELECT regexp_replace(coalesce($1, ''), '[^0-9]+', '', 'g')"),
-         "IMMUTABLE PARALLEL SAFE"),
-        ("kp_phone_key", psql.SQL("SELECT right(public.kp_phone_digits($1), 9)"), "IMMUTABLE PARALLEL SAFE"),
-    ]
-    changed = False
-    for name, body, flags in funcs:
-        try:
-            with get_cursor() as cur:
-                src_sql = body.as_string(cur)
-                cur.execute(
-                    "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-                    " WHERE n.nspname = 'public' AND p.proname = %s",
-                    (name,),
-                )
-                row = cur.fetchone()
-                if row and row["prosrc"].strip() == src_sql.strip():
-                    continue
+    try:
+        with get_cursor() as cur:
+            ext, ns_extensions, sources, presents = etat(cur)
+            if "pg_trgm" not in ext:
                 cur.execute("SET LOCAL lock_timeout = '3s'")
-                cur.execute(psql.SQL(
-                    "CREATE OR REPLACE FUNCTION public.{}(text) RETURNS text LANGUAGE sql " + flags + " AS $kp$ {} $kp$"
-                ).format(psql.Identifier(name), psql.SQL(src_sql)))
-                changed = changed or row is not None
-        except Exception as e:
-            print(f"Warning recherche (fonction {name}): {e}")
-    if trgm:
-        # STABLE (comme l'opérateur, qui lit pg_trgm.word_similarity_threshold) et non
-        # STRICT : PostgreSQL l'inline, et « mot <% document » profite des index GIN.
-        run("kp_word_match", psql.SQL(
-            "CREATE OR REPLACE FUNCTION public.kp_word_match(text, text) RETURNS boolean LANGUAGE sql"
-            " STABLE PARALLEL SAFE AS $kp$ SELECT $1 OPERATOR({}.<%) $2 $kp$"
-        ).format(psql.Identifier(trgm["ns"])))
+                if essayer(cur, "pg_trgm", "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+                           + (" WITH SCHEMA extensions" if ns_extensions else "")):
+                    ext, ns_extensions, sources, presents = etat(cur)
+            ua, trgm = ext.get("unaccent"), ext.get("pg_trgm")
 
-    dev = S.doc_sql("", S.T_DEVICE_COLS)
-    indexes = [
-        ("idx_clients_phone_key", "clients", "btree", "public.kp_phone_key(telephone)", ""),
-        ("idx_tickets_imei_alnum", "tickets", "btree", "public.kp_alnum(imei)", "imei <> ''"),
-        ("idx_tickets_pret_imei_alnum", "tickets", "btree", "public.kp_alnum(telephone_pret_imei)",
-         "telephone_pret_imei <> ''"),
-    ]
-    if trgm:
-        indexes += [
-            ("idx_tickets_device_trgm_v1", "tickets", "gin", dev, ""),
-            ("idx_tickets_device_compact_trgm_v1", "tickets", "gin", S.compact_sql(dev), ""),
-            ("idx_tickets_work_trgm_v1", "tickets", "gin", S.doc_sql("", S.T_WORK_COLS), ""),
-            ("idx_tickets_panne_trgm_v1", "tickets", "gin", S.doc_sql("", S.T_PANNE_COLS), ""),
-            # Fragments d'IMEI : sans eux, le OR d'un mot numérique force un seq scan
-            ("idx_tickets_imei_trgm", "tickets", "gin", "public.kp_alnum(imei)", ""),
-            ("idx_tickets_pret_imei_trgm", "tickets", "gin", "public.kp_alnum(telephone_pret_imei)", ""),
-            ("idx_clients_doc_trgm_v1", "clients", "gin", S.doc_sql("", S.C_COLS), ""),
-            ("idx_clients_phone_digits_trgm", "clients", "gin", "public.kp_phone_digits(telephone)", ""),
-            ("idx_notes_tickets_doc_trgm_v1", "notes_tickets", "gin", S.doc_sql("", S.NOTE_COLS),
-             "type_note IN ('note', 'message_client', 'avis_client')"),
-            ("idx_devis_doc_trgm_v1", "devis", "gin", S.doc_sql("", S.DEVIS_COLS), ""),
-            ("idx_commandes_doc_trgm_v1", "commandes_pieces", "gin", S.doc_sql("", S.CMD_COLS), ""),
-        ]
-    analyze = set()
-    for name, table, method, expr, where in indexes:
-        existing = fetch("SELECT to_regclass(%s) IS NOT NULL AS ok", ("public." + name,))
-        if existing and existing["ok"]:
-            if changed:
-                run(f"reindex {name}", psql.SQL("REINDEX INDEX {}").format(psql.Identifier(name)))
-            continue
-        if method == "gin":
-            stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING gin (({}) {})").format(
-                psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
-                psql.Identifier(trgm["ns"], "gin_trgm_ops"),
-            )
-        else:
-            stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (({}))").format(
-                psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
-            )
-        if where:
-            stmt = stmt + psql.SQL(" WHERE " + where)
-        if run(f"index {name}", stmt):
-            analyze.add(table)
-    # Statistiques des nouvelles expressions indexées, sinon le planner les ignore
-    for table in sorted(analyze):
-        run(f"analyze {table}", psql.SQL("ANALYZE {}").format(psql.Identifier(table)))
+            if ua:
+                # Forme à 2 arguments (dictionnaire explicite) : seule enveloppe IMMUTABLE fiable.
+                unaccent_body = psql.SQL("SELECT {}({}::regdictionary, $1)").format(
+                    psql.Identifier(ua["ns"], "unaccent"), psql.Literal(ua["qns"] + ".unaccent"),
+                )
+            else:
+                src, dst = "ÀÁÂÃÄÅàáâãäåÇçÈÉÊËèéêëÌÍÎÏìíîïÑñÒÓÔÕÖòóôõöÙÚÛÜùúûüÝýÿ", "AAAAAAaaaaaaCcEEEEeeeeIIIIiiiiNnOOOOOoooooUUUUuuuuYyy"
+                unaccent_body = psql.SQL(
+                    "SELECT translate(replace(replace(replace(replace($1, 'œ', 'oe'), 'Œ', 'OE'), 'æ', 'ae'), 'ß', 'ss'), {}, {})"
+                ).format(psql.Literal(src), psql.Literal(dst))
+            # Ne jamais changer un corps sans REINDEX : les index sur ces expressions
+            # deviendraient silencieusement faux (géré ci-dessous via `changed`).
+            funcs = [
+                ("kp_unaccent", "(text) RETURNS text", unaccent_body, "IMMUTABLE PARALLEL SAFE STRICT"),
+                ("kp_doc", "(text) RETURNS text", psql.SQL(
+                    "SELECT ' ' || regexp_replace(lower(public.kp_unaccent(coalesce($1, ''))), '[^a-z0-9]+', ' ', 'g') || ' '"
+                ), "IMMUTABLE PARALLEL SAFE"),
+                ("kp_alnum", "(text) RETURNS text",
+                 psql.SQL("SELECT regexp_replace(lower(coalesce($1, '')), '[^a-z0-9]+', '', 'g')"),
+                 "IMMUTABLE PARALLEL SAFE"),
+                ("kp_phone_digits", "(text) RETURNS text",
+                 psql.SQL("SELECT regexp_replace(coalesce($1, ''), '[^0-9]+', '', 'g')"),
+                 "IMMUTABLE PARALLEL SAFE"),
+                ("kp_phone_key", "(text) RETURNS text", psql.SQL("SELECT right(public.kp_phone_digits($1), 9)"),
+                 "IMMUTABLE PARALLEL SAFE"),
+            ]
+            if trgm:
+                # STABLE (comme l'opérateur, qui lit pg_trgm.word_similarity_threshold) et non
+                # STRICT : PostgreSQL l'inline, et « mot <% document » profite des index GIN.
+                funcs.append(("kp_word_match", "(text, text) RETURNS boolean",
+                              psql.SQL("SELECT $1 OPERATOR({}.<%) $2").format(psql.Identifier(trgm["ns"])),
+                              "STABLE PARALLEL SAFE"))
+            changed = False
+            verrou = False
+            for name, signature, body, flags in funcs:
+                src_sql = body.as_string(cur)
+                ancien = sources.get(name)
+                if ancien is not None and ancien.strip() == src_sql.strip():
+                    continue
+                if not verrou:
+                    cur.execute("SET LOCAL lock_timeout = '3s'")
+                    verrou = True
+                ok = essayer(cur, f"fonction {name}", psql.SQL(
+                    "CREATE OR REPLACE FUNCTION public.{}" + signature + " LANGUAGE sql " + flags + " AS $kp$ {} $kp$"
+                ).format(psql.Identifier(name), psql.SQL(src_sql)))
+                # kp_word_match n'est la base d'aucun index : pas de REINDEX pour elle
+                changed = changed or (ok and ancien is not None and name != "kp_word_match")
+
+            analyze = set()
+            for method, liste in (("btree", index_btree), ("gin", index_gin if trgm else [])):
+                for name, table, expr, where in liste:
+                    if name in presents:
+                        if changed:
+                            essayer(cur, f"reindex {name}", psql.SQL("REINDEX INDEX {}").format(psql.Identifier(name)))
+                        continue
+                    if method == "gin":
+                        stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} USING gin (({}) {})").format(
+                            psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
+                            psql.Identifier(trgm["ns"], "gin_trgm_ops"),
+                        )
+                    else:
+                        stmt = psql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (({}))").format(
+                            psql.Identifier(name), psql.Identifier(table), psql.SQL(expr),
+                        )
+                    if where:
+                        stmt = stmt + psql.SQL(" WHERE " + where)
+                    if not verrou:
+                        cur.execute("SET LOCAL lock_timeout = '3s'")
+                        verrou = True
+                    if essayer(cur, f"index {name}", stmt):
+                        analyze.add(table)
+            # Statistiques des nouvelles expressions indexées, sinon le planner les ignore
+            for table in sorted(analyze):
+                essayer(cur, f"analyze {table}", psql.SQL("ANALYZE {}").format(psql.Identifier(table)))
+    except Exception as e:
+        print(f"Warning recherche: {e}\n{traceback.format_exc()}")
 
 
 MIGRATION_FORFAITS_LIGNES = "MIGRATION_FICHE_FORFAITS_LIGNES"
 
 
 def _migrations_fiche():
-    """Fiche ticket : colonnes de restitution, pannes accentuées, lignes JSON en forfaits.
+    """Fiche ticket : pannes accentuées, lignes JSON en forfaits (colonnes : _DDL_ALTERS).
 
-    Chaque bloc tient dans un get_cursor (idempotent, échec journalisé sans
-    bloquer le démarrage). date_maj n'est jamais touchée.
+    Une transaction : une requête dit ce qui reste à faire ; chaque bloc est isolé
+    par un SAVEPOINT (échec journalisé sans bloquer le démarrage). date_maj
+    n'est jamais touchée.
     """
     import json
     from datetime import datetime
     from psycopg2.extras import execute_values
     from app.database import get_cursor
     from app.services import prestations as P
-
-    def run(label, fn):
-        try:
-            with get_cursor() as cur:
-                cur.execute("SET LOCAL lock_timeout = '3s'")
-                fn(cur)
-        except Exception as e:
-            print(f"Warning fiche ({label}): {e}")
-
-    def colonnes(cur):
-        # TEXT comme date_cloture (format '%Y-%m-%d %H:%M:%S')
-        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS date_rendu TEXT")
-        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS rendu_par TEXT")
-        # Issue distincte du statut : 'refus_devis' (devis refusé, rendu sans réparation)
-        cur.execute("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS issue TEXT")
 
     renommees = list(P.PANNES_RENOMMEES)   # [(nouvelle, ancienne)]
 
@@ -236,9 +944,6 @@ def _migrations_fiche():
         Exclus : tickets terminés, rendus, clôturés, payés ou facturés (document
         déjà remis), et les lignes rattachées à une commande de pièce (même libellé).
         """
-        cur.execute("SELECT 1 FROM params WHERE cle = %s", (MIGRATION_FORFAITS_LIGNES,))
-        if cur.fetchone():
-            return
         symptomes = {
             P.normaliser(v)
             for _cle, sympt, _presta, _court, alias in P.PRESTATIONS
@@ -298,548 +1003,84 @@ def _migrations_fiche():
         if maj:
             print(f"Forfaits : {len(maj)} ticket(s) en cours mis à niveau")
 
-    run("colonnes", colonnes)
-    run("pannes accentuées", pannes)
-    run("lignes en forfaits", lignes_forfaits)
+    anciennes = [anc for _nouv, anc in renommees]
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT EXISTS (SELECT 1 FROM tickets WHERE panne = ANY(%(anc)s))
+                       OR EXISTS (SELECT 1 FROM autocompletion WHERE categorie = 'panne' AND terme = ANY(%(anc)s))
+                       AS pannes,
+                       NOT EXISTS (SELECT 1 FROM params WHERE cle = %(flag)s) AS forfaits
+            """, {"anc": anciennes, "flag": MIGRATION_FORFAITS_LIGNES})
+            a_faire = cur.fetchone()
+            blocs = [(label, fn) for label, fn, cle in (("pannes accentuées", pannes, "pannes"),
+                                                       ("lignes en forfaits", lignes_forfaits, "forfaits"))
+                     if a_faire[cle]]
+            if blocs:
+                cur.execute("SET LOCAL lock_timeout = '3s'")
+            for label, fn in blocs:
+                cur.execute("SAVEPOINT kp_fiche")
+                try:
+                    fn(cur)
+                    cur.execute("RELEASE SAVEPOINT kp_fiche")
+                except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT kp_fiche")
+                    print(f"Warning fiche ({label}): {e}")
+    except Exception as e:
+        print(f"Warning fiche: {e}")
+
+
+def _prechauffer_pool():
+    try:
+        prechauffer_pool()
+    except Exception as e:
+        print(f"Warning préchauffage du pool: {e}")
+
+
+def _marquer_schema_verifie():
+    """Schéma à jour : les modules à création paresseuse n'ont plus rien à vérifier."""
+    for mod, drapeau in _DRAPEAUX_SCHEMA:
+        setattr(mod, drapeau, True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle: init DB tables + fermer proprement le pool DB a l'arret."""
-    from app.database import get_cursor
-    # Non-blocking migrations: kill idle sessions, short lock_timeout, skip on failure
+    """Démarrage : schéma (si son empreinte a changé), données, puis service ; pool fermé à l'arrêt."""
+    debut = time.perf_counter()
+    empreinte = schema_empreinte()
     try:
-        with get_cursor() as cur:
-            cur.execute("""
-                SELECT pg_terminate_backend(pid)
-                FROM pg_stat_activity
-                WHERE state = 'idle in transaction'
-                AND pid != pg_backend_pid()
-            """)
-    except Exception:
-        print(f"Warning kill idle sessions:\n{traceback.format_exc()}")
-
-    # Enable unaccent extension for accent-insensitive search
-    try:
-        with get_cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS unaccent")
+        version = _etat_initial()
     except Exception as e:
-        print(f"Warning unaccent extension: {e}\n{traceback.format_exc()}")
+        print(f"Warning état initial: {e}\n{traceback.format_exc()}")
+        version = None
+    force = os.getenv("KP_FORCE_SCHEMA") == "1"
+    if version == empreinte and not force:
+        _marquer_schema_verifie()
+        print(f"Schéma à jour ({empreinte[:12]}) : DDL sauté")
+    else:
+        if appliquer_schema():
+            _ecrire_version(empreinte)
+            print(f"Schéma appliqué ({empreinte[:12]})")
+        else:
+            print("Schéma appliqué avec des erreurs : empreinte non enregistrée, nouvel essai au prochain démarrage")
 
-    # CREATE TABLE statements (don't need exclusive locks)
-    for sql in [
-        # ─── TABLES COEUR ────────────────────────────────────────────
-        # Historiquement créées à la main sur la prod ; déclarées ici pour que
-        # le schéma soit reproductible sur une fresh DB (test, restauration).
-        # IF NOT EXISTS → no-op sur la prod existante.
-        """CREATE TABLE IF NOT EXISTS params (
-            cle TEXT PRIMARY KEY,
-            valeur TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS membres_equipe (
-            id SERIAL PRIMARY KEY,
-            nom TEXT NOT NULL,
-            role TEXT DEFAULT 'Technicien',
-            couleur TEXT DEFAULT '#94A3B8',
-            actif INTEGER DEFAULT 1
-        )""",
-        """CREATE TABLE IF NOT EXISTS clients (
-            id SERIAL PRIMARY KEY,
-            nom TEXT,
-            prenom TEXT,
-            telephone TEXT,
-            email TEXT,
-            societe TEXT,
-            points_fidelite INTEGER DEFAULT 0,
-            total_depense DECIMAL(10,2) DEFAULT 0,
-            carte_camby INTEGER DEFAULT 0,
-            cree_par TEXT DEFAULT '',
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS tickets (
-            id SERIAL PRIMARY KEY,
-            ticket_code TEXT,
-            client_id INTEGER REFERENCES clients(id),
-            categorie TEXT,
-            marque TEXT,
-            modele TEXT,
-            modele_autre TEXT,
-            imei TEXT,
-            panne TEXT,
-            panne_detail TEXT,
-            pin TEXT,
-            pattern TEXT,
-            notes_client TEXT,
-            notes_internes TEXT,
-            commentaire_client TEXT,
-            type_ecran TEXT,
-            statut TEXT DEFAULT 'En attente de diagnostic',
-            statut_paiement TEXT DEFAULT 'Non payé',
-            paye INTEGER DEFAULT 0,
-            devis_estime DECIMAL(10,2) DEFAULT 0,
-            tarif_final DECIMAL(10,2) DEFAULT 0,
-            acompte DECIMAL(10,2) DEFAULT 0,
-            reste_a_payer DECIMAL(10,2) DEFAULT 0,
-            reparation_supp TEXT,
-            prix_supp DECIMAL(10,2) DEFAULT 0,
-            technicien_assigne TEXT,
-            historique TEXT,
-            commande_piece INTEGER DEFAULT 0,
-            msg_whatsapp INTEGER DEFAULT 0,
-            msg_sms INTEGER DEFAULT 0,
-            msg_email INTEGER DEFAULT 0,
-            date_depot TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            date_cloture TEXT,
-            date_recuperation TEXT
-        )""",
-        """CREATE TABLE IF NOT EXISTS commandes_pieces (
-            id SERIAL PRIMARY KEY,
-            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-            ticket_code TEXT DEFAULT '',
-            description TEXT,
-            fournisseur TEXT,
-            reference TEXT,
-            prix DECIMAL(10,2),
-            statut TEXT DEFAULT 'En attente',
-            notes TEXT,
-            date_commande TEXT,
-            date_reception TEXT,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS catalog_marques (
-            id SERIAL PRIMARY KEY,
-            categorie TEXT NOT NULL,
-            marque TEXT NOT NULL,
-            UNIQUE(categorie, marque)
-        )""",
-        """CREATE TABLE IF NOT EXISTS catalog_modeles (
-            id SERIAL PRIMARY KEY,
-            categorie TEXT NOT NULL,
-            marque TEXT NOT NULL,
-            modele TEXT NOT NULL,
-            UNIQUE(categorie, marque, modele)
-        )""",
-        # Audit log : actions admin sensibles (suppression, etc.)
-        # Permet de tracer qui a fait quoi (ne pas truster aveuglement le staff).
-        """CREATE TABLE IF NOT EXISTS admin_audit_log (
-            id SERIAL PRIMARY KEY,
-            user_login TEXT DEFAULT '',
-            user_target TEXT DEFAULT '',
-            action TEXT NOT NULL,
-            target_type TEXT DEFAULT '',
-            target_id INTEGER DEFAULT NULL,
-            details TEXT DEFAULT '',
-            ip_hash TEXT DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE INDEX IF NOT EXISTS idx_audit_action_date ON admin_audit_log(action, created_at DESC)""",
-        # Demandes de commande passees depuis la vitrine publique
-        # /site-tarifs-iphone (bouton 'Passer commande').
-        # Statut : nouvelle / en_cours / confirmee / annulee
-        """CREATE TABLE IF NOT EXISTS demandes_commandes (
-            id SERIAL PRIMARY KEY,
-            nom TEXT NOT NULL,
-            telephone TEXT NOT NULL,
-            email TEXT DEFAULT '',
-            marque TEXT DEFAULT '',
-            modele TEXT NOT NULL,
-            stockage TEXT DEFAULT '',
-            prix INTEGER DEFAULT 0,
-            message TEXT DEFAULT '',
-            statut TEXT DEFAULT 'nouvelle',
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            admin_notes TEXT DEFAULT ''
-        )""",
-        """CREATE INDEX IF NOT EXISTS idx_demandes_commandes_statut ON demandes_commandes(statut, date_creation DESC)""",
-        # Tracking events : clics sur liens publics (compteurs admin reporting)
-        """CREATE TABLE IF NOT EXISTS tracking_events (
-            id SERIAL PRIMARY KEY,
-            event_type TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            target TEXT DEFAULT '',
-            ip_hash TEXT DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE INDEX IF NOT EXISTS idx_tracking_type_date ON tracking_events(event_type, created_at)""",
-        """CREATE TABLE IF NOT EXISTS historique (
-            id SERIAL PRIMARY KEY,
-            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-            type TEXT DEFAULT 'statut',
-            contenu TEXT,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS chat_messages (
-            id SERIAL PRIMARY KEY,
-            sender TEXT NOT NULL,
-            recipient TEXT DEFAULT 'all',
-            message TEXT NOT NULL,
-            is_private BOOLEAN DEFAULT FALSE,
-            read_by TEXT DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS fidelite_historique (
-            id SERIAL PRIMARY KEY,
-            client_id INTEGER REFERENCES clients(id),
-            ticket_id INTEGER REFERENCES tickets(id),
-            type TEXT NOT NULL,
-            points INTEGER NOT NULL,
-            description TEXT,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS notes_tickets (
-            id SERIAL PRIMARY KEY,
-            ticket_id INTEGER REFERENCES tickets(id) ON DELETE CASCADE,
-            auteur TEXT NOT NULL,
-            contenu TEXT NOT NULL,
-            important BOOLEAN DEFAULT FALSE,
-            date_creation TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )""",
-        """CREATE TABLE IF NOT EXISTS autocompletion (
-            id SERIAL PRIMARY KEY,
-            categorie VARCHAR(50) NOT NULL,
-            terme VARCHAR(255) NOT NULL,
-            compteur INTEGER DEFAULT 1,
-            derniere_utilisation TIMESTAMP DEFAULT NOW(),
-            UNIQUE(categorie, terme)
-        )""",
-        """CREATE TABLE IF NOT EXISTS devis (
-            id SERIAL PRIMARY KEY,
-            numero TEXT UNIQUE,
-            client_id INTEGER REFERENCES clients(id),
-            client_nom TEXT,
-            client_prenom TEXT,
-            client_tel TEXT,
-            client_email TEXT,
-            appareil TEXT,
-            description TEXT,
-            statut TEXT DEFAULT 'Brouillon',
-            total_ht DECIMAL(10,2) DEFAULT 0,
-            tva DECIMAL(5,2) DEFAULT 20,
-            total_ttc DECIMAL(10,2) DEFAULT 0,
-            remise DECIMAL(10,2) DEFAULT 0,
-            notes TEXT,
-            validite_jours INTEGER DEFAULT 30,
-            date_creation TIMESTAMP DEFAULT NOW(),
-            date_maj TIMESTAMP DEFAULT NOW(),
-            date_acceptation TIMESTAMP,
-            date_refus TIMESTAMP,
-            ticket_id INTEGER
-        )""",
-        """CREATE TABLE IF NOT EXISTS devis_lignes (
-            id SERIAL PRIMARY KEY,
-            devis_id INTEGER REFERENCES devis(id) ON DELETE CASCADE,
-            description TEXT NOT NULL,
-            quantite INTEGER DEFAULT 1,
-            prix_unitaire DECIMAL(10,2) DEFAULT 0,
-            total DECIMAL(10,2) DEFAULT 0,
-            ordre INTEGER DEFAULT 0
-        )""",
-        """CREATE TABLE IF NOT EXISTS telephones_vente (
-            id SERIAL PRIMARY KEY,
-            marque TEXT NOT NULL,
-            modele TEXT NOT NULL,
-            capacite TEXT,
-            couleur TEXT,
-            etat TEXT DEFAULT 'Occasion',
-            prix_achat DECIMAL(10,2) DEFAULT 0,
-            prix_vente DECIMAL(10,2) DEFAULT 0,
-            imei TEXT,
-            en_stock BOOLEAN DEFAULT TRUE,
-            notes TEXT,
-            date_ajout TIMESTAMP DEFAULT NOW()
-        )""",
-    ]:
-        try:
-            with get_cursor() as cur:
-                cur.execute(sql)
-        except Exception as e:
-            print(f"Warning CREATE TABLE: {e}\n{traceback.format_exc()}")
-
-    # Tarifs table
-    try:
-        tarifs._ensure_table()
-    except Exception as e:
-        print(f"Warning tarifs table: {e}\n{traceback.format_exc()}")
-
-    # iPhone tarifs (affiches boutique) : table + seed
-    try:
-        iphone_tarifs.init_iphone_tarifs()
-    except Exception as e:
-        print(f"Warning iphone_tarifs init: {e}\n{traceback.format_exc()}")
-
-    # iPhones stock (ventes + générateur vidéo Story) : table + seed
-    try:
-        iphones_stock.init_iphones_stock()
-    except Exception as e:
-        print(f"Warning iphones_stock init: {e}\n{traceback.format_exc()}")
-
-    # Smartphones non-Apple (Samsung, Xiaomi, Google, etc.)
-    try:
-        smartphones_tarifs.init_smartphones_tarifs()
-    except Exception as e:
-        print(f"Warning smartphones_tarifs init: {e}\n{traceback.format_exc()}")
-
-    # Attestations table
-    try:
-        attestation._ensure_attestation_table()
-    except Exception as e:
-        print(f"Warning attestations table: {e}\n{traceback.format_exc()}")
-
-    # Marketing tables
-    try:
-        marketing._ensure_tables()
-    except Exception as e:
-        print(f"Warning marketing tables: {e}\n{traceback.format_exc()}")
-
-    # Telephones table
-    try:
-        telephones._ensure_table()
-    except Exception as e:
-        print(f"Warning telephones table: {e}\n{traceback.format_exc()}")
-
-    # ALTER TABLE statements (need exclusive lock — use very short timeout)
-    for sql in [
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
-        # Bon de grattage disponible : 'film', 'reduction' ou NULL. Valable pour
-        # la PROCHAINE reparation (consome au paiement par l'admin).
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS bon_grattage TEXT DEFAULT NULL",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_fait BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS grattage_gain TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_montant DECIMAL(10,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reduction_pourcentage DECIMAL(5,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_imei TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_rendu BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS ticket_code TEXT DEFAULT ''",
-        "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS type_note TEXT DEFAULT 'note'",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_debut TIMESTAMP",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_fin TIMESTAMP",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_duree INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS cree_par TEXT DEFAULT ''",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS est_retour_sav BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS ticket_original_id INTEGER",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'boutique'",
-        "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT FALSE",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_document TEXT DEFAULT 'devis'",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS carte_camby INTEGER DEFAULT 0",
-        # Base créée avec l'ancien schéma (BOOLEAN) : le modèle et la prod sont en INTEGER 0/1
-        """DO $$ BEGIN
-            IF EXISTS (SELECT 1 FROM information_schema.columns
-                       WHERE table_schema = current_schema() AND table_name = 'clients'
-                         AND column_name = 'carte_camby' AND data_type = 'boolean') THEN
-                ALTER TABLE clients ALTER COLUMN carte_camby DROP DEFAULT;
-                ALTER TABLE clients ALTER COLUMN carte_camby TYPE INTEGER
-                    USING (CASE WHEN carte_camby THEN 1 ELSE 0 END);
-                ALTER TABLE clients ALTER COLUMN carte_camby SET DEFAULT 0;
-            END IF;
-        END $$""",
-        # date_cloture est du TEXTE : cast tolérant pour les durées des stats admin
-        # (« 2026-02-30 » passe une regex mais ferait échouer toute la requête).
-        # Pas PARALLEL SAFE : le bloc EXCEPTION ouvre une sous-transaction.
-        """CREATE OR REPLACE FUNCTION public.kp_try_ts(text) RETURNS timestamp
-            LANGUAGE plpgsql STABLE STRICT AS $kp$
-        BEGIN
-            RETURN $1::timestamp;
-        EXCEPTION WHEN others THEN
-            RETURN NULL;
-        END
-        $kp$""",
-        # Colonnes tickets écrites par le code mais absentes des migrations
-        # historiques (toggle_paye, update_ticket, parts auto-sync). Sans elles,
-        # une fresh DB crashe au premier paiement / PATCH ticket.
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS statut_paiement TEXT DEFAULT 'Non payé'",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reste_a_payer DECIMAL(10,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commentaire_client TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS type_ecran TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_whatsapp INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_sms INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS msg_email INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS historique TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS commande_piece INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_supp TEXT",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS prix_supp DECIMAL(10,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS paye INTEGER DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS devis_estime DECIMAL(10,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tarif_final DECIMAL(10,2) DEFAULT 0",
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS acompte DECIMAL(10,2) DEFAULT 0",
-        # Jeton aléatoire des liens de partage client (/api/public/documents/{jeton})
-        "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS suivi_token TEXT",
-        # Catalogue : ordre d'affichage, suppression logique, année de sortie
-        "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 100",
-        "ALTER TABLE catalog_marques ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS annee SMALLINT",
-        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS ordre INTEGER DEFAULT 0",
-        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS actif BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE catalog_modeles ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manuel'",
-    ]:
-        try:
-            with get_cursor() as cur:
-                cur.execute("SET lock_timeout = '3s'")
-                cur.execute(sql)
-        except Exception as e:
-            print(f"Warning ALTER TABLE: {e}\n{traceback.format_exc()}")
-    # Performance indexes (CREATE INDEX IF NOT EXISTS is safe to run every startup)
-    for sql in [
-        "CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_statut ON tickets(statut)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_date_depot ON tickets(date_depot DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_clients_telephone ON clients(telephone)",
-        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_ticket_id ON notes_tickets(ticket_id)",
-        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_id ON commandes_pieces(ticket_id)",
-        "CREATE INDEX IF NOT EXISTS idx_historique_ticket_id ON historique(ticket_id)",
-        "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_client ON fidelite_historique(client_id)",
-        "CREATE INDEX IF NOT EXISTS idx_fidelite_hist_ticket ON fidelite_historique(ticket_id)",
-        "CREATE INDEX IF NOT EXISTS idx_chat_created ON chat_messages(created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_technicien ON tickets(technicien_assigne)",
-        "CREATE INDEX IF NOT EXISTS idx_autocompletion_categorie ON autocompletion(categorie)",
-        "CREATE INDEX IF NOT EXISTS idx_autocompletion_compteur ON autocompletion(categorie, compteur DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_devis_client_id ON devis(client_id)",
-        "CREATE INDEX IF NOT EXISTS idx_devis_statut ON devis(statut)",
-        "CREATE INDEX IF NOT EXISTS idx_devis_date ON devis(date_creation DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_devis_lignes_devis_id ON devis_lignes(devis_id)",
-        "CREATE INDEX IF NOT EXISTS idx_telephones_vente_marque ON telephones_vente(marque)",
-        "CREATE INDEX IF NOT EXISTS idx_telephones_vente_stock ON telephones_vente(en_stock)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_cree_par ON tickets(cree_par)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_date_cloture ON tickets(date_cloture DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_retour_sav ON tickets(est_retour_sav) WHERE est_retour_sav = true",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_original_id ON tickets(ticket_original_id) WHERE ticket_original_id IS NOT NULL",
-        "CREATE INDEX IF NOT EXISTS idx_tickets_source ON tickets(source)",
-        # Performance indexes — ticket_code lookups, commandes, clients
-        "CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code)",
-        "CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email)",
-        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_ticket_code ON commandes_pieces(ticket_code)",
-        "CREATE INDEX IF NOT EXISTS idx_commandes_pieces_statut ON commandes_pieces(statut)",
-        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type ON notes_tickets(ticket_id, type_note)",
-        # Index pour le filtre type_note SEUL (dashboard interactions, polées /30s)
-        # — l'index composite ci-dessus a ticket_id en tête, inutilisable ici.
-        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_note ON notes_tickets(type_note)",
-        "CREATE INDEX IF NOT EXISTS idx_notes_tickets_type_unread ON notes_tickets(type_note, ticket_id) WHERE (is_read = FALSE OR is_read IS NULL)",
-        # Index chat_messages : unread (recipient) + conversations privées,
-        # polées toutes les 5-8s par poste — sinon seq scan complet à chaque poll.
-        "CREATE INDEX IF NOT EXISTS idx_chat_recipient_created ON chat_messages(recipient, created_at DESC)",
-        "CREATE INDEX IF NOT EXISTS idx_chat_private_pair ON chat_messages(sender, recipient, created_at DESC) WHERE is_private = TRUE",
-        # Index notifications_center : unread-count polé /12s par NotificationCenter.
-        "CREATE INDEX IF NOT EXISTS idx_notifc_target_created ON notifications_center(target_user, created_at DESC)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_suivi_token ON tickets(suivi_token)",
-    ]:
-        try:
-            with get_cursor() as cur:
-                cur.execute(sql)
-        except Exception as e:
-            print(f"Warning CREATE INDEX: {e}\n{traceback.format_exc()}")
-
-    # Rattrapage des jetons de partage manquants (tickets antérieurs, ou créés
-    # par la conversion de devis / le dépôt à distance). Idempotent.
-    try:
-        import secrets
-        from psycopg2.extras import execute_values
-        with get_cursor() as cur:
-            cur.execute("SELECT id FROM tickets WHERE suivi_token IS NULL")
-            manquants = [(r["id"], secrets.token_urlsafe(16)) for r in cur.fetchall()]
-            if manquants:
-                execute_values(
-                    cur,
-                    "UPDATE tickets t SET suivi_token = v.jeton FROM (VALUES %s) AS v(id, jeton) "
-                    "WHERE t.id = v.id AND t.suivi_token IS NULL",
-                    manquants, page_size=1000,
-                )
-                print(f"suivi_token : {len(manquants)} ticket(s) rattrapé(s)")
-    except Exception as e:
-        print(f"Warning suivi_token: {e}\n{traceback.format_exc()}")
-
+    # Données : après le schéma (colonnes et tables présentes)
+    _donnees_de_demarrage()
     # Recherche staff : après les ALTER, pour que toutes les colonnes indexées existent
     _migrations_recherche()
-
-    # Purge de rétention : chat_messages et notifications_center grossissent sans
-    # limite (miroir notif → chat). On borne à 90 jours pour que les requêtes
-    # unread (polées toutes les 8-12s) restent rapides dans le temps.
-    try:
-        with get_cursor() as cur:
-            cur.execute("DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '90 days'")
-            cur.execute("DELETE FROM notifications_center WHERE created_at < NOW() - INTERVAL '90 days'")
-    except Exception as e:
-        print(f"Warning purge old messages: {e}")
-
-    # Seed autocompletion — pannes courantes
-    try:
-        with get_cursor() as cur:
-            cur.execute("""
-                INSERT INTO autocompletion (categorie, terme, compteur) VALUES
-                    ('panne', 'Écran cassé', 100),
-                    ('panne', 'Batterie HS', 80),
-                    ('panne', 'Ne charge plus', 60),
-                    ('panne', 'Connecteur de charge', 45),
-                    ('panne', 'Écran qui clignote', 40),
-                    ('panne', 'Vitre arrière cassée', 35),
-                    ('panne', 'Bouton power HS', 30),
-                    ('panne', 'Caméra arrière HS', 25),
-                    ('panne', 'Désoxydation', 25),
-                    ('panne', 'Tactile ne répond plus', 22),
-                    ('panne', 'Caméra avant HS', 20),
-                    ('panne', 'Haut-parleur HS', 20),
-                    ('panne', 'Face ID HS', 20),
-                    ('panne', 'LCD tâche noire', 18),
-                    ('panne', 'Micro HS', 15),
-                    ('panne', 'Touch ID HS', 15),
-                    ('panne', 'Écouteur interne HS', 12),
-                    ('panne', 'Batterie qui gonfle', 10),
-                    ('panne', 'Wifi / Bluetooth HS', 10),
-                    ('panne', 'Nappe volume HS', 8)
-                ON CONFLICT (categorie, terme) DO NOTHING
-            """)
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES ('AFFICHER_AUTOCOMPLETION', 'true')
-                ON CONFLICT (cle) DO NOTHING
-            """)
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES
-                    ('MODULE_DEVIS_VISIBLE', 'false'),
-                    ('MODULE_DEVIS_FLASH_VISIBLE', 'false'),
-                    ('DEPOT_DISTANCE_ACTIF', 'true'),
-                    ('NOTIFICATIONS_EMAIL_ACTIF', 'true'),
-                    ('NOTIFICATIONS_STATUTS', 'Réparation terminée,En attente de pièce,En cours de réparation')
-                ON CONFLICT (cle) DO NOTHING
-            """)
-    except Exception as e:
-        print(f"Warning autocompletion seed: {e}\n{traceback.format_exc()}")
-
     # Fiche ticket : après le seed, pour fusionner « Écran casse » dans « Écran cassé »
     _migrations_fiche()
-
-    # Default admin password — lu depuis env var DEFAULT_ADMIN_PASSWORD.
-    # Si absent, on ne seed PAS de mot de passe en clair (security).
-    # Le password existant en DB est preserve (ON CONFLICT DO NOTHING).
-    try:
-        default_admin_pwd = os.environ.get("DEFAULT_ADMIN_PASSWORD")
-        with get_cursor() as cur:
-            if default_admin_pwd:
-                cur.execute(
-                    """INSERT INTO params (cle, valeur) VALUES ('ADMIN_PASSWORD', %s)
-                       ON CONFLICT (cle) DO NOTHING""",
-                    (default_admin_pwd,),
-                )
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
-                ON CONFLICT (cle) DO NOTHING
-            """)
-            cur.execute("""
-                INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
-                ON CONFLICT (cle) DO UPDATE SET valeur = 'https://klikphone-sav-v2-production.up.railway.app'
-                WHERE params.valeur != 'https://klikphone-sav-v2-production.up.railway.app'
-            """)
-    except Exception as e:
-        print(f"Warning ADMIN_PASSWORD default: {e}\n{traceback.format_exc()}")
-
     # Catalogue marques/modèles : seed versionné (no-op si déjà appliqué)
     try:
         seed_catalog()
     except Exception as e:
         print(f"Warning catalog seed: {e}\n{traceback.format_exc()}")
+    # Backfill + catalogue iPhones en arrière-plan (ne retarde pas le démarrage)
+    iphones_stock.lancer_init_differee()
+    params_cache.invalidate()
+    # Connexions du pool ouvertes en tâche de fond (une seule a servi au démarrage)
+    threading.Thread(target=_prechauffer_pool, daemon=True, name="pool_prechauffage").start()
+    print(f"Démarrage : {time.perf_counter() - debut:.2f} s")
 
     yield
     close_pool()
@@ -871,8 +1112,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- GZIP (compress responses > 500 bytes) ---
-app.add_middleware(GZipMiddleware, minimum_size=500)
+# --- GZIP (réponses > 500 octets ; niveau 6 : ~4x moins de CPU que 9 pour ~3 % de plus) ---
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 
 
 # --- SECURITY HEADERS + CACHE HEADERS for static assets ---

@@ -432,13 +432,14 @@ def list_tickets(
         conditions.append(f"t.statut = {sp.add(statut)}")
     if tel:
         digits = search_engine.phone_digits(tel)
-        if len(digits) >= 9:
-            pq_tel = search_engine.ParsedQuery(q=tel, phone_key=search_engine.phone_key(digits),
+        look = search_engine.phone_lookup(tel)
+        if look and look[0] == "key":
+            pq_tel = search_engine.ParsedQuery(q=tel, phone_key=look[1],
                                                phone_full=search_engine.phone_full_variants(digits))
             conditions.append(f"public.kp_phone_key(c.telephone) = {sp.add(pq_tel.phone_key)}")
             conditions.append(search_engine.phone_homonym_sql(pq_tel, sp, "t.client_id"))
-        elif len(digits) >= 4:
-            conditions.append(f"public.kp_phone_digits(c.telephone) LIKE ANY({sp.add(search_engine.phone_patterns(digits))}::text[])")
+        elif look:
+            conditions.append(f"public.kp_phone_digits(c.telephone) LIKE ANY({sp.add(look[1])}::text[])")
         else:
             conditions.append(f"c.telephone LIKE {sp.add('%' + search_engine.esc_like(tel) + '%')}")
     if code:
@@ -551,7 +552,7 @@ def get_ticket_by_code(ticket_code: str, request: Request):
 
 # ─── CRÉATION ───────────────────────────────────────────────────
 @router.post("", response_model=dict)
-def create_ticket(data: TicketCreate):
+def create_ticket(data: TicketCreate, background_tasks: BackgroundTasks):
     """Crée un nouveau ticket (accessible sans auth — formulaire client)."""
     # Si retour SAV, vérifier que le ticket original existe et appartient au même client
     if data.est_retour_sav and data.ticket_original_id:
@@ -597,12 +598,12 @@ def create_ticket(data: TicketCreate):
     except Exception as e:
         print(f"[tickets] jeton de suivi non créé pour le ticket {tid} : {e}")
 
-    # Apprentissage autocomplétion (silencieux)
-    learn_terms({"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre})
-
-    # Notification Discord (non bloquant)
+    # Après la réponse : apprentissage (silencieux) et Discord (jusqu'à 5 s)
+    background_tasks.add_task(
+        learn_terms, {"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre},
+    )
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
-    notif_nouveau_ticket(code, appareil, data.panne or data.panne_detail or "Réparation")
+    background_tasks.add_task(notif_nouveau_ticket, code, appareil, data.panne or data.panne_detail or "Réparation")
 
     return {"id": tid, "ticket_code": code}
 

@@ -12,23 +12,17 @@ import json
 from datetime import datetime, date
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from app.database import get_cursor
-from app.api.auth import get_current_user
+from app.api.auth import exiger_role_admin, get_current_user
 
 
-def _require_admin_marketing(user: dict = Depends(get_current_user)):
-    """Dependency: admin required for marketing actions (lookup DB)."""
-    with get_cursor() as cur:
-        cur.execute("SELECT role FROM membres_equipe WHERE nom = %s", (user.get("sub", ""),))
-        row = cur.fetchone()
-    if not row or row.get("role") != "admin":
-        raise HTTPException(403, "Admin requis")
-    user["role"] = "admin"
-    return user
+def _require_admin_marketing(request: Request, user: dict = Depends(get_current_user)):
+    """Dépendance : rôle admin du membre ET code admin saisi sur ce poste (auth.exiger_role_admin)."""
+    return exiger_role_admin(request, user)
 
 router = APIRouter(prefix="/api/marketing", tags=["marketing"])
 

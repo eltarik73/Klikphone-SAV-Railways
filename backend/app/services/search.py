@@ -222,6 +222,43 @@ def phone_patterns(d: str) -> list:
     return pats
 
 
+_INDICATIF_FR_RE = re.compile(r"\(?\+\s*33")
+
+
+def phone_lookup(value):
+    """Numéro saisi, complet ou partiel : ("key", clé à 9 chiffres), ("like", motifs sur
+    kp_phone_digits) ou None (moins de 4 chiffres).
+
+    Indicatif français explicite (+33, 0033, +33 (0)…) : la partie nationale décide,
+    « +33 7 11 » cherche 0711… et « +33 6 12 34 56 7 » reste partiel. « 33 7 11 » sans +
+    est ambigu : les deux lectures. 0 + 8 chiffres : numéro français incomplet.
+    """
+    s = str(value or "").strip()
+    d = phone_digits(s)
+    core = None
+    if _INDICATIF_FR_RE.match(s):
+        core = d[2:]
+    elif d.startswith("0033"):
+        core = d[4:]
+    if core is not None:
+        core = core[1:] if core.startswith("0") else core
+        if len(core) >= 9:
+            return ("key", core[-9:])
+        return ("like", _phone_prefix_variants(core)) if len(core) >= 3 else None
+    if len(d) >= 9 and not (len(d) == 9 and d.startswith("0") and not d.startswith("00")):
+        return ("key", phone_key(d))
+    if len(d) < 4:
+        return None
+    pats = phone_patterns(d)
+    if len(d) == 9:
+        pats += _phone_prefix_variants(d[1:])
+    if d.startswith("33") and len(d) >= 5:
+        core = d[2:][1:] if d[2:].startswith("0") else d[2:]
+        if len(core) >= 3:
+            pats += [p for p in _phone_prefix_variants(core) if p not in pats]
+    return ("like", pats)
+
+
 # ─── IMEI / NUMÉRO DE SÉRIE ──────────────────────────────────────
 def luhn_ok(d: str) -> bool:
     if not d.isdigit():
