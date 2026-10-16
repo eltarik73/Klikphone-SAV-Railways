@@ -6,6 +6,7 @@ import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
 import { normKey, searchModeles, parseModelesEnMasse, sansPrefixeMarque, MARQUE_AUTRE } from '../lib/catalog';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { STATUTS_MESSAGE, statutsNotifies, basculerStatutNotifie } from '../lib/messages';
 import {
   Settings, Save, Users, Plus, Trash2, Edit3, X,
   Key, Bell, Printer, Store, Check, Loader2, MessageCircle,
@@ -1145,6 +1146,33 @@ export default function ConfigPage() {
       {/* ═══ Notifications tab ═══ */}
       {activeTab === 'notifications' && (
         <div className="space-y-5">
+          <fieldset className="card p-5">
+            <legend className="sr-only">Message proposé au client</legend>
+            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-brand-600" aria-hidden="true" /> Message proposé au client
+            </h2>
+            <p className="text-xs text-slate-600 mb-4">
+              Au passage à ces statuts (fiche ticket et scan comptoir), le message WhatsApp / SMS correspondant
+              s’ouvre pré-rempli. Rien n’est envoyé sans un clic.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {STATUTS_MESSAGE.map(statut => {
+                const actifs = statutsNotifies(config.NOTIFICATIONS_STATUTS);
+                return (
+                  <label key={statut} className="flex items-center gap-2.5 min-h-11 px-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                    <input
+                      type="checkbox"
+                      checked={actifs.includes(statut)}
+                      onChange={e => updateConfig('NOTIFICATIONS_STATUTS', basculerStatutNotifie(config.NOTIFICATIONS_STATUTS, statut, e.target.checked))}
+                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="text-sm font-medium text-slate-700">{statut}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Discord Webhook</h2>
             <div className="space-y-4">

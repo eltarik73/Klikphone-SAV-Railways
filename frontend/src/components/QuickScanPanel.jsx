@@ -16,6 +16,8 @@ import ProgressTracker from './ProgressTracker';
 import { isScanSoundOn, setScanSoundOn, playScanSound, takePendingScan } from './ScanListener';
 
 const PrintDrawer = lazy(() => import('./PrintDrawer'));
+// Chargé à la première proposition de message (après « Réparation terminée » par défaut)
+const MessageComposer = lazy(() => import('./MessageComposer'));
 
 const TERMINE = 'Réparation terminée';
 const EN_COURS = 'En cours de réparation';
@@ -401,11 +403,23 @@ function QuickScanHost({ user }) {
 
   const runStatus = useCallback(async ({ id, code, statut, assign }) => {
     try {
-      await api.changeStatus(id, statut);
+      const res = await api.changeStatus(id, statut);
       if (assign) await api.updateTicket(id, { technicien_assigne: assign }).catch(() => {});
       invalidateCache('tickets', 'dashboard');
       notifyTicketUpdated(id);
-      toast.success(`${code} : ${statut}`);
+      if (!res?.proposer_message) {
+        toast.success(`${code} : ${statut}`);
+      } else if (viewRef.current?.id === id) {
+        // Panneau ouvert sur ce ticket : le message pré-rempli s'affiche en tête (rien n'est envoyé seul)
+        toast.success(`${code} : ${statut}`);
+        setView((v) => (v && v.id === id ? { ...v, proposition: statut } : v));
+      } else {
+        // Panneau fermé entre-temps : la notification le rouvre sur la proposition
+        toast.success(`${code} : ${statut} — prévenir le client ?`, {
+          duration: 10_000,
+          onClick: () => showTicketRef.current?.(id, { label: code, proposition: statut }),
+        });
+      }
     } catch (err) {
       playScanSound('error');
       toast.error(`${code} : ${err?.message || 'changement de statut impossible'}`);
@@ -478,7 +492,9 @@ function QuickScanHost({ user }) {
     setView(null);
   }, [commitDeferred]);
 
-  const showTicket = useCallback(async (id, { seq = ++seqRef.current, label = '', silent = false } = {}) => {
+  const showTicket = useCallback(async (id, {
+    seq = ++seqRef.current, label = '', silent = false, proposition = null,
+  } = {}) => {
     setLookup((l) => l || { label: label || `#${id}` });
     try {
       const data = await fetchTicket(id);
@@ -486,7 +502,7 @@ function QuickScanHost({ user }) {
       if (!data.ticket?.montants) loadTva();
       wizardRef.current = false;
       if (!silent) playScanSound('ok');
-      setView({ n: seq, id, ...data, verified: false, mismatch: null });
+      setView({ n: seq, id, ...data, verified: false, mismatch: null, proposition });
     } catch (err) {
       if (seq !== seqRef.current) return;
       playScanSound('error');
@@ -495,6 +511,9 @@ function QuickScanHost({ user }) {
       if (seq === seqRef.current) setLookup(null);
     }
   }, [fetchTicket, toast, loadTva]);
+
+  const showTicketRef = useRef(showTicket);
+  showTicketRef.current = showTicket;
 
   const handleScan = useCallback(async (scan) => {
     const label = scan.label || scan.query;
@@ -678,6 +697,7 @@ function QuickScanHost({ user }) {
           onPretRecupere={pretRecupere}
           onShowTicket={(id, label) => showTicket(id, { label })}
           onDismissMismatch={() => setView((v) => (v ? { ...v, mismatch: null } : v))}
+          onDismissProposition={() => setView((v) => (v ? { ...v, proposition: null } : v))}
           onWizardChange={(open) => { wizardRef.current = open; }}
         />
       )}
@@ -736,7 +756,7 @@ const ALERT_STYLES = {
 function ScanDialog({
   view, role, tva, userName, deferred, onClose, onReload, onOpenTicket, onOpenClient, onPrint,
   onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onPretRecupere, onShowTicket,
-  onDismissMismatch, onWizardChange,
+  onDismissMismatch, onDismissProposition, onWizardChange,
 }) {
   const toast = useToast();
   const t = view.ticket || {};
@@ -751,6 +771,8 @@ function ScanDialog({
   const titleId = useId();
   const descId = useId();
   const confirmIds = useId();
+  const propositionId = useId();
+  const propositionRef = useRef(null);
   const dialogRef = useRef(null);
   const titleRef = useRef(null);
   const wizardTitleRef = useRef(null);
@@ -794,6 +816,13 @@ function ScanDialog({
   useEffect(() => {
     if (view.verified === 'pret' && pretEnCours(t)) setWizard((w) => (w ? { ...w, pretOk: true, error: null } : w));
   }, [view.verifiedAt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Message proposé après le changement de statut : affiché en tête, le focus y va
+  useEffect(() => {
+    if (!view.proposition) return;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    propositionRef.current?.focus({ preventScroll: true });
+  }, [view.proposition]);
 
   // Un bouton qui disparaît (annulation, retour) ne doit pas laisser le focus sur la page derrière
   useEffect(() => {
@@ -1003,6 +1032,33 @@ function ScanDialog({
         </header>
 
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+          {view.proposition && !wizard && (
+            <section aria-labelledby={propositionId} className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 id={propositionId} ref={propositionRef} tabIndex={-1}
+                    className="flex items-center gap-2 rounded text-base font-bold text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                    <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    Prévenir {t.client_prenom || 'le client'} ?
+                  </h3>
+                  <p className="mt-0.5 text-sm text-emerald-900">
+                    « {view.proposition} » : message pré-rempli, rien n’est envoyé sans votre clic.
+                  </p>
+                </div>
+                <button type="button" onClick={onDismissProposition}
+                  className={`min-h-[44px] shrink-0 rounded-xl bg-white px-3 text-sm font-bold text-emerald-900 ring-1 ring-emerald-300 hover:bg-emerald-100 ${FOCUS_RING}`}>
+                  Plus tard
+                </button>
+              </div>
+              <div className="rounded-xl bg-white p-3">
+                <Suspense fallback={<p className="text-sm text-slate-600">Chargement du message…</p>}>
+                  <MessageComposer ticket={t} statutPropose={view.proposition} integre
+                    onMessageSent={onDismissProposition} />
+                </Suspense>
+              </div>
+            </section>
+          )}
+
           {view.mismatch && (
             <div role="alert" className="rounded-2xl bg-red-50 p-4 ring-2 ring-red-300">
               <p className="flex items-start gap-2 font-bold text-red-800">
