@@ -19,6 +19,7 @@ from app.api.auth import (
     require_admin, verifier_essais, verifier_secret,
 )
 from app.api.catalog import clear_catalog_cache
+from app.services import params as params_cache
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -119,6 +120,7 @@ def set_param(data: ParamUpdate, request: Request, user: dict = Depends(get_curr
         with get_cursor() as cur:
             for cle, valeur in ecritures:
                 _ecrire_param(cur, cle, valeur)
+        params_cache.invalidate()
     return {"ok": True}
 
 
@@ -134,6 +136,7 @@ def set_params_batch(
         with get_cursor() as cur:
             for cle, valeur in ecritures:
                 _ecrire_param(cur, cle, valeur)
+        params_cache.invalidate()
     return {"ok": True}
 
 
@@ -166,6 +169,7 @@ def change_pin(data: PinChangeRequest, request: Request, user: dict = Depends(re
             "UPDATE params SET valeur = %s WHERE cle = %s",
             (data.new_pin, param_key),
         )
+    params_cache.invalidate()
     return {"ok": True}
 
 
@@ -267,6 +271,7 @@ def import_backup(backup: dict, user: dict = Depends(require_admin)):
                 pass
 
     clear_catalog_cache()
+    params_cache.invalidate()
     from app.api.chat import invalider_cache_chat
     from app.api.notifications_center import invalider_cache_notifications
     invalider_cache_chat()
@@ -314,6 +319,7 @@ def save_message_templates(data: dict, user: dict = Depends(get_current_user)):
             INSERT INTO params (cle, valeur) VALUES ('message_templates', %s)
             ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
         """, (val,))
+    params_cache.invalidate()
     return {"ok": True}
 
 
@@ -363,6 +369,7 @@ def save_caisse_config(data: dict, user: dict = Depends(require_admin)):
                 INSERT INTO params (cle, valeur) VALUES (%s, %s)
                 ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
             """, (key, value))
+    params_cache.invalidate()
     return {"ok": True}
 
 

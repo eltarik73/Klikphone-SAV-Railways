@@ -7,7 +7,7 @@ Montant et libellé de la vente sont calculés côté serveur à partir du ticke
 
 import httpx
 
-from app.database import get_cursor
+from app.services import params as params_cache
 from app.services.montants import calculer_montants
 
 API_URL = "https://caisse.enregistreuse.fr/workers/webapp.php"
@@ -15,12 +15,10 @@ _LIBELLE_MAX = 150
 
 
 def config_caisse() -> dict:
-    """Paramètres caisse en une requête ; la base prime, sinon les variables Railway."""
+    """Paramètres caisse (cache services/params) ; la base prime, sinon les variables Railway."""
     from app.api.config import CAISSE_DEFAULTS
     cles = list(CAISSE_DEFAULTS) + ["CAISSE_DELIVERY_METHOD", "CAISSE_RAYON_ID"]
-    with get_cursor() as cur:
-        cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (cles,))
-        lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+    lus = params_cache.get_params(cles)
     cfg = {k: str(lus.get(k) or CAISSE_DEFAULTS.get(k, "") or "").strip() for k in cles}
     if not cfg["CAISSE_ID"].isdigit():
         cfg["CAISSE_ID"] = "49343"

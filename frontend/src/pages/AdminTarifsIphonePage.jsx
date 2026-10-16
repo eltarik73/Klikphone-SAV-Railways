@@ -19,13 +19,9 @@ function pdfUrl(path) {
   return { url, token };
 }
 
+// Via l'ApiClient : message d'erreur du serveur (« Aucun modèle trouvé »…) plutôt que « Erreur 404 »
 async function downloadPdf(path, filename) {
-  const token = localStorage.getItem('kp_token');
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Erreur ${res.status}`);
-  const blob = await res.blob();
+  const blob = await api.requestRaw(path, { as: 'blob', timeoutMs: 120_000 });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -37,12 +33,7 @@ async function downloadPdf(path, filename) {
 }
 
 async function openPdfInNewTab(path) {
-  const token = localStorage.getItem('kp_token');
-  const res = await fetch(`${API_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Erreur ${res.status}`);
-  const blob = await res.blob();
+  const blob = await api.requestRaw(path, { as: 'blob', timeoutMs: 60_000 });
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -868,7 +859,8 @@ export default function AdminTarifsIphonePage() {
                   .map(([key, items]) => (
                     <button
                       key={key}
-                      onClick={() => openPdfInNewTab(`/api/iphone-tarifs/pdf?group=${encodeURIComponent(key)}`)}
+                      onClick={() => openPdfInNewTab(`/api/iphone-tarifs/pdf?group=${encodeURIComponent(key)}`)
+                        .catch((e) => showToast('error', `PDF : ${e.message}`))}
                       className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-brand-500/40 text-xs flex items-center gap-2 transition"
                     >
                       <FileDown className="w-3 h-3 text-brand-400" />

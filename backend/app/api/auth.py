@@ -7,6 +7,7 @@ présenter dans l'en-tête X-Admin-Token pour les actions sensibles
 (dépendance require_admin).
 """
 
+import hashlib
 import hmac
 import os
 import secrets
@@ -16,12 +17,14 @@ from datetime import datetime, timedelta, timezone
 from time import monotonic
 from typing import Optional
 
+import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.services import params as params_cache
 from app.models import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -57,15 +60,25 @@ ADMIN_TOKEN_MINUTES = 10
 _ADMIN_TYP = "admin_elevation"
 
 
-def create_token(target: str, utilisateur: str) -> str:
-    """Crée un JWT token."""
+def create_token(target: str, utilisateur: str, sid: Optional[str] = None) -> str:
+    """Crée un JWT token.
+
+    `sid` : lignée de session du poste, nouvelle à chaque connexion par PIN et
+    transmise par switch-user (preuve du code admin, cf. exiger_role_admin).
+    """
     expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
         "sub": utilisateur,
         "target": target,
+        "sid": sid or secrets.token_urlsafe(16),
         "exp": expire,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _sid_ancien(jeton: str) -> str:
+    """Lignée d'un jeton émis avant les sid : dérivée du jeton lui-même."""
+    return "h:" + hashlib.sha256(jeton.encode("utf-8")).hexdigest()[:32]
 
 
 def decode_token(token: str) -> dict:
@@ -94,6 +107,9 @@ async def get_current_user(
             detail="Non authentifié",
         )
     payload = decode_token(credentials.credentials)
+    if not payload.get("sid"):
+        payload["sid"] = _sid_ancien(credentials.credentials)
+        payload["sid_ancien"] = True
     # Un poste qui présente un jeton valide est un poste de la boutique (cf. verrou global)
     _IP_CONNUES.noter(client_ip(request))
     return payload
@@ -387,6 +403,7 @@ def controler_admin_password(request: Request, password: str) -> bool:
                         "UPDATE params SET valeur = %s WHERE cle = 'ADMIN_PASSWORD' AND valeur = %s",
                         (nouveau, stocke),
                     )
+                params_cache.invalidate()
             except Exception as e:
                 print(f"[auth] migration du hash admin reportée : {e}")
     return True
@@ -410,23 +427,30 @@ def _refus_admin(code: str, message: str):
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": code, "message": message})
 
 
+def _jeton_elevation_valide(request: Request, user: dict) -> bool:
+    jeton = (request.headers.get("x-admin-token") or "").strip()
+    if not jeton:
+        return False
+    try:
+        payload = jwt.decode(jeton, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        return False
+    return (payload.get("typ") == _ADMIN_TYP and payload.get("admin") is True
+            and payload.get("sub") == user.get("sub"))
+
+
 def exiger_elevation(request: Request, user: dict) -> dict:
     """403 sauf jeton d'élévation valide (X-Admin-Token) ou code admin (X-Admin-Password).
 
     403 et non 401 : le front déconnecte l'employé sur tout 401.
     """
     jeton = (request.headers.get("x-admin-token") or "").strip()
-    if jeton:
-        try:
-            payload = jwt.decode(jeton, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        except JWTError:
-            payload = None
-        if (payload and payload.get("typ") == _ADMIN_TYP and payload.get("admin") is True
-                and payload.get("sub") == user.get("sub")):
-            return {**user, "admin": True}
+    if _jeton_elevation_valide(request, user):
+        return {**user, "admin": True}
     password = request.headers.get("x-admin-password")
     if password:
         if controler_admin_password(request, password):
+            noter_preuve_admin(user.get("sid"))
             return {**user, "admin": True}
         _refus_admin("admin_invalide", "Code admin incorrect.")
     if jeton:
@@ -437,6 +461,96 @@ def exiger_elevation(request: Request, user: dict) -> dict:
 def require_admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
     """Dépendance : action réservée à l'admin (élévation de moins de 10 min)."""
     return exiger_elevation(request, user)
+
+
+# ─── RÔLE ADMIN : PREUVE DU CODE PAR POSTE ───────────────────────
+# Le rôle (membres_equipe.role) se lit sur le nom de la session, et ce nom se
+# choisit avec le seul PIN boutique. Les routes du rôle admin (stats, marketing)
+# exigent donc aussi que la lignée de session du poste (sid) ait saisi le code
+# admin : preuve gardée 30 jours, prolongée à l'usage. Elle est retirée quand le
+# mode admin est verrouillé (POST /api/admin/lock) ou quand un autre membre prend
+# la session (switch-user) : revenir sur le membre admin redemande le code.
+PREUVE_ADMIN_JOURS = 30
+
+
+def noter_preuve_admin(sid: Optional[str], origine: str = "code"):
+    """Ce poste a saisi le code admin. « reprise » : jeton antérieur aux sid, non prolongée."""
+    if not sid:
+        return
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                INSERT INTO sessions_admin (sid, origine, prouve_le, expire)
+                VALUES (%s, %s, NOW(), NOW() + make_interval(days => %s))
+                ON CONFLICT (sid) DO UPDATE
+                SET origine = EXCLUDED.origine, prouve_le = NOW(), expire = EXCLUDED.expire
+                WHERE EXCLUDED.origine = 'code' OR sessions_admin.origine <> 'code'
+                   OR sessions_admin.expire <= NOW()
+            """, (sid, origine, PREUVE_ADMIN_JOURS))
+            # Ménage des preuves expirées
+            cur.execute("DELETE FROM sessions_admin WHERE expire < NOW() - INTERVAL '1 day'")
+    except Exception as e:
+        print(f"[auth] preuve admin non enregistrée : {e}")
+
+
+def revoquer_preuve_admin(sid: Optional[str]):
+    """Le code admin n'est plus prouvé sur cette lignée. Table absente : rien à retirer."""
+    if not sid:
+        return
+    try:
+        with get_cursor() as cur:
+            cur.execute("DELETE FROM sessions_admin WHERE sid = %s", (sid,))
+    except psycopg2.Error as e:
+        if getattr(e, "pgcode", None) != "42P01":
+            raise
+
+
+def _role_et_preuve(nom: str, sid: str) -> Optional[dict]:
+    try:
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT m.role, s.sid IS NOT NULL AS prouve,
+                       COALESCE(s.origine = 'code' AND s.expire < NOW() + INTERVAL '29 days', FALSE) AS a_prolonger
+                FROM membres_equipe m
+                LEFT JOIN sessions_admin s ON s.sid = %s AND s.expire > NOW()
+                WHERE m.nom = %s
+                LIMIT 1
+            """, (sid, nom))
+            return cur.fetchone()
+    except psycopg2.Error as e:
+        # Table des preuves absente (migration en échec) : rôle seul, jamais prouvé
+        print(f"[auth] lecture des preuves admin impossible : {e}")
+        with get_cursor() as cur:
+            cur.execute("SELECT role, FALSE AS prouve, FALSE AS a_prolonger FROM membres_equipe WHERE nom = %s LIMIT 1", (nom,))
+            return cur.fetchone()
+
+
+def exiger_role_admin(request: Request, user: dict) -> dict:
+    """Rôle admin du membre de la session ET code admin saisi sur ce poste.
+
+    - rôle absent : 403 « Admin requis » (texte : refus de rôle, le code n'y change rien) ;
+    - rôle admin sans preuve : 403 {code: admin_requis}. Un jeton d'élévation
+      valide (X-Admin-Token) vaut preuve et l'enregistre ;
+    - jeton de session antérieur aux sid (avant cette version) : repris une fois,
+      30 jours non prolongés, pour ne pas couper les gérants au déploiement ;
+    - preuve retirée par POST /api/admin/lock et par un changement de membre.
+    """
+    sid = user.get("sid") or ""
+    row = _role_et_preuve(user.get("sub") or "", sid)
+    if not row or row.get("role") != "admin":
+        raise HTTPException(403, "Admin requis")
+    if not row.get("prouve"):
+        if _jeton_elevation_valide(request, user):
+            noter_preuve_admin(sid)
+        elif user.get("sid_ancien"):
+            noter_preuve_admin(sid, "reprise")
+        else:
+            _refus_admin("admin_requis", "Code admin requis sur ce poste : verrouillez le mode admin "
+                                         "puis saisissez de nouveau le code admin.")
+    elif row.get("a_prolonger"):
+        noter_preuve_admin(sid)
+    user["role"] = "admin"
+    return user
 
 
 # ─── ROUTES ──────────────────────────────────────────────────────
@@ -499,12 +613,33 @@ class SwitchUserRequest(BaseModel):
     utilisateur: str
 
 
+def _reprendre_preuve_ancienne(user: dict):
+    """Jeton antérieur aux sid porté par un membre admin : sa lignée garde l'accès
+    (preuve « reprise », 30 jours) après le changement d'utilisateur."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT role FROM membres_equipe WHERE nom = %s LIMIT 1", (user.get("sub") or "",))
+            row = cur.fetchone()
+    except Exception:
+        return
+    if row and row.get("role") == "admin":
+        noter_preuve_admin(user.get("sid"), "reprise")
+
+
 @router.post("/switch-user", response_model=TokenResponse)
 def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
-    """Change d'utilisateur sans re-saisir le PIN (le token courant est valide)."""
+    """Change d'utilisateur sans re-saisir le PIN (le token courant est valide).
+
+    La lignée (sid) suit, pas la preuve du code admin : un autre membre qui prend
+    le poste ne garde pas l'accès du gérant en revenant sur son nom.
+    """
     target = user["target"]
     utilisateur = _membre_autorise(req.utilisateur, target)
-    token = create_token(target, utilisateur)
+    if utilisateur != (user.get("sub") or "").strip():
+        revoquer_preuve_admin(user.get("sid"))
+    elif user.get("sid_ancien"):
+        _reprendre_preuve_ancienne(user)
+    token = create_token(target, utilisateur, sid=user.get("sid"))
     return TokenResponse(
         access_token=token,
         target=target,

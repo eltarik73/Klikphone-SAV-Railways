@@ -3,6 +3,7 @@ API Autocomplete — recherche intelligente et apprentissage des termes.
 Recherche publique (sauf catégorie client) ; apprentissage réservé au staff.
 """
 
+import re
 import threading
 from collections import defaultdict, deque
 from time import time
@@ -11,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import get_cursor
 from app.api.auth import get_optional_user
+from app.services import search as search_engine
 from app.services.prestations import normaliser
 
 router = APIRouter(prefix="/api/autocomplete", tags=["autocomplete"])
@@ -100,16 +102,25 @@ def search(
         return results
 
     elif categorie == "client":
+        # Numéro tout format (06 12…, +33 6…, +33 7 11, 0612…) : clé à 9 chiffres indexée,
+        # ou fragment de chiffres comparé à kp_phone_digits (comme la recherche)
+        tel_sql, tel_params = "telephone LIKE %s", (pattern,)
+        if re.fullmatch(r"[\d\s.+\-()/]+", q.strip()):
+            look = search_engine.phone_lookup(q)
+            if look and look[0] == "key":
+                tel_sql, tel_params = "public.kp_phone_key(telephone) = %s", (look[1],)
+            elif look:
+                tel_sql, tel_params = "public.kp_phone_digits(telephone) LIKE ANY(%s::text[])", (look[1],)
         with get_cursor() as cur:
             cur.execute(
                 """SELECT id, nom, prenom, telephone, email FROM clients
                    WHERE LOWER(nom) LIKE LOWER(%s)
                       OR LOWER(prenom) LIKE LOWER(%s)
-                      OR telephone LIKE %s
+                      OR """ + tel_sql + """
                    ORDER BY CASE WHEN LOWER(nom) LIKE LOWER(%s) THEN 0 ELSE 1 END,
                             nom, prenom
                    LIMIT %s""",
-                (pattern, pattern, pattern, pattern, limit),
+                (pattern, pattern, *tel_params, pattern, limit),
             )
             rows = cur.fetchall()
         return [

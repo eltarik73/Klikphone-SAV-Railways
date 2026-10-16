@@ -14,17 +14,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.database import get_cursor
+from app.services import params as params_cache
 from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/email", tags=["email"])
 
 
 def _get_param(key: str) -> str:
-    with get_cursor() as cur:
-        cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-        row = cur.fetchone()
-    return row["valeur"] if row else ""
+    return params_cache.get_param(key, "")
 
 
 def _send_resend(to: str, subject: str, body: str) -> tuple:

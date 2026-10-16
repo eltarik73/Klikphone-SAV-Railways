@@ -175,6 +175,19 @@ export function actionsTicket(t, role, notes = []) {
   if (statut === 'Rendu au client' && !montantsTicket(t).paye && typeof api.setPaye === 'function') {
     out.push({ id: 'encaisser', label: 'Encaisser le solde', primary: true });
   }
+  // Ticket déjà rendu, prêt encore dehors : la restitution ne s'applique plus et le serveur refuse
+  // « Clôturé » tant que le prêt n'est pas noté récupéré (409 utiliser_restitution)
+  if (estRendu(t) && pretEnCours(t) && typeof api.updateTicket === 'function') {
+    out.push({
+      id: 'pret',
+      label: 'Prêt récupéré…',
+      primary: !out.some((a) => a.primary),
+      warn: {
+        text: `Le téléphone de prêt (${String(t.telephone_pret).trim()}) est-il bien récupéré et vérifié ?`,
+        ok: 'Oui, prêt récupéré',
+      },
+    });
+  }
   return out;
 }
 
@@ -465,14 +478,14 @@ function QuickScanHost({ user }) {
     setView(null);
   }, [commitDeferred]);
 
-  const showTicket = useCallback(async (id, { seq = ++seqRef.current, label = '' } = {}) => {
+  const showTicket = useCallback(async (id, { seq = ++seqRef.current, label = '', silent = false } = {}) => {
     setLookup((l) => l || { label: label || `#${id}` });
     try {
       const data = await fetchTicket(id);
       if (seq !== seqRef.current) return;
       if (!data.ticket?.montants) loadTva();
       wizardRef.current = false;
-      playScanSound('ok');
+      if (!silent) playScanSound('ok');
       setView({ n: seq, id, ...data, verified: false, mismatch: null });
     } catch (err) {
       if (seq !== seqRef.current) return;
@@ -498,8 +511,12 @@ function QuickScanHost({ user }) {
     }
     const seq = ++seqRef.current;
     setLookup({ label });
+    // Ouverture demandée par l'interface (openQuickScan) : ticket déjà connu, rien à résoudre
+    const manuel = !!scan.ticketId;
     try {
-      const r = await api.resolveCode(scan.query);
+      const r = manuel
+        ? { type: 'ticket', id: scan.ticketId, ticket_code: scan.code }
+        : await api.resolveCode(scan.query);
       if (seq !== seqRef.current) return;
       if (r?.type === 'client' && r.id) {
         playScanSound('ok');
@@ -510,6 +527,10 @@ function QuickScanHost({ user }) {
       }
       if (r?.type !== 'ticket' || !r.id) throw Object.assign(new Error('Aucun ticket'), { status: 404 });
       const cur = viewRef.current;
+      if (cur && cur.id === r.id && manuel) {
+        reload(r.id);
+        return;
+      }
       if (cur && cur.id === r.id) {
         // Même ticket : reçu + étiquette du sachet, IMEI de l'appareil ou du téléphone de prêt
         const digits = scan.kind === 'imei' ? scan.imei : '';
@@ -527,7 +548,7 @@ function QuickScanHost({ user }) {
         setView((v) => (v ? { ...v, mismatch: { id: r.id, code: r.ticket_code || label } } : v));
         return;
       }
-      await showTicket(r.id, { seq });
+      await showTicket(r.id, { seq, silent: manuel });
     } catch (err) {
       if (seq !== seqRef.current) return;
       playScanSound('error');
@@ -595,6 +616,23 @@ function QuickScanHost({ user }) {
     }
   }, [toast, reload, user.utilisateur]);
 
+  const pretRecupere = useCallback(async (t) => {
+    busyRef.current = true;
+    try {
+      const res = await api.updateTicket(t.id, { telephone_pret_rendu: 1 });
+      await api.addHistory(t.id, `Téléphone de prêt restitué — par ${user.utilisateur}`)
+        .catch(() => toast.warning(`${t.ticket_code} : restitution du prêt non notée dans l’historique.`));
+      invalidateCache('tickets', 'dashboard');
+      notifyTicketUpdated(t.id, res?.ticket);
+      playScanSound('ok');
+      toast.success(`${t.ticket_code} : téléphone de prêt récupéré`);
+      reload(t.id);
+      return res;
+    } finally {
+      busyRef.current = false;
+    }
+  }, [toast, reload, user.utilisateur]);
+
   const goTicket = useCallback((id) => {
     closeView();
     navigate(`${basePath}/ticket/${id}`);
@@ -637,6 +675,7 @@ function QuickScanHost({ user }) {
           onCommitDeferred={commitDeferred}
           onRestitution={submitRestitution}
           onEncaisser={encaisserSolde}
+          onPretRecupere={pretRecupere}
           onShowTicket={(id, label) => showTicket(id, { label })}
           onDismissMismatch={() => setView((v) => (v ? { ...v, mismatch: null } : v))}
           onWizardChange={(open) => { wizardRef.current = open; }}
@@ -696,7 +735,7 @@ const ALERT_STYLES = {
 
 function ScanDialog({
   view, role, tva, userName, deferred, onClose, onReload, onOpenTicket, onOpenClient, onPrint,
-  onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onShowTicket,
+  onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onPretRecupere, onShowTicket,
   onDismissMismatch, onWizardChange,
 }) {
   const toast = useToast();
@@ -808,7 +847,19 @@ function ScanDialog({
 
   const confirmAction = async () => {
     const action = confirm?.action;
-    if (!action) return;
+    if (!action || confirm.submitting) return;
+    if (action.id === 'pret') {
+      setConfirm((c) => ({ ...c, submitting: true }));
+      try {
+        await onPretRecupere(t);
+        setConfirm(null);
+      } catch (err) {
+        playScanSound('error');
+        toast.error(`${t.ticket_code} : ${err?.message || 'enregistrement impossible'}`);
+        setConfirm((c) => (c ? { ...c, submitting: false } : c));
+      }
+      return;
+    }
     if (action.id !== 'encaisser') {
       setConfirm(null);
       onSchedule(t, action);
@@ -1206,10 +1257,13 @@ function ScanDialog({
   );
 }
 
-const ACTION_ICONS = { rendre: PackageCheck, demarrer: Play, terminer: CircleCheckBig, encaisser: HandCoins, facturer: Receipt };
+const ACTION_ICONS = {
+  rendre: PackageCheck, demarrer: Play, terminer: CircleCheckBig, encaisser: HandCoins, facturer: Receipt, pret: Smartphone,
+};
 const ACTION_COLORS = {
   rendre: 'bg-emerald-700 hover:bg-emerald-800 text-white',
   facturer: 'bg-amber-700 hover:bg-amber-800 text-white',
+  pret: 'bg-amber-700 hover:bg-amber-800 text-white',
   terminer: 'bg-emerald-700 hover:bg-emerald-800 text-white',
   demarrer: 'bg-blue-700 hover:bg-blue-800 text-white',
   encaisser: 'bg-brand-600 hover:bg-brand-700 text-white',

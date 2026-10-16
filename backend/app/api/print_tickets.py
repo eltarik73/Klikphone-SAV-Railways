@@ -10,6 +10,7 @@ formulaires publics (/client, /depot, dépôt à distance).
 """
 
 import base64
+import json
 import os
 import re
 import urllib.parse
@@ -35,6 +36,8 @@ except Exception:  # image sans base tz : repli sur la règle d'heure d'été UE
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services import params as params_cache
+from app.services.montants import calculer_montants, lignes_dues
 from app.services.pdf_text import _pdf_safe
 from app.services.prestations import detail_public, index_ligne_ecran, lignes_reparation
 
@@ -68,26 +71,17 @@ _META_CSP = "script-src 'none'; object-src 'none'; base-uri 'none'"
 
 
 def _get_configs(keys=None) -> dict:
-    """Paramètres boutique en une seule requête, complétés par les valeurs par défaut."""
+    """Paramètres boutique (cache services/params), complétés par les valeurs par défaut."""
     keys = list(keys or _DEFAUTS)
-    cfg = {k: _DEFAUTS.get(k, "") for k in keys}
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (keys,))
-            for row in cur.fetchall():
-                if row["valeur"] is not None:
-                    cfg[row["cle"]] = row["valeur"]
+        return params_cache.get_params(keys, _DEFAUTS)
     except Exception:
-        pass
-    return cfg
+        return {k: _DEFAUTS.get(k, "") for k in keys}
 
 
 def _get_config(key: str, default: str = "") -> str:
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-            row = cur.fetchone()
-        return row["valeur"] if row else default
+        return params_cache.get_param(key, default)
     except Exception:
         return default
 
@@ -105,20 +99,28 @@ def _get_frontend_url() -> str:
     return _frontend_url_from(_get_configs(["URL_SUIVI"]).get("URL_SUIVI"))
 
 
-_SELECT_TICKET = """
+_COLONNES_TICKET = """
     SELECT t.*, c.nom as client_nom, c.prenom as client_prenom,
            c.telephone as client_tel, c.email as client_email,
-           c.societe as client_societe, o.ticket_code as ticket_original_code
+           c.societe as client_societe, c.points_fidelite as client_points_fidelite,
+           o.ticket_code as ticket_original_code"""
+_FROM_TICKET = """
     FROM tickets t
     JOIN clients c ON t.client_id = c.id
     LEFT JOIN tickets o ON o.id = t.ticket_original_id
 """
+_SELECT_TICKET = _COLONNES_TICKET + _FROM_TICKET
+# Fiche atelier : les 3 dernières notes viennent avec le ticket (une seule requête par impression)
+_SELECT_TICKET_STAFF = _COLONNES_TICKET + """,
+           (SELECT COALESCE(json_agg(n ORDER BY n.date_creation DESC), '[]'::json) FROM (
+               SELECT contenu, auteur, important, date_creation FROM notes_tickets
+               WHERE ticket_id = t.id ORDER BY date_creation DESC LIMIT 3) n) AS notes_impression""" + _FROM_TICKET
 
 
 def _get_ticket_full(ticket_id: int) -> dict:
     """Récupère un ticket avec toutes les infos client."""
     with get_cursor() as cur:
-        cur.execute(_SELECT_TICKET + " WHERE t.id = %s", (ticket_id,))
+        cur.execute(_SELECT_TICKET_STAFF + " WHERE t.id = %s", (ticket_id,))
         return cur.fetchone()
 
 
@@ -237,7 +239,32 @@ def _get_ticket_notes(ticket_id: int, limit: int = None) -> list:
         return []
 
 
-def _points_fidelite(client_id):
+def _notes_staff(t: dict) -> list:
+    """3 dernières notes : lues avec le ticket (_get_ticket_full), sinon une requête."""
+    notes = t.get("notes_impression")
+    if notes is None:
+        return _get_ticket_notes(t["id"], 3) if t.get("id") else []
+    if isinstance(notes, str):
+        try:
+            notes = json.loads(notes)
+        except ValueError:
+            return []
+    out = []
+    for n in notes if isinstance(notes, list) else []:
+        n = dict(n)
+        d = n.get("date_creation")
+        if isinstance(d, str):
+            try:
+                n["date_creation"] = datetime.fromisoformat(d)
+            except ValueError:
+                pass
+        out.append(n)
+    return out
+
+
+def _points_fidelite(client_id, t: dict = None):
+    if t is not None and "client_points_fidelite" in t:
+        return int(t.get("client_points_fidelite") or 0) if t.get("client_id") else None
     if not client_id:
         return None
     try:
@@ -444,14 +471,41 @@ def _retour_sav_banner(t: dict) -> str:
     )
 
 
-def _totaux(t: dict, lignes: list) -> dict:
-    subtotal = sum(r["prix"] for r in lignes)
-    reduction = _calc_reduction(t, subtotal)
-    total = max(0, subtotal - reduction)
-    acompte = _num(t.get("acompte"))
-    return {
-        "subtotal": subtotal, "reduction": reduction, "total": total,
-        "acompte": acompte, "reste": max(0, total - acompte), "paye": bool(t.get("paye")),
+def _totaux(t: dict) -> tuple:
+    """(lignes, totaux) imprimés : services/montants.calculer_montants, comme l'écran,
+    /restitution, la fidélité et la caisse.
+
+    Devis refusé : seules les lignes de frais sont imprimées. Sans ligne chiffrée
+    (repli devis estimé) ou quand tarif_final fait foi (ancien format, réduction
+    déjà déduite), la première ligne porte la base, comme la fiche (lignesFiche) :
+    lignes, réduction et total restent cohérents à l'impression.
+    """
+    m = calculer_montants(t)
+    # Mêmes lignes, dans le même ordre, que m["lignes"] (prix arrondis au centime) ; + la clé
+    lignes = [{**r, "prix": c["prix"]} for r, c in zip(lignes_dues(t), m["lignes"])]
+    total = m["total"]
+    base, reduction = m["sous_total"], m["reduction"]
+    if m["source"] == "tarif_final":
+        pct = _num(t.get("reduction_pourcentage"))
+        eur = _num(t.get("reduction_montant"))
+        if 0 < pct < 100:
+            base = total / (1 - pct / 100)
+        elif pct <= 0 and eur > 0:
+            base = total + eur
+        else:
+            base = total
+        base = round(base, 2)
+        reduction = round(max(0.0, base - total), 2)
+    if m["source"] != "lignes":
+        autres = sum(r["prix"] for r in lignes[1:])
+        prix = round(max(0.0, base - autres), 2)
+        if lignes:
+            lignes[0] = {**lignes[0], "prix": prix}
+        else:
+            lignes = [{"label": "Réparation", "prix": prix, "cle": None}]
+    return lignes, {
+        "subtotal": base, "reduction": reduction, "total": total,
+        "acompte": m["acompte"], "reste": m["reste"], "paye": m["paye"],
     }
 
 
@@ -462,8 +516,7 @@ def _totaux(t: dict, lignes: list) -> dict:
 def _client_body(t: dict, cfg: dict) -> str:
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
-    lignes = lignes_reparation(t)
-    tot = _totaux(t, lignes)
+    lignes, tot = _totaux(t)
 
     recup_html = ""
     if t.get("date_recuperation"):
@@ -554,8 +607,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
     date_recup = t.get("date_recuperation") or "Non définie"
     type_ecran = str(t.get("type_ecran") or "").strip()
 
-    lignes = lignes_reparation(t)
-    tot = _totaux(t, lignes)
+    lignes, tot = _totaux(t)
     idx_ecran = index_ligne_ecran(lignes) if type_ecran else None
 
     repairs = ""
@@ -593,7 +645,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
         sec_html = _box("Codes de sécurité", sec)
 
     notes_html = ""
-    notes = _get_ticket_notes(t["id"], 3) if t.get("id") else []
+    notes = _notes_staff(t)
     if notes:
         inner = ""
         for n in notes:
@@ -697,8 +749,7 @@ def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
     tva_rate = _num(cfg.get("tva"), 20.0)
-    lignes = lignes_reparation(t)
-    tot = _totaux(t, lignes)
+    lignes, tot = _totaux(t)
     tva = round(tot["total"] * tva_rate / (100 + tva_rate), 2)
     total_ht = round(tot["total"] - tva, 2)
     date_doc = _fd(t.get("date_depot")) if is_devis else _maintenant_paris().strftime("%d/%m/%Y")
@@ -755,7 +806,7 @@ def _fidelite_section(t: dict, cfg: dict = None) -> str:
     cfg = cfg or _get_configs()
     if cfg.get("fidelite_active") != "1":
         return ""
-    pts = _points_fidelite(t.get("client_id"))
+    pts = _points_fidelite(t.get("client_id"), t)
     if pts is None:
         return ""
     palier_film = int(_num(cfg.get("fidelite_palier_film"), 1000))
@@ -897,8 +948,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
     technicien = _e(t.get("technicien_assigne") or "Non assigné")
     type_ecran = str(t.get("type_ecran") or "").strip()
 
-    repair_lines = lignes_reparation(t)
-    tot = _totaux(t, repair_lines)
+    repair_lines, tot = _totaux(t)
     total_ttc = tot["total"]
     tva_amount = round(total_ttc * tva_rate / (100 + tva_rate), 2)
     total_ht = round(total_ttc - tva_amount, 2)
@@ -939,7 +989,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
 
     fidel = ""
     if not is_devis and cfg.get("fidelite_active") == "1":
-        pts = _points_fidelite(t.get("client_id"))
+        pts = _points_fidelite(t.get("client_id"), t)
         if pts is not None:
             fidel = f'<div class="fidel"><span class="fl">Programme Fidélité</span><span class="fp">{pts} points</span></div>'
 
@@ -1090,8 +1140,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     technicien = _pdf_safe(t.get("technicien_assigne") or "Non assigné")
     type_ecran = _pdf_safe(str(t.get("type_ecran") or "").strip())
 
-    repair_lines = lignes_reparation(t)
-    tot = _totaux(t, repair_lines)
+    repair_lines, tot = _totaux(t)
     subtotal_ttc = tot["subtotal"]
     reduction = tot["reduction"]
     total_ttc = tot["total"]
@@ -1362,7 +1411,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
 
     # ── FIDÉLITÉ (reçu only) ──
     if not is_devis and cfg.get("fidelite_active") == "1":
-        pts = _points_fidelite(t.get("client_id"))
+        pts = _points_fidelite(t.get("client_id"), t)
         if pts is not None:
             pdf.ln(5)
             fy = pdf.get_y()

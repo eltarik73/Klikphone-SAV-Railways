@@ -23,6 +23,8 @@ from psycopg2.extras import execute_values
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.services import params as params_cache
+from app.services import search as search_engine
 from app.api.auth import (
     client_ip, exiger_elevation, get_current_user, noter_echec, noter_succes, verifier_essais, verifier_secret,
 )
@@ -504,13 +506,19 @@ def passer_commande(payload: PasserCommandeRequest, request: Request):
     # Anti-doublon : si la meme combinaison (tel + modele + prix) a ete
     # insered dans les 60 dernieres secondes, on retourne le doublon
     # (pas une erreur, on valide silencieusement pour ne pas frustrer).
+    # Téléphone comparé sur la clé à 9 chiffres (= kp_phone_key, sans dépendre de la
+    # fonction) : « 06 12… », « 0612… » et « +33 6 12… » sont le même numéro.
+    chiffres = search_engine.phone_digits(tel)
+    cle = search_engine.phone_key(chiffres)
     with get_cursor() as cur:
         cur.execute(
             """SELECT id FROM demandes_commandes
-               WHERE telephone = %s AND modele = %s AND prix = %s
+               WHERE """ + ("right(regexp_replace(telephone, '[^0-9]', '', 'g'), 9) = %s" if cle
+                            else "regexp_replace(telephone, '[^0-9]', '', 'g') = %s") + """
+                 AND modele = %s AND prix = %s
                  AND date_creation >= NOW() - INTERVAL '60 seconds'
                ORDER BY date_creation DESC LIMIT 1""",
-            (tel, modele, prix),
+            (cle or chiffres or tel, modele, prix),
         )
         existing = cur.fetchone()
         if existing:
@@ -536,10 +544,7 @@ def passer_commande(payload: PasserCommandeRequest, request: Request):
 
     # Envoi email admin (fire-and-forget, on ne bloque pas si ca echoue)
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT valeur FROM params WHERE cle = 'CONTACT_EMAIL'")
-            r = cur.fetchone()
-        admin_email = (r["valeur"] if r else None) or "contact@klikphone.com"
+        admin_email = params_cache.get_param("CONTACT_EMAIL") or "contact@klikphone.com"
         subject = f"[COMMANDE #{new_id}] {nom} — {marque} {modele}"
         body = (
             f"NOUVELLE COMMANDE #{new_id} depuis la vitrine\n\n"
@@ -809,10 +814,7 @@ def demande_devis(payload: DemandeDevisRequest, request: Request):
     # Envoie a l'adresse contact de la boutique (lu depuis params, fallback
     # sur une valeur raisonnable).
     try:
-        with get_cursor() as cur:
-            cur.execute("SELECT valeur FROM params WHERE cle = 'CONTACT_EMAIL'")
-            row = cur.fetchone()
-        to_email = (row["valeur"] if row else None) or "contact@klikphone.com"
+        to_email = params_cache.get_param("CONTACT_EMAIL") or "contact@klikphone.com"
     except Exception:
         to_email = "contact@klikphone.com"
 

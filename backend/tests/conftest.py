@@ -44,6 +44,15 @@ from app.main import app  # noqa: E402
 
 # ── Fixtures ────────────────────────────────────────────────
 
+@pytest.fixture(autouse=True)
+def _params_cache_vide():
+    """Cache des paramètres (services/params) vidé entre deux tests."""
+    from app.services import params as params_cache
+    params_cache.invalidate()
+    yield
+    params_cache.invalidate()
+
+
 @pytest.fixture
 def client():
     """TestClient for the FastAPI app."""

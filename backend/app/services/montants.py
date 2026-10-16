@@ -47,6 +47,14 @@ def _frais_dus(ligne: dict) -> bool:
     return ligne.get("cle") == "diagnostic" or bool(_MOTS_FRAIS & set(normaliser(ligne.get("label")).split()))
 
 
+def lignes_dues(t: dict) -> list:
+    """Lignes facturables [{"label", "prix", "cle"}] : devis refusé → frais seuls."""
+    brutes = lignes_reparation(t) or []
+    if str(t.get("issue") or "") == "refus_devis":
+        brutes = [r for r in brutes if _frais_dus(r)]
+    return brutes
+
+
 def calculer_montants(t: dict) -> dict:
     """{sous_total, reduction, total, acompte, reste, trop_percu, paye, refus_devis, source, lignes}.
 
@@ -61,9 +69,7 @@ def calculer_montants(t: dict) -> dict:
     - reste = 0 dès que le ticket est marqué payé ; trop_percu = acompte au-delà du total.
     """
     refus = str(t.get("issue") or "") == "refus_devis"
-    brutes = lignes_reparation(t) or []
-    if refus:
-        brutes = [r for r in brutes if _frais_dus(r)]
+    brutes = lignes_dues(t)
     lignes = [
         {"label": str(r.get("label") or ""), "prix": float(_cents(_dec(r.get("prix"))))}
         for r in brutes

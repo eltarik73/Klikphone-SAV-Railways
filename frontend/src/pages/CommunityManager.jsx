@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
+import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useToast } from '../components/Toast';
 import VentesIphoneStory from '../components/VentesIphoneStory';
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -74,6 +76,13 @@ const TYPE_LABELS = {
 // ─── Main Component ───────────────────────────────────────
 
 export default function CommunityManager() {
+  const toast = useToast();
+  // Routes marketing : rôle admin ET code admin saisi sur ce poste (403 admin_requis sinon)
+  const { sensible, adminPrompt } = useAdminElevation();
+  const signalerErreur = (err, defaut) => {
+    if (err?.code !== 'admin_cancelled') toast.error(err?.message || defaut);
+  };
+
   // Tabs
   const [activeTab, setActiveTab] = useState('posts');
 
@@ -108,47 +117,47 @@ export default function CommunityManager() {
   // ─── Data hooks ────────────────────────────────────────────
 
   const postsKey = activeTab === 'posts' ? `cm:posts:${filterPlateforme}:${filterStatut}` : null;
-  const { data: postsData, loading: postsLoading, mutate: mutatePosts } = useApi(
+  const { data: postsData, error: postsError, loading: postsLoading, mutate: mutatePosts } = useApi(
     postsKey,
     async () => {
       const params = {};
       if (filterPlateforme) params.plateforme = filterPlateforme;
       if (filterStatut) params.statut = filterStatut;
-      return api.getMarketingPosts(params);
+      return sensible(() => api.getMarketingPosts(params));
     },
     { tags: ['marketing-posts'], ttl: 120_000 }
   );
   const posts = Array.isArray(postsData) ? postsData : [];
 
   const calKey = activeTab === 'calendrier' ? `cm:cal:${calendarWeekStart.toISOString().split('T')[0]}` : null;
-  const { data: calData, loading: calLoading } = useApi(
+  const { data: calData, error: calError, loading: calLoading } = useApi(
     calKey,
     async () => {
       const days = getWeekDays(calendarWeekStart);
       const date_debut = days[0].toISOString().split('T')[0];
       const date_fin = days[6].toISOString().split('T')[0];
-      return api.getCalendrierMarketing({ date_debut, date_fin });
+      return sensible(() => api.getCalendrierMarketing({ date_debut, date_fin }));
     },
     { tags: ['marketing-calendar'], ttl: 120_000 }
   );
   const events = Array.isArray(calData) ? calData : [];
 
   const tplKey = activeTab === 'templates' ? 'cm:templates' : null;
-  const { data: tplData, loading: tplLoading } = useApi(
+  const { data: tplData, error: tplError, loading: tplLoading } = useApi(
     tplKey,
-    () => api.getMarketingTemplates(),
+    () => sensible(() => api.getMarketingTemplates()),
     { tags: ['marketing-templates'], ttl: 300_000 }
   );
   const templates = Array.isArray(tplData) ? tplData : [];
 
   const analyticsKey = activeTab === 'analytics' ? 'cm:analytics' : null;
-  const { data: analyticsData, loading: analyticsLoading } = useApi(
+  const { data: analyticsData, error: analyticsError, loading: analyticsLoading } = useApi(
     analyticsKey,
     async () => {
-      const [overview, postsData] = await Promise.all([
+      const [overview, postsData] = await sensible(() => Promise.all([
         api.getMarketingAnalytics(),
         api.getMarketingAnalyticsPosts(),
-      ]);
+      ]));
       return { analytics: overview || null, analyticsPosts: Array.isArray(postsData) ? postsData : [] };
     },
     { tags: ['marketing-analytics'], ttl: 120_000 }
@@ -157,6 +166,10 @@ export default function CommunityManager() {
   const analyticsPosts = analyticsData?.analyticsPosts ?? [];
 
   const loading = postsLoading || calLoading || tplLoading || analyticsLoading;
+  // Seul l'onglet affiché charge (les autres clés sont nulles) : son erreur, s'il n'a rien à montrer
+  const loadError = (!postsData && postsError) || (!calData && calError) || (!tplData && tplError)
+    || (!analyticsData && analyticsError) || null;
+  const retryLoad = () => invalidateCache('marketing-posts', 'marketing-calendar', 'marketing-templates', 'marketing-analytics');
 
   // ─── Handlers ───────────────────────────────────────────
 
@@ -164,14 +177,14 @@ export default function CommunityManager() {
     if (!genContexte.trim()) return;
     setGenerating(true);
     try {
-      const data = await api.genererPost({
+      const data = await sensible(() => api.genererPost({
         plateforme: genPlateforme,
         type_contenu: genType,
         contexte: genContexte,
-      });
+      }));
       setGeneratedPost(data);
     } catch (err) {
-      console.error('Erreur génération:', err);
+      signalerErreur(err, 'Génération impossible');
     } finally {
       setGenerating(false);
     }
@@ -184,14 +197,14 @@ export default function CommunityManager() {
     setImageLoading(true);
     setGenImageUrl('');
     try {
-      const data = await api.genererImage({ prompt });
+      const data = await sensible(() => api.genererImage({ prompt }));
       if (data.image_url) {
         setGenImageUrl(data.image_url);
       } else {
         setImageLoading(false);
       }
     } catch (err) {
-      console.error('Erreur génération image:', err);
+      signalerErreur(err, 'Génération de l’image impossible');
       setImageLoading(false);
     } finally {
       setGeneratingImage(false);
@@ -200,7 +213,7 @@ export default function CommunityManager() {
 
   const handleSaveDraft = async (post) => {
     try {
-      await api.createMarketingPost({
+      await sensible(() => api.createMarketingPost({
         titre: post.titre || `Post ${genType}`,
         contenu: post.contenu || '',
         plateforme: post.plateforme || genPlateforme,
@@ -208,14 +221,14 @@ export default function CommunityManager() {
         hashtags: post.hashtags || [],
         image_url: genImageUrl || null,
         statut: 'brouillon',
-      });
+      }));
       setGeneratedPost(null);
       setGenContexte('');
       setGenImageUrl('');
       setGenImagePrompt('');
       invalidateCache('marketing-posts');
     } catch (err) {
-      console.error('Erreur sauvegarde:', err);
+      signalerErreur(err, 'Enregistrement du brouillon impossible');
     }
   };
 
@@ -223,7 +236,7 @@ export default function CommunityManager() {
     setPublishing(id);
     setPublishResult(null);
     try {
-      const result = await api.publierPost(id);
+      const result = await sensible(() => api.publierPost(id));
       const platforms = result.platforms_published || [];
       const warning = result.warning || '';
       const msg = warning
@@ -232,7 +245,7 @@ export default function CommunityManager() {
       setPublishResult({ success: true, message: msg, platforms });
       invalidateCache('marketing-posts');
     } catch (err) {
-      console.error('Erreur publication:', err);
+      if (err?.code === 'admin_cancelled') return;
       const msg = err?.message || 'Erreur lors de la publication';
       setPublishResult({ success: false, message: msg });
     } finally {
@@ -254,9 +267,9 @@ export default function CommunityManager() {
         image_url: genImageUrl || null,
         statut: 'brouillon',
       };
-      const created = await api.createMarketingPost(postData);
+      const created = await sensible(() => api.createMarketingPost(postData));
       if (created && created.id) {
-        const result = await api.publierPost(created.id);
+        const result = await sensible(() => api.publierPost(created.id));
         const platforms = result.platforms_published || [];
         const warning = result.warning || '';
         const msg = warning
@@ -270,7 +283,7 @@ export default function CommunityManager() {
       setGenImagePrompt('');
       invalidateCache('marketing-posts');
     } catch (err) {
-      console.error('Erreur publication:', err);
+      if (err?.code === 'admin_cancelled') return;
       const msg = err?.message || 'Erreur lors de la publication';
       setPublishResult({ success: false, message: msg });
     } finally {
@@ -282,49 +295,49 @@ export default function CommunityManager() {
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer ce brouillon ?')) return;
     try {
-      await api.deleteMarketingPost(id);
+      await sensible(() => api.deleteMarketingPost(id));
       invalidateCache('marketing-posts');
     } catch (err) {
-      console.error('Erreur suppression:', err);
+      signalerErreur(err, 'Suppression impossible');
     }
   };
 
   const handleProgrammer = async (id) => {
     if (!programDate) return;
     try {
-      await api.programmerPost(id, {
+      await sensible(() => api.programmerPost(id, {
         date_programmee: `${programDate}T${programHeure}:00`,
-      });
+      }));
       setProgrammingId(null);
       setProgramDate('');
       setProgramHeure('10:00');
       invalidateCache('marketing-posts');
     } catch (err) {
-      console.error('Erreur programmation:', err);
+      signalerErreur(err, 'Programmation impossible');
     }
   };
 
   const handleAddEvent = async () => {
     if (!newEvent.titre.trim() || !newEvent.date) return;
     try {
-      await api.createCalendrierEvent({
+      await sensible(() => api.createCalendrierEvent({
         ...newEvent,
         date_heure: `${newEvent.date}T${newEvent.heure}:00`,
-      });
+      }));
       setNewEvent({ titre: '', type: 'post', date: '', heure: '10:00', couleur: '#7C3AED' });
       setShowAddEvent(false);
       invalidateCache('marketing-calendar');
     } catch (err) {
-      console.error('Erreur ajout événement:', err);
+      signalerErreur(err, 'Ajout de l’événement impossible');
     }
   };
 
   const handleDeleteEvent = async (id) => {
     try {
-      await api.deleteCalendrierEvent(id);
+      await sensible(() => api.deleteCalendrierEvent(id));
       invalidateCache('marketing-calendar');
     } catch (err) {
-      console.error('Erreur suppression événement:', err);
+      signalerErreur(err, 'Suppression de l’événement impossible');
     }
   };
 
@@ -411,6 +424,7 @@ export default function CommunityManager() {
 
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
+      {adminPrompt}
       {/* Header (sticky) */}
       <div className="sticky top-0 z-30 bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -446,6 +460,19 @@ export default function CommunityManager() {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {loadError && !loading && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+            <p className="flex-1 min-w-0">
+              {loadError.code === 'admin_cancelled'
+                ? 'Code admin requis pour afficher cet onglet.'
+                : `Données indisponibles : ${loadError.message || 'erreur du serveur'}`}
+            </p>
+            <button type="button" onClick={retryLoad}
+              className="min-h-[44px] px-4 rounded-lg bg-white border border-red-300 font-semibold text-red-800 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+              Réessayer
+            </button>
+          </div>
+        )}
 
         {/* ─── TAB: POSTS ─────────────────────────────── */}
         {activeTab === 'posts' && (

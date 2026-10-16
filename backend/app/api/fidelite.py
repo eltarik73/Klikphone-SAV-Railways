@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.database import get_cursor
+from app.services import params as params_cache
 from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
@@ -22,9 +23,8 @@ router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
 
 
 def _get_param(cur, key: str, default: str = "") -> str:
-    cur.execute("SELECT valeur FROM params WHERE cle = %s", (key,))
-    row = cur.fetchone()
-    return row["valeur"] if row else default
+    # Cache services/params ; à froid, rechargé par le curseur de l'appelant
+    return params_cache.get_param(key, default, cur=cur)
 
 
 _PARAMS_DEFAUT = {
@@ -37,9 +37,8 @@ _PARAMS_DEFAUT = {
 
 
 def _params(cur) -> dict:
-    """Paramètres fidélité en une seule requête (valeurs par défaut si absents ou vides)."""
-    cur.execute("SELECT cle, valeur FROM params WHERE cle = ANY(%s)", (list(_PARAMS_DEFAUT),))
-    lus = {r["cle"]: r["valeur"] for r in cur.fetchall()}
+    """Paramètres fidélité (cache services/params ; défauts si absents ou vides)."""
+    lus = params_cache.get_params(_PARAMS_DEFAUT, cur=cur)
     return {k: (lus.get(k) or d) for k, d in _PARAMS_DEFAUT.items()}
 
 

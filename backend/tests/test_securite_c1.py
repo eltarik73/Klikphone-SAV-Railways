@@ -608,9 +608,13 @@ def test_client_public_nouveau_id_seul(client):
 
 # ── Admin : date_cloture comparée comme du texte ────────────────────
 
+# Membre admin dont le poste a saisi le code admin (auth.exiger_role_admin)
+_ADMIN_PROUVE = {"role": "admin", "prouve": True, "a_prolonger": False}
+
+
 def test_admin_stats_sans_cast_date_cloture(client):
-    cur, gc = fake_db(lambda sql, params: {"role": "admin"} if "membres_equipe" in sql else None)
-    with patch("app.api.admin.get_cursor", gc):
+    cur, gc = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
+    with patch("app.api.admin.get_cursor", gc), patch("app.api.auth.get_cursor", gc):
         for path in ("/api/admin/stats/overview", "/api/admin/stats/reparations-par-tech",
                      "/api/admin/stats/evolution-ca", "/api/admin/reparations", "/api/admin/evolution"):
             client.get(path, headers=_headers())
@@ -629,8 +633,8 @@ def test_admin_dates_helpers():
 
 
 def test_admin_date_invalide_400(client):
-    _, gc = fake_db(lambda sql, params: {"role": "admin"} if "membres_equipe" in sql else None)
-    with patch("app.api.admin.get_cursor", gc):
+    _, gc = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
+    with patch("app.api.admin.get_cursor", gc), patch("app.api.auth.get_cursor", gc):
         r = client.get("/api/admin/stats/overview?date_start=16/10/2026", headers=_headers())
     assert r.status_code == 400
 
@@ -856,8 +860,8 @@ def test_admin_durees_cast_tolerant_et_top_clients():
 
 
 def test_top_clients_sans_colonnes_inexistantes(client):
-    cur, gc = fake_db(lambda sql, params: {"role": "admin"} if "membres_equipe" in sql else [])
-    with patch("app.api.admin.get_cursor", gc):
+    cur, gc = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else [])
+    with patch("app.api.admin.get_cursor", gc), patch("app.api.auth.get_cursor", gc):
         r = client.get("/api/admin/stats/top-clients?date_start=2026-01-01", headers=_headers())
         bad = client.get("/api/admin/stats/top-clients?date_start=hier", headers=_headers())
     assert r.status_code == 200 and bad.status_code == 400

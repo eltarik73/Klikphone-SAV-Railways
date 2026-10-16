@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, useTransition, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useTransition, useId, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
@@ -7,6 +7,8 @@ import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
 import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
 import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
+import { openQuickScan } from '../components/ScanListener';
+import { useToast } from '../components/Toast';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
@@ -36,9 +38,75 @@ function writeDashState(v) {
 
 const str = (v) => (typeof v === 'string' ? v : '');
 
+// Remise au client : seule la restitution (panneau d'action rapide) contrôle le téléphone de prêt,
+// le paiement et « rendu par ». La liste ne fait que passer de l'un à l'autre un ticket déjà rendu.
+export const STATUTS_REMISE = ['Rendu au client', 'Clôturé'];
+const BULK_CONCURRENCE = 4;
+
+const codeErreur = (err) => err?.code || err?.detail?.code || err?.data?.code || null;
+const ticketRef = (t) => ({ id: t.id, ticket_code: t.ticket_code || `#${t.id}`, statut: t.statut });
+
+/** Changement de statut d'une ligne : 'panneau' (remise à faire), 'aucun' (même statut) ou 'serveur'. */
+export function actionStatutLigne(ticket, statut) {
+  if (!statut || statut === ticket?.statut) return 'aucun';
+  if (STATUTS_REMISE.includes(statut) && !STATUTS_REMISE.includes(ticket?.statut)) return 'panneau';
+  return 'serveur';
+}
+
+/**
+ * Changement groupé : un ticket pas encore rendu ne passe jamais en « Rendu au client » / « Clôturé »
+ * par la liste (à traiter un par un). Un ticket au statut inconnu (hors de la liste affichée) non plus.
+ */
+export function planStatutGroupe(tickets, statut) {
+  const plan = { envoyer: [], aTraiter: [], inchanges: [] };
+  for (const t of tickets) {
+    if (!t) continue;
+    const action = actionStatutLigne(t, statut);
+    if (action === 'aucun') plan.inchanges.push(ticketRef(t));
+    else if (action === 'panneau') plan.aTraiter.push({ ...ticketRef(t), raison: 'remise au client à faire' });
+    else plan.envoyer.push(ticketRef(t));
+  }
+  return plan;
+}
+
+/** Envoie le plan, quelques requêtes à la fois. 409 utiliser_restitution → à traiter un par un. */
+export async function executerStatutGroupe(plan, statut, changeStatus, concurrence = BULK_CONCURRENCE) {
+  const res = { statut, faits: [], aTraiter: [...plan.aTraiter], erreurs: [], inchanges: plan.inchanges.length };
+  const file = [...plan.envoyer];
+  const worker = async () => {
+    for (let t = file.shift(); t; t = file.shift()) {
+      try {
+        await changeStatus(t.id, statut);
+        res.faits.push(t);
+      } catch (err) {
+        if (codeErreur(err) === 'utiliser_restitution') res.aTraiter.push({ ...t, raison: err.message || 'non réglé' });
+        else res.erreurs.push({ ...t, message: err?.message || 'changement impossible' });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrence, file.length)) }, worker));
+  return res;
+}
+
+const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+
+/** « 2 clôturés · 3 à traiter un par un · 1 en échec » */
+export function resumeStatutGroupe(r) {
+  const n = r.faits.length;
+  const parts = [];
+  if (r.statut === 'Rendu au client') parts.push(n ? pluriel(n, 'rendu') : 'Aucun ticket rendu');
+  else if (r.statut === 'Clôturé') parts.push(n ? pluriel(n, 'clôturé') : 'Aucun ticket clôturé');
+  else parts.push(n ? `${pluriel(n, 'ticket')} en « ${r.statut} »` : 'Aucun ticket modifié');
+  if (r.aTraiter.length) parts.push(`${r.aTraiter.length} à traiter un par un`);
+  if (r.erreurs.length) parts.push(`${r.erreurs.length} en échec`);
+  if (r.inchanges) parts.push(`${r.inchanges} déjà « ${r.statut} »`);
+  return parts.join(' · ');
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const toast = useToast();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const reduceMotion = useReducedMotion();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -63,8 +131,12 @@ export default function DashboardPage() {
   const [activeKpi, setActiveKpi] = useState(null);
   const [showArchived, setShowArchived] = useState(initial.archives);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkReport, setBulkReport] = useState(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const bulkBtnRef = useRef(null);
+  const bulkMenuRef = useRef(null);
+  const bulkMenuId = useId();
   const [filterTech, setFilterTech] = useState(initial.tech);
   const [interactionFilter, setInteractionFilter] = useState(null); // 'accord_client' | 'messages' | 'avis' | null
   const [pageSize, setPageSize] = useState(() => parseInt(localStorage.getItem('kp_page_size') || '50'));
@@ -96,6 +168,11 @@ export default function DashboardPage() {
       return next;
     });
   };
+
+  // Menu du changement groupé ouvert : le focus va sur le premier statut (Échap le rend au bouton)
+  useEffect(() => {
+    if (showBulkMenu) bulkMenuRef.current?.querySelector('button')?.focus();
+  }, [showBulkMenu]);
 
   // Debounced search (300ms)
   useEffect(() => {
@@ -273,21 +350,38 @@ export default function DashboardPage() {
     }
   };
 
+  const ouvrirRemise = (t) => openQuickScan({ id: t.id, code: t.ticket_code });
+
   const handleBulkStatus = async (statut) => {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.size === 0 || bulkBusy) return;
+    setShowBulkMenu(false);
+    setBulkReport(null);
+    setBulkBusy(true);
     try {
-      await Promise.all([...selectedIds].map(id => api.changeStatus(id, statut)));
+      const byId = new Map(tickets.map(t => [t.id, t]));
+      const choisis = [...selectedIds].map(id => byId.get(id) || { id });
+      const res = await executerStatutGroupe(planStatutGroupe(choisis, statut), statut, (id, s) => api.changeStatus(id, s));
       setSelectedIds(new Set());
-      setShowBulkMenu(false);
       // Invalide aussi 'interactions' pour que les points vert/orange se mettent
       // à jour immédiatement (sinon ils restent figés ~30s le temps du polling).
-      invalidateCache('tickets', 'dashboard', 'interactions');
+      if (res.faits.length) invalidateCache('tickets', 'dashboard', 'interactions');
+      if (res.aTraiter.length || res.erreurs.length) setBulkReport(res);
+      else toast.success(resumeStatutGroupe(res));
     } catch (err) {
-      console.error(err);
+      toast.error(err?.message || 'Changement groupé impossible');
+    } finally {
+      setBulkBusy(false);
     }
   };
 
-  const handleInlineStatus = async (ticketId, newStatut) => {
+  const handleInlineStatus = async (ticket, newStatut) => {
+    const action = actionStatutLigne(ticket, newStatut);
+    if (action === 'aucun') return;
+    if (action === 'panneau') {
+      ouvrirRemise(ticket);
+      return;
+    }
+    const ticketId = ticket.id;
     try {
       await api.changeStatus(ticketId, newStatut);
       // Mise à jour optimiste du statut affiché
@@ -300,7 +394,14 @@ export default function DashboardPage() {
       // que la liste, pas les compteurs KPI du payload dashboard).
       invalidateCache('tickets', 'dashboard', 'interactions');
     } catch (err) {
-      console.error(err);
+      const code = ticket.ticket_code || `#${ticketId}`;
+      if (codeErreur(err) === 'utiliser_restitution') {
+        // Non réglé ou prêt sorti : le panneau propose l'encaissement ou la remise
+        toast.info(`${code} : ${err.message}`);
+        ouvrirRemise(ticket);
+      } else {
+        toast.error(`${code} : ${err?.message || 'changement de statut impossible'}`);
+      }
     }
   };
 
@@ -922,19 +1023,32 @@ export default function DashboardPage() {
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-brand-50 border border-brand-200 rounded-xl motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
           <span className="text-sm font-semibold text-brand-700">{selectedIds.size} sélectionné(s)</span>
-          <div className="relative ml-auto">
-            <button onClick={() => setShowBulkMenu(!showBulkMenu)}
-              className="btn-primary text-xs px-3 py-1.5">
-              Changer statut <ChevronDown className="w-3.5 h-3.5" />
+          <div className="relative ml-auto"
+            onKeyDown={e => {
+              if (e.key !== 'Escape' || !showBulkMenu) return;
+              e.stopPropagation();
+              setShowBulkMenu(false);
+              bulkBtnRef.current?.focus();
+            }}>
+            <button type="button" ref={bulkBtnRef} onClick={() => setShowBulkMenu(!showBulkMenu)} disabled={bulkBusy}
+              aria-expanded={showBulkMenu} aria-controls={showBulkMenu ? bulkMenuId : undefined}
+              className="btn-primary text-xs px-3 min-h-[44px] disabled:opacity-60">
+              {bulkBusy
+                ? <><RefreshCw className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" /> Changement en cours…</>
+                : <>Changer statut <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" /></>}
             </button>
             {showBulkMenu && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowBulkMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 w-64 card p-1.5 shadow-xl z-50 motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
+                <div role="group" id={bulkMenuId} ref={bulkMenuRef} aria-label="Nouveau statut des tickets sélectionnés"
+                  className="absolute right-0 top-full mt-1 w-72 card p-1.5 shadow-xl z-50 motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
                   {STATUTS.map(s => (
-                    <button key={s} onClick={() => handleBulkStatus(s)}
-                      className="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors">
+                    <button type="button" key={s} onClick={() => handleBulkStatus(s)}
+                      className="w-full min-h-[44px] text-left px-3 py-2 rounded-lg text-sm hover:bg-slate-50 text-slate-700 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                       {s}
+                      {STATUTS_REMISE.includes(s) && (
+                        <span className="block text-xs text-slate-600">Tickets déjà rendus et réglés ; remise un par un</span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -947,6 +1061,50 @@ export default function DashboardPage() {
           </button>
         </div>
       )}
+
+      {/* Compte rendu du changement groupé : tickets à rendre un par un, échecs */}
+      {bulkReport && (() => {
+        const enAttente = bulkReport.aTraiter.filter(r => {
+          const cur = tickets.find(t => t.id === r.id);
+          return !cur || cur.statut === r.statut;
+        });
+        return (
+          <div role="status" className="flex items-start gap-3 mb-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+            <div className="flex-1 min-w-0 text-sm text-amber-900">
+              <p className="font-semibold">{resumeStatutGroupe(bulkReport)}</p>
+              {enAttente.length > 0 && (
+                <>
+                  <p className="mt-1 text-xs">
+                    Remise au client par le panneau (paiement, téléphone de prêt) — cliquez sur un ticket :
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {enAttente.map(r => (
+                      <li key={r.id}>
+                        <button type="button" onClick={() => ouvrirRemise(r)} title={r.raison}
+                          className="min-h-[44px] px-3 rounded-lg bg-white border border-amber-300 font-mono text-sm font-semibold text-amber-900 hover:bg-amber-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600">
+                          {r.ticket_code}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {bulkReport.erreurs.length > 0 && (
+                <ul className="mt-2 space-y-0.5 text-xs">
+                  {bulkReport.erreurs.map(r => (
+                    <li key={r.id}><span className="font-mono font-semibold">{r.ticket_code}</span> : {r.message}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button type="button" onClick={() => setBulkReport(null)} aria-label="Fermer le compte rendu"
+              className="btn-ghost p-1.5 min-w-[44px] min-h-[44px] -my-2 -mr-2 text-amber-900">
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Table */}
       <div aria-busy={loading || isPending}
@@ -1198,7 +1356,7 @@ export default function DashboardPage() {
                   <select
                     value={t.statut}
                     aria-label={`Statut du ticket ${t.ticket_code}`}
-                    onChange={e => handleInlineStatus(t.id, e.target.value)}
+                    onChange={e => handleInlineStatus(t, e.target.value)}
                     className="w-full min-h-[44px] lg:min-h-0 py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
                     style={{
                       borderColor: getStatusConfig(t.statut).color,
