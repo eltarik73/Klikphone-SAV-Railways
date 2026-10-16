@@ -63,7 +63,8 @@ describe('MessageComposer : bouton SMS', () => {
     await waitFor(() => expect(apiMock.envoyerSms).toHaveBeenCalled());
     const [ticketId, message] = apiMock.envoyerSms.mock.calls[0];
     expect(ticketId).toBe(42);
-    expect(message).toContain('Votre iPhone est prêt');
+    expect(message).toContain('Votre iPhone est pret');
+    expect(message).not.toMatch(/\/suivi/);
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('SMS envoyé au 06 12 34 56 78'));
     expect(apiMock.logMessage).not.toHaveBeenCalled();
     expect(window.open).not.toHaveBeenCalled();

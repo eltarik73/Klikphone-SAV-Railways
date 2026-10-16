@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
-import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
+import { envoyerSms, messageSmsEnvoye, versionCourteSms, smsSegments } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useToast } from './Toast';
 import { useAuth } from '../hooks/useAuth';
@@ -127,6 +127,8 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   const isAvisTemplate = selectedId === 11;
   const rawText = isCustom ? customText : (selected ? replaceVars(selected.message) : '');
   const previewText = isAvisTemplate ? rawText : appendSuiviLink(rawText);
+  const smsText = versionCourteSms(rawText);
+  const smsInfo = smsSegments(smsText);
 
   const sendWhatsApp = (telephone, message) => {
     let tel = telephone.replace(/[\s\-\.]/g, '');
@@ -161,7 +163,8 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
         sendWhatsApp(tel, previewText);
       } else if (canal === 'sms') {
         if (!tel) { toast.error('Pas de telephone'); return; }
-        const res = await envoyerSms({ serveur: smsServeur, ticketId: t.id, tel, message: previewText, libelle: label });
+        if (!smsText) { toast.error('Message vide'); return; }
+        const res = await envoyerSms({ serveur: smsServeur, ticketId: t.id, tel, message: smsText, libelle: label });
         if (res.mode === 'serveur') smsServeurEnvoye = res;
       } else if (canal === 'email') {
         if (!email) { toast.error("Ce client n'a pas d'adresse email"); return; }
@@ -236,6 +239,16 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
         <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 leading-relaxed mb-3 border border-slate-100 whitespace-pre-line break-words">
           {previewText}
         </div>
+      )}
+
+      {smsText && (
+        <details className="mb-3 text-xs text-slate-600">
+          <summary className="cursor-pointer select-none py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded">
+            Par SMS : version courte sans lien de suivi · <strong className="font-semibold text-slate-800">{smsInfo.segments} SMS</strong>
+            {' '}({smsInfo.caracteres} caractères{smsInfo.unicode ? ', unicode : 70 par SMS' : ', 160 par SMS'})
+          </summary>
+          <p className="mt-1 p-2 bg-white rounded border border-slate-100 break-words">{smsText}</p>
+        </details>
       )}
 
       {/* Send buttons */}

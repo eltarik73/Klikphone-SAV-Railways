@@ -30,6 +30,39 @@ export function estGsm(texte) {
   return true;
 }
 
+const TEL_BOUTIQUE = '04 79 60 89 22';
+
+// Lettres hors alphabet GSM : une seule suffit à facturer le SMS en Unicode (70 caractères au lieu de 160)
+const LETTRES_GSM = {
+  'â': 'a', 'ê': 'e', 'ë': 'e', 'î': 'i', 'ï': 'i', 'ô': 'o', 'û': 'u', 'ç': 'c', 'œ': 'oe',
+  'á': 'a', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ÿ': 'y',
+  'Â': 'A', 'Ê': 'E', 'Ë': 'E', 'Î': 'I', 'Ï': 'I', 'Ô': 'O', 'Û': 'U', 'Œ': 'OE',
+  'À': 'A', 'È': 'E', 'Ù': 'U', 'Ì': 'I', 'Ò': 'O',
+};
+
+// Lien de suivi (…/suivi?…) jusqu'à la fin de sa phrase, sans avaler la phrase suivante
+const PHRASE_LIEN_SUIVI = /[^.!?\n]*https?:\/\/\S*?\/suivi\S*?(?=[.!?,;:]?(?:\s|$))[.!?]?/gi;
+
+/**
+ * Version facturée au plus juste d'un message client envoyé par SMS : sans lien de suivi
+ * (adresse trop longue, inutile par SMS), en alphabet GSM, sans emoji ni lignes vides.
+ * Une demande d'accord perd son lien : on renvoie vers le téléphone de la boutique,
+ * un SMS venant de « KLIKPHONE » ne pouvant pas recevoir de réponse.
+ */
+export function versionCourteSms(texte) {
+  let t = normaliserSms(texte);
+  let accordRetire = false;
+  t = t.replace(PHRASE_LIEN_SUIVI, (phrase) => {
+    if (/accord|accepter|refuser|valider/i.test(phrase)) accordRetire = true;
+    return '';
+  });
+  t = t.replace(/[^\n]*Suivez votre r[ée]paration[^\n]*/gi, '');
+  t = [...t].map((c) => LETTRES_GSM[c] ?? c).filter((c) => GSM_BASE.has(c) || GSM_EXT.has(c)).join('');
+  t = t.replace(/\s*\n\s*/g, ' ').replace(/ {2,}/g, ' ').replace(/ +([.,!?])/g, '$1').trim();
+  if (accordRetire && !t.includes(TEL_BOUTIQUE)) t = `${t} Merci de nous donner votre accord au ${TEL_BOUTIQUE}.`;
+  return t;
+}
+
 // { segments, unicode, caracteres } du texte tel que le serveur l'enverra
 export function smsSegments(texte) {
   const t = normaliserSms(texte);

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
-import { envoyerSms } from '../lib/sms';
+import { envoyerSms, versionCourteSms } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { invalidateCache } from '../hooks/useApi';
 import { useAutoSave } from '../hooks/useAutoSave';
@@ -1674,7 +1674,7 @@ function TicketDetail({ id }) {
       } else if (canal === 'sms') {
         if (!tel) { toast.error('Pas de téléphone'); return; }
         try {
-          const res = await envoyerSms({ serveur: smsServeur, ticketId: id, tel, message: accordMessage, libelle: 'Demande accord' });
+          const res = await envoyerSms({ serveur: smsServeur, ticketId: id, tel, message: versionCourteSms(accordMessage), libelle: 'Demande accord' });
           smsServeurEnvoye = res.mode === 'serveur';
         } catch (err) {
           // Refus lisible (doublon, numéro fixe, crédits…) : statut inchangé, échec noté sur le ticket
