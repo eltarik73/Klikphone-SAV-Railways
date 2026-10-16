@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import { useToast } from './Toast';
 import { useAuth } from '../hooks/useAuth';
+import { modelePourStatut } from '../lib/messages';
 import { MessageCircle, Send, Mail, Check } from 'lucide-react';
 
 const DEFAULT_TEMPLATES = [
@@ -24,22 +25,36 @@ const TEMPLATE_ICONS = {
   6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️', 11: '⭐', 12: '🤝',
 };
 
-export default function MessageComposer({ ticket, onMessageSent }) {
+/**
+ * Messages au client (WhatsApp / SMS ouverts pré-remplis, email envoyé par le serveur).
+ * statutPropose : modèle pré-sélectionné après un changement de statut (lib/messages) ;
+ * integre : sans cadre ni titre, dans une modale ou le scan comptoir.
+ */
+export default function MessageComposer({ ticket, onMessageSent, statutPropose = null, integre = false }) {
   const toast = useToast();
   const { user } = useAuth();
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => modelePourStatut(DEFAULT_TEMPLATES, statutPropose));
   const [customText, setCustomText] = useState('');
   const [sending, setSending] = useState(null);
   const [googleReviewLink, setGoogleReviewLink] = useState('https://g.page/r/Cf6adrBONrj3EAE/review');
+  // Modèle choisi à la main : les modèles de la boutique, arrivés après, ne le remplacent pas
+  const choixManuelRef = useRef(false);
+  const [choixManuel, setChoixManuel] = useState(false);
+  const statutProposeRef = useRef(statutPropose);
 
   useEffect(() => {
     api.getMessageTemplates()
       .then(data => {
-        if (data && data.length > 0) setTemplates(data);
+        if (!data || data.length === 0) return;
+        setTemplates(data);
+        if (statutProposeRef.current && !choixManuelRef.current) {
+          setSelectedId(modelePourStatut(data, statutProposeRef.current));
+        }
       })
       .catch(() => {});
-    api.getConfig()
+    // Même lecture en cache que la fiche et le scan comptoir (5 min)
+    api.getCached('/api/config', 5 * 60_000)
       .then(cfg => {
         const map = {};
         (Array.isArray(cfg) ? cfg : []).forEach(p => { map[p.cle] = p.valeur; });
@@ -76,7 +91,10 @@ export default function MessageComposer({ ticket, onMessageSent }) {
     totalAvantAcompte = Math.max(0, devis - reduction);
   }
 
-  const montant = t.paye ? 0 : Math.max(0, totalAvantAcompte - acompte);
+  // Montants du serveur (services/montants : forfaits, devis refusé, acompte) quand la fiche les a
+  const serveur = t.montants && Number.isFinite(Number(t.montants.reste)) ? t.montants : null;
+  const montant = serveur ? Number(serveur.reste) : (t.paye ? 0 : Math.max(0, totalAvantAcompte - acompte));
+  const totalTicket = serveur ? Number(serveur.total) || 0 : totalAvantAcompte;
 
   const suiviUrl = `${window.location.origin}/suivi?ticket=${t.ticket_code || ''}`;
 
@@ -127,7 +145,7 @@ export default function MessageComposer({ ticket, onMessageSent }) {
       toast.error('Message vide');
       return;
     }
-    if (templateUsesMontant && montant <= 0 && !t.paye) {
+    if (templateUsesMontant && totalTicket <= 0 && !t.paye) {
       toast.error('Renseigne un tarif avant d\'envoyer');
       return;
     }
@@ -170,79 +188,100 @@ export default function MessageComposer({ ticket, onMessageSent }) {
     }
   };
 
+  const grille = (
+    <div role="group" aria-label="Modèles de message" className="grid grid-cols-2 gap-1.5 mb-3">
+      {templates.map(tp => (
+        <button
+          key={tp.id}
+          type="button"
+          aria-pressed={selectedId === tp.id}
+          onClick={() => {
+            choixManuelRef.current = true;
+            setChoixManuel(true);
+            setSelectedId(tp.id === selectedId ? null : tp.id);
+          }}
+          className={`min-h-[44px] text-left px-2.5 py-2 rounded-lg text-xs font-medium transition-colors border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+            selectedId === tp.id
+              ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-sm'
+              : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50 hover:border-slate-200'
+          }`}
+        >
+          <span className="mr-1" aria-hidden="true">{TEMPLATE_ICONS[tp.id] || '💬'}</span>
+          {tp.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const BOUTON = 'flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
+  const apercu = selectedId ? (
+    <div className="animate-in">
+      {isCustom ? (
+        <textarea
+          value={customText}
+          onChange={e => setCustomText(e.target.value)}
+          placeholder="Tapez votre message..."
+          aria-label="Message personnalisé"
+          rows={3}
+          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 mb-3"
+        />
+      ) : (
+        <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 leading-relaxed mb-3 border border-slate-100 whitespace-pre-line break-words">
+          {previewText}
+        </div>
+      )}
+
+      {/* Send buttons */}
+      <div className="flex gap-2">
+        <button type="button" onClick={() => sendMessage('whatsapp')} disabled={!!sending}
+          className={`${BOUTON} bg-green-700 hover:bg-green-800 text-white`}>
+          {sending === 'whatsapp' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />}
+          WhatsApp
+        </button>
+        <button type="button" onClick={() => sendMessage('sms')} disabled={!!sending}
+          className={`${BOUTON} bg-white hover:bg-slate-50 text-slate-700 border border-slate-200`}>
+          {sending === 'sms' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Send className="w-3.5 h-3.5" aria-hidden="true" />}
+          SMS
+        </button>
+        <button type="button" onClick={() => sendMessage('email')} disabled={!!sending}
+          className={`${BOUTON} bg-white hover:bg-slate-50 text-slate-700 border border-slate-200`}>
+          {sending === 'email' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Mail className="w-3.5 h-3.5" aria-hidden="true" />}
+          Email
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  // Proposition (modale, scan comptoir) : le message pré-rempli d'abord, les autres modèles repliés
+  if (integre) {
+    return apercu && !choixManuel ? (
+      <div>
+        {apercu}
+        <details className="mt-3">
+          <summary className="min-h-[44px] flex items-center cursor-pointer rounded text-xs font-semibold text-slate-700 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            Choisir un autre modèle
+          </summary>
+          <div className="mt-2">{grille}</div>
+        </details>
+      </div>
+    ) : (
+      <div>
+        {grille}
+        {apercu}
+      </div>
+    );
+  }
+
   return (
     <div className="card p-5">
       <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center" aria-hidden="true">
           <MessageCircle className="w-4 h-4 text-green-600" />
         </div>
         <h2 className="text-sm font-semibold text-slate-800">Messages</h2>
       </div>
-
-      {/* Template grid */}
-      <div className="grid grid-cols-2 gap-1.5 mb-3">
-        {templates.map(tp => (
-          <button
-            key={tp.id}
-            onClick={() => setSelectedId(tp.id === selectedId ? null : tp.id)}
-            className={`text-left px-2.5 py-2 rounded-lg text-xs font-medium transition-all border ${
-              selectedId === tp.id
-                ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-sm'
-                : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50 hover:border-slate-200'
-            }`}
-          >
-            <span className="mr-1">{TEMPLATE_ICONS[tp.id] || '💬'}</span>
-            {tp.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Preview */}
-      {selectedId && (
-        <div className="animate-in">
-          {isCustom ? (
-            <textarea
-              value={customText}
-              onChange={e => setCustomText(e.target.value)}
-              placeholder="Tapez votre message..."
-              rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 mb-3"
-            />
-          ) : (
-            <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 leading-relaxed mb-3 border border-slate-100">
-              {previewText}
-            </div>
-          )}
-
-          {/* Send buttons */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => sendMessage('whatsapp')}
-              disabled={!!sending}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-bold transition-colors disabled:opacity-50"
-            >
-              {sending === 'whatsapp' ? <Check className="w-3.5 h-3.5" /> : <MessageCircle className="w-3.5 h-3.5" />}
-              WhatsApp
-            </button>
-            <button
-              onClick={() => sendMessage('sms')}
-              disabled={!!sending}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
-            >
-              {sending === 'sms' ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
-              SMS
-            </button>
-            <button
-              onClick={() => sendMessage('email')}
-              disabled={!!sending}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
-            >
-              {sending === 'email' ? <Check className="w-3.5 h-3.5" /> : <Mail className="w-3.5 h-3.5" />}
-              Email
-            </button>
-          </div>
-        </div>
-      )}
+      {grille}
+      {apercu}
     </div>
   );
 }

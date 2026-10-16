@@ -9,12 +9,13 @@ import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig 
 import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
 import { openQuickScan } from '../components/ScanListener';
 import { useToast } from '../components/Toast';
+import EtagereARecuperer from '../components/EtagereARecuperer';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
   Smartphone, MessageCircle, Send, Mail, Lock, Shield,
   SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
-  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox,
+  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck,
 } from 'lucide-react';
 
 // Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
@@ -129,6 +130,9 @@ export default function DashboardPage() {
   const [debouncedSearch, setDebouncedSearch] = useState(initial.q.trim());
   const [filterStatut, setFilterStatut] = useState(initial.statut);
   const [activeKpi, setActiveKpi] = useState(null);
+  // Étagère « À récupérer » (carte KPI) : liste filtrée et triée par le serveur, au-dessus du tableau
+  const [showEtagere, setShowEtagere] = useState(false);
+  const etagereId = useId();
   const [showArchived, setShowArchived] = useState(initial.archives);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -417,7 +421,12 @@ export default function DashboardPage() {
       });
   };
 
-  const handleKpiClick = (filter, idx) => {
+  const handleKpiClick = (filter, idx, etagere) => {
+    if (etagere) {
+      setShowEtagere(v => !v);
+      return;
+    }
+    setShowEtagere(false);
     if (activeKpi === idx) {
       setActiveKpi(null);
       setFilterStatut('');
@@ -675,6 +684,7 @@ export default function DashboardPage() {
     { label: 'Réparation', value: kpi.en_cours, icon: Wrench, color: 'text-blue-600', iconBg: 'bg-blue-100', filter: 'En cours de réparation' },
     { label: 'Accord client', value: kpi.en_attente_accord, icon: AlertTriangle, color: 'text-orange-600', iconBg: 'bg-orange-100', filter: "En attente d'accord client" },
     { label: 'Pièces', value: kpi.en_attente_piece, icon: Package, color: 'text-violet-600', iconBg: 'bg-violet-100', filter: 'En attente de pièce' },
+    { label: 'À récupérer', value: kpi.a_recuperer ?? 0, icon: PackageCheck, color: 'text-emerald-700', iconBg: 'bg-emerald-100', etagere: true },
   ] : [];
 
   // Recovery date countdown helper
@@ -793,22 +803,26 @@ export default function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* KPI Grid — 5 cards cliquables (filtres rapides au-dessus du tableau) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+      {/* KPI Grid — 6 cards cliquables (filtres rapides au-dessus du tableau, étagère « À récupérer ») */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {!kpi && loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
+          Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="card p-4">
               <div className="w-9 h-9 rounded-lg animate-shimmer mb-3" />
               <div className="h-7 w-12 animate-shimmer rounded mb-1" />
               <div className="h-3 w-20 animate-shimmer rounded" />
             </div>
           ))
-        ) : kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter }, i) => (
+        ) : kpiCards.map(({ label, value, icon: Icon, color, iconBg, filter, etagere }, i) => {
+          const actif = etagere ? showEtagere : activeKpi === i;
+          return (
           <button key={label} type="button"
-            onClick={() => handleKpiClick(filter, i)}
-            aria-pressed={activeKpi === i}
+            onClick={() => handleKpiClick(filter, i, etagere)}
+            {...(etagere
+              ? { 'aria-expanded': showEtagere, 'aria-controls': showEtagere ? etagereId : undefined }
+              : { 'aria-pressed': actif })}
             className={`card p-4 hover:shadow-md motion-safe:hover:-translate-y-0.5 transition-all duration-200 motion-safe:animate-[fadeIn_0.3s_ease-out_both] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-              ${activeKpi === i ? 'ring-2 ring-brand-500 shadow-lg shadow-brand-500/10' : ''}`}
+              ${actif ? 'ring-2 ring-brand-500 shadow-lg shadow-brand-500/10' : ''}`}
             style={{ animationDelay: `${i * 50}ms` }}
           >
             <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center mb-3`} aria-hidden="true">
@@ -817,8 +831,14 @@ export default function DashboardPage() {
             <p className="text-2xl font-bold text-slate-900 tracking-tight">{value}</p>
             <p className="text-[11px] text-slate-500 font-medium mt-0.5 leading-tight">{label}</p>
           </button>
-        ))}
+          );
+        })}
       </div>
+
+      {showEtagere && (
+        <EtagereARecuperer id={etagereId} basePath={basePath} onOpenTicket={openTicket}
+          onRemettre={ouvrirRemise} onClose={() => setShowEtagere(false)} />
+      )}
 
       {/* ★ Barre actions compacte — regroupe commandes, dépôts distants, interactions */}
       {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0)) && (

@@ -3,12 +3,14 @@ Schemas Pydantic pour validation des données.
 Compatible avec le schéma PostgreSQL existant de Klikphone SAV.
 """
 
+import re
+
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from typing import Any
 from typing import Optional, List
 from datetime import datetime
 
-from app.services.search import phone_canonical
+from app.services.search import luhn_ok, phone_canonical
 
 
 # ============================================================
@@ -132,6 +134,20 @@ class TicketUpdate(BaseModel):
     telephone_pret_imei: Optional[str] = None
     telephone_pret_rendu: Optional[int] = None
     type_document: Optional[str] = None
+
+    @field_validator("telephone_pret_imei")
+    @classmethod
+    def _imei_pret(cls, v):
+        # IMEI du téléphone de prêt : vide, ou 15 chiffres avec clé de Luhn (séparateurs
+        # retirés). C'est lui que la scanette compare à la remise.
+        if v is None:
+            return None
+        if not v.strip():
+            return ""
+        chiffres = re.sub(r"\D", "", v)
+        if len(chiffres) != 15 or set(chiffres) == {"0"} or not luhn_ok(chiffres):
+            raise ValueError("IMEI du téléphone de prêt invalide : 15 chiffres avec clé de contrôle")
+        return chiffres
 
 
 class StatusChange(BaseModel):
@@ -305,6 +321,7 @@ class KPIResponse(BaseModel):
     total_actifs: int = 0
     clotures_aujourdhui: int = 0
     nouveaux_aujourdhui: int = 0
+    a_recuperer: int = 0
 
 
 # ============================================================

@@ -24,6 +24,8 @@ import {
 } from '../lib/prestations';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
+import { luhnOk } from '../lib/scan';
+import { digitsOnly } from '../lib/ticketCode';
 import { useToast } from '../components/Toast';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Trash2,
@@ -59,7 +61,20 @@ function formulaireAppareil(d) {
     modele_autre: d.modele_autre || '', imei: d.imei || '', panne: d.panne || '',
     panne_detail: d.panne_detail || '', pin: d.pin || '', pattern: d.pattern || '',
     notes_client: d.notes_client || '',
+    telephone_pret: d.telephone_pret || '', telephone_pret_imei: d.telephone_pret_imei || '',
+    telephone_pret_rendu: pretRendu(d),
   };
+}
+
+// Colonne BOOLEAN (schéma neuf) ou INTEGER 0/1 (ancienne base)
+function pretRendu(d) {
+  return d?.telephone_pret_rendu === true || Number(d?.telephone_pret_rendu) === 1;
+}
+
+/** IMEI du téléphone de prêt : vide, ou 15 chiffres avec clé de Luhn (même règle que le serveur). */
+export function imeiPretValide(valeur) {
+  const d = digitsOnly(valeur);
+  return d === '' || (d.length === 15 && luhnOk(d));
 }
 
 function formulaireClient(d) {
@@ -573,6 +588,10 @@ function TicketDetail({ id }) {
   const [paiement, setPaiement] = useState(null);
   const [paying, setPaying] = useState(false);
   const [statutEnCours, setStatutEnCours] = useState(false);
+  // Message au client proposé après un changement de statut (réponse proposer_message) : { statut }
+  const [propositionMessage, setPropositionMessage] = useState(null);
+  // IMEI du prêt quitté une fois : l'erreur de saisie s'affiche dès lors
+  const [pretImeiVu, setPretImeiVu] = useState(false);
   const [envoiCaisse, setEnvoiCaisse] = useState(false);
   // Avantages client écrits en réduction sur le ticket, pas encore débités (montant en €)
   const [avantagesAppliques, setAvantagesAppliques] = useState(0);
@@ -985,6 +1004,30 @@ function TicketDetail({ id }) {
     deviceSave.schedule(updates, opts);
   };
 
+  // Téléphone de prêt confié sur un ticket qui n'en avait pas : il est dehors (même règle que
+  // le serveur), la remise exigera sa restitution
+  const updatePretModele = (valeur) => {
+    const updates = { telephone_pret: valeur };
+    const dejaPrete = !!String(enregistreRef.current.device.telephone_pret || '').trim();
+    if (!dejaPrete && valeur.trim() && deviceFormRef.current.telephone_pret_rendu) updates.telephone_pret_rendu = 0;
+    updateDeviceForm(updates);
+  };
+
+  // IMEI du prêt : envoyé seulement vide ou valide (Luhn) ; une saisie invalide reste à l'écran
+  const updatePretImei = (valeur) => {
+    if (imeiPretValide(valeur)) updateDeviceForm({ telephone_pret_imei: valeur });
+    else majDeviceForm({ ...deviceFormRef.current, telephone_pret_imei: valeur });
+  };
+
+  const basculerPretRendu = (rendu) => {
+    updateDeviceForm({ telephone_pret_rendu: rendu ? 1 : 0 }, { wait: 0 });
+    if (!rendu) return;
+    // Même trace que le scan comptoir (« Prêt récupéré »)
+    deviceSave.flush()
+      .then(() => api.addHistory(id, `Téléphone de prêt restitué — par ${user?.utilisateur || 'Staff'}`))
+      .catch(() => {});
+  };
+
   // Fin de saisie (sortie du champ, suggestion choisie, fermeture) : l'envoi porte ?learn=1 ;
   // une valeur déjà enregistrée par le délai d'auto-save est apprise une seule fois ici.
   const finSaisieAppareil = () => {
@@ -1198,11 +1241,13 @@ function TicketDetail({ id }) {
         return false;
       }
       try {
-        await api.changeStatus(id, statut);
+        const res = await api.changeStatus(id, statut);
         invaliderListes();
         fusionnerTicket({ statut }, null);
         await loadTicket(false);
         if (!silencieux) toast.success(`Statut changé : ${statut}`);
+        // Proposé, jamais envoyé : le message part seulement sur un clic (WhatsApp, SMS, email)
+        if (res?.proposer_message && !silencieux && mountedRef.current) setPropositionMessage({ statut });
         return true;
       } catch (err) {
         const dejaRemis = STATUTS_REMISE.has(ticketRef.current?.statut);
@@ -1989,6 +2034,18 @@ function TicketDetail({ id }) {
                     </div>
                   ))}
                 </div>
+                {String(t.telephone_pret || '').trim() && (
+                  <div className={`mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border p-3 text-sm ${
+                    pretRendu(t) ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
+                    <PhoneCall className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span><span className="font-semibold">Téléphone de prêt :</span> {t.telephone_pret}</span>
+                    {t.telephone_pret_imei && <span className="font-mono text-xs">IMEI {t.telephone_pret_imei}</span>}
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${
+                      pretRendu(t) ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-amber-100 text-amber-900 ring-amber-300'}`}>
+                      {pretRendu(t) ? 'Récupéré' : 'À récupérer avant la remise'}
+                    </span>
+                  </div>
+                )}
                 {(t.pin || t.pattern) && (
                   <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
                     {t.pin && (
@@ -2064,6 +2121,46 @@ function TicketDetail({ id }) {
                 <label htmlFor={`${uid}-notes-client`} className="input-label">Note client</label>
                 <textarea id={`${uid}-notes-client`} value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input resize-none" rows={2} />
               </div>
+              {(() => {
+                const modelePret = String(deviceForm.telephone_pret || '').trim();
+                const chiffres = digitsOnly(deviceForm.telephone_pret_imei);
+                const imeiFaux = !imeiPretValide(deviceForm.telephone_pret_imei) && (pretImeiVu || chiffres.length >= 15);
+                return (
+                  <fieldset className="col-span-2 sm:col-span-3 min-w-0 pt-3 border-t border-slate-100">
+                    <legend className="sr-only">Téléphone de prêt</legend>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor={`${uid}-pret`} className="input-label flex items-center gap-1"><PhoneCall className="w-3 h-3" aria-hidden="true" /> Téléphone de prêt</label>
+                        <input id={`${uid}-pret`} value={deviceForm.telephone_pret} onChange={e => updatePretModele(e.target.value)} onBlur={flushSilencieux(deviceSave)}
+                          className="input" placeholder="Modèle prêté (ex. iPhone 8)" autoComplete="off" aria-describedby={`${uid}-pret-aide`} />
+                        <p id={`${uid}-pret-aide`} className="text-[11px] text-slate-600 mt-1">Tant qu’il n’est pas récupéré, la remise au client est bloquée.</p>
+                      </div>
+                      <div>
+                        <label htmlFor={`${uid}-pret-imei`} className="input-label">IMEI du prêt</label>
+                        <input id={`${uid}-pret-imei`} data-scan-target="imei" inputMode="numeric" value={deviceForm.telephone_pret_imei}
+                          onChange={e => updatePretImei(e.target.value)}
+                          onBlur={() => { setPretImeiVu(true); flushSilencieux(deviceSave)(); }}
+                          disabled={!modelePret && !deviceForm.telephone_pret_imei}
+                          aria-invalid={imeiFaux || undefined} aria-describedby={`${uid}-pret-imei-aide`}
+                          className={`input font-mono ${imeiFaux ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : ''}`} autoComplete="off" />
+                        <p id={`${uid}-pret-imei-aide`} role={imeiFaux ? 'alert' : undefined}
+                          className={`text-[11px] mt-1 ${imeiFaux ? 'font-semibold text-red-700' : 'text-slate-600'}`}>
+                          {imeiFaux
+                            ? 'IMEI invalide (15 chiffres, clé de contrôle) : non enregistré'
+                            : modelePret ? '15 chiffres (*#06# sur le téléphone), scannable' : 'Indiquez d’abord le modèle prêté'}
+                        </p>
+                      </div>
+                      {modelePret && (
+                        <label className="sm:col-span-2 justify-self-start flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-50">
+                          <input type="checkbox" checked={!!deviceForm.telephone_pret_rendu} onChange={e => basculerPretRendu(e.target.checked)}
+                            className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                          Prêt récupéré
+                        </label>
+                      )}
+                    </div>
+                  </fieldset>
+                );
+              })()}
             </div>
           </EditableSection>
         );
@@ -3010,6 +3107,37 @@ function TicketDetail({ id }) {
               className="flex-1 flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
             >
               <Mail className="w-3.5 h-3.5" aria-hidden="true" /> Email
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Message proposé après un changement de statut (NOTIFICATIONS_STATUTS) : rien ne part sans clic */}
+      {propositionMessage && (
+        <Modal labelledBy={`${uid}-message-titre`} onClose={() => setPropositionMessage(null)} panelClassName="max-w-lg p-6">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0" aria-hidden="true">
+              <MessageCircle className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div className="min-w-0">
+              <h3 id={`${uid}-message-titre`} className="text-lg font-display font-bold text-slate-900">
+                Prévenir {t.client_prenom || 'le client'} ?
+              </h3>
+              <p className="text-sm text-slate-600">
+                {t.ticket_code} est « {propositionMessage.statut} ». Message pré-rempli : rien n’est envoyé sans votre clic.
+              </p>
+            </div>
+          </div>
+          <MessageComposer
+            ticket={t}
+            statutPropose={propositionMessage.statut}
+            integre
+            onMessageSent={() => { loadNotes(); setPropositionMessage(null); }}
+          />
+          <div className="flex justify-end mt-4 pt-4 border-t border-slate-100">
+            <button type="button" onClick={() => setPropositionMessage(null)}
+              className="btn-ghost min-h-11 px-4 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+              Plus tard
             </button>
           </div>
         </Modal>

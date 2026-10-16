@@ -27,6 +27,8 @@ from app.services.notifications import (
     notif_accord_client,
 )
 from app.api.notifications_center import push_notification
+from app.services import etagere
+from app.services import params as params_cache
 from app.services import search as search_engine
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
@@ -137,6 +139,25 @@ def _blocage_rendu(t) -> Optional[tuple]:
     return None
 
 
+def _pret_vide(v) -> bool:
+    return not str(v or "").strip()
+
+
+# Statuts après lesquels la fiche et le scan proposent un message au client (jamais envoyé seul)
+NOTIFICATIONS_STATUTS_DEFAUT = "Réparation terminée"
+
+
+def _proposer_message(cur, nouveau: str, refus_devis: bool) -> bool:
+    """Paramètre NOTIFICATIONS_STATUTS (liste séparée par des virgules ; vide = jamais).
+
+    Devis refusé : l'appareil revient non réparé, pas d'annonce « prêt ».
+    """
+    if refus_devis:
+        return False
+    liste = params_cache.get_param("NOTIFICATIONS_STATUTS", NOTIFICATIONS_STATUTS_DEFAUT, cur=cur)
+    return nouveau in {s.strip() for s in str(liste).split(",") if s.strip()}
+
+
 def _rouvrir_si_cloture(t, sets: dict, textes: list):
     """Un « Clôturé » dé-payé redevient un impayé visible (« Rendu au client »), hors CA."""
     if t.get("statut") == "Clôturé":
@@ -227,6 +248,30 @@ def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
     return result
 
 
+# ─── KPI (dashboard combiné et /stats/kpi : une seule requête) ────
+# Fragments SQL fixes (aucune saisie) ; paramètres : date du jour + '%', date du jour
+_KPI_SQL = f"""
+    SELECT
+        COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
+        COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
+        COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
+        COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
+        COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
+        COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
+        COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
+        COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+        COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres,
+        COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer
+    FROM tickets
+"""
+
+
+def _kpi(row) -> dict:
+    data = dict(row) if row else {}
+    pre = data.pop("pre_enregistres", 0)
+    return {**KPIResponse(**data).model_dump(), "pre_enregistres": pre}
+
+
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
 @router.get("/stats/dashboard")
 def get_dashboard(
@@ -237,14 +282,19 @@ def get_dashboard(
     date_from: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     date_to: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     tech: Optional[str] = None,
-    vue: Optional[str] = Query(None, pattern="^(actifs|archives|tous)$"),
+    vue: Optional[str] = Query(None, pattern="^(actifs|archives|tous|a_recuperer)$"),
     user: dict = Depends(get_current_user),
 ):
     """Retourne KPI + tickets en une seule requête pour le dashboard.
 
     Filtres serveur optionnels : dates de dépôt (YYYY-MM-DD), technicien,
-    vue actifs / archives / tous, pagination (offset) ; `total` = nombre de
-    tickets correspondant aux filtres, hors limit/offset.
+    vue actifs / archives / tous / a_recuperer, pagination (offset) ; `total` =
+    nombre de tickets correspondant aux filtres, hors limit/offset.
+
+    Vue a_recuperer (étagère, services/etagere) : « Réparation terminée » et
+    « Rendu au client » non payés, terminés d'abord, du plus ancien au plus récent
+    depuis la fin de réparation ; chaque ticket porte fin_reparation, jours_attente
+    et reste_du, la réponse delai_abandon_jours.
     """
     today = datetime.now().strftime("%Y-%m-%d")
     for value in (date_from, date_to):
@@ -262,6 +312,8 @@ def get_dashboard(
         conditions.append(search_engine.actif_sql("t"))
     elif vue == "archives":
         conditions.append("t.statut IN ('Rendu au client', 'Clôturé')")
+    elif vue == "a_recuperer":
+        conditions.append(etagere.a_recuperer_sql("t"))
     if tech:
         conditions.append(f"t.technicien_assigne = {sp.add(tech)}")
     if date_from:
@@ -276,25 +328,17 @@ def get_dashboard(
         conditions.append(search_engine.ticket_where_sql(pq, sp))
         if not pq.empty:
             order = search_engine.ticket_order_sql(pq, sp)
+    colonnes_etagere = ""
+    if vue == "a_recuperer":
+        colonnes_etagere = f", {etagere.fin_reparation_sql(sp, 't')} AS fin_reparation"
+        order = etagere.ORDRE_SQL
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
     params_tickets = {**sp.values, "limit": limit, "offset": offset}
 
     with get_cursor() as cur:
         # KPI in one query
-        cur.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
-                COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
-                COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
-                COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
-                COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
-                COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
-                COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
-            FROM tickets
-        """, (today + "%", today))
+        cur.execute(_KPI_SQL, (today + "%", today))
         kpi_row = cur.fetchone()
 
         # Tickets list
@@ -306,6 +350,7 @@ def get_dashboard(
                    EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
                    EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
                    EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
+                   {colonnes_etagere}
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
             {where}
@@ -321,11 +366,10 @@ def get_dashboard(
             row = cur.fetchone()
             total = row["n"] if row else 0
 
-    kpi_data = dict(kpi_row) if kpi_row else {}
-    pre = kpi_data.pop("pre_enregistres", 0)
-    kpi = {**KPIResponse(**kpi_data).model_dump(), "pre_enregistres": pre}
-
-    return {"kpi": kpi, "tickets": tickets, "total": total}
+    if vue == "a_recuperer":
+        return {"kpi": _kpi(kpi_row), "tickets": etagere.enrichir(tickets), "total": total,
+                "delai_abandon_jours": etagere.DELAI_ABANDON_JOURS}
+    return {"kpi": _kpi(kpi_row), "tickets": tickets, "total": total}
 
 
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
@@ -335,25 +379,10 @@ def get_kpi(user: dict = Depends(get_current_user)):
     today = datetime.now().strftime("%Y-%m-%d")
 
     with get_cursor() as cur:
-        cur.execute("""
-            SELECT
-                COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
-                COUNT(*) FILTER (WHERE statut = 'En cours de réparation') as en_cours,
-                COUNT(*) FILTER (WHERE statut = 'En attente de pièce') as en_attente_piece,
-                COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
-                COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
-                COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-                COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
-                COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
-                COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres
-            FROM tickets
-        """, (today + "%", today))
+        cur.execute(_KPI_SQL, (today + "%", today))
         row = cur.fetchone()
 
-    data = dict(row) if row else {}
-    pre_enregistres = data.pop("pre_enregistres", 0)
-    result = KPIResponse(**data)
-    return {**result.model_dump(), "pre_enregistres": pre_enregistres}
+    return _kpi(row)
 
 
 # ─── FILE D'ATTENTE RÉPARATION ────────────────────────────────────
@@ -640,6 +669,10 @@ def update_ticket(
         avant = dict(avant)
 
         if updates:
+            # Prêt confié sur un ticket qui n'en avait pas : il est dehors (garde-fou de la restitution)
+            if ("telephone_pret" in updates and not _pret_vide(updates["telephone_pret"])
+                    and _pret_vide(avant.get("telephone_pret"))):
+                updates.setdefault("telephone_pret_rendu", 0)
             if "telephone_pret_rendu" in updates:
                 updates["telephone_pret_rendu"] = _booleen(updates["telephone_pret_rendu"])
             if "paye" in updates:
@@ -759,6 +792,8 @@ def change_status(
     tant que le ticket n'est pas réglé ou qu'un téléphone de prêt est dehors.
     « En attente d'accord client » → « Réparation terminée » = devis refusé :
     pièces non marquées reçues, issue='refus_devis', pas d'annonce « prêt ».
+    proposer_message : le nouveau statut figure dans NOTIFICATIONS_STATUTS, la
+    fiche et le scan proposent alors le message au client (jamais envoyé seul).
     """
     if data.statut not in STATUTS:
         raise HTTPException(400, f"Statut invalide. Valides: {STATUTS}")
@@ -777,7 +812,7 @@ def change_status(
         ancien = t.get("statut") or ""
         ticket_code = t.get("ticket_code") or f"#{ticket_id}"
         if ancien == nouveau:
-            return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau}
+            return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau, "proposer_message": False}
 
         if nouveau in _STATUTS_RENDUS:
             blocage = _blocage_rendu(t)
@@ -819,6 +854,7 @@ def change_status(
                 """,
                 (ticket_id, auteur, f"✅ Devis accepté par le client — validé au comptoir par {auteur}"),
             )
+        proposer = _proposer_message(cur, nouveau, refus_devis)
 
     # Notifications hors du chemin de la réponse (Discord : jusqu'à 5 s)
     if refus_devis:
@@ -844,7 +880,7 @@ def change_status(
             action_url=f"/accueil/ticket/{ticket_id}",
         )
 
-    return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau}
+    return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau, "proposer_message": proposer}
 
 
 # ─── RESTITUTION (remise au client en un appel, atomique et idempotente) ──
