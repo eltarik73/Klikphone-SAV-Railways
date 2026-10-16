@@ -650,8 +650,16 @@ _DONNEES_FIXES = [
         ('MODULE_DEVIS_FLASH_VISIBLE', 'false'),
         ('DEPOT_DISTANCE_ACTIF', 'true'),
         ('NOTIFICATIONS_EMAIL_ACTIF', 'true'),
-        ('NOTIFICATIONS_STATUTS', 'Réparation terminée,En attente de pièce,En cours de réparation'),
+        ('NOTIFICATIONS_STATUTS', 'Réparation terminée'),
         ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
+    ON CONFLICT (cle) DO NOTHING""",
+    # L'ancienne valeur semée n'était lue par rien jusqu'au message « prêt » proposé :
+    # ramenée une seule fois au défaut, un choix fait ensuite dans la config est conservé.
+    """UPDATE params SET valeur = 'Réparation terminée'
+    WHERE cle = 'NOTIFICATIONS_STATUTS'
+      AND valeur = 'Réparation terminée,En attente de pièce,En cours de réparation'
+      AND NOT EXISTS (SELECT 1 FROM params WHERE cle = 'MIGRATION_NOTIF_STATUTS_2026_10')""",
+    """INSERT INTO params (cle, valeur) VALUES ('MIGRATION_NOTIF_STATUTS_2026_10', '1')
     ON CONFLICT (cle) DO NOTHING""",
     """INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
     ON CONFLICT (cle) DO UPDATE SET valeur = 'https://klikphone-sav-v2-production.up.railway.app'

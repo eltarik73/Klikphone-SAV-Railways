@@ -242,11 +242,11 @@ def test_envoi_reussi(client, brevo):
     }
     notes = cur.ecrits("INSERT INTO notes_tickets")
     assert len(notes) == 1
-    ticket_id, auteur, contenu = notes[0][1]
+    ticket_id, auteur, contenu, type_note = notes[0][1]
+    assert type_note == "sms"
     assert (ticket_id, auteur) == (42, "Marie")
     assert contenu.startswith("✅ SMS envoyé au 06 12 34 56 78 (1 SMS, Brevo)")
     assert contenu.endswith("[Appareil prêt] Votre iPhone 13 est prêt ! À bientôt")
-    assert "'sms'" in notes[0][0]
     assert cur.ecrits("UPDATE tickets SET msg_sms = 1") == [("UPDATE tickets SET msg_sms = 1 WHERE id = %s", (42,))]
     assert CLE not in r.text
 
@@ -286,6 +286,7 @@ def test_echec_brevo_trace_sans_marquer(client, brevo):
     assert "Crédits SMS Brevo épuisés" in r.json()["detail"]["message"]
     notes = cur.ecrits("INSERT INTO notes_tickets")
     assert len(notes) == 1 and notes[0][1][2].startswith("⚠️ SMS NON envoyé au 06 12 34 56 78 — Crédits")
+    assert notes[0][1][3] == "sms_echec"
     assert not cur.ecrits("UPDATE tickets SET msg_sms")
     # Échec certain : la place est rendue, un nouvel essai repart vers Brevo
     r2 = envoyer(client, gc)

@@ -1053,7 +1053,7 @@ function ScanDialog({
               <div className="rounded-xl bg-white p-3">
                 <Suspense fallback={<p className="text-sm text-slate-600">Chargement du message…</p>}>
                   <MessageComposer ticket={t} statutPropose={view.proposition} integre
-                    onMessageSent={onDismissProposition} />
+                    onMessageSent={(r) => { if (!r?.echec) onDismissProposition(); }} />
                 </Suspense>
               </div>
             </section>

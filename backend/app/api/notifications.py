@@ -161,11 +161,13 @@ def send_sms(data: SmsSendRequest, user: dict = Depends(get_current_user)):
         entete = f"✅ SMS envoyé au {dest} ({nb} SMS, Brevo)"
     else:
         entete = f"⚠️ SMS NON envoyé au {dest} — {res.erreur}"
+    # 'sms_echec' : l'icône « déjà contacté » du dashboard se base sur type_note = 'sms'
+    type_note = "sms" if res.ok else "sms_echec"
     with get_cursor() as cur:
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
-            VALUES (%s, %s, %s, FALSE, 'sms')
-        """, (data.ticket_id, user.get("sub") or "Staff", f"{entete}\n{libelle}{texte}"))
+            VALUES (%s, %s, %s, FALSE, %s)
+        """, (data.ticket_id, user.get("sub") or "Staff", f"{entete}\n{libelle}{texte}", type_note))
         if res.ok:
             cur.execute("UPDATE tickets SET msg_sms = 1 WHERE id = %s", (data.ticket_id,))
 

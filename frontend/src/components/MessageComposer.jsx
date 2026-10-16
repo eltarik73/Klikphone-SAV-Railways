@@ -188,7 +188,7 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
     } catch (err) {
       toast.error(err.message || 'Erreur envoi');
       // Refus de Brevo : l'échec est noté sur le ticket, on rafraîchit les notes
-      if (err?.status === 424 && onMessageSent) onMessageSent();
+      if (err?.status === 424 && onMessageSent) onMessageSent({ echec: true });
       console.error(err);
     } finally {
       setSending(null);

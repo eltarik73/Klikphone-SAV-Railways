@@ -2276,6 +2276,7 @@ function TicketDetail({ id }) {
                 const badge = isClientMsg ? { bg: 'bg-violet-100 text-violet-800 ring-1 ring-violet-300', label: '💬 CLIENT' }
                   : tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-800', label: 'WhatsApp' }
                   : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-800', label: 'SMS' }
+                  : tn === 'sms_echec' ? { bg: 'bg-red-100 text-red-800 ring-1 ring-red-300', label: 'SMS non envoyé' }
                   : tn === 'email' ? { bg: 'bg-amber-100 text-amber-800', label: 'Email' }
                   : tn === 'validation_devis' ? { bg: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300', label: '✅ ACCORD' }
                   : tn === 'avis_client' ? { bg: 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300', label: '⭐ AVIS' }
@@ -3148,7 +3149,7 @@ function TicketDetail({ id }) {
             ticket={t}
             statutPropose={propositionMessage.statut}
             integre
-            onMessageSent={() => { loadNotes(); setPropositionMessage(null); }}
+            onMessageSent={(r) => { loadNotes(); if (!r?.echec) setPropositionMessage(null); }}
           />
           <div className="flex justify-end mt-4 pt-4 border-t border-slate-100">
             <button type="button" onClick={() => setPropositionMessage(null)}
