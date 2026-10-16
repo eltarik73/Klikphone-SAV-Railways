@@ -1,0 +1,11 @@
+# Klikphone SAV : seules les pages publiques sont indexables.
+User-agent: *
+Disallow: /api/
+Disallow: /accueil
+Disallow: /tech
+Disallow: /login
+Disallow: /client
+Disallow: /depot
+Disallow: /suivi?
+Disallow: /demo-design
+Allow: /
