@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
+import { envoyerSms } from '../lib/sms';
+import { useSmsServeur } from '../hooks/useSmsServeur';
 import { invalidateCache } from '../hooks/useApi';
 import { useAutoSave } from '../hooks/useAutoSave';
 import StatusBadge from '../components/StatusBadge';
@@ -536,6 +538,7 @@ function TicketDetail({ id }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const { actif: smsServeur } = useSmsServeur();
   const reduireAnimations = useReducedMotion();
   const uid = useId();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
@@ -1662,13 +1665,23 @@ function TicketDetail({ id }) {
       const tk = ticketRef.current;
       const tel = tk.client_tel;
       const email = tk.client_email;
+      // SMS parti par le serveur (Brevo) : la note est déjà écrite côté serveur
+      let smsServeurEnvoye = false;
 
       if (canal === 'whatsapp') {
         if (!tel) { toast.error('Pas de téléphone'); return; }
         window.open(waLink(tel, accordMessage), '_blank');
       } else if (canal === 'sms') {
         if (!tel) { toast.error('Pas de téléphone'); return; }
-        window.open(smsLink(tel, accordMessage), '_blank');
+        try {
+          const res = await envoyerSms({ serveur: smsServeur, ticketId: id, tel, message: accordMessage, libelle: 'Demande accord' });
+          smsServeurEnvoye = res.mode === 'serveur';
+        } catch (err) {
+          // Refus lisible (doublon, numéro fixe, crédits…) : statut inchangé, échec noté sur le ticket
+          toast.error(err?.message || 'SMS non envoyé');
+          if (err?.status === 424) loadNotes();
+          return;
+        }
       } else if (canal === 'email') {
         if (!email) { toast.error("Ce client n'a pas d'adresse email"); return; }
         const res = await api.envoyerEmail(email, `Klikphone SAV - Accord ${tk.ticket_code}`, accordMessage);
@@ -1677,14 +1690,16 @@ function TicketDetail({ id }) {
 
       await api.changeStatus(id, "En attente d'accord client");
 
-      const auteur = user?.utilisateur || 'Accueil';
-      const logText = `[Demande accord] ${accordMessage.substring(0, 120)}${accordMessage.length > 120 ? '...' : ''}`;
-      await api.logMessage(id, auteur, logText, canal);
+      if (!smsServeurEnvoye) {
+        const auteur = user?.utilisateur || 'Accueil';
+        const logText = `[Demande accord] ${accordMessage.substring(0, 120)}${accordMessage.length > 120 ? '...' : ''}`;
+        await api.logMessage(id, auteur, logText, canal);
+      }
 
       setShowAccordModal(false);
       invaliderListes();
       await loadTicket(false);
-      toast.success("Demande d'accord envoyée");
+      toast.success(smsServeurEnvoye ? "Demande d'accord envoyée par SMS" : "Demande d'accord envoyée");
     } catch (err) {
       toast.error('Erreur envoi de la demande');
     } finally {
@@ -3096,6 +3111,7 @@ function TicketDetail({ id }) {
               type="button"
               onClick={() => handleSendAccord('sms')}
               disabled={accordLoading}
+              title={smsServeur ? 'Envoyer le SMS depuis le serveur (Brevo)' : "Ouvrir l'app Messages de l'appareil"}
               className="flex-1 flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" aria-hidden="true" /> SMS

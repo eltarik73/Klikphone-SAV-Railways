@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache, clearCache } from '../hooks/useApi';
 import api from '../lib/api';
+import SmsBrevoConfig from '../components/SmsBrevoConfig';
 import { useToast } from '../components/Toast';
 import { useSettings } from '../hooks/useSettings';
 import { normKey, searchModeles, parseModelesEnMasse, sansPrefixeMarque, MARQUE_AUTRE } from '../lib/catalog';
@@ -1312,6 +1313,8 @@ export default function ConfigPage() {
               </div>
             </div>
           </div>
+
+          <SmsBrevoConfig config={config} updateConfig={updateConfig} saveParamNow={saveParamNow} />
 
           <div className="card p-5">
             <h2 className="text-sm font-semibold text-slate-800 mb-4">Chat & Assistant IA</h2>

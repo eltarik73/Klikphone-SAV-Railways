@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
+import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
+import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useToast } from './Toast';
 import { useAuth } from '../hooks/useAuth';
 import { modelePourStatut } from '../lib/messages';
@@ -33,6 +35,7 @@ const TEMPLATE_ICONS = {
 export default function MessageComposer({ ticket, onMessageSent, statutPropose = null, integre = false }) {
   const toast = useToast();
   const { user } = useAuth();
+  const { actif: smsServeur } = useSmsServeur();
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [selectedId, setSelectedId] = useState(() => modelePourStatut(DEFAULT_TEMPLATES, statutPropose));
   const [customText, setCustomText] = useState('');
@@ -133,10 +136,6 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  const sendSMS = (telephone, message) => {
-    window.open(`sms:${telephone}?body=${encodeURIComponent(message)}`, '_blank');
-  };
-
   // Check if the selected template uses {montant}
   const templateUsesMontant = selected && !isCustom && selected.message.includes('{montant}');
 
@@ -150,16 +149,20 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
       return;
     }
     setSending(canal);
+    const label = selected ? selected.label : 'Message';
     try {
       const tel = t.client_tel;
       const email = t.client_email;
+      // SMS parti par le serveur (Brevo) : il a déjà noté l'envoi sur le ticket (pas de logMessage)
+      let smsServeurEnvoye = null;
 
       if (canal === 'whatsapp') {
         if (!tel) { toast.error('Pas de telephone'); return; }
         sendWhatsApp(tel, previewText);
       } else if (canal === 'sms') {
         if (!tel) { toast.error('Pas de telephone'); return; }
-        sendSMS(tel, previewText);
+        const res = await envoyerSms({ serveur: smsServeur, ticketId: t.id, tel, message: previewText, libelle: label });
+        if (res.mode === 'serveur') smsServeurEnvoye = res;
       } else if (canal === 'email') {
         if (!email) { toast.error("Ce client n'a pas d'adresse email"); return; }
         const res = await api.envoyerEmail(email, `Klikphone SAV - ${t.ticket_code}`, previewText);
@@ -171,17 +174,21 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
 
       // Log to DB
       const auteur = user?.utilisateur || 'Accueil';
-      const label = selected ? selected.label : 'Message';
       const logText = `[${label}] ${previewText.substring(0, 120)}${previewText.length > 120 ? '...' : ''}`;
       if (isAvisTemplate) {
         await api.addPrivateNote(t.id, auteur, `[Demande avis Google] Envoyé par ${canal}`);
       }
-      await api.logMessage(t.id, auteur, logText, canal);
-
-      toast.success(canal === 'email' ? 'Email envoyé avec succès' : `Message ${canal} envoyé`);
+      if (smsServeurEnvoye) {
+        toast.success(messageSmsEnvoye(smsServeurEnvoye));
+      } else {
+        await api.logMessage(t.id, auteur, logText, canal);
+        toast.success(canal === 'email' ? 'Email envoyé avec succès' : `Message ${canal} envoyé`);
+      }
       if (onMessageSent) onMessageSent();
     } catch (err) {
       toast.error(err.message || 'Erreur envoi');
+      // Refus de Brevo : l'échec est noté sur le ticket, on rafraîchit les notes
+      if (err?.status === 424 && onMessageSent) onMessageSent();
       console.error(err);
     } finally {
       setSending(null);

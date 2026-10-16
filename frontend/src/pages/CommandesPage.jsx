@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
-import { formatDateShort, formatPrix, waLink, smsLink } from '../lib/utils';
+import { formatDateShort, formatPrix, waLink } from '../lib/utils';
+import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
+import { useSmsServeur } from '../hooks/useSmsServeur';
 import { matchesQuery } from '../components/SearchPalette';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
@@ -45,6 +47,8 @@ export default function CommandesPage() {
   const [toast, setToast] = useState(null);
   const [showNotifModal, setShowNotifModal] = useState(false);
   const [notifPart, setNotifPart] = useState(null);
+  const [notifEnvoi, setNotifEnvoi] = useState(false);
+  const { actif: smsServeur } = useSmsServeur();
   const [form, setForm] = useState({
     description: '', fournisseur: '', reference: '',
     prix: '', ticket_code: '', statut: 'En attente', notes: '',
@@ -198,13 +202,27 @@ export default function CommandesPage() {
   };
 
   const handleNotifSMS = async () => {
-    if (!notifPart) return;
+    if (!notifPart || notifEnvoi) return;
     const msg = getNotifMessage(notifPart);
-    const link = smsLink(notifPart.client_tel, msg);
-    window.open(link, '_blank');
+    // Envoi par le serveur (Brevo) s'il est activé et la commande liée à un ticket, sinon app Messages
+    setNotifEnvoi(true);
+    let res;
+    try {
+      res = await envoyerSms({
+        serveur: smsServeur, ticketId: notifPart.ticket_id, tel: notifPart.client_tel, message: msg, libelle: 'Pièce reçue',
+      });
+    } catch (err) {
+      // Refus lisible : la fenêtre reste ouverte (WhatsApp reste possible)
+      setToast({ type: 'error', msg: err?.message || 'SMS non envoyé' });
+      return;
+    } finally {
+      setNotifEnvoi(false);
+    }
 
-    // Add note to ticket
-    if (notifPart.ticket_id) {
+    if (res.mode === 'serveur') {
+      // Le serveur a déjà noté le SMS sur le ticket
+      setToast({ type: 'success', msg: messageSmsEnvoye(res) });
+    } else if (notifPart.ticket_id) {
       try {
         await api.addNote(notifPart.ticket_id, '[PIÈCE] Pièce reçue — Client notifié par SMS');
       } catch (err) {
@@ -255,30 +273,31 @@ export default function CommandesPage() {
       {/* Notification modal on "Reçu" */}
       {showNotifModal && notifPart && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 animate-in">
+          <div role="dialog" aria-modal="true" aria-labelledby="notif-piece-titre" className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 animate-in">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
                 <Check className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Pi&egrave;ce re&ccedil;ue !</h3>
-                <p className="text-sm text-slate-500">Voulez-vous pr&eacute;venir le client ?</p>
+                <h3 id="notif-piece-titre" className="text-lg font-bold text-slate-900">Pi&egrave;ce re&ccedil;ue !</h3>
+                <p className="text-sm text-slate-600">Voulez-vous pr&eacute;venir le client ?</p>
               </div>
             </div>
             <div className="bg-slate-50 rounded-lg p-3 mb-5 text-sm text-slate-600 leading-relaxed">
               {getNotifMessage(notifPart)}
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
-              <button onClick={handleNotifSMS}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors">
-                <MessageSquare className="w-4 h-4" /> SMS
+              <button type="button" onClick={handleNotifSMS} disabled={notifEnvoi} aria-busy={notifEnvoi}
+                title={smsServeur && notifPart.ticket_id ? 'Envoyer le SMS depuis le serveur (Brevo)' : "Ouvrir l'app Messages de l'appareil"}
+                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
+                <MessageSquare className="w-4 h-4" aria-hidden="true" /> {notifEnvoi ? 'Envoi…' : 'SMS'}
               </button>
-              <button onClick={handleNotifWhatsApp}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors">
-                <Send className="w-4 h-4" /> WhatsApp
+              <button type="button" onClick={handleNotifWhatsApp} disabled={notifEnvoi}
+                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-700 text-white text-sm font-medium hover:bg-green-800 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
+                <Send className="w-4 h-4" aria-hidden="true" /> WhatsApp
               </button>
-              <button onClick={handleNotifDismiss}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-600 text-sm font-medium hover:bg-slate-200 transition-colors">
+              <button type="button" onClick={handleNotifDismiss} disabled={notifEnvoi}
+                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
                 Non merci
               </button>
             </div>

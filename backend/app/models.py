@@ -350,6 +350,28 @@ class SendMessageRequest(BaseModel):
     channel: str  # "whatsapp", "sms", "email"
 
 
+class SmsSendRequest(BaseModel):
+    """SMS envoyé par le serveur (Brevo) au client du ticket."""
+    ticket_id: int
+    message: str
+    # Libellé du modèle (« Appareil prêt », « Demande accord »…) repris dans la note du ticket
+    libelle: Optional[str] = None
+
+    @field_validator("message")
+    @classmethod
+    def _message(cls, v):
+        if not v.strip():
+            raise ValueError("Message vide")
+        if len(v) > 1000:
+            raise ValueError("Message trop long (1000 caractères maximum)")
+        return v
+
+    @field_validator("libelle")
+    @classmethod
+    def _libelle(cls, v):
+        return (v or "").strip()[:60] or None
+
+
 class NotificationRequest(BaseModel):
     message: str
     emoji: Optional[str] = "📢"
