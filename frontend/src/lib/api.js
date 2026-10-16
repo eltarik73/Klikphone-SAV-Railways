@@ -621,9 +621,18 @@ class ApiClient {
   sendWhatsApp(ticketId, message) {
     return this.post(`/api/notifications/whatsapp?ticket_id=${ticketId}&message=${encodeURIComponent(message)}`);
   }
-  sendSMS(ticketId, message) {
-    return this.post(`/api/notifications/sms?ticket_id=${ticketId}&message=${encodeURIComponent(message)}`);
+  // Vrai SMS envoyé par le serveur (Brevo). 409 « sms_non_configure » (detail.link = lien sms:
+  // de repli), 409 « sms_doublon », 424 refus/panne Brevo : err.message est toujours lisible.
+  envoyerSms(ticketId, message, libelle) {
+    this._invalidate('/api/notifications/sms');
+    return this.request('/api/notifications/sms', {
+      method: 'POST',
+      body: JSON.stringify({ ticket_id: ticketId, message, libelle: libelle || null }),
+    }, 20000);
   }
+  // { cle_configuree, active, disponible, expediteur } — jamais la clé
+  getSmsEtat({ fresh = false } = {}) { return this.getCached('/api/notifications/sms/etat', 60_000, { fresh }); }
+  getSmsCredits() { return this.get('/api/notifications/sms/credits', { retries: 0 }); }
   sendEmail(ticketId, message, sujet) {
     return this.request(`/api/notifications/email?ticket_id=${ticketId}&message=${encodeURIComponent(message)}&sujet=${encodeURIComponent(sujet)}`, { method: 'POST' }, 45000);
   }

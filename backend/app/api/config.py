@@ -20,6 +20,7 @@ from app.api.auth import (
 )
 from app.api.catalog import clear_catalog_cache
 from app.services import params as params_cache
+from app.services import sms
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -72,17 +73,32 @@ def _controler_secret(cle: str, valeur: str):
         raise HTTPException(400, "Le mot de passe admin doit faire au moins 4 caractères")
 
 
+# Réglages non secrets mais engageants (crédits SMS payants) : élévation admin aussi
+SENSIBLE_KEYS = frozenset({sms.PARAM_ACTIF, sms.PARAM_EXPEDITEUR})
+
+
+def _controler_sms(cle: str, valeur: str):
+    if cle == sms.PARAM_ACTIF and valeur not in ("0", "1"):
+        raise HTTPException(400, "SMS_BREVO_ACTIF vaut 0 ou 1")
+    if cle == sms.PARAM_EXPEDITEUR and valeur and not sms.expediteur_valide(valeur):
+        raise HTTPException(400, "Expéditeur SMS : 11 lettres ou chiffres maximum, sans espace ni accent")
+
+
 def _ecritures(request: Request, user: dict, params: list) -> list:
-    """Paires (clé, valeur) à écrire ; l'écriture d'un secret exige l'élévation admin."""
-    ecritures, secret = [], False
+    """Paires (clé, valeur) à écrire ; un secret ou un réglage sensible exige l'élévation admin."""
+    ecritures, elevation = [], False
     for p in params:
         if est_secret(p.cle):
             if _valeur_masquee(p.valeur):
                 continue
             _controler_secret(p.cle, p.valeur)
-            secret = True
+            elevation = True
+        elif p.cle in SENSIBLE_KEYS:
+            p = p.model_copy(update={"valeur": (p.valeur or "").strip()})
+            _controler_sms(p.cle, p.valeur)
+            elevation = True
         ecritures.append((p.cle, p.valeur))
-    if secret:
+    if elevation:
         exiger_elevation(request, user)
     return ecritures
 
