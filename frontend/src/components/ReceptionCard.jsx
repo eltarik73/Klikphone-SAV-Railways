@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   ClipboardCheck, ChevronDown, RotateCcw, AlertTriangle, CheckCircle2, ScanLine, PowerOff, HardDriveDownload, ListChecks,
+  Check, X, Circle,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAutoSave } from '../hooks/useAutoSave';
@@ -24,15 +25,14 @@ export const TESTS = [
   ['haut_parleur', 'Haut-parleur'], ['ecouteur', 'Écouteur'], ['charge', 'Charge'],
   ['wifi', 'Wi-Fi'], ['reseau', 'Réseau / SIM'], ['boutons', 'Boutons'],
 ];
-const REPONSES = [['oui', 'Oui', true], ['non', 'Non', false], ['nt', 'Non testé', null]];
 const CLES_ACCESSOIRES = new Set(ACCESSOIRES.map(([k]) => k));
 
-/** Fiche neuve : état « OK » par défaut (saisie rapide), tests non faits. */
+/** Fiche neuve : TOUT décoché — aucun accessoire, aucun état présélectionné, aucun test fait. */
 export function itemsVides() {
   return {
     accessoires: [],
     accessoires_autre: '',
-    etat: { ecran: 'ok', dos: 'ok', chassis: 'ok', notes: '' },
+    etat: { ecran: null, dos: null, chassis: null, notes: '' },
     tests: Object.fromEntries(TESTS.map(([k]) => [k, null])),
     imei_verifie: null,
     appareil_eteint: false,
@@ -41,7 +41,7 @@ export function itemsVides() {
 }
 
 const objet = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
-// Partie non renseignée par un autre poste : null (aucun choix), jamais « OK » d'office
+// Partie non renseignée : null (aucun choix), jamais « OK » d'office
 const parmi = (v, options) => (options.some(([k]) => k === v) ? v : null);
 
 /** Items reçus du serveur → forme complète et valide (les clés inconnues sont gardées telles quelles). */
@@ -99,7 +99,8 @@ const majuscule = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /**
  * Résumé d'une ligne pour l'en-tête replié : « Coque, chargeur · écran rayé · 3 tests KO ».
- * Ne dit que ce qui a été constaté (rien sur les tests tant qu'aucun n'est fait).
+ * Ne dit que ce qui a été constaté : rien sur l'état tant qu'aucune partie n'est renseignée
+ * (jamais « non renseigné »), rien sur les tests tant qu'aucun n'est fait.
  */
 export function resumeCourt(items) {
   const r = resumeReception(items);
@@ -156,48 +157,106 @@ function Indicateur({ etat }) {
 
 // En-tête « carte large » : variantes `[@container(min-width:34rem)]:` écrites en toutes lettres dans le JSX
 // (Tailwind ne voit que les classes littérales) ; sans prise en charge des requêtes de conteneur : disposition étroite.
-// Pastilles de choix = `.choice` partagée, resserrée : 40 px à la souris, 44 px au doigt (pointer: coarse, index.css)
-const PUCE = 'choice min-h-10 min-w-10 px-2.5 text-[13px] font-semibold';
-// Lignes « libellé + boutons » : 2 colonnes dès que la carte fait ~34 rem (colonne de la fiche en 1440), sinon 1
-const GRILLE_CHOIX = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,16.5rem),1fr))] gap-x-4 gap-y-1';
-// Cases à cocher en ligne : 40 px, 44 px au doigt
-const LIGNE_COCHE = 'flex items-center gap-2.5 min-h-10 [@media(pointer:coarse)]:min-h-11 px-2.5 rounded-lg border border-slate-200 bg-white text-[13px] font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150';
+// Puces = `.choice` partagée, resserrée : 36 px à la souris, 44 px au doigt (pointer: coarse, index.css).
+// Ce sont de vrais <button> (pas de peer) : l'anneau de focus est posé ici, pas par `.choice`.
+const PUCE = 'choice min-h-9 px-2.5 text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
+// Ligne « libellé + puces » : colonne de libellé (5,5 rem) quand la CARTE fait ≥ 30 rem (colonne de la fiche en 1440),
+// libellé au-dessus des puces sinon (en 1024 la carte ne fait que 370 px : la colonne ferait plier chaque ligne)
+const LIGNE = 'flex flex-wrap items-center gap-x-3 gap-y-1';
+const ETIQUETTE = 'basis-full [@container(min-width:30rem)]:basis-auto [@container(min-width:30rem)]:w-[5.5rem] shrink-0 text-[13px] font-semibold leading-tight text-slate-700';
+const PUCES = 'flex flex-1 flex-wrap gap-1.5 min-w-0';
+// En-tête de section : titre + actions, 28 px. Un bouton btn-sm (36 px) y déborde de 4 px par une marge
+// négative : `-my-1` (haut et bas) quand la ligne du dessous ne remplit pas la largeur (état constaté),
+// `-mt-1` seulement (haut) quand la grille du dessous remplit la largeur (tests d'entrée) — sinon les
+// 4 px bas du bouton passeraient sous la première puce, qui les masquerait.
+const TITRE_SECTION = 'flex flex-wrap items-center gap-x-2 gap-y-0.5 min-h-7';
+const TOUT_OK = 'btn-ghost btn-sm text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900';
 
-// Libellé à gauche (retour à la ligne si long), boutons à droite
-function Choix({ legende, nom, options, valeur, onChange, tonChoisi }) {
+// Saisies compactes : 36 px à la souris, 44 px au doigt (comme les puces). Sur un <input class="input">
+// l'utilitaire suffit (même spécificité, déclaré après) ; sur le <textarea class="input">, `textarea.input`
+// (0,1,1 : 96 px) l'emporterait, d'où les formes importantes.
+const CHAMP = 'min-h-9 [@media(pointer:coarse)]:min-h-11';
+const CHAMP_TEXTAREA = '!min-h-9 [@media(pointer:coarse)]:!min-h-11';
+
+// Notes : la zone grandit avec le texte grâce à `field-sizing: content` (Chrome 123+, Safari 26+) ; ailleurs
+// (Firefox, Safari antérieurs) un repli JS ajuste la hauteur au contenu, même plafond que `max-h-24`.
+const NOTES_MAX_PX = 96;
+function supporteFieldSizing() {
+  try { return typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content'); } catch { return false; }
+}
+export function ajusterHauteurNotes(el) {
+  if (!el || supporteFieldSizing()) return;
+  el.style.height = 'auto';
+  if (!el.scrollHeight) return; // non rendu (jsdom, display: none)
+  const bordures = el.offsetHeight - el.clientHeight;
+  el.style.height = `${Math.min(el.scrollHeight + bordures, NOTES_MAX_PX)}px`;
+}
+
+/** Puce à bascule (multi) : bouton avec aria-pressed. */
+function Bascule({ actif, onClick, ton = 'choice-on', className = '', children }) {
   return (
-    <fieldset className="min-w-0">
-      <legend className="sr-only">{legende}</legend>
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <span className="min-w-[4.5rem] flex-1 text-[13px] font-medium leading-tight text-slate-700" aria-hidden="true">{legende}</span>
-        <div className="flex flex-wrap gap-1.5">
-          {options.map(([k, texte]) => {
-            const choisi = valeur === k;
-            return (
-              <label key={k} className="cursor-pointer">
-                <input type="radio" name={nom} value={k} checked={choisi} onChange={() => onChange(k)} className="peer sr-only" />
-                <span className={`${PUCE} ${choisi ? tonChoisi(k) : ''}`}>{texte}</span>
-              </label>
-            );
-          })}
-        </div>
-      </div>
-    </fieldset>
+    <button type="button" aria-pressed={actif} onClick={onClick} className={`${PUCE} ${actif ? ton : ''} ${className}`}>
+      {children}
+    </button>
   );
 }
 
-// OK = vert plein, défaut constaté = ambre doux (attention), Non = rouge, Non testé = gris neutre
+// OK = vert plein, défaut constaté = ambre doux (attention)
 const tonEtat = (k) => (k === 'ok' ? 'choice-ok' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-50');
-const tonTest = (k) => (k === 'oui' ? 'choice-ok'
-  : k === 'non' ? 'choice-ko'
-    : 'choice-muted');
-const reponseDe = (v) => (v === true ? 'oui' : v === false ? 'non' : 'nt');
+
+/**
+ * Puces exclusives (radiogroup ARIA) : aucune sélection par défaut. Clic, Entrée ou Espace choisit ;
+ * les flèches passent d'une puce à l'autre (tabulation unique, comme des boutons radio natifs).
+ */
+function Exclusif({ legende, id, options, valeur, onChange, tonChoisi }) {
+  const legendeId = `${id}-legende`;
+  const aucune = !options.some(([k]) => k === valeur);
+  const onKeyDown = (e) => {
+    const pas = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!pas) return;
+    e.preventDefault();
+    const i = options.findIndex(([k]) => k === valeur);
+    const j = i < 0 ? (pas > 0 ? 0 : options.length - 1) : (i + pas + options.length) % options.length;
+    onChange(options[j][0]);
+    e.currentTarget.querySelectorAll('[role="radio"]')[j]?.focus();
+  };
+  return (
+    <div className={LIGNE}>
+      <span id={legendeId} className={ETIQUETTE}>{legende}</span>
+      <div role="radiogroup" aria-labelledby={legendeId} onKeyDown={onKeyDown} className={PUCES}>
+        {options.map(([k, texte], i) => {
+          const choisi = valeur === k;
+          return (
+            <button
+              key={k} type="button" role="radio" aria-checked={choisi}
+              tabIndex={choisi || (aucune && i === 0) ? 0 : -1}
+              onClick={() => onChange(k)}
+              className={`${PUCE} ${choisi ? tonChoisi(k) : ''}`}
+            >
+              {texte}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Test d'entrée : un tap cycle non testé (gris) → OK (vert) → KO (rouge) → non testé
+const ETAT_TEST = {
+  nul: { texte: 'non testé', ton: '', Icone: Circle, icone: 'w-3 h-3 text-slate-500' }, // 4,76:1 sur blanc (≥ 3:1 non textuel)
+  ok: { texte: 'OK', ton: 'choice-ok', Icone: Check, icone: 'w-3.5 h-3.5' },
+  ko: { texte: 'KO', ton: 'choice-ko', Icone: X, icone: 'w-3.5 h-3.5' },
+};
+const etatTest = (v) => (v === true ? ETAT_TEST.ok : v === false ? ETAT_TEST.ko : ETAT_TEST.nul);
+const suivantTest = (v) => (v === null ? true : v === true ? false : null);
 
 /**
  * Fiche de réception (phase d'entrée, facultative) : accessoires, état, tests, IMEI vérifié.
  * Carte déroulante, REPLIÉE par défaut quel que soit le statut : un en-tête d'une ligne
  * (badge + résumé), le formulaire sur demande. L'état déplié est mémorisé par ticket dans la
  * session du navigateur (un rechargement ne referme pas une saisie en cours).
+ * Tout est décoché à l'ouverture d'une fiche vide ; rien n'est envoyé tant que rien n'est modifié.
  * Enregistrement automatique (PUT complet, un envoi à la fois) ; « Valider la réception » pose complete.
  * onEtat({ charge: 'chargement'|'ok'|'erreur', complete }) informe la fiche (badge « à compléter »).
  * controleRef reçoit { flush, ouvrir } : la fiche envoie la réception avant d'imprimer.
@@ -220,6 +279,9 @@ export default function ReceptionCard({
   const [imeiSaisi, setImeiSaisi] = useState('');
   const [imeiVu, setImeiVu] = useState(false);
   const [essai, setEssai] = useState(0);
+  const notesRef = useRef(null);
+  // Repli sans field-sizing : à chaque changement du texte et à l'affichage de la zone (ouverture, chargement)
+  useLayoutEffect(() => { ajusterHauteurNotes(notesRef.current); }, [items.etat.notes, ouvert, charge]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -283,6 +345,7 @@ export default function ReceptionCard({
   onEtatRef.current = onEtat;
   useEffect(() => { onEtatRef.current?.({ charge, complete }); }, [charge, complete]);
 
+  // Seule porte d'entrée vers l'auto-save : appelée uniquement sur une action de l'utilisateur
   const modifier = (changes, opts) => {
     const next = { ...itemsRef.current, ...changes };
     itemsRef.current = next;
@@ -292,17 +355,16 @@ export default function ReceptionCard({
   };
   const flushSilencieux = () => { save.flush().catch(() => {}); };
 
-  const basculerAccessoire = (cle, coche) => {
+  const basculerAccessoire = (cle) => {
     const actuels = itemsRef.current.accessoires;
-    const accessoires = coche ? [...new Set([...actuels, cle])] : actuels.filter(a => a !== cle);
+    const accessoires = actuels.includes(cle) ? actuels.filter(a => a !== cle) : [...actuels, cle];
     modifier({ accessoires }, { wait: 300 });
   };
   const changerEtat = (cle, valeur, opts = { wait: 300 }) => modifier({ etat: { ...itemsRef.current.etat, [cle]: valeur } }, opts);
-  const changerTest = (cle, rep) => {
-    const valeur = REPONSES.find(([k]) => k === rep)?.[2] ?? null;
-    modifier({ tests: { ...itemsRef.current.tests, [cle]: valeur } }, { wait: 300 });
-  };
-  const testsRestantsOk = () => {
+  const etatToutOk = () => modifier({ etat: { ...itemsRef.current.etat, ...Object.fromEntries(ETATS.map(([k]) => [k, 'ok'])) } }, { wait: 0 });
+  const cyclerTest = (cle) => modifier({ tests: { ...itemsRef.current.tests, [cle]: suivantTest(itemsRef.current.tests[cle]) } }, { wait: 300 });
+  // « Tout OK » : les tests encore neutres passent OK, les KO constatés restent KO
+  const testsToutOk = () => {
     const tests = { ...itemsRef.current.tests };
     for (const [k] of TESTS) if (tests[k] === null) tests[k] = true;
     modifier({ tests }, { wait: 0 });
@@ -336,6 +398,15 @@ export default function ReceptionCard({
   const imeiPropre = identifiantPropre(imeiSaisi);
   const imeiFaux = !!imeiPropre && !imeiValide(imeiPropre) && (imeiVu || imeiPropre.length >= 15);
   const imeiDifferent = !!items.imei_verifie && !!imeiTicketPropre && items.imei_verifie !== imeiTicketPropre;
+  const imeiMessage = imeiFaux ? 'IMEI invalide (15 chiffres, clé de contrôle) ou n° de série incorrect : non enregistré'
+    : imeiDifferent ? `Différent de l’IMEI de la fiche (${imeiTicketPropre})` : '';
+
+  const nbOk = TESTS.filter(([k]) => items.tests[k] === true).length;
+  const nbKo = TESTS.filter(([k]) => items.tests[k] === false).length;
+  const nbNonTestes = TESTS.length - nbOk - nbKo;
+  const compteur = [
+    nbOk ? `${nbOk} OK` : '', nbKo ? `${nbKo} KO` : '', nbNonTestes ? `${nbNonTestes} non testé${nbNonTestes > 1 ? 's' : ''}` : '',
+  ].filter(Boolean).join(' · ');
 
   const badge = charge !== 'ok' ? null : complete ? (
     <span id={badgeId} className="badge badge-success">
@@ -406,108 +477,118 @@ export default function ReceptionCard({
       )}
 
       {charge === 'ok' && ouvert && (
-        <div id={corpsId} className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 space-y-4">
-          <fieldset className="min-w-0">
-            <legend className="t-h3 mb-1.5">Accessoires déposés</legend>
-            <div className="flex flex-wrap gap-1.5">
+        <div id={corpsId} className="px-3 sm:px-4 pb-3 sm:pb-4 pt-1 space-y-2.5">
+          {/* Accessoires : puces à bascule, aucune cochée par défaut */}
+          <div className={LIGNE}>
+            <span id={`${uid}-acc`} className={ETIQUETTE}>Accessoires</span>
+            <div role="group" aria-labelledby={`${uid}-acc`} className={PUCES}>
               {ACCESSOIRES.map(([k, texte]) => {
                 const coche = items.accessoires.includes(k);
                 return (
-                  <label key={k} className="cursor-pointer">
-                    <input type="checkbox" checked={coche} onChange={e => basculerAccessoire(k, e.target.checked)} className="peer sr-only" />
-                    <span className={`${PUCE} ${coche ? 'choice-on' : ''}`}>
-                      {coche && <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}{texte}
-                    </span>
-                  </label>
+                  <Bascule key={k} actif={coche} onClick={() => basculerAccessoire(k)}>
+                    {coche && <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}{texte}
+                  </Bascule>
+                );
+              })}
+              {items.accessoires.includes('autre') && (
+                <span className="flex-1 min-w-[10rem] basis-40">
+                  <label htmlFor={`${uid}-acc-autre`} className="sr-only">Autre accessoire</label>
+                  <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value }, { wait: 800 })}
+                    onBlur={flushSilencieux} className={`input ${CHAMP} !py-1 text-sm`} placeholder="Précisez l’accessoire" autoComplete="off" />
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* État : une ligne par partie, puces exclusives sans sélection par défaut */}
+          <div>
+            <div className={TITRE_SECTION}>
+              <p className="t-h3">État constaté</p>
+              <button type="button" onClick={etatToutOk} aria-label="Tout OK : état constaté" className={`${TOUT_OK} -my-1 ml-auto`}>
+                <ListChecks aria-hidden="true" /> Tout OK
+              </button>
+            </div>
+            <div className="space-y-1">
+              {ETATS.map(([k, nom, options]) => (
+                <Exclusif key={k} legende={nom} id={`${uid}-etat-${k}`} options={options} valeur={items.etat[k]} onChange={v => changerEtat(k, v)} tonChoisi={tonEtat} />
+              ))}
+            </div>
+          </div>
+
+          {/* Tests d'entrée : puces à un tap qui cyclent non testé → OK → KO */}
+          <div>
+            <div className={TITRE_SECTION}>
+              <p className="t-h3">Tests d’entrée</p>
+              <span className="t-caption font-normal">
+                {items.appareil_eteint ? 'reçu éteint : « non testé » si invérifiable' : '1 tap OK · 2 taps KO'}
+              </span>
+              <span className="t-caption ml-auto tabular-nums" aria-live="polite">{compteur}</span>
+              <button type="button" onClick={testsToutOk} aria-label="Tout OK : tests d’entrée" className={`${TOUT_OK} -mt-1`}>
+                <ListChecks aria-hidden="true" /> Tout OK
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {TESTS.map(([k, nom]) => {
+                const { texte, ton, Icone, icone } = etatTest(items.tests[k]);
+                return (
+                  <button key={k} type="button" aria-label={`${nom} : ${texte}`} onClick={() => cyclerTest(k)} className={`${PUCE} ${ton}`}>
+                    <Icone className={`${icone} shrink-0`} aria-hidden="true" />{nom}
+                  </button>
                 );
               })}
             </div>
-            {items.accessoires.includes('autre') && (
-              <div className="mt-2">
-                <label htmlFor={`${uid}-acc-autre`} className="sr-only">Autre accessoire</label>
-                <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value }, { wait: 800 })}
-                  onBlur={flushSilencieux} className="input" placeholder="Précisez l’accessoire" autoComplete="off" />
-              </div>
-            )}
-          </fieldset>
-
-          <div>
-            <p className="t-h3 mb-1.5">État constaté</p>
-            <div className="space-y-1">
-              {ETATS.map(([k, nom, options]) => (
-                <Choix key={k} legende={nom} nom={`${uid}-etat-${k}`} options={options} valeur={items.etat[k]} onChange={v => changerEtat(k, v)} tonChoisi={tonEtat} />
-              ))}
-            </div>
-            <label htmlFor={`${uid}-notes`} className="input-label mt-2.5 mb-1">Notes (oxydation, taches, pixels morts…)</label>
-            <textarea id={`${uid}-notes`} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, { wait: 800 })}
-              onBlur={flushSilencieux} className="input resize-none !min-h-[56px] !py-2 text-sm" rows={2} />
           </div>
 
+          {/* IMEI : une ligne ; l'aide n'apparaît que pour une erreur ou une différence avec la fiche */}
           <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <p className="t-h3">Tests d’entrée</p>
-              <button type="button" onClick={testsRestantsOk} className="btn-ghost btn-sm -my-1 text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900">
-                <ListChecks aria-hidden="true" /> Tests restants OK
-              </button>
-            </div>
-            {items.appareil_eteint && (
-              <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5 mb-2">Appareil reçu éteint : laissez « Non testé » pour ce qui n’a pas pu être vérifié.</p>
-            )}
-            <div className={GRILLE_CHOIX}>
-              {TESTS.map(([k, nom]) => (
-                <Choix key={k} legende={nom} nom={`${uid}-test-${k}`} options={REPONSES} valeur={reponseDe(items.tests[k])} onChange={v => changerTest(k, v)} tonChoisi={tonTest} />
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] gap-x-4 gap-y-3">
-            <div>
-              <label htmlFor={`${uid}-imei`} className="input-label mb-1 flex items-center gap-1.5"><ScanLine className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> IMEI / n° de série vérifié</label>
+            <div className={LIGNE}>
+              <label htmlFor={`${uid}-imei`} className={`${ETIQUETTE} flex items-center gap-1.5`}>
+                <ScanLine className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" /> IMEI<span className="sr-only"> / n° de série vérifié</span>
+              </label>
               <input
                 id={`${uid}-imei`} data-scan-target="imei" value={imeiSaisi}
                 autoCapitalize="characters" spellCheck={false}
                 onChange={e => changerImei(e.target.value)}
                 onBlur={() => { setImeiVu(true); flushSilencieux(); }}
-                aria-invalid={imeiFaux || undefined} aria-describedby={`${uid}-imei-aide`}
-                className="input font-mono tabular-nums"
+                aria-invalid={imeiFaux || undefined} aria-describedby={imeiMessage ? `${uid}-imei-aide` : undefined}
+                className={`input flex-1 min-w-[11rem] ${CHAMP} !py-1 font-mono tabular-nums`}
+                placeholder="*#06#, douchette ou n° de série"
                 autoComplete="off"
               />
+              {imeiValide(imeiTicketPropre) && imeiTicketPropre !== items.imei_verifie && (
+                <button type="button" onClick={() => changerImei(imeiTicketPropre)} className="btn-ghost btn-sm -my-1 text-brand-700 hover:text-brand-800 hover:bg-brand-50">
+                  Reprendre l’IMEI de la fiche
+                </button>
+              )}
+              {!imeiTicketPropre && items.imei_verifie && onUtiliserImei && (
+                <button type="button" onClick={() => onUtiliserImei(items.imei_verifie)} className="btn-ghost btn-sm -my-1 text-brand-700 hover:text-brand-800 hover:bg-brand-50">
+                  Copier dans la fiche appareil
+                </button>
+              )}
+            </div>
+            {imeiMessage && (
               <p id={`${uid}-imei-aide`} role={imeiFaux ? 'alert' : undefined}
-                className={imeiFaux ? 'input-error' : imeiDifferent ? 'input-help font-semibold text-amber-800' : 'input-help'}>
-                {imeiFaux ? 'IMEI invalide (15 chiffres, clé de contrôle) ou n° de série incorrect : non enregistré'
-                  : imeiDifferent ? `Différent de l’IMEI de la fiche (${imeiTicketPropre})`
-                    : '*#06# sur l’appareil, scannable à la douchette'}
+                className={imeiFaux ? 'input-error' : 'input-help font-semibold text-amber-800'}>
+                {imeiMessage}
               </p>
-              {(imeiValide(imeiTicketPropre) && imeiTicketPropre !== items.imei_verifie) || (!imeiTicketPropre && items.imei_verifie && onUtiliserImei) ? (
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {imeiValide(imeiTicketPropre) && imeiTicketPropre !== items.imei_verifie && (
-                    <button type="button" onClick={() => changerImei(imeiTicketPropre)} className="btn-ghost btn-sm text-brand-700 hover:text-brand-800 hover:bg-brand-50">
-                      Reprendre l’IMEI de la fiche
-                    </button>
-                  )}
-                  {!imeiTicketPropre && items.imei_verifie && onUtiliserImei && (
-                    <button type="button" onClick={() => onUtiliserImei(items.imei_verifie)} className="btn-ghost btn-sm text-brand-700 hover:text-brand-800 hover:bg-brand-50">
-                      Copier dans la fiche appareil
-                    </button>
-                  )}
-                </div>
-              ) : null}
-            </div>
-            <div className="space-y-1.5 self-start sm:pt-6">
-              <label className={LIGNE_COCHE}>
-                <input type="checkbox" checked={items.appareil_eteint} onChange={e => modifier({ appareil_eteint: e.target.checked }, { wait: 300 })}
-                  className="checkbox" />
-                <PowerOff className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Reçu éteint (tests impossibles)
-              </label>
-              <label className={LIGNE_COCHE}>
-                <input type="checkbox" checked={items.sauvegarde_conseillee} onChange={e => modifier({ sauvegarde_conseillee: e.target.checked }, { wait: 300 })}
-                  className="checkbox" />
-                <HardDriveDownload className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Sauvegarde des données conseillée
-              </label>
-            </div>
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1">
+          {/* Notes + deux cases (puces à bascule) sur une ligne */}
+          <div className={LIGNE}>
+            <label htmlFor={`${uid}-notes`} className={ETIQUETTE}>Notes</label>
+            <textarea id={`${uid}-notes`} ref={notesRef} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, { wait: 800 })}
+              onBlur={flushSilencieux} rows={1} placeholder="Oxydation…"
+              className={`input flex-1 min-w-[8rem] resize-none ${CHAMP_TEXTAREA} !py-1.5 text-sm leading-snug [field-sizing:content] max-h-24`} />
+            <Bascule actif={items.appareil_eteint} onClick={() => modifier({ appareil_eteint: !itemsRef.current.appareil_eteint }, { wait: 300 })}>
+              <PowerOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Reçu éteint
+            </Bascule>
+            <Bascule actif={items.sauvegarde_conseillee} onClick={() => modifier({ sauvegarde_conseillee: !itemsRef.current.sauvegarde_conseillee }, { wait: 300 })}>
+              <HardDriveDownload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Sauvegarde conseillée
+            </Bascule>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-0.5">
             {!complete ? (
               <>
                 <button type="button" onClick={() => changerValidation(true)} className="btn-success flex-1 min-w-[12rem]">

@@ -375,7 +375,12 @@ describe('Réception : modèle', () => {
 
   it('items normalisés : valeurs par défaut, valeurs inconnues écartées, clés futures gardées', () => {
     const vide = itemsVides();
-    expect(vide.etat).toEqual({ ecran: 'ok', dos: 'ok', chassis: 'ok', notes: '' });
+    // Tout décoché par défaut : plus d'« OK » présélectionné sur écran / dos / châssis
+    expect(vide.etat).toEqual({ ecran: null, dos: null, chassis: null, notes: '' });
+    expect(vide.accessoires).toEqual([]);
+    expect(vide.appareil_eteint).toBe(false);
+    expect(vide.sauvegarde_conseillee).toBe(false);
+    expect(vide.imei_verifie).toBeNull();
     expect(Object.values(vide.tests).every(v => v === null)).toBe(true);
     expect(Object.keys(vide.tests)).toHaveLength(12);
     const n = normaliserItems({
@@ -432,34 +437,40 @@ describe('ReceptionCard', () => {
   it('accessoires, état et tests regroupés en un PUT complet après un court délai', async () => {
     renderCarte();
     await ouvrirCarte();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Écran' })).getByRole('radio', { name: 'Rayé' }));
-    fireEvent.click(within(screen.getByRole('group', { name: 'Micro' })).getByRole('radio', { name: 'Non' }));
+    // Puces : accessoire = bouton aria-pressed, état = radiogroup, test = bouton « Nom : état » qui cycle (OK puis KO)
+    fireEvent.click(screen.getByRole('button', { name: 'Chargeur' }));
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Écran' })).getByRole('radio', { name: 'Rayé' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Micro : non testé' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Micro : OK' }));
     await waitFor(() => expect(apiMock.saveReception).toHaveBeenCalledTimes(1), { timeout: 3000 });
     const [id, corps] = apiMock.saveReception.mock.calls[0];
     expect(id).toBe('42');
     expect(corps.complete).toBe(false);
     expect(corps.items).toMatchObject({
       accessoires: ['chargeur'],
-      etat: { ecran: 'raye', dos: 'ok', chassis: 'ok', notes: '' },
+      // Dos et châssis non touchés : null (plus d'« OK » d'office)
+      etat: { ecran: 'raye', dos: null, chassis: null, notes: '' },
       tests: expect.objectContaining({ micro: false, allume: null }),
       imei_verifie: null, appareil_eteint: false, sauvegarde_conseillee: false,
     });
   });
 
-  it('« Tests restants OK » garde les KO ; « Valider la réception » pose complete et replie la fiche', async () => {
+  it('« Tout OK » (tests) garde les KO ; « Valider la réception » pose complete et replie la fiche', async () => {
     const onEtat = vi.fn();
     renderCarte({ onEtat });
     await ouvrirCarte();
-    fireEvent.click(within(screen.getByRole('group', { name: 'Charge' })).getByRole('radio', { name: 'Non' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Tests restants OK' }));
+    // Deux taps sur « Charge » : non testé → OK → KO
+    fireEvent.click(screen.getByRole('button', { name: 'Charge : non testé' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Charge : OK' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tout OK : tests d’entrée' }));
     fireEvent.click(screen.getByRole('button', { name: 'Valider la réception' }));
     await waitFor(() => expect(apiMock.saveReception.mock.calls.some(([, c]) => c.complete === true)).toBe(true));
     const dernier = apiMock.saveReception.mock.calls.at(-1)[1];
     expect(dernier.complete).toBe(true);
     expect(dernier.items.tests.charge).toBe(false);
     expect(dernier.items.tests.allume).toBe(true);
-    expect(await screen.findByText('Aucun accessoire · état OK · 1 test KO')).toBeInTheDocument();
+    // État non touché : le résumé n'invente plus « état OK »
+    expect(await screen.findByText('Aucun accessoire · 1 test KO')).toBeInTheDocument();
     expect(screen.getByText('Validée')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Réception' })).toHaveAttribute('aria-expanded', 'false');
     await waitFor(() => expect(onEtat).toHaveBeenLastCalledWith({ charge: 'ok', complete: true }));
@@ -492,7 +503,7 @@ describe('ReceptionCard', () => {
     expect(screen.getByText('Validée')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Réception' }));
-    expect(screen.getByRole('checkbox', { name: 'Coque' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Coque' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText(/Validée par Karim/)).toBeInTheDocument();
   });
 
@@ -510,7 +521,7 @@ describe('ReceptionCard', () => {
     renderCarte({ controleRef: ref });
     await screen.findByText('Réception à compléter');
     act(() => ref.current.ouvrir());
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Coque' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Coque' }));
     expect(apiMock.saveReception).not.toHaveBeenCalled();
     await act(() => ref.current.flush());
     expect(apiMock.saveReception).toHaveBeenCalledTimes(1);
@@ -595,7 +606,7 @@ describe('Fiche : réception', () => {
     apiMock.getPrintHtml.mockResolvedValue('<p>Ticket</p>');
     renderFiche();
     await ouvrirReception();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chargeur' }));
     fireEvent.click(screen.getByRole('button', { name: 'Imprimer' }));
     await waitFor(() => expect(apiMock.getPrintHtml).toHaveBeenCalled());
     expect(apiMock.saveReception).toHaveBeenCalledTimes(1);
@@ -609,7 +620,7 @@ describe('Fiche : réception', () => {
     apiMock.changeStatus.mockResolvedValue({ ok: true });
     renderFiche();
     await ouvrirReception();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chargeur' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Changer le statut' }), { target: { value: 'Pièce reçue' } });
     await waitFor(() => expect(apiMock.changeStatus).toHaveBeenCalledWith('42', 'Pièce reçue'));
     expect(apiMock.saveReception).toHaveBeenCalled();
