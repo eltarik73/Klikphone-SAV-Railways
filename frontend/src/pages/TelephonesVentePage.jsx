@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useRef, memo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
+import { SynchroLcdPhone } from '../components/SantePrixWidget';
 import {
   Smartphone, Search, Package, Euro, Tag, Filter,
-  Loader2, Shield, ChevronLeft, ChevronRight, RefreshCw,
+  Loader2, Shield, ChevronLeft, ChevronRight,
   SlidersHorizontal,
 } from 'lucide-react';
 
@@ -34,7 +35,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
       <div className="relative h-44 bg-slate-50 flex items-center justify-center overflow-hidden">
         {phone.image_url ? (
           <img src={phone.image_url} alt={phone.modele || ''}
-            className="h-full w-full object-contain p-3 group-hover:scale-105 transition-transform"
+            className="h-full w-full object-contain p-3 motion-safe:group-hover:scale-105 motion-safe:transition-transform"
             loading="lazy"
             onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling?.classList.remove('hidden'); }} />
         ) : null}
@@ -76,6 +77,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
 
 export default function TelephonesVentePage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || localStorage.getItem('klikphone_admin') === 'true';
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -84,7 +86,6 @@ export default function TelephonesVentePage() {
   const [enStockOnly, setEnStockOnly] = useState(true);
   const [sortBy, setSortBy] = useState('prix_asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [syncing, setSyncing] = useState(false);
   const searchTimer = useRef(null);
 
   // Debounced search
@@ -139,28 +140,10 @@ export default function TelephonesVentePage() {
   const totalPages = phonesData?.totalPages ?? 1;
   const totalItems = phonesData?.total ?? 0;
 
-  // Sync
-  const handleSync = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      await api.syncTelephones();
-      let attempts = 0;
-      while (attempts < 60) {
-        await new Promise(r => setTimeout(r, 5000));
-        attempts++;
-        try {
-          const st = await api.getSyncStatus();
-          if (!st.running) break;
-        } catch { break; }
-      }
-      setCurrentPage(1);
-      invalidateCache('telephones');
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSyncing(false);
-    }
+  // Synchro LCD-Phone (bloc partagé) : liste relue à la fin
+  const handleSyncTerminee = () => {
+    setCurrentPage(1);
+    invalidateCache('telephones');
   };
 
   return (
@@ -169,17 +152,13 @@ export default function TelephonesVentePage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Smartphone className="w-6 h-6 text-brand-600" /> Téléphones en vente
+            <Smartphone className="w-6 h-6 text-brand-600" aria-hidden="true" /> Téléphones en vente
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {totalItems} téléphone{totalItems > 1 ? 's' : ''} disponibles — catalogue LCD-Phone
           </p>
         </div>
-        <button onClick={handleSync} disabled={syncing}
-          className="btn-secondary flex items-center gap-2">
-          <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Synchronisation...' : 'Sync LCD-Phone'}
-        </button>
+        <SynchroLcdPhone estAdmin={isAdmin} onTerminee={handleSyncTerminee} dateRepli={stats.derniere_sync} />
       </div>
 
       {/* Stats */}
@@ -225,35 +204,35 @@ export default function TelephonesVentePage() {
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Rechercher par marque, modèle..."
-              value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+            <input type="search" placeholder="Rechercher par marque, modèle..." aria-label="Rechercher un téléphone par marque ou modèle"
+              value={search} onChange={e => setSearch(e.target.value)} autoComplete="off"
+              className="w-full min-h-[44px] pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-all" />
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2.5 flex items-center gap-2 flex-wrap bg-slate-50/50">
-          <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          <select value={filterMarque} onChange={e => setFilterMarque(e.target.value)}
-            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600">
+          <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
+          <select value={filterMarque} onChange={e => setFilterMarque(e.target.value)} aria-label="Filtrer par marque"
+            className="min-h-[44px] text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700">
             <option value="">Toutes marques</option>
             {marques.map(m => {
               const name = typeof m === 'string' ? m : m.marque;
               return <option key={name} value={name}>{name}</option>;
             })}
           </select>
-          <select value={filterType} onChange={e => setFilterType(e.target.value)}
-            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600">
+          <select value={filterType} onChange={e => setFilterType(e.target.value)} aria-label="Filtrer par type"
+            className="min-h-[44px] text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700">
             <option value="">Tous types</option>
             <option value="neuf">Neuf</option>
             <option value="occasion">Occasion</option>
           </select>
-          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 min-h-[44px] px-1 text-xs text-slate-700 cursor-pointer select-none">
             <input type="checkbox" checked={enStockOnly} onChange={e => setEnStockOnly(e.target.checked)}
               className="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
             En stock uniquement
           </label>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            className="text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-600 ml-auto">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} aria-label="Trier les téléphones"
+            className="min-h-[44px] text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-white text-slate-700 ml-auto">
             <option value="prix_asc">Prix croissant</option>
             <option value="prix_desc">Prix décroissant</option>
             <option value="marque">Marque A-Z</option>
@@ -262,17 +241,11 @@ export default function TelephonesVentePage() {
         </div>
       </div>
 
-      {/* Dernière sync */}
-      {stats.derniere_sync && (
-        <p className="text-[11px] text-slate-400 mb-3 px-1">
-          Dernière synchronisation : {new Date(stats.derniere_sync).toLocaleString('fr-FR')}
-        </p>
-      )}
-
       {/* Grid */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+        <div className="flex justify-center py-16" role="status">
+          <Loader2 className="w-6 h-6 motion-safe:animate-spin text-brand-600" aria-hidden="true" />
+          <span className="sr-only">Chargement des téléphones…</span>
         </div>
       ) : phones.length === 0 ? (
         <div className="text-center py-16">
@@ -280,7 +253,7 @@ export default function TelephonesVentePage() {
             <Smartphone className="w-7 h-7 text-slate-300" />
           </div>
           <p className="text-slate-500 font-medium">Aucun téléphone trouvé</p>
-          <p className="text-sm text-slate-400 mt-1">Modifiez vos filtres ou lancez une synchronisation</p>
+          <p className="text-sm text-slate-600 mt-1">Modifiez vos filtres ou lancez une synchronisation</p>
         </div>
       ) : (
         <>
@@ -293,9 +266,9 @@ export default function TelephonesVentePage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 mt-6">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
-                className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronLeft className="w-4 h-4 text-slate-600" />
+              <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Page précédente"
+                className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronLeft className="w-4 h-4 text-slate-600" aria-hidden="true" />
               </button>
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -309,20 +282,21 @@ export default function TelephonesVentePage() {
                     p === '...' ? (
                       <span key={`dots-${i}`} className="px-1 text-slate-400">...</span>
                     ) : (
-                      <button key={p} onClick={() => setCurrentPage(p)}
-                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
-                          p === currentPage ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+                      <button key={p} type="button" onClick={() => setCurrentPage(p)} aria-label={`Page ${p}`}
+                        aria-current={p === currentPage ? 'page' : undefined}
+                        className={`w-11 h-11 rounded-lg text-xs font-medium transition-colors ${
+                          p === currentPage ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                         }`}>
                         {p}
                       </button>
                     )
                   )}
               </div>
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-                className="p-2 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed">
-                <ChevronRight className="w-4 h-4 text-slate-600" />
+              <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} aria-label="Page suivante"
+                className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed">
+                <ChevronRight className="w-4 h-4 text-slate-600" aria-hidden="true" />
               </button>
-              <span className="text-xs text-slate-400 ml-2">{totalItems} résultat{totalItems > 1 ? 's' : ''}</span>
+              <span className="text-xs text-slate-600 ml-2">{totalItems} résultat{totalItems > 1 ? 's' : ''}</span>
             </div>
           )}
         </>

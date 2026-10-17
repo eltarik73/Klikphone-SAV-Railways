@@ -1,26 +1,33 @@
 """
-Téléphones catalogue — vente de téléphones neufs et reconditionnés.
+Téléphones catalogue — vente de téléphones neufs et d'occasion (type_produit 'neuf' | 'occasion').
 Scraping LCD-Phone.com pour les prix fournisseur + marge automatique.
+
+Synchro et test de connexion (/sync, /probe) : rôle admin + code admin sur le poste. L'état de
+la dernière synchro est gardé dans params (LCDPHONE_DERNIERE_SYNCHRO, LCDPHONE_SYNCHRO_OK,
+LCDPHONE_SYNCHRO_RESUME) : /sync-status le relit après un redémarrage ou un redéploiement.
 """
 
-import os
+import json
 import time
-import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, BackgroundTasks, Request
 
 from app.database import get_cursor
-from app.api.auth import get_current_user
+from app.api.auth import exiger_role_admin, get_current_user
+from app.services import params as params_cache
 
 router = APIRouter(prefix="/api/telephones", tags=["telephones"])
 logger = logging.getLogger(__name__)
 
 _table_checked = False
 _sync_status = {"running": False, "last_result": None, "started_at": None}
+
+PARAM_DERNIERE_SYNCHRO = "LCDPHONE_DERNIERE_SYNCHRO"
+PARAM_SYNCHRO_OK = "LCDPHONE_SYNCHRO_OK"
+PARAM_SYNCHRO_RESUME = "LCDPHONE_SYNCHRO_RESUME"
 
 
 # ─── Simple TTL cache ────────────────────────────────
@@ -60,7 +67,7 @@ def _ensure_table():
                     stockage VARCHAR(20),
                     couleur VARCHAR(50),
                     grade VARCHAR(20),
-                    type_produit VARCHAR(20) NOT NULL DEFAULT 'reconditionné',
+                    type_produit VARCHAR(20) NOT NULL DEFAULT 'occasion',
                     prix_fournisseur DECIMAL(10,2),
                     prix_vente DECIMAL(10,2),
                     marge_appliquee DECIMAL(10,2),
@@ -77,6 +84,9 @@ def _ensure_table():
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            # Base créée avant : les prochaines fiches valent 'occasion' (les existantes ne sont pas
+            # réécrites ici : la synchro suivante remet type_produit à jour)
+            cur.execute("ALTER TABLE telephones_catalogue ALTER COLUMN type_produit SET DEFAULT 'occasion'")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_marque ON telephones_catalogue(marque)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_type ON telephones_catalogue(type_produit)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_actif ON telephones_catalogue(actif)")
@@ -100,15 +110,49 @@ def _row_to_dict(row):
     return d
 
 
+def _maintenant_utc() -> str:
+    """Heure UTC (ISO, sans fuseau) : début et fin de synchro, LCDPHONE_DERNIERE_SYNCHRO."""
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+
+
+def _resume_synchro(result: dict, debut: str, fin: str) -> dict:
+    """Résumé gardé dans params : comptes et erreur courte, jamais d'identifiant."""
+    return {
+        "success": bool(result.get("success")),
+        "total": result.get("total", 0), "inserted": result.get("inserted", 0),
+        "updated": result.get("updated", 0), "marques": result.get("marques", 0),
+        "message": result.get("message"),
+        "error": str(result.get("error"))[:300] if result.get("error") else None,
+        "started_at": debut, "finished_at": fin,
+    }
+
+
+def _noter_synchro(result: dict, debut: str, fin: str):
+    """État durable de la dernière synchro (relu par /sync-status après un redémarrage)."""
+    try:
+        with get_cursor() as cur:
+            for cle, valeur in (
+                (PARAM_DERNIERE_SYNCHRO, fin),
+                (PARAM_SYNCHRO_OK, "1" if result.get("success") else "0"),
+                (PARAM_SYNCHRO_RESUME, json.dumps(_resume_synchro(result, debut, fin), ensure_ascii=False)),
+            ):
+                cur.execute("""INSERT INTO params (cle, valeur) VALUES (%s, %s)
+                               ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur""", (cle, valeur))
+        params_cache.invalidate()
+    except Exception as e:
+        logger.error(f"État de la synchro LCD-Phone non enregistré : {type(e).__name__}")
+
+
 def _run_sync_background():
     """Execute sync in background thread."""
-    global _sync_status
+    debut = _sync_status.get("started_at") or _maintenant_utc()
     try:
         from app.services.scraper_lcdphone import sync_telephones_lcdphone
         from app.services.notifications import notif_sync_telephones
         result = sync_telephones_lcdphone()
         _sync_status["last_result"] = result
-        _sync_status["finished_at"] = datetime.utcnow().isoformat()
+        _sync_status["finished_at"] = _maintenant_utc()
+        _noter_synchro(result, debut, _sync_status["finished_at"])
 
         # Discord alert
         if result.get("success"):
@@ -118,7 +162,8 @@ def _run_sync_background():
     except Exception as e:
         logger.error(f"Background sync error: {e}")
         _sync_status["last_result"] = {"success": False, "error": str(e)}
-        _sync_status["finished_at"] = datetime.utcnow().isoformat()
+        _sync_status["finished_at"] = _maintenant_utc()
+        _noter_synchro(_sync_status["last_result"], debut, _sync_status["finished_at"])
         try:
             from app.services.notifications import notif_sync_telephones
             notif_sync_telephones(False, error=str(e))
@@ -130,10 +175,9 @@ def _run_sync_background():
 
 
 @router.post("/sync")
-def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
-    """Lance la synchronisation avec LCD-Phone en arrière-plan."""
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin requis")
+def sync_catalogue(request: Request, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+    """Lance la synchronisation avec LCD-Phone en arrière-plan (admin)."""
+    exiger_role_admin(request, user)
     global _sync_status
     _ensure_table()
 
@@ -146,7 +190,7 @@ def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_c
     _sync_status = {
         "running": True,
         "last_result": None,
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": _maintenant_utc(),
         "finished_at": None,
     }
 
@@ -160,18 +204,34 @@ def sync_catalogue(background_tasks: BackgroundTasks, user: dict = Depends(get_c
 
 @router.get("/sync-status")
 def sync_status(user: dict = Depends(get_current_user)):
-    """Vérifie l'état de la synchronisation."""
+    """État de la synchronisation : celle en cours sur ce processus, sinon la dernière
+    enregistrée (params, conservée après un redémarrage)."""
+    p = params_cache.get_params([PARAM_DERNIERE_SYNCHRO, PARAM_SYNCHRO_OK, PARAM_SYNCHRO_RESUME])
+    try:
+        resume = json.loads(p[PARAM_SYNCHRO_RESUME]) if p[PARAM_SYNCHRO_RESUME] else None
+    except (TypeError, ValueError):
+        resume = None
+    ok = {"1": True, "0": False}.get(str(p[PARAM_SYNCHRO_OK] or "").strip())
+    last_result = _sync_status.get("last_result")
+    finished_at = _sync_status.get("finished_at")
+    if last_result is None and not _sync_status["running"] and resume:
+        last_result = {k: v for k, v in resume.items() if k not in ("started_at", "finished_at")}
+        finished_at = resume.get("finished_at")
     return {
         "running": _sync_status["running"],
-        "started_at": _sync_status.get("started_at"),
-        "finished_at": _sync_status.get("finished_at"),
-        "last_result": _sync_status.get("last_result"),
+        "started_at": _sync_status.get("started_at") or (resume or {}).get("started_at"),
+        "finished_at": finished_at,
+        "last_result": last_result,
+        "derniere_synchro": p[PARAM_DERNIERE_SYNCHRO] or None,
+        "synchro_ok": ok,
+        "resume": resume,
     }
 
 
 @router.get("/probe")
-def probe_lcdphone_endpoint(user: dict = Depends(get_current_user)):
-    """Diagnostic: teste le login LCD-Phone et analyse la structure HTML."""
+def probe_lcdphone_endpoint(request: Request, user: dict = Depends(get_current_user)):
+    """Diagnostic (admin) : teste le login LCD-Phone et analyse la structure des réponses."""
+    exiger_role_admin(request, user)
     from app.services.scraper_lcdphone import probe_lcdphone
     return probe_lcdphone()
 

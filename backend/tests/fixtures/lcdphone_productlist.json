@@ -1,0 +1,27 @@
+{
+  "_commentaire": "Réponse d'exemple (fictive, forme de l'endpoint PrestaShop ?ajax=1&action=productList de LCD-Phone) pour tests/test_prix_sources.py : aucune requête réseau.",
+  "pages": [
+    {
+      "pagination": {"total_items": 10, "items_shown_from": 1, "items_shown_to": 6, "current_page": 1, "pages_count": 2},
+      "rendered_products": "<div class=\"products\"></div>",
+      "products": [
+        {"id_product": 50730, "name": "iPhone 14 256 Go Bleu Grade AB avec boîte et sans accessoire", "price": "479,00 €", "price_amount": 479.0, "availability_message": "En stock", "quantity": 2, "url": "https://lcd-phone.com/fr/iphone-occasion/50730-iphone-14-256-go-bleu-grade-ab.html", "cover": {"large": {"url": "https://lcd-phone.com/1-large_default/iphone-14.jpg"}}},
+        {"id_product": 31902, "name": "Boite Tablette Vide 11\"", "price": "2,00 €", "price_amount": 2.0, "availability_message": "En stock", "quantity": 40, "url": "https://lcd-phone.com/fr/tablette-occasion/31902-boite-tablette-vide-11.html"},
+        {"id_product": 5349, "name": "Coque de Protection Transparente iPhone - Vrac", "price": "1,50 €", "price_amount": 1.5, "availability_message": "En stock", "quantity": 100},
+        {"id_product": 4802, "name": "Câble USB vers Lightning 20W -1M (Mayline)", "price": "3,90 €", "price_amount": 3.9, "availability_message": "En stock", "quantity": 12},
+        {"id_product": 4809, "name": "Kit Chargeur 5W Câble USB vers Lightning 1M (Mayline)", "price": "6,90 €", "price_amount": 6.9, "availability_message": "En stock", "quantity": 8},
+        {"id_product": 40001, "name": "iPhone 8 64 Go Gris Grade A", "price": "99,00 €", "price_amount": 99.0, "availability_message": "En stock", "quantity": 1}
+      ]
+    },
+    {
+      "pagination": {"total_items": 10, "items_shown_from": 7, "items_shown_to": 10, "current_page": 2, "pages_count": 2},
+      "rendered_products": "",
+      "products": [
+        {"id_product": 50730, "name": "iPhone 14 256 Go Bleu Grade AB avec boîte et sans accessoire", "price": "479,00 €", "price_amount": 479.0, "availability_message": "En stock", "quantity": 2},
+        {"id_product": 52337, "name": "iPhone 13 Pro 512 Go Bleu Sierra Grade A avec boîte et accessoire", "price": "1 049,00 €", "availability_message": "En stock", "quantity": 1, "cover": {"medium": {"url": "https://lcd-phone.com/2-medium_default/iphone-13-pro.jpg"}}},
+        {"id_product": 52338, "name": "iPhone 15 128 Go Noir Grade B", "price": "389,00 €", "price_amount": 389.0, "availability_message": "Rupture de stock", "quantity": 0},
+        {"id_product": 43717, "name": "ZTE Blade A53 Plus 64 Go Gris Grade A avec boite et cable", "price": "59,00 €", "price_amount": 59.0, "availability_message": "En stock", "quantity": 3}
+      ]
+    }
+  ]
+}

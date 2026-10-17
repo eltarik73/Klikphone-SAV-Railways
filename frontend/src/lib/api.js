@@ -171,6 +171,20 @@ function buildQuery(params) {
   return qs;
 }
 
+// Commande de pièce : prix_ht en nombre (virgule acceptée, vide → null), tarif_cle en texte ou null.
+// Les autres champs passent tels quels ; absents, ces deux-là ne sont pas ajoutés.
+export function commandePayload(data) {
+  if (!data || typeof data !== 'object') return data;
+  const out = { ...data };
+  if ('prix_ht' in out) {
+    const brut = out.prix_ht;
+    const n = typeof brut === 'string' ? parseFloat(brut.replace(',', '.')) : Number(brut);
+    out.prix_ht = brut === '' || brut === null || brut === undefined || !Number.isFinite(n) ? null : Math.round(n * 100) / 100;
+  }
+  if ('tarif_cle' in out) out.tarif_cle = out.tarif_cle ? String(out.tarif_cle) : null;
+  return out;
+}
+
 class ApiClient {
   constructor() {
     this.token = localStorage.getItem('kp_token') || null;
@@ -297,7 +311,9 @@ class ApiClient {
     const { retries, auth = true, withHeaders = false, ...fetchOptions } = options;
     const url = `${API_URL}${path}`;
     const headers = { ...fetchOptions.headers };
-    if (fetchOptions.body) headers['Content-Type'] = 'application/json';
+    // FormData (envoi de fichier) : le navigateur pose lui-même le multipart et sa frontière
+    const multipart = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
+    if (fetchOptions.body && !multipart) headers['Content-Type'] = 'application/json';
     const bearer = auth ? this.token : null;
     if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
     const adminToken = auth && sendsAdminToken(path) ? this.getAdminToken() : null;
@@ -614,9 +630,11 @@ class ApiClient {
   }
   getPartsByTicket(ticketId) { return this.get(`/api/parts?ticket_id=${ticketId}`); }
   getPublicCommandes(ticketCode) { return this.get(`/api/parts/public/${encodeURIComponent(ticketCode)}`); }
-  createPart(data) { return this.post('/api/parts', data); }
+  // prix_ht (HT réellement payé) et tarif_cle (« tarifs:123 ») : le serveur en tire une proposition
+  // de mise à jour de la grille, jamais une écriture directe du prix
+  createPart(data) { return this.post('/api/parts', commandePayload(data)); }
   createPartAuto(data) { return this.post('/api/parts/auto', data); }
-  updatePart(id, data) { return this.patch(`/api/parts/${id}`, data); }
+  updatePart(id, data) { return this.patch(`/api/parts/${id}`, commandePayload(data)); }
   deletePart(id) { return this.delete(`/api/parts/${id}`); }
 
   // ─── CONFIG ────────────────────────────────
@@ -1024,6 +1042,97 @@ class ApiClient {
     return this.request('/api/tarifs/apple-devices/import', { method: 'POST', body: JSON.stringify({ items }) });
   }
 
+  // ─── MOTEUR DE PRIX (écrans admin) ─────────
+  // Toute écriture exige l'élévation admin côté serveur (403 admin_requis → useAdminElevation).
+  // Après une écriture, les listes de prix en cache (pièces, grilles boutique, suggestions) sont oubliées.
+  _apresEcriturePrix() {
+    ['/api/tarifs', '/api/iphone-tarifs', '/api/smartphones-tarifs', '/api/grille'].forEach((p) => this._invalidate(p));
+  }
+  async _ecriturePrix(path, body, timeoutMs) {
+    try {
+      return await this.request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }, timeoutMs);
+    } finally {
+      this._apresEcriturePrix();
+    }
+  }
+  // → { modifies, inchanges, verrouilles, sans_prix_achat, ignores, lot_id } (lot annulable)
+  recalculerTarifs() { return this._ecriturePrix('/api/tarifs/recalculate', {}, 60_000); }
+  // → règles de marge (TARIFS_REGLES) : { tva, ecran: {standard, haut_de_gamme, pliant}, autre, ipad, macbook, arrondi, seuil_marge_alerte, … }
+  getReglesPrix() { return this.request('/api/tarifs/regles', { cache: 'no-store' }); }
+  // payload : { regles } ou { cible, filtre: { marque, modele, type_piece, ids, colonne }, ajustement: { type: 'pct'|'eur', valeur } }
+  // → { modifies, inchanges, verrouilles, ignores, variation_moy|min|max (€), variation_moy_pct (%), alertes,
+  //     ecarts: [{ cle, label, ancien, nouveau, alerte, alertes, ancien_ht?, nouveau_ht? }], verrouilles_liste } (rien n'est écrit)
+  simulerPrix(payload) {
+    return this.request('/api/tarifs/simuler', { method: 'POST', body: JSON.stringify(payload ?? {}) }, 30_000);
+  }
+  // Même charge que simulerPrix ; les règles fournies sont enregistrées → { lot_id, modifies, verrouilles }
+  appliquerPrix(payload) { return this._ecriturePrix('/api/tarifs/appliquer', { ...payload, confirmer: true }, 60_000); }
+  // Fichier fournisseur (xlsx/csv, 5 Mo) lu sans rien écrire →
+  // { import_id, colonnes, mapping, reconnues, nouvelles, non_reconnues, invalides, absentes, resume }
+  apercuImportPrix({ fichier, fournisseur, cible = 'tarifs', mapping } = {}) {
+    const form = new FormData();
+    form.append('fichier', fichier);
+    form.append('fournisseur', fournisseur || '');
+    form.append('cible', cible);
+    if (mapping && Object.keys(mapping).length) form.append('mapping', JSON.stringify(mapping));
+    return this.request('/api/tarifs/import-fichier/apercu', { method: 'POST', body: form }, 60_000);
+  }
+  // body : { lignes: [n], associations: [{ n, cle }], nouvelles: [n], marquer_obsoletes, ignorer_invalides }
+  // → { lot_id, modifies, ajoutes, obsoletes, verrouilles, confirmes, inchanges }
+  appliquerImportPrix(importId, body) {
+    return this._ecriturePrix(`/api/tarifs/import-fichier/${encodeURIComponent(importId)}/appliquer`, body, 90_000);
+  }
+  // Lignes « À associer » d'un aperçu : avant → après chiffré par le serveur, RIEN n'est écrit.
+  // associations [{ n, cle }] → [{ n, cle, label, ancien_ht, nouveau_ht, ancien_client, nouveau_client, change,
+  //   verrou, obsolete, alerte, alertes, confirmation_requise }] ; association inapplicable : { n, cle, erreur }.
+  // Avec confirmation_requise, l'association n'est appliquée que si n est aussi envoyé dans `confirmees`.
+  evaluerAssociationsImport(importId, associations) {
+    const liste = (associations || [])
+      .map((a) => ({ n: Number(a?.n), cle: String(a?.cle || '') }))
+      .filter((a) => Number.isFinite(a.n) && a.cle);
+    return this.request(`/api/tarifs/import-fichier/${encodeURIComponent(importId)}/evaluer`, {
+      method: 'POST', body: JSON.stringify({ associations: liste }),
+    }, 20_000);
+  }
+  // → [{ id, table_nom, ligne_id, colonne, ancien, nouveau, source, lot_id, par, le }]
+  getHistoriquePrix({ table, ligne_id, lot_id, limit } = {}) {
+    return this.request(`/api/tarifs/historique${buildQuery({ table, ligne_id, lot_id, limit })}`, { cache: 'no-store' });
+  }
+  // Derniers lots → [{ lot_id, source, par, le, valeurs, lignes, annule }]
+  getLotsPrix(limit = 30) {
+    return this.request(`/api/tarifs/historique/lots${buildQuery({ limit })}`, { cache: 'no-store' });
+  }
+  annulerLotPrix(lotId) {
+    return this._ecriturePrix(`/api/tarifs/historique/annuler-lot/${encodeURIComponent(lotId)}`, {}, 60_000);
+  }
+  // Verrou d'une pièce fournisseur (tarifs) ou d'un iPad / MacBook (table 'tarifs_apple_devices') :
+  // jamais modifiée automatiquement → { id, verrou_manuel }
+  async setVerrouPrix(id, verrouManuel, table = 'tarifs') {
+    const base = table === 'tarifs_apple_devices' ? '/api/tarifs/apple-devices' : '/api/tarifs';
+    try {
+      return await this.request(`${base}/${encodeURIComponent(id)}/verrou`, {
+        method: 'PATCH', body: JSON.stringify({ verrou_manuel: !!verrouManuel }),
+      });
+    } finally {
+      this._apresEcriturePrix();
+    }
+  }
+  // Pièce absente de la grille, saisie à la main (source 'manuel') :
+  // { marque, modele, type_piece, qualite?, categorie, prix_fournisseur_ht? | prix_client? } → ligne créée
+  // (prix client saisi : pièce verrouillée). 409 err.code = 'piece_existante' (err.detail.id).
+  creerLignePrix(body) { return this._ecriturePrix('/api/tarifs/ligne', body, 20_000); }
+  // Prix d'achat HT : masqués par le serveur tant que le code admin n'est pas saisi sur ce poste.
+  // Relecture sans cache après l'élévation → { tarifs, appleDevices } avec les HT (cache des listes oublié).
+  async getPrixAchat() {
+    this._invalidate('/api/tarifs');
+    const [tarifs, appleDevices] = await Promise.all([
+      this.request('/api/tarifs', { cache: 'no-store' }, 20_000),
+      this.request('/api/tarifs/apple-devices', { cache: 'no-store' }, 20_000),
+    ]);
+    return { tarifs: tarifs || [], appleDevices: appleDevices || [] };
+  }
+  // getSantePrix() (staff) : défini plus bas avec les propositions de prix
+
   // ─── MARKETING ──────────────────────────────
   getAvisGoogle(params = {}) {
     const qs = new URLSearchParams(params).toString();
@@ -1116,6 +1225,32 @@ class ApiClient {
   getTelephoneMarques() { return this.get('/api/telephones/marques'); }
   syncTelephones() { return this.request('/api/telephones/sync', { method: 'POST' }, 30000); }
   getSyncStatus() { return this.get('/api/telephones/sync-status'); }
+  // Test de connexion LCD-Phone (admin) : jamais relancé (chaque essai ouvre une session fournisseur)
+  probeTelephones() { return this.request('/api/telephones/probe', { retries: 0, cache: 'no-store' }, 60000); }
+
+  // ─── PRIX : propositions issues des commandes, modèles sans prix, alias, santé ──
+  getPropositionsPrix({ statut = 'en_attente' } = {}) {
+    return this.request(`/api/tarifs/propositions${buildQuery({ statut })}`, { cache: 'no-store' });
+  }
+  // Une proposition acceptée change un prix : les grilles en cache sont relues
+  accepterPropositionPrix(id) {
+    this._invalidate('/api/tarifs');
+    return this.post(`/api/tarifs/propositions/${encodeURIComponent(id)}/accepter`, {});
+  }
+  refuserPropositionPrix(id) { return this.post(`/api/tarifs/propositions/${encodeURIComponent(id)}/refuser`, {}); }
+  accepterPropositionsPrix(ids) {
+    this._invalidate('/api/tarifs');
+    return this.post('/api/tarifs/propositions/accepter', { ids: (ids || []).map(Number).filter(Number.isFinite) });
+  }
+  getModelesSansPrix() { return this.request('/api/grille/sans-prix', { cache: 'no-store' }, 20000); }
+  getAliasModeles() { return this.get('/api/grille/alias'); }
+  ajouterAliasModele({ alias, modele_canonique, categorie } = {}) {
+    return this.post('/api/grille/alias', {
+      alias: String(alias || '').trim(), modele_canonique: String(modele_canonique || '').trim(), categorie: categorie || null,
+    });
+  }
+  supprimerAliasModele(id) { return this.delete(`/api/grille/alias/${encodeURIComponent(id)}`); }
+  getSantePrix() { return this.get('/api/tarifs/sante'); }
 
   // ─── VENTES iPHONE (stock + générateur vidéo Story) ──
   getIphones(params = {}) {

@@ -20,13 +20,15 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.responses import FileResponse, StreamingResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_cursor
 from app.services import params as params_cache
+from app.services import prix as prix_srv
 from app.services import search as search_engine
 from app.api.auth import (
-    client_ip, exiger_elevation, get_current_user, noter_echec, noter_succes, verifier_essais, verifier_secret,
+    client_ip, exiger_elevation, exiger_role_admin, get_current_user, noter_echec, noter_succes, verifier_essais,
+    verifier_secret,
 )
 # Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque
 from app.api.smartphones_tarifs import _fetch_image_for_pdf
@@ -866,13 +868,13 @@ def demande_devis(payload: DemandeDevisRequest, request: Request):
 class IphoneTarifUpdate(BaseModel):
     modele: Optional[str] = None
     stockage_1: Optional[str] = None
-    prix_1: Optional[int] = None
+    prix_1: Optional[int] = Field(None, ge=0, le=100000)
     stock_1: Optional[int] = None
     stockage_2: Optional[str] = None
-    prix_2: Optional[int] = None
+    prix_2: Optional[int] = Field(None, ge=0, le=100000)
     stock_2: Optional[int] = None
     stockage_3: Optional[str] = None
-    prix_3: Optional[int] = None
+    prix_3: Optional[int] = Field(None, ge=0, le=100000)
     stock_3: Optional[int] = None
     grade: Optional[str] = None
     das_tete: Optional[str] = None
@@ -897,29 +899,51 @@ def list_tarifs():
                    stockage_2, prix_2, stock_2,
                    stockage_3, prix_3, stock_3,
                    grade, das_tete, das_corps, das_membre,
-                   image_filename, image_url, page_group, actif, condition, updated_at
+                   image_filename, image_url, page_group, actif, condition, updated_at,
+                   -- Date des prix (moteur de prix) : updated_at bouge aussi au stock ou à la photo
+                   prix_maj_le,
+                   floor(extract(epoch FROM NOW() - prix_maj_le) / 86400)::int AS age_jours
             FROM iphone_tarifs
             ORDER BY ordre ASC
         """)
         return [dict(r) for r in cur.fetchall()]
 
 
+def _admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    """Écriture de prix : rôle admin du membre ET code admin saisi sur ce poste."""
+    return exiger_role_admin(request, user)
+
+
+_COLONNES_PRIX = ("prix_1", "prix_2", "prix_3")
+
+
 @router.patch("/{tarif_id}")
-def update_tarif(tarif_id: int, payload: IphoneTarifUpdate, user: dict = Depends(get_current_user)):
+def update_tarif(tarif_id: int, payload: IphoneTarifUpdate, user: dict = Depends(_admin)):
+    """Modifie un iPhone de la vitrine (admin). Les prix passent par le moteur de prix
+    (source 'manuel', date du prix, historique) ; les autres champs sont écrits tels quels.
+
+    Saisie manuelle explicite : permise même sur une ligne cadenassée (PRIX_LIGNES_VERROUILLEES),
+    le cadenas reste posé ; il protège la ligne des ajustements globaux et des annulations de lot."""
     data = payload.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")
-
-    set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
-    values = list(data.values()) + [tarif_id]
+    prix_envoyes = {k: data.pop(k) for k in _COLONNES_PRIX if k in data}
 
     with get_cursor() as cur:
-        cur.execute(
-            f"UPDATE iphone_tarifs SET {set_clauses}, updated_at = NOW() WHERE id = %s RETURNING id",
-            values,
-        )
+        if data:
+            # Noms de colonnes : champs du modèle IphoneTarifUpdate uniquement
+            set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
+            cur.execute(
+                f"UPDATE iphone_tarifs SET {set_clauses}, updated_at = NOW() WHERE id = %s RETURNING id",
+                list(data.values()) + [tarif_id],
+            )
+        else:
+            cur.execute("SELECT id FROM iphone_tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
         if not cur.fetchone():
             raise HTTPException(404, "Tarif non trouvé")
+        if prix_envoyes:
+            prix_srv.ecrire_prix_lot(cur, "iphone_tarifs", [(tarif_id, k, v) for k, v in prix_envoyes.items()],
+                                     "manuel", (user.get("sub") or None), prix_srv.nouveau_lot())
     # Invalide cache in-memory pour que list_iphones reflete immediatement
     try:
         from app.api.iphones_stock import _invalidate_tarifs_cache

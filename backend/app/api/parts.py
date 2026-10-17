@@ -1,18 +1,74 @@
 """
 API Commandes de pièces.
+
+Prix réellement payé : une commande peut porter le HT payé (prix_ht) et la pièce de la
+grille concernée (tarif_cle, « tarifs:123 » : identifiant des suggestions de /api/grille).
+Avec les deux, à la création, quand l'un change ou à la réception, une proposition de
+mise à jour du prix est créée (services/prix.creer_proposition, écart de plus de 1 €),
+à valider par l'admin (/api/tarifs/propositions) : jamais d'écriture directe du prix.
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import Field, field_validator
 from app.database import get_cursor
 from app.api.auth import get_current_user
-from app.models import CommandePieceCreate, CommandePieceUpdate, CommandePieceOut
+from app.models import CommandePieceCreate, CommandePieceUpdate
+from app.services import prix as prix_srv
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
+logger = logging.getLogger(__name__)
 
 
 STATUTS_TERMINAUX = ["Donné au client", "Clôturé"]
+STATUTS_RECUS = ("Reçu", "Donné au client", "Clôturé")
+
+
+def _valider_tarif_cle(v):
+    if v is None or not str(v).strip():
+        return None
+    try:
+        prix_srv.parse_tarif_cle(str(v).strip())
+    except ValueError:
+        raise ValueError("tarif_cle invalide (attendu : « tarifs:123 »)")
+    return str(v).strip()
+
+
+class CommandePieceCreatePrix(CommandePieceCreate):
+    prix_ht: Optional[float] = Field(None, ge=0, le=100000)
+    tarif_cle: Optional[str] = Field(None, max_length=80)
+
+    @field_validator("tarif_cle", mode="before")
+    @classmethod
+    def _cle(cls, v):
+        return _valider_tarif_cle(v)
+
+
+class CommandePieceUpdatePrix(CommandePieceUpdate):
+    prix_ht: Optional[float] = Field(None, ge=0, le=100000)
+    tarif_cle: Optional[str] = Field(None, max_length=80)
+
+    @field_validator("tarif_cle", mode="before")
+    @classmethod
+    def _cle(cls, v):
+        return _valider_tarif_cle(v)
+
+
+def _proposer(cur, commande_id: int, prix_ht, tarif_cle, par: str):
+    """Proposition de prix (dans un SAVEPOINT : un échec n'annule jamais la commande)."""
+    if prix_ht is None or not tarif_cle or float(prix_ht) <= 0:
+        return None
+    cur.execute("SAVEPOINT kp_proposition")
+    try:
+        pid = prix_srv.creer_proposition(cur, tarif_cle, prix_ht, "commande", par, commande_id)
+        cur.execute("RELEASE SAVEPOINT kp_proposition")
+        return pid
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT kp_proposition")
+        logger.warning("Proposition de prix non créée (commande %s) : %s", commande_id, type(e).__name__)
+        return None
 
 
 @router.get("")
@@ -77,8 +133,8 @@ def list_parts(
 
 
 @router.post("", response_model=dict)
-def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user)):
-    """Crée une commande de pièce."""
+def create_part(data: CommandePieceCreatePrix, user: dict = Depends(get_current_user)):
+    """Crée une commande de pièce (prix_ht + tarif_cle : proposition de prix, cf. docstring du module)."""
     ticket_id = data.ticket_id
 
     # If ticket_code provided but no ticket_id, resolve it
@@ -91,11 +147,13 @@ def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user
 
     with get_cursor() as cur:
         cur.execute("""
-            INSERT INTO commandes_pieces (ticket_id, description, fournisseur, reference, prix, notes, ticket_code, statut)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'En attente') RETURNING id
+            INSERT INTO commandes_pieces (ticket_id, description, fournisseur, reference, prix, notes, ticket_code,
+                                          statut, prix_ht, tarif_cle)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'En attente', %s, %s) RETURNING id
         """, (
             ticket_id, data.description, data.fournisseur,
             data.reference, data.prix, data.notes, data.ticket_code or '',
+            data.prix_ht, data.tarif_cle,
         ))
         row = cur.fetchone()
 
@@ -105,8 +163,9 @@ def create_part(data: CommandePieceCreate, user: dict = Depends(get_current_user
                 "UPDATE tickets SET commande_piece = 1, date_maj = %s WHERE id = %s",
                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
             )
+        proposition = _proposer(cur, row["id"], data.prix_ht, data.tarif_cle, user.get("sub") or "")
 
-    return {"id": row["id"]}
+    return {"id": row["id"], "proposition_id": proposition}
 
 
 @router.post("/auto", response_model=dict)
@@ -147,11 +206,13 @@ def create_part_auto(data: dict):
 @router.patch("/{commande_id}", response_model=dict)
 def update_part(
     commande_id: int,
-    data: CommandePieceUpdate,
+    data: CommandePieceUpdatePrix,
     user: dict = Depends(get_current_user),
 ):
-    """Met à jour une commande de pièce."""
-    updates = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
+    """Met à jour une commande de pièce. prix_ht et tarif_cle acceptent null (effacés) ; un
+    changement de l'un d'eux, ou la réception, crée la proposition de prix (cf. docstring du module)."""
+    envoye = data.model_dump(exclude_unset=True)
+    updates = {k: v for k, v in envoye.items() if v is not None or k in ("prix_ht", "tarif_cle")}
     if not updates:
         return {"ok": True}
 
@@ -171,11 +232,26 @@ def update_part(
             if row:
                 updates["ticket_id"] = row["id"]
 
+    # Noms de colonnes : champs du modèle Pydantic uniquement
     set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
     values = list(updates.values()) + [commande_id]
+    proposition = None
 
     with get_cursor() as cur:
+        avant = None
+        if {"prix_ht", "tarif_cle", "statut"} & set(updates):
+            cur.execute("SELECT prix_ht, tarif_cle, statut FROM commandes_pieces WHERE id = %s", (commande_id,))
+            avant = cur.fetchone()
         cur.execute(f"UPDATE commandes_pieces SET {set_clause} WHERE id = %s", values)
+
+        if avant is not None:
+            prix_ht = updates.get("prix_ht", avant["prix_ht"])
+            tarif_cle = updates.get("tarif_cle", avant["tarif_cle"])
+            change = ("prix_ht" in updates and _differe(updates["prix_ht"], avant["prix_ht"])) or \
+                     ("tarif_cle" in updates and (updates["tarif_cle"] or None) != (avant["tarif_cle"] or None))
+            recue = updates.get("statut") in STATUTS_RECUS and avant["statut"] not in STATUTS_RECUS
+            if change or (recue and not _deja_proposee(cur, commande_id)):
+                proposition = _proposer(cur, commande_id, prix_ht, tarif_cle, user.get("sub") or "")
 
         # Auto-sync: if commande becomes "Reçu", update ticket status to "Pièce reçue"
         if updates.get("statut") == "Reçu":
@@ -194,7 +270,27 @@ def update_part(
                     (history_entry, row["ticket_id"]),
                 )
 
-    return {"ok": True}
+    return {"ok": True, "proposition_id": proposition}
+
+
+def _differe(a, b) -> bool:
+    if a is None or b is None:
+        return (a is None) != (b is None)
+    return abs(float(a) - float(b)) >= 0.005
+
+
+def _deja_proposee(cur, commande_id: int) -> bool:
+    """Une proposition (quel que soit son sort) vient déjà de cette commande : la réception ne
+    la relance pas (une proposition refusée ne revient pas d'elle-même)."""
+    cur.execute("SAVEPOINT kp_deja")
+    try:
+        cur.execute("SELECT 1 AS x FROM tarifs_propositions WHERE commande_id = %s LIMIT 1", (commande_id,))
+        deja = cur.fetchone() is not None
+        cur.execute("RELEASE SAVEPOINT kp_deja")
+        return deja
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT kp_deja")
+        return False
 
 
 @router.delete("/{commande_id}", response_model=dict)

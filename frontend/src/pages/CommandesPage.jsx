@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useId } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
@@ -6,16 +6,253 @@ import api from '../lib/api';
 import { formatDateShort, formatPrix, waLink } from '../lib/utils';
 import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { matchesQuery } from '../components/SearchPalette';
+import { fraicheurPrix } from '../components/TarifPicker';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
   Truck, Wrench, Archive, ShoppingCart, UserCheck,
-  MessageSquare, Send,
+  MessageSquare, Send, Tag,
 } from 'lucide-react';
 
 const PART_STATUTS = ['Panier', 'En attente', 'Commandée', 'Reçu', 'En réparation', 'Donné au client', 'Clôturé'];
 const STATUTS_TERMINAUX = ['Donné au client', 'Clôturé'];
+
+// ─── Prix HT payé → proposition de mise à jour de la grille ───────────────
+// Seules les pièces à coût d'achat (fournisseur, iPad/MacBook) se rattachent à une commande
+const SOURCES_PIECES = new Set(['tarifs', 'tarifs_apple_devices']);
+// Écart au-delà duquel le serveur crée une proposition (services/prix.creer_proposition)
+export const ECART_PROPOSITION = 1;
+export const MESSAGE_PROPOSITION = 'Proposition de mise à jour envoyée au gérant';
+
+/** Nombre saisi (virgule acceptée) ou null. */
+export function montantSaisi(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim().replace(/\s|€/g, '').replace(',', '.');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
+}
+
+/** Suggestions de la grille → pièces rattachables à une commande (lignes obsolètes exclues). */
+export function piecesCommandables(suggestions) {
+  return (Array.isArray(suggestions) ? suggestions : [])
+    .filter(s => s && !s.obsolete && s.id && SOURCES_PIECES.has(s.source));
+}
+
+const mots = (s) => String(s ?? '').normalize('NFKD').replace(/\p{Mn}/gu, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/** Pièce pressentie d'après la désignation (type et qualité) : seulement si une seule ressort nettement. */
+export function piecePressentie(description, pieces) {
+  const desc = new Set(mots(description));
+  if (!desc.size || !pieces?.length) return null;
+  let meilleur = null;
+  let egalite = false;
+  for (const p of pieces) {
+    const type = mots(p.type_piece)[0];
+    if (!type || !desc.has(type)) continue;
+    const qualite = mots(p.qualite);
+    const score = 2 + (qualite.length && qualite.every(m => desc.has(m)) ? 1 : 0);
+    if (!meilleur || score > meilleur.score) { meilleur = { p, score }; egalite = false; }
+    else if (score === meilleur.score) egalite = true;
+  }
+  return meilleur && !egalite ? meilleur.p : null;
+}
+
+/** Le serveur signale-t-il une proposition créée ? true / false, ou null s'il ne le dit pas. */
+export function propositionSignalee(res) {
+  if (!res || typeof res !== 'object') return null;
+  for (const k of ['proposition_id', 'proposition', 'proposition_creee']) {
+    if (k in res) return Boolean(res[k]);
+  }
+  return null;
+}
+
+// Option de la liste : pièce (le modèle est celui du ticket), date du prix, HT pour l'admin
+function libellePiece(s, isAdmin) {
+  const morceaux = [String(s.label || '').replace(/^Forfait remplacement /i, 'Remplacement ')];
+  const f = fraicheurPrix(s);
+  if (f) morceaux.push(f.libelle + (f.estime ? ' · estimé' : ''));
+  if (isAdmin && s.cout_ht != null) morceaux.push(`HT ${formatPrix(s.cout_ht)}`);
+  return morceaux.join(' — ');
+}
+
+function appareilDeLigne(p) {
+  const modele = (p?.modele && p.modele !== 'Autre' ? p.modele : p?.modele_autre) || '';
+  return modele ? { marque: p.marque || '', modele, categorie: p.categorie || '' } : null;
+}
+
+/**
+ * Pièces de la grille pour le modèle du ticket de la commande : appareil connu (ligne de la liste)
+ * ou ticket résolu depuis son code (saisi dans le formulaire). Le coût HT n'arrive qu'à l'admin.
+ */
+function usePiecesGrille({ actif, appareil, ticketId, ticketCode }) {
+  const [etat, setEtat] = useState({ statut: 'vide', pieces: [], appareil: null });
+  const cleAppareil = appareil ? `${appareil.marque}|${appareil.modele}|${appareil.categorie}` : '';
+  const code = String(ticketCode || '').trim();
+
+  useEffect(() => {
+    if (!actif || (!cleAppareil && !ticketId && code.length < 3)) {
+      setEtat({ statut: 'vide', pieces: [], appareil: null });
+      return undefined;
+    }
+    let annule = false;
+    setEtat(e => ({ ...e, statut: 'chargement' }));
+    const timer = setTimeout(async () => {
+      try {
+        let app = appareil;
+        if (!app) {
+          let id = ticketId;
+          if (!id) {
+            const r = await api.resolveCode(code).catch(() => null);
+            id = r?.type === 'ticket' ? r.id : null;
+          }
+          const t = id ? await api.getTicket(id).catch(() => null) : null;
+          app = t ? appareilDeLigne(t) : null;
+        }
+        if (annule) return;
+        if (!app) { setEtat({ statut: 'introuvable', pieces: [], appareil: null }); return; }
+        const data = await api.getGrilleSuggestions({ q: '', limit: 50, marque: app.marque, modele: app.modele, categorie: app.categorie });
+        if (annule) return;
+        setEtat({ statut: 'pret', pieces: piecesCommandables(data?.suggestions), appareil: app });
+      } catch {
+        if (!annule) setEtat({ statut: 'erreur', pieces: [], appareil: null });
+      }
+    }, cleAppareil || ticketId ? 0 : 400);
+    return () => { annule = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actif, cleAppareil, ticketId, code]);
+
+  return etat;
+}
+
+/**
+ * « Prix HT payé » + pièce de la grille correspondante. HT de la grille prérempli seulement pour
+ * l'admin (le serveur ne l'envoie qu'à lui) ; l'écart s'affiche alors avant l'envoi.
+ */
+function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, cleEnregistree = '' }) {
+  const pieces = grille.pieces;
+  const choisie = pieces.find(s => String(s.id) === String(valeurs.tarif_cle)) || null;
+  // Pièce déjà enregistrée mais absente des suggestions (obsolète) : gardée tant que le ticket ne change pas
+  const horsListe = cleEnregistree && valeurs.tarif_cle === cleEnregistree && !choisie ? cleEnregistree : '';
+  const pressentieRef = useRef(false);
+
+  // À chaque liste chargée : choix d'un autre ticket retiré, sinon pièce pressentie d'après la désignation
+  useEffect(() => {
+    if (grille.statut !== 'pret') {
+      pressentieRef.current = false;
+      // Plus de ticket (ou ticket inconnu) : la pièce choisie pour un autre ticket ne part pas
+      if (grille.statut !== 'chargement' && valeurs.tarif_cle && valeurs.tarif_cle !== cleEnregistree) onChange({ tarif_cle: '' });
+      return;
+    }
+    if (pressentieRef.current) return;
+    pressentieRef.current = true;
+    const cle = String(valeurs.tarif_cle || '');
+    if (cle && (cle === cleEnregistree || pieces.some(s => String(s.id) === cle))) return;
+    const p = piecePressentie(description, pieces);
+    if (p) choisir(String(p.id));
+    else if (cle) onChange({ tarif_cle: '' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grille.statut, pieces]);
+
+  function choisir(cle) {
+    const p = pieces.find(s => String(s.id) === cle);
+    const patch = { tarif_cle: cle };
+    // HT prérempli uniquement si l'admin le reçoit et que rien n'a été saisi
+    if (p && isAdmin && p.cout_ht != null && montantSaisi(valeurs.prix_ht) === null) patch.prix_ht = String(p.cout_ht);
+    onChange(patch);
+  }
+
+  const ht = montantSaisi(valeurs.prix_ht);
+  const coutGrille = choisie && choisie.cout_ht != null ? Number(choisie.cout_ht) : null;
+  const ecart = ht !== null && coutGrille !== null ? Math.round((ht - coutGrille) * 100) / 100 : null;
+  const aideId = `${id}-aide`;
+
+  return (
+    <>
+      <div className="col-span-2 sm:col-span-2">
+        <label htmlFor={`${id}-piece`} className="input-label">Pièce de la grille</label>
+        <select id={`${id}-piece`} value={valeurs.tarif_cle || ''} onChange={e => choisir(e.target.value)}
+          className="input min-h-[44px]" disabled={grille.statut !== 'pret' || (pieces.length === 0 && !horsListe)} aria-describedby={aideId}>
+          <option value="">{grille.statut === 'chargement' ? 'Chargement des pièces…' : 'Aucune (ne pas mettre à jour la grille)'}</option>
+          {horsListe && <option value={horsListe}>Pièce enregistrée ({horsListe})</option>}
+          {pieces.map(s => <option key={s.id} value={String(s.id)}>{libellePiece(s, isAdmin)}</option>)}
+        </select>
+        <p id={aideId} className="text-[11px] text-slate-600 mt-1">
+          {grille.statut === 'vide' ? 'Renseignez le ticket associé pour choisir la pièce de sa grille.'
+            : grille.statut === 'introuvable' ? 'Ticket introuvable : pièce de la grille non proposée.'
+              : grille.statut === 'erreur' ? 'Grille indisponible pour le moment.'
+                : grille.statut === 'pret' && pieces.length === 0 ? `Aucune pièce fournisseur pour ${grille.appareil?.modele || 'ce modèle'}.`
+                  : grille.appareil ? `Pièces de la grille pour ${[grille.appareil.marque, grille.appareil.modele].filter(Boolean).join(' ')}.` : ''}
+        </p>
+      </div>
+      <div>
+        <label htmlFor={`${id}-ht`} className="input-label">Prix HT payé (&euro;)</label>
+        <input id={`${id}-ht`} type="text" inputMode="decimal" autoComplete="off" value={valeurs.prix_ht}
+          onChange={e => onChange({ prix_ht: e.target.value })} className="input min-h-[44px]" placeholder="Facture fournisseur"
+          aria-describedby={`${id}-ht-aide`} />
+        <p id={`${id}-ht-aide`} className="text-[11px] mt-1 text-slate-600 min-h-[2.5em]" aria-live="polite">
+          {valeurs.prix_ht && ht === null ? <span className="text-red-700 font-medium">Montant invalide</span>
+            : ecart !== null && Math.abs(ecart) > ECART_PROPOSITION
+              ? <span className="text-amber-900 font-medium">Écart de {ecart > 0 ? '+' : ''}{formatPrix(ecart)} avec la grille : proposition au gérant.</span>
+              : ecart !== null ? 'Conforme à la grille.'
+                : choisie ? 'Plus de 1 € d’écart avec la grille : le gérant reçoit une proposition.' : 'HT de la facture, hors livraison.'}
+        </p>
+      </div>
+    </>
+  );
+}
+
+/** Pièce reçue : saisie du prix HT payé (facultative) avant de prévenir le client. */
+function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
+  const titreId = useId();
+  const champsId = useId();
+  const ref = useRef(null);
+  const [valeurs, setValeurs] = useState({ prix_ht: '', tarif_cle: part?.tarif_cle || '' });
+  const [envoi, setEnvoi] = useState(false);
+  const grille = usePiecesGrille({ actif: Boolean(part), appareil: appareilDeLigne(part), ticketId: part?.ticket_id });
+  useFocusTrap(ref, Boolean(part), { onEscape: () => !envoi && onPasser() });
+  if (!part) return null;
+  const ht = montantSaisi(valeurs.prix_ht);
+  const valider = async (e) => {
+    e.preventDefault();
+    if (envoi || ht === null) return;
+    setEnvoi(true);
+    try { await onEnregistrer(valeurs, grille.pieces); } finally { setEnvoi(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+      <form ref={ref} onSubmit={valider} role="dialog" aria-modal="true" aria-labelledby={titreId}
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
+            <Tag className="w-5 h-5 text-emerald-700" />
+          </div>
+          <div className="min-w-0">
+            <h3 id={titreId} className="text-lg font-bold text-slate-900">Pièce reçue : prix payé</h3>
+            <p className="text-sm text-slate-600 truncate">{part.description}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <ChampsPrixPaye id={champsId} valeurs={valeurs} onChange={patch => setValeurs(v => ({ ...v, ...patch }))}
+            grille={grille} description={part.description} isAdmin={isAdmin} cleEnregistree={part.tarif_cle || ''} />
+        </div>
+        <p className="text-xs text-slate-600 mt-3">Le prix de la grille ne change pas : le gérant valide la mise à jour.</p>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-5">
+          <button type="button" onClick={onPasser} disabled={envoi}
+            className="min-h-[44px] px-4 rounded-lg bg-slate-100 text-slate-800 text-sm font-medium hover:bg-slate-200 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            Passer
+          </button>
+          <button type="submit" disabled={envoi || ht === null} aria-busy={envoi}
+            className="btn-primary min-h-[44px] justify-center disabled:opacity-60">
+            <Save className="w-4 h-4" aria-hidden="true" /> {envoi ? 'Enregistrement…' : 'Enregistrer le prix'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 const COMMANDE_STATUS_CONFIG = {
   'Panier': { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-300', color: '#6b7280', icon: ShoppingCart },
@@ -36,6 +273,9 @@ export default function CommandesPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
+  const isAdmin = user?.role === 'admin';
+  const formId = useId();
+  const [receptionPart, setReceptionPart] = useState(null);
   const [searchParams] = useSearchParams();
   const urlQ = searchParams.get('q');
   const [search, setSearch] = useState(() => urlQ || '');
@@ -51,7 +291,17 @@ export default function CommandesPage() {
   const { actif: smsServeur } = useSmsServeur();
   const [form, setForm] = useState({
     description: '', fournisseur: '', reference: '',
-    prix: '', ticket_code: '', statut: 'En attente', notes: '',
+    prix: '', ticket_code: '', statut: 'En attente', notes: '', prix_ht: '', tarif_cle: '',
+  });
+  // Modification sans changer de ticket : appareil connu par la ligne et pièce enregistrée gardée.
+  // Ticket changé : la pièce enregistrée (autre appareil) redevient une sélection ordinaire.
+  const memeTicket = Boolean(editingPart) && String(editingPart.ticket_code || '') === String(form.ticket_code || '');
+  const cleEnregistree = memeTicket ? String(editingPart.tarif_cle || '') : '';
+  const grilleForm = usePiecesGrille({
+    actif: showForm,
+    appareil: memeTicket ? appareilDeLigne(editingPart) : null,
+    ticketId: memeTicket ? editingPart.ticket_id : null,
+    ticketCode: form.ticket_code,
   });
 
   // Debounced search (300ms)
@@ -69,7 +319,7 @@ export default function CommandesPage() {
   // Toast auto-hide
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3000);
+    const t = setTimeout(() => setToast(null), toast.duree || 3000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -106,23 +356,55 @@ export default function CommandesPage() {
   }, [searchedParts]);
 
   const resetForm = () => {
-    setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '' });
+    setForm({ description: '', fournisseur: '', reference: '', prix: '', ticket_code: '', statut: 'En attente', notes: '', prix_ht: '', tarif_cle: '' });
     setEditingPart(null);
     setShowForm(false);
   };
 
+  // Proposition créée par le serveur (ou, s'il ne le dit pas, écart > 1 € connu de l'admin)
+  const propositionEnvoyee = (res, valeurs, pieces) => {
+    const signal = propositionSignalee(res);
+    if (signal !== null) return signal;
+    const ht = montantSaisi(valeurs.prix_ht);
+    const piece = pieces.find(s => String(s.id) === String(valeurs.tarif_cle));
+    return ht !== null && piece?.cout_ht != null && Math.abs(ht - Number(piece.cout_ht)) > ECART_PROPOSITION;
+  };
+
   const handleSubmit = async () => {
     try {
+      const { prix_ht, tarif_cle: cleSaisie, ...reste } = form;
+      // Seule une pièce de la grille du ticket saisi (ou celle déjà enregistrée, même ticket) part avec
+      // la commande ; pendant un chargement, les pièces affichées sont encore celles de l'ancien ticket
+      const tarif_cle = cleSaisie && (cleSaisie === cleEnregistree
+        || (grilleForm.statut === 'pret' && grilleForm.pieces.some(s => String(s.id) === cleSaisie))) ? cleSaisie : '';
       const data = {
-        ...form,
+        ...reste,
         prix: form.prix ? parseFloat(form.prix) : null,
       };
+      // Prix payé et pièce envoyés seulement s'ils changent : une proposition déjà traitée ne revient pas
+      const htSaisi = montantSaisi(prix_ht);
+      const htAvant = editingPart ? montantSaisi(editingPart.prix_ht) : null;
+      const cleAvant = editingPart?.tarif_cle || '';
+      if (!editingPart) {
+        if (htSaisi !== null) data.prix_ht = htSaisi;
+        if (tarif_cle) data.tarif_cle = tarif_cle;
+      } else if (htSaisi !== htAvant || (tarif_cle || '') !== cleAvant) {
+        // Modification : null efface le prix payé ou la pièce
+        data.prix_ht = htSaisi;
+        data.tarif_cle = tarif_cle || null;
+      }
+      const prixEnvoye = 'prix_ht' in data && 'tarif_cle' in data;
+      let res;
       if (editingPart) {
-        await api.updatePart(editingPart.id, data);
-        setToast({ type: 'success', msg: 'Commande mise à jour' });
+        res = await api.updatePart(editingPart.id, data);
       } else {
-        await api.createPart(data);
-        setToast({ type: 'success', msg: 'Commande créée' });
+        res = await api.createPart(data);
+      }
+      const base = editingPart ? 'Commande mise à jour' : 'Commande créée';
+      if (prixEnvoye && propositionEnvoyee(res, { prix_ht: data.prix_ht, tarif_cle: data.tarif_cle }, grilleForm.pieces)) {
+        setToast({ type: 'success', msg: `${base} — ${MESSAGE_PROPOSITION.toLowerCase()}`, duree: 6000 });
+      } else {
+        setToast({ type: 'success', msg: base });
       }
       resetForm();
       // Une commande pièce peut auto-changer le statut du ticket lié
@@ -144,6 +426,8 @@ export default function CommandesPage() {
       ticket_code: part.ticket_code || '',
       statut: part.statut || 'En attente',
       notes: part.notes || '',
+      prix_ht: part.prix_ht != null ? String(part.prix_ht) : '',
+      tarif_cle: part.tarif_cle || '',
     });
     setShowForm(true);
   };
@@ -163,20 +447,53 @@ export default function CommandesPage() {
 
   const handleStatusChange = async (part, newStatut) => {
     try {
-      await api.updatePart(part.id, { statut: newStatut });
+      const res = await api.updatePart(part.id, { statut: newStatut });
       // Une commande pièce peut auto-changer le statut du ticket lié
       // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
       invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
-      setToast({ type: 'success', msg: `Statut → ${newStatut}` });
+      // Réception d'une commande qui porte déjà son prix payé : le serveur peut en tirer une proposition
+      setToast(propositionSignalee(res) === true
+        ? { type: 'success', msg: `Statut → ${newStatut} — ${MESSAGE_PROPOSITION.toLowerCase()}`, duree: 6000 }
+        : { type: 'success', msg: `Statut → ${newStatut}` });
 
-      // If changed to "Reçu", show notification modal
-      if (newStatut === 'Reçu' && part.client_tel) {
-        setNotifPart(part);
-        setShowNotifModal(true);
+      // Pièce reçue : prix HT payé d'abord (s'il manque), puis proposition de prévenir le client
+      if (newStatut === 'Reçu') {
+        if (part.prix_ht == null || part.prix_ht === '') setReceptionPart(part);
+        else proposerNotification(part);
       }
     } catch (err) {
       console.error(err);
       setToast({ type: 'error', msg: 'Erreur changement statut' });
+    }
+  };
+
+  const proposerNotification = (part) => {
+    if (part?.client_tel) {
+      setNotifPart(part);
+      setShowNotifModal(true);
+    }
+  };
+
+  const finirReception = () => {
+    const part = receptionPart;
+    setReceptionPart(null);
+    proposerNotification(part);
+  };
+
+  const enregistrerPrixRecu = async (valeurs, pieces = []) => {
+    const part = receptionPart;
+    const data = { prix_ht: montantSaisi(valeurs.prix_ht) };
+    if (valeurs.tarif_cle) data.tarif_cle = valeurs.tarif_cle;
+    try {
+      const res = await api.updatePart(part.id, data);
+      invalidateCache('commandes');
+      const proposee = Boolean(data.tarif_cle) && propositionEnvoyee(res, data, pieces);
+      setToast(proposee
+        ? { type: 'success', msg: MESSAGE_PROPOSITION, duree: 6000 }
+        : { type: 'success', msg: 'Prix payé enregistré' });
+      finirReception();
+    } catch (err) {
+      setToast({ type: 'error', msg: err?.message || 'Prix non enregistré' });
     }
   };
 
@@ -264,10 +581,17 @@ export default function CommandesPage() {
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-4 right-4 z-[100] px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium animate-in
-          ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+        <div role={toast.type === 'error' ? 'alert' : 'status'}
+          className={`fixed top-4 right-4 z-[120] max-w-[calc(100vw-2rem)] px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium animate-in
+          ${toast.type === 'success' ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'}`}>
           {toast.msg}
         </div>
+      )}
+
+      {/* Pièce reçue : prix HT payé (facultatif) avant de prévenir le client */}
+      {receptionPart && (
+        <ReceptionPrixDialog part={receptionPart} isAdmin={isAdmin}
+          onEnregistrer={enregistrerPrixRecu} onPasser={finirReception} />
       )}
 
       {/* Notification modal on "Reçu" */}
@@ -365,45 +689,50 @@ export default function CommandesPage() {
             <h2 className="text-sm font-semibold text-slate-800">
               {editingPart ? 'Modifier la commande' : 'Nouvelle commande'}
             </h2>
-            <button onClick={resetForm} className="btn-ghost p-1.5">
-              <X className="w-4 h-4" />
+            <button type="button" onClick={resetForm} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" aria-label="Fermer le formulaire">
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div className="col-span-2 sm:col-span-1">
-              <label className="input-label">D&eacute;signation *</label>
-              <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="&Eacute;cran iPhone 15..." />
+              <label htmlFor={`${formId}-description`} className="input-label">D&eacute;signation *</label>
+              <input id={`${formId}-description`} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="&Eacute;cran iPhone 15..." />
             </div>
             <div>
-              <label className="input-label">Fournisseur</label>
-              <input value={form.fournisseur} onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} className="input" placeholder="Nom fournisseur" />
+              <label htmlFor={`${formId}-fournisseur`} className="input-label">Fournisseur</label>
+              <input id={`${formId}-fournisseur`} value={form.fournisseur} onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} className="input" placeholder="Nom fournisseur" />
             </div>
             <div>
-              <label className="input-label">R&eacute;f&eacute;rence</label>
-              <input value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input font-mono" placeholder="REF-001" />
+              <label htmlFor={`${formId}-reference`} className="input-label">R&eacute;f&eacute;rence</label>
+              <input id={`${formId}-reference`} value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input font-mono" placeholder="REF-001" />
             </div>
             <div>
-              <label className="input-label">Prix (&euro;)</label>
-              <input type="number" step="0.01" value={form.prix} onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input" />
+              <label htmlFor={`${formId}-prix`} className="input-label">Prix client TTC (&euro;)</label>
+              <input id={`${formId}-prix`} type="number" step="0.01" min="0" inputMode="decimal" value={form.prix}
+                onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-[44px]"
+                aria-describedby={`${formId}-prix-aide`} />
+              <p id={`${formId}-prix-aide`} className="text-[11px] text-slate-600 mt-1">Prix annoncé au client. La facture du fournisseur va dans « Prix HT payé ».</p>
             </div>
             <div>
-              <label className="input-label">Ticket associ&eacute;</label>
-              <input value={form.ticket_code} onChange={e => setForm(f => ({ ...f, ticket_code: e.target.value }))} className="input font-mono" placeholder="KP-000001" />
+              <label htmlFor={`${formId}-ticket`} className="input-label">Ticket associ&eacute;</label>
+              <input id={`${formId}-ticket`} value={form.ticket_code} onChange={e => setForm(f => ({ ...f, ticket_code: e.target.value }))} className="input font-mono" placeholder="KP-000001" autoComplete="off" />
             </div>
             <div>
-              <label className="input-label">Statut</label>
-              <select value={form.statut} onChange={e => setForm(f => ({ ...f, statut: e.target.value }))} className="input">
+              <label htmlFor={`${formId}-statut`} className="input-label">Statut</label>
+              <select id={`${formId}-statut`} value={form.statut} onChange={e => setForm(f => ({ ...f, statut: e.target.value }))} className="input">
                 {PART_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            <ChampsPrixPaye id={formId} valeurs={form} onChange={patch => setForm(f => ({ ...f, ...patch }))}
+              grille={grilleForm} description={form.description} isAdmin={isAdmin} cleEnregistree={cleEnregistree} />
             <div className="col-span-2 sm:col-span-3">
-              <label className="input-label">Notes</label>
-              <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Notes..." />
+              <label htmlFor={`${formId}-notes`} className="input-label">Notes</label>
+              <input id={`${formId}-notes`} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Notes..." />
             </div>
           </div>
           <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
-            <button onClick={handleSubmit} disabled={!form.description} className="btn-primary">
-              <Save className="w-4 h-4" /> {editingPart ? 'Mettre à jour' : 'Créer'}
+            <button type="button" onClick={handleSubmit} disabled={!form.description || (form.prix_ht !== '' && montantSaisi(form.prix_ht) === null)} className="btn-primary min-h-[44px]">
+              <Save className="w-4 h-4" aria-hidden="true" /> {editingPart ? 'Mettre à jour' : 'Créer'}
             </button>
           </div>
         </div>
@@ -411,13 +740,13 @@ export default function CommandesPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden lg:grid grid-cols-[1fr_140px_130px_130px_100px_80px_100px_140px_70px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden xl:grid xl:grid-cols-[minmax(180px,1fr)_130px_120px_84px_96px_140px_96px] 2xl:grid-cols-[minmax(180px,1fr)_130px_120px_110px_100px_84px_96px_140px_96px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
           <span className="table-header">D&eacute;signation</span>
           <span className="table-header">Mod&egrave;le</span>
           <span className="table-header">Client</span>
-          <span className="table-header">Fournisseur</span>
-          <span className="table-header">Panne</span>
-          <span className="table-header text-right">Prix</span>
+          <span className="table-header hidden 2xl:block">Fournisseur</span>
+          <span className="table-header hidden 2xl:block">Panne</span>
+          <span className="table-header text-right" title="Prix client TTC (prix HT payé au fournisseur dessous)">Prix TTC</span>
           <span className="table-header">Dates</span>
           <span className="table-header">Statut</span>
           <span className="table-header text-right">Actions</span>
@@ -455,7 +784,7 @@ export default function CommandesPage() {
 
               return (
                 <div key={p.id}
-                  className="lg:grid lg:grid-cols-[1fr_140px_130px_130px_100px_80px_100px_140px_70px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
+                  className="xl:grid xl:grid-cols-[minmax(180px,1fr)_130px_120px_84px_96px_140px_96px] 2xl:grid-cols-[minmax(180px,1fr)_130px_120px_110px_100px_84px_96px_140px_96px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
                 >
                   {/* Désignation */}
                   <div className="min-w-0">
@@ -467,40 +796,46 @@ export default function CommandesPage() {
                         {p.ticket_code} <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
                       </button>
                     )}
-                    {(modelText || clientFullName) && (
-                      <p className="lg:hidden text-xs text-slate-600 truncate">{[modelText, clientFullName].filter(Boolean).join(' · ')}</p>
-                    )}
+                    {(() => {
+                      // Tablette / mobile : modèle, client, fournisseur et HT payé sur une ligne
+                      const resume = [modelText, clientFullName, p.fournisseur,
+                        p.prix_ht != null && p.prix_ht !== '' ? `HT payé ${formatPrix(p.prix_ht)}` : ''].filter(Boolean).join(' · ');
+                      return resume ? <p className="xl:hidden text-xs text-slate-600 truncate">{resume}</p> : null;
+                    })()}
                     {p.notes && <p className="text-xs text-slate-400 mt-0.5 truncate" title={p.notes}>{p.notes}</p>}
                   </div>
 
                   {/* Modèle */}
-                  <div className="hidden lg:block min-w-0">
+                  <div className="hidden xl:block min-w-0">
                     <p className="text-sm text-slate-600 truncate" title={modelText}>{modelText || '—'}</p>
                   </div>
 
                   {/* Client */}
-                  <div className="hidden lg:block min-w-0">
+                  <div className="hidden xl:block min-w-0">
                     <p className="text-sm text-slate-700 truncate" title={clientFullName}>{clientFullName || '—'}</p>
-                    {p.client_tel && <p className="text-[11px] text-slate-400 font-mono">{p.client_tel}</p>}
+                    {p.client_tel && <p className="text-[11px] text-slate-600 font-mono">{p.client_tel}</p>}
                   </div>
 
-                  {/* Fournisseur */}
-                  <div className="hidden lg:block min-w-0">
+                  {/* Fournisseur (grands écrans) */}
+                  <div className="hidden 2xl:block min-w-0">
                     <p className="text-sm text-slate-600 truncate" title={p.fournisseur || '—'}>{p.fournisseur || '—'}</p>
                   </div>
 
-                  {/* Panne */}
-                  <div className="hidden lg:block min-w-0">
+                  {/* Panne (grands écrans) */}
+                  <div className="hidden 2xl:block min-w-0">
                     <p className="text-xs text-slate-500 truncate" title={panneText}>{panneText}</p>
                   </div>
 
                   {/* Prix */}
-                  <div className="hidden lg:block text-right">
-                    <p className="text-sm font-medium text-slate-800">{p.prix ? formatPrix(p.prix) : '—'}</p>
+                  <div className="hidden xl:block text-right">
+                    <p className="text-sm font-medium text-slate-800" title="Prix client TTC">{p.prix ? formatPrix(p.prix) : '—'}</p>
+                    {p.prix_ht != null && p.prix_ht !== '' && (
+                      <p className="text-[11px] text-slate-600" title="Prix HT payé au fournisseur">HT {formatPrix(p.prix_ht)}</p>
+                    )}
                   </div>
 
                   {/* Dates */}
-                  <div className="hidden lg:block">
+                  <div className="hidden xl:block">
                     <p className="text-[11px] text-slate-500">
                       <Calendar className="w-3 h-3 inline mr-0.5" />
                       {p.date_creation ? formatDateShort(p.date_creation) : '—'}
@@ -514,11 +849,12 @@ export default function CommandesPage() {
                   </div>
 
                   {/* Status dropdown */}
-                  <div className="mt-2 lg:mt-0" onClick={e => e.stopPropagation()}>
+                  <div className="mt-2 xl:mt-0" onClick={e => e.stopPropagation()}>
                     <select
                       value={p.statut}
                       onChange={e => handleStatusChange(p, e.target.value)}
-                      className="w-full min-w-[130px] py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
+                      aria-label={`Statut de la commande ${p.description || ''}`.trim()}
+                      className="w-full min-w-[130px] min-h-[44px] py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
                       style={{
                         borderColor: conf.color,
                         color: conf.color,
@@ -534,12 +870,12 @@ export default function CommandesPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="hidden lg:flex justify-end gap-1">
-                    <button onClick={() => handleEdit(p)} className="btn-ghost p-1.5" title="Modifier">
-                      <Edit3 className="w-3.5 h-3.5" />
+                  <div className="flex justify-end gap-1 mt-1 xl:mt-0">
+                    <button type="button" onClick={() => handleEdit(p)} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" title="Modifier" aria-label={`Modifier la commande ${p.description || ''}`.trim()}>
+                      <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
-                    <button onClick={() => handleDelete(p.id)} className="btn-ghost p-1.5" title="Supprimer">
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                    <button type="button" onClick={() => handleDelete(p.id)} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" title="Supprimer" aria-label={`Supprimer la commande ${p.description || ''}`.trim()}>
+                      <Trash2 className="w-3.5 h-3.5 text-red-600" aria-hidden="true" />
                     </button>
                   </div>
                 </div>

@@ -1,18 +1,17 @@
 """
+OBSOLÈTE — ne fait plus rien (voir main). Données conservées : référence des tests de
+non-régression du moteur de prix (estimations du 2026-02-15).
+
 Script d'import des tarifs iPad et MacBook pour KLIKPHONE.
 Prix fournisseur HT basés sur les tarifs Mobilax/marché français 2024-2025.
 Le calcul prix client est fait automatiquement par le backend :
   - iPad  : (HT × 1.2) + 110€, arrondi au 9 supérieur
   - MacBook: (HT × 1.2) + 120€, arrondi au 9 supérieur
 
-Usage: python import_apple_devices.py
 """
 
-import os
 import sys
-import httpx
 
-API_URL = os.environ.get("API_URL", "https://klikphone-sav-v2-production.up.railway.app")
 
 # ─── DONNÉES iPad ──────────────────────────────────────────────
 # Structure: (categorie, modele, ecran_prix_ht, batterie_prix_ht)
@@ -110,60 +109,18 @@ APPLE_DEVICES = [
 ]
 
 
+MESSAGE_OBSOLETE = (
+    "import_apple_devices.py est obsolète : il vidait la grille (ids des pièces perdus) puis la réimportait. "
+    "Utiliser l'import de fichier fournisseur (Tarifs → Importer une liste de prix : aperçu, "
+    "puis application, annulable) ou les règles de prix."
+)
+
+
 def main():
-    print(f"=== Import iPad & MacBook — {len(APPLE_DEVICES)} modèles ===")
-    print(f"API: {API_URL}")
-
-    headers = {}
-
-    # Clear existing
-    resp = httpx.delete(f"{API_URL}/api/tarifs/apple-devices/clear", headers=headers)
-    print(f"Clear: {resp.status_code} — {resp.json()}")
-
-    # Import in batches of 20
-    batch_size = 20
-    total_imported = 0
-    for i in range(0, len(APPLE_DEVICES), batch_size):
-        batch = APPLE_DEVICES[i:i + batch_size]
-        items = []
-        for cat, modele, ecran_ht, batterie_ht in batch:
-            items.append({
-                "categorie": cat,
-                "modele": modele,
-                "ecran_prix_ht": ecran_ht,
-                "batterie_prix_ht": batterie_ht,
-            })
-        resp = httpx.post(
-            f"{API_URL}/api/tarifs/apple-devices/import",
-            json={"items": items},
-            headers=headers,
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            n = resp.json().get("imported", 0)
-            total_imported += n
-            print(f"  Batch {i // batch_size + 1}: {n} importés")
-        else:
-            print(f"  Batch {i // batch_size + 1} ERROR: {resp.status_code} {resp.text}")
-
-    print(f"\n=== Total importé: {total_imported} modèles ===")
-
-    # Verify
-    resp = httpx.get(f"{API_URL}/api/tarifs/apple-devices", headers=headers)
-    if resp.status_code == 200:
-        data = resp.json()
-        ipads = [d for d in data if d["categorie"] == "ipad"]
-        macbooks = [d for d in data if d["categorie"] == "macbook"]
-        print(f"Vérification: {len(ipads)} iPads, {len(macbooks)} MacBooks")
-        if ipads:
-            sample = ipads[0]
-            print(f"  Exemple iPad: {sample['modele']} — Écran: {sample.get('ecran_prix_ht', '?')}€ HT → {sample['ecran_prix_vente']}€ TTC | Batterie: {sample.get('batterie_prix_ht', '?')}€ HT → {sample['batterie_prix_vente']}€ TTC")
-        if macbooks:
-            sample = macbooks[0]
-            print(f"  Exemple MacBook: {sample['modele']} — Écran: {sample.get('ecran_prix_ht', '?')}€ HT → {sample['ecran_prix_vente']}€ TTC | Batterie: {sample.get('batterie_prix_ht', '?')}€ HT → {sample['batterie_prix_vente']}€ TTC")
-    else:
-        print(f"Verification failed: {resp.status_code}")
+    """Neutralisé : aucune requête n'est envoyée."""
+    print(MESSAGE_OBSOLETE.format(nom="import_apple_devices.py"), file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

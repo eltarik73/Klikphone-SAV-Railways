@@ -3,9 +3,19 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Smartphone, Save, Plus, ArrowLeft, Loader2, Check, X, Trash2,
   Sparkles, Image as ImageIcon, Search, Filter, AlertCircle,
-  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown,
+  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown, SlidersHorizontal, History,
 } from 'lucide-react';
 import api from '../lib/api';
+import { useAdminElevation } from '../hooks/useAdminElevation';
+import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
+import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
+
+const TABLE = 'smartphones_tarifs';
+const COLONNES_PRIX = [
+  { key: 'prix_1', label: 'Prix 1 (1er stockage)' },
+  { key: 'prix_2', label: 'Prix 2 (2e stockage)' },
+  { key: 'prix_3', label: 'Prix 3 (3e stockage)' },
+];
 
 async function openPdf({ ids = null, marque = null } = {}) {
   let qs = '';
@@ -77,6 +87,10 @@ export default function AdminTarifsSmartphonesPage() {
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState('all');
   const [pdfSelection, setPdfSelection] = useState(() => new Set()); // Set<id>
+  const { sensible, adminPrompt } = useAdminElevation();
+  const { verrouilles, basculer: basculerVerrou, enCours: verrouEnCours } = useVerrousBoutique(TABLE, sensible);
+  const [anciensSeuls, setAnciensSeuls] = useState(false);
+  const [fenetre, setFenetre] = useState(null); // 'ajuster' | 'historique'
 
   function toggleSelect(id) {
     setPdfSelection(prev => {
@@ -101,7 +115,7 @@ export default function AdminTarifsSmartphonesPage() {
       const data = await api.getSmartphonesTarifs(false);
       setRows(data || []);
     } catch (e) {
-      showToast('error', `Erreur chargement : ${e.message}`);
+      showToast('error', messageErreurPrix(e, 'Chargement impossible') || 'Chargement impossible');
     } finally {
       setLoading(false);
     }
@@ -109,7 +123,13 @@ export default function AdminTarifsSmartphonesPage() {
 
   function showToast(type, msg) {
     setToast({ type, msg });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), type === 'error' ? 6000 : 3000);
+  }
+
+  // Message d'erreur lisible ; rien si l'identification admin a été annulée
+  function toastErreur(e, action) {
+    const msg = messageErreurPrix(e, action);
+    if (msg) showToast('error', msg);
   }
 
   function updateRow(id, field, value) {
@@ -120,7 +140,7 @@ export default function AdminTarifsSmartphonesPage() {
   async function saveRow(row) {
     setSavingId(row.id);
     try {
-      await api.updateSmartphoneTarif(row.id, {
+      await sensible(() => api.updateSmartphoneTarif(row.id, {
         marque: row.marque,
         modele: row.modele,
         stockage_1: row.stockage_1,
@@ -134,11 +154,13 @@ export default function AdminTarifsSmartphonesPage() {
         stock_3: row.stock_3 != null ? Number(row.stock_3) : 0,
         condition: row.condition,
         image_url: row.image_url || null,
-      });
+      }));
       setDirty(d => { const c = { ...d }; delete c[row.id]; return c; });
       showToast('success', `${row.marque} ${row.modele} enregistré`);
+      return true;
     } catch (e) {
-      showToast('error', `Erreur : ${e.message}`);
+      toastErreur(e, `${row.marque} ${row.modele} non enregistré`);
+      return false;
     } finally {
       setSavingId(null);
     }
@@ -146,7 +168,11 @@ export default function AdminTarifsSmartphonesPage() {
 
   async function saveAll() {
     const rowsToSave = rows.filter(r => dirty[r.id]);
-    for (const r of rowsToSave) await saveRow(r);
+    for (const r of rowsToSave) {
+      // Un échec (ou l'identification annulée) arrête la série : le message reste lisible
+      if (!(await saveRow(r))) return false;
+    }
+    return true;
   }
 
   async function createNew() {
@@ -156,24 +182,28 @@ export default function AdminTarifsSmartphonesPage() {
     }
     const slug = newRow.slug || slugify(`${newRow.marque} ${newRow.modele}`);
     try {
-      await api.createSmartphoneTarif({ ...newRow, slug });
+      await sensible(() => api.createSmartphoneTarif({ ...newRow, slug }));
       showToast('success', `${newRow.marque} ${newRow.modele} ajouté`);
       setShowNewForm(false);
       setNewRow({ ...EMPTY_ROW });
       await load();
     } catch (e) {
-      showToast('error', `Erreur : ${e.message}`);
+      toastErreur(e, 'Smartphone non ajouté');
     }
   }
 
   async function removeRow(row) {
+    if (verrouilles.has(row.id)) {
+      showToast('error', `${row.marque} ${row.modele} est verrouillé : ouvrez le cadenas avant de le supprimer.`);
+      return;
+    }
     if (!confirm(`Supprimer ${row.marque} ${row.modele} ?`)) return;
     try {
-      await api.deleteSmartphoneTarif(row.id);
+      await sensible(() => api.deleteSmartphoneTarif(row.id));
       showToast('success', 'Smartphone supprimé');
       await load();
     } catch (e) {
-      showToast('error', `Erreur : ${e.message}`);
+      toastErreur(e, 'Suppression impossible');
     }
   }
 
@@ -191,12 +221,12 @@ export default function AdminTarifsSmartphonesPage() {
 
   async function chooseImage(row, url) {
     try {
-      await api.updateSmartphoneTarif(row.id, { image_url: url });
+      await sensible(() => api.updateSmartphoneTarif(row.id, { image_url: url }));
       await load();
       setImagePicker(null);
       showToast('success', 'Image enregistrée');
     } catch (e) {
-      showToast('error', `Erreur : ${e.message}`);
+      toastErreur(e, 'Image non enregistrée');
     }
   }
 
@@ -212,9 +242,12 @@ export default function AdminTarifsSmartphonesPage() {
     return counts;
   }, [rows]);
 
+  const nombreAnciens = useMemo(() => rows.filter(r => plusDeTroisMois(r)).length, [rows]);
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter(r => {
+      if (anciensSeuls && !plusDeTroisMois(r)) return false;
       if (brandFilter !== 'all' && r.marque !== brandFilter) return false;
       if (!q) return true;
       return (
@@ -223,7 +256,7 @@ export default function AdminTarifsSmartphonesPage() {
         (r.slug || '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, brandFilter]);
+  }, [rows, search, brandFilter, anciensSeuls]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-zinc-900 to-slate-900 text-white">
@@ -233,9 +266,10 @@ export default function AdminTarifsSmartphonesPage() {
           <div className="flex items-start gap-4">
             <Link
               to={basePath}
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-all"
+              aria-label="Retour"
+              className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
             </Link>
             <div>
               <h1 className="text-2xl font-black flex items-center gap-2">
@@ -251,7 +285,8 @@ export default function AdminTarifsSmartphonesPage() {
                 <div className="flex flex-wrap gap-2 mt-3">
                   <button
                     onClick={() => setBrandFilter('all')}
-                    className={`px-3 py-1 text-xs font-bold rounded-full border transition-all ${
+                    aria-pressed={brandFilter === 'all'}
+                    className={`min-h-[44px] px-3 py-1 text-xs font-bold rounded-full border transition-all ${
                       brandFilter === 'all'
                         ? 'bg-white/15 border-white/30 text-white'
                         : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
@@ -263,8 +298,9 @@ export default function AdminTarifsSmartphonesPage() {
                     <button
                       key={brand}
                       onClick={() => setBrandFilter(brandFilter === brand ? 'all' : brand)}
-                      className={`px-3 py-1 text-xs font-bold rounded-full border bg-gradient-to-br transition-all ${brandStyle(brand)} ${
-                        brandFilter === brand ? 'ring-2 ring-white/30 scale-105' : 'opacity-85 hover:opacity-100'
+                      aria-pressed={brandFilter === brand}
+                      className={`min-h-[44px] px-3 py-1 text-xs font-bold rounded-full border bg-gradient-to-br transition-all ${brandStyle(brand)} ${
+                        brandFilter === brand ? 'ring-2 ring-white/30 motion-safe:scale-105' : 'opacity-85 hover:opacity-100'
                       }`}
                     >
                       {brand} <span className="opacity-70">({n})</span>
@@ -291,7 +327,7 @@ export default function AdminTarifsSmartphonesPage() {
               }}
               disabled={pdfSelection.size === 0}
               title={pdfSelection.size === 0 ? 'Sélectionne des smartphones via les cases' : `PDF A4 (${pdfSelection.size} modèles)`}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
+              className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
             >
               <FileDown className="w-4 h-4" /> PDF
               {pdfSelection.size > 0 && (
@@ -302,14 +338,28 @@ export default function AdminTarifsSmartphonesPage() {
             </button>
             <button
               onClick={() => setShowNewForm(s => !s)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all"
+              className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all"
             >
               <Plus className="w-4 h-4" /> Ajouter
+            </button>
+            <button
+              type="button"
+              onClick={() => setFenetre('ajuster')}
+              className="flex items-center gap-2 min-h-[44px] px-4 rounded-lg border border-brand-500/50 bg-brand-500/15 text-brand-200 hover:bg-brand-500/25 font-bold text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            >
+              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Ajuster en %
+            </button>
+            <button
+              type="button"
+              onClick={() => setFenetre('historique')}
+              className="flex items-center gap-2 min-h-[44px] px-4 rounded-lg border border-slate-600 bg-slate-800/60 text-slate-100 hover:bg-slate-700 font-bold text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            >
+              <History className="w-4 h-4" aria-hidden="true" /> Historique
             </button>
             {dirtyCount > 0 && (
               <button
                 onClick={saveAll}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all animate-pulse"
+                className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-colors motion-safe:animate-pulse"
               >
                 <Save className="w-4 h-4" />
                 Enregistrer ({dirtyCount})
@@ -324,27 +374,31 @@ export default function AdminTarifsSmartphonesPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
-                type="text"
+                type="search"
                 value={search}
+                aria-label="Rechercher une marque, un modèle"
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Rechercher une marque, un modèle…"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                className="w-full min-h-[44px] pl-10 pr-12 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/10 text-slate-500"
+                  aria-label="Effacer la recherche"
+                  className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 inline-flex items-center justify-center rounded-md hover:bg-white/10 text-slate-400"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700">
-              <Filter className="w-4 h-4 text-slate-500" />
+            <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} theme="sombre" />
+            <div className="flex items-center gap-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700">
+              <Filter className="w-4 h-4 text-slate-400" aria-hidden="true" />
               <select
                 value={brandFilter}
+                aria-label="Filtrer par marque"
                 onChange={(e) => setBrandFilter(e.target.value)}
-                className="bg-transparent text-sm font-semibold text-white focus:outline-none min-w-[120px]"
+                className="bg-transparent min-h-[44px] text-sm font-semibold text-white focus:outline-none min-w-[120px]"
               >
                 <option value="all" className="bg-slate-900">Toutes marques</option>
                 {Object.keys(brandCounts).sort().map(b => (
@@ -354,6 +408,7 @@ export default function AdminTarifsSmartphonesPage() {
             </div>
           </div>
         )}
+        {!loading && rows.length > 0 && <p className="-mt-2 mb-3 text-xs text-slate-400">{AIDE_VERROU_BOUTIQUE.note}</p>}
 
         {/* Nouveau form inline */}
         {showNewForm && (
@@ -367,7 +422,8 @@ export default function AdminTarifsSmartphonesPage() {
               </h2>
               <button
                 onClick={() => setShowNewForm(false)}
-                className="p-2 rounded-lg hover:bg-white/10 text-slate-400"
+                aria-label="Fermer le formulaire"
+                className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -500,7 +556,7 @@ export default function AdminTarifsSmartphonesPage() {
                 Essayez une autre recherche ou changez le filtre de marque.
               </p>
               <button
-                onClick={() => { setSearch(''); setBrandFilter('all'); }}
+                onClick={() => { setSearch(''); setBrandFilter('all'); setAnciensSeuls(false); }}
                 className="mt-4 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-sm font-semibold"
               >
                 Réinitialiser les filtres
@@ -508,24 +564,28 @@ export default function AdminTarifsSmartphonesPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: '1040px', tableLayout: 'fixed' }}>
+              <table className="w-full text-sm" style={{ minWidth: '1380px', tableLayout: 'fixed' }}>
                 <thead className="bg-slate-800/60 text-slate-300 text-xs uppercase">
                   <tr>
-                    <th className="px-2 py-3 text-center w-10">
-                      <input
-                        type="checkbox"
-                        checked={filteredRows.length > 0 && filteredRows.every(r => pdfSelection.has(r.id))}
-                        onChange={(e) => {
-                          if (e.target.checked) selectAllVisible(filteredRows);
-                          else clearSelection();
-                        }}
-                        title="Tout sélectionner pour le PDF"
-                        className="w-4 h-4 accent-rose-500 cursor-pointer"
-                      />
+                    <th className="px-1 py-3 text-center w-14">
+                      <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filteredRows.length > 0 && filteredRows.every(r => pdfSelection.has(r.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) selectAllVisible(filteredRows);
+                            else clearSelection();
+                          }}
+                          title="Tout sélectionner pour le PDF"
+                          aria-label="Tout sélectionner pour le PDF"
+                          className="w-5 h-5 accent-rose-500 cursor-pointer"
+                        />
+                      </label>
                     </th>
                     <th className="px-2 py-3 text-left w-[64px]">Photo</th>
-                    <th className="px-2 py-3 text-left w-24">Marque</th>
-                    <th className="px-2 py-3 text-left min-w-[180px]">Modèle</th>
+                    <th className="px-2 py-3 text-left w-28">Marque</th>
+                    <th className="px-2 py-3 text-left w-[220px]">Modèle</th>
+                    <th className="px-2 py-3 text-left w-24">Prix du</th>
                     <th className="px-2 py-3 text-left w-36">Condition</th>
                     <th className="px-2 py-3 text-left w-24">Stockage</th>
                     <th className="px-2 py-3 text-left w-24">Prix €</th>
@@ -533,11 +593,14 @@ export default function AdminTarifsSmartphonesPage() {
                     <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Stockage 2</th>
                     <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Prix 2 €</th>
                     <th className="px-2 py-3 text-center w-16 hidden xl:table-cell">Stock 2</th>
-                    <th className="px-2 py-3 text-right w-28">Actions</th>
+                    <th className="px-2 py-3 text-right w-40">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((r, idx) => (
+                  {filteredRows.map((r, idx) => {
+                    const verrou = verrouilles.has(r.id);
+                    const aideVerrou = verrou ? 'Prix protégés par le cadenas : ouvrez-le pour les modifier' : undefined;
+                    return (
                     <tr
                       key={r.id}
                       className={`border-t border-slate-800 transition-colors ${
@@ -546,14 +609,17 @@ export default function AdminTarifsSmartphonesPage() {
                           : idx % 2 === 0 ? 'hover:bg-slate-800/30' : 'bg-slate-900/30 hover:bg-slate-800/30'
                       }`}
                     >
-                      <td className="px-2 py-2 text-center align-middle">
-                        <input
-                          type="checkbox"
-                          checked={pdfSelection.has(r.id)}
-                          onChange={() => toggleSelect(r.id)}
-                          title="Inclure dans le PDF"
-                          className="w-4 h-4 accent-rose-500 cursor-pointer"
-                        />
+                      <td className="px-1 py-2 text-center align-middle">
+                        <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={pdfSelection.has(r.id)}
+                            onChange={() => toggleSelect(r.id)}
+                            title="Inclure dans le PDF"
+                            aria-label={`Inclure ${r.marque} ${r.modele} dans le PDF`}
+                            className="w-5 h-5 accent-rose-500 cursor-pointer"
+                          />
+                        </label>
                       </td>
                       <Cell>
                         <div className="flex items-center gap-1">
@@ -568,7 +634,7 @@ export default function AdminTarifsSmartphonesPage() {
                                 className="absolute -bottom-1 -right-1 p-1 rounded-full bg-brand-500 hover:bg-brand-600 text-white shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity disabled:opacity-100"
                               >
                                 {generatingId === r.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                  <Loader2 className="w-3 h-3 motion-safe:animate-spin" />
                                 ) : (
                                   <RefreshCw className="w-3 h-3" />
                                 )}
@@ -582,7 +648,7 @@ export default function AdminTarifsSmartphonesPage() {
                               className="w-14 h-14 rounded-lg bg-slate-800/50 border-2 border-dashed border-slate-700 hover:border-brand-500 hover:bg-brand-500/10 flex items-center justify-center text-slate-500 hover:text-brand-400 transition-all"
                             >
                               {generatingId === r.id ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <Loader2 className="w-5 h-5 motion-safe:animate-spin" />
                               ) : (
                                 <ImageIcon className="w-5 h-5" />
                               )}
@@ -593,17 +659,23 @@ export default function AdminTarifsSmartphonesPage() {
                       <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.marque || ''}
                           onChange={(e) => updateRow(r.id, 'marque', e.target.value)}
+                          aria-label="Marque"
                           className="input-cell w-full font-bold" />
                       </td>
                       <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.modele || ''}
                           onChange={(e) => updateRow(r.id, 'modele', e.target.value)}
+                          aria-label="Modèle"
                           className="input-cell w-full font-semibold text-white"
                           placeholder="Ex: Galaxy A17 5G" />
                       </td>
                       <td className="px-2 py-2 align-middle">
+                        <BadgeDatePrix row={r} theme="sombre" court />
+                      </td>
+                      <td className="px-2 py-2 align-middle">
                         <div className="relative">
                           <select value={r.condition || 'Reconditionné Premium'}
+                            aria-label={`Condition de ${r.marque} ${r.modele}`}
                             onChange={(e) => updateRow(r.id, 'condition', e.target.value)}
                             className={`input-cell w-full pl-6 pr-1 font-bold appearance-none cursor-pointer ${
                               r.condition === 'Neuf'
@@ -620,6 +692,7 @@ export default function AdminTarifsSmartphonesPage() {
                       </td>
                       <td className="px-2 py-2 align-middle">
                         <input type="text" value={r.stockage_1 || ''}
+                          aria-label={`Stockage 1 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_1', e.target.value)}
                           placeholder="128 Go"
                           className="input-cell w-full" />
@@ -627,13 +700,17 @@ export default function AdminTarifsSmartphonesPage() {
                       <td className="px-2 py-2 align-middle">
                         <input type="number" value={r.prix_1 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_1', e.target.value)}
-                          className="input-cell w-full font-bold text-brand-300" />
+                          readOnly={verrou}
+                          title={aideVerrou}
+                          aria-label={`Prix 1 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
+                          className={`input-cell w-full font-bold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`} />
                       </td>
                       <td className="px-2 py-2 text-center align-middle">
-                        <StockInput value={r.stock_1} onChange={(v) => updateRow(r.id, 'stock_1', v)} />
+                        <StockInput value={r.stock_1} onChange={(v) => updateRow(r.id, 'stock_1', v)} label={`Stock 1 de ${r.modele}`} />
                       </td>
                       <td className="px-2 py-2 align-middle hidden xl:table-cell">
                         <input type="text" value={r.stockage_2 || ''}
+                          aria-label={`Stockage 2 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
                           placeholder="256 Go"
                           className="input-cell w-full" />
@@ -641,21 +718,33 @@ export default function AdminTarifsSmartphonesPage() {
                       <td className="px-2 py-2 align-middle hidden xl:table-cell">
                         <input type="number" value={r.prix_2 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
-                          className="input-cell w-full font-bold text-brand-300" />
+                          readOnly={verrou}
+                          title={aideVerrou}
+                          aria-label={`Prix 2 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
+                          className={`input-cell w-full font-bold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`} />
                       </td>
                       <td className="px-2 py-2 text-center align-middle hidden xl:table-cell">
-                        <StockInput value={r.stock_2} onChange={(v) => updateRow(r.id, 'stock_2', v)} />
+                        <StockInput value={r.stock_2} onChange={(v) => updateRow(r.id, 'stock_2', v)} label={`Stock 2 de ${r.modele}`} />
                       </td>
                       <td className="px-2 py-2 text-right align-middle">
                         <div className="flex items-center gap-1 justify-end">
+                          <BoutonVerrou
+                            verrouille={verrou}
+                            onClick={() => basculerVerrou(r.id, `${r.marque} ${r.modele}`)}
+                            disabled={verrouEnCours === r.id}
+                            theme="sombre"
+                            nom={`les prix de ${r.marque} ${r.modele}`}
+                            aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
+                          />
                           <button
                             onClick={() => generateImage(r)}
                             disabled={generatingId === r.id}
+                            aria-label={`Rechercher une image pour ${r.marque} ${r.modele}`}
                             title="Rechercher image"
-                            className="p-2 rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 transition-all disabled:opacity-50"
+                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 transition-all disabled:opacity-50"
                           >
                             {generatingId === r.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="w-4 h-4 motion-safe:animate-spin" />
                             ) : (
                               <Sparkles className="w-4 h-4" />
                             )}
@@ -664,11 +753,12 @@ export default function AdminTarifsSmartphonesPage() {
                             <button
                               onClick={() => saveRow(r)}
                               disabled={savingId === r.id}
+                              aria-label={`Enregistrer ${r.marque} ${r.modele}`}
                               title="Enregistrer"
-                              className="p-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 transition-all"
+                              className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 transition-all"
                             >
                               {savingId === r.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <Loader2 className="w-4 h-4 motion-safe:animate-spin" />
                               ) : (
                                 <Save className="w-4 h-4" />
                               )}
@@ -676,15 +766,17 @@ export default function AdminTarifsSmartphonesPage() {
                           )}
                           <button
                             onClick={() => removeRow(r)}
+                            aria-label={`Supprimer ${r.marque} ${r.modele}`}
                             title="Supprimer"
-                            className="p-2 rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 transition-all"
+                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 transition-all"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -716,7 +808,8 @@ export default function AdminTarifsSmartphonesPage() {
                   </div>
                 </div>
                 <button onClick={() => setImagePicker(null)}
-                  className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 transition-all">
+                  aria-label="Fermer le choix de photo"
+                  className="w-11 h-11 inline-flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/15 transition-colors">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -735,10 +828,10 @@ export default function AdminTarifsSmartphonesPage() {
                   <button
                     key={i}
                     onClick={() => chooseImage(imagePicker.row, url)}
-                    className="group relative bg-white rounded-2xl overflow-hidden aspect-square flex items-center justify-center hover:ring-4 hover:ring-brand-500 transition-all shadow-lg hover:shadow-2xl hover:scale-[1.03]"
+                    className="group relative bg-white rounded-2xl overflow-hidden aspect-square flex items-center justify-center hover:ring-4 hover:ring-brand-500 transition-all shadow-lg hover:shadow-2xl motion-safe:hover:scale-[1.03]"
                   >
                     <img src={url} alt="" referrerPolicy="no-referrer"
-                      className="max-w-full max-h-full object-contain p-4 group-hover:scale-110 transition-transform duration-300"
+                      className="max-w-full max-h-full object-contain p-4 motion-safe:group-hover:scale-110 transition-transform duration-300"
                       onError={(e) => { e.target.style.opacity = '0.25'; }}
                     />
                     {i === 0 && (
@@ -764,6 +857,7 @@ export default function AdminTarifsSmartphonesPage() {
         {/* Toast */}
         {toast && (
           <div
+            role={toast.type === 'error' ? 'alert' : 'status'}
             className={`fixed top-6 right-6 z-[60] px-4 py-3 rounded-xl shadow-2xl text-sm font-bold flex items-center gap-3 animate-toast-in min-w-[280px] max-w-sm border ${
               toast.type === 'error'
                 ? 'bg-gradient-to-r from-red-500 to-red-600 border-red-400 text-white'
@@ -780,7 +874,8 @@ export default function AdminTarifsSmartphonesPage() {
             <span className="flex-1">{toast.msg}</span>
             <button
               onClick={() => setToast(null)}
-              className="p-1 rounded-md hover:bg-white/20 transition-all"
+              aria-label="Fermer le message"
+              className="w-11 h-11 -my-2 -mr-2 inline-flex items-center justify-center rounded-md hover:bg-white/20 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -788,12 +883,37 @@ export default function AdminTarifsSmartphonesPage() {
         )}
       </div>
 
+      {/* Un smartphone désactivé n'est pas ajusté par le serveur (actif IS NOT FALSE) : exclu ici aussi */}
+      <AjustementColonne
+        open={fenetre === 'ajuster'}
+        onClose={() => setFenetre(null)}
+        sensible={sensible}
+        cible={TABLE}
+        titre="Ajuster les prix des smartphones"
+        colonnes={COLONNES_PRIX}
+        lignes={filteredRows.filter((r) => r.actif !== false).map((r) => ({ id: r.id, label: `${r.marque} ${r.modele}`, valeurs: r }))}
+        verrouilles={verrouilles}
+        aEnregistrer={{ nombre: dirtyCount, enregistrer: saveAll }}
+        onApplique={() => load()}
+      />
+      <HistoriquePrix
+        open={fenetre === 'historique'}
+        onClose={() => setFenetre(null)}
+        sensible={sensible}
+        filtre={{ table: TABLE }}
+        titre="Historique des prix des smartphones"
+        nommer={(l) => { const r = rows.find((x) => x.id === l.ligne_id); return r ? `${r.marque} ${r.modele}` : null; }}
+        onAnnule={() => load()}
+      />
+      {adminPrompt}
+
       <style>{`
         .input-cell {
           background: rgb(30 41 59 / 0.5);
           border: 1px solid rgb(51 65 85);
           border-radius: 0.5rem;
           padding: 0.45rem 0.55rem;
+          min-height: 44px;
           color: white;
           transition: all 0.15s ease;
           font-size: 0.925rem;
@@ -839,12 +959,15 @@ export default function AdminTarifsSmartphonesPage() {
           background-size: 200% 100%;
           animation: skeleton-pulse 1.6s ease-in-out infinite;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-toast-in, .animate-fade-in, .skeleton { animation: none !important; }
+        }
       `}</style>
     </div>
   );
 }
 
-function StockInput({ value, onChange }) {
+function StockInput({ value, onChange, label = 'Stock' }) {
   const badge = stockBadge(value);
   return (
     <div className="relative inline-block">
@@ -852,7 +975,8 @@ function StockInput({ value, onChange }) {
         type="number"
         value={value ?? 0}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-14 text-center font-black rounded-lg px-2 py-1.5 border ${badge.cls} focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
+        aria-label={label}
+        className={`w-14 min-h-[44px] text-center font-black rounded-lg px-2 py-1.5 border ${badge.cls} focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
       />
     </div>
   );
@@ -905,7 +1029,7 @@ function EmptyState({ onAdd, onQuickAdd }) {
             <button
               key={b}
               onClick={() => onQuickAdd(b)}
-              className={`px-4 py-2 text-sm font-bold rounded-xl border bg-gradient-to-br transition-all hover:scale-105 ${brandStyle(b)}`}
+              className={`px-4 py-2 text-sm font-bold rounded-xl border bg-gradient-to-br transition-all motion-safe:hover:scale-105 ${brandStyle(b)}`}
             >
               + {b}
             </button>

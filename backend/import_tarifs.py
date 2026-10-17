@@ -1,18 +1,14 @@
 """
+OBSOLÈTE — ne fait plus rien (voir main). Données conservées : référence des tests de
+non-régression du moteur de prix (estimations du 2026-02-15).
+
 Script d'import des tarifs reparation KLIKPHONE.
 Prix fournisseur HT bases sur les tarifs Mobilax/marche francais 2024-2025.
 Le calcul prix client est fait automatiquement par le backend.
 
-Usage: python import_tarifs.py
 """
 
-import math
-import os
 import sys
-
-import httpx
-
-API_URL = os.environ.get("API_URL", "https://klikphone-sav-v2-production.up.railway.app")
 
 # ─── TARIFS FOURNISSEUR HT ───────────────────────────────────
 # Structure: (marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie)
@@ -1800,68 +1796,18 @@ TARIFS = [
 ]
 
 
+MESSAGE_OBSOLETE = (
+    "import_tarifs.py est obsolète : il vidait la grille (ids des pièces perdus) puis la réimportait. "
+    "Utiliser l'import de fichier fournisseur (Tarifs → Importer une liste de prix : aperçu, "
+    "puis application, annulable) ou les règles de prix."
+)
+
+
 def main():
-    print(f"API: {API_URL}\n")
-
-    # Build items (tuples can be 7 or 8 elements; 8th = en_stock, default True)
-    items = []
-    for row in TARIFS:
-        en_stock = True
-        if len(row) == 8:
-            marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie, en_stock = row
-        else:
-            marque, modele, type_piece, qualite, nom_fournisseur, prix_ht, categorie = row
-        items.append({
-            "marque": marque,
-            "modele": modele,
-            "type_piece": type_piece,
-            "qualite": qualite,
-            "nom_fournisseur": nom_fournisseur,
-            "prix_fournisseur_ht": prix_ht,
-            "categorie": categorie,
-            "source": "mobilax",
-            "en_stock": en_stock,
-        })
-
-    print(f"{len(items)} tarifs a importer")
-    brands = {}
-    for i in items:
-        brands[i["marque"]] = brands.get(i["marque"], 0) + 1
-    for b, c in sorted(brands.items(), key=lambda x: -x[1]):
-        print(f"  {b}: {c} tarifs")
-
-    # Type pieces
-    types = {}
-    for i in items:
-        types[i["type_piece"]] = types.get(i["type_piece"], 0) + 1
-    print("\nPar type:")
-    for t, c in sorted(types.items(), key=lambda x: -x[1]):
-        print(f"  {t}: {c}")
-
-    headers = {"Content-Type": "application/json"}
-
-    # Clear existing tarifs
-    print("\n--- Clear existing tarifs ---")
-    clear_res = httpx.delete(f"{API_URL}/api/tarifs/clear", headers=headers, timeout=15)
-    print(f"Clear: {clear_res.status_code} {clear_res.json()}")
-
-    # Import
-    print("\n--- Import tarifs ---")
-    import_res = httpx.post(
-        f"{API_URL}/api/tarifs/import",
-        json={"items": items},
-        headers=headers,
-        timeout=60,
-    )
-    print(f"Import: {import_res.status_code} {import_res.json()}")
-
-    # Stats (public endpoint)
-    print("\n--- Stats ---")
-    stats_res = httpx.get(f"{API_URL}/api/tarifs/stats", timeout=15)
-    print(f"Stats: {stats_res.json()}")
-
-    print("\nDone!")
+    """Neutralisé : aucune requête n'est envoyée."""
+    print(MESSAGE_OBSOLETE.format(nom="import_tarifs.py"), file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -7,7 +7,7 @@ import os
 import re
 import time
 import logging
-from typing import Optional, List, Dict
+from typing import Optional
 
 from app.database import get_cursor
 
@@ -44,6 +44,38 @@ EXCLUSION_KEYWORDS = [
     "ipod", "i-pod",
     "c2buy",
 ]
+# Accessoires vendus dans les mêmes catégories (« Boite Tablette Vide 11" », « Coque… »,
+# « Câble USB… », « Kit Chargeur… ») : exclus quand le nom COMMENCE par l'un de ces mots, ou
+# contient « vide ». Jamais sur un simple mot du nom : « iPhone 14 … avec boîte et câble »
+# est un téléphone (300 fiches de ce type au catalogue).
+ACCESSOIRES_EN_TETE = ("boite", "boîte", "coque", "chargeur", "câble", "cable", "kit chargeur")
+MOTS_EXCLUS = ("vide",)
+# Politesse envers LCD-Phone (robots.txt) : pas de tri imposé (&order=), 2 s entre deux pages
+PAUSE_ENTRE_PAGES = 2.0
+# Seules valeurs admises de telephones_catalogue.type_produit
+TYPES_PRODUIT = ("neuf", "occasion")
+
+
+def _sans_accents(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    return "".join(c for c in s if not unicodedata.combining(c)).lower()
+
+
+def est_exclu(nom: str) -> bool:
+    """Produit à ne pas proposer à la vente (factice, iPod, accessoire, boîte vide…)."""
+    nom_lower = str(nom or "").lower()
+    if any(kw in nom_lower for kw in EXCLUSION_KEYWORDS):
+        return True
+    simple = " ".join(re.sub(r"[^a-z0-9]+", " ", _sans_accents(nom)).split())
+    if any(simple == _sans_accents(m) or simple.startswith(_sans_accents(m) + " ") for m in ACCESSOIRES_EN_TETE):
+        return True
+    return any(re.search(rf"\b{re.escape(m)}\b", simple) for m in MOTS_EXCLUS)
+
+
+def type_produit_valide(v) -> str:
+    """'neuf' ou 'occasion' (« reconditionné » et toute autre valeur : occasion)."""
+    return "neuf" if _sans_accents(v).strip() == "neuf" else "occasion"
 
 
 def _is_old_iphone(nom: str) -> bool:
@@ -232,28 +264,140 @@ def login_lcdphone():
 
 # ─── AJAX SCRAPING (PrestaShop faceted search) ──────
 
-def _scrape_category_ajax(client, cat: dict) -> tuple:
+def parser_produits(data: dict, cat: dict, debug: dict = None, vus: set = None) -> list:
+    """Produits d'une page de l'endpoint AJAX PrestaShop (?ajax=1&action=productList), sans
+    réseau : exclusions, marques autorisées, prix (price_amount, sinon prix affiché), stock,
+    dédoublonnage par id_product (`vus`, partagé entre pages et catégories)."""
+    debug = debug if debug is not None else {}
+    for k in ("cards_parsed", "cards_skipped_stock", "cards_skipped_brand", "cards_skipped_excluded",
+              "cards_skipped_doublon"):
+        debug.setdefault(k, 0)
+    debug.setdefault("errors", [])
+    vus = vus if vus is not None else set()
+    produits = []
+    for p in (data or {}).get("products", []) or []:
+        try:
+            if not isinstance(p, dict):
+                continue
+
+            nom = p.get("name", "")
+            if not nom:
+                continue
+
+            # Exclure factice, iPod, c2buy, accessoires, boîtes vides…
+            if est_exclu(nom):
+                debug["cards_skipped_excluded"] += 1
+                continue
+
+            # Exclure les vieux iPhones (8 et en dessous)
+            if _is_old_iphone(nom):
+                debug["cards_skipped_excluded"] += 1
+                continue
+
+            # Filtrer par marque autorisée
+            marque_detected = cat.get("marque_forcee") or detecter_marque(nom)
+            if marque_detected not in MARQUES_AUTORISEES:
+                debug["cards_skipped_brand"] += 1
+                continue
+
+            # Prix — utiliser price_amount (numérique)
+            prix_fournisseur = p.get("price_amount")
+            if prix_fournisseur is None:
+                # Fallback: parser le prix formaté
+                prix_text = str(p.get("price", "")).replace('\xa0', '').replace('\u202f', '').replace(' ', '').replace('€', '')
+                m = re.search(r'(\d+(?:[,.]\d+)?)', prix_text)
+                if m:
+                    prix_fournisseur = float(m.group(1).replace(',', '.'))
+            try:
+                prix_fournisseur = float(prix_fournisseur)
+            except (TypeError, ValueError):
+                continue
+            if prix_fournisseur <= 0:
+                continue
+
+            # Stock — vérifier availability
+            availability = str(p.get("availability_message", "") or "")
+            if any(w in availability.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
+                debug["cards_skipped_stock"] += 1
+                continue
+
+            # Référence : un même produit peut revenir (pages sans tri, plusieurs catégories)
+            ref = str(p.get("id_product", "") or "")
+            if ref and ref in vus:
+                debug["cards_skipped_doublon"] += 1
+                continue
+            if ref:
+                vus.add(ref)
+
+            stock_qty = p.get("quantity", 1) or 1
+
+            # Image
+            image_url = ""
+            cover = p.get("cover", {})
+            if isinstance(cover, dict):
+                image_url = (cover.get("large") or {}).get("url", "") or (cover.get("medium") or {}).get("url", "") \
+                    or cover.get("url", "")
+
+            # URL du produit
+            product_url = p.get("url", "")
+
+            # Parser les infos depuis le nom
+            marque = marque_detected
+            type_produit = type_produit_valide(cat["type_produit"])
+            stockage = extraire_stockage(nom)
+            grade = extraire_grade(nom) or ("Neuf" if type_produit == "neuf" else None)
+            couleur = extraire_couleur(nom)
+            modele = extraire_modele(nom, marque)
+            prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
+
+            produits.append({
+                "marque": marque,
+                "modele": modele,
+                "stockage": stockage,
+                "couleur": couleur,
+                "grade": grade,
+                "type_produit": type_produit,
+                "prix_fournisseur": prix_fournisseur,
+                "prix_vente": prix_vente,
+                "marge_appliquee": marge,
+                "stock_fournisseur": stock_qty,
+                "en_stock": True,
+                "reference_fournisseur": ref,
+                "das": None,
+                "image_url": image_url,
+                "source_url": product_url,
+            })
+            debug["cards_parsed"] += 1
+
+        except Exception as e:
+            debug["errors"].append(f"Parse error: {str(e)[:100]}")
+    return produits
+
+
+def _url_page(cat: dict, page: int, par_page: int) -> str:
+    """URL de l'endpoint AJAX, sans &order= (robots.txt de LCD-Phone)."""
+    return (f"{LCDPHONE_BASE}/fr/{cat['id']}-{cat['slug']}"
+            f"?ajax=1&action=productList&resultsPerPage={par_page}&page={page}")
+
+
+def _scrape_category_ajax(client, cat: dict, vus: set = None) -> tuple:
     """
     Scrape via l'endpoint AJAX PrestaShop: ?ajax=1&action=productList
-    Retourne directement les produits en JSON.
+    Retourne directement les produits en JSON (parser_produits), une page toutes les 2 s.
     """
     produits = []
     debug = {
         "pages": 0, "total_items": 0, "cards_parsed": 0,
         "cards_skipped_stock": 0, "cards_skipped_brand": 0,
-        "cards_skipped_excluded": 0, "errors": [],
+        "cards_skipped_excluded": 0, "cards_skipped_doublon": 0, "errors": [],
     }
-
-    cat_id = cat["id"]
-    slug = cat["slug"]
+    vus = vus if vus is not None else set()
     page = 1
     results_per_page = 36
 
     while True:
         debug["pages"] = page
-        url = (f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}"
-               f"?ajax=1&action=productList&resultsPerPage={results_per_page}"
-               f"&page={page}&order=product.name.asc")
+        url = _url_page(cat, page, results_per_page)
 
         try:
             resp = client.get(url, headers={
@@ -266,111 +410,22 @@ def _scrape_category_ajax(client, cat: dict) -> tuple:
                 break
 
             data = resp.json()
-            products_json = data.get("products", [])
-            pagination = data.get("pagination", {})
+            pagination = data.get("pagination", {}) or {}
 
             if page == 1:
                 debug["total_items"] = pagination.get("total_items", 0)
 
-            if not products_json:
+            if not data.get("products"):
                 break
 
-            for p in products_json:
-                try:
-                    if not isinstance(p, dict):
-                        continue
-
-                    nom = p.get("name", "")
-                    if not nom:
-                        continue
-
-                    # Exclure factice, iPod, c2buy, etc.
-                    nom_lower = nom.lower()
-                    if any(kw in nom_lower for kw in EXCLUSION_KEYWORDS):
-                        debug["cards_skipped_excluded"] += 1
-                        continue
-
-                    # Exclure les vieux iPhones (8 et en dessous)
-                    if _is_old_iphone(nom):
-                        debug["cards_skipped_excluded"] += 1
-                        continue
-
-                    # Filtrer par marque autorisée
-                    marque_detected = cat.get("marque_forcee") or detecter_marque(nom)
-                    if marque_detected not in MARQUES_AUTORISEES:
-                        debug["cards_skipped_brand"] += 1
-                        continue
-
-                    # Prix — utiliser price_amount (numérique)
-                    prix_fournisseur = p.get("price_amount")
-                    if prix_fournisseur is None:
-                        # Fallback: parser le prix formaté
-                        prix_text = str(p.get("price", "")).replace('\xa0', '').replace(' ', '').replace('€', '')
-                        m = re.search(r'([\d]+[,.][\d]+)', prix_text)
-                        if m:
-                            prix_fournisseur = float(m.group(1).replace(',', '.'))
-                    if prix_fournisseur is None or prix_fournisseur <= 0:
-                        continue
-
-                    prix_fournisseur = float(prix_fournisseur)
-
-                    # Stock — vérifier availability
-                    availability = p.get("availability_message", "")
-                    if any(w in availability.lower() for w in ['rupture', 'indisponible', 'épuisé', 'out of stock']):
-                        debug["cards_skipped_stock"] += 1
-                        continue
-
-                    stock_qty = p.get("quantity", 1) or 1
-
-                    # Image
-                    image_url = ""
-                    cover = p.get("cover", {})
-                    if isinstance(cover, dict):
-                        image_url = cover.get("large", {}).get("url", "") or cover.get("medium", {}).get("url", "") or cover.get("url", "")
-
-                    # URL du produit
-                    product_url = p.get("url", "")
-
-                    # Référence
-                    ref = str(p.get("id_product", ""))
-
-                    # Parser les infos depuis le nom
-                    marque = marque_detected
-                    stockage = extraire_stockage(nom)
-                    grade = extraire_grade(nom) or ("Neuf" if cat["type_produit"] == "neuf" else None)
-                    couleur = extraire_couleur(nom)
-                    modele = extraire_modele(nom, marque)
-                    type_produit = cat["type_produit"]
-                    prix_vente, marge = calculer_prix_vente(prix_fournisseur, marque, type_produit)
-
-                    produits.append({
-                        "marque": marque,
-                        "modele": modele,
-                        "stockage": stockage,
-                        "couleur": couleur,
-                        "grade": grade,
-                        "type_produit": type_produit,
-                        "prix_fournisseur": prix_fournisseur,
-                        "prix_vente": prix_vente,
-                        "marge_appliquee": marge,
-                        "stock_fournisseur": stock_qty,
-                        "en_stock": True,
-                        "reference_fournisseur": ref,
-                        "das": None,
-                        "image_url": image_url,
-                        "source_url": product_url,
-                    })
-                    debug["cards_parsed"] += 1
-
-                except Exception as e:
-                    debug["errors"].append(f"Parse error: {str(e)[:100]}")
+            produits.extend(parser_produits(data, cat, debug, vus))
 
             # Pagination
-            total_pages = pagination.get("pages_count", 1)
+            total_pages = pagination.get("pages_count", 1) or 1
             if page >= total_pages:
                 break
             page += 1
-            time.sleep(0.3)
+            time.sleep(PAUSE_ENTRE_PAGES)
 
         except Exception as e:
             debug["errors"].append(f"Page {page}: {str(e)[:200]}")
@@ -399,7 +454,7 @@ def probe_lcdphone() -> dict:
             cat_label = f"{cat_id}-{slug}"
 
             # Appel AJAX qui fonctionne: ?ajax=1&action=productList
-            url = f"{LCDPHONE_BASE}/fr/{cat_id}-{slug}?ajax=1&action=productList&resultsPerPage=12&page=1"
+            url = _url_page(cat, 1, 12)
             try:
                 resp = client.get(url, headers={
                     "X-Requested-With": "XMLHttpRequest",
@@ -446,7 +501,8 @@ def probe_lcdphone() -> dict:
             except Exception as e:
                 results["categories"][cat_label] = {"error": str(e)[:200]}
 
-            time.sleep(0.3)
+            if cat is not CATEGORIES[-1]:
+                time.sleep(PAUSE_ENTRE_PAGES)
 
     finally:
         client.close()
@@ -457,8 +513,60 @@ def probe_lcdphone() -> dict:
 
 # ─── SYNC PRINCIPALE ────────────────────────────────
 
+def enregistrer_produits(cur, produits: list) -> tuple:
+    """Upsert du catalogue dans la transaction de `cur` (une erreur annule tout : l'appelant
+    utilise get_cursor). Toutes les fiches passent inactives, celles revues sont réactivées ;
+    type_produit réécrit à chaque passage, toujours 'neuf' ou 'occasion'. → (insérés, mis à jour)"""
+    inserted = updated = 0
+    cur.execute("UPDATE telephones_catalogue SET actif = FALSE, updated_at = NOW()")
+    for p in produits:
+        type_produit = type_produit_valide(p.get("type_produit"))
+        if p["reference_fournisseur"]:
+            cur.execute(
+                "SELECT id FROM telephones_catalogue WHERE reference_fournisseur = %s ORDER BY id LIMIT 1",
+                (p["reference_fournisseur"],))
+        else:
+            cur.execute(
+                "SELECT id FROM telephones_catalogue WHERE marque = %s AND modele = %s "
+                "AND COALESCE(stockage,'') = COALESCE(%s,'') AND COALESCE(grade,'') = COALESCE(%s,'') "
+                "ORDER BY id LIMIT 1",
+                (p["marque"], p["modele"], p["stockage"], p["grade"]))
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute("""
+                UPDATE telephones_catalogue SET
+                    prix_fournisseur=%s, prix_vente=%s, marge_appliquee=%s,
+                    stock_fournisseur=%s, en_stock=TRUE,
+                    image_url=%s, source_url=%s,
+                    couleur=COALESCE(%s, couleur),
+                    grade=COALESCE(%s, grade),
+                    type_produit=%s,
+                    actif=TRUE, derniere_sync=NOW(), updated_at=NOW()
+                WHERE id=%s
+            """, (p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
+                  p["stock_fournisseur"], p["image_url"], p["source_url"],
+                  p["couleur"], p["grade"], type_produit, existing["id"]))
+            updated += 1
+        else:
+            cur.execute("""
+                INSERT INTO telephones_catalogue
+                (marque, modele, stockage, couleur, grade, type_produit,
+                 prix_fournisseur, prix_vente, marge_appliquee,
+                 stock_fournisseur, en_stock, reference_fournisseur,
+                 das, garantie_mois, image_url, source_url, actif)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,12,%s,%s,TRUE)
+            """, (p["marque"], p["modele"], p["stockage"], p["couleur"],
+                  p["grade"], type_produit,
+                  p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
+                  p["stock_fournisseur"], p["reference_fournisseur"],
+                  p["das"], p["image_url"], p["source_url"]))
+            inserted += 1
+    return inserted, updated
+
+
 def sync_telephones_lcdphone() -> dict:
-    """Login + scrape toutes les catégories + upsert en BDD."""
+    """Login + scrape toutes les catégories + upsert en BDD (une seule transaction)."""
     if not _HAS_DEPS:
         return {"success": False, "error": "beautifulsoup4 ou httpx non installé"}
 
@@ -468,12 +576,15 @@ def sync_telephones_lcdphone() -> dict:
 
     all_produits = []
     all_debug = {}
+    vus = set()   # id_product déjà lus : un produit présent dans deux catégories n'est gardé qu'une fois
 
     try:
-        for cat in CATEGORIES:
+        for i, cat in enumerate(CATEGORIES):
+            if i:
+                time.sleep(PAUSE_ENTRE_PAGES)
             cat_label = f"{cat['id']}-{cat['slug']}"
             logger.info(f"Catégorie: {cat_label}")
-            produits, debug = _scrape_category_ajax(client, cat)
+            produits, debug = _scrape_category_ajax(client, cat, vus)
             logger.info(f"  -> {len(produits)} produits")
             all_produits.extend(produits)
             all_debug[cat_label] = {
@@ -484,84 +595,35 @@ def sync_telephones_lcdphone() -> dict:
                 "cards_skipped_stock": debug["cards_skipped_stock"],
                 "cards_skipped_brand": debug["cards_skipped_brand"],
                 "cards_skipped_excluded": debug["cards_skipped_excluded"],
+                "cards_skipped_doublon": debug["cards_skipped_doublon"],
                 "errors": debug["errors"][:5],
             }
     finally:
         client.close()
 
+    marques = len({p["marque"] for p in all_produits})
     if not all_produits:
         return {
             "success": True,
-            "total": 0, "inserted": 0, "updated": 0,
+            "total": 0, "inserted": 0, "updated": 0, "marques": 0,
             "message": "Aucun produit trouvé",
             "debug": all_debug,
         }
 
-    inserted = 0
-    updated = 0
-
     try:
         # Transaction atomique : si une erreur survient, rollback automatique
-        # via get_db() — les données existantes restent intactes.
-        from psycopg2.extras import RealDictCursor
-        from app.database import get_db
-
-        with get_db() as conn:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("UPDATE telephones_catalogue SET actif = FALSE, updated_at = NOW()")
-
-            for p in all_produits:
-                if p["reference_fournisseur"]:
-                    cur.execute(
-                        "SELECT id FROM telephones_catalogue WHERE reference_fournisseur = %s",
-                        (p["reference_fournisseur"],))
-                else:
-                    cur.execute(
-                        "SELECT id FROM telephones_catalogue WHERE marque = %s AND modele = %s "
-                        "AND COALESCE(stockage,'') = COALESCE(%s,'') AND COALESCE(grade,'') = COALESCE(%s,'')",
-                        (p["marque"], p["modele"], p["stockage"], p["grade"]))
-                existing = cur.fetchone()
-
-                if existing:
-                    cur.execute("""
-                        UPDATE telephones_catalogue SET
-                            prix_fournisseur=%s, prix_vente=%s, marge_appliquee=%s,
-                            stock_fournisseur=%s, en_stock=TRUE,
-                            image_url=%s, source_url=%s,
-                            couleur=COALESCE(%s, couleur),
-                            grade=COALESCE(%s, grade),
-                            actif=TRUE, derniere_sync=NOW(), updated_at=NOW()
-                        WHERE id=%s
-                    """, (p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
-                          p["stock_fournisseur"], p["image_url"], p["source_url"],
-                          p["couleur"], p["grade"], existing["id"]))
-                    updated += 1
-                else:
-                    cur.execute("""
-                        INSERT INTO telephones_catalogue
-                        (marque, modele, stockage, couleur, grade, type_produit,
-                         prix_fournisseur, prix_vente, marge_appliquee,
-                         stock_fournisseur, en_stock, reference_fournisseur,
-                         das, garantie_mois, image_url, source_url, actif)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,TRUE,%s,%s,12,%s,%s,TRUE)
-                    """, (p["marque"], p["modele"], p["stockage"], p["couleur"],
-                          p["grade"], p["type_produit"],
-                          p["prix_fournisseur"], p["prix_vente"], p["marge_appliquee"],
-                          p["stock_fournisseur"], p["reference_fournisseur"],
-                          p["das"], p["image_url"], p["source_url"]))
-                    inserted += 1
-
-            cur.close()
-            # conn.commit() is called automatically by get_db() on success
-
+        # via get_cursor() — les données existantes restent intactes.
+        with get_cursor() as cur:
+            inserted, updated = enregistrer_produits(cur, all_produits)
         return {
             "success": True,
             "total": len(all_produits),
             "inserted": inserted,
             "updated": updated,
+            "marques": marques,
             "debug": all_debug,
         }
     except Exception as e:
-        # get_db() does conn.rollback() on exception — data preserved
+        # get_cursor() fait le rollback — données conservées
         logger.error(f"Erreur BDD (rollback effectué): {e}")
-        return {"success": False, "error": str(e), "debug": all_debug}
+        return {"success": False, "error": str(e)[:300], "debug": all_debug}

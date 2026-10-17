@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import {
   Smartphone, Search, RefreshCw, Filter, ChevronDown, Shield,
-  Package, Loader2, SlidersHorizontal, Sparkles, Tag,
+  Package, SlidersHorizontal, Sparkles, Tag,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
+import { SynchroLcdPhone } from '../components/SantePrixWidget';
 
 // ─── Constantes ──────────────────────────────────
 
@@ -42,17 +43,6 @@ const SORT_OPTIONS = [
 
 // ─── Helpers ─────────────────────────────────────
 
-function formatDate(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${day}/${month} a ${hours}:${minutes}`;
-}
-
 function formatPrice(price) {
   if (price == null) return '';
   return Number(price).toFixed(2).replace('.', ',') + ' €';
@@ -67,7 +57,7 @@ function getGradeStyle(grade) {
 
 function KPICardSkeleton() {
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 animate-pulse">
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 motion-safe:animate-pulse">
       <div className="flex items-center gap-4">
         <div className="w-12 h-12 rounded-xl bg-slate-700/50" />
         <div className="flex-1 space-y-2">
@@ -81,7 +71,7 @@ function KPICardSkeleton() {
 
 function PhoneCardSkeleton() {
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden animate-pulse">
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden motion-safe:animate-pulse">
       <div className="h-48 bg-slate-900/80" />
       <div className="p-4 space-y-3">
         <div className="h-3 w-16 bg-slate-700/50 rounded" />
@@ -130,7 +120,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
           <img
             src={phone.image_url}
             alt={phone.modele || 'Telephone'}
-            className="h-full w-full object-contain p-4 group-hover:scale-105 transition-transform duration-200"
+            className="h-full w-full object-contain p-4 motion-safe:group-hover:scale-105 motion-safe:transition-transform duration-200"
             loading="lazy"
             onError={(e) => {
               e.target.style.display = 'none';
@@ -154,7 +144,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
         <div className="absolute top-3 right-3">
           {inStock ? (
             <span className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 backdrop-blur-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
               En stock
             </span>
           ) : (
@@ -231,10 +221,7 @@ function ToggleSwitch({ checked, onChange, label }) {
 
 export default function TarifsTelephonesPage() {
   const { user } = useAuth();
-  const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
-
-  // Loading / UI state
-  const [syncing, setSyncing] = useState(false);
+  const isAdmin = user?.role === 'admin' || localStorage.getItem('klikphone_admin') === 'true';
 
   // Filter state
   const [typeProduit, setTypeProduit] = useState('');
@@ -303,33 +290,12 @@ export default function TarifsTelephonesPage() {
     prevFilters.current = { selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy };
   }, [selectedBrand, typeProduit, enStockOnly, searchQuery, sortBy]);
 
-  // ─── Sync handler ──────────────────────────────
+  // ─── Synchro LCD-Phone (bloc partagé : test de connexion, synchro, statut durable) ──
 
-  async function handleSync() {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      await api.syncTelephones();
-      // Poll sync-status until done
-      let attempts = 0;
-      while (attempts < 120) { // max ~10 min
-        await new Promise(r => setTimeout(r, 5000));
-        attempts++;
-        try {
-          const status = await api.getSyncStatus();
-          if (!status.running) {
-            break;
-          }
-        } catch { break; }
-      }
-      setCurrentPage(1);
-      invalidateCache('telephones');
-    } catch (err) {
-      console.error('Erreur sync telephones:', err);
-    } finally {
-      setSyncing(false);
-    }
-  }
+  const handleSyncTerminee = () => {
+    setCurrentPage(1);
+    invalidateCache('telephones');
+  };
 
   // ─── Close sort dropdown on outside click ──────
 
@@ -370,7 +336,7 @@ export default function TarifsTelephonesPage() {
       {/* ───────── HEADER ───────── */}
       <div className="bg-slate-900 border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             {/* Title */}
             <div>
               <h1 className="text-2xl font-bold text-white">Tarifs Telephones</h1>
@@ -379,31 +345,8 @@ export default function TarifsTelephonesPage() {
               </p>
             </div>
 
-            {/* Sync button — admin only */}
-            <div className="flex flex-col items-end shrink-0">
-              {isAdmin && (
-                <button
-                  onClick={handleSync}
-                  disabled={syncing}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60 shadow-lg"
-                  style={{
-                    background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-                  }}
-                >
-                  {syncing ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-4 h-4" />
-                  )}
-                  {syncing ? 'Synchronisation...' : 'Synchroniser'}
-                </button>
-              )}
-              {stats?.derniere_sync && (
-                <p className="text-[11px] text-slate-500 mt-1.5">
-                  Derniere sync : {formatDate(stats.derniere_sync)}
-                </p>
-              )}
-            </div>
+            {/* Synchro LCD-Phone : test puis synchro pour l'admin, dernière synchro pour tous */}
+            <SynchroLcdPhone estAdmin={isAdmin} theme="sombre" onTerminee={handleSyncTerminee} dateRepli={stats?.derniere_sync} className="shrink-0" />
           </div>
         </div>
       </div>
@@ -515,13 +458,15 @@ export default function TarifsTelephonesPage() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {/* Search input */}
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
               <input
-                type="text"
+                type="search"
                 placeholder="Rechercher un telephone..."
+                aria-label="Rechercher un téléphone"
+                autoComplete="off"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/70 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all"
+                className="w-full min-h-[44px] pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/70 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/50 transition-all"
               />
             </div>
 

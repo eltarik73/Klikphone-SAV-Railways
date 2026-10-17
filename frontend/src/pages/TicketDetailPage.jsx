@@ -18,7 +18,7 @@ import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
 import AutocompleteField from '../components/AutocompleteField';
 import ModelCombobox from '../components/ModelCombobox';
-import TarifPicker from '../components/TarifPicker';
+import TarifPicker, { cleCommandeDepuisLigne } from '../components/TarifPicker';
 import ReceptionCard from '../components/ReceptionCard';
 import EmplacementInput from '../components/EmplacementInput';
 import PrevenirClient from '../components/PrevenirClient';
@@ -1253,6 +1253,8 @@ function TicketDetail({ id }) {
         try {
           const res = await api.createPart({
             ticket_id: tk.id, ticket_code: tk.ticket_code, description: temp.description, fournisseur: temp.fournisseur, prix: temp.prix,
+            // Pièce de la grille choisie sur la ligne : rapprochée du HT payé à la réception (proposition au gérant)
+            ...(cleCommandeDepuisLigne(line) ? { tarif_cle: cleCommandeDepuisLigne(line) } : {}),
           });
           const row = res?.description ? res : { ...temp, id: res?.id ?? tempId };
           if (mountedRef.current) setCommandes(prev => prev.map(c => (c.id === tempId ? row : c)));

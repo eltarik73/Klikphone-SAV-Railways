@@ -1,21 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Lock, Unlock, Pencil } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, Lock, Pencil, SlidersHorizontal, History } from 'lucide-react';
 import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
+import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useToast } from '../components/Toast';
+import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
+import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
 const PRINT_MARGIN_MM = 1;
+const TABLE = 'tarifs_reparation';
 
 const COLUMNS = [
   { key: 'ecran_generique', label: 'Écran Générique', shortLabel: 'Générique', headerBg: 'bg-blue-600' },
   { key: 'ecran_confort', label: 'Écran Confort', shortLabel: 'Confort', headerBg: 'bg-blue-700' },
   { key: 'ecran_apple', label: 'Écran Apple', shortLabel: 'Apple', headerBg: 'bg-blue-800' },
-  { key: 'batterie', label: 'Batterie', shortLabel: 'Batterie', headerBg: 'bg-yellow-600' },
-  { key: 'desoxydation', label: 'Désoxydation', shortLabel: 'Désoxy.', headerBg: 'bg-green-600' },
+  { key: 'batterie', label: 'Batterie', shortLabel: 'Batterie', headerBg: 'bg-yellow-700' },
+  { key: 'desoxydation', label: 'Désoxydation', shortLabel: 'Désoxy.', headerBg: 'bg-green-700' },
   { key: 'connecteur_charge', label: 'Connecteur', shortLabel: 'Connect.', headerBg: 'bg-rose-600' },
   { key: 'reparation_divers', label: 'Réparation', shortLabel: 'Répar.', headerBg: 'bg-indigo-600' },
   { key: 'ecouteur_apn', label: 'Écouteur/APN', shortLabel: 'Écout.', headerBg: 'bg-purple-600' },
-  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', headerBg: 'bg-orange-600' },
+  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', headerBg: 'bg-orange-700' },
   { key: 'chassis', label: 'Châssis', shortLabel: 'Châssis', headerBg: 'bg-slate-700' },
 ];
 
@@ -40,9 +45,13 @@ function getBarrePrice(val, barreDb) {
 }
 
 export default function TarifsReparationPage() {
+  const toast = useToast();
+  const { sensible, adminPrompt } = useAdminElevation();
   const [tarifs, setTarifs] = useState([]);
   const [search, setSearch] = useState('');
+  const [anciensSeuls, setAnciensSeuls] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [erreurChargement, setErreurChargement] = useState('');
   const [editCell, setEditCell] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
@@ -56,15 +65,18 @@ export default function TarifsReparationPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [fenetre, setFenetre] = useState(null); // 'ajuster' | 'historique'
   const inputRef = useRef(null);
   const addRef = useRef(null);
+  const { verrouilles, basculer: basculerVerrou, enCours: verrouEnCours } = useVerrousBoutique(TABLE, sensible);
 
   const load = useCallback(async () => {
     try {
       const data = await api.getTarifsReparation();
       setTarifs(data);
+      setErreurChargement('');
     } catch (e) {
-      console.error('Erreur chargement tarifs:', e);
+      setErreurChargement(messageErreurPrix(e, 'Chargement des tarifs impossible') || '');
     } finally {
       setLoading(false);
     }
@@ -83,13 +95,19 @@ export default function TarifsReparationPage() {
   useEffect(() => { if (editCell && inputRef.current) inputRef.current.focus(); }, [editCell]);
   useEffect(() => { if (showAdd && addRef.current) addRef.current.focus(); }, [showAdd]);
 
-  const filtered = search
-    ? tarifs.filter(t => t.modele.toLowerCase().includes(search.toLowerCase()))
-    : tarifs;
+  const nombreAnciens = useMemo(() => tarifs.filter((t) => plusDeTroisMois(t)).length, [tarifs]);
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return tarifs.filter((t) => (!q || t.modele.toLowerCase().includes(q)) && (!anciensSeuls || plusDeTroisMois(t)));
+  }, [tarifs, search, anciensSeuls]);
 
-  const startEdit = (id, key, val) => {
+  const startEdit = (t, key, val) => {
     if (!isAdmin) return;
-    setEditCell({ id, key });
+    if (verrouilles.has(t.id)) {
+      toast.info(`${t.modele} est verrouillé : ouvrez le cadenas de la ligne pour modifier ses prix.`);
+      return;
+    }
+    setEditCell({ id: t.id, key });
     setEditValue(val !== null && val !== undefined ? String(val) : '');
   };
 
@@ -97,15 +115,30 @@ export default function TarifsReparationPage() {
 
   const saveEdit = async () => {
     if (!editCell || saving) return;
+    const val = editValue.trim() === '' ? null : parseInt(editValue, 10);
+    if (val !== null && (isNaN(val) || val < 0)) {
+      toast.error('Prix invalide : saisissez un nombre entier en euros (ou laissez vide).');
+      cancelEdit();
+      return;
+    }
+    const courant = tarifs.find((t) => t.id === editCell.id);
+    if (courant && (courant[editCell.key] ?? null) === val) { cancelEdit(); return; }
     setSaving(true);
     try {
-      const val = editValue.trim() === '' ? null : parseInt(editValue, 10);
-      if (val !== null && isNaN(val)) { cancelEdit(); setSaving(false); return; }
-      const updated = await api.updateTarifReparation(editCell.id, { [editCell.key]: val });
-      setTarifs(prev => prev.map(t => t.id === editCell.id ? updated : t));
+      const cell = editCell;
+      const updated = await sensible(() => api.updateTarifReparation(cell.id, { [cell.key]: val }));
+      // La réponse (SELECT *) n'a pas d'âge calculé : l'ancien age_jours ferait passer un prix du jour
+      // pour « périmé ». Sans lui, la fraîcheur se recalcule depuis prix_maj_le.
+      setTarifs(prev => prev.map((t) => {
+        if (t.id !== cell.id) return t;
+        const { age_jours: _age, fraicheur: _fraicheur, ...reste } = t;
+        return { ...reste, ...updated };
+      }));
       cancelEdit();
     } catch (e) {
-      console.error('Erreur sauvegarde:', e);
+      const msg = messageErreurPrix(e, 'Prix non enregistré');
+      if (msg) toast.error(msg);
+      cancelEdit();
     } finally {
       setSaving(false);
     }
@@ -122,24 +155,32 @@ export default function TarifsReparationPage() {
     const name = newModele.trim();
     if (!name) return;
     try {
-      const created = await api.addTarifReparation(name);
+      const created = await sensible(() => api.addTarifReparation(name));
       setTarifs(prev => [...prev, created]);
       setNewModele('');
       setShowAdd(false);
+      toast.success(`${name} ajouté à la grille.`);
     } catch (e) {
-      console.error('Erreur ajout:', e);
+      const msg = messageErreurPrix(e, 'Modèle non ajouté');
+      if (msg) toast.error(msg);
     }
   };
 
   // ─── Delete model ───
   const handleDelete = async (id, modele) => {
     if (!isAdmin) return;
+    if (verrouilles.has(id)) {
+      toast.info(`${modele} est verrouillé : ouvrez le cadenas avant de le supprimer.`);
+      return;
+    }
     if (!confirm(`Supprimer "${modele}" ?`)) return;
     try {
-      await api.deleteTarifReparation(id);
+      await sensible(() => api.deleteTarifReparation(id));
       setTarifs(prev => prev.filter(t => t.id !== id));
+      toast.success(`${modele} supprimé.`);
     } catch (e) {
-      console.error('Erreur suppression:', e);
+      const msg = messageErreurPrix(e, 'Suppression impossible');
+      if (msg) toast.error(msg);
     }
   };
 
@@ -150,13 +191,13 @@ export default function TarifsReparationPage() {
     if (newIndex < 0 || newIndex >= tarifs.length) return;
     const newTarifs = [...tarifs];
     [newTarifs[index], newTarifs[newIndex]] = [newTarifs[newIndex], newTarifs[index]];
-    // Update ordre
     const reordered = newTarifs.map((t, i) => ({ ...t, ordre: i }));
     setTarifs(reordered);
     try {
-      await api.reorderTarifsReparation(reordered.map((t, i) => ({ id: t.id, ordre: i })));
+      await sensible(() => api.reorderTarifsReparation(reordered.map((t, i) => ({ id: t.id, ordre: i }))));
     } catch (e) {
-      console.error('Erreur reorder:', e);
+      const msg = messageErreurPrix(e, 'Ordre non enregistré');
+      if (msg) toast.error(msg);
       load(); // reload on failure
     }
   };
@@ -175,7 +216,7 @@ export default function TarifsReparationPage() {
       t.modele, ...COLUMNS.map(c => t[c.key] ?? ''),
     ]);
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url;
     a.download = 'tarifs_reparation_klikphone.csv'; a.click();
@@ -184,7 +225,7 @@ export default function TarifsReparationPage() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-96">
-      <div className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+      <div role="status" aria-label="Chargement des tarifs" className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full motion-safe:animate-spin" />
     </div>
   );
 
@@ -329,32 +370,35 @@ export default function TarifsReparationPage() {
   }
 
   // ── Main view ──
+  const boutonBase = 'flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
+  const bouton = `${boutonBase} font-bold`;
+  const colSpan = COLUMNS.length + (isAdmin ? 4 : 2);
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <img src="/logo_k.png" alt="Klikphone" className="w-10 h-10 rounded-xl object-contain" />
+      <div className="flex flex-wrap items-center gap-4 mb-6">
+        <div className="flex items-center gap-3 shrink-0">
+          <img src="/logo_k.png" alt="" className="w-10 h-10 rounded-xl object-contain" />
           <div>
             <h1 className="text-xl font-bold text-slate-900">Tarifs Réparation iPhone</h1>
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-slate-500">{tarifs.length} modèles</p>
+              <p className="text-xs text-slate-600">{tarifs.length} modèles</p>
               {isAdmin ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
-                  style={{ background: 'rgba(34,197,94,0.15)', color: '#16A34A' }}>
-                  <Unlock className="w-3 h-3" /> Mode édition
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-800">
+                  <Pencil className="w-3 h-3" aria-hidden="true" /> Mode édition
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
-                  <Lock className="w-3 h-3" /> Lecture seule
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700">
+                  <Lock className="w-3 h-3" aria-hidden="true" /> Lecture seule
                 </span>
               )}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
+        <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
           {isAdmin ? (
             <button
+              type="button"
               onClick={() => {
                 localStorage.removeItem('klikphone_admin');
                 api.clearAdminToken();
@@ -362,46 +406,64 @@ export default function TarifsReparationPage() {
                 setEditCell(null);
                 setShowAdd(false);
               }}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200"
-              title="Verrouiller l'édition"
+              className={`${bouton} bg-slate-100 text-slate-700 hover:bg-slate-200`}
+              title="Repasser en lecture seule"
             >
-              <Lock className="w-4 h-4" /> Verrouiller
+              <Lock className="w-4 h-4" aria-hidden="true" /> Fermer l’édition
             </button>
           ) : (
             <button
+              type="button"
               onClick={() => setShowAdminModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600"
+              className={`${bouton} bg-amber-600 text-white hover:bg-amber-700`}
               title="Activer le mode édition (admin)"
             >
-              <Pencil className="w-4 h-4" /> Modifier
+              <Pencil className="w-4 h-4" aria-hidden="true" /> Modifier
             </button>
           )}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Rechercher un modèle"
               placeholder="Rechercher..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
+              className="min-h-[44px] pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
             />
           </div>
+          <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
           {isAdmin && (
-            <button onClick={() => setShowAdd(true)} className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">
-              <Plus className="w-4 h-4" /> Ajouter
-            </button>
+            <>
+              <button type="button" onClick={() => setShowAdd(true)} className={`${bouton} bg-emerald-700 text-white hover:bg-emerald-800`}>
+                <Plus className="w-4 h-4" aria-hidden="true" /> Ajouter
+              </button>
+              <button type="button" onClick={() => setFenetre('ajuster')} className={`${bouton} bg-violet-700 text-white hover:bg-violet-800`}>
+                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Ajuster en %
+              </button>
+              <button type="button" onClick={() => setFenetre('historique')} className={`${bouton} bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
+                <History className="w-4 h-4" aria-hidden="true" /> Historique
+              </button>
+            </>
           )}
-          <button onClick={exportJSON} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
-            <FileJson className="w-4 h-4" /> JSON
+          <button type="button" onClick={exportJSON} className={`${boutonBase} font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
+            <FileJson className="w-4 h-4" aria-hidden="true" /> JSON
           </button>
-          <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-50">
-            <FileSpreadsheet className="w-4 h-4" /> CSV
+          <button type="button" onClick={exportCSV} className={`${boutonBase} font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
+            <FileSpreadsheet className="w-4 h-4" aria-hidden="true" /> CSV
           </button>
-          <button onClick={() => setPrintMode(true)} className="flex items-center gap-1.5 min-h-11 px-3 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700">
-            <Printer className="w-4 h-4" /> Impression
+          <button type="button" onClick={() => setPrintMode(true)} className={`${bouton} bg-brand-600 text-white hover:bg-brand-700`}>
+            <Printer className="w-4 h-4" aria-hidden="true" /> Impression
           </button>
         </div>
       </div>
+
+      {erreurChargement && (
+        <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <span>{erreurChargement}</span>
+          <button type="button" onClick={() => { setLoading(true); load(); }} className="min-h-[44px] px-3 rounded-lg font-semibold hover:bg-red-100">Réessayer</button>
+        </div>
+      )}
 
       {/* Add model bar */}
       {showAdd && (
@@ -409,17 +471,19 @@ export default function TarifsReparationPage() {
           <input
             ref={addRef}
             type="text"
+            aria-label="Nom du nouveau modèle"
             value={newModele}
             onChange={e => setNewModele(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setShowAdd(false); setNewModele(''); } }}
             placeholder="Nom du modèle (ex: iPhone 17 Pro Max)"
-            className="flex-1 px-3 py-2 border border-emerald-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            className="flex-1 min-h-[44px] px-3 py-2 border border-emerald-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           />
-          <button onClick={handleAdd} disabled={!newModele.trim()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-40">
+          <button type="button" onClick={handleAdd} disabled={!newModele.trim()} className="min-h-[44px] px-4 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 disabled:opacity-40">
             Ajouter
           </button>
-          <button onClick={() => { setShowAdd(false); setNewModele(''); }} className="p-2 text-slate-400 hover:text-slate-600">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={() => { setShowAdd(false); setNewModele(''); }} aria-label="Annuler l’ajout"
+            className="w-11 h-11 inline-flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-emerald-100">
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -427,94 +491,124 @@ export default function TarifsReparationPage() {
       {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[1200px]">
+          <table className="w-full border-collapse min-w-[1300px]">
+            <caption className="sr-only">Tarifs de réparation iPhone, prix TTC</caption>
             <thead>
               <tr>
                 {isAdmin && (
-                  <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[50px]">
+                  <th scope="col" className="bg-slate-900 text-white px-2 py-3 text-center text-[11px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[100px]">
                     Ordre
                   </th>
                 )}
-                <th className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold border-r border-slate-700 min-w-[170px]">
+                <th scope="col" className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold border-r border-slate-700 min-w-[170px]">
                   Modèle iPhone
                 </th>
+                <th scope="col" className="bg-slate-900 text-white px-3 py-3 text-left text-[11px] font-bold border-r border-slate-700 whitespace-nowrap">
+                  Prix du
+                </th>
                 {COLUMNS.map(c => (
-                  <th key={c.key} className={`${c.headerBg} text-white px-3 py-3 text-center text-[11px] font-bold border-x border-white/20 whitespace-nowrap`}>
+                  <th scope="col" key={c.key} className={`${c.headerBg} text-white px-3 py-3 text-center text-[11px] font-bold border-x border-white/20 whitespace-nowrap`}>
                     {c.label}
                   </th>
                 ))}
-                {isAdmin && <th className="bg-slate-900 text-white px-2 py-3 text-center text-[10px] font-bold w-[40px]" />}
+                {isAdmin && <th scope="col" className="bg-slate-900 text-white px-2 py-3 text-center text-[11px] font-bold w-[100px]">Verrou / suppr.</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.map((t, i) => {
                 const realIndex = tarifs.findIndex(x => x.id === t.id);
+                const verrou = verrouilles.has(t.id);
                 return (
                   <tr key={t.id} className={`${ROW_COLORS[i % ROW_COLORS.length]} hover:bg-brand-50/40 transition-colors group`}>
                     {/* Move buttons */}
                     {isAdmin && (
                       <td className="px-1 py-1 text-center border-r border-slate-200 bg-white sticky left-0 z-10">
-                        <div className="flex flex-col items-center gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0}
-                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Monter">
-                            <ChevronUp className="w-3.5 h-3.5 text-slate-600" />
+                        <div className="flex items-center justify-center gap-0.5">
+                          <button type="button" onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0 || !!search || anciensSeuls}
+                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-200 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                            aria-label={`Monter ${t.modele}`}>
+                            <ChevronUp className="w-4 h-4 text-slate-700" aria-hidden="true" />
                           </button>
-                          <span className="text-[9px] text-slate-400 font-mono">{i + 1}</span>
-                          <button onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1}
-                            className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-20" title="Descendre">
-                            <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                          <button type="button" onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1 || !!search || anciensSeuls}
+                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-200 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                            aria-label={`Descendre ${t.modele}`}>
+                            <ChevronDown className="w-4 h-4 text-slate-700" aria-hidden="true" />
                           </button>
                         </div>
                       </td>
                     )}
                     {/* Model name */}
-                    <td className="px-4 py-2.5 font-bold text-sm text-slate-900 border-r border-slate-200 bg-white whitespace-nowrap">
+                    <th scope="row" className="px-4 py-2.5 text-left font-bold text-sm text-slate-900 border-r border-slate-200 bg-white whitespace-nowrap">
                       {t.modele}
+                      {verrou && <Lock className="inline w-3.5 h-3.5 ml-1.5 text-amber-700" aria-label="verrouillé" />}
+                    </th>
+                    <td className="px-3 py-1.5 border-r border-slate-100 bg-white whitespace-nowrap">
+                      <BadgeDatePrix row={t} court />
                     </td>
                     {/* Price cells */}
                     {COLUMNS.map(c => {
                       const isEditing = editCell?.id === t.id && editCell?.key === c.key;
                       const val = t[c.key];
                       const barre = getBarrePrice(val, t[c.key + '_barre']);
+                      const contenu = val != null ? (
+                        <span className="block">
+                          {barre != null && barre > val && (
+                            <span className="block text-[11px] text-red-700 line-through leading-none mb-0.5">{barre}€</span>
+                          )}
+                          <span className="block text-sm font-black text-slate-900">{val}€</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-sm" aria-hidden="true">—</span>
+                      );
                       return (
-                        <td
-                          key={c.key}
-                          className={`px-2 py-1.5 text-center border-x border-slate-100 transition-colors ${isAdmin ? 'cursor-pointer hover:bg-amber-50' : 'cursor-default'}`}
-                          onClick={() => !isEditing && startEdit(t.id, c.key, val)}
-                        >
+                        <td key={c.key} className="px-1 py-1 text-center border-x border-slate-100">
                           {isEditing ? (
                             <input
                               ref={inputRef}
                               type="text"
+                              inputMode="numeric"
+                              aria-label={`${c.label} de ${t.modele}, en euros`}
                               value={editValue}
                               onChange={e => setEditValue(e.target.value)}
                               onKeyDown={handleKeyDown}
                               onBlur={saveEdit}
-                              className="w-16 px-1.5 py-0.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
+                              className="w-16 min-h-[44px] px-1.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
                             />
-                          ) : val != null ? (
-                            <div>
-                              {barre != null && barre > val && (
-                                <div className="text-[10px] text-red-400 line-through leading-none mb-0.5">{barre}€</div>
-                              )}
-                              <div className="text-sm font-black text-slate-900">{val}€</div>
-                            </div>
+                          ) : isAdmin ? (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(t, c.key, val)}
+                              aria-label={`${c.label} de ${t.modele} : ${val != null ? `${val} euros` : 'pas de prix'}. ${verrou ? 'Verrouillé' : 'Modifier'}`}
+                              className={`w-full min-h-[44px] rounded-lg px-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-amber-50'}`}
+                            >
+                              {contenu}
+                            </button>
                           ) : (
-                            <span className="text-slate-300 text-sm">—</span>
+                            <span className="block py-1.5">{contenu}{val == null && <span className="sr-only">pas de prix</span>}</span>
                           )}
                         </td>
                       );
                     })}
-                    {/* Delete button */}
+                    {/* Verrou + suppression */}
                     {isAdmin && (
                       <td className="px-1 py-1 text-center">
-                        <button
-                          onClick={() => handleDelete(t.id, t.modele)}
-                          className="p-1 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <BoutonVerrou
+                            verrouille={verrou}
+                            onClick={() => basculerVerrou(t.id, t.modele)}
+                            disabled={verrouEnCours === t.id}
+                            nom={`les prix de ${t.modele}`}
+                            aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t.id, t.modele)}
+                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                            aria-label={`Supprimer ${t.modele}`}
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -522,8 +616,8 @@ export default function TarifsReparationPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + (isAdmin ? 3 : 1)} className="text-center py-12 text-slate-400 text-sm">
-                    Aucun modèle trouvé pour "{search}"
+                  <td colSpan={colSpan} className="text-center py-12 text-slate-600 text-sm">
+                    {anciensSeuls && !search ? 'Aucun prix de plus de 3 mois.' : `Aucun modèle trouvé pour "${search}"`}
                   </td>
                 </tr>
               )}
@@ -532,11 +626,32 @@ export default function TarifsReparationPage() {
         </div>
       </div>
 
-      <p className="text-[11px] text-slate-400 mt-3 text-center">
+      <p className="text-xs text-slate-600 mt-3 text-center">
         {isAdmin
-          ? 'Cliquez sur un prix pour le modifier (Entrée = sauvegarder). Flèches = déplacer. Corbeille = supprimer.'
-          : 'Mode lecture seule. Cliquez sur « Modifier » en haut à droite pour activer l\'édition (admin requis).'}
+          ? `Touchez un prix pour le modifier (Entrée = enregistrer, Échap = annuler). Flèches = déplacer. ${AIDE_VERROU_BOUTIQUE.note}`
+          : 'Mode lecture seule. Touchez « Modifier » en haut à droite pour activer l\'édition (admin requis).'}
       </p>
+
+      <AjustementColonne
+        open={fenetre === 'ajuster'}
+        onClose={() => setFenetre(null)}
+        sensible={sensible}
+        cible={TABLE}
+        titre="Ajuster une colonne de la grille iPhone"
+        colonnes={COLUMNS.map(({ key, label }) => ({ key, label }))}
+        lignes={filtered.map((t) => ({ id: t.id, label: t.modele, valeurs: t }))}
+        verrouilles={verrouilles}
+        onApplique={() => load()}
+      />
+      <HistoriquePrix
+        open={fenetre === 'historique'}
+        onClose={() => setFenetre(null)}
+        sensible={sensible}
+        filtre={{ table: TABLE }}
+        titre="Historique de la grille iPhone"
+        nommer={(l) => tarifs.find((t) => t.id === l.ligne_id)?.modele}
+        onAnnule={() => load()}
+      />
 
       <AdminLoginModal
         open={showAdminModal}
@@ -546,6 +661,7 @@ export default function TarifsReparationPage() {
           setShowAdminModal(false);
         }}
       />
+      {adminPrompt}
     </div>
   );
 }

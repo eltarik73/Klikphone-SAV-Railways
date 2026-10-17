@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from app.database import get_cursor
 from app.models import ParamUpdate, ParamOut
 from app.api.auth import (
-    ecrire_admin_password, exiger_elevation, get_current_user, noter_echec, noter_succes,
+    ecrire_admin_password, exiger_elevation, exiger_role_admin, get_current_user, noter_echec, noter_succes,
     require_admin, verifier_essais, verifier_secret,
 )
 from app.api.catalog import clear_catalog_cache
@@ -23,6 +23,7 @@ from app.api import rgpd
 from app.services import etagere
 from app.services import mentions
 from app.services import params as params_cache
+from app.services import prix as prix_moteur
 from app.services import sms
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -142,6 +143,49 @@ def _controler_etagere(cle: str, valeur: str) -> str:
     return ", ".join(emplacements)
 
 
+# Moteur de prix (services/prix, import_prix, veille_prix, telephones) : clés tenues par le
+# serveur, jamais écrites par la configuration générique. Les règles de marge ne changent que par
+# POST /api/tarifs/appliquer (aperçu, lot annulable, rôle admin et code) ; dates et résumés de
+# veille et de synchro, drapeaux de migration, colonnes d'import mémorisées : le serveur seul.
+CLES_MOTEUR_PRIX = frozenset({prix_moteur.CLE_REGLES})
+PREFIXES_MOTEUR_PRIX = ("IMPORT_MAPPING_", "VEILLE_PRIX_", "LCDPHONE_", "MIGRATION_PRIX_", "MODELES_ALIAS_")
+# Cadenas des grilles boutique ({table: [ids]}, ReglesPrixPanel) : écriture de prix, donc rôle
+# admin et code, comme les routes /api/tarifs
+PARAM_VERROUS_BOUTIQUE = "PRIX_LIGNES_VERROUILLEES"
+TABLES_VERROUS_BOUTIQUE = ("tarifs_reparation", "iphone_tarifs", "smartphones_tarifs")
+VERROUS_MAX = 2000
+
+
+def est_cle_moteur_prix(cle: str) -> bool:
+    c = (cle or "").strip().upper()
+    return c in CLES_MOTEUR_PRIX or c.startswith(PREFIXES_MOTEUR_PRIX)
+
+
+def _refuser_cle_moteur_prix(cle: str):
+    if cle.strip().upper() == prix_moteur.CLE_REGLES:
+        raise HTTPException(403, "Règles de prix : modifiez les marges dans Tarifs → Règles de prix "
+                                 "(aperçu des prix touchés, puis lot annulable).")
+    raise HTTPException(403, f"{cle} : réglage tenu par le serveur (moteur de prix), non modifiable ici.")
+
+
+def _controler_verrous_boutique(valeur: str) -> str:
+    """{"tarifs_reparation": [9, 10], …} normalisé (ids entiers triés, sans doublon) ; vide → {}."""
+    v = (valeur or "").strip()
+    try:
+        brut = json.loads(v) if v else {}
+    except ValueError:
+        raise HTTPException(400, "Lignes verrouillées : JSON {table: [ids]} attendu")
+    if not isinstance(brut, dict) or not set(brut) <= set(TABLES_VERROUS_BOUTIQUE):
+        raise HTTPException(400, "Lignes verrouillées : tables " + ", ".join(TABLES_VERROUS_BOUTIQUE) + " uniquement")
+    out = {}
+    for table, ids in brut.items():
+        if not isinstance(ids, list) or len(ids) > VERROUS_MAX or not all(
+                isinstance(i, int) and not isinstance(i, bool) and 0 < i < 2 ** 31 for i in ids):
+            raise HTTPException(400, f"Lignes verrouillées ({table}) : liste d'identifiants entiers attendue")
+        out[table] = sorted(set(ids))
+    return json.dumps(out, sort_keys=True)
+
+
 def _reponse(ecritures: list) -> dict:
     """{"ok": True}, plus « avertissements » si un CGV_DEPOT écrit garde une ancienne clause de
     retrait en 3 mois : enregistré tel quel (texte de l'admin), mais signalé."""
@@ -200,10 +244,16 @@ def _avec_anciennes_cles(ecritures: list) -> list:
 
 def _ecritures(request: Request, user: dict, params: list) -> list:
     """Paires (clé, valeur) à écrire ; un secret ou un réglage sensible exige l'élévation admin :
-    identité légale imprimée et durées RGPD (elles pilotent une anonymisation irréversible) aussi."""
-    ecritures, elevation = [], False
+    identité légale imprimée et durées RGPD (elles pilotent une anonymisation irréversible) aussi.
+    Clés du moteur de prix refusées (403) ; cadenas des grilles boutique : rôle admin et code."""
+    ecritures, elevation, role_admin = [], False, False
     for p in params:
-        if est_secret(p.cle):
+        if est_cle_moteur_prix(p.cle):
+            _refuser_cle_moteur_prix(p.cle)
+        if p.cle == PARAM_VERROUS_BOUTIQUE:
+            p = p.model_copy(update={"valeur": _controler_verrous_boutique(p.valeur)})
+            role_admin = True
+        elif est_secret(p.cle):
             if _valeur_masquee(p.valeur):
                 continue
             _controler_secret(p.cle, p.valeur)
@@ -223,6 +273,8 @@ def _ecritures(request: Request, user: dict, params: list) -> list:
             p = p.model_copy(update={"valeur": _controler_etagere(p.cle, p.valeur)})
             elevation = elevation or p.cle == etagere.PARAM_DELAI_ABANDON
         ecritures.append((p.cle, p.valeur))
+    if role_admin:
+        exiger_role_admin(request, user)
     if elevation:
         exiger_elevation(request, user)
     return _avec_anciennes_cles(ecritures)

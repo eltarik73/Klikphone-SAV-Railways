@@ -360,9 +360,10 @@ def test_creation_ticket_attribue_un_jeton(client, monkeypatch):
 # ─── Pièce à commander : seul le nom de la pièce sort chez le client ─
 
 def _textes_pdf(pdf: bytes) -> bytes:
-    flux = re.findall(rb"stream\r?\n(.*?)\r?\nendstream", pdf, re.S)
+    # Découpe sur /Length : un flux compressé peut finir par 0x0D, que « \r?\nendstream » avalerait
     out = b""
-    for f in flux:
+    for m in re.finditer(rb"/Length (\d+)[^>]*>>\s*stream\r?\n", pdf):
+        f = pdf[m.end():m.end() + int(m.group(1))]
         try:
             out += zlib.decompress(f)
         except zlib.error:

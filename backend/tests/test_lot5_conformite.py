@@ -40,8 +40,10 @@ def _h(admin=False, user="Sophie"):
 
 
 def _textes_pdf(pdf: bytes) -> bytes:
+    # Découpe sur /Length : un flux compressé peut finir par 0x0D, que « \r?\nendstream » avalerait
     out = b""
-    for f in re.findall(rb"stream\r?\n(.*?)\r?\nendstream", pdf, re.S):
+    for m in re.finditer(rb"/Length (\d+)[^>]*>>\s*stream\r?\n", pdf):
+        f = pdf[m.end():m.end() + int(m.group(1))]
         try:
             out += zlib.decompress(f)
         except zlib.error:

@@ -680,8 +680,19 @@ def test_check_stock_mobilax_sans_reseau(client, monkeypatch):
     cur, gc = fake_db(lambda sql, params: [{"id": 1, "marque": "Apple", "modele": "iPhone 12", "type_piece": "ecran",
                                             "qualite": "x", "en_stock": True}])
     with patch("app.api.tarifs.get_cursor", gc):
+        # Tâche de fond (moteur de prix) : la vérification elle-même, sans réseau
+        assert tarifs.verifier_stock_mobilax()["models_total"] == 1
+    # La route est réservée à l'admin et lance la vérification en tâche de fond
+    _, gc_role = fake_db(lambda sql, params: None)
+    with patch("app.api.auth.get_cursor", gc_role):
+        assert client.post("/api/tarifs/check-stock", headers=_headers()).status_code == 403
+    lances = []
+    monkeypatch.setattr(tarifs, "_tache_stock", lambda: lances.append(1))
+    monkeypatch.setattr(tarifs, "_stock_etat", {"en_cours": False, "debut": None, "fin": None, "resultat": None})
+    _, gc_admin = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
+    with patch("app.api.auth.get_cursor", gc_admin):
         r = client.post("/api/tarifs/check-stock", headers=_headers())
-    assert r.status_code == 200 and r.json()["models_total"] == 1
+    assert r.status_code == 200 and r.json()["lance"] is True and "models_found" not in r.json() and lances == [1]
 
 
 def test_marketing_enregistrer_avis():

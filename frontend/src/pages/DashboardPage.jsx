@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback, useTransition, useId, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, useTransition, useId, Fragment, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../hooks/useAuth';
@@ -18,6 +18,9 @@ import {
   SquareCheck, Square, X, Filter, Calendar, RotateCcw, Globe, Star,
   Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck, ClipboardList, Hourglass,
 } from 'lucide-react';
+
+// Santé des prix : réservée à l'admin, chargée seulement pour lui
+const SantePrixWidget = lazy(() => import('../components/SantePrixWidget'));
 
 // Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
 const DASH_STATE_KEY = 'kp_dashboard_filters';
@@ -1609,6 +1612,13 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* ─── Santé des prix (admin) : prix estimés ou périmés, propositions, modèles sans prix ── */}
+      {user?.role === 'admin' && (
+        <Suspense fallback={null}>
+          <SantePrixWidget basePath={basePath} />
+        </Suspense>
+      )}
     </div>
   );
 }

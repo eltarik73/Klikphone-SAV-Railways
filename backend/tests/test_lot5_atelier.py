@@ -389,7 +389,9 @@ def test_suggestions_iphone_13(reel, grille_fictive):
     assert body["modele_trouve"] is True
     assert {x["modele"] for x in s} == {"iPhone 13"}          # ni 13 Pro ni 13 mini
     assert grille_fictive[("iPhone 13 Pro", "Ecran", "Original")] not in {x["id"] for x in s}
-    assert set(s[0]) == {"source", "id", "label", "type_piece", "qualite", "prix", "stock", "cout_ht", "modele"}
+    # + date, source, fraîcheur et groupe d'affichage du prix (moteur de prix, tests/test_prix_sources.py)
+    assert set(s[0]) == {"source", "id", "label", "type_piece", "qualite", "prix", "stock", "cout_ht", "modele",
+                         "prix_maj_le", "prix_source", "age_jours", "fraicheur", "estime", "groupe"}
     assert all(x["cout_ht"] is None for x in s)                # pas admin
 
     grille_iphone = _sql(reel, "SELECT id, ecran_generique, batterie FROM tarifs_reparation WHERE modele = 'iPhone 13'")
@@ -399,14 +401,21 @@ def test_suggestions_iphone_13(reel, grille_fictive):
                 "label": "Forfait remplacement écran (Générique)", "source": "tarifs_reparation"}.items() \
             <= next(x for x in s if x["id"].endswith(":ecran_generique")).items()
     original = next(x for x in s if x["id"] == grille_fictive[("iPhone 13", "Ecran", "Original")])
-    assert original == {"source": "tarifs", "id": original["id"], "label": "Forfait remplacement écran (Original)",
-                        "type_piece": "Ecran", "qualite": "Original", "prix": 289.0, "stock": "En stock",
-                        "cout_ht": None, "modele": "iPhone 13"}
+    assert {k: v for k, v in original.items() if k not in ("prix_maj_le", "prix_source", "age_jours", "fraicheur",
+                                                           "estime", "groupe")} == {
+        "source": "tarifs", "id": original["id"], "label": "Forfait remplacement écran (Original)",
+        "type_piece": "Ecran", "qualite": "Original", "prix": 289.0, "stock": "En stock",
+        "cout_ht": None, "modele": "iPhone 13"}
     assert next(x for x in s if x["id"] == grille_fictive[("iPhone 13", "Ecran", "Soft OLED")])["stock"] == "Rupture"
     # Écrans d'abord, puis batterie, caméra… ; par type : grille de la boutique puis
-    # pièces fournisseur, chacune par prix croissant
+    # pièces fournisseur, chacune par prix croissant. Les pièces repliées sous la grille boutique
+    # (groupe 'fournisseur') viennent après, dans le même ordre (tests/test_prix_sources.py).
+    repliees = [x["groupe"] == "fournisseur" for x in s]
+    assert any(repliees) and repliees == sorted(repliees)
+    for bloc in (False, True):
+        types = [grille.P.cle_panne(x["type_piece"]) for x, r in zip(s, repliees) if r is bloc]
+        assert types == sorted(types, key=lambda k: grille._RANG_TYPE.get(k, 20))
     types = [grille.P.cle_panne(x["type_piece"]) for x in s]
-    assert types == sorted(types, key=lambda k: grille._RANG_TYPE.get(k, 20))
     ecrans = [(grille._RANG_SOURCE[x["source"]], x["prix"]) for x, k in zip(s, types) if k == "ecran"]
     assert ecrans == sorted(ecrans) and ecrans[-1] == (1, 289.0)
 

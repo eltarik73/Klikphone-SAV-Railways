@@ -1,32 +1,50 @@
-import { useState, useEffect, useMemo, useRef, memo } from 'react';
-import { Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2, Headphones, PackageX, Tablet, Laptop, Lock, Unlock } from 'lucide-react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, memo, lazy, Suspense } from 'react';
+import {
+  Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2,
+  Headphones, PackageX, Tablet, Laptop, Lock, Unlock, FileSpreadsheet, SlidersHorizontal, Calculator, History,
+  AlertTriangle, Clock, CheckCircle2, X, Inbox, PackagePlus, Filter,
+} from 'lucide-react';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
-import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
+import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useToast } from '../components/Toast';
+import AdminLoginModal from '../components/AdminLoginModal';
+import HistoriquePrix, {
+  BadgeDatePrix, BoutonVerrou, FiltreAnciens, SEUILS_FRAICHEUR,
+  dateFr, estEcran, euros, fraicheurPrix, lireDate, messageErreurPrix, plusDeTroisMois,
+} from '../components/HistoriquePrix';
+
+// Fenêtres admin chargées à la demande (le personnel de l'accueil ne les ouvre jamais)
+const ImportPrixModal = lazy(() => import('../components/ImportPrixModal'));
+const ReglesPrixPanel = lazy(() => import('../components/ReglesPrixPanel'));
+const FenetreRecalcul = lazy(() => import('../components/ReglesPrixPanel').then((m) => ({ default: m.FenetreRecalcul })));
+const AjoutPiecePrix = lazy(() => import('../components/ReglesPrixPanel').then((m) => ({ default: m.AjoutPiecePrix })));
 
 // ─── Constantes ──────────────────────────────────
+const AUCUNE_LIGNE = Object.freeze([]);
 const BRAND_CONFIG = {
   Apple:    { bg: '#18181b', text: '#fff', logo: 'apple' },
   Samsung:  { bg: '#2563eb', text: '#fff', logo: 'samsung' },
-  Xiaomi:   { bg: '#ea580c', text: '#fff', logo: 'xiaomi' },
+  Xiaomi:   { bg: '#c2410c', text: '#fff', logo: 'xiaomi' },
   Huawei:   { bg: '#dc2626', text: '#fff', logo: 'huawei' },
   Honor:    { bg: '#6d28d9', text: '#fff', logo: 'honor' },
-  Google:   { bg: '#16a34a', text: '#fff', logo: 'google' },
-  Oppo:     { bg: '#059669', text: '#fff', logo: 'oppo' },
+  Google:   { bg: '#15803d', text: '#fff', logo: 'google' },
+  Oppo:     { bg: '#047857', text: '#fff', logo: 'oppo' },
   OnePlus:  { bg: '#dc2626', text: '#fff', logo: 'oneplus' },
-  Motorola: { bg: '#0891b2', text: '#fff', logo: 'motorola' },
+  Motorola: { bg: '#0e7490', text: '#fff', logo: 'motorola' },
   Nothing:  { bg: '#18181b', text: '#fff', logo: 'nothing' },
-  Realme:   { bg: '#d97706', text: '#fff', logo: 'realme' },
+  Realme:   { bg: '#b45309', text: '#fff', logo: 'realme' },
   Vivo:     { bg: '#1d4ed8', text: '#fff', logo: 'vivo' },
 };
 const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', logo: null };
 
 const BrandLogo = memo(function BrandLogo({ slug, size = 18 }) {
   const [error, setError] = useState(false);
-  if (!slug || error) return <Smartphone className="w-[18px] h-[18px] opacity-70" />;
+  if (!slug || error) return <Smartphone className="w-[18px] h-[18px] opacity-70" aria-hidden="true" />;
   return (
     <img src={`https://cdn.simpleicons.org/${slug}/ffffff`} alt="" width={size} height={size}
-      className="shrink-0" style={{ filter: 'brightness(1)', minWidth: size }} loading="lazy" onError={() => setError(true)} />
+      className="shrink-0" style={{ minWidth: size }} loading="lazy" onError={() => setError(true)} />
   );
 });
 
@@ -34,12 +52,12 @@ const QUALITY_COLORS = {
   'Original':       { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
   'Soft OLED':      { color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd' },
   'OLED':           { color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
-  'Incell':         { color: '#b45309', bg: '#fffbeb', border: '#fcd34d' },
-  'LCD':            { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' },
-  'Reconditionnee': { color: '#0e7490', bg: '#ecfeff', border: '#67e8f9' },
+  'Incell':         { color: '#92400e', bg: '#fffbeb', border: '#fcd34d' },
+  'LCD':            { color: '#3f3f46', bg: '#f4f4f5', border: '#d4d4d8' },
+  'Reconditionnee': { color: '#155e75', bg: '#ecfeff', border: '#67e8f9' },
   'Compatible':     { color: '#be123c', bg: '#fff1f2', border: '#fda4af' },
 };
-const DEFAULT_QUALITY = { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' };
+const DEFAULT_QUALITY = { color: '#3f3f46', bg: '#f4f4f5', border: '#d4d4d8' };
 
 const BRAND_ORDER = ['Apple', 'Samsung', 'Xiaomi', 'Huawei', 'Honor', 'Google', 'Oppo', 'OnePlus', 'Motorola', 'Nothing', 'Realme', 'Vivo'];
 const BRAND_FILTERS = ['Toutes', ...BRAND_ORDER];
@@ -48,13 +66,13 @@ const PIECE_ICONS = { ecran: Smartphone, batterie: Battery, connecteur: Plug, ca
 const PIECE_TYPE_COLORS = {
   batterie:               { color: '#047857', bg: '#ecfdf5', border: '#a7f3d0' },
   'connecteur de charge': { color: '#1d4ed8', bg: '#eff6ff', border: '#93c5fd' },
-  'camera arriere':       { color: '#b45309', bg: '#fffbeb', border: '#fcd34d' },
-  'vitre arriere':        { color: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'camera arriere':       { color: '#92400e', bg: '#fffbeb', border: '#fcd34d' },
+  'vitre arriere':        { color: '#6d28d9', bg: '#f5f3ff', border: '#c4b5fd' },
   'haut-parleur':         { color: '#0f766e', bg: '#f0fdfa', border: '#99f6e4' },
   'ecouteur interne':     { color: '#be185d', bg: '#fdf2f8', border: '#f9a8d4' },
   'vitre camera arriere': { color: '#4338ca', bg: '#eef2ff', border: '#a5b4fc' },
 };
-const DEFAULT_PIECE_TYPE = { color: '#52525b', bg: '#f4f4f5', border: '#d4d4d8' };
+const DEFAULT_PIECE_TYPE = { color: '#3f3f46', bg: '#f4f4f5', border: '#d4d4d8' };
 
 function getPieceIcon(type) {
   const t = (type || '').toLowerCase();
@@ -67,6 +85,76 @@ function getPieceTypeColor(type) {
   return DEFAULT_PIECE_TYPE;
 }
 function formatPrice(n) { if (n == null) return null; return `${n} €`; }
+const nomPiece = (t) => `${t.marque} ${t.modele} · ${t.type_piece}${t.qualite ? ` ${t.qualite}` : ''}`;
+const sansAccents = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+// « Samsung Galaxy A12 » → marque + modèle quand le premier mot est une marque de la grille
+function decouperRecherche(texte, marques) {
+  const t = String(texte || '').trim().replace(/\s+/g, ' ');
+  const [premier, ...reste] = t.split(' ');
+  const marque = marques.find((m) => m.toLowerCase() === (premier || '').toLowerCase());
+  return marque && reste.length ? { marque, modele: reste.join(' ') } : { marque: '', modele: t };
+}
+
+// ─── Filtres reçus par l'URL (tuiles « Santé des prix » du tableau de bord) ───
+// ?source=estimation, ?fraicheur=a_revoir|perime, ?marge=faible : valeurs connues uniquement (une valeur
+// inconnue est ignorée). ?q= est géré à part (recherche préremplie).
+export const FILTRES_URL = Object.freeze({
+  source: Object.freeze(['estimation']),
+  fraicheur: Object.freeze(['a_revoir', 'perime']),
+  marge: Object.freeze(['faible']),
+});
+const SEUIL_MARGE_DEFAUT = 40;
+const TVA_DEFAUT = 1.2;
+
+export function lireFiltresUrl(params) {
+  const lire = (cle) => {
+    const v = params?.get?.(cle);
+    return FILTRES_URL[cle].includes(v) ? v : null;
+  };
+  return { source: lire('source'), fraicheur: lire('fraicheur'), marge: lire('marge') };
+}
+
+/**
+ * Marge d'un écran : prix client − achat HT × TVA, au centime (même calcul que services/prix.sante).
+ * Pièce fournisseur (écrans seulement) ou iPad / MacBook (`apple` : ecran_prix_vente − ecran_prix_ht).
+ * null si ce n'est pas un écran ou si le prix d'achat est inconnu (masqué sans le code admin).
+ */
+export function margeEcran(row, tva = TVA_DEFAUT, apple = false) {
+  if (!row) return null;
+  if (!apple && !estEcran(row.type_piece)) return null;
+  const ht = apple ? row.ecran_prix_ht : row.prix_fournisseur_ht;
+  const prix = apple ? row.ecran_prix_vente : row.prix_client;
+  if (ht === null || ht === undefined || ht === '' || prix === null || prix === undefined || prix === '') return null;
+  const h = Number(ht);
+  const p = Number(prix);
+  const t = Number(tva) || TVA_DEFAUT;
+  if (!Number.isFinite(h) || !Number.isFinite(p)) return null;
+  return Math.round((p - h * t) * 100) / 100;
+}
+
+/** Une ligne (pièce, ou iPad / MacBook avec `apple`) passe-t-elle les filtres de l'URL ? */
+export function correspondFiltresUrl(row, filtres, { seuils = SEUILS_FRAICHEUR, tva = TVA_DEFAUT, seuilMarge = SEUIL_MARGE_DEFAUT, apple = false } = {}) {
+  if (!filtres) return true;
+  const f = fraicheurPrix(row, seuils);
+  if (filtres.source === 'estimation' && !f.estime) return false;
+  if (filtres.fraicheur && f.niveau !== filtres.fraicheur) return false;
+  if (filtres.marge === 'faible') {
+    const m = margeEcran(row, tva, apple);
+    if (m === null || !(m < seuilMarge)) return false;
+  }
+  return true;
+}
+
+// Libellés des filtres actifs (puces effaçables), seuils en vigueur compris
+function libellesFiltresUrl(filtres, seuils, seuilMarge) {
+  const out = [];
+  if (filtres.source === 'estimation') out.push({ cle: 'source', libelle: 'Prix estimés (jamais vérifiés)' });
+  if (filtres.fraicheur === 'a_revoir') out.push({ cle: 'fraicheur', libelle: `À revoir (plus de ${seuils.jours_a_revoir} jours)` });
+  if (filtres.fraicheur === 'perime') out.push({ cle: 'fraicheur', libelle: `Périmés (plus de ${seuils.jours_perime} jours)` });
+  if (filtres.marge === 'faible') out.push({ cle: 'marge', libelle: `Marges faibles (écrans, sous ${euros(seuilMarge)})` });
+  return out;
+}
 
 // ─── iPhone series helpers ──────────────────────
 const SERIES_ORDER = ['17', '16', '15', '14', '13', '12', '11', 'SE', 'X/XS/XR', '8', '7'];
@@ -90,10 +178,133 @@ function iPhoneModelSort(a, b) {
   return order(a) - order(b);
 }
 
+// Le plus ancien prix d'un groupe (pour le résumé d'un modèle)
+function plusAncien(items) {
+  let pire = null;
+  for (const t of items) {
+    const d = lireDate(t.prix_maj_le || t.updated_at);
+    if (d && (!pire || d < lireDate(pire.prix_maj_le || pire.updated_at))) pire = t;
+  }
+  return pire;
+}
+
+// ─── Bandeau « Prix du fournisseur » ─────────────
+function resumeFraicheur(lignes, seuils, sante) {
+  const total = lignes.length;
+  let estimes = 0; let aRevoir = 0; let perimes = 0;
+  let dateEstimation = null; let plusRecent = null; let plusVieux = null;
+  for (const l of lignes) {
+    const f = fraicheurPrix(l, seuils);
+    const d = lireDate(f.date);
+    if (f.estime) {
+      estimes += 1;
+      if (d && (!dateEstimation || d < dateEstimation)) dateEstimation = d;
+    }
+    if (f.niveau === 'a_revoir') aRevoir += 1;
+    if (f.niveau === 'perime') perimes += 1;
+    if (d && (!plusRecent || d > plusRecent)) plusRecent = d;
+    if (d && (!plusVieux || d < plusVieux)) plusVieux = d;
+  }
+  // Les comptages du serveur font foi quand ils existent (même périmètre : pièces + iPad/MacBook)
+  if (sante && Number.isFinite(sante.total) && sante.total > 0) {
+    return {
+      total: sante.total,
+      estimes: Number(sante.estimes) || 0,
+      aRevoir: Number(sante.a_revoir) || 0,
+      perimes: Number(sante.perimes) || 0,
+      dateEstimation, plusRecent, plusVieux,
+    };
+  }
+  return { total, estimes, aRevoir, perimes, dateEstimation, plusRecent, plusVieux };
+}
+
+function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalculer, onHistorique, onAjouter, onDevenirAdmin, nbObsoletes, basePath }) {
+  const { total, estimes, aRevoir, perimes, dateEstimation, plusRecent } = resume;
+  const tousEstimes = total > 0 && estimes >= total;
+  let titre;
+  if (!total) titre = 'Prix du fournisseur : aucun prix enregistré';
+  else if (tousEstimes) titre = `Prix du fournisseur : estimés le ${dateEstimation ? dateFr(dateEstimation) : '15/02/2026'}`;
+  else if (estimes > 0) titre = `Prix du fournisseur : ${total - estimes} mis à jour, ${estimes} encore estimés${dateEstimation ? ` (${dateFr(dateEstimation)})` : ''}`;
+  else titre = `Prix du fournisseur : mis à jour${plusRecent ? ` le ${dateFr(plusRecent)}` : ''}`;
+
+  const ton = perimes > 0
+    ? { boite: 'border-red-300 bg-red-50', texte: 'text-red-900', icone: AlertTriangle, iconeTon: 'text-red-700' }
+    : aRevoir > 0
+      ? { boite: 'border-amber-300 bg-amber-50', texte: 'text-amber-950', icone: Clock, iconeTon: 'text-amber-700' }
+      : { boite: 'border-emerald-300 bg-emerald-50', texte: 'text-emerald-950', icone: CheckCircle2, iconeTon: 'text-emerald-700' };
+  const Icone = ton.icone;
+  const details = [];
+  if (perimes > 0) details.push(`${perimes} prix de plus de 6 mois`);
+  if (aRevoir > 0) details.push(`${aRevoir} à revoir (plus de 3 mois)`);
+  if (tousEstimes) details.push('jamais vérifiés depuis');
+  if (sante?.propositions_en_attente > 0) details.push(`${sante.propositions_en_attente} proposition${sante.propositions_en_attente > 1 ? 's' : ''} venant des commandes à valider`);
+  if (sante?.marges_faibles > 0) details.push(`${sante.marges_faibles} marge${sante.marges_faibles > 1 ? 's' : ''} trop faible${sante.marges_faibles > 1 ? 's' : ''}`);
+  if (nbObsoletes > 0) details.push(`${nbObsoletes} pièce${nbObsoletes > 1 ? 's' : ''} obsolète${nbObsoletes > 1 ? 's' : ''} masquée${nbObsoletes > 1 ? 's' : ''}`);
+
+  const actionBase = 'min-h-[44px] px-3 rounded-xl border text-sm font-semibold inline-flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1';
+  const action = `${actionBase} bg-white text-slate-900 border-slate-300 hover:bg-slate-50`;
+  const actionPrincipale = `${actionBase} bg-violet-700 text-white border-violet-700 hover:bg-violet-800`;
+  return (
+    <section aria-label="État des prix" className={`mt-4 rounded-2xl border p-3 ${ton.boite}`}>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-start gap-2 min-w-[240px] flex-1">
+          <Icone className={`w-5 h-5 mt-0.5 shrink-0 ${ton.iconeTon}`} aria-hidden="true" />
+          <div className={`min-w-0 ${ton.texte}`}>
+            <p className="font-bold text-sm sm:text-base">{titre}</p>
+            {details.length > 0 && <p className="text-xs sm:text-sm">{details.join(' · ')}</p>}
+          </div>
+        </div>
+        {isAdmin ? (
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
+            <button type="button" onClick={onImporter} className={actionPrincipale}>
+              <FileSpreadsheet className="w-4 h-4" aria-hidden="true" /> Importer une liste de prix
+            </button>
+            <button type="button" onClick={onRegles} className={action}>
+              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Règles de prix
+            </button>
+            <button type="button" onClick={onRecalculer} className={action}>
+              <Calculator className="w-4 h-4" aria-hidden="true" /> Recalculer
+            </button>
+            <button type="button" onClick={onHistorique} className={action}>
+              <History className="w-4 h-4" aria-hidden="true" /> Historique
+            </button>
+            <button type="button" onClick={onAjouter} className={action}>
+              <PackagePlus className="w-4 h-4" aria-hidden="true" /> Ajouter une pièce
+            </button>
+            {sante?.propositions_en_attente > 0 && (
+              <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
+                <Inbox className="w-4 h-4" aria-hidden="true" /> Propositions des commandes ({sante.propositions_en_attente})
+              </Link>
+            )}
+          </div>
+        ) : (
+          <button type="button" onClick={onDevenirAdmin} className={action}>
+            <Lock className="w-4 h-4" aria-hidden="true" /> Mettre à jour les prix (admin)
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ─── Composant principal ─────────────────────────
 export default function TarifsPage() {
-  const { user } = useAuth();
-  const isAdmin = localStorage.getItem('klikphone_admin') === 'true';
+  const toast = useToast();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith('/tech') ? '/tech' : '/accueil';
+  const { sensible: sensibleBrut, adminPrompt } = useAdminElevation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rechercheLien = searchParams.get('q') || '';
+  // Filtres envoyés par les tuiles « Santé des prix » : l'URL fait foi (retour arrière, lien partagé)
+  const { source: filtreSource, fraicheur: filtreFraicheur, marge: filtreMarge } = lireFiltresUrl(searchParams);
+  const filtresUrl = useMemo(
+    () => ({ source: filtreSource, fraicheur: filtreFraicheur, marge: filtreMarge }),
+    [filtreSource, filtreFraicheur, filtreMarge],
+  );
+  const filtreUrlActif = Boolean(filtreSource || filtreFraicheur || filtreMarge);
+  const rechercheRef = useRef(null);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   const { data: tarifsData, loading, isRevalidating, mutate: mutateTarifs } = useApi(
     'tarifs',
@@ -105,20 +316,88 @@ export default function TarifsPage() {
     },
     { tags: ['tarifs'], ttl: 300_000 }
   );
-  const tarifs = tarifsData?.tarifs ?? [];
+  // Listes stables pendant le chargement : un [] neuf à chaque rendu relancerait sans fin l'effet qui
+  // déplie les marques quand une recherche est déjà saisie (arrivée par ?q=)
+  const tousTarifs = tarifsData?.tarifs ?? AUCUNE_LIGNE;
+  const tarifs = useMemo(() => tousTarifs.filter((t) => !t.obsolete), [tousTarifs]);
+  const nbObsoletes = tousTarifs.length - tarifs.length;
   const stats = tarifsData?.stats ?? null;
-  const appleDevices = tarifsData?.appleDevices ?? [];
 
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Prix d'achat HT masqués par le serveur tant que le code admin n'est pas saisi : relus une fois
+  // dès la première action admin réussie (aperçus, comptages, import en ont besoin). `sensible` reste
+  // stable : les fenêtres qui en dépendent ne relancent pas leurs lectures.
+  const htMasques = tousTarifs.length > 0 && !tousTarifs.some((t) => Object.prototype.hasOwnProperty.call(t, 'prix_fournisseur_ht'));
+  const htMasquesRef = useRef(htMasques);
+  htMasquesRef.current = htMasques;
+  const mutateRef = useRef(mutateTarifs);
+  mutateRef.current = mutateTarifs;
+  const relectureHt = useRef(null);
+  const relirePrixAchat = useCallback(() => {
+    if (!relectureHt.current) {
+      relectureHt.current = api.getPrixAchat()
+        .then(({ tarifs: t, appleDevices: ad }) => {
+          if (!t.some((x) => Object.prototype.hasOwnProperty.call(x, 'prix_fournisseur_ht'))) return false;
+          mutateRef.current((prev) => (prev ? { ...prev, tarifs: t, appleDevices: ad } : prev));
+          return true;
+        })
+        .catch(() => false)
+        .finally(() => { relectureHt.current = null; });
+    }
+    return relectureHt.current;
+  }, []);
+  const [regles, setReglesEtat] = useState(null);
+  const reglesRef = useRef(null);
+  const setRegles = useCallback((r) => { reglesRef.current = r; setReglesEtat(r); }, []);
+  const sensible = useCallback(async (fn) => {
+    const res = await sensibleBrut(fn);
+    if (htMasquesRef.current) relirePrixAchat();
+    // Règles lues sans le code à l'ouverture de la page : refus, relues maintenant
+    if (!reglesRef.current) api.getReglesPrix().then(setRegles).catch(() => {});
+    return res;
+  }, [sensibleBrut, relirePrixAchat, setRegles]);
+  const appleDevices = tarifsData?.appleDevices ?? AUCUNE_LIGNE;
+
+  // « Saisir le prix » (modèles sans prix) arrive avec ?q=<marque modèle> : recherche préremplie
+  const [search, setSearch] = useState(rechercheLien);
+  const [debouncedSearch, setDebouncedSearch] = useState(rechercheLien);
   const searchTimer = useRef(null);
   const [brandFilter, setBrandFilter] = useState('Toutes');
+  const [anciensSeuls, setAnciensSeuls] = useState(false);
   const [expandedBrands, setExpandedBrands] = useState(new Set());
   const [expandedModels, setExpandedModels] = useState(new Set());
   const [expandedSeries, setExpandedSeries] = useState(new Set());
   const [checkingStock, setCheckingStock] = useState(false);
   const [stockResult, setStockResult] = useState(null);
   const [showHT, setShowHT] = useState(false);
+  const [fenetre, setFenetre] = useState(null); // 'import' | 'regles' | 'historique' | 'recalcul' | 'ajout'
+  const [ajoutInitial, setAjoutInitial] = useState(null);
+  const [verrouEnCours, setVerrouEnCours] = useState(null);
+  const [sante, setSante] = useState(null);
+
+  // Règles lues avec le code admin ; à défaut, seuils renvoyés par la santé des prix (personnel)
+  const seuils = useMemo(() => ({
+    jours_a_revoir: Number(regles?.jours_a_revoir ?? sante?.seuils?.jours_a_revoir) || SEUILS_FRAICHEUR.jours_a_revoir,
+    jours_perime: Number(regles?.jours_perime ?? sante?.seuils?.jours_perime) || SEUILS_FRAICHEUR.jours_perime,
+  }), [regles, sante]);
+  const contexteFiltres = useMemo(() => {
+    const seuilLu = regles?.seuil_marge_alerte ?? sante?.seuils?.seuil_marge_alerte;
+    const seuilMarge = seuilLu !== null && seuilLu !== undefined && seuilLu !== '' && Number.isFinite(Number(seuilLu))
+      ? Number(seuilLu) : SEUIL_MARGE_DEFAUT;
+    return { seuils, tva: Number(regles?.tva) || TVA_DEFAUT, seuilMarge };
+  }, [seuils, regles, sante]);
+
+  // Santé des prix (personnel) et règles (admin) : lues sans rien demander, un refus est sans effet
+  const chargerSante = useCallback(() => {
+    if (typeof api.getSantePrix !== 'function') return;
+    Promise.resolve().then(() => api.getSantePrix()).then(setSante).catch(() => {});
+  }, []);
+  useEffect(() => { chargerSante(); }, [chargerSante]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.getReglesPrix().then(setRegles).catch(() => {});
+  }, [isAdmin]);
+
+  useEffect(() => { if (rechercheLien) setSearch(rechercheLien); }, [rechercheLien]);
 
   // Debounced search (300ms)
   useEffect(() => {
@@ -127,37 +406,135 @@ export default function TarifsPage() {
     return () => clearTimeout(searchTimer.current);
   }, [search]);
 
+  const relire = useCallback(() => {
+    invalidateCache('tarifs');
+    chargerSante();
+    if (isAdmin) api.getReglesPrix().then(setRegles).catch(() => {});
+  }, [chargerSante, isAdmin]);
+
+  // « Prix HT » : sans le code admin, les prix d'achat ne sont pas envoyés par le serveur
+  async function basculerHT() {
+    if (showHT || !htMasques) { setShowHT(!showHT); return; }
+    try {
+      await sensible(() => api.getReglesPrix());
+      if (await relirePrixAchat()) setShowHT(true);
+      else toast.error('Prix d’achat HT indisponibles : identification administrateur requise.');
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Prix d’achat HT indisponibles');
+      if (msg) toast.error(msg);
+    }
+  }
+
+  // Filtre « marges faibles » : il faut les prix d'achat HT (code admin), relus puis la grille filtrée
+  const [lectureMarges, setLectureMarges] = useState(false);
+  async function afficherMarges() {
+    setLectureMarges(true);
+    try {
+      await sensible(() => api.getReglesPrix());
+      if (await relirePrixAchat()) {
+        try { if (localStorage.getItem('klikphone_admin') === 'true') setIsAdmin(true); } catch { /* stockage indisponible */ }
+      } else {
+        toast.error('Prix d’achat HT indisponibles : identification administrateur requise.');
+      }
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Marges indisponibles');
+      if (msg) toast.error(msg);
+    } finally {
+      setLectureMarges(false);
+    }
+  }
+
+  // Puce « × » d'un filtre de l'URL : retiré de l'adresse (les autres paramètres, dont ?q=, restent)
+  function retirerFiltresUrl(cles) {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      for (const c of cles) p.delete(c);
+      return p;
+    }, { replace: true });
+    // Le bouton disparaît : le focus revient sur la recherche plutôt que d'être perdu
+    rechercheRef.current?.focus();
+  }
+
   async function handleToggleStock(id) {
     try {
-      const res = await api.toggleTarifStock(id);
+      const res = await sensible(() => api.toggleTarifStock(id));
       mutateTarifs(prev => prev ? {
         ...prev, tarifs: prev.tarifs.map(t => t.id === id ? { ...t, en_stock: res.en_stock } : t)
       } : prev);
-    } catch (e) { console.error('Erreur toggle stock:', e); }
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Stock non modifié');
+      if (msg) toast.error(msg);
+    }
   }
 
   async function handleCheckStock() {
     setCheckingStock(true); setStockResult(null);
     try {
-      const res = await api.checkTarifStock();
-      setStockResult(res); invalidateCache('tarifs');
+      const res = await sensible(() => api.checkTarifStock());
+      setStockResult(res || {}); invalidateCache('tarifs');
     } catch (e) {
-      console.error('Erreur check stock:', e); setStockResult({ error: true });
+      const msg = messageErreurPrix(e, 'Vérification du stock impossible');
+      if (msg) { toast.error(msg); setStockResult({ error: msg }); }
     } finally { setCheckingStock(false); }
   }
+
+  async function basculerVerrou(t) {
+    setVerrouEnCours(t.id);
+    const verrouiller = !t.verrou_manuel;
+    try {
+      const res = await sensible(() => api.setVerrouPrix(t.id, verrouiller));
+      const valeur = typeof res?.verrou_manuel === 'boolean' ? res.verrou_manuel : verrouiller;
+      mutateTarifs(prev => prev ? {
+        ...prev, tarifs: prev.tarifs.map(x => x.id === t.id ? { ...x, verrou_manuel: valeur } : x),
+      } : prev);
+      toast.success(valeur ? `${nomPiece(t)} : prix verrouillé.` : `${nomPiece(t)} : prix déverrouillé.`);
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Verrou non enregistré');
+      if (msg) toast.error(msg);
+    } finally {
+      setVerrouEnCours(null);
+    }
+  }
+
+  async function basculerVerrouAppareil(d) {
+    const cle = `apple-${d.id}`;
+    setVerrouEnCours(cle);
+    const verrouiller = !d.verrou_manuel;
+    try {
+      const res = await sensible(() => api.setVerrouPrix(d.id, verrouiller, 'tarifs_apple_devices'));
+      const valeur = typeof res?.verrou_manuel === 'boolean' ? res.verrou_manuel : verrouiller;
+      mutateTarifs(prev => prev ? {
+        ...prev, appleDevices: prev.appleDevices.map(x => x.id === d.id ? { ...x, verrou_manuel: valeur } : x),
+      } : prev);
+      toast.success(valeur ? `${d.modele} : prix verrouillés.` : `${d.modele} : prix déverrouillés.`);
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Verrou non enregistré');
+      if (msg) toast.error(msg);
+    } finally {
+      setVerrouEnCours(null);
+    }
+  }
+
+  const nombreAnciens = useMemo(
+    () => tarifs.filter((t) => plusDeTroisMois(t, seuils)).length + appleDevices.filter((d) => plusDeTroisMois(d, seuils)).length,
+    [tarifs, appleDevices, seuils],
+  );
 
   const filtered = useMemo(() => {
     let result = tarifs;
     if (brandFilter !== 'Toutes') result = result.filter(t => t.marque === brandFilter);
-    if (debouncedSearch.trim()) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(t =>
-        (t.marque || '').toLowerCase().includes(q) || (t.modele || '').toLowerCase().includes(q) ||
-        (t.type_piece || '').toLowerCase().includes(q) || (t.qualite || '').toLowerCase().includes(q)
-      );
+    if (anciensSeuls) result = result.filter(t => plusDeTroisMois(t, seuils));
+    if (filtreUrlActif) result = result.filter(t => correspondFiltresUrl(t, filtresUrl, contexteFiltres));
+    // Chaque mot doit se retrouver dans la pièce (« samsung galaxy a12 batterie »)
+    const mots = sansAccents(debouncedSearch).split(/\s+/).filter(Boolean);
+    if (mots.length) {
+      result = result.filter(t => {
+        const texte = sansAccents(`${t.marque} ${t.modele} ${t.type_piece} ${t.qualite || ''}`);
+        return mots.every(m => texte.includes(m));
+      });
     }
     return result;
-  }, [tarifs, brandFilter, debouncedSearch]);
+  }, [tarifs, brandFilter, debouncedSearch, anciensSeuls, seuils, filtreUrlActif, filtresUrl, contexteFiltres]);
 
   const grouped = useMemo(() => {
     const byBrand = {};
@@ -189,11 +566,9 @@ export default function TarifsPage() {
       if (!bySerieMap[serie]) bySerieMap[serie] = [];
       bySerieMap[serie].push({ model, items });
     }
-    // Sort models within each series
     for (const serie of Object.keys(bySerieMap)) {
       bySerieMap[serie].sort((a, b) => iPhoneModelSort(a.model, b.model));
     }
-    // Sort series by order
     return Object.entries(bySerieMap).sort(([a], [b]) => {
       const ia = SERIES_ORDER.indexOf(a), ib = SERIES_ORDER.indexOf(b);
       if (ia >= 0 && ib >= 0) return ia - ib;
@@ -202,7 +577,6 @@ export default function TarifsPage() {
     }).map(([serie, models]) => ({ serie, models }));
   }, [grouped]);
 
-  // Apple non-iPhone models
   const appleOtherModels = useMemo(() => {
     const appleGroup = grouped.find(g => g.brand === 'Apple');
     if (!appleGroup) return [];
@@ -210,11 +584,73 @@ export default function TarifsPage() {
   }, [grouped]);
 
   // iPad / MacBook from appleDevices
-  const iPadDevices = useMemo(() => appleDevices.filter(d => d.categorie === 'ipad'), [appleDevices]);
-  const macBookDevices = useMemo(() => appleDevices.filter(d => d.categorie === 'macbook'), [appleDevices]);
+  const devicesVisibles = useMemo(() => {
+    let liste = appleDevices;
+    if (anciensSeuls) liste = liste.filter((d) => plusDeTroisMois(d, seuils));
+    if (filtreUrlActif) liste = liste.filter((d) => correspondFiltresUrl(d, filtresUrl, { ...contexteFiltres, apple: true }));
+    // Grille filtrée : la recherche vaut aussi pour les iPad / MacBook (« samsung » ne les montre pas)
+    const mots = anciensSeuls || filtreUrlActif ? sansAccents(debouncedSearch).split(/\s+/).filter(Boolean) : [];
+    if (mots.length) {
+      liste = liste.filter((d) => {
+        const texte = sansAccents(`Apple ${d.categorie || ''} ${d.modele || ''}`);
+        return mots.every((m) => texte.includes(m));
+      });
+    }
+    return liste;
+  }, [appleDevices, anciensSeuls, seuils, filtreUrlActif, filtresUrl, contexteFiltres, debouncedSearch]);
+  // Filtre de la grille en cours (« plus de 3 mois » ou filtre de l'URL) : iPad / MacBook concernés montrés seuls
+  const filtreActif = anciensSeuls || filtreUrlActif;
+  const appleVisible = brandFilter === 'Toutes' || brandFilter === 'Apple';
+  const filtresActifs = useMemo(
+    () => libellesFiltresUrl(filtresUrl, seuils, contexteFiltres.seuilMarge),
+    [filtresUrl, seuils, contexteFiltres.seuilMarge],
+  );
+  const nbCorrespondants = filtered.length + (appleVisible ? devicesVisibles.length : 0);
+  // Marges incalculables tant que les prix d'achat HT sont masqués (code admin pas saisi sur ce poste)
+  const htAppleMasques = appleDevices.length > 0 && !appleDevices.some((d) => Object.prototype.hasOwnProperty.call(d, 'ecran_prix_ht'));
+  const margesMasquees = filtreMarge === 'faible' && (htMasques || htAppleMasques);
+  const iPadDevices = useMemo(() => devicesVisibles.filter(d => d.categorie === 'ipad'), [devicesVisibles]);
+  const macBookDevices = useMemo(() => devicesVisibles.filter(d => d.categorie === 'macbook'), [devicesVisibles]);
+
+  const resume = useMemo(() => resumeFraicheur([...tarifs, ...appleDevices], seuils, sante), [tarifs, appleDevices, seuils, sante]);
+
+  // Libellés de l'historique (table + ligne → pièce)
+  const nommer = useCallback((l) => {
+    if (l.label) return l.label;
+    if (l.table_nom === 'tarifs') {
+      const t = tousTarifs.find((x) => x.id === l.ligne_id);
+      return t ? nomPiece(t) : null;
+    }
+    if (l.table_nom === 'tarifs_apple_devices') {
+      const d = appleDevices.find((x) => x.id === l.ligne_id);
+      return d ? d.modele : null;
+    }
+    return null;
+  }, [tousTarifs, appleDevices]);
 
   useEffect(() => { if (search.trim()) setExpandedBrands(new Set(grouped.map(g => g.brand))); }, [search, grouped]);
   useEffect(() => { if (brandFilter !== 'Toutes') setExpandedBrands(new Set([brandFilter])); }, [brandFilter]);
+  useEffect(() => { if (anciensSeuls) setExpandedBrands(new Set(grouped.map(g => g.brand))); }, [anciensSeuls]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Filtre de l'URL : marques dépliées ; peu de résultats → modèles, séries iPhone et iPad / MacBook aussi.
+  // Une fois par filtre (puis après la relecture des HT pour les marges) : un repli à la main n'est pas annulé.
+  // Avant l'affichage (useLayoutEffect) : pas de grille repliée qui saute à l'écran une image plus tard.
+  const filtresDeplies = useRef('');
+  const cleDepliage = filtreUrlActif ? `${filtreSource}|${filtreFraicheur}|${filtreMarge}|${margesMasquees ? 'ht' : ''}` : '';
+  useLayoutEffect(() => {
+    if (!cleDepliage) { filtresDeplies.current = ''; return; }
+    if (loading || filtresDeplies.current === cleDepliage) return;
+    filtresDeplies.current = cleDepliage;
+    setExpandedBrands(new Set(grouped.map((g) => g.brand)));
+    if (nbCorrespondants > 0 && nbCorrespondants <= 40) {
+      setExpandedModels(new Set(grouped.flatMap((g) => g.models.map((m) => `${g.brand}::${m.model}`))));
+      setExpandedSeries(new Set([
+        ...appleIPhoneSeries.map((s) => `apple-serie-${s.serie}`),
+        ...(iPadDevices.length ? ['apple-ipad'] : []),
+        ...(macBookDevices.length ? ['apple-macbook'] : []),
+      ]));
+    }
+  }, [cleDepliage, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleBrand(brand) {
     setExpandedBrands(prev => {
@@ -242,16 +678,43 @@ export default function TarifsPage() {
     setExpandedSeries(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
 
-  function StockBadge({ tarif }) {
+  // Fonctions de rendu (pas des composants : pas de remontage, le focus clavier reste en place)
+  function renderStockBadge(tarif) {
     const inStock = tarif.en_stock !== false;
     return (
-      <button onClick={(e) => { e.stopPropagation(); handleToggleStock(tarif.id); }}
-        className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md transition-all cursor-pointer ${
-          inStock ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
-                  : 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-200'}`}
-        title={inStock ? 'En stock' : 'Rupture'}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); handleToggleStock(tarif.id); }}
+        aria-pressed={!inStock}
+        aria-label={`${nomPiece(tarif)} : ${inStock ? 'en stock' : 'en rupture'}. Changer`}
+        className={`inline-flex items-center justify-center min-h-[44px] px-2 text-[11px] font-bold rounded-lg transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
+          inStock ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                  : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'}`}>
         {inStock ? 'En stock' : 'Rupture'}
       </button>
+    );
+  }
+
+  function renderPiedCarte(t) {
+    return (
+      <div className="mt-2 flex items-center justify-between gap-1.5">
+        <BadgeDatePrix row={t} seuils={seuils} court />
+        <div className="flex items-center gap-1">
+          {isAdmin
+            ? <BoutonVerrou verrouille={!!t.verrou_manuel} onClick={() => basculerVerrou(t)} disabled={verrouEnCours === t.id} nom={`le prix de ${nomPiece(t)}`} />
+            : <BoutonVerrou verrouille={!!t.verrou_manuel} lectureSeule nom={nomPiece(t)} />}
+        </div>
+      </div>
+    );
+  }
+
+  // Filtre « marges faibles » : marge réelle de l'écran sous le prix (prix client − achat HT × TVA)
+  function renderMarge(row, apple = false) {
+    if (filtreMarge !== 'faible') return null;
+    const m = margeEcran(row, contexteFiltres.tva, apple);
+    if (m === null) return null;
+    return (
+      <div className="text-[11px] mt-1 font-semibold text-red-800">
+        Marge : {euros(m)} (seuil {euros(contexteFiltres.seuilMarge)})
+      </div>
     );
   }
 
@@ -265,7 +728,7 @@ export default function TarifsPage() {
     const otherItems = items.filter(t => !(t.type_piece || '').toLowerCase().includes('ecran'));
     const otherByType = {};
     for (const t of otherItems) { const k = t.type_piece; if (!otherByType[k]) otherByType[k] = []; otherByType[k].push(t); }
-    return { qualityCount, screenItems, batterie: getPrice('batter'), connecteur: getPrice('connect'), camera: getPrice('cam'), otherByType, outOfStock: items.filter(t => t.en_stock === false).length };
+    return { qualityCount, screenItems, batterie: getPrice('batter'), connecteur: getPrice('connect'), camera: getPrice('cam'), otherByType, outOfStock: items.filter(t => t.en_stock === false).length, ancien: plusAncien(items) };
   }
 
   const totalModels = grouped.reduce((sum, g) => sum + g.models.length, 0);
@@ -273,98 +736,86 @@ export default function TarifsPage() {
   const COLOR_CONN = PIECE_TYPE_COLORS['connecteur de charge'];
   const COLOR_CAM  = PIECE_TYPE_COLORS['camera arriere'];
 
-  function PriceBadge({ value, icon: Icon, color }) {
+  function renderPriceBadge(value, Icon, color, mobile = false) {
     if (value == null) return null;
+    if (mobile) {
+      return <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md font-bold"
+        style={{ background: color.bg, color: color.color }}>
+        <Icon className="w-2.5 h-2.5" aria-hidden="true" />{formatPrice(value)}</span>;
+    }
     return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg font-semibold border"
       style={{ background: color.bg, color: color.color, borderColor: color.border }}>
-      <Icon className="w-3 h-3" />{formatPrice(value)}</span>;
-  }
-  function PriceBadgeMobile({ value, icon: Icon, color }) {
-    if (value == null) return null;
-    return <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-md font-bold"
-      style={{ background: color.bg, color: color.color }}>
-      <Icon className="w-2.5 h-2.5" />{formatPrice(value)}</span>;
+      <Icon className="w-3 h-3" aria-hidden="true" />{formatPrice(value)}</span>;
   }
 
   // ─── Render model row (reusable for all brands) ────
-  function ModelRow({ brand, model, items, idx }) {
+  function renderModelRow(brand, model, items, idx) {
     const modelKey = `${brand}::${model}`;
     const isModelOpen = expandedModels.has(modelKey);
     const summary = getModelSummary(items);
+    const idPanneau = `modele-${brand}-${model}`.replace(/[^a-zA-Z0-9_-]/g, '-');
     return (
       <div key={model}>
-        <button onClick={() => toggleModel(modelKey)}
-          className={`w-full flex items-center px-5 py-3 text-left transition-colors
+        <button type="button" onClick={() => toggleModel(modelKey)}
+          aria-expanded={isModelOpen} aria-controls={idPanneau}
+          className={`w-full min-h-[48px] flex items-center px-5 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500
             ${idx % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'} ${isModelOpen ? '!bg-violet-50/60' : 'hover:bg-violet-50/30'}`}>
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            {isModelOpen ? <ChevronDown className="w-3.5 h-3.5 text-violet-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
+            {isModelOpen ? <ChevronDown className="w-3.5 h-3.5 text-violet-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />}
             <span className="font-semibold text-[13px] text-zinc-900 truncate">{model}</span>
             {summary.qualityCount > 0 && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap font-medium ${isModelOpen ? 'bg-violet-100 text-violet-700' : 'bg-zinc-100 text-zinc-500'}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap font-medium ${isModelOpen ? 'bg-violet-100 text-violet-800' : 'bg-zinc-100 text-zinc-600'}`}>
                 {summary.qualityCount} qualit{summary.qualityCount > 1 ? 'es' : 'e'}
               </span>
             )}
             {summary.outOfStock > 0 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-600 border border-red-200 font-bold whitespace-nowrap">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200 font-bold whitespace-nowrap">
                 {summary.outOfStock} rupture{summary.outOfStock > 1 ? 's' : ''}
               </span>
             )}
+            {summary.ancien && <BadgeDatePrix row={summary.ancien} seuils={seuils} court className="hidden md:inline-flex" />}
           </div>
           <div className="hidden sm:flex items-center gap-1.5 shrink-0">
-            <PriceBadge value={summary.batterie} icon={Battery} color={COLOR_BATT} />
-            <PriceBadge value={summary.connecteur} icon={Plug} color={COLOR_CONN} />
-            <PriceBadge value={summary.camera} icon={Camera} color={COLOR_CAM} />
+            {renderPriceBadge(summary.batterie, Battery, COLOR_BATT)}
+            {renderPriceBadge(summary.connecteur, Plug, COLOR_CONN)}
+            {renderPriceBadge(summary.camera, Camera, COLOR_CAM)}
           </div>
           <div className="flex sm:hidden items-center gap-1 shrink-0 ml-2">
-            <PriceBadgeMobile value={summary.batterie} icon={Battery} color={COLOR_BATT} />
-            <PriceBadgeMobile value={summary.connecteur} icon={Plug} color={COLOR_CONN} />
-            <PriceBadgeMobile value={summary.camera} icon={Camera} color={COLOR_CAM} />
+            {renderPriceBadge(summary.batterie, Battery, COLOR_BATT, true)}
+            {renderPriceBadge(summary.connecteur, Plug, COLOR_CONN, true)}
+            {renderPriceBadge(summary.camera, Camera, COLOR_CAM, true)}
           </div>
         </button>
 
         {isModelOpen && (
-          <div className="px-5 py-4 bg-violet-50/30 border-t border-violet-100/50">
-            {Object.keys(summary.otherByType).length > 0 && (
-              <div className="sm:hidden flex flex-wrap gap-2 mb-4">
-                {Object.entries(summary.otherByType).map(([type, pieces]) => {
-                  const pc = getPieceTypeColor(type); const Icon = getPieceIcon(type);
-                  return (
-                    <div key={type} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${pieces[0].en_stock === false ? 'opacity-50' : ''}`}
-                      style={{ background: pc.bg, borderColor: pieces[0].en_stock === false ? '#fca5a5' : pc.border }}>
-                      <Icon className="w-3 h-3" style={{ color: pc.color }} />
-                      <span className="font-medium" style={{ color: pc.color }}>{type}</span>
-                      <span className="font-bold" style={{ color: pc.color }}>{formatPrice(pieces[0].prix_client)}</span>
-                      {pieces[0].en_stock === false && <span className="text-[8px] text-red-500 font-bold">RUPTURE</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <div id={idPanneau} className="px-5 py-4 bg-violet-50/30 border-t border-violet-100/50">
             {summary.screenItems.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Smartphone className="w-4 h-4 text-violet-500" />
-                  <span className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wide">Ecrans disponibles</span>
+                  <Smartphone className="w-4 h-4 text-violet-600" aria-hidden="true" />
+                  <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">Ecrans disponibles</span>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
-                  {summary.screenItems.map((t, i) => {
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                  {summary.screenItems.map((t) => {
                     const qc = QUALITY_COLORS[t.qualite] || DEFAULT_QUALITY;
                     return (
-                      <div key={i} className={`rounded-xl border-2 p-3 transition-all hover:shadow-md hover:scale-[1.02] ${t.en_stock === false ? 'opacity-50' : ''}`}
+                      <div key={t.id} className={`rounded-xl border-2 p-3 transition-shadow hover:shadow-md ${t.en_stock === false ? 'opacity-60' : ''}`}
                         style={{ background: qc.bg, borderColor: t.en_stock === false ? '#fca5a5' : qc.border }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} />
-                            <span className="text-[11px] font-bold" style={{ color: qc.color }}>{t.qualite || 'Standard'}</span>
+                        <div className="flex items-center justify-between gap-1 mb-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} aria-hidden="true" />
+                            <span className="text-[11px] font-bold truncate" style={{ color: qc.color }}>{t.qualite || 'Standard'}</span>
                           </div>
-                          <StockBadge tarif={t} />
+                          {renderStockBadge(t)}
                         </div>
                         <div className="text-2xl font-extrabold leading-none" style={{ color: qc.color }}>{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
-                          <div className="text-[10px] mt-1.5 opacity-50" style={{ color: qc.color }}>
-                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'€'} HT
+                          <div className="text-[11px] mt-1.5 text-zinc-700">
+                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} € HT
                           </div>
                         )}
+                        {renderMarge(t)}
+                        {renderPiedCarte(t)}
                       </div>
                     );
                   })}
@@ -372,30 +823,31 @@ export default function TarifsPage() {
               </div>
             )}
             {Object.keys(summary.otherByType).length > 0 && (
-              <div className="hidden sm:block mt-4">
+              <div className={summary.screenItems.length > 0 ? 'mt-4' : ''}>
                 <div className="flex items-center gap-2 mb-3">
-                  <Package className="w-4 h-4 text-indigo-400" />
-                  <span className="text-[11px] font-semibold text-zinc-600 uppercase tracking-wide">Autres pieces</span>
+                  <Package className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+                  <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">Autres pieces</span>
                 </div>
-                <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
                   {Object.entries(summary.otherByType).map(([type, pieces]) => {
                     const pc = getPieceTypeColor(type); const Icon = getPieceIcon(type);
-                    return pieces.map((t, i) => (
-                      <div key={`${type}-${i}`} className={`rounded-xl border-2 p-3 hover:shadow-md transition-all hover:scale-[1.02] ${t.en_stock === false ? 'opacity-50' : ''}`}
+                    return pieces.map((t) => (
+                      <div key={t.id} className={`rounded-xl border-2 p-3 transition-shadow hover:shadow-md ${t.en_stock === false ? 'opacity-60' : ''}`}
                         style={{ background: pc.bg, borderColor: t.en_stock === false ? '#fca5a5' : pc.border }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <Icon className="w-3.5 h-3.5" style={{ color: pc.color }} />
-                            <span className="text-[10px] font-bold uppercase" style={{ color: pc.color }}>{type}</span>
+                        <div className="flex items-center justify-between gap-1 mb-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: pc.color }} aria-hidden="true" />
+                            <span className="text-[10px] font-bold uppercase truncate" style={{ color: pc.color }}>{type}{t.qualite ? ` ${t.qualite}` : ''}</span>
                           </div>
-                          <StockBadge tarif={t} />
+                          {renderStockBadge(t)}
                         </div>
                         <div className="text-lg font-extrabold" style={{ color: pc.color }}>{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
-                          <div className="text-[10px] mt-1 opacity-60" style={{ color: pc.color }}>
-                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} {'€'} HT
+                          <div className="text-[11px] mt-1 text-zinc-700">
+                            Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} € HT
                           </div>
                         )}
+                        {renderPiedCarte(t)}
                       </div>
                     ));
                   })}
@@ -409,65 +861,75 @@ export default function TarifsPage() {
   }
 
   // ─── Device table for iPad/MacBook ────
-  function DeviceSection({ devices, label, icon: SIcon, color, formulaText, sectionKey }) {
-    if (!devices.length && !isAdmin) return null;
+  function renderDeviceSection({ devices, label, icon: SIcon, color, marge, sectionKey }) {
+    // Section vide : montrée à l'admin pour ajouter des prix, jamais quand la grille est filtrée
+    if (!devices.length && (!isAdmin || filtreActif)) return null;
     const isOpen = expandedSeries.has(sectionKey);
+    const tva = String(regles?.tva ?? 1.2).replace('.', ',');
     return (
-      <div>
-        {/* Collapsible section header */}
-        <button onClick={() => toggleSerie(sectionKey)}
-          className="w-full px-5 py-2.5 border-b flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90"
+      <div key={sectionKey}>
+        <button type="button" onClick={() => toggleSerie(sectionKey)} aria-expanded={isOpen}
+          className="w-full min-h-[44px] px-5 py-2.5 border-b flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500"
           style={{ background: color.bg, borderColor: color.border }}>
           <div className="flex items-center gap-2">
-            {isOpen ? <ChevronDown className="w-3.5 h-3.5" style={{ color: color.text }} /> : <ChevronRight className="w-3.5 h-3.5" style={{ color: color.text }} />}
-            <SIcon className="w-4 h-4" style={{ color: color.text }} />
+            {isOpen ? <ChevronDown className="w-3.5 h-3.5" style={{ color: color.text }} aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5" style={{ color: color.text }} aria-hidden="true" />}
+            <SIcon className="w-4 h-4" style={{ color: color.text }} aria-hidden="true" />
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: color.text }}>{label}</span>
-            <span className="text-[10px] font-medium opacity-60" style={{ color: color.text }}>({devices.length})</span>
+            <span className="text-[11px] font-medium" style={{ color: color.text }}>({devices.length})</span>
           </div>
         </button>
 
         {isOpen && (
           <>
-            {/* Formula banner — admin only */}
-            {isAdmin && formulaText && (
-              <div className="px-5 py-2 border-b" style={{ background: color.formulaBg, borderColor: color.border }}>
-                <span className="text-[13px] font-semibold" style={{ color: color.formulaText }}>
-                  {'\uD83E\uDDEE'} {formulaText}
+            {isAdmin && (
+              <div className="px-5 py-2 border-b flex items-center gap-2" style={{ background: color.formulaBg, borderColor: color.border }}>
+                <Calculator className="w-4 h-4 shrink-0" style={{ color: color.text }} aria-hidden="true" />
+                <span className="text-[13px] font-semibold" style={{ color: color.text }}>
+                  Formule : (prix pièce HT × {tva}) + {marge} € de main d’œuvre, arrondi au 9
                 </span>
               </div>
             )}
 
             {devices.length === 0 ? (
-              <div className="px-5 py-6 text-center text-xs text-zinc-400">Aucun tarif {label} pour le moment</div>
+              <div className="px-5 py-6 text-center text-xs text-zinc-600">Aucun tarif {label} pour le moment</div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {/* Table header */}
-                <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-50 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-50 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
                   <div className="flex-1 pl-2">Modele</div>
-                  <div className="w-32 text-center">Ecran</div>
-                  {showHT && isAdmin && <div className="w-28 text-center">Ecran HT</div>}
-                  <div className="w-32 text-center">Batterie</div>
-                  {showHT && isAdmin && <div className="w-28 text-center">Batterie HT</div>}
+                  <div className="w-28 text-center">Ecran</div>
+                  {showHT && isAdmin && <div className="w-24 text-center">Ecran HT</div>}
+                  <div className="w-28 text-center">Batterie</div>
+                  {showHT && isAdmin && <div className="w-24 text-center">Batterie HT</div>}
+                  <div className="w-36 text-center">Prix du</div>
                 </div>
                 {devices.map((d, i) => (
                   <div key={d.id || i} className={`flex flex-col sm:flex-row items-start sm:items-center px-5 py-3 gap-2 sm:gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'}`}>
-                    <div className="flex-1 pl-2 font-semibold text-[13px] text-zinc-900">{d.modele}</div>
-                    <div className="w-32 text-center">
-                      {d.ecran_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
+                    <div className="flex-1 pl-2 font-semibold text-[13px] text-zinc-900 flex items-center gap-1.5">
+                      {isAdmin
+                        ? <BoutonVerrou verrouille={!!d.verrou_manuel} onClick={() => basculerVerrouAppareil(d)} disabled={verrouEnCours === `apple-${d.id}`} nom={`les prix de ${d.modele}`} />
+                        : <BoutonVerrou verrouille={!!d.verrou_manuel} lectureSeule nom={d.modele} />}
+                      {d.modele}
+                    </div>
+                    <div className="w-28 sm:text-center">
+                      {d.ecran_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}><span className="sm:hidden text-zinc-600 font-medium">Écran : </span>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-zinc-400" aria-label="pas de prix">-</span>}
+                      {renderMarge(d, true)}
                     </div>
                     {showHT && isAdmin && (
-                      <div className="w-28 text-center text-[11px] text-red-400 font-medium">
+                      <div className="w-24 sm:text-center text-[11px] text-red-700 font-medium">
                         {d.ecran_prix_ht != null ? `${Number(d.ecran_prix_ht).toFixed(2)} € HT` : '-'}
                       </div>
                     )}
-                    <div className="w-32 text-center">
-                      {d.batterie_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-zinc-300">-</span>}
+                    <div className="w-28 sm:text-center">
+                      {d.batterie_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}><span className="sm:hidden text-zinc-600 font-medium">Batterie : </span>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-zinc-400" aria-label="pas de prix">-</span>}
                     </div>
                     {showHT && isAdmin && (
-                      <div className="w-28 text-center text-[11px] text-red-400 font-medium">
+                      <div className="w-24 sm:text-center text-[11px] text-red-700 font-medium">
                         {d.batterie_prix_ht != null ? `${Number(d.batterie_prix_ht).toFixed(2)} € HT` : '-'}
                       </div>
                     )}
+                    <div className="sm:w-36 sm:text-center">
+                      <BadgeDatePrix row={d} seuils={seuils} />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -478,8 +940,21 @@ export default function TarifsPage() {
     );
   }
 
-  const IPAD_COLOR = { bg: 'rgba(59,130,246,0.08)', border: '#3B82F633', text: '#3B82F6', formulaBg: 'rgba(59,130,246,0.05)', formulaText: '#60A5FA' };
-  const MACBOOK_COLOR = { bg: 'rgba(139,92,246,0.08)', border: '#8B5CF633', text: '#8B5CF6', formulaBg: 'rgba(139,92,246,0.05)', formulaText: '#A78BFA' };
+  const IPAD_COLOR = { bg: 'rgba(59,130,246,0.08)', border: '#3B82F633', text: '#1d4ed8', formulaBg: 'rgba(59,130,246,0.05)' };
+  const MACBOOK_COLOR = { bg: 'rgba(139,92,246,0.08)', border: '#8B5CF633', text: '#6d28d9', formulaBg: 'rgba(139,92,246,0.05)' };
+  const fermerFenetre = () => setFenetre(null);
+  const marquesGrille = [...new Set(tousTarifs.map((t) => t.marque).filter(Boolean))];
+  function ouvrirAjout(texte) {
+    setAjoutInitial(decouperRecherche(texte, marquesGrille));
+    setFenetre('ajout');
+  }
+  // Pièce ajoutée (ou déjà existante) : la grille est relue et la recherche montre ce modèle
+  function pieceAjoutee(ligne) {
+    setFenetre(null);
+    relire();
+    const texte = [ligne?.marque, ligne?.modele].filter(Boolean).join(' ');
+    if (texte) setSearch(texte);
+  }
 
   // ─── RENDER ────────────────────────────────────
   return (
@@ -487,14 +962,14 @@ export default function TarifsPage() {
       {/* Header sticky */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
-                <Tag className="w-5 h-5 text-violet-600" />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+                <Tag className="w-5 h-5 text-violet-700" aria-hidden="true" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h1 className="text-lg font-bold text-zinc-900">Grille Tarifaire</h1>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-zinc-600 truncate">
                   {stats ? `${stats.modeles} modeles · ${stats.marques} marques · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}` : 'Chargement...'}
                 </p>
               </div>
@@ -502,83 +977,172 @@ export default function TarifsPage() {
             <div className="flex gap-2 items-center">
               {/* HT toggle — admin only */}
               {isAdmin && (
-                <button onClick={() => setShowHT(!showHT)}
-                  className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-2 rounded-lg border transition-all"
-                  style={{
-                    background: showHT ? 'rgba(239,68,68,0.1)' : 'rgba(100,116,139,0.1)',
-                    color: showHT ? '#EF4444' : '#64748B',
-                    borderColor: showHT ? '#EF444433' : '#33415533',
-                  }}>
-                  {showHT ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                <button type="button" onClick={basculerHT} aria-pressed={showHT}
+                  className={`flex items-center gap-1.5 min-h-[44px] text-xs font-semibold px-3 rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
+                    showHT ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                  {showHT ? <Unlock className="w-3.5 h-3.5" aria-hidden="true" /> : <Lock className="w-3.5 h-3.5" aria-hidden="true" />}
                   <span className="hidden sm:inline">{showHT ? 'Prix HT visibles' : 'Prix HT masques'}</span>
+                  <span className="sm:hidden sr-only">Prix d’achat HT</span>
                 </button>
               )}
               {isAdmin && (
-                <button onClick={handleCheckStock} disabled={checkingStock || isRevalidating}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-                  <PackageX className={`w-4 h-4 ${checkingStock ? 'animate-pulse' : ''}`} />
+                <button type="button" onClick={handleCheckStock} disabled={checkingStock || isRevalidating}
+                  aria-label="Vérifier le stock chez Mobilax"
+                  className="flex items-center gap-2 min-h-[44px] px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
+                  <PackageX className={`w-4 h-4 ${checkingStock ? 'motion-safe:animate-pulse' : ''}`} aria-hidden="true" />
                   <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
                 </button>
               )}
-              <button onClick={() => { invalidateCache('tarifs'); }}
+              <button type="button" onClick={relire}
                 disabled={isRevalidating || checkingStock}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors disabled:opacity-50">
-                <RefreshCw className={`w-4 h-4 ${isRevalidating ? 'animate-spin' : ''}`} />
+                aria-label="Actualiser les tarifs"
+                className="flex items-center gap-2 min-h-[44px] px-4 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-sm font-medium transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
+                <RefreshCw className={`w-4 h-4 ${isRevalidating ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
                 <span className="hidden sm:inline">{isRevalidating ? 'Chargement...' : 'Actualiser'}</span>
               </button>
             </div>
           </div>
 
+          {!loading && (
+            <BandeauPrix
+              resume={resume}
+              sante={sante}
+              isAdmin={isAdmin}
+              nbObsoletes={nbObsoletes}
+              basePath={basePath}
+              onImporter={() => setFenetre('import')}
+              onRegles={() => setFenetre('regles')}
+              onRecalculer={() => setFenetre('recalcul')}
+              onHistorique={() => setFenetre('historique')}
+              onAjouter={() => ouvrirAjout(search)}
+              onDevenirAdmin={() => setShowAdminLogin(true)}
+            />
+          )}
+
           {stockResult && !stockResult.error && (
-            <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
-              <div className="flex items-center justify-between">
-                <div className="text-emerald-800">
-                  <span className="font-semibold">{stockResult.models_found}</span> modeles trouves sur Mobilax
-                  {' / '}<span className="font-semibold">{stockResult.models_checked}</span> verifies
-                  {' — '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
-                  {stockResult.now_rupture > 0 && <span className="text-red-600 font-semibold ml-2">({stockResult.now_rupture} ruptures)</span>}
-                  {stockResult.now_in_stock > 0 && <span className="text-emerald-600 font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>}
+            <div role="status" className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-emerald-900">
+                  {stockResult.models_found != null ? (
+                    <>
+                      <span className="font-semibold">{stockResult.models_found}</span> modeles trouves sur Mobilax
+                      {' / '}<span className="font-semibold">{stockResult.models_checked}</span> verifies
+                      {' — '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
+                      {stockResult.now_rupture > 0 && <span className="text-red-700 font-semibold ml-2">({stockResult.now_rupture} ruptures)</span>}
+                      {stockResult.now_in_stock > 0 && <span className="text-emerald-800 font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>}
+                    </>
+                  ) : (
+                    <>{stockResult.message || 'Vérification du stock lancée en arrière-plan'} : actualisez dans quelques minutes pour voir les ruptures.</>
+                  )}
                 </div>
-                <button onClick={() => setStockResult(null)} className="text-emerald-400 hover:text-emerald-600 text-xs">&times;</button>
+                <button type="button" onClick={() => setStockResult(null)} aria-label="Masquer le résultat"
+                  className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-lg text-emerald-800 hover:bg-emerald-100">
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
               </div>
             </div>
           )}
           {stockResult?.error && (
-            <div className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-              Erreur lors de la verification du stock.
-              <button onClick={() => setStockResult(null)} className="ml-2 text-red-400 hover:text-red-600 text-xs">&times;</button>
+            <div role="alert" className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 flex items-center justify-between gap-2">
+              <span>{typeof stockResult.error === 'string' ? stockResult.error : 'Erreur lors de la verification du stock.'}</span>
+              <button type="button" onClick={() => setStockResult(null)} aria-label="Masquer le message"
+                className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-red-100">
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
             </div>
           )}
 
           <div className="mt-4 flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input type="text" placeholder="Rechercher un modele..." value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all" />
+            <div className="relative flex-1 sm:min-w-[220px]">
+              <label htmlFor="tarifs-recherche" className="sr-only">Rechercher un modèle</label>
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" aria-hidden="true" />
+              <input ref={rechercheRef} id="tarifs-recherche" type="search" placeholder="Rechercher un modele..." value={search} onChange={e => setSearch(e.target.value)}
+                className="w-full min-h-[44px] pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-colors" />
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-              {BRAND_FILTERS.filter(b => b === 'Toutes' || grouped.some(g => g.brand === b)).map(b => (
-                <button key={b} onClick={() => { setBrandFilter(b); if (b === 'Toutes') { setExpandedBrands(new Set()); setExpandedModels(new Set()); setExpandedSeries(new Set()); } }}
-                  className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${brandFilter === b ? 'bg-zinc-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-zinc-600 hover:bg-zinc-100'}`}>
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5 min-w-0" role="group" aria-label="Filtres">
+              <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
+              {BRAND_FILTERS.filter(b => b === 'Toutes' || grouped.some(g => g.brand === b) || brandFilter === b).map(b => (
+                <button key={b} type="button" aria-pressed={brandFilter === b}
+                  onClick={() => { setBrandFilter(b); if (b === 'Toutes') { setExpandedBrands(new Set()); setExpandedModels(new Set()); setExpandedSeries(new Set()); } }}
+                  className={`min-h-[44px] px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${brandFilter === b ? 'bg-zinc-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-zinc-700 hover:bg-zinc-100'}`}>
                   {b}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Filtres arrivés par l'URL (tuiles « Santé des prix ») : visibles et effaçables */}
+          {filtresActifs.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filtres actifs">
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
+                <Filter className="w-3.5 h-3.5" aria-hidden="true" /> Filtré :
+              </span>
+              {filtresActifs.map((f) => (
+                <button key={f.cle} type="button" onClick={() => retirerFiltresUrl([f.cle])}
+                  aria-label={`Retirer le filtre ${f.libelle}`}
+                  className="min-h-[44px] pl-3 pr-2 rounded-full border border-violet-300 bg-violet-50 text-violet-900 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-violet-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                  {f.libelle}
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              ))}
+              {filtresActifs.length > 1 && (
+                <button type="button" onClick={() => retirerFiltresUrl(filtresActifs.map((f) => f.cle))}
+                  className="min-h-[44px] px-3 rounded-full text-xs font-semibold text-zinc-800 underline underline-offset-2 hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                  Effacer les filtres
+                </button>
+              )}
+              {!loading && !margesMasquees && (
+                <span role="status" className="text-xs text-zinc-700">
+                  {nbCorrespondants} prix correspond{nbCorrespondants > 1 ? 'ent' : ''}
+                </span>
+              )}
+            </div>
+          )}
+          {margesMasquees && !loading && (
+            <div role="status" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 flex flex-wrap items-center gap-3">
+              <Lock className="w-4 h-4 shrink-0 text-amber-800" aria-hidden="true" />
+              <span className="flex-1 min-w-[220px]">
+                Les marges se calculent avec les prix d’achat HT, masqués tant que le code administrateur n’est pas saisi sur ce poste.
+              </span>
+              <button type="button" onClick={afficherMarges} disabled={lectureMarges}
+                className="min-h-[44px] px-4 rounded-xl bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800 disabled:opacity-60 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
+                <Unlock className="w-4 h-4" aria-hidden="true" />
+                {lectureMarges ? 'Lecture des marges…' : 'Afficher les marges (code admin)'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
-            <p className="mt-4 text-sm text-zinc-500">Chargement des tarifs...</p>
+          <div className="flex flex-col items-center justify-center py-20" role="status">
+            <div className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" />
+            <p className="mt-4 text-sm text-zinc-600">Chargement des tarifs...</p>
           </div>
-        ) : grouped.length === 0 ? (
+        ) : grouped.length === 0 && !(filtreActif && appleVisible && devicesVisibles.length) ? (
           <div className="text-center py-20">
-            <Tag className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-            <p className="text-zinc-500 text-sm">Aucun tarif trouve</p>
+            <Tag className="w-12 h-12 text-zinc-400 mx-auto mb-4" aria-hidden="true" />
+            <p className="text-zinc-700 text-sm">
+              {margesMasquees ? 'Saisissez le code administrateur pour voir les marges faibles.'
+                : filtreUrlActif ? `Aucun prix pour ce filtre : ${filtresActifs.map((f) => f.libelle).join(', ')}.`
+                  : anciensSeuls ? 'Aucun prix de plus de 3 mois.' : debouncedSearch.trim() ? `Aucune pièce pour « ${debouncedSearch.trim()} ».` : 'Aucun tarif trouvé.'}
+            </p>
+            {filtreUrlActif && !margesMasquees && (
+              <button type="button" onClick={() => retirerFiltresUrl(filtresActifs.map((f) => f.cle))}
+                className="mt-4 min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-zinc-800 hover:bg-zinc-50 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                <X className="w-4 h-4" aria-hidden="true" /> Voir toute la grille
+              </button>
+            )}
+            {!filtreActif && debouncedSearch.trim() && (isAdmin ? (
+              <button type="button" onClick={() => ouvrirAjout(debouncedSearch)}
+                className="mt-4 min-h-[44px] px-4 rounded-xl bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
+                <PackagePlus className="w-4 h-4" aria-hidden="true" /> Ajouter une pièce pour ce modèle
+              </button>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-700">Un administrateur peut l’ajouter : « Mettre à jour les prix (admin) » en haut de page.</p>
+            ))}
           </div>
         ) : (
           grouped.map(({ brand, models }) => {
@@ -589,15 +1153,15 @@ export default function TarifsPage() {
             return (
               <div key={brand} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 {/* NIVEAU 1 : Header marque */}
-                <button onClick={() => toggleBrand(brand)}
-                  className="w-full px-5 py-3.5 flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90"
+                <button type="button" onClick={() => toggleBrand(brand)} aria-expanded={isBrandOpen}
+                  className="w-full min-h-[48px] px-5 py-3.5 flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
                   style={{ background: bc.bg, color: bc.text }}>
                   <div className="flex items-center gap-2.5">
-                    {isBrandOpen ? <ChevronDown className="w-4 h-4 opacity-70" /> : <ChevronRight className="w-4 h-4 opacity-70" />}
+                    {isBrandOpen ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
                     <BrandLogo slug={bc.logo} />
                     <span className="font-bold text-sm tracking-wide">{brand}</span>
                   </div>
-                  <span className="text-xs opacity-75 font-medium">
+                  <span className="text-xs font-medium">
                     {models.length} modele{models.length > 1 ? 's' : ''}
                   </span>
                 </button>
@@ -605,84 +1169,108 @@ export default function TarifsPage() {
                 {/* ═══════ APPLE: iPhone series + iPad + MacBook ═══════ */}
                 {isBrandOpen && isApple && (
                   <div>
-                    {/* ── iPhone section header ── */}
                     <div className="px-5 py-2.5 border-b flex items-center gap-2" style={{ background: 'rgba(245,158,11,0.08)', borderColor: '#F59E0B33' }}>
-                      <Smartphone className="w-4 h-4 text-amber-600" />
-                      <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">iPhone</span>
-                      <span className="text-[10px] font-medium text-amber-500">({appleIPhoneSeries.reduce((s, sr) => s + sr.models.length, 0)} modeles)</span>
+                      <Smartphone className="w-4 h-4 text-amber-700" aria-hidden="true" />
+                      <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">iPhone</span>
+                      <span className="text-[11px] font-medium text-amber-800">({appleIPhoneSeries.reduce((s, sr) => s + sr.models.length, 0)} modeles)</span>
                     </div>
 
-                    {/* ── iPhone series sub-accordions ── */}
                     {appleIPhoneSeries.map(({ serie, models: serieModels }) => {
                       const serieKey = `apple-serie-${serie}`;
                       const isSerieOpen = expandedSeries.has(serieKey);
                       return (
                         <div key={serie}>
-                          <button onClick={() => toggleSerie(serieKey)}
-                            className={`w-full flex items-center px-5 py-2.5 text-left transition-colors border-b border-slate-100 ${isSerieOpen ? 'bg-amber-50/50' : 'hover:bg-amber-50/30 bg-white'}`}>
+                          <button type="button" onClick={() => toggleSerie(serieKey)} aria-expanded={isSerieOpen}
+                            className={`w-full min-h-[44px] flex items-center px-5 py-2.5 text-left transition-colors border-b border-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${isSerieOpen ? 'bg-amber-50/50' : 'hover:bg-amber-50/30 bg-white'}`}>
                             <div className="flex items-center gap-2 flex-1">
-                              {isSerieOpen ? <ChevronDown className="w-3.5 h-3.5 text-amber-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />}
+                              {isSerieOpen ? <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />}
                               <span className="font-bold text-[13px] text-zinc-800">Serie {serie === 'X/XS/XR' ? serie : `iPhone ${serie}`}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 font-medium">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-medium">
                                 {serieModels.length} modele{serieModels.length > 1 ? 's' : ''}
                               </span>
                             </div>
                           </button>
                           {isSerieOpen && (
                             <div>
-                              <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                              <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
                                 <div className="flex-1 pl-7">Modele</div>
                                 <div className="text-right pr-1">Pieces disponibles</div>
                               </div>
-                              {serieModels.map(({ model, items }, idx) => (
-                                <ModelRow key={model} brand="Apple" model={model} items={items} idx={idx} />
-                              ))}
+                              {serieModels.map(({ model, items }, idx) => renderModelRow('Apple', model, items, idx))}
                             </div>
                           )}
                         </div>
                       );
                     })}
 
-                    {/* ── Non-iPhone Apple models (if any) ── */}
-                    {appleOtherModels.length > 0 && appleOtherModels.map(({ model, items }, idx) => (
-                      <ModelRow key={model} brand="Apple" model={model} items={items} idx={idx} />
-                    ))}
+                    {appleOtherModels.length > 0 && appleOtherModels.map(({ model, items }, idx) => renderModelRow('Apple', model, items, idx))}
 
-                    {/* ── iPad section (collapsible, closed by default) ── */}
-                    <DeviceSection devices={iPadDevices} label="iPad" icon={Tablet} color={IPAD_COLOR}
-                      formulaText="Formule : (Prix pièce HT × 1.2) + 110€ de main d'œuvre" sectionKey="apple-ipad" />
-
-                    {/* ── MacBook section (collapsible, closed by default) ── */}
-                    <DeviceSection devices={macBookDevices} label="MacBook" icon={Laptop} color={MACBOOK_COLOR}
-                      formulaText="Formule : (Prix pièce HT × 1.2) + 120€ de main d'œuvre" sectionKey="apple-macbook" />
+                    {renderDeviceSection({ devices: iPadDevices, label: 'iPad', icon: Tablet, color: IPAD_COLOR, marge: regles?.ipad ?? 110, sectionKey: 'apple-ipad' })}
+                    {renderDeviceSection({ devices: macBookDevices, label: 'MacBook', icon: Laptop, color: MACBOOK_COLOR, marge: regles?.macbook ?? 120, sectionKey: 'apple-macbook' })}
                   </div>
                 )}
 
                 {/* ═══════ OTHER BRANDS: flat model list ═══════ */}
                 {isBrandOpen && !isApple && (
                   <div>
-                    <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
                       <div className="flex-1 pl-7">Modele</div>
                       <div className="text-right pr-1">Pieces disponibles</div>
                     </div>
-                    {models.map(({ model, items }, idx) => (
-                      <ModelRow key={model} brand={brand} model={model} items={items} idx={idx} />
-                    ))}
+                    {models.map(({ model, items }, idx) => renderModelRow(brand, model, items, idx))}
                   </div>
                 )}
               </div>
             );
           })
         )}
+
+        {/* Grille filtrée (« plus de 3 mois », filtre de l'URL) : iPad / MacBook concernés même sans pièce Apple retenue */}
+        {!loading && filtreActif && appleVisible && !grouped.some((g) => g.brand === 'Apple') && devicesVisibles.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {renderDeviceSection({ devices: iPadDevices, label: 'iPad', icon: Tablet, color: IPAD_COLOR, marge: regles?.ipad ?? 110, sectionKey: 'apple-ipad' })}
+            {renderDeviceSection({ devices: macBookDevices, label: 'MacBook', icon: Laptop, color: MACBOOK_COLOR, marge: regles?.macbook ?? 120, sectionKey: 'apple-macbook' })}
+          </div>
+        )}
       </div>
 
       {!loading && totalModels > 0 && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center text-xs text-zinc-400 space-y-1">
-            <p>{totalModels} mod{'è'}le{totalModels > 1 ? 's' : ''} {'·'} {grouped.length} marque{grouped.length > 1 ? 's' : ''} {'·'} Source : Mobilax</p>
+          <div className="text-center text-xs text-zinc-600 space-y-1">
+            <p>{totalModels} modèle{totalModels > 1 ? 's' : ''} · {grouped.length} marque{grouped.length > 1 ? 's' : ''} · Source : Mobilax</p>
           </div>
         </div>
       )}
+
+      {/* ─── Fenêtres admin ─── */}
+      {fenetre === 'historique' && (
+        <HistoriquePrix open onClose={fermerFenetre} sensible={sensible} nommer={nommer} onAnnule={relire} />
+      )}
+
+      <Suspense fallback={null}>
+        {fenetre === 'recalcul' && (
+          <FenetreRecalcul open onClose={fermerFenetre} sensible={sensible} onApplique={relire} />
+        )}
+        {fenetre === 'ajout' && (
+          <AjoutPiecePrix open onClose={fermerFenetre} sensible={sensible} regles={regles} catalogue={tarifs}
+            initial={ajoutInitial} onAjoute={pieceAjoutee} />
+        )}
+        {fenetre === 'import' && (
+          <ImportPrixModal open onClose={fermerFenetre} sensible={sensible} regles={regles}
+            catalogue={{ tarifs: tousTarifs, appleDevices }} onApplique={relire} />
+        )}
+        {fenetre === 'regles' && (
+          <ReglesPrixPanel open onClose={fermerFenetre} sensible={sensible}
+            tarifs={tarifs} appleDevices={appleDevices} onApplique={relire} />
+        )}
+      </Suspense>
+
+      <AdminLoginModal
+        open={showAdminLogin}
+        onClose={() => setShowAdminLogin(false)}
+        onSuccess={() => { setShowAdminLogin(false); setIsAdmin(true); }}
+      />
+      {adminPrompt}
     </div>
   );
 }

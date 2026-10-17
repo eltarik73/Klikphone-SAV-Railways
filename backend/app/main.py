@@ -35,6 +35,8 @@ from app.api import etagere as etagere_api
 from app.api import grille
 from app.api import reception as reception_api
 from app.api import rgpd as rgpd_api
+from app.api import propositions_prix
+from app.services import veille_prix
 from app.services import mentions
 
 logger = logging.getLogger("klikphone.startup")
@@ -305,6 +307,56 @@ _DDL_TABLES = [
         prouve_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         expire TIMESTAMP NOT NULL
     )""",
+    # Moteur de prix (BE-A, app/services/prix.py) : historique de chaque prix écrit (annulation
+    # d'un lot), aperçus d'import de fichier fournisseur, propositions venues des commandes
+    """CREATE TABLE IF NOT EXISTS tarifs_historique (
+        id SERIAL PRIMARY KEY,
+        table_nom TEXT NOT NULL,
+        ligne_id INTEGER NOT NULL,
+        colonne TEXT NOT NULL,
+        ancien NUMERIC,
+        nouveau NUMERIC,
+        source TEXT,
+        lot_id TEXT,
+        par TEXT,
+        le TIMESTAMP DEFAULT NOW(),
+        ancien_maj_le TIMESTAMP,
+        ancien_source TEXT
+    )""",
+    """CREATE TABLE IF NOT EXISTS tarifs_imports (
+        id SERIAL PRIMARY KEY,
+        fichier TEXT,
+        fournisseur TEXT,
+        cible TEXT,
+        statut TEXT DEFAULT 'apercu',
+        resume JSONB,
+        par TEXT,
+        le TIMESTAMP DEFAULT NOW(),
+        lot_id TEXT,
+        applique_le TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS tarifs_propositions (
+        id SERIAL PRIMARY KEY,
+        tarif_cle TEXT NOT NULL,
+        ancien_ht NUMERIC,
+        nouveau_ht NUMERIC,
+        source TEXT,
+        commande_id INTEGER,
+        statut TEXT DEFAULT 'en_attente',
+        par TEXT,
+        le TIMESTAMP DEFAULT NOW(),
+        traite_le TIMESTAMP,
+        traite_par TEXT
+    )""",
+    # Moteur de prix (BE-B) : alias de modèles pour la grille (« iPhone Air » → « iPhone 17 Air »),
+    # édités par l'admin (app/api/grille.py)
+    """CREATE TABLE IF NOT EXISTS modeles_alias (
+        id SERIAL PRIMARY KEY,
+        alias TEXT UNIQUE NOT NULL,
+        modele_canonique TEXT NOT NULL,
+        categorie TEXT,
+        le TIMESTAMP DEFAULT NOW()
+    )""",
 ]
 
 # ADD COLUMN déjà présente : écartée avant exécution (l'ALTER prendrait quand
@@ -324,6 +376,9 @@ _DDL_ALTERS = [
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_imei TEXT",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS telephone_pret_rendu BOOLEAN DEFAULT FALSE",
     "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS ticket_code TEXT DEFAULT ''",
+    # Moteur de prix (BE-B) : HT réellement payé et pièce de la grille (« tarifs:123 ») → proposition
+    "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS prix_ht NUMERIC(10,2)",
+    "ALTER TABLE commandes_pieces ADD COLUMN IF NOT EXISTS tarif_cle TEXT",
     "ALTER TABLE notes_tickets ADD COLUMN IF NOT EXISTS type_note TEXT DEFAULT 'note'",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_debut TIMESTAMP",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS reparation_fin TIMESTAMP",
@@ -401,6 +456,25 @@ _DDL_ALTERS = [
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing_retire_le TIMESTAMP",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing_source TEXT",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS anonymise_le TIMESTAMP",
+    # Moteur de prix (BE-A) : date et source de chaque prix, verrou manuel, fournisseur, obsolète.
+    # prix_maj_le sans valeur par défaut : initialisé une fois depuis updated_at (_DONNEES_FIXES)
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS prix_source TEXT",
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS verrou_manuel BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS ref_fournisseur TEXT",
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS fournisseur TEXT DEFAULT 'Mobilax'",
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS obsolete BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS prix_source TEXT",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS verrou_manuel BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS ref_fournisseur TEXT",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS fournisseur TEXT DEFAULT 'Mobilax'",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS obsolete BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE tarifs_reparation ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
+    "ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
+    "ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
+    # Lot de l'acceptation d'une proposition (prix.appliquer_ht) : annuler ce lot la rouvre
+    "ALTER TABLE tarifs_propositions ADD COLUMN IF NOT EXISTS lot_id TEXT",
 ]
 
 # Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
@@ -449,6 +523,16 @@ _DDL_INDEXES = [
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_tickets_suivi_token ON tickets(suivi_token)",
     # Recherche par emplacement d'étagère (« b3 » → upper(t.emplacement) = 'B3', services/search)
     "CREATE INDEX IF NOT EXISTS idx_tickets_emplacement ON tickets (upper(emplacement)) WHERE emplacement IS NOT NULL",
+    # Moteur de prix (BE-A) : une pièce par (marque, modèle, type, qualité) — doublons vérifiés à 0 en
+    # prod — et une seule proposition en attente par pièce (services/prix.creer_proposition)
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tarifs_piece_unique ON tarifs "
+    "(lower(marque), lower(modele), lower(type_piece), COALESCE(lower(qualite), ''))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tarifs_propositions_attente ON tarifs_propositions (tarif_cle) "
+    "WHERE statut = 'en_attente'",
+    "CREATE INDEX IF NOT EXISTS idx_tarifs_propositions_statut ON tarifs_propositions (statut, le DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_tarifs_historique_lot ON tarifs_historique (lot_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tarifs_historique_ligne ON tarifs_historique (table_nom, ligne_id, id DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_tarifs_imports_lot ON tarifs_imports (lot_id) WHERE lot_id IS NOT NULL",
 ]
 
 
@@ -702,6 +786,12 @@ _DONNEES_FIXES = [
     mentions.SQL_MIGRATION_ABANDON_FLAG,
     # Rétention RGPD automatique : désactivée par défaut, jamais de date de début sans activation
     rgpd_api.SQL_DEBUT_SANS_ACTIVATION,
+    # Moteur de prix (BE-B) : alias de modèles initiaux, une seule fois (un alias retiré par
+    # l'admin ne revient pas au démarrage suivant)
+    grille.SQL_ALIAS_INITIAUX,
+    grille.SQL_ALIAS_INITIAUX_FLAG,
+    # Moteur de prix (BE-A) : date et source initiales des prix, une seule fois (drapeau dans le bloc)
+    tarifs.SQL_INIT_PRIX,
 ]
 
 
@@ -1160,6 +1250,9 @@ async def lifespan(app: FastAPI):
     # Rétention RGPD : vérification horaire en tâche de fond, sans effet tant qu'un admin ne l'a
     # pas activée (RGPD_RETENTION_AUTO = '1', premier passage 7 jours après l'activation)
     rgpd_api.demarrer_retention_quotidienne()
+    # Veille des prix : un passage par semaine (comptages et notification, aucun prix écrit) ;
+    # KP_VEILLE_PRIX=0 empêche même la tâche
+    veille_prix.demarrer_veille_hebdomadaire()
     params_cache.invalidate()
     # Connexions du pool ouvertes en tâche de fond (une seule a servi au démarrage)
     threading.Thread(target=_prechauffer_pool, daemon=True, name="pool_prechauffage").start()
@@ -1262,6 +1355,8 @@ app.include_router(admin.router)
 app.include_router(chat.router)
 app.include_router(fidelite.router)
 app.include_router(email_api.router)
+# Avant tarifs : /api/tarifs/propositions… ne doit pas être pris pour /api/tarifs/{id}
+app.include_router(propositions_prix.router)
 app.include_router(tarifs.router)
 app.include_router(marketing.router)
 app.include_router(telephones.router)

@@ -14,15 +14,16 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from app.api.auth import get_current_user
+from app.api.auth import exiger_role_admin, get_current_user
 from fpdf import FPDF
 from PIL import Image
 from psycopg2.extras import execute_values
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_cursor
+from app.services import prix as prix_srv
 
 # Assets pour PDF (logo + fonts)
 _ASSETS_DIR = Path(__file__).parent.parent / "assets" / "iphone_tarifs"
@@ -173,13 +174,13 @@ class SmartphoneCreate(BaseModel):
     modele: str
     ordre: int = 0
     stockage_1: Optional[str] = None
-    prix_1: Optional[int] = None
+    prix_1: Optional[int] = Field(None, ge=0, le=100000)
     stock_1: Optional[int] = 0
     stockage_2: Optional[str] = None
-    prix_2: Optional[int] = None
+    prix_2: Optional[int] = Field(None, ge=0, le=100000)
     stock_2: Optional[int] = 0
     stockage_3: Optional[str] = None
-    prix_3: Optional[int] = None
+    prix_3: Optional[int] = Field(None, ge=0, le=100000)
     stock_3: Optional[int] = 0
     condition: str = "Reconditionné Premium"
     image_url: Optional[str] = None
@@ -190,13 +191,13 @@ class SmartphoneUpdate(BaseModel):
     modele: Optional[str] = None
     ordre: Optional[int] = None
     stockage_1: Optional[str] = None
-    prix_1: Optional[int] = None
+    prix_1: Optional[int] = Field(None, ge=0, le=100000)
     stock_1: Optional[int] = None
     stockage_2: Optional[str] = None
-    prix_2: Optional[int] = None
+    prix_2: Optional[int] = Field(None, ge=0, le=100000)
     stock_2: Optional[int] = None
     stockage_3: Optional[str] = None
-    prix_3: Optional[int] = None
+    prix_3: Optional[int] = Field(None, ge=0, le=100000)
     stock_3: Optional[int] = None
     condition: Optional[str] = None
     image_url: Optional[str] = None
@@ -218,39 +219,59 @@ def list_smartphones(active_only: bool = True):
         return [dict(r) for r in cur.fetchall()]
 
 
+def _admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    """Écriture de prix : rôle admin du membre ET code admin saisi sur ce poste."""
+    return exiger_role_admin(request, user)
+
+
+_COLONNES_PRIX = ("prix_1", "prix_2", "prix_3")
+
+
+def _ecrire_prix(cur, tarif_id: int, valeurs: dict, user: dict):
+    """Prix de vente par le moteur de prix (source 'manuel', date du prix, historique).
+
+    Saisie manuelle explicite (POST ou PATCH d'une ligne) : permise même sur une ligne cadenassée
+    (PRIX_LIGNES_VERROUILLEES), le cadenas reste posé ; il protège la ligne des ajustements globaux
+    et des annulations de lot (services/prix.ecrire_prix_lot)."""
+    if valeurs:
+        prix_srv.ecrire_prix_lot(cur, "smartphones_tarifs", [(tarif_id, k, v) for k, v in valeurs.items()],
+                                 "manuel", (user.get("sub") or None), prix_srv.nouveau_lot())
+
+
 @router.post("")
-def create_smartphone(payload: SmartphoneCreate, user: dict = Depends(get_current_user)):
-    """Crée un nouveau smartphone (mode admin)."""
+def create_smartphone(payload: SmartphoneCreate, user: dict = Depends(_admin)):
+    """Crée un smartphone, ou met à jour celui du même slug (id conservé)."""
+    prix_envoyes = {k: getattr(payload, k) for k in _COLONNES_PRIX}
     with get_cursor() as cur:
         cur.execute(
             """
             INSERT INTO smartphones_tarifs
             (slug, marque, modele, ordre,
-             stockage_1, prix_1, stock_1,
-             stockage_2, prix_2, stock_2,
-             stockage_3, prix_3, stock_3,
+             stockage_1, stock_1,
+             stockage_2, stock_2,
+             stockage_3, stock_3,
              condition, image_url)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (slug) DO UPDATE SET
                 marque = EXCLUDED.marque, modele = EXCLUDED.modele,
                 ordre = EXCLUDED.ordre,
-                stockage_1 = EXCLUDED.stockage_1, prix_1 = EXCLUDED.prix_1,
-                stock_1 = EXCLUDED.stock_1,
-                stockage_2 = EXCLUDED.stockage_2, prix_2 = EXCLUDED.prix_2,
-                stock_2 = EXCLUDED.stock_2,
-                stockage_3 = EXCLUDED.stockage_3, prix_3 = EXCLUDED.prix_3,
-                stock_3 = EXCLUDED.stock_3,
+                stockage_1 = EXCLUDED.stockage_1, stock_1 = EXCLUDED.stock_1,
+                stockage_2 = EXCLUDED.stockage_2, stock_2 = EXCLUDED.stock_2,
+                stockage_3 = EXCLUDED.stockage_3, stock_3 = EXCLUDED.stock_3,
                 condition = EXCLUDED.condition,
                 image_url = EXCLUDED.image_url,
                 updated_at = NOW()
-            RETURNING *
+            RETURNING id
             """,
             (payload.slug, payload.marque, payload.modele, payload.ordre,
-             payload.stockage_1, payload.prix_1, payload.stock_1 or 0,
-             payload.stockage_2, payload.prix_2, payload.stock_2 or 0,
-             payload.stockage_3, payload.prix_3, payload.stock_3 or 0,
+             payload.stockage_1, payload.stock_1 or 0,
+             payload.stockage_2, payload.stock_2 or 0,
+             payload.stockage_3, payload.stock_3 or 0,
              payload.condition, payload.image_url),
         )
+        tarif_id = cur.fetchone()["id"]
+        _ecrire_prix(cur, tarif_id, prix_envoyes, user)
+        cur.execute("SELECT * FROM smartphones_tarifs WHERE id = %s", (tarif_id,))
         row = cur.fetchone()
     _invalidate_phones_cache()
     return dict(row)
@@ -266,27 +287,33 @@ def _invalidate_phones_cache():
 
 
 @router.patch("/{tarif_id}")
-def update_smartphone(tarif_id: int, payload: SmartphoneUpdate, user: dict = Depends(get_current_user)):
+def update_smartphone(tarif_id: int, payload: SmartphoneUpdate, user: dict = Depends(_admin)):
     data = payload.model_dump(exclude_unset=True)
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")
-    set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
-    values = list(data.values()) + [tarif_id]
+    prix_envoyes = {k: data.pop(k) for k in _COLONNES_PRIX if k in data}
     with get_cursor() as cur:
-        cur.execute(
-            f"UPDATE smartphones_tarifs SET {set_clauses}, updated_at = NOW() "
-            f"WHERE id = %s RETURNING *",
-            values,
-        )
-        row = cur.fetchone()
-        if not row:
+        if data:
+            # Noms de colonnes : champs du modèle SmartphoneUpdate uniquement
+            set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
+            cur.execute(
+                f"UPDATE smartphones_tarifs SET {set_clauses}, updated_at = NOW() "
+                f"WHERE id = %s RETURNING id",
+                list(data.values()) + [tarif_id],
+            )
+        else:
+            cur.execute("SELECT id FROM smartphones_tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
+        if not cur.fetchone():
             raise HTTPException(404, "Smartphone non trouvé")
+        _ecrire_prix(cur, tarif_id, prix_envoyes, user)
+        cur.execute("SELECT * FROM smartphones_tarifs WHERE id = %s", (tarif_id,))
+        row = cur.fetchone()
     _invalidate_phones_cache()
     return dict(row)
 
 
 @router.delete("/{tarif_id}")
-def delete_smartphone(tarif_id: int, user: dict = Depends(get_current_user)):
+def delete_smartphone(tarif_id: int, user: dict = Depends(_admin)):
     """Soft delete (active = false)."""
     with get_cursor() as cur:
         cur.execute(

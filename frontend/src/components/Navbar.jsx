@@ -10,7 +10,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv, Inbox,
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
@@ -19,6 +19,8 @@ import {
 const BADGES_POLL_MS = 60_000;
 const DEMANDES_EVERY_MS = 2 * 60_000;
 const AVIS_EVERY_MS = 5 * 60_000;
+// Propositions de prix en attente (santé des prix) : une fois par minute au plus, rôle admin seulement
+const SANTE_PRIX_EVERY_MS = 60_000;
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -33,6 +35,7 @@ export default function Navbar() {
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
   const [interactionCount, setInteractionCount] = useState(0);
   const [demandesCmdNew, setDemandesCmdNew] = useState(0);
+  const [propositionsPrix, setPropositionsPrix] = useState(0);
   const [moduleDevis, setModuleDevis] = useState(false);
   const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
   const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
@@ -43,20 +46,26 @@ export default function Navbar() {
   const [pendingAdminPath, setPendingAdminPath] = useState(null);
 
   // Pause onglet masqué, rafraîchissement immédiat au retour (usePolling)
-  const lastSlowRef = useRef({ demandes: 0, avis: 0 });
+  const lastSlowRef = useRef({ demandes: 0, avis: 0, santePrix: 0 });
   const isRoleAdmin = user?.role === 'admin';
   usePolling(() => {
     const now = Date.now();
     const last = lastSlowRef.current;
     const demandes = now - last.demandes >= DEMANDES_EVERY_MS;
     const avis = isRoleAdmin && now - last.avis >= AVIS_EVERY_MS;
+    // Retour sur l'onglet (appel immédiat) : pas de relecture si la dernière a moins d'une minute
+    const santePrix = isRoleAdmin && typeof api.getSantePrix === 'function' && now - last.santePrix >= SANTE_PRIX_EVERY_MS;
     if (demandes) last.demandes = now;
     if (avis) last.avis = now;
+    if (santePrix) last.santePrix = now;
     return api.background(() => Promise.all([
       api.getKPI().then(kpi => setPendingCount(kpi?.total_actifs || 0)).catch(() => {}),
       api.getInteractions().then(d => setInteractionCount(d?.total_actions ?? 0)).catch(() => {}),
       demandes && api.countDemandesCommandesNouvelles().then(d => setDemandesCmdNew(d?.count ?? 0)).catch(() => {}),
       avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch(() => {}),
+      santePrix && Promise.resolve().then(() => api.getSantePrix())
+        .then(s => setPropositionsPrix(Math.max(0, Math.round(Number(s?.propositions_en_attente)) || 0)))
+        .catch(() => {}),
     ]));
   }, BADGES_POLL_MS, { enabled: Boolean(user?.utilisateur) });
 
@@ -93,8 +102,18 @@ export default function Navbar() {
     { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
   ];
 
+  // Badge des propositions de prix : jamais pour un membre qui n'a pas le rôle admin
+  const nbPropositionsPrix = isRoleAdmin ? propositionsPrix : 0;
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
+    {
+      // Même page que les tuiles « Santé des prix » (PropositionsPrix.cheminPrixARevoir), onglet propositions
+      path: `${basePath}/prix-a-revoir`, to: `${basePath}/prix-a-revoir?onglet=propositions`,
+      label: 'Prix à revoir', icon: Inbox, badge: nbPropositionsPrix,
+      aria: nbPropositionsPrix > 0
+        ? `Prix à revoir : ${nbPropositionsPrix} proposition${nbPropositionsPrix > 1 ? 's' : ''} de prix en attente`
+        : 'Prix à revoir',
+    },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
@@ -109,7 +128,7 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const adminPages = ['/admin', '/avis-google', '/community', '/config'];
+  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/prix-a-revoir'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
 
   const handleNav = (path) => {
@@ -164,7 +183,7 @@ export default function Navbar() {
         >
           {label}
           {badge > 0 && (
-            <span className="ml-2 bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+            <span className="ml-2 bg-brand-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
               {badge > 99 ? '99+' : badge}
             </span>
           )}
@@ -175,7 +194,7 @@ export default function Navbar() {
 
   // ─── Item button (unified styling + hover scale + tooltip) ───
   const navBtnClass = (active, variant = 'brand') => {
-    const base = `group/nav w-full flex items-center gap-3 rounded-lg text-[13px] font-medium
+    const base = `group/nav w-full min-h-[44px] flex items-center gap-3 rounded-lg text-[13px] font-medium
       transition-all duration-150 ease-out relative
       ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}`;
     const activeCls = {
@@ -205,8 +224,8 @@ export default function Navbar() {
   const Badge = ({ value, tone = 'brand' }) => {
     if (!value || value <= 0) return null;
     const toneCls = {
-      brand: 'bg-brand-500 shadow-[0_0_0_2px_rgba(124,58,237,0.25)]',
-      red:   'bg-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.25)]',
+      brand: 'bg-brand-600 shadow-[0_0_0_2px_rgba(124,58,237,0.25)]',
+      red:   'bg-red-600 shadow-[0_0_0_2px_rgba(239,68,68,0.25)]',
     }[tone];
     const label = value > 99 ? '99+' : value;
     return (
@@ -219,7 +238,7 @@ export default function Navbar() {
 
   const DotBadge = ({ value, tone = 'brand' }) => {
     if (!value || value <= 0) return null;
-    const bg = tone === 'red' ? 'bg-red-500' : 'bg-brand-500';
+    const bg = tone === 'red' ? 'bg-red-600' : 'bg-brand-600';
     return (
       <span className={`${bg} absolute top-0.5 right-0.5 text-white text-[9px] font-bold
         min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center
@@ -241,7 +260,9 @@ export default function Navbar() {
     }
     return (
       <button
+        type="button"
         onClick={onToggle}
+        aria-expanded={!!open}
         className="w-full flex items-center justify-between px-3 mb-2 group/sec"
       >
         <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em]"
@@ -275,7 +296,7 @@ export default function Navbar() {
             <Search className="w-5 h-5" aria-hidden="true" />
           </button>
           {pendingCount > 0 && (
-            <span className="bg-brand-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
+            <span className="bg-brand-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
               aria-label={`${pendingCount} tickets actifs`}>
               {pendingCount}
             </span>
@@ -467,11 +488,12 @@ export default function Navbar() {
             />
             {(adminOpen || collapsed) && (
               <div className="space-y-0.5">
-                {adminItems.map(({ path, label, icon: Icon, badge, pill }) => {
+                {adminItems.map(({ path, to, label, icon: Icon, badge, pill, aria }) => {
                   const active = isActive(path);
                   return (
                     <Tooltip key={path} label={label} badge={badge}>
-                      <button onClick={() => handleAdminNav(path)} className={navBtnClass(active, 'red')}>
+                      <button type="button" onClick={() => handleAdminNav(to || path)} className={navBtnClass(active, 'red')}
+                        aria-label={aria || (collapsed ? label : undefined)} aria-current={active ? 'page' : undefined}>
                         <Icon className={iconCls(active, 'red')} />
                         {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
                         {!collapsed && pill && (
