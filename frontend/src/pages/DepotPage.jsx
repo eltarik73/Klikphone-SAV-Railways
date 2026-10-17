@@ -26,6 +26,26 @@ const INITIAL_FORM = {
   imei: '', consentement_marketing: false, attente_boutique: false,
 };
 
+// Tuile de choix (catégorie, panne) : 56 px, bordure 2 px, sélection = marque
+const tuile = (actif) => `min-h-14 px-4 py-3 rounded-lg border-2 text-base font-semibold text-left leading-snug
+  transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+  ${actif ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`;
+
+// En-tête d'étape : pastille marque 40 px + titre + sous-titre (span : `.depot-form p` forcerait 16 px)
+function EnTete({ icone: Icone, titre, sousTitre }) {
+  return (
+    <div className="flex items-center gap-3 mb-1">
+      <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
+        <Icone className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold leading-snug text-slate-900">{titre}</h2>
+        <span className="block text-sm text-slate-500">{sousTitre}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function DepotPage() {
   const toast = useToast();
   const [step, setStep] = useState(0);
@@ -110,9 +130,11 @@ export default function DepotPage() {
     return Object.keys(errs).length === 0;
   };
 
+  // <div> et non <p> : `.depot-form p` écraserait la couleur rouge de l'erreur
   const FieldError = ({ field }) => errors[field] ? (
-    <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
+    <div id={`borne-${field}-erreur`} role="alert" className="input-error text-sm">{errors[field]}</div>
   ) : null;
+  const invalide = (field) => (errors[field] ? { 'aria-invalid': 'true', 'aria-describedby': `borne-${field}-erreur` } : {});
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -162,95 +184,93 @@ export default function DepotPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Kiosk header — no sidebar */}
-      <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden">
+      <div className="bg-slate-900 text-white px-4 sm:px-6 py-3 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-lg bg-white p-1 overflow-hidden shrink-0">
             <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
           </div>
-          <div>
-            <h1 className="text-lg font-display font-bold tracking-tight">KLIKPHONE</h1>
-            <p className="text-[11px] text-slate-400">Déposer un appareil en réparation</p>
+          <div className="min-w-0">
+            <h1 className="text-lg font-display font-bold tracking-tight leading-tight">KLIKPHONE</h1>
+            <p className="text-xs text-slate-400 truncate">Déposer un appareil en réparation</p>
           </div>
         </div>
         {step < 5 && (
-          <div className="text-right">
-            <p className="text-xs text-slate-400">Étape {step + 1} / {STEPS.length}</p>
+          <div className="text-right shrink-0">
+            <p className="text-xs text-slate-400 tabular-nums">Étape {step + 1} / {STEPS.length}</p>
             <p className="text-sm font-semibold text-brand-300">{STEPS[step]}</p>
           </div>
         )}
       </div>
 
       <div className="flex-1 flex flex-col">
-        <div className="depot-form w-[90%] lg:max-w-2xl mx-auto px-4 py-6 flex-1 flex flex-col">
-          {/* Progress bar with circles */}
+        <div className="depot-form w-full max-w-[640px] mx-auto px-4 py-5 sm:py-6 pb-10 flex-1 flex flex-col">
+          {/* Progress bar with circles (stepper monochrome : la progression se lit au poids) */}
           {step < 5 && (
-            <div className="flex items-center mb-8">
-              {STEPS.map((s, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center relative">
-                  {/* Connector line */}
-                  {i > 0 && (
-                    <div className={`absolute top-3.5 right-1/2 w-full h-0.5 transition-all duration-500 ${
-                      i <= step ? 'bg-brand-500' : 'bg-slate-200'
-                    }`} />
-                  )}
-                  {/* Circle */}
-                  <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-300 ${
-                    i < step ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25'
-                    : i === step ? 'bg-brand-500 text-white shadow-md shadow-brand-500/30 ring-4 ring-brand-100'
-                    : 'bg-slate-200 text-slate-400'
-                  }`}>
-                    {i < step ? '✓' : i + 1}
+            <div className="grid grid-cols-6 w-full min-w-0 mb-6">
+              {STEPS.map((s, i) => {
+                const fait = i < step;
+                const courant = i === step;
+                return (
+                  <div key={i} className="relative flex flex-col items-center min-w-0 px-0.5">
+                    {/* Connector line */}
+                    {i > 0 && (
+                      <div className={`absolute top-[15px] h-0.5 rounded-full left-[calc(-50%_+_18px)] right-[calc(50%_+_18px)] ${
+                        i <= step ? 'bg-brand-200' : 'bg-slate-200'
+                      }`} aria-hidden="true" />
+                    )}
+                    {/* Circle */}
+                    <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold tabular-nums transition-colors duration-150 ${
+                      fait ? 'bg-brand-600 text-white'
+                      : courant ? 'bg-white border-2 border-brand-600 text-brand-700'
+                      : 'bg-slate-100 text-slate-500'
+                    }`} aria-current={courant ? 'step' : undefined}>
+                      {fait ? <Check className="w-4 h-4" aria-hidden="true" /> : i + 1}
+                    </div>
+                    <span lang="fr" className={`mt-1.5 max-w-full text-xs text-center leading-tight tracking-tight break-words hyphens-auto ${
+                      courant ? 'font-semibold text-brand-700' : fait ? 'font-medium text-brand-700' : 'font-medium text-slate-500'
+                    }`}>{s}</span>
                   </div>
-                  <p className={`text-[9px] font-medium mt-1.5 text-center ${
-                    i <= step ? 'text-brand-600' : 'text-slate-400'
-                  }`}>{s}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {/* Step 0: Client */}
           {step === 0 && (
-            <div className="card p-6 space-y-4 animate-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
-                  <User className="w-5 h-5 text-sky-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Vos coordonnées</h2>
-                  <p className="text-xs text-slate-400">Informations de contact</p>
-                </div>
-              </div>
+            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+              <EnTete icone={User} titre="Vos coordonnées" sousTitre="Informations de contact" />
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="input-label">Nom *</label>
-                  <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
-                    className={`input ${errors.nom ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Dupont" />
+                  <label htmlFor="borne-nom" className="input-label">Nom *</label>
+                  <input id="borne-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                    autoComplete="family-name" className="input" placeholder="Dupont" {...invalide('nom')} />
                   <FieldError field="nom" />
                 </div>
                 <div>
-                  <label className="input-label">Prénom</label>
-                  <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)} className="input" placeholder="Jean" />
+                  <label htmlFor="borne-prenom" className="input-label">Prénom</label>
+                  <input id="borne-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
+                    autoComplete="given-name" className="input" placeholder="Jean" />
                 </div>
               </div>
               <div>
-                <label className="input-label">Téléphone *</label>
-                <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
-                  className={`input ${errors.telephone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="06 XX XX XX XX" />
+                <label htmlFor="borne-telephone" className="input-label">Téléphone *</label>
+                <input id="borne-telephone" type="tel" inputMode="tel" autoComplete="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
+                  className="input" placeholder="06 XX XX XX XX" {...invalide('telephone')} />
                 <FieldError field="telephone" />
               </div>
               <div>
-                <label className="input-label">Email</label>
-                <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
-                  className={`input ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="optionnel" />
+                <label htmlFor="borne-email" className="input-label">Email</label>
+                <input id="borne-email" type="email" inputMode="email" autoComplete="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
+                  className="input" placeholder="optionnel" {...invalide('email')} />
                 <FieldError field="email" />
               </div>
               <div>
-                <label className="input-label">Société</label>
-                <input value={form.societe} onChange={e => updateForm('societe', e.target.value)} className="input" placeholder="optionnel" />
+                <label htmlFor="borne-societe" className="input-label">Société</label>
+                <input id="borne-societe" value={form.societe} onChange={e => updateForm('societe', e.target.value)}
+                  autoComplete="organization" className="input" placeholder="optionnel" />
               </div>
               <ConsentementMarketing id="borne-consentement" checked={form.consentement_marketing}
                 onChange={(v) => updateForm('consentement_marketing', v)} />
@@ -260,26 +280,17 @@ export default function DepotPage() {
 
           {/* Step 1: Catégorie */}
           {step === 1 && (
-            <div className="card p-6 space-y-4 animate-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5 text-brand-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Type d'appareil</h2>
-                  <p className="text-xs text-slate-400">Sélectionnez la catégorie</p>
-                </div>
-              </div>
+            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+              <EnTete icone={Smartphone} titre="Type d'appareil" sousTitre="Sélectionnez la catégorie" />
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-3">
                 {categories.map(cat => (
                   <button
                     key={cat}
+                    type="button"
+                    aria-pressed={form.categorie === cat}
                     onClick={() => updateForm('categorie', cat)}
-                    className={`p-4 rounded-xl text-sm font-medium border-2 transition-all text-left
-                      ${form.categorie === cat
-                        ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm shadow-brand-500/10'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                    className={tuile(form.categorie === cat)}
                   >
                     {cat}
                   </button>
@@ -290,20 +301,13 @@ export default function DepotPage() {
 
           {/* Step 2: Marque & Modèle */}
           {step === 2 && (
-            <div className="card p-6 space-y-4 animate-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                  <Smartphone className="w-5 h-5 text-brand-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Marque & modèle</h2>
-                  <p className="text-xs text-slate-400">{form.categorie}</p>
-                </div>
-              </div>
+            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+              <EnTete icone={Smartphone} titre="Marque & modèle" sousTitre={form.categorie} />
 
               <div>
                 <label htmlFor="borne-marque" className="input-label">Marque *</label>
-                <select id="borne-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
+                <select id="borne-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)}
+                  className="select input pr-12" {...invalide('marque')}>
                   <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
                   {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
                   <option value={MARQUE_AUTRE}>Autre</option>
@@ -329,7 +333,7 @@ export default function DepotPage() {
                 <div>
                   <label htmlFor="borne-modele-autre" className="input-label">Préciser marque / modèle *</label>
                   <input id="borne-modele-autre" value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
-                    className={`input ${errors.modele_autre ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Ex: Samsung Galaxy S24" autoFocus />
+                    className="input" placeholder="Ex: Samsung Galaxy S24" autoFocus {...invalide('modele_autre')} />
                   <FieldError field="modele_autre" />
                 </div>
               )}
@@ -338,62 +342,57 @@ export default function DepotPage() {
 
           {/* Step 3: Panne */}
           {step === 3 && (
-            <div className="card p-6 space-y-4 animate-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Le problème</h2>
-                  <p className="text-xs text-slate-400">Décrivez la panne</p>
-                </div>
-              </div>
+            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+              <EnTete icone={AlertTriangle} titre="Le problème" sousTitre="Décrivez la panne" />
 
-              <div>
-                <label className="input-label">Type de panne *</label>
-                <div className="grid grid-cols-2 gap-2">
+              <fieldset>
+                <legend className="input-label">Type de panne *</legend>
+                <div className="grid grid-cols-2 gap-3">
                   {pannes.map(p => (
                     <button
                       key={p}
+                      type="button"
+                      aria-pressed={form.panne === p}
                       onClick={() => updateForm('panne', p)}
-                      className={`p-2.5 rounded-lg text-xs font-medium border-2 transition-all text-left
-                        ${form.panne === p
-                          ? 'border-brand-500 bg-brand-50 text-brand-700'
-                          : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                      className={tuile(form.panne === p)}
                     >
                       {p}
                     </button>
                   ))}
                 </div>
-              </div>
+              </fieldset>
 
               <div>
-                <label className="input-label">Détails supplémentaires</label>
+                <label htmlFor="borne-panne-detail" className="input-label">Détails supplémentaires</label>
                 <textarea
+                  id="borne-panne-detail"
                   value={form.panne_detail}
                   onChange={e => updateForm('panne_detail', e.target.value)}
-                  className="input min-h-[80px] resize-none"
+                  className="input resize-none"
+                  rows={3}
                   placeholder="Décrivez plus précisément le problème..."
                 />
               </div>
 
               <div>
-                <label className="input-label">Notes</label>
+                <label htmlFor="borne-notes" className="input-label">Notes</label>
                 <textarea
+                  id="borne-notes"
                   value={form.notes_client}
                   onChange={e => updateForm('notes_client', e.target.value)}
-                  className="input min-h-[60px] resize-none"
+                  className="input resize-none"
+                  rows={2}
                   placeholder="Informations complémentaires (accessoires, état cosmétique...)"
                 />
               </div>
 
-              <label htmlFor="borne-attente" className="flex items-start gap-3 p-4 min-h-[44px] rounded-xl border-2 border-slate-200 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 cursor-pointer transition-colors">
+              <label htmlFor="borne-attente" className="flex items-start gap-3 p-4 min-h-14 rounded-lg border-2 border-slate-200 bg-white has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 cursor-pointer transition-colors duration-150">
                 <input id="borne-attente" type="checkbox" checked={form.attente_boutique}
                   onChange={e => updateForm('attente_boutique', e.target.checked)}
                   aria-describedby="borne-attente-aide"
-                  className="mt-0.5 w-6 h-6 shrink-0 rounded border-slate-400 text-brand-600 focus:ring-2 focus:ring-brand-500" />
+                  className="checkbox w-6 h-6 mt-0.5" />
                 <span className="min-w-0">
-                  <span className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                  <span className="flex items-center gap-2 text-base font-semibold text-slate-900">
                     <Clock className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Je patiente en boutique
                   </span>
                   <span id="borne-attente-aide" className="block text-sm text-slate-600 mt-0.5">
@@ -406,38 +405,33 @@ export default function DepotPage() {
 
           {/* Step 4: Sécurité */}
           {step === 4 && (
-            <div className="card p-6 space-y-5 animate-in">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-                  <Lock className="w-5 h-5 text-violet-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Codes d'accès</h2>
-                  <p className="text-xs text-slate-400">Optionnel — nécessaire pour le diagnostic</p>
-                </div>
-              </div>
+            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+              <EnTete icone={Lock} titre="Codes d'accès" sousTitre="Optionnel — nécessaire pour le diagnostic" />
 
-              <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
-                Ces informations sont confidentielles et nécessaires uniquement pour le diagnostic de votre appareil.
+              <div className="callout callout-info">
+                <Shield aria-hidden="true" />
+                <span>Ces informations sont confidentielles et nécessaires uniquement pour le diagnostic de votre appareil.</span>
               </div>
 
               <div>
-                <label className="input-label flex items-center gap-1.5">
-                  <Lock className="w-3 h-3" /> Code PIN / Mot de passe
+                <label htmlFor="borne-pin" className="input-label flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 text-slate-500" aria-hidden="true" /> Code PIN / Mot de passe
                 </label>
                 <input
+                  id="borne-pin"
                   type="text"
+                  autoComplete="off"
                   value={form.pin}
                   onChange={e => updateForm('pin', e.target.value)}
-                  className="input text-center text-lg font-mono tracking-widest"
+                  className="input text-center text-xl font-mono tracking-widest"
                   placeholder="••••"
                 />
               </div>
 
               <div>
-                <label className="input-label flex items-center gap-1.5">
-                  <Shield className="w-3 h-3" /> Schéma de déverrouillage
-                </label>
+                <div className="input-label flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-slate-500" aria-hidden="true" /> Schéma de déverrouillage
+                </div>
                 <div className="flex justify-center">
                   <PatternGrid
                     value={form.pattern}
@@ -451,56 +445,60 @@ export default function DepotPage() {
 
           {/* Step 5: Confirmation */}
           {step === 5 && createdCode && (
-            <div className="card p-8 text-center animate-in">
-              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
-                <Check className="w-10 h-10 text-emerald-500" />
+            <div className="card p-6 sm:p-8 text-center animate-in">
+              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-5" aria-hidden="true">
+                <Check className="w-10 h-10 text-emerald-700" />
               </div>
-              <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Demande enregistrée !</h2>
-              <p className="text-slate-500 mb-6">Votre numéro de ticket :</p>
-              <div className="bg-brand-50 rounded-xl py-4 px-6 mb-6 border border-brand-100">
-                <p className="text-3xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
+              <h2 className="t-display text-balance mb-2">Demande enregistrée !</h2>
+              <p className="text-slate-500 mb-5">Votre numéro de ticket :</p>
+              <div className="bg-brand-50 rounded-xl py-4 px-6 mb-5 border border-brand-200">
+                {/* <div> et non <p> : `.depot-form p` ramènerait le code à 16 px slate-700 */}
+                <div className="text-3xl sm:text-4xl font-bold font-mono text-brand-700 tracking-wider tabular-nums">{createdCode}</div>
               </div>
-              <p className="text-sm text-slate-400 mb-6">
+              <p className="text-slate-600 mb-6">
                 Conservez ce code pour suivre l'avancement de votre réparation.
               </p>
 
               {/* Countdown */}
               {countdown !== null && (
                 <div className="mb-6">
-                  <div className="w-16 h-16 mx-auto rounded-full border-4 border-slate-200 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-slate-600 font-mono">{countdown}</span>
+                  <div className="w-16 h-16 mx-auto rounded-full border-4 border-slate-200 flex items-center justify-center" aria-hidden="true">
+                    <span className="text-2xl font-bold text-slate-700 tabular-nums">{countdown}</span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-2">Retour automatique dans {countdown}s</p>
+                  <span className="block text-sm text-slate-500 mt-2 tabular-nums">Retour automatique dans {countdown}s</span>
                 </div>
               )}
 
               <button
+                type="button"
                 onClick={handleReset}
-                className="btn-primary w-full text-base py-3"
+                className="btn-primary btn-lg btn-block"
               >
-                <Plus className="w-5 h-5" /> Nouveau dépôt
+                <Plus aria-hidden="true" /> Nouveau dépôt
               </button>
             </div>
           )}
 
           {/* Navigation */}
           {step < 5 && (
-            <div className="flex justify-between mt-6">
+            <div className="flex justify-between gap-3 mt-6">
               <button
+                type="button"
                 onClick={() => step === 0 ? handleReset() : setStep(s => s - 1)}
-                className="btn-secondary"
+                className={`${step === 0 ? 'btn-ghost' : 'btn-secondary'} btn-lg min-h-14`}
               >
-                {step === 0 ? <><RotateCcw className="w-4 h-4" /> Réinitialiser</> : <><ArrowLeft className="w-4 h-4" /> Retour</>}
+                {step === 0 ? <><RotateCcw aria-hidden="true" /> Réinitialiser</> : <><ArrowLeft aria-hidden="true" /> Retour</>}
               </button>
 
               <button
+                type="button"
                 onClick={handleNext}
                 disabled={loading || !canNext()}
-                className={step === 4 ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}
+                className="btn-primary btn-lg min-h-14 flex-1 sm:flex-none sm:min-w-[220px]"
               >
                 {loading ? 'Envoi...' : step === 4 ? 'Confirmer le dépôt' : 'Suivant'}
-                {step < 4 && <ArrowRight className="w-4 h-4" />}
-                {step === 4 && <Check className="w-4 h-4" />}
+                {step < 4 && <ArrowRight aria-hidden="true" />}
+                {step === 4 && <Check aria-hidden="true" />}
               </button>
             </div>
           )}

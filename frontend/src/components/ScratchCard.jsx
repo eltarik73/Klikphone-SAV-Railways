@@ -1,6 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../lib/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Gift, PartyPopper, Smile, Coins, Sparkles } from 'lucide-react';
+
+// Icône du gain : film verre trempé = cadeau, sinon réduction = pièces
+function IconeGain({ gain, className = 'w-5 h-5' }) {
+  const Icone = gain === 'film' ? Gift : Coins;
+  return <Icone className={`${className} shrink-0`} aria-hidden="true" />;
+}
+
+// « Valable pour votre prochaine réparation » : pastille ambre (attention : pas pour celle-ci)
+function Validite() {
+  return (
+    <p className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-800">
+      <Sparkles className="w-4 h-4 shrink-0" aria-hidden="true" />
+      <span>Valable pour votre <strong className="font-bold">prochaine réparation</strong></span>
+    </p>
+  );
+}
 
 export default function ScratchCard({ ticketCode }) {
   const canvasRef = useRef(null);
@@ -57,11 +73,11 @@ export default function ScratchCard({ ticketCode }) {
       ctx.fillRect(i * 60, 0, 20, canvas.height);
     }
 
-    ctx.fillStyle = '#888';
+    ctx.fillStyle = '#475569';
     ctx.font = 'bold 18px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('GRATTEZ ICI', canvas.width / 2, canvas.height / 2 - 10);
-    ctx.font = '12px system-ui, sans-serif';
+    ctx.font = '13px system-ui, sans-serif';
     ctx.fillText('Tentez votre chance !', canvas.width / 2, canvas.height / 2 + 15);
   }, [loading, isRevealed, actif]);
 
@@ -112,8 +128,8 @@ export default function ScratchCard({ ticketCode }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-6">
-        <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+      <div className="flex items-center justify-center py-6" role="status" aria-label="Chargement">
+        <Loader2 className="w-5 h-5 animate-spin text-brand-600" aria-hidden="true" />
       </div>
     );
   }
@@ -123,61 +139,53 @@ export default function ScratchCard({ ticketCode }) {
   // Already scratched
   if (isRevealed && result?.deja_gratte) {
     return (
-      <div className="bg-white rounded-2xl border-2 border-slate-200 p-6 text-center">
+      <div className="card card-body text-center">
         <p className="text-sm text-slate-500">Vous avez déjà gratté ce ticket</p>
         {result.gain && (
           <>
-            <p className="text-lg font-bold text-emerald-600 mt-2">
-              {result.gain === 'film' ? '🎁' : '💰'} {result.gain_label}
+            <p className="mt-2 inline-flex items-center justify-center gap-2 text-lg font-bold text-emerald-700">
+              <IconeGain gain={result.gain} /> {result.gain_label}
             </p>
-            <p className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
-              ✨ Valable pour votre <strong className="font-bold">prochaine réparation</strong>
-            </p>
+            <div><Validite /></div>
           </>
         )}
         {!result.gain && (
-          <p className="text-sm text-slate-400 mt-1">Retentez votre chance au prochain passage !</p>
+          <p className="text-sm text-slate-500 mt-1">Retentez votre chance au prochain passage !</p>
         )}
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl border-2 border-violet-200 p-6 text-center shadow-lg">
-      <h3 className="text-lg font-bold text-violet-700 mb-2">
-        <span className="text-xl">🎰</span> Tentez votre chance !
+    <div className="card card-body text-center">
+      <h3 className="text-lg font-semibold leading-snug text-slate-900 mb-1 inline-flex items-center gap-2">
+        <Gift className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Tentez votre chance !
       </h3>
       <p className="text-sm text-slate-500 mb-4">Grattez pour découvrir si vous avez gagné</p>
 
-      <div className="relative inline-block mx-auto rounded-xl overflow-hidden" style={{ width: 280, height: 140 }}>
+      <div className="relative inline-block mx-auto max-w-full rounded-xl overflow-hidden bg-slate-100" style={{ width: 280, height: 140 }}>
         {/* Hidden content */}
-        <div className="absolute inset-0 flex items-center justify-center"
-          style={{
-            background: isRevealed
-              ? (result?.gagnant
-                ? 'linear-gradient(135deg, #fbbf24, #f59e0b)'
-                : '#f1f5f9')
-              : '#e2e8f0'
-          }}
-        >
+        <div className={`absolute inset-0 flex items-center justify-center ${
+          isRevealed && result?.gagnant ? 'bg-brand-600 text-white' : 'bg-slate-100'
+        }`}>
           {isRevealed ? (
             result?.gagnant ? (
-              <div className="text-center" style={{ animation: 'bounceIn 0.5s ease-out' }}>
-                <div className="text-4xl mb-1">🎉</div>
-                <div className="text-lg font-extrabold text-white">GAGNÉ !</div>
-                <div className="text-sm font-semibold text-white/90">
-                  {result.gain === 'film' ? '🎁' : '💰'} {result.gain_label}
+              <div className="text-center motion-safe:animate-[bounceIn_0.5s_ease-out]" role="status">
+                <PartyPopper className="w-9 h-9 mx-auto mb-1" aria-hidden="true" />
+                <div className="text-lg font-extrabold">GAGNÉ !</div>
+                <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/90">
+                  <IconeGain gain={result.gain} className="w-4 h-4" /> {result.gain_label}
                 </div>
               </div>
             ) : (
-              <div className="text-center">
-                <div className="text-3xl mb-1">😊</div>
-                <div className="text-sm font-semibold text-slate-500">Pas cette fois !</div>
-                <div className="text-xs text-slate-400">Retentez au prochain passage</div>
+              <div className="text-center" role="status">
+                <Smile className="w-8 h-8 mx-auto mb-1 text-slate-500" aria-hidden="true" />
+                <div className="text-sm font-semibold text-slate-700">Pas cette fois !</div>
+                <div className="text-xs text-slate-500">Retentez au prochain passage</div>
               </div>
             )
           ) : (
-            <div className="text-xs text-slate-400">?</div>
+            <div className="text-sm text-slate-500">?</div>
           )}
         </div>
 
@@ -189,6 +197,7 @@ export default function ScratchCard({ ticketCode }) {
             height={140}
             className="absolute inset-0 cursor-pointer"
             style={{ touchAction: 'none' }}
+            aria-label="Carte à gratter"
             onMouseDown={() => setIsScratching(true)}
             onMouseUp={() => setIsScratching(false)}
             onMouseLeave={() => setIsScratching(false)}
@@ -201,12 +210,10 @@ export default function ScratchCard({ ticketCode }) {
       </div>
 
       {isRevealed && result?.gagnant && (
-        <p className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold">
-          ✨ Valable pour votre <strong className="font-bold">prochaine réparation</strong>
-        </p>
+        <div><Validite /></div>
       )}
 
-      <p className="text-[10px] text-slate-400 mt-3">
+      <p className="t-caption mt-3">
         1 chance sur {frequence} de gagner un film verre trempé ou une réduction
       </p>
 

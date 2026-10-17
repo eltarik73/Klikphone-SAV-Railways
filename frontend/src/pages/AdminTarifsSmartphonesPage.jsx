@@ -47,12 +47,6 @@ const EMPTY_ROW = {
 
 const POPULAR_BRANDS = ['Samsung', 'Xiaomi', 'Google', 'Honor'];
 
-const BRAND_COLORS = {
-  Samsung: 'from-blue-500/20 to-blue-600/10 border-blue-500/30 text-blue-300',
-  Xiaomi: 'from-orange-500/20 to-orange-600/10 border-orange-500/30 text-orange-300',
-  Google: 'from-emerald-500/20 to-emerald-600/10 border-emerald-500/30 text-emerald-300',
-  Honor: 'from-rose-500/20 to-rose-600/10 border-rose-500/30 text-rose-300',
-};
 
 function slugify(s) {
   return (s || '')
@@ -62,15 +56,11 @@ function slugify(s) {
     .replace(/^-+|-+$/g, '');
 }
 
-function brandStyle(marque) {
-  return BRAND_COLORS[marque] || 'from-slate-500/20 to-slate-600/10 border-slate-500/30 text-slate-300';
-}
-
 function stockBadge(n) {
   const v = Number(n ?? 0);
-  if (v < 2) return { cls: 'bg-red-500/20 text-red-300 border-red-500/40', label: v };
-  if (v <= 5) return { cls: 'bg-orange-500/20 text-orange-300 border-orange-500/40', label: v };
-  return { cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40', label: v };
+  if (v < 2) return { cls: 'bg-red-50 text-red-700 border-red-200', label: v };
+  if (v <= 5) return { cls: 'bg-amber-50 text-amber-800 border-amber-200', label: v };
+  return { cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', label: v };
 }
 
 export default function AdminTarifsSmartphonesPage() {
@@ -259,59 +249,29 @@ export default function AdminTarifsSmartphonesPage() {
   }, [rows, search, brandFilter, anciensSeuls]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-zinc-900 to-slate-900 text-white">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="page max-w-[1280px]">
+      <div>
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
-          <div className="flex items-start gap-4">
+        <div className="page-header">
+          <div className="flex items-start gap-2 min-w-0">
             <Link
               to={basePath}
               aria-label="Retour"
-              className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+              className="btn-ghost btn-icon shrink-0 -ml-2"
             >
-              <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+              <ArrowLeft aria-hidden="true" />
             </Link>
-            <div>
-              <h1 className="text-2xl font-black flex items-center gap-2">
-                <Smartphone className="w-6 h-6 text-brand-400" />
+            <div className="min-w-0">
+              <h1 className="page-header-title">
                 Tarifs Smartphones
               </h1>
-              <p className="text-sm text-slate-400 mt-1">
+              <p className="page-header-subtitle">
                 Samsung, Xiaomi, Google Pixel, Honor — gérez tous vos smartphones non-Apple
               </p>
-
-              {/* Brand badges */}
-              {!loading && rows.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <button
-                    onClick={() => setBrandFilter('all')}
-                    aria-pressed={brandFilter === 'all'}
-                    className={`min-h-[44px] px-3 py-1 text-xs font-bold rounded-full border transition-all ${
-                      brandFilter === 'all'
-                        ? 'bg-white/15 border-white/30 text-white'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                    }`}
-                  >
-                    Tous <span className="opacity-70">({rows.length})</span>
-                  </button>
-                  {Object.entries(brandCounts).sort((a, b) => b[1] - a[1]).map(([brand, n]) => (
-                    <button
-                      key={brand}
-                      onClick={() => setBrandFilter(brandFilter === brand ? 'all' : brand)}
-                      aria-pressed={brandFilter === brand}
-                      className={`min-h-[44px] px-3 py-1 text-xs font-bold rounded-full border bg-gradient-to-br transition-all ${brandStyle(brand)} ${
-                        brandFilter === brand ? 'ring-2 ring-white/30 motion-safe:scale-105' : 'opacity-85 hover:opacity-100'
-                      }`}
-                    >
-                      {brand} <span className="opacity-70">({n})</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="page-header-actions max-w-full">
             <button
               onClick={async () => {
                 try {
@@ -327,115 +287,141 @@ export default function AdminTarifsSmartphonesPage() {
               }}
               disabled={pdfSelection.size === 0}
               title={pdfSelection.size === 0 ? 'Sélectionne des smartphones via les cases' : `PDF A4 (${pdfSelection.size} modèles)`}
-              className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-sm shadow-lg shadow-rose-500/20 transition-all"
+              className="btn-secondary"
             >
-              <FileDown className="w-4 h-4" /> PDF
+              <FileDown /> PDF
               {pdfSelection.size > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-md bg-white/20 text-[11px] font-black">
+                <span className="badge-count badge-count-brand">
                   {pdfSelection.size}
                 </span>
               )}
             </button>
             <button
-              onClick={() => setShowNewForm(s => !s)}
-              className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-lg shadow-brand-500/20 transition-all"
+              type="button"
+              onClick={() => setFenetre('historique')}
+              className="btn-secondary"
             >
-              <Plus className="w-4 h-4" /> Ajouter
+              <History aria-hidden="true" /> Historique
             </button>
             <button
               type="button"
               onClick={() => setFenetre('ajuster')}
-              className="flex items-center gap-2 min-h-[44px] px-4 rounded-lg border border-brand-500/50 bg-brand-500/15 text-brand-200 hover:bg-brand-500/25 font-bold text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+              className="btn-secondary"
             >
-              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Ajuster en %
+              <SlidersHorizontal aria-hidden="true" /> Ajuster en %
             </button>
+            {/* Un seul bouton plein : « Ajouter », sauf quand des modifications attendent d'être enregistrées */}
             <button
-              type="button"
-              onClick={() => setFenetre('historique')}
-              className="flex items-center gap-2 min-h-[44px] px-4 rounded-lg border border-slate-600 bg-slate-800/60 text-slate-100 hover:bg-slate-700 font-bold text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+              onClick={() => setShowNewForm(s => !s)}
+              className={dirtyCount > 0 ? 'btn-secondary' : 'btn-primary'}
             >
-              <History className="w-4 h-4" aria-hidden="true" /> Historique
+              <Plus /> Ajouter
             </button>
             {dirtyCount > 0 && (
               <button
                 onClick={saveAll}
-                className="flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-colors motion-safe:animate-pulse"
+                className="btn-primary"
               >
-                <Save className="w-4 h-4" />
+                <Save />
                 Enregistrer ({dirtyCount})
               </button>
             )}
           </div>
         </div>
 
+        {/* Brand filter */}
+        {!loading && rows.length > 0 && (
+          <div className="scroll-fade-x mb-4">
+            <div className="segmented" role="group" aria-label="Marques">
+              <button
+                type="button"
+                onClick={() => setBrandFilter('all')}
+                aria-pressed={brandFilter === 'all'}
+                className={`segmented-item ${brandFilter === 'all' ? 'segmented-item-active' : ''}`}
+              >
+                Tous <span className="text-slate-500">({rows.length})</span>
+              </button>
+              {Object.entries(brandCounts).sort((a, b) => b[1] - a[1]).map(([brand, n]) => (
+                <button
+                  key={brand}
+                  type="button"
+                  onClick={() => setBrandFilter(brandFilter === brand ? 'all' : brand)}
+                  aria-pressed={brandFilter === brand}
+                  className={`segmented-item ${brandFilter === brand ? 'segmented-item-active' : ''}`}
+                >
+                  {brand} <span className="text-slate-500">({n})</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Search + filter */}
         {!loading && rows.length > 0 && (
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row gap-3 mb-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
               <input
                 type="search"
                 value={search}
                 aria-label="Rechercher une marque, un modèle"
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Rechercher une marque, un modèle…"
-                className="w-full min-h-[44px] pl-10 pr-12 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700 text-sm text-white placeholder-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                className="input pl-10 pr-12"
               />
               {search && (
                 <button
                   onClick={() => setSearch('')}
                   aria-label="Effacer la recherche"
-                  className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 inline-flex items-center justify-center rounded-md hover:bg-white/10 text-slate-400"
+                  className="btn-ghost btn-icon absolute right-0 top-1/2 -translate-y-1/2 text-slate-500"
                 >
-                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                  <X aria-hidden="true" />
                 </button>
               )}
             </div>
-            <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} theme="sombre" />
-            <div className="flex items-center gap-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700">
-              <Filter className="w-4 h-4 text-slate-400" aria-hidden="true" />
+            <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
               <select
                 value={brandFilter}
                 aria-label="Filtrer par marque"
                 onChange={(e) => setBrandFilter(e.target.value)}
-                className="bg-transparent min-h-[44px] text-sm font-semibold text-white focus:outline-none min-w-[120px]"
+                className="select pl-9 min-w-[180px] font-medium"
               >
-                <option value="all" className="bg-slate-900">Toutes marques</option>
+                <option value="all">Toutes marques</option>
                 {Object.keys(brandCounts).sort().map(b => (
-                  <option key={b} value={b} className="bg-slate-900">{b}</option>
+                  <option key={b} value={b}>{b}</option>
                 ))}
               </select>
             </div>
           </div>
         )}
-        {!loading && rows.length > 0 && <p className="-mt-2 mb-3 text-xs text-slate-400">{AIDE_VERROU_BOUTIQUE.note}</p>}
+        {!loading && rows.length > 0 && <p className="t-caption mb-4">{AIDE_VERROU_BOUTIQUE.note}</p>}
 
         {/* Nouveau form inline */}
         {showNewForm && (
-          <div className="mb-6 bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-brand-500/30 rounded-2xl p-6 shadow-xl shadow-brand-500/5">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="font-black text-lg flex items-center gap-2">
-                <div className="p-2 rounded-lg bg-brand-500/20">
-                  <Plus className="w-5 h-5 text-brand-400" />
-                </div>
+          <div className="card border-brand-300 mb-6">
+            <div className="card-header">
+              <h2 className="t-h2 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-slate-400" aria-hidden="true" />
                 Nouveau smartphone
               </h2>
               <button
                 onClick={() => setShowNewForm(false)}
                 aria-label="Fermer le formulaire"
-                className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-white/10 text-slate-300"
+                className="btn-ghost btn-icon"
               >
-                <X className="w-4 h-4" />
+                <X />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-4 sm:px-5 pb-4 sm:pb-5">
               {/* Col 1 : identité */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-brand-400 flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5" /> Identité
+              <div className="space-y-4">
+                <h3 className="t-h3 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-slate-400" aria-hidden="true" /> Identité
                 </h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <Field label="Marque *" value={newRow.marque}
                     onChange={v => setNewRow({ ...newRow, marque: v })}
                     placeholder="Samsung" />
@@ -452,27 +438,28 @@ export default function AdminTarifsSmartphonesPage() {
 
                 {/* Preview image */}
                 <div className="pt-2">
-                  <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider mb-2">
+                  <p className="input-label">
                     Aperçu
-                  </div>
+                  </p>
                   <div className="flex items-center gap-3">
-                    <div className="w-24 h-24 rounded-xl bg-white flex items-center justify-center overflow-hidden border border-slate-700">
+                    <div className="w-24 h-24 rounded-lg bg-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
                       {newRow.image_url ? (
                         <img src={newRow.image_url} alt="" className="max-w-full max-h-full object-contain" />
                       ) : (
-                        <ImageIcon className="w-8 h-8 text-slate-300" />
+                        <ImageIcon className="w-8 h-8 text-slate-300" aria-hidden="true" />
                       )}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <input
                         type="text"
                         value={newRow.image_url}
                         onChange={(e) => setNewRow({ ...newRow, image_url: e.target.value })}
                         placeholder="URL de l'image (optionnel)"
-                        className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                        aria-label="URL de l'image"
+                        className="input"
                       />
-                      <p className="text-[10px] text-slate-500 mt-1">
-                        Laisser vide et utiliser <Sparkles className="w-3 h-3 inline text-purple-400" /> après création
+                      <p className="input-help">
+                        Laisser vide et utiliser <Sparkles className="w-3 h-3 inline text-brand-600" aria-hidden="true" /> après création
                       </p>
                     </div>
                   </div>
@@ -480,12 +467,12 @@ export default function AdminTarifsSmartphonesPage() {
               </div>
 
               {/* Col 2 : variantes */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-brand-400 flex items-center gap-1.5">
-                  <Package className="w-3.5 h-3.5" /> Variantes stockage
+              <div className="space-y-4">
+                <h3 className="t-h3 flex items-center gap-1.5">
+                  <Package className="w-4 h-4 text-slate-400" aria-hidden="true" /> Variantes stockage
                 </h3>
-                <div className="bg-slate-900/40 rounded-xl border border-slate-700/50 p-3 space-y-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">Variante 1 (principale)</div>
+                <div className="card-section space-y-2">
+                  <div className="t-h3">Variante 1 (principale)</div>
                   <div className="grid grid-cols-3 gap-2">
                     <Field compact label="Stockage" value={newRow.stockage_1}
                       onChange={v => setNewRow({ ...newRow, stockage_1: v })} />
@@ -495,8 +482,8 @@ export default function AdminTarifsSmartphonesPage() {
                       onChange={v => setNewRow({ ...newRow, stock_1: v })} />
                   </div>
                 </div>
-                <div className="bg-slate-900/40 rounded-xl border border-slate-700/50 p-3 space-y-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">Variante 2 (optionnel)</div>
+                <div className="card-section space-y-2">
+                  <div className="t-h3">Variante 2 (optionnel)</div>
                   <div className="grid grid-cols-3 gap-2">
                     <Field compact label="Stockage" value={newRow.stockage_2}
                       onChange={v => setNewRow({ ...newRow, stockage_2: v })} />
@@ -506,8 +493,8 @@ export default function AdminTarifsSmartphonesPage() {
                       onChange={v => setNewRow({ ...newRow, stock_2: v })} />
                   </div>
                 </div>
-                <div className="bg-slate-900/40 rounded-xl border border-slate-700/50 p-3 space-y-2">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase">Variante 3 (optionnel)</div>
+                <div className="card-section space-y-2">
+                  <div className="t-h3">Variante 3 (optionnel)</div>
                   <div className="grid grid-cols-3 gap-2">
                     <Field compact label="Stockage" value={newRow.stockage_3}
                       onChange={v => setNewRow({ ...newRow, stockage_3: v })} />
@@ -520,16 +507,16 @@ export default function AdminTarifsSmartphonesPage() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-white/10">
+            <div className="card-footer">
               <button
                 onClick={() => setShowNewForm(false)}
-                className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-sm font-semibold transition-all"
+                className="btn-ghost"
               >
                 Annuler
               </button>
               <button
                 onClick={createNew}
-                className="px-6 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-sm font-bold shadow-lg shadow-brand-500/20 transition-all"
+                className="btn-primary"
               >
                 Créer le smartphone
               </button>
@@ -538,7 +525,7 @@ export default function AdminTarifsSmartphonesPage() {
         )}
 
         {/* Tableau / loading / empty */}
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="card overflow-hidden">
           {loading ? (
             <TableSkeleton />
           ) : rows.length === 0 ? (
@@ -547,27 +534,25 @@ export default function AdminTarifsSmartphonesPage() {
               setShowNewForm(true);
             }} />
           ) : filteredRows.length === 0 ? (
-            <div className="text-center py-16 px-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-slate-800 mb-4">
-                <Search className="w-8 h-8 text-slate-500" />
-              </div>
-              <p className="text-slate-300 font-semibold mb-1">Aucun résultat</p>
-              <p className="text-sm text-slate-500">
+            <div className="empty-state">
+              <div className="empty-state-icon"><Search aria-hidden="true" /></div>
+              <p className="t-h2">Aucun résultat</p>
+              <p className="t-body text-slate-500">
                 Essayez une autre recherche ou changez le filtre de marque.
               </p>
               <button
                 onClick={() => { setSearch(''); setBrandFilter('all'); setAnciensSeuls(false); }}
-                className="mt-4 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-sm font-semibold"
+                className="btn-secondary"
               >
                 Réinitialiser les filtres
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: '1380px', tableLayout: 'fixed' }}>
-                <thead className="bg-slate-800/60 text-slate-300 text-xs uppercase">
+            <div className="overflow-x-auto scroll-fade-x">
+              <table className="table table-dense min-w-[1280px] table-fixed">
+                <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-1 py-3 text-center w-14">
+                    <th className="table-header !px-1 text-center w-14">
                       <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                         <input
                           type="checkbox"
@@ -578,38 +563,34 @@ export default function AdminTarifsSmartphonesPage() {
                           }}
                           title="Tout sélectionner pour le PDF"
                           aria-label="Tout sélectionner pour le PDF"
-                          className="w-5 h-5 accent-rose-500 cursor-pointer"
+                          className="checkbox"
                         />
                       </label>
                     </th>
-                    <th className="px-2 py-3 text-left w-[64px]">Photo</th>
-                    <th className="px-2 py-3 text-left w-28">Marque</th>
-                    <th className="px-2 py-3 text-left w-[220px]">Modèle</th>
-                    <th className="px-2 py-3 text-left w-24">Prix du</th>
-                    <th className="px-2 py-3 text-left w-36">Condition</th>
-                    <th className="px-2 py-3 text-left w-24">Stockage</th>
-                    <th className="px-2 py-3 text-left w-24">Prix €</th>
-                    <th className="px-2 py-3 text-center w-16">Stock</th>
-                    <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Stockage 2</th>
-                    <th className="px-2 py-3 text-left w-24 hidden xl:table-cell">Prix 2 €</th>
-                    <th className="px-2 py-3 text-center w-16 hidden xl:table-cell">Stock 2</th>
-                    <th className="px-2 py-3 text-right w-40">Actions</th>
+                    <th className="table-header !px-2 w-[72px]">Photo</th>
+                    <th className="table-header !px-2 w-28">Marque</th>
+                    <th className="table-header !px-2 w-[200px]">Modèle</th>
+                    <th className="table-header !px-2 w-28">Prix du</th>
+                    <th className="table-header !px-2 w-48">Condition</th>
+                    <th className="table-header !px-2 w-24">Stockage</th>
+                    <th className="table-header !px-2 w-24">Prix €</th>
+                    <th className="table-header !px-2 text-center w-20">Stock</th>
+                    <th className="table-header !px-2 w-24 hidden xl:table-cell">Stockage 2</th>
+                    <th className="table-header !px-2 w-24 hidden xl:table-cell">Prix 2 €</th>
+                    <th className="table-header !px-2 text-center w-20 hidden xl:table-cell">Stock 2</th>
+                    <th className="table-header !px-2 text-right w-44">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((r, idx) => {
+                  {filteredRows.map((r) => {
                     const verrou = verrouilles.has(r.id);
                     const aideVerrou = verrou ? 'Prix protégés par le cadenas : ouvrez-le pour les modifier' : undefined;
                     return (
                     <tr
                       key={r.id}
-                      className={`border-t border-slate-800 transition-colors ${
-                        dirty[r.id]
-                          ? 'bg-brand-500/10 ring-1 ring-inset ring-brand-500/30'
-                          : idx % 2 === 0 ? 'hover:bg-slate-800/30' : 'bg-slate-900/30 hover:bg-slate-800/30'
-                      }`}
+                      className={`table-row ${dirty[r.id] ? 'bg-amber-50/70 hover:bg-amber-50' : ''}`}
                     >
-                      <td className="px-1 py-2 text-center align-middle">
+                      <td className="!px-1 !py-1 text-center">
                         <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                           <input
                             type="checkbox"
@@ -617,7 +598,7 @@ export default function AdminTarifsSmartphonesPage() {
                             onChange={() => toggleSelect(r.id)}
                             title="Inclure dans le PDF"
                             aria-label={`Inclure ${r.marque} ${r.modele} dans le PDF`}
-                            className="w-5 h-5 accent-rose-500 cursor-pointer"
+                            className="checkbox"
                           />
                         </label>
                       </td>
@@ -626,17 +607,17 @@ export default function AdminTarifsSmartphonesPage() {
                           {r.image_url ? (
                             <div className="relative group/img">
                               <img src={r.image_url} alt=""
-                                className="w-14 h-14 rounded-lg object-contain bg-white p-1 border border-slate-700" />
+                                className="w-14 h-14 rounded-lg object-contain bg-white p-1 border border-slate-200" />
                               <button
                                 onClick={() => generateImage(r)}
                                 disabled={generatingId === r.id}
                                 title="Remplacer l'image"
-                                className="absolute -bottom-1 -right-1 p-1 rounded-full bg-brand-500 hover:bg-brand-600 text-white shadow-lg opacity-0 group-hover/img:opacity-100 transition-opacity disabled:opacity-100"
+                                className="absolute -bottom-1 -right-1 w-7 h-7 inline-flex items-center justify-center rounded-full bg-brand-600 hover:bg-brand-700 text-white shadow-xs opacity-0 group-hover/img:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 disabled:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                               >
                                 {generatingId === r.id ? (
-                                  <Loader2 className="w-3 h-3 motion-safe:animate-spin" />
+                                  <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" />
                                 ) : (
-                                  <RefreshCw className="w-3 h-3" />
+                                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                                 )}
                               </button>
                             </div>
@@ -645,94 +626,89 @@ export default function AdminTarifsSmartphonesPage() {
                               onClick={() => generateImage(r)}
                               disabled={generatingId === r.id}
                               title="Chercher une image"
-                              className="w-14 h-14 rounded-lg bg-slate-800/50 border-2 border-dashed border-slate-700 hover:border-brand-500 hover:bg-brand-500/10 flex items-center justify-center text-slate-500 hover:text-brand-400 transition-all"
+                              className="w-14 h-14 rounded-lg bg-slate-50 border-2 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50 flex items-center justify-center text-slate-500 hover:text-brand-600 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               {generatingId === r.id ? (
-                                <Loader2 className="w-5 h-5 motion-safe:animate-spin" />
+                                <Loader2 className="w-5 h-5 motion-safe:animate-spin" aria-hidden="true" />
                               ) : (
-                                <ImageIcon className="w-5 h-5" />
+                                <ImageIcon className="w-5 h-5" aria-hidden="true" />
                               )}
                             </button>
                           )}
                         </div>
                       </Cell>
-                      <td className="px-2 py-2 align-middle">
+                      <td className="!px-2">
                         <input type="text" value={r.marque || ''}
                           onChange={(e) => updateRow(r.id, 'marque', e.target.value)}
                           aria-label="Marque"
-                          className="input-cell w-full font-bold" />
+                          className="input px-2 font-semibold" />
                       </td>
-                      <td className="px-2 py-2 align-middle">
+                      <td className="!px-2">
                         <input type="text" value={r.modele || ''}
                           onChange={(e) => updateRow(r.id, 'modele', e.target.value)}
                           aria-label="Modèle"
-                          className="input-cell w-full font-semibold text-white"
+                          className="input px-2 font-semibold"
                           placeholder="Ex: Galaxy A17 5G" />
                       </td>
-                      <td className="px-2 py-2 align-middle">
-                        <BadgeDatePrix row={r} theme="sombre" court />
+                      <td className="!px-2">
+                        <BadgeDatePrix row={r} court />
                       </td>
-                      <td className="px-2 py-2 align-middle">
+                      <td className="!px-2">
                         <div className="relative">
                           <select value={r.condition || 'Reconditionné Premium'}
                             aria-label={`Condition de ${r.marque} ${r.modele}`}
                             onChange={(e) => updateRow(r.id, 'condition', e.target.value)}
-                            className={`input-cell w-full pl-6 pr-1 font-bold appearance-none cursor-pointer ${
-                              r.condition === 'Neuf'
-                                ? 'text-emerald-200 border-emerald-600/50 bg-emerald-500/10'
-                                : 'text-blue-200 border-blue-600/50 bg-blue-500/10'
-                            }`}>
+                            className="select pl-6 pr-8 font-medium">
                             <option value="Neuf">Neuf</option>
                             <option value="Reconditionné Premium">Recond. Premium</option>
                           </select>
                           <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${
-                            r.condition === 'Neuf' ? 'bg-emerald-400' : 'bg-blue-400'
-                          }`} />
+                            r.condition === 'Neuf' ? 'bg-emerald-500' : 'bg-blue-500'
+                          }`} aria-hidden="true" />
                         </div>
                       </td>
-                      <td className="px-2 py-2 align-middle">
+                      <td className="!px-2">
                         <input type="text" value={r.stockage_1 || ''}
                           aria-label={`Stockage 1 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_1', e.target.value)}
                           placeholder="128 Go"
-                          className="input-cell w-full" />
+                          className="input px-2" />
                       </td>
-                      <td className="px-2 py-2 align-middle">
+                      <td className="!px-2">
                         <input type="number" value={r.prix_1 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_1', e.target.value)}
                           readOnly={verrou}
                           title={aideVerrou}
                           aria-label={`Prix 1 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
-                          className={`input-cell w-full font-bold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`} />
+                          className={`input px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} />
                       </td>
-                      <td className="px-2 py-2 text-center align-middle">
+                      <td className="!px-2 text-center">
                         <StockInput value={r.stock_1} onChange={(v) => updateRow(r.id, 'stock_1', v)} label={`Stock 1 de ${r.modele}`} />
                       </td>
-                      <td className="px-2 py-2 align-middle hidden xl:table-cell">
+                      <td className="!px-2 hidden xl:table-cell">
                         <input type="text" value={r.stockage_2 || ''}
                           aria-label={`Stockage 2 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
                           placeholder="256 Go"
-                          className="input-cell w-full" />
+                          className="input px-2" />
                       </td>
-                      <td className="px-2 py-2 align-middle hidden xl:table-cell">
+                      <td className="!px-2 hidden xl:table-cell">
                         <input type="number" value={r.prix_2 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
                           readOnly={verrou}
                           title={aideVerrou}
                           aria-label={`Prix 2 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
-                          className={`input-cell w-full font-bold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`} />
+                          className={`input px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} />
                       </td>
-                      <td className="px-2 py-2 text-center align-middle hidden xl:table-cell">
+                      <td className="!px-2 text-center hidden xl:table-cell">
                         <StockInput value={r.stock_2} onChange={(v) => updateRow(r.id, 'stock_2', v)} label={`Stock 2 de ${r.modele}`} />
                       </td>
-                      <td className="px-2 py-2 text-right align-middle">
+                      <td className="!px-2 text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <BoutonVerrou
                             verrouille={verrou}
                             onClick={() => basculerVerrou(r.id, `${r.marque} ${r.modele}`)}
                             disabled={verrouEnCours === r.id}
-                            theme="sombre"
                             nom={`les prix de ${r.marque} ${r.modele}`}
                             aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
                           />
@@ -741,12 +717,12 @@ export default function AdminTarifsSmartphonesPage() {
                             disabled={generatingId === r.id}
                             aria-label={`Rechercher une image pour ${r.marque} ${r.modele}`}
                             title="Rechercher image"
-                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 transition-all disabled:opacity-50"
+                            className="btn-ghost btn-icon text-brand-600 hover:text-brand-700 hover:bg-brand-50"
                           >
                             {generatingId === r.id ? (
-                              <Loader2 className="w-4 h-4 motion-safe:animate-spin" />
+                              <Loader2 className="motion-safe:animate-spin" />
                             ) : (
-                              <Sparkles className="w-4 h-4" />
+                              <Sparkles />
                             )}
                           </button>
                           {dirty[r.id] && (
@@ -755,12 +731,12 @@ export default function AdminTarifsSmartphonesPage() {
                               disabled={savingId === r.id}
                               aria-label={`Enregistrer ${r.marque} ${r.modele}`}
                               title="Enregistrer"
-                              className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 transition-all"
+                              className="btn-primary btn-icon"
                             >
                               {savingId === r.id ? (
-                                <Loader2 className="w-4 h-4 motion-safe:animate-spin" />
+                                <Loader2 className="motion-safe:animate-spin" />
                               ) : (
-                                <Save className="w-4 h-4" />
+                                <Save />
                               )}
                             </button>
                           )}
@@ -768,9 +744,9 @@ export default function AdminTarifsSmartphonesPage() {
                             onClick={() => removeRow(r)}
                             aria-label={`Supprimer ${r.marque} ${r.modele}`}
                             title="Supprimer"
-                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg bg-red-500/15 hover:bg-red-500/30 text-red-300 transition-all"
+                            className="btn-danger-ghost btn-icon"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 />
                           </button>
                         </div>
                       </td>
@@ -786,69 +762,69 @@ export default function AdminTarifsSmartphonesPage() {
         {/* Modal choix image */}
         {imagePicker && (
           <div
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+            className="modal-overlay"
             onClick={() => setImagePicker(null)}
           >
             <div
-              className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-white/10 max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl"
+              className="modal sm:max-w-5xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-white/10 bg-slate-900/95 backdrop-blur-md">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-xl bg-brand-500/20">
-                    <ImageIcon className="w-5 h-5 text-brand-400" />
+              <div className="modal-header">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-5 h-5" aria-hidden="true" />
                   </div>
-                  <div>
-                    <h3 className="font-black text-lg leading-tight">
+                  <div className="min-w-0">
+                    <h3 className="t-h2">
                       Choisir la photo
                     </h3>
-                    <p className="text-sm text-slate-400">
+                    <p className="text-sm text-slate-500 truncate">
                       {imagePicker.row.marque} {imagePicker.row.modele}
                     </p>
                   </div>
                 </div>
                 <button onClick={() => setImagePicker(null)}
                   aria-label="Fermer le choix de photo"
-                  className="w-11 h-11 inline-flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/15 transition-colors">
-                  <X className="w-5 h-5" />
+                  className="btn-ghost btn-icon shrink-0">
+                  <X />
                 </button>
               </div>
 
-              <div className="px-5 pt-4 pb-2">
-                <div className="flex items-center gap-2 text-sm text-slate-400">
-                  <Search className="w-4 h-4" />
+              <div className="modal-body space-y-3">
+                <div className="flex items-center gap-2 t-caption">
+                  <Search className="w-4 h-4 text-slate-400" aria-hidden="true" />
                   <span>
                     {imagePicker.candidates.length} photos trouvées via DuckDuckGo Images — cliquez sur la meilleure
                   </span>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-5">
-                {imagePicker.candidates.map((url, i) => (
-                  <button
-                    key={i}
-                    onClick={() => chooseImage(imagePicker.row, url)}
-                    className="group relative bg-white rounded-2xl overflow-hidden aspect-square flex items-center justify-center hover:ring-4 hover:ring-brand-500 transition-all shadow-lg hover:shadow-2xl motion-safe:hover:scale-[1.03]"
-                  >
-                    <img src={url} alt="" referrerPolicy="no-referrer"
-                      className="max-w-full max-h-full object-contain p-4 motion-safe:group-hover:scale-110 transition-transform duration-300"
-                      onError={(e) => { e.target.style.opacity = '0.25'; }}
-                    />
-                    {i === 0 && (
-                      <div className="absolute top-2 left-2 flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg">
-                        <Star className="w-3 h-3 fill-current" />
-                        RECOMMANDÉ
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {imagePicker.candidates.map((url, i) => (
+                    <button
+                      key={i}
+                      onClick={() => chooseImage(imagePicker.row, url)}
+                      aria-label={`Choisir la photo ${i + 1}`}
+                      className="group relative card overflow-hidden aspect-square flex items-center justify-center transition-colors duration-150 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+                    >
+                      <img src={url} alt="" referrerPolicy="no-referrer"
+                        className="max-w-full max-h-full object-contain p-4"
+                        onError={(e) => { e.target.style.opacity = '0.25'; }}
+                      />
+                      {i === 0 && (
+                        <div className="absolute top-2 left-2 badge badge-brand">
+                          <Star className="w-3 h-3 fill-current" aria-hidden="true" />
+                          RECOMMANDÉ
+                        </div>
+                      )}
+                      <div className="absolute bottom-2 right-2 badge-count">
+                        {i + 1}
                       </div>
-                    )}
-                    <div className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center bg-slate-900 text-white text-[11px] font-bold rounded-full shadow-lg">
-                      {i + 1}
-                    </div>
-                    <div className="absolute inset-0 bg-brand-500/0 group-hover:bg-brand-500/10 transition-colors" />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-600 to-transparent text-white text-xs font-bold py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                      <Check className="w-3.5 h-3.5" /> Choisir cette photo
-                    </div>
-                  </button>
-                ))}
+                      <div className="absolute inset-x-0 bottom-0 bg-brand-600 text-white text-xs font-semibold py-2 px-3 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 flex items-center justify-center gap-1.5">
+                        <Check className="w-4 h-4" aria-hidden="true" /> Choisir cette photo
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -858,26 +834,22 @@ export default function AdminTarifsSmartphonesPage() {
         {toast && (
           <div
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`fixed top-6 right-6 z-[60] px-4 py-3 rounded-xl shadow-2xl text-sm font-bold flex items-center gap-3 animate-toast-in min-w-[280px] max-w-sm border ${
-              toast.type === 'error'
-                ? 'bg-gradient-to-r from-red-500 to-red-600 border-red-400 text-white'
-                : 'bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-400 text-white'
+            className={`toast fixed top-4 right-4 z-[60] items-center animate-in ${
+              toast.type === 'error' ? 'border-l-red-600' : 'border-l-emerald-600'
             }`}
           >
-            <div className={`p-1.5 rounded-lg ${toast.type === 'error' ? 'bg-red-600/40' : 'bg-emerald-600/40'}`}>
-              {toast.type === 'error' ? (
-                <AlertCircle className="w-4 h-4" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4" />
-              )}
-            </div>
-            <span className="flex-1">{toast.msg}</span>
+            {toast.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 shrink-0 text-red-700" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
+            )}
+            <span className="flex-1 font-medium">{toast.msg}</span>
             <button
               onClick={() => setToast(null)}
               aria-label="Fermer le message"
-              className="w-11 h-11 -my-2 -mr-2 inline-flex items-center justify-center rounded-md hover:bg-white/20 transition-colors"
+              className="btn-ghost btn-icon shrink-0"
             >
-              <X className="w-3.5 h-3.5" />
+              <X />
             </button>
           </div>
         )}
@@ -906,63 +878,6 @@ export default function AdminTarifsSmartphonesPage() {
         onAnnule={() => load()}
       />
       {adminPrompt}
-
-      <style>{`
-        .input-cell {
-          background: rgb(30 41 59 / 0.5);
-          border: 1px solid rgb(51 65 85);
-          border-radius: 0.5rem;
-          padding: 0.45rem 0.55rem;
-          min-height: 44px;
-          color: white;
-          transition: all 0.15s ease;
-          font-size: 0.925rem;
-          min-width: 0;
-        }
-        .input-cell[type="number"] {
-          font-variant-numeric: tabular-nums;
-        }
-        .input-cell:focus {
-          outline: none;
-          border-color: rgb(124 58 237);
-          box-shadow: 0 0 0 2px rgb(124 58 237 / 0.2);
-        }
-        .input-cell:hover {
-          border-color: rgb(71 85 105);
-        }
-        @keyframes toast-in {
-          from {
-            opacity: 0;
-            transform: translateX(24px) scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0) scale(1);
-          }
-        }
-        .animate-toast-in {
-          animation: toast-in 0.22s cubic-bezier(0.21, 1.02, 0.73, 1);
-        }
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.18s ease-out;
-        }
-        @keyframes skeleton-pulse {
-          0%, 100% { opacity: 0.4; }
-          50% { opacity: 0.7; }
-        }
-        .skeleton {
-          background: linear-gradient(90deg, rgb(51 65 85 / 0.3) 0%, rgb(71 85 105 / 0.5) 50%, rgb(51 65 85 / 0.3) 100%);
-          background-size: 200% 100%;
-          animation: skeleton-pulse 1.6s ease-in-out infinite;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .animate-toast-in, .animate-fade-in, .skeleton { animation: none !important; }
-        }
-      `}</style>
     </div>
   );
 }
@@ -976,7 +891,7 @@ function StockInput({ value, onChange, label = 'Stock' }) {
         value={value ?? 0}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
-        className={`w-14 min-h-[44px] text-center font-black rounded-lg px-2 py-1.5 border ${badge.cls} focus:outline-none focus:ring-2 focus:ring-brand-500/30`}
+        className={`w-16 min-h-[40px] text-center font-semibold text-base lg:text-sm tabular-nums rounded-lg px-2 py-1.5 border ${badge.cls} focus:outline-none focus:ring-2 focus:ring-brand-500/40`}
       />
     </div>
   );
@@ -984,21 +899,21 @@ function StockInput({ value, onChange, label = 'Stock' }) {
 
 function TableSkeleton() {
   return (
-    <div className="p-4 space-y-3">
-      <div className="flex gap-3 pb-3 border-b border-slate-800">
+    <div className="p-4 space-y-3" role="status" aria-label="Chargement des smartphones">
+      <div className="flex gap-3 pb-3 border-b border-slate-100">
         {['w-20', 'w-24', 'flex-1', 'w-32', 'w-20', 'w-20', 'w-16'].map((w, i) => (
-          <div key={i} className={`h-3 rounded-full skeleton ${w}`} />
+          <div key={i} className={`skeleton-line h-3 ${w}`} />
         ))}
       </div>
       {[...Array(6)].map((_, i) => (
         <div key={i} className="flex items-center gap-3 py-2">
-          <div className="w-14 h-14 rounded-lg skeleton" />
-          <div className="w-20 h-4 rounded skeleton" />
-          <div className="flex-1 h-4 rounded skeleton" />
-          <div className="w-32 h-8 rounded-lg skeleton" />
-          <div className="w-16 h-4 rounded skeleton" />
-          <div className="w-16 h-4 rounded skeleton" />
-          <div className="w-10 h-7 rounded-lg skeleton" />
+          <div className="skeleton w-14 h-14" />
+          <div className="skeleton-line w-20" />
+          <div className="skeleton-line flex-1" />
+          <div className="skeleton w-32 h-8" />
+          <div className="skeleton-line w-16" />
+          <div className="skeleton-line w-16" />
+          <div className="skeleton w-10 h-7" />
         </div>
       ))}
     </div>
@@ -1007,29 +922,26 @@ function TableSkeleton() {
 
 function EmptyState({ onAdd, onQuickAdd }) {
   return (
-    <div className="text-center py-16 px-6">
-      <div className="relative inline-flex items-center justify-center mb-6">
-        <div className="absolute inset-0 bg-brand-500/20 rounded-full blur-2xl" />
-        <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-brand-500/30 to-brand-700/20 border border-brand-500/30 flex items-center justify-center">
-          <Smartphone className="w-12 h-12 text-brand-300" />
-        </div>
+    <div className="empty-state max-h-none py-12">
+      <div className="empty-state-icon">
+        <Smartphone aria-hidden="true" />
       </div>
-      <h3 className="text-xl font-black mb-2">Aucun smartphone pour l'instant</h3>
-      <p className="text-slate-400 text-sm max-w-md mx-auto mb-6">
+      <h3 className="t-h2">Aucun smartphone pour l'instant</h3>
+      <p className="t-body text-slate-500 max-w-md">
         Commencez par ajouter vos modèles Samsung, Xiaomi, Google Pixel ou Honor.
         Les photos se récupèrent automatiquement via DuckDuckGo.
       </p>
 
-      <div className="mb-6">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center justify-center gap-2">
-          <TrendingUp className="w-3.5 h-3.5" /> Marques populaires
+      <div>
+        <div className="t-caption mb-3 flex items-center justify-center gap-2">
+          <TrendingUp className="w-4 h-4 text-slate-400" aria-hidden="true" /> Marques populaires
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           {POPULAR_BRANDS.map(b => (
             <button
               key={b}
               onClick={() => onQuickAdd(b)}
-              className={`px-4 py-2 text-sm font-bold rounded-xl border bg-gradient-to-br transition-all motion-safe:hover:scale-105 ${brandStyle(b)}`}
+              className="btn-secondary btn-sm"
             >
               + {b}
             </button>
@@ -1039,9 +951,9 @@ function EmptyState({ onAdd, onQuickAdd }) {
 
       <button
         onClick={onAdd}
-        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm shadow-xl shadow-brand-500/30 transition-all"
+        className="btn-primary"
       >
-        <Plus className="w-4 h-4" />
+        <Plus />
         Ajouter un smartphone
       </button>
     </div>
@@ -1049,13 +961,13 @@ function EmptyState({ onAdd, onQuickAdd }) {
 }
 
 function Cell({ children }) {
-  return <td className="px-3 py-2 align-middle">{children}</td>;
+  return <td className="!px-2">{children}</td>;
 }
 
 function Field({ label, value, onChange, type = 'text', placeholder, compact = false }) {
   return (
     <label className="block">
-      <span className={`${compact ? 'text-[10px]' : 'text-[11px]'} text-slate-400 font-semibold uppercase tracking-wider`}>
+      <span className="input-label">
         {label}
       </span>
       <input
@@ -1063,7 +975,7 @@ function Field({ label, value, onChange, type = 'text', placeholder, compact = f
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full mt-1 px-3 ${compact ? 'py-1.5' : 'py-2'} rounded-lg bg-slate-800 border border-slate-700 ${compact ? 'text-xs' : 'text-sm'} text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all`}
+        className={`input ${compact ? 'px-2' : ''}`}
       />
     </label>
   );
@@ -1072,13 +984,13 @@ function Field({ label, value, onChange, type = 'text', placeholder, compact = f
 function SelectField({ label, value, onChange, options }) {
   return (
     <label className="block">
-      <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">
+      <span className="input-label">
         {label}
       </span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full mt-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all"
+        className="select"
       >
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>

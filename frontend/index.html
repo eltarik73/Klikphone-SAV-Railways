@@ -19,7 +19,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Une seule feuille : Plus Jakarta Sans (variable 400-800) + Instrument Serif italique
-         (seul style utilisé, .font-editorial). Non bloquante, display=swap. -->
+         (seul style utilisé, .font-editorial). Préchargée puis appliquée sans bloquer le rendu, display=swap. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Plus+Jakarta+Sans:wght@400..800&display=swap" />
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Plus+Jakarta+Sans:wght@400..800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <noscript><link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Plus+Jakarta+Sans:wght@400..800&display=swap" rel="stylesheet" /></noscript>
   </head>

@@ -114,8 +114,8 @@ function Indicateur({ etat }) {
   const s = etat?.status;
   if (!s) return null;
   return (
-    <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-[11px] font-medium">
-      {s === 'dirty' && <span className="text-slate-600">Modifié…</span>}
+    <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs font-medium">
+      {s === 'dirty' && <span className="text-slate-500">Modifié…</span>}
       {s === 'saving' && <span className="text-amber-800">Enregistrement…</span>}
       {s === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
       {s === 'error' && (
@@ -125,9 +125,9 @@ function Indicateur({ etat }) {
           <button
             type="button"
             onClick={() => etat.retry().catch(() => {})}
-            className="ml-1 inline-flex items-center gap-1 min-h-11 px-3 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            className="btn-secondary btn-sm ml-1 text-red-700"
           >
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </>
       )}
@@ -135,8 +135,8 @@ function Indicateur({ etat }) {
   );
 }
 
-const PUCE = 'inline-flex items-center justify-center gap-1.5 min-h-11 min-w-11 px-2.5 rounded-xl border-2 text-sm font-semibold transition-colors '
-  + 'peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-1';
+// Pastilles de choix = `.choice` partagée (44 px, bordure fine) ; la couleur ne vient qu'une fois choisi
+const PUCE = 'choice min-w-11 font-semibold';
 // Colonnes selon la largeur réelle de la carte (colonne étroite de la fiche, iPad, plein écran)
 const GRILLE_CHOIX = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-x-6 gap-y-1.5';
 
@@ -146,14 +146,14 @@ function Choix({ legende, nom, options, valeur, onChange, tonChoisi }) {
     <fieldset className="min-w-0">
       <legend className="sr-only">{legende}</legend>
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <span className="w-28 shrink-0 text-sm font-medium text-slate-800" aria-hidden="true">{legende}</span>
-        <div className="flex flex-wrap gap-1.5">
+        <span className="w-28 shrink-0 text-sm font-medium text-slate-700" aria-hidden="true">{legende}</span>
+        <div className="flex flex-wrap gap-2">
           {options.map(([k, texte]) => {
             const choisi = valeur === k;
             return (
               <label key={k} className="cursor-pointer">
                 <input type="radio" name={nom} value={k} checked={choisi} onChange={() => onChange(k)} className="peer sr-only" />
-                <span className={`${PUCE} ${choisi ? tonChoisi(k) : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>{texte}</span>
+                <span className={`${PUCE} ${choisi ? tonChoisi(k) : ''}`}>{texte}</span>
               </label>
             );
           })}
@@ -163,10 +163,11 @@ function Choix({ legende, nom, options, valeur, onChange, tonChoisi }) {
   );
 }
 
-const tonEtat = (k) => (k === 'ok' ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-amber-400 border-amber-500 text-amber-950');
-const tonTest = (k) => (k === 'oui' ? 'bg-emerald-600 border-emerald-600 text-white'
-  : k === 'non' ? 'bg-red-600 border-red-600 text-white'
-    : 'bg-slate-600 border-slate-600 text-white');
+// OK = vert plein, défaut constaté = ambre doux (attention), Non = rouge, Non testé = gris neutre
+const tonEtat = (k) => (k === 'ok' ? 'choice-ok' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-50');
+const tonTest = (k) => (k === 'oui' ? 'choice-ok'
+  : k === 'non' ? 'choice-ko'
+    : 'choice-muted');
 const reponseDe = (v) => (v === true ? 'oui' : v === false ? 'non' : 'nt');
 
 /**
@@ -311,46 +312,44 @@ export default function ReceptionCard({
   const resume = resumeReception(items);
 
   const badge = charge !== 'ok' ? null : complete ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200 px-2 py-0.5 text-[11px] font-bold">
-      <CheckCircle2 className="w-3 h-3" aria-hidden="true" /> Validée
+    <span className="badge badge-success">
+      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Validée
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 ring-1 ring-amber-300 px-2 py-0.5 text-[11px] font-bold">
-      <AlertTriangle className="w-3 h-3" aria-hidden="true" /> Réception à compléter
+    <span className="badge badge-warning">
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Réception à compléter
     </span>
   );
 
   return (
-    <section id={ancre} tabIndex={-1} className="card p-5 focus:outline-none" aria-labelledby={titreId}>
-      <div className="flex items-center justify-between gap-2 mb-4">
+    <section id={ancre} tabIndex={-1} className="card p-4 sm:p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-labelledby={titreId}>
+      <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
-            <ClipboardCheck className="w-4 h-4 text-teal-700" aria-hidden="true" />
-          </div>
-          <h2 id={titreId} className="text-sm font-semibold text-slate-800">Réception</h2>
+          <ClipboardCheck className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+          <h2 id={titreId} className="t-h2">Réception</h2>
           {badge}
           <Indicateur etat={save} />
         </div>
         {charge === 'ok' && !ouvert && (
-          <button type="button" onClick={() => setOuvert(true)} className="btn-ghost text-xs px-3 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-            <Edit3 className="w-3.5 h-3.5" aria-hidden="true" /> {rempli ? 'Modifier' : 'Remplir'}
+          <button type="button" onClick={() => setOuvert(true)} className="btn-ghost btn-sm shrink-0">
+            <Edit3 aria-hidden="true" /> {rempli ? 'Modifier' : 'Remplir'}
           </button>
         )}
       </div>
 
       {charge === 'chargement' && (
         <div className="space-y-2" aria-busy="true" aria-label="Chargement de la réception">
-          <div className="h-4 w-2/3 bg-slate-100 rounded motion-safe:animate-pulse" />
-          <div className="h-4 w-1/2 bg-slate-100 rounded motion-safe:animate-pulse" />
+          <div className="skeleton-line w-2/3" />
+          <div className="skeleton-line w-1/2" />
         </div>
       )}
 
       {charge === 'erreur' && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-          <AlertTriangle className="w-4 h-4 text-amber-600" aria-hidden="true" />
-          <span>Fiche de réception indisponible.</span>
-          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-11 text-xs">
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+        <div className="callout callout-warning flex-wrap items-center">
+          <AlertTriangle aria-hidden="true" />
+          <span className="flex-1">Fiche de réception indisponible.</span>
+          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </div>
       )}
@@ -362,38 +361,38 @@ export default function ReceptionCard({
       {charge === 'ok' && !ouvert && rempli && (
         <dl className="space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-2">
-            <dt className="text-slate-600">Accessoires déposés :</dt>
-            <dd className="font-medium text-slate-800">{resume.accessoires.length ? resume.accessoires.join(', ') : 'aucun'}</dd>
+            <dt className="text-slate-500">Accessoires déposés :</dt>
+            <dd className="font-medium text-slate-900">{resume.accessoires.length ? resume.accessoires.join(', ') : 'aucun'}</dd>
           </div>
           <div className="flex flex-wrap gap-x-2">
-            <dt className="text-slate-600">État :</dt>
-            <dd className="font-medium text-slate-800">
+            <dt className="text-slate-500">État :</dt>
+            <dd className="font-medium text-slate-900">
               {resume.etat.map((e, i) => (
                 <span key={e.cle} className={e.ok ? '' : 'text-amber-800 font-semibold'}>{i > 0 ? ' · ' : ''}{e.nom} {e.ok ? 'OK' : e.valeur.toLowerCase()}</span>
               ))}
             </dd>
           </div>
           {resume.notes && (
-            <div className="flex flex-wrap gap-x-2"><dt className="text-slate-600">Notes :</dt><dd className="text-slate-800">{resume.notes}</dd></div>
+            <div className="flex flex-wrap gap-x-2"><dt className="text-slate-500">Notes :</dt><dd className="text-slate-900">{resume.notes}</dd></div>
           )}
           <div className="flex flex-wrap gap-x-2">
-            <dt className="text-slate-600">Tests :</dt>
-            <dd className={resume.ko.length ? 'font-semibold text-red-700' : 'font-medium text-slate-800'}>
+            <dt className="text-slate-500">Tests :</dt>
+            <dd className={resume.ko.length ? 'font-semibold text-red-700' : 'font-medium text-slate-900'}>
               {resume.ko.length ? `KO : ${resume.ko.join(', ')}` : 'aucun test KO'}
-              {resume.nonTestes > 0 && <span className="font-normal text-slate-600"> ({resume.nonTestes} non testé{resume.nonTestes > 1 ? 's' : ''})</span>}
+              {resume.nonTestes > 0 && <span className="font-normal text-slate-500"> ({resume.nonTestes} non testé{resume.nonTestes > 1 ? 's' : ''})</span>}
             </dd>
           </div>
           {items.imei_verifie && (
-            <div className="flex flex-wrap gap-x-2"><dt className="text-slate-600">IMEI / n° de série vérifié :</dt><dd className="font-mono text-xs text-slate-800 self-center">{items.imei_verifie}</dd></div>
+            <div className="flex flex-wrap gap-x-2"><dt className="text-slate-500">IMEI / n° de série vérifié :</dt><dd className="t-mono text-slate-900 self-center">{items.imei_verifie}</dd></div>
           )}
           {(items.appareil_eteint || items.sauvegarde_conseillee) && (
             <div className="flex flex-wrap gap-2 pt-1">
-              {items.appareil_eteint && <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">Reçu éteint</span>}
-              {items.sauvegarde_conseillee && <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-800">Sauvegarde conseillée</span>}
+              {items.appareil_eteint && <span className="badge badge-sm badge-neutral">Reçu éteint</span>}
+              {items.sauvegarde_conseillee && <span className="badge badge-sm badge-info">Sauvegarde conseillée</span>}
             </div>
           )}
           {complete && (auteur || dateMaj) && (
-            <p className="text-[11px] text-slate-500 pt-1">Validée{auteur ? ` par ${auteur}` : ''}{dateMaj ? ` · ${formatDate(dateMaj)}` : ''}</p>
+            <p className="t-caption pt-1">Validée{auteur ? ` par ${auteur}` : ''}{dateMaj ? ` · ${formatDate(dateMaj)}` : ''}</p>
           )}
         </dl>
       )}
@@ -401,15 +400,15 @@ export default function ReceptionCard({
       {charge === 'ok' && ouvert && (
         <div className="space-y-5">
           <fieldset className="min-w-0">
-            <legend className="input-label">Accessoires déposés</legend>
-            <div className="flex flex-wrap gap-1.5">
+            <legend className="t-h3 mb-2">Accessoires déposés</legend>
+            <div className="flex flex-wrap gap-2">
               {ACCESSOIRES.map(([k, texte]) => {
                 const coche = items.accessoires.includes(k);
                 return (
                   <label key={k} className="cursor-pointer">
                     <input type="checkbox" checked={coche} onChange={e => basculerAccessoire(k, e.target.checked)} className="peer sr-only" />
-                    <span className={`${PUCE} ${coche ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                      {coche && <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />}{texte}
+                    <span className={`${PUCE} ${coche ? 'choice-on' : ''}`}>
+                      {coche && <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />}{texte}
                     </span>
                   </label>
                 );
@@ -419,32 +418,32 @@ export default function ReceptionCard({
               <div className="mt-2">
                 <label htmlFor={`${uid}-acc-autre`} className="sr-only">Autre accessoire</label>
                 <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value }, { wait: 800 })}
-                  onBlur={flushSilencieux} className="input min-h-11" placeholder="Précisez l’accessoire" autoComplete="off" />
+                  onBlur={flushSilencieux} className="input" placeholder="Précisez l’accessoire" autoComplete="off" />
               </div>
             )}
           </fieldset>
 
           <div>
-            <p className="input-label">État constaté</p>
+            <p className="t-h3 mb-2">État constaté</p>
             <div className={GRILLE_CHOIX}>
               {ETATS.map(([k, nom, options]) => (
                 <Choix key={k} legende={nom} nom={`${uid}-etat-${k}`} options={options} valeur={items.etat[k]} onChange={v => changerEtat(k, v)} tonChoisi={tonEtat} />
               ))}
             </div>
-            <label htmlFor={`${uid}-notes`} className="block text-xs font-semibold text-slate-700 mt-3 mb-1.5">Notes sur l’état (oxydation, taches, pixels morts…)</label>
+            <label htmlFor={`${uid}-notes`} className="input-label mt-4">Notes sur l’état (oxydation, taches, pixels morts…)</label>
             <textarea id={`${uid}-notes`} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, { wait: 800 })}
-              onBlur={flushSilencieux} className="input resize-none" rows={2} />
+              onBlur={flushSilencieux} className="input resize-none !min-h-[72px]" rows={2} />
           </div>
 
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <p className="input-label mb-0">Tests d’entrée</p>
-              <button type="button" onClick={testsRestantsOk} className="btn-ghost text-xs px-3 min-h-11 text-emerald-800 hover:bg-emerald-50">
-                <ListChecks className="w-3.5 h-3.5" aria-hidden="true" /> Tests restants OK
+              <p className="t-h3">Tests d’entrée</p>
+              <button type="button" onClick={testsRestantsOk} className="btn-ghost btn-sm text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900">
+                <ListChecks aria-hidden="true" /> Tests restants OK
               </button>
             </div>
             {items.appareil_eteint && (
-              <p className="text-[11px] text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2">Appareil reçu éteint : laissez « Non testé » pour ce qui n’a pas pu être vérifié.</p>
+              <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2 mb-3">Appareil reçu éteint : laissez « Non testé » pour ce qui n’a pas pu être vérifié.</p>
             )}
             <div className={GRILLE_CHOIX}>
               {TESTS.map(([k, nom]) => (
@@ -455,45 +454,45 @@ export default function ReceptionCard({
 
           <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))] gap-3">
             <div>
-              <label htmlFor={`${uid}-imei`} className="input-label flex items-center gap-1"><ScanLine className="w-3 h-3" aria-hidden="true" /> IMEI / n° de série vérifié</label>
+              <label htmlFor={`${uid}-imei`} className="input-label flex items-center gap-1.5"><ScanLine className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> IMEI / n° de série vérifié</label>
               <input
                 id={`${uid}-imei`} data-scan-target="imei" value={imeiSaisi}
                 autoCapitalize="characters" spellCheck={false}
                 onChange={e => changerImei(e.target.value)}
                 onBlur={() => { setImeiVu(true); flushSilencieux(); }}
                 aria-invalid={imeiFaux || undefined} aria-describedby={`${uid}-imei-aide`}
-                className={`input font-mono min-h-11 ${imeiFaux ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+                className="input font-mono tabular-nums"
                 autoComplete="off"
               />
               <p id={`${uid}-imei-aide`} role={imeiFaux ? 'alert' : undefined}
-                className={`text-[11px] mt-1 ${imeiFaux ? 'font-semibold text-red-700' : imeiDifferent ? 'font-semibold text-amber-800' : 'text-slate-600'}`}>
+                className={imeiFaux ? 'input-error' : imeiDifferent ? 'input-help font-semibold text-amber-800' : 'input-help'}>
                 {imeiFaux ? 'IMEI invalide (15 chiffres, clé de contrôle) ou n° de série incorrect : non enregistré'
                   : imeiDifferent ? `Différent de l’IMEI de la fiche (${imeiTicketPropre})`
                     : '*#06# sur l’appareil, scannable à la douchette'}
               </p>
               <div className="flex flex-wrap gap-2 mt-1">
                 {imeiValide(imeiTicketPropre) && imeiTicketPropre !== items.imei_verifie && (
-                  <button type="button" onClick={() => changerImei(imeiTicketPropre)} className="btn-ghost text-xs px-3 min-h-11 text-brand-700">
+                  <button type="button" onClick={() => changerImei(imeiTicketPropre)} className="btn-ghost btn-sm text-brand-700 hover:text-brand-800 hover:bg-brand-50">
                     Reprendre l’IMEI de la fiche
                   </button>
                 )}
                 {!imeiTicketPropre && items.imei_verifie && onUtiliserImei && (
-                  <button type="button" onClick={() => onUtiliserImei(items.imei_verifie)} className="btn-ghost text-xs px-3 min-h-11 text-brand-700">
+                  <button type="button" onClick={() => onUtiliserImei(items.imei_verifie)} className="btn-ghost btn-sm text-brand-700 hover:text-brand-800 hover:bg-brand-50">
                     Copier dans la fiche appareil
                   </button>
                 )}
               </div>
             </div>
             <div className="space-y-2 self-start">
-              <label className="flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-50">
+              <label className="flex items-center gap-3 min-h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
                 <input type="checkbox" checked={items.appareil_eteint} onChange={e => modifier({ appareil_eteint: e.target.checked }, { wait: 300 })}
-                  className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                <PowerOff className="w-4 h-4 text-slate-500" aria-hidden="true" /> Reçu éteint (tests impossibles)
+                  className="checkbox" />
+                <PowerOff className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Reçu éteint (tests impossibles)
               </label>
-              <label className="flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-50">
+              <label className="flex items-center gap-3 min-h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
                 <input type="checkbox" checked={items.sauvegarde_conseillee} onChange={e => modifier({ sauvegarde_conseillee: e.target.checked }, { wait: 300 })}
-                  className="w-5 h-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                <HardDriveDownload className="w-4 h-4 text-slate-500" aria-hidden="true" /> Sauvegarde des données conseillée
+                  className="checkbox" />
+                <HardDriveDownload className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Sauvegarde des données conseillée
               </label>
             </div>
           </div>
@@ -501,13 +500,13 @@ export default function ReceptionCard({
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {!complete ? (
               <button type="button" onClick={() => changerValidation(true)}
-                className="flex-1 min-w-[12rem] min-h-12 inline-flex items-center justify-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Valider la réception
+                className="btn-success btn-lg flex-1 min-w-[12rem]">
+                <CheckCircle2 aria-hidden="true" /> Valider la réception
               </button>
             ) : (
               <>
-                <button type="button" onClick={() => { flushSilencieux(); setOuvert(false); }} className="btn-secondary min-h-11 flex-1">Fermer</button>
-                <button type="button" onClick={() => changerValidation(false)} className="btn-ghost min-h-11 text-xs">Repasser « à compléter »</button>
+                <button type="button" onClick={() => { flushSilencieux(); setOuvert(false); }} className="btn-secondary flex-1">Fermer</button>
+                <button type="button" onClick={() => changerValidation(false)} className="btn-ghost btn-sm">Repasser « à compléter »</button>
               </>
             )}
           </div>

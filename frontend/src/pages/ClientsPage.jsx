@@ -13,7 +13,7 @@ import {
   Search, Users, Phone, Mail, ChevronRight, Plus,
   Smartphone, Trash2, Edit3, X, Save, ChevronLeft,
   ArrowUpDown, ArrowUp, ArrowDown, ArrowLeft, AlertCircle,
-  Download, UserX, ShieldCheck, Loader2,
+  Download, UserX, ShieldCheck, Loader2, Ticket,
 } from 'lucide-react';
 
 const SORT_LABELS = { nom: 'nom', telephone: 'téléphone', email: 'email', date_creation: 'date de création' };
@@ -39,8 +39,17 @@ function BadgeConsentement({ client }) {
   const oui = Boolean(client.consentement_marketing);
   const date = oui && client.consentement_marketing_le ? ` le ${formatDateShort(client.consentement_marketing_le)}` : '';
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${oui ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+    <span className={`badge ${oui ? 'badge-success' : 'badge-neutral'}`}>
       {oui ? `Offres acceptées${date}` : 'Pas d’offres commerciales'}
+    </span>
+  );
+}
+
+/** Pastille « Camby » (carte partenaire) : marque, jamais une alerte. */
+function BadgeCamby({ className = '' }) {
+  return (
+    <span className={`badge badge-brand badge-sm ${className}`}>
+      <Ticket className="w-3 h-3" aria-hidden="true" /> Camby
     </span>
   );
 }
@@ -53,32 +62,36 @@ function AnonymiserDialog({ client, busy, onCancel, onConfirm }) {
   if (!client) return null;
   const nom = `${client.prenom || ''} ${client.nom || ''}`.trim() || `client n° ${client.id}`;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4" onClick={() => { if (!busy) onCancel(); }}>
+    <div className="modal-overlay z-[60]" onClick={() => { if (!busy) onCancel(); }}>
       <form ref={boxRef} role="alertdialog" aria-modal="true" aria-labelledby="anonymiser-titre" aria-describedby="anonymiser-texte"
         onClick={e => e.stopPropagation()}
         onSubmit={e => { e.preventDefault(); if (ok && !busy) onConfirm(); }}
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-5 sm:p-6">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0" aria-hidden="true">
-            <UserX className="w-5 h-5 text-red-700" />
+        className="modal sm:max-w-md">
+        <div className="modal-header">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0" aria-hidden="true">
+              <UserX className="w-5 h-5 text-red-700" />
+            </div>
+            <h2 id="anonymiser-titre" className="t-h2 truncate">Anonymiser {nom} ?</h2>
           </div>
-          <h2 id="anonymiser-titre" className="text-base font-bold text-slate-900">Anonymiser {nom} ?</h2>
         </div>
-        <div id="anonymiser-texte" className="space-y-2 text-sm text-slate-700">
-          <p><strong>Effacés définitivement :</strong> nom, prénom, téléphone, e-mail, société et codes de déverrouillage de ses appareils.</p>
-          <p><strong>Conservés :</strong> ses réparations et leurs montants (obligation comptable), sans lien possible avec la personne.</p>
-          <p className="font-semibold text-red-800">Action irréversible.</p>
+        <div className="modal-body">
+          <div id="anonymiser-texte" className="space-y-2 t-body">
+            <p><strong className="text-slate-900">Effacés définitivement :</strong> nom, prénom, téléphone, e-mail, société et codes de déverrouillage de ses appareils.</p>
+            <p><strong className="text-slate-900">Conservés :</strong> ses réparations et leurs montants (obligation comptable), sans lien possible avec la personne.</p>
+            <p className="font-semibold text-red-800">Action irréversible.</p>
+          </div>
+          <label htmlFor="anonymiser-saisie" className="input-label mt-4">
+            Tapez {MOT_CONFIRMATION_ANONYMISER} pour confirmer
+          </label>
+          <input id="anonymiser-saisie" value={saisie} onChange={e => setSaisie(e.target.value)}
+            autoComplete="off" autoCapitalize="characters" spellCheck={false}
+            className="input min-h-[44px] font-mono uppercase tabular-nums" />
         </div>
-        <label htmlFor="anonymiser-saisie" className="input-label mt-4">
-          Tapez {MOT_CONFIRMATION_ANONYMISER} pour confirmer
-        </label>
-        <input id="anonymiser-saisie" value={saisie} onChange={e => setSaisie(e.target.value)}
-          autoComplete="off" autoCapitalize="characters" spellCheck={false}
-          className="input min-h-[44px] font-mono uppercase" />
-        <div className="flex flex-wrap justify-end gap-2 mt-5">
-          <button type="button" onClick={onCancel} disabled={busy} className="btn-secondary min-h-[44px]">Annuler</button>
-          <button type="submit" disabled={!ok || busy} aria-busy={busy} className="btn-danger min-h-[44px]">
-            {busy ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <UserX className="w-4 h-4" aria-hidden="true" />}
+        <div className="modal-footer flex-wrap">
+          <button type="button" onClick={onCancel} disabled={busy} className="btn-ghost">Annuler</button>
+          <button type="submit" disabled={!ok || busy} aria-busy={busy} className="btn-danger">
+            {busy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <UserX aria-hidden="true" />}
             Anonymiser définitivement
           </button>
         </div>
@@ -199,10 +212,10 @@ export default function ClientsPage() {
   };
 
   const SortIcon = ({ field }) => {
-    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-slate-400" aria-hidden="true" />;
+    if (sortField !== field) return <ArrowUpDown className="w-4 h-4 text-slate-400" aria-hidden="true" />;
     return sortDir === 'asc'
-      ? <ArrowUp className="w-3 h-3 text-brand-600" aria-hidden="true" />
-      : <ArrowDown className="w-3 h-3 text-brand-600" aria-hidden="true" />;
+      ? <ArrowUp className="w-4 h-4 text-brand-600" aria-hidden="true" />
+      : <ArrowDown className="w-4 h-4 text-brand-600" aria-hidden="true" />;
   };
 
   const sortLabel = (field) => {
@@ -423,15 +436,15 @@ export default function ClientsPage() {
   }, [panelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="page max-w-[1280px]">
       {adminPrompt}
       <AnonymiserDialog key={anonymiserCible?.id ?? 'aucun'} client={anonymiserCible} busy={anonymiserBusy}
         onCancel={() => setAnonymiserCible(null)} onConfirm={handleAnonymiser} />
       {/* Header */}
-      <div ref={headerRef} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div ref={headerRef} className="page-header">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Clients</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <h1 className="page-header-title">Clients</h1>
+          <p className="page-header-subtitle">
             Page {page + 1} · {clients.length} client{clients.length > 1 ? 's' : ''} affiché{clients.length > 1 ? 's' : ''}
             {debouncedSearch ? ` pour « ${debouncedSearch} »` : ''}
           </p>
@@ -439,68 +452,69 @@ export default function ClientsPage() {
       </div>
 
       {/* Search */}
-      <div ref={searchCardRef} className="card overflow-hidden mb-6">
+      <div ref={searchCardRef} className="card mb-6">
         <div className="p-3 sm:p-4">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
             <label htmlFor="clients-search" className="sr-only">Rechercher un client</label>
             <input id="clients-search" type="text" placeholder="Rechercher par nom, téléphone, email, société..."
               value={search} onChange={(e) => setSearch(e.target.value)}
               autoComplete="off"
-              className="w-full min-h-[44px] pl-10 pr-11 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-colors"
+              className="input min-h-[44px] pl-10 pr-12"
             />
             {search && (
               <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
-                className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                <X className="w-4 h-4" aria-hidden="true" />
+                className="btn-ghost btn-icon absolute right-0.5 top-1/2 -translate-y-1/2 text-slate-500">
+                <X aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Client list */}
-        <div ref={listColRef} className="lg:col-span-2">
+        <div ref={listColRef} className="lg:col-span-2 min-w-0">
           <div className="card overflow-hidden">
-            <div className="hidden lg:grid grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-5 py-2 bg-slate-50/80 border-b border-slate-100">
+            {/* En-têtes : iPad (lg) = client seul, téléphone sous le nom ; ≥ xl = 3 colonnes triables */}
+            <div className="hidden lg:grid lg:grid-cols-[1fr_40px] xl:grid-cols-[1fr_150px_200px_40px] gap-3 items-center px-5 bg-slate-50 border-b border-slate-100">
               <button type="button" onClick={() => toggleSort('nom')} aria-label={sortLabel('nom')}
-                className="table-header min-h-[36px] flex items-center gap-1 hover:text-brand-600 transition-colors">
+                className="table-header table-header-sortable">
                 Client <SortIcon field="nom" />
               </button>
               <button type="button" onClick={() => toggleSort('telephone')} aria-label={sortLabel('telephone')}
-                className="table-header min-h-[36px] flex items-center gap-1 hover:text-brand-600 transition-colors">
+                className="table-header table-header-sortable hidden xl:inline-flex">
                 Téléphone <SortIcon field="telephone" />
               </button>
               <button type="button" onClick={() => toggleSort('email')} aria-label={sortLabel('email')}
-                className="table-header min-h-[36px] flex items-center gap-1 hover:text-brand-600 transition-colors">
+                className="table-header table-header-sortable hidden xl:inline-flex">
                 Email <SortIcon field="email" />
               </button>
               <span></span>
             </div>
 
             {loading ? (
-              <div className="py-16 text-center" role="status">
-                <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full motion-safe:animate-spin mx-auto mb-3" aria-hidden="true" />
-                <p className="text-sm text-slate-500">Chargement...</p>
+              <div className="p-4 space-y-3" role="status">
+                {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="skeleton-row" aria-hidden="true" />)}
+                <p className="sr-only">Chargement...</p>
               </div>
             ) : sorted.length === 0 ? (
-              <div className="py-16 px-6 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                  <Users className="w-7 h-7 text-slate-400" aria-hidden="true" />
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <Users aria-hidden="true" />
                 </div>
-                <p className="text-slate-700 font-medium">
+                <p className="t-h2">
                   {debouncedSearch ? `Aucun client ne correspond à « ${debouncedSearch} »` : 'Aucun client trouvé'}
                 </p>
                 {debouncedSearch && (
                   <button type="button" onClick={() => openSearchPalette(debouncedSearch)}
-                    className="btn-secondary mt-4 text-sm min-h-[44px]">
-                    <Search className="w-4 h-4" aria-hidden="true" /> Chercher aussi dans les tickets
+                    className="btn-secondary">
+                    <Search aria-hidden="true" /> Chercher aussi dans les tickets
                   </button>
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-slate-100/80">
+              <div className="divide-y divide-slate-100">
                 {sorted.map((c) => (
                   <div key={c.id}
                     data-client-row={c.id}
@@ -510,33 +524,33 @@ export default function ClientsPage() {
                     aria-label={`Ouvrir la fiche de ${c.prenom || ''} ${c.nom || ''}`.replace(/\s+/g, ' ').trim()}
                     onClick={() => handleSelectClient(c)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelectClient(c); } }}
-                    className={`lg:grid lg:grid-cols-[1fr_150px_180px_32px] gap-3 items-center px-4 sm:px-5 py-3.5 min-h-[56px] cursor-pointer transition-colors group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 focus-visible:ring-inset
+                    className={`lg:grid lg:grid-cols-[1fr_40px] xl:grid-cols-[1fr_150px_200px_40px] gap-3 items-center px-4 sm:px-5 py-2.5 min-h-14 cursor-pointer transition-colors duration-150 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset
                       ${selectedId === c.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'}`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-h-9">
                       <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                         <span className="text-brand-700 font-bold text-xs">
                           {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
                         </span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-800 truncate">
+                        <p className="text-sm font-semibold text-slate-900 truncate">
                           {c.prenom || ''} {c.nom || ''}
-                          {c.carte_camby ? <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[9px] font-bold">🎫 Camby</span> : null}
+                          {c.carte_camby ? <BadgeCamby className="ml-1.5 align-middle" /> : null}
                         </p>
-                        {c.societe && <p className="text-xs text-slate-500 truncate">{c.societe}</p>}
-                        {c.telephone && <p className="lg:hidden text-xs text-slate-600 font-mono">{formatPhone(c.telephone)}</p>}
+                        {c.societe && <p className="t-caption truncate">{c.societe}</p>}
+                        {c.telephone && <p className="xl:hidden t-small tabular-nums">{formatPhone(c.telephone)}</p>}
                       </div>
                       <ChevronRight className="lg:hidden w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
                     </div>
-                    <div className="hidden lg:block">
-                      <p className="text-slate-600 font-mono text-xs">{c.telephone ? formatPhone(c.telephone) : '—'}</p>
+                    <div className="hidden xl:block">
+                      <p className="t-small tabular-nums text-slate-700">{c.telephone ? formatPhone(c.telephone) : '—'}</p>
                     </div>
-                    <div className="hidden lg:block">
-                      <p className="text-slate-500 truncate text-xs">{c.email || '—'}</p>
+                    <div className="hidden xl:block min-w-0">
+                      <p className="t-small truncate">{c.email || '—'}</p>
                     </div>
                     <div className="hidden lg:flex justify-end">
-                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-500 transition-colors" aria-hidden="true" />
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600 transition-colors duration-150" aria-hidden="true" />
                     </div>
                   </div>
                 ))}
@@ -545,20 +559,20 @@ export default function ClientsPage() {
 
             {/* Pagination */}
             {!loading && (page > 0 || hasMore) && (
-              <div className="flex items-center justify-between gap-2 px-3 sm:px-5 py-2 border-t border-slate-100 bg-slate-50/50">
+              <div className="card-footer justify-between gap-2 px-3">
                 <button type="button"
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className="btn-ghost text-xs min-h-[44px] disabled:opacity-30"
+                  className="btn-ghost btn-sm"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Précédent
+                  <ChevronLeft aria-hidden="true" /> Précédent
                 </button>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500">Page {page + 1}</span>
+                  <span className="t-caption whitespace-nowrap">Page {page + 1}</span>
                   <label htmlFor="clients-page-size" className="sr-only">Clients par page</label>
                   <select id="clients-page-size" value={pageSize}
                     onChange={e => { const s = Number(e.target.value); setPageSize(s); setPage(0); localStorage.setItem('kp_clients_page_size', s.toString()); }}
-                    className="text-xs min-h-[36px] border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-600">
+                    className="select w-auto min-h-9 py-1">
                     {[10, 20, 50, 100].map(n => (
                       <option key={n} value={n}>{n} / page</option>
                     ))}
@@ -567,9 +581,9 @@ export default function ClientsPage() {
                 <button type="button"
                   onClick={() => setPage(p => p + 1)}
                   disabled={!hasMore}
-                  className="btn-ghost text-xs min-h-[44px] disabled:opacity-30"
+                  className="btn-ghost btn-sm"
                 >
-                  Suivant <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+                  Suivant <ChevronRight aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -578,64 +592,64 @@ export default function ClientsPage() {
 
         {/* Client detail panel : plein écran sous lg, colonne à droite au-delà */}
         <section aria-label="Fiche client"
-          className={`${panelOpen ? 'fixed inset-x-0 top-14 bottom-0 z-30 overflow-y-auto overscroll-contain bg-slate-50 p-4 pb-20 sm:p-6' : 'hidden'}
-            lg:static lg:block lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0 lg:pb-0`}>
-          <div className="space-y-5">
+          className={`${panelOpen ? 'fixed inset-x-0 top-14 bottom-0 z-30 overflow-y-auto overscroll-contain bg-slate-50 p-4 pb-24 sm:p-6' : 'hidden'}
+            lg:static lg:block lg:z-auto lg:overflow-visible lg:bg-transparent lg:p-0 lg:pb-0 min-w-0`}>
+          <div className="space-y-4">
           {panelOpen && (
             <button type="button" onClick={closePanel}
-              className="lg:hidden btn-secondary w-full justify-start min-h-[44px] text-sm">
-              <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Retour à la liste des clients
+              className="lg:hidden btn-secondary btn-block justify-start">
+              <ArrowLeft aria-hidden="true" /> Retour à la liste des clients
             </button>
           )}
           {clientError ? (
-            <div role="alert" className="card p-5 flex items-start gap-3 text-sm text-slate-700">
-              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden="true" />
+            <div role="alert" className="callout callout-warning">
+              <AlertCircle aria-hidden="true" />
               <div className="flex-1">
                 <p>{clientError}</p>
-                <button type="button" onClick={closePanel} className="btn-secondary mt-3 text-xs min-h-[44px]">Fermer</button>
+                <button type="button" onClick={closePanel} className="btn-secondary btn-sm mt-3">Fermer</button>
               </div>
             </div>
           ) : selectedClient ? (
             <>
-              <div className="card p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2 min-w-0">
+              <div className="card card-body">
+                <div className="flex items-start justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                       <span className="text-brand-700 font-bold text-sm">
                         {(selectedClient.prenom?.[0] || '').toUpperCase()}{(selectedClient.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
                     <div className="min-w-0">
-                      <h2 ref={panelHeadingRef} tabIndex={-1} className="font-bold text-slate-900 truncate focus:outline-none">
+                      <h2 ref={panelHeadingRef} tabIndex={-1} className="t-h2 truncate focus:outline-none">
                         {selectedClient.prenom} {selectedClient.nom}
                       </h2>
-                      {selectedClient.societe && <p className="text-xs text-slate-500">{selectedClient.societe}</p>}
-                      {selectedClient.carte_camby ? <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">🎫 Camby</span> : null}
-                      <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedClient.societe && <p className="t-caption">{selectedClient.societe}</p>}
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {selectedClient.carte_camby ? <BadgeCamby /> : null}
                         <BadgeConsentement client={selectedClient} />
                         {selectedClient.anonymise_le && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-800 text-white text-[11px] font-semibold">
+                          <span className="badge badge-neutral">
                             Anonymisé le {formatDateShort(selectedClient.anonymise_le)}
                           </span>
                         )}
                       </div>
                     </div>
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0 -mr-2 -mt-1">
                     <button type="button" onClick={() => setEditMode(!editMode)}
-                      className="btn-ghost w-11 h-11 p-0" title="Modifier" aria-label="Modifier le client" aria-pressed={editMode}>
-                      <Edit3 className="w-4 h-4" aria-hidden="true" />
+                      className="btn-ghost btn-icon" title="Modifier" aria-label="Modifier le client" aria-pressed={editMode}>
+                      <Edit3 aria-hidden="true" />
                     </button>
                     <button type="button" onClick={closePanel}
-                      className="btn-ghost w-11 h-11 p-0 hidden lg:inline-flex" title="Fermer" aria-label="Fermer le panneau client">
-                      <X className="w-4 h-4" aria-hidden="true" />
+                      className="btn-ghost btn-icon hidden lg:inline-flex" title="Fermer" aria-label="Fermer le panneau client">
+                      <X aria-hidden="true" />
                     </button>
                   </div>
                 </div>
 
                 {editMode ? (
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                       <div>
                         <label htmlFor="client-edit-nom" className="input-label">Nom</label>
                         <input id="client-edit-nom" value={editForm.nom} onChange={e => setEditForm(f => ({ ...f, nom: e.target.value }))} className="input" />
@@ -647,7 +661,7 @@ export default function ClientsPage() {
                     </div>
                     <div>
                       <label htmlFor="client-edit-tel" className="input-label">Téléphone</label>
-                      <input id="client-edit-tel" type="tel" value={editForm.telephone} onChange={e => setEditForm(f => ({ ...f, telephone: e.target.value }))} className="input" />
+                      <input id="client-edit-tel" type="tel" value={editForm.telephone} onChange={e => setEditForm(f => ({ ...f, telephone: e.target.value }))} className="input tabular-nums" />
                     </div>
                     <div>
                       <label htmlFor="client-edit-email" className="input-label">Email</label>
@@ -657,29 +671,29 @@ export default function ClientsPage() {
                       <label htmlFor="client-edit-societe" className="input-label">Société</label>
                       <input id="client-edit-societe" value={editForm.societe} onChange={e => setEditForm(f => ({ ...f, societe: e.target.value }))} className="input" />
                     </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button type="button" onClick={() => setEditMode(false)} className="btn-secondary text-xs min-h-[44px]">Annuler</button>
-                      <button type="button" onClick={handleSaveClient} className="btn-primary text-xs min-h-[44px]">
-                        <Save className="w-3.5 h-3.5" aria-hidden="true" /> Enregistrer
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button type="button" onClick={() => setEditMode(false)} className="btn-ghost">Annuler</button>
+                      <button type="button" onClick={handleSaveClient} className="btn-primary">
+                        <Save aria-hidden="true" /> Enregistrer
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-1">
                     {selectedClient.telephone && (
-                      <a href={`tel:${selectedClient.telephone}`} className="flex items-center gap-2.5 min-h-[44px] text-sm text-slate-600 hover:text-brand-600 transition-colors rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      <a href={`tel:${selectedClient.telephone}`} className="flex items-center gap-3 min-h-11 text-sm font-medium text-slate-700 hover:text-brand-700 transition-colors duration-150 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
                           <Phone className="w-4 h-4 text-slate-500" />
                         </div>
-                        <span className="font-mono text-xs">{formatPhone(selectedClient.telephone)}</span>
+                        <span className="tabular-nums">{formatPhone(selectedClient.telephone)}</span>
                       </a>
                     )}
                     {selectedClient.email && (
-                      <a href={`mailto:${selectedClient.email}`} className="flex items-center gap-2.5 min-h-[44px] text-sm text-slate-600 hover:text-brand-600 transition-colors rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      <a href={`mailto:${selectedClient.email}`} className="flex items-center gap-3 min-h-11 text-sm text-slate-600 hover:text-brand-700 transition-colors duration-150 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 min-w-0">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
                           <Mail className="w-4 h-4 text-slate-500" />
                         </div>
-                        <span className="text-xs truncate">{selectedClient.email}</span>
+                        <span className="truncate">{selectedClient.email}</span>
                       </a>
                     )}
                   </div>
@@ -689,25 +703,25 @@ export default function ClientsPage() {
               {/* New repair for this client */}
               <button type="button"
                 onClick={() => navigate(`/client?client_id=${selectedClient.id}&tel=${encodeURIComponent(selectedClient.telephone || '')}`)}
-                className="btn-primary w-full justify-center text-xs min-h-[44px]"
+                className="btn-primary btn-block"
               >
-                <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Nouvelle réparation pour ce client
+                <Plus aria-hidden="true" /> Nouvelle réparation pour ce client
               </button>
 
               {/* Client tickets : en cours d'abord, avec leur statut */}
-              <div className="card p-5">
+              <div className="card card-body">
                 <div className="flex items-baseline justify-between gap-2 mb-3">
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  <h3 className="t-h2">
                     Réparations ({clientTickets.length})
                   </h3>
                   {clientTickets.length > 0 && (
-                    <p className="text-xs text-slate-600">
+                    <p className="t-caption text-right">
                       {ticketStats.actifs} en cours{ticketStats.prets > 0 ? ` · ${ticketStats.prets} prête${ticketStats.prets > 1 ? 's' : ''} à rendre` : ''}
                     </p>
                   )}
                 </div>
                 {ticketsLoading && clientTickets.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-4" role="status">Chargement des réparations…</p>
+                  <p className="loading-inline justify-center w-full py-4" role="status"><Loader2 aria-hidden="true" /> Chargement des réparations…</p>
                 ) : clientTickets.length === 0 ? (
                   <p className="text-sm text-slate-500 text-center py-4">Aucun ticket</p>
                 ) : (
@@ -720,24 +734,24 @@ export default function ClientsPage() {
                           <button type="button"
                             onClick={() => navigate(`${basePath}/ticket/${t.id}`)}
                             aria-label={`Ouvrir ${t.ticket_code}, ${device || 'appareil'}, ${t.statut}`}
-                            className={`w-full flex items-start gap-3 p-2.5 min-h-[44px] rounded-lg transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-                              ${archived ? 'hover:bg-slate-50' : 'bg-white ring-1 ring-slate-100 hover:bg-brand-50/40'}`}
+                            className={`w-full flex items-start gap-3 p-2.5 min-h-11 rounded-lg transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                              ${archived ? 'hover:bg-slate-50' : 'bg-white border border-slate-200 hover:bg-brand-50/40 hover:border-brand-200'}`}
                           >
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${archived ? 'bg-slate-100' : 'bg-brand-50'}`} aria-hidden="true">
                               <Smartphone className={`w-4 h-4 ${archived ? 'text-slate-500' : 'text-brand-600'}`} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span className="text-xs font-bold text-brand-700 font-mono">{t.ticket_code}</span>
+                                <span className="t-mono font-bold text-brand-700">{t.ticket_code}</span>
                                 <StatusBadge statut={t.statut} />
                                 {t.statut === 'Réparation terminée' && (
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${t.paye ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+                                  <span className={`badge badge-sm ${t.paye ? 'badge-success' : 'badge-warning'}`}>
                                     {t.paye ? 'Payé' : 'À encaisser'}
                                   </span>
                                 )}
                               </div>
-                              <p className="text-xs text-slate-600 truncate mt-0.5">{[device, t.panne].filter(Boolean).join(' — ') || '—'}</p>
-                              <p className="text-[11px] text-slate-500">Déposé le {formatDateShort(t.date_depot)}</p>
+                              <p className="t-small text-slate-600 truncate mt-1">{[device, t.panne].filter(Boolean).join(' — ') || '—'}</p>
+                              <p className="t-caption">Déposé le {formatDateShort(t.date_depot)}</p>
                             </div>
                             <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-2" aria-hidden="true" />
                           </button>
@@ -749,40 +763,40 @@ export default function ClientsPage() {
               </div>
 
               {/* RGPD : droit d'accès (export) et d'effacement (anonymisation) — élévation admin */}
-              <div className="card p-5">
-                <h3 className="flex items-center gap-2 text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
-                  <ShieldCheck className="w-4 h-4 text-brand-700" aria-hidden="true" /> Données personnelles
+              <div className="card card-body">
+                <h3 className="t-h2 flex items-center gap-2 mb-3">
+                  <ShieldCheck className="w-4 h-4 text-brand-600" aria-hidden="true" /> Données personnelles
                 </h3>
                 <button type="button" onClick={handleConsentement}
                   disabled={consentBusy || Boolean(selectedClient.anonymise_le)}
                   aria-pressed={Boolean(selectedClient.consentement_marketing)}
                   aria-describedby="client-consentement-aide" aria-busy={consentBusy}
-                  className="w-full flex items-center justify-between gap-3 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 text-left hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-60 disabled:cursor-not-allowed">
+                  className="w-full flex items-center justify-between gap-3 min-h-11 px-3 py-2 rounded-lg border border-slate-200 bg-white text-left transition-colors duration-150 hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed">
                   <span className="text-sm font-medium text-slate-800">Accepte les offres (SMS, e-mail)</span>
                   <span className="flex items-center gap-2 shrink-0" aria-hidden="true">
                     {consentBusy && <Loader2 className="w-4 h-4 text-slate-500 motion-safe:animate-spin" />}
                     <span className="text-xs font-semibold text-slate-700">{selectedClient.consentement_marketing ? 'Oui' : 'Non'}</span>
-                    <span className={`relative inline-flex h-6 w-11 rounded-full transition-colors motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'bg-emerald-600' : 'bg-slate-500'}`}>
-                      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'translate-x-5' : ''}`} />
+                    <span className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-150 motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'bg-emerald-700' : 'bg-slate-500'}`}>
+                      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 motion-reduce:transition-none ${selectedClient.consentement_marketing ? 'translate-x-5' : ''}`} />
                     </span>
                   </span>
                 </button>
-                <p id="client-consentement-aide" className="text-xs text-slate-600 mt-1.5 mb-4">
+                <p id="client-consentement-aide" className="input-help mb-4">
                   À activer seulement avec l'accord exprès du client. Le retrait s'applique tout de suite.
                 </p>
-                <p className="text-xs text-slate-600 mb-3">
+                <p className="text-xs text-slate-500 mb-3">
                   Demande du client : export de ses données (fichier JSON) ou anonymisation. Code administrateur requis.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
                   <button type="button" onClick={() => handleExportRgpd(selectedClient)} disabled={exportBusy}
-                    aria-busy={exportBusy} className="btn-secondary text-xs min-h-[44px]">
-                    {exportBusy ? <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" /> : <Download className="w-3.5 h-3.5" aria-hidden="true" />}
+                    aria-busy={exportBusy} className="btn-secondary">
+                    {exportBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
                     Exporter ses données
                   </button>
                   <button type="button" onClick={() => setAnonymiserCible(selectedClient)}
                     disabled={Boolean(selectedClient.anonymise_le)}
-                    className="btn-secondary text-xs min-h-[44px] text-red-700 border-red-200 hover:bg-red-50 hover:border-red-300">
-                    <UserX className="w-3.5 h-3.5" aria-hidden="true" />
+                    className="btn-secondary text-red-700 hover:bg-red-50 hover:border-red-200">
+                    <UserX aria-hidden="true" />
                     {selectedClient.anonymise_le ? 'Déjà anonymisé' : 'Anonymiser'}
                   </button>
                 </div>
@@ -791,22 +805,22 @@ export default function ClientsPage() {
               {/* Delete */}
               <button type="button"
                 onClick={() => handleDeleteClient(selectedClient.id)}
-                className="btn-danger w-full text-xs min-h-[44px]"
+                className="btn-danger-ghost btn-block"
               >
-                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" /> Supprimer le client
+                <Trash2 aria-hidden="true" /> Supprimer le client
               </button>
             </>
           ) : panelOpen ? (
-            <div className="card p-8 text-center" role="status">
-              <p className="text-sm text-slate-500">Chargement du client…</p>
+            <div className="card card-body text-center" role="status">
+              <p className="loading-inline justify-center"><Loader2 aria-hidden="true" /> Chargement du client…</p>
             </div>
           ) : (
-            <div className="card p-8 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                <Users className="w-7 h-7 text-slate-400" aria-hidden="true" />
+            <div className="card empty-state hidden lg:flex">
+              <div className="empty-state-icon">
+                <Users aria-hidden="true" />
               </div>
-              <p className="text-slate-600 font-medium">Sélectionnez un client</p>
-              <p className="text-sm text-slate-500 mt-1">Cliquez sur un client pour voir ses réparations</p>
+              <p className="t-h2">Sélectionnez un client</p>
+              <p className="t-body text-slate-500 max-w-sm">Cliquez sur un client pour voir ses réparations</p>
             </div>
           )}
           </div>

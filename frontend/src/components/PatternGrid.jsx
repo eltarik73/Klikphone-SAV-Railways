@@ -10,6 +10,9 @@ for (let row = 0; row < GRID_SIZE; row++) {
 
 // Minimum touch target: 44x44px per point
 const HIT_RADIUS = 22;
+// Design V2 : cercle visible 16 px (24 px une fois choisi), tracé brand-600
+const BRAND_600 = '#7C3AED';
+const BRAND_700 = '#6D28D9';
 
 export default function PatternGrid({ value, onChange, readOnly = false, size = 160 }) {
   const [sequence, setSequence] = useState(
@@ -100,7 +103,7 @@ export default function PatternGrid({ value, onChange, readOnly = false, size = 
   }
 
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="inline-flex flex-col items-center gap-2 rounded-lg bg-slate-50 p-2">
       <svg
         ref={svgRef}
         width={size}
@@ -113,7 +116,7 @@ export default function PatternGrid({ value, onChange, readOnly = false, size = 
       >
         {lines.map(l => (
           <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-            stroke="#7C3AED" strokeWidth="3" strokeLinecap="round" />
+            stroke={BRAND_600} strokeWidth="3" strokeLinecap="round" />
         ))}
         {POINT_POSITIONS.map(point => {
           const pos = getPos(point);
@@ -127,19 +130,13 @@ export default function PatternGrid({ value, onChange, readOnly = false, size = 
                 <circle cx={pos.cx} cy={pos.cy} r={HIT_RADIUS}
                   fill="transparent" stroke="none" />
               )}
-              <circle cx={pos.cx} cy={pos.cy} r={isSelected ? 14 : 10}
-                fill={isSelected ? '#7C3AED' : '#E2E8F0'}
-                stroke={isSelected ? '#6D28D9' : '#CBD5E1'} strokeWidth="2" />
+              <circle cx={pos.cx} cy={pos.cy} r={isSelected ? 12 : 8}
+                fill={isSelected ? BRAND_600 : '#FFFFFF'}
+                stroke={isSelected ? BRAND_700 : '#CBD5E1'} strokeWidth="2" />
               {isSelected && (
                 <text x={pos.cx} y={pos.cy + 1} textAnchor="middle" dominantBaseline="central"
-                  fill="white" fontSize="11" fontWeight="bold">
+                  fill="white" fontSize="12" fontWeight="bold">
                   {idx + 1}
-                </text>
-              )}
-              {!isSelected && !readOnly && (
-                <text x={pos.cx} y={pos.cy + 1} textAnchor="middle" dominantBaseline="central"
-                  fill="#94A3B8" fontSize="10">
-                  {point.id}
                 </text>
               )}
             </g>
@@ -147,13 +144,13 @@ export default function PatternGrid({ value, onChange, readOnly = false, size = 
         })}
       </svg>
       {sequence.length > 0 && (
-        <p className="text-xs text-slate-500 font-mono">
+        <p className="t-caption t-mono">
           {sequence.join(' → ')}
         </p>
       )}
       {!readOnly && sequence.length > 0 && (
         <button type="button" onClick={handleClear}
-          className="text-xs text-red-500 hover:text-red-700 font-medium">
+          className="btn-danger-ghost btn-sm">
           Effacer
         </button>
       )}

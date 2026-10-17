@@ -5,7 +5,7 @@ import { SettingsProvider } from './hooks/useSettings';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ScanListener, { QuickScanMount } from './components/ScanListener';
-import { ShieldX, ArrowLeft, RefreshCw, Home, Loader2 } from 'lucide-react';
+import { Lock, ArrowLeft, Home, Loader2 } from 'lucide-react';
 
 // Accueil et suivi client (QR) restent dans le chunk d'entrée : premier affichage sans
 // aller-retour réseau de plus. Connexion et shell staff sont chargés à la demande.
@@ -74,12 +74,24 @@ function StaffPreload() {
   return null;
 }
 
-// Réserve la place de la sidebar (et de la barre mobile) pendant le chargement du shell : pas de saut
+// Réserve la place de la sidebar (et de la barre mobile) pendant le chargement du shell : pas de saut.
+// Squelette aux dimensions réelles de la barre (en-tête 64 px, recherche 44 px, entrées 44 px).
 function NavbarPlaceholder({ collapsed }) {
   return (
     <>
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 z-40" aria-hidden="true" />
-      <div className={`hidden lg:block fixed top-0 left-0 bottom-0 bg-slate-900 z-50 ${collapsed ? 'w-[72px]' : 'w-64'}`} aria-hidden="true" />
+      <div className={`hidden lg:flex flex-col fixed top-0 left-0 bottom-0 bg-slate-900 z-50 border-r border-white/[0.06] ${collapsed ? 'w-[72px]' : 'w-64'}`} aria-hidden="true">
+        <div className="h-16 border-b border-white/[0.06] flex items-center px-4 gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/10 shrink-0" />
+          {!collapsed && <div className="h-4 w-28 rounded bg-white/10" />}
+        </div>
+        <div className="p-2 pt-4 space-y-2">
+          <div className={`rounded-lg bg-white/[0.07] ${collapsed ? 'w-11 h-11 mx-auto' : 'h-11'}`} />
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <div key={i} className={`rounded-lg bg-white/[0.04] ${collapsed ? 'w-11 h-11 mx-auto' : 'h-11'}`} />
+          ))}
+        </div>
+      </div>
     </>
   );
 }
@@ -91,23 +103,23 @@ function AccessDenied() {
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 max-w-sm w-full p-8 text-center">
-        <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto mb-5">
-          <ShieldX className="w-7 h-7 text-amber-500" />
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-6">
+      <div className="card shadow-lg max-w-sm w-full p-6 sm:p-8">
+        <div className="empty-state min-h-0 max-h-none py-0 px-0 mb-6">
+          <div className="empty-state-icon bg-amber-50 text-amber-700">
+            <Lock aria-hidden="true" />
+          </div>
+          <h2 className="t-h2">Accès restreint</h2>
+          <p className="t-body text-slate-500 max-w-sm">
+            Cette page nécessite les droits administrateur. Veuillez vous connecter en tant qu'admin depuis le menu.
+          </p>
         </div>
-        <h2 className="text-lg font-bold text-slate-900 mb-2">Accès restreint</h2>
-        <p className="text-sm text-slate-500 mb-6">
-          Cette page nécessite les droits administrateur. Veuillez vous connecter en tant qu'admin depuis le menu.
-        </p>
         <div className="space-y-2">
-          <button onClick={() => navigate(basePath, { replace: true })}
-            className="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
-            <Home className="w-4 h-4" /> Retour au dashboard
+          <button type="button" onClick={() => navigate(basePath, { replace: true })} className="btn-primary btn-block">
+            <Home aria-hidden="true" /> Retour au dashboard
           </button>
-          <button onClick={() => navigate(-1)}
-            className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-            <ArrowLeft className="w-4 h-4" /> Page précédente
+          <button type="button" onClick={() => navigate(-1)} className="btn-secondary btn-block">
+            <ArrowLeft aria-hidden="true" /> Page précédente
           </button>
         </div>
       </div>
@@ -116,23 +128,49 @@ function AccessDenied() {
 }
 
 // ─── Floating back button (webapp mode) ─────────────────────
+// Une page qui a déjà son propre bouton Retour dans son en-tête (`.page-header [aria-label="Retour"]` :
+// Demandes de commande, grilles Tarifs iPhones / Smartphones…) n'a pas besoin du bouton flottant,
+// qui recouvrait alors inutilement la première colonne (cases à cocher, titres de ligne) sous lg.
+function useOwnBackControl(pathname) {
+  const [own, setOwn] = useState(false);
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return undefined;
+    const main = document.querySelector('main');
+    if (!main) { setOwn(false); return undefined; }
+    let timer = 0;
+    const check = () => {
+      timer = 0;
+      const el = main.querySelector('.page-header [aria-label="Retour"]');
+      setOwn(Boolean(el && el.getClientRects().length > 0));
+    };
+    const schedule = () => { if (!timer) timer = window.setTimeout(check, 60); };
+    check();
+    const mo = new MutationObserver(schedule);
+    mo.observe(main, { childList: true, subtree: true });
+    return () => { mo.disconnect(); if (timer) window.clearTimeout(timer); };
+  }, [pathname]);
+  return own;
+}
+
 function FloatingBackButton() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isWebapp] = useState(() =>
-    window.matchMedia('(display-mode: standalone)').matches ||
+    (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) ||
     window.navigator.standalone === true
   );
+  const pageHasBack = useOwnBackControl(location.pathname);
 
   if (!user) return null;
 
   // Don't show on dashboard (root pages)
   const basePath = user.target === 'tech' ? '/tech' : '/accueil';
   const isDashboard = location.pathname === basePath || location.pathname === basePath + '/';
-  if (isDashboard) return null;
+  if (isDashboard || pageHasBack) return null;
 
-  // Only show on mobile or in webapp mode
+  // Only show on mobile or in webapp mode. Disque 44 px translucide (flou d'arrière-plan) : le contenu
+  // qu'il survole reste lisible ; `.page` garde pb-24 sous lg pour que la dernière ligne se dégage.
   return (
     <button
       onClick={() => {
@@ -142,10 +180,13 @@ function FloatingBackButton() {
           navigate(basePath, { replace: true });
         }
       }}
-      className={`fixed bottom-4 left-4 z-30 w-11 h-11 rounded-full bg-slate-900/80 backdrop-blur-sm text-white shadow-lg flex items-center justify-center active:scale-90 transition-transform ${isWebapp ? '' : 'lg:hidden'}`}
+      type="button"
+      className={`fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 w-11 h-11 rounded-full bg-slate-900/70 backdrop-blur-sm text-white shadow-md
+        flex items-center justify-center transition-colors duration-150 hover:bg-slate-900
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${isWebapp ? '' : 'lg:hidden'}`}
       aria-label="Retour"
     >
-      <ArrowLeft className="w-5 h-5" />
+      <ArrowLeft className="w-5 h-5" aria-hidden="true" />
     </button>
   );
 }
@@ -172,7 +213,7 @@ function ProtectedRoute({ children, allowedTargets }) {
       <Suspense fallback={<NavbarPlaceholder collapsed={sidebarCollapsed} />}>
         <Navbar />
       </Suspense>
-      <main className={`pt-14 lg:pt-0 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-64'}`}>
+      <main className={`pt-14 lg:pt-0 min-h-screen min-w-0 overflow-x-clip transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? 'lg:pl-[72px]' : 'lg:pl-64'}`}>
         <ErrorBoundary>
           <Suspense fallback={<PageLoader />}>
             {children}
@@ -231,20 +272,37 @@ function PageLoader({ fullScreen = false }) {
     return () => { clearTimeout(showId); clearTimeout(slowId); };
   }, []);
   if (!visible) return null;
+  // Squelette aux dimensions réelles d'une page de liste (titre 28, tuiles 96, lignes 56) : zéro saut
   return (
     <div role="status" aria-live="polite"
-      className={`${fullScreen ? 'min-h-screen bg-slate-50' : 'min-h-[60vh]'} flex flex-col items-center justify-center gap-3 px-6 text-slate-500`}>
-      <Loader2 className="w-6 h-6 text-brand-600 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-      <p className="text-sm font-medium">Chargement…</p>
-      {slow && (
-        <div className="text-center text-sm max-w-xs">
-          <p>Le chargement prend plus de temps que prévu.</p>
-          <button type="button" onClick={() => window.location.reload()}
-            className="mt-3 min-h-[44px] px-5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2">
-            Recharger
-          </button>
+      className={`${fullScreen ? 'min-h-screen bg-slate-50' : 'min-h-[60vh]'} page max-w-[1280px] text-slate-500`}>
+      <div className="page-header" aria-hidden="true">
+        <div className="space-y-2">
+          <div className="skeleton-title" />
+          <div className="skeleton-line w-64" />
         </div>
-      )}
+        <div className="skeleton h-10 w-36" />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" aria-hidden="true">
+        {[0, 1, 2, 3].map(i => <div key={i} className="skeleton-card" />)}
+      </div>
+      <div className="card overflow-hidden divide-y divide-slate-100" aria-hidden="true">
+        {[0, 1, 2, 3, 4].map(i => <div key={i} className="skeleton-row rounded-none" />)}
+      </div>
+      <div className="flex flex-col items-center gap-3 pt-8">
+        <p className="loading-inline">
+          <Loader2 className="text-brand-600 motion-reduce:animate-none" aria-hidden="true" />
+          <span className="font-medium">Chargement…</span>
+        </p>
+        {slow && (
+          <div className="text-center text-sm max-w-xs">
+            <p>Le chargement prend plus de temps que prévu.</p>
+            <button type="button" onClick={() => window.location.reload()} className="btn-primary mt-3">
+              Recharger
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

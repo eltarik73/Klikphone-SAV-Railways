@@ -786,12 +786,12 @@ const PrintPreview = forwardRef(function PrintPreview({
 
       {current.status === 'error' ? (
         <div className="flex h-full min-h-[320px] items-center justify-center p-6">
-          <div role="alert" className="max-w-sm rounded-xl bg-white p-6 text-center shadow-sm">
+          <div role="alert" className="max-w-sm rounded-xl bg-white p-6 text-center shadow-xs border border-slate-200">
             <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-600" aria-hidden="true" />
-            <p className="font-semibold text-slate-900">Impossible d'afficher l'aperçu</p>
+            <p className="t-h2">Impossible d'afficher l'aperçu</p>
             <p className="mt-1 text-sm text-slate-600">{current.error}</p>
-            <button type="button" onClick={retry} className={`btn-primary mt-4 min-h-11 ${FOCUS_RING}`}>
-              <RefreshCw className="w-4 h-4" aria-hidden="true" /> Réessayer
+            <button type="button" onClick={retry} className="btn-secondary mt-4">
+              <RefreshCw aria-hidden="true" /> Réessayer
             </button>
           </div>
         </div>
@@ -806,7 +806,7 @@ const PrintPreview = forwardRef(function PrintPreview({
         <div className="w-fit min-w-full px-4 py-5">
           <div className="mx-auto" style={{ width: Math.round(paperPx * zoom) }}>
             {paper.roll && (
-              <div aria-hidden="true" className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+              <div aria-hidden="true" className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
                 <span className="h-px flex-1 bg-slate-400" />{paper.w} mm<span className="h-px flex-1 bg-slate-400" />
               </div>
             )}
@@ -829,7 +829,7 @@ const PrintPreview = forwardRef(function PrintPreview({
               {!paper.roll && ready && lay?.pages > 1 && Array.from({ length: lay.pages - 1 }, (_, k) => (
                 <div key={k} aria-hidden="true" className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-sky-500/70"
                   style={{ top: (mmToPx(entry?.margins?.top || 0) + (k + 1) * lay.perPagePx) * zoom }}>
-                  <span className="absolute right-1 -top-5 rounded bg-sky-700 px-1.5 py-0.5 text-[11px] font-semibold text-white">Page {k + 2} ≈</span>
+                  <span className="absolute right-1 -top-5 rounded bg-sky-700 px-1.5 py-0.5 text-xs font-semibold text-white">Page {k + 2} ≈</span>
                 </div>
               ))}
               {!ready && (
@@ -861,26 +861,30 @@ const PrintPreview = forwardRef(function PrintPreview({
   const toolbar = (
     <div className="shrink-0 border-b border-slate-200 bg-slate-50">
       {hasTabs && (
-        <div role="tablist" aria-label="Document à imprimer"
-          className="flex snap-x gap-1 overflow-x-auto px-3 pt-2 pb-1 scrollbar-none sm:px-4">
-          {documents.map((d) => {
-            const Icon = d.icon;
-            const sel = d.id === doc.id;
-            return (
-              <button key={d.id} type="button" role="tab" id={tabId(d.id)} aria-selected={sel} aria-controls={panelId}
-                tabIndex={sel ? 0 : -1} title={d.desc} onClick={() => selectDoc(d.id)} onKeyDown={onTabKeyDown}
-                className={`inline-flex h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm font-semibold ${FOCUS_RING} ${
-                  sel ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-slate-900'}`}>
-                {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
-                {d.label}
-              </button>
-            );
-          })}
+        /* Sous sm les icônes (décoratives) sont masquées pour que les 5 onglets tiennent sur 390 px ;
+           si ça déborde quand même (petit écran, police plus large), le fondu à droite signale le
+           défilement et le pr-8 laisse le dernier onglet sortir du fondu une fois tout à droite. */
+        <div className="scroll-fade-x">
+          <div role="tablist" aria-label="Document à imprimer"
+            className="page-tabs snap-x pl-3 pr-8 sm:px-4">
+            {documents.map((d) => {
+              const Icon = d.icon;
+              const sel = d.id === doc.id;
+              return (
+                <button key={d.id} type="button" role="tab" id={tabId(d.id)} aria-selected={sel} aria-controls={panelId}
+                  tabIndex={sel ? 0 : -1} title={d.desc} onClick={() => selectDoc(d.id)} onKeyDown={onTabKeyDown}
+                  className={`page-tab shrink-0 snap-start ${sel ? 'page-tab-active' : ''}`}>
+                  {Icon && <Icon className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />}
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
         {formatKeys.length > 1 ? (
-          <div role="radiogroup" aria-label="Format d'impression" className="inline-flex rounded-lg bg-slate-200/70 p-0.5">
+          <div role="radiogroup" aria-label="Format d'impression" className="segmented">
             {formatKeys.map((k) => {
               const def = doc.formats[k];
               const p = PAPERS[def.paper] || PAPERS.a4;
@@ -888,8 +892,7 @@ const PrintPreview = forwardRef(function PrintPreview({
               return (
                 <button key={k} type="button" role="radio" aria-checked={sel} tabIndex={sel ? 0 : -1}
                   onClick={() => setFormatPref(k)} onKeyDown={onRadioKeyDown}
-                  className={`h-11 min-w-11 rounded-md px-3 text-sm font-semibold ${FOCUS_RING} ${
-                    sel ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-700 hover:text-slate-900'}`}>
+                  className={`segmented-item min-w-11 ${sel ? 'segmented-item-active' : ''}`}>
                   {def.label || (p.roll ? 'Ticket 80 mm' : p.short)}
                 </button>
               );
@@ -899,18 +902,19 @@ const PrintPreview = forwardRef(function PrintPreview({
           <span className="text-sm font-semibold text-slate-700">{paperLabel}</span>
         )}
         {!isPdf && (
-          <div role="group" aria-label="Zoom" className="ml-auto flex items-center gap-1">
-            <span className="min-w-[3.25rem] text-right text-xs font-semibold tabular-nums text-slate-600" aria-hidden="true">
+          <div role="group" aria-label="Zoom" className="ml-auto flex items-center gap-2">
+            <span className="min-w-[3.25rem] text-right t-caption tabular-nums" aria-hidden="true">
               {Math.round(zoom * 100)} %
             </span>
-            {ZOOM_PRESETS.map((z) => (
-              <button key={String(z.value)} type="button" aria-pressed={zoomMode === z.value}
-                onClick={() => setZoom(z.value)}
-                className={`h-11 min-w-11 rounded-lg px-2.5 text-sm font-semibold ${FOCUS_RING} ${
-                  zoomMode === z.value ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-white'}`}>
-                {z.label}
-              </button>
-            ))}
+            <div className="segmented">
+              {ZOOM_PRESETS.map((z) => (
+                <button key={String(z.value)} type="button" aria-pressed={zoomMode === z.value}
+                  onClick={() => setZoom(z.value)}
+                  className={`segmented-item min-w-11 px-2.5 ${zoomMode === z.value ? 'segmented-item-active' : ''}`}>
+                  {z.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -921,31 +925,31 @@ const PrintPreview = forwardRef(function PrintPreview({
     <div className="shrink-0 border-t border-slate-200 bg-white px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" data-pp-print onClick={doPrint} disabled={!ready}
-          className={`btn-primary min-h-11 flex-1 justify-center shadow-lg shadow-brand-600/20 ${FOCUS_RING}`}>
-          <Printer className="h-4 w-4" aria-hidden="true" />
+          className="btn-primary flex-1">
+          <Printer aria-hidden="true" />
           Imprimer <span className="whitespace-nowrap font-medium opacity-90">({isPdf ? 'PDF A4' : paper.short})</span>
-          <kbd className="ml-1 hidden rounded border border-white/40 bg-white/15 px-1.5 py-0.5 text-[11px] font-semibold lg:inline">{kbd}</kbd>
+          <kbd className="ml-1 hidden rounded border border-white/40 px-1.5 py-0.5 text-xs font-semibold lg:inline">{kbd}</kbd>
         </button>
         {isPdf && entry?.url && (
-          <a href={entry.url} download={entry.filename} className={`btn-secondary min-h-11 ${FOCUS_RING}`}>
-            <Download className="h-4 w-4" aria-hidden="true" /> PDF
+          <a href={entry.url} download={entry.filename} className="btn-secondary">
+            <Download aria-hidden="true" /> PDF
           </a>
         )}
         {renderActions?.(actionCtx)}
         <button type="button" onClick={openStandalone} disabled={!ready}
           aria-label="Ouvrir le document dans un nouvel onglet" title="Ouvrir dans un nouvel onglet"
-          className={`btn-secondary min-h-11 min-w-11 px-3 ${FOCUS_RING}`}>
-          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          className="btn-secondary btn-icon">
+          <ExternalLink aria-hidden="true" />
         </button>
       </div>
-      <p id={descId} className="mt-2 text-center text-xs text-slate-600">{description}</p>
+      <p id={descId} className="mt-2 text-center t-caption">{description}</p>
     </div>
   );
 
   const toastEl = toast && (
     <div className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4 ${isDialog ? 'bottom-28' : 'bottom-4'}`}>
       <div role={toast.type === 'error' ? 'alert' : 'status'}
-        className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-2xl motion-safe:animate-[ppToastIn_200ms_ease-out] ${
+        className={`pointer-events-auto flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg motion-safe:animate-[ppToastIn_200ms_ease-out] ${
           toast.type === 'error' ? 'bg-red-700' : toast.type === 'success' ? 'bg-emerald-700' : 'bg-slate-800'}`}>
         {toast.type === 'error'
           ? <AlertCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
@@ -986,15 +990,15 @@ const PrintPreview = forwardRef(function PrintPreview({
       <div className="absolute inset-0 bg-slate-900/50 motion-safe:backdrop-blur-sm" aria-hidden="true" onClick={() => onCloseRef.current?.()} />
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descId}
         onKeyDown={onRootKeyDown}
-        className="relative flex h-full w-full flex-col bg-white shadow-2xl motion-safe:animate-[ppSlideIn_200ms_ease-out] lg:w-[680px]">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5 sm:px-5">
+        className="relative flex h-full w-full flex-col bg-white shadow-lg motion-safe:animate-[ppSlideIn_200ms_ease-out] lg:w-[680px]">
+        <div className="flex shrink-0 min-h-14 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2 sm:px-5">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-display font-bold text-slate-900">{title}</h2>
-            {subtitle && <p className="truncate text-xs text-slate-600">{subtitle}</p>}
+            <h2 id={titleId} className="t-h2">{title}</h2>
+            {subtitle && <p className="truncate t-small">{subtitle}</p>}
           </div>
           <button type="button" data-pp-close onClick={() => onCloseRef.current?.()} aria-label="Fermer l'aperçu"
-            className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 ${FOCUS_RING}`}>
-            <X className="h-5 w-5" aria-hidden="true" />
+            className="btn-ghost btn-icon shrink-0">
+            <X className="!h-5 !w-5" aria-hidden="true" />
           </button>
         </div>
         {toolbar}

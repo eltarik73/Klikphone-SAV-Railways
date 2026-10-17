@@ -49,19 +49,19 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
   const cleAbsente = etat && !etat.cle_configuree;
 
   return (
-    <section className="card p-5" aria-labelledby="cfg-sms-titre">
-      <h2 id="cfg-sms-titre" className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-        <MessageSquare className="w-4 h-4 text-brand-600" aria-hidden="true" /> SMS (Brevo)
+    <section className="card card-body" aria-labelledby="cfg-sms-titre">
+      <h2 id="cfg-sms-titre" className="t-h2 mb-4 flex items-center gap-2">
+        <MessageSquare className="w-4 h-4 text-slate-400" aria-hidden="true" /> SMS (Brevo)
       </h2>
 
       {!etat ? (
-        <p className="text-xs text-slate-600 mb-4 flex items-center gap-1.5">
-          <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Vérification de la configuration…
+        <p className="loading-inline mb-4">
+          <Loader2 className="motion-reduce:animate-none" aria-hidden="true" /> Vérification de la configuration…
         </p>
       ) : cleAbsente ? (
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4 flex gap-2" role="status">
-          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-xs text-amber-900">
+        <div className="callout callout-warning mb-4" role="status">
+          <AlertTriangle aria-hidden="true" />
+          <p>
             {etat.erreur
               ? 'État des SMS illisible : vérifiez la connexion au serveur.'
               : <>Clé API Brevo absente du serveur. Ajoutez la variable <code className="font-mono">BREVO_API_KEY</code> dans
@@ -69,15 +69,15 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
           </p>
         </div>
       ) : (
-        <p className="text-xs text-emerald-800 mb-4 flex items-center gap-1.5">
-          <Check className="w-3.5 h-3.5" aria-hidden="true" /> Clé API Brevo présente sur le serveur (jamais affichée).
+        <p className="text-sm font-medium text-emerald-700 mb-4 flex items-center gap-1.5">
+          <Check className="w-4 h-4" aria-hidden="true" /> Clé API Brevo présente sur le serveur (jamais affichée).
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-3 py-2 border-t border-slate-100">
+      <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
         <div className="min-w-0">
           <p id="cfg-sms-actif" className="text-sm font-medium text-slate-800">Envoyer les SMS depuis le serveur (Brevo)</p>
-          <p className="text-xs text-slate-600 mt-0.5">
+          <p className="t-caption mt-0.5">
             Sinon, le bouton SMS ouvre l’app Messages de l’appareil, comme avant. Chaque SMS consomme des crédits Brevo.
           </p>
         </div>
@@ -88,15 +88,15 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
           role="switch"
           aria-checked={actif}
           aria-labelledby="cfg-sms-actif"
-          className="relative shrink-0 inline-flex items-center justify-center w-14 h-11 rounded-full disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed"
         >
-          <span className={`relative w-11 h-6 rounded-full transition-colors motion-reduce:transition-none ${actif ? 'bg-brand-600' : 'bg-slate-300'}`}>
-            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform motion-reduce:transition-none ${actif ? 'translate-x-5' : 'translate-x-0'}`} />
+          <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors duration-150 ${actif ? 'bg-brand-600' : 'bg-slate-300'} ${!etat || (cleAbsente && !actif) ? 'opacity-60' : ''}`}>
+            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 ${actif ? 'translate-x-5' : 'translate-x-0'}`} />
           </span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
         <div>
           <label className="input-label" htmlFor="cfg-sms-expediteur">Expéditeur</label>
           <input
@@ -110,14 +110,14 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
             placeholder="KLIKPHONE"
             aria-describedby="cfg-sms-expediteur-aide"
           />
-          <p id="cfg-sms-expediteur-aide" className="text-xs text-slate-600 mt-1">
+          <p id="cfg-sms-expediteur-aide" className="input-help">
             Nom affiché à la place d’un numéro : 11 lettres ou chiffres, sans espace ni accent.
           </p>
         </div>
         <div>
           <p className="input-label">Solde de crédits SMS</p>
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-slate-800 min-w-0" aria-live="polite">
+          <div className="flex items-center gap-2 min-h-[40px]">
+            <p className="t-num text-sm min-w-0" aria-live="polite">
               {cleAbsente ? '—'
                 : credits.chargement ? 'Lecture…'
                   : credits.erreur ? <span className="text-red-700 font-medium text-xs">{credits.erreur}</span>
@@ -128,9 +128,9 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
               type="button"
               onClick={chargerCredits}
               disabled={!etat?.cle_configuree || credits.chargement}
-              className="btn-secondary min-h-[44px] px-3 text-xs ml-auto shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className="btn-secondary btn-sm ml-auto shrink-0"
             >
-              {credits.chargement ? <Loader2 className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : 'Actualiser'}
+              {credits.chargement ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : 'Actualiser'}
             </button>
           </div>
         </div>

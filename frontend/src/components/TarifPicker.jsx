@@ -20,10 +20,11 @@ export const SEUILS_FRAICHEUR = { aRevoir: 90, perime: 180 };
 const NIVEAUX = new Set(['ok', 'a_revoir', 'perime']);
 const JOUR_MS = 86_400_000;
 
+// Badges sans bordure (design V2) : gris / ambre / rouge, texte -700/-800 (AA sur fond -50)
 const TON_FRAICHEUR = {
-  ok: 'bg-slate-100 text-slate-700 ring-slate-200',
-  a_revoir: 'bg-amber-50 text-amber-900 ring-amber-300',
-  perime: 'bg-red-50 text-red-800 ring-red-200',
+  ok: 'bg-slate-100 text-slate-700',
+  a_revoir: 'bg-amber-50 text-amber-800',
+  perime: 'bg-red-50 text-red-700',
 };
 const MOT_FRAICHEUR = { ok: '', a_revoir: 'à revoir', perime: 'périmé' };
 // Prix décidés par la boutique (forfaits iPhone, grilles de vente) : jamais « estimés », seulement à revoir
@@ -39,10 +40,10 @@ export function libelleSource(source) {
 export function tonStock(stock) {
   const s = String(stock ?? '').trim();
   if (!s) return null;
-  if (/rupture|hors|indispon|[ée]puis|^non\b|^0$/i.test(s)) return 'bg-red-50 text-red-800 ring-red-200';
-  if (/commande|d[ée]lai/i.test(s)) return 'bg-amber-50 text-amber-900 ring-amber-200';
-  if (/stock|dispo|^oui\b|^\d+$/i.test(s)) return 'bg-emerald-50 text-emerald-800 ring-emerald-200';
-  return 'bg-slate-100 text-slate-700 ring-slate-200';
+  if (/rupture|hors|indispon|[ée]puis|^non\b|^0$/i.test(s)) return 'bg-red-50 text-red-700';
+  if (/commande|d[ée]lai/i.test(s)) return 'bg-amber-50 text-amber-800';
+  if (/stock|dispo|^oui\b|^\d+$/i.test(s)) return 'bg-emerald-50 text-emerald-700';
+  return 'bg-slate-100 text-slate-700';
 }
 
 function prixValide(v) {
@@ -128,8 +129,8 @@ export function BadgeFraicheur({ fraicheur, className = '' }) {
   const Icone = niveau === 'perime' ? AlertTriangle : niveau === 'a_revoir' ? Clock : null;
   return (
     <span title={titreFraicheur(fraicheur)}
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded ring-1 font-semibold ${TON_FRAICHEUR[niveau] || TON_FRAICHEUR.ok} ${className}`}>
-      {Icone && <Icone className="w-3 h-3" aria-hidden="true" />}
+      className={`badge badge-sm gap-1 ${TON_FRAICHEUR[niveau] || TON_FRAICHEUR.ok} ${className}`}>
+      {Icone && <Icone className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
       {libelle}{estime ? ' · estimé' : ''}
       {mot && <span className="sr-only"> ({mot})</span>}
     </span>
@@ -193,27 +194,27 @@ function LigneSuggestion({ s, modele, isAdmin, onChoisir }) {
       <button
         type="button"
         onClick={() => onChoisir(s)}
-        className="w-full min-h-14 flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+        className="w-full min-h-14 flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:border-brand-300 hover:bg-brand-50/40 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
         aria-label={`Ajouter ${s.label}${autreModele ? ` (${autreModele})` : ''}${s.stock ? `, ${s.stock}` : ''}, ${prix != null ? formatPrix(prix) : 'prix non renseigné'}${fraicheur ? `, ${fraicheur.description}` : ''}`}
       >
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-900">{s.label}</span>
           {autreModele && <span className="block text-xs font-medium text-slate-700">{autreModele}</span>}
-          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-            {s.type_piece && <span className="text-slate-600">{s.type_piece}</span>}
-            {s.qualite && <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-800 font-semibold">{s.qualite}</span>}
+          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            {s.type_piece && <span>{s.type_piece}</span>}
+            {s.qualite && <span className="badge badge-sm badge-brand">{s.qualite}</span>}
             {ton && (
-              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded ring-1 font-semibold ${ton}`}>
-                <Package className="w-3 h-3" aria-hidden="true" />{s.stock}
+              <span className={`badge badge-sm gap-1 ${ton}`}>
+                <Package className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />{s.stock}
               </span>
             )}
             <BadgeFraicheur fraicheur={fraicheur} />
-            <span className="text-slate-600">{libelleSource(s.source)}</span>
+            <span>{libelleSource(s.source)}</span>
           </span>
         </span>
         <span className="shrink-0 text-right">
-          <span className="block text-base font-extrabold text-slate-900">{prix != null ? formatPrix(prix) : '—'}</span>
-          {cout != null && <span className="block text-[11px] text-slate-600">Achat HT {formatPrix(cout)}</span>}
+          <span className="block text-base font-bold tabular-nums text-slate-900">{prix != null ? formatPrix(prix) : '—'}</span>
+          {cout != null && <span className="block text-xs text-slate-500 tabular-nums">Achat HT {formatPrix(cout)}</span>}
         </span>
       </button>
     </li>
@@ -307,7 +308,7 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50" aria-hidden="true" onClick={() => onClose?.()} />
+      <div className="fixed inset-0 bg-slate-900/50 z-50" aria-hidden="true" onClick={() => onClose?.()} />
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pointer-events-none">
         <div
           ref={panneauRef}
@@ -315,54 +316,51 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
           aria-modal="true"
           aria-labelledby={titreId}
           tabIndex={-1}
-          className="pointer-events-auto bg-white w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-2xl sm:rounded-2xl shadow-2xl focus:outline-none"
+          className="pointer-events-auto bg-white w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-xl sm:rounded-xl shadow-lg focus:outline-none animate-scale-in"
         >
-          <div className="flex items-start gap-3 p-4 sm:p-5 border-b border-slate-100">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-              <Tag className="w-5 h-5 text-emerald-700" aria-hidden="true" />
-            </div>
+          <div className="modal-header">
             <div className="min-w-0 flex-1">
-              <h2 id={titreId} className="text-base font-display font-bold text-slate-900">Ajouter depuis la grille</h2>
-              <p className="text-xs text-slate-600 truncate">{appareil ? `Appareil du ticket : ${appareil}` : 'Appareil non renseigné : recherche dans toutes les grilles'}</p>
+              <h2 id={titreId} className="t-h2 flex items-center gap-2">
+                <Tag className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" /> Ajouter depuis la grille
+              </h2>
+              <p className="t-small truncate mt-0.5">{appareil ? `Appareil du ticket : ${appareil}` : 'Appareil non renseigné : recherche dans toutes les grilles'}</p>
             </div>
-            <button type="button" onClick={() => onClose?.()} className="btn-ghost p-0 min-w-11 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" aria-label="Fermer la grille">
-              <X className="w-4 h-4" aria-hidden="true" />
+            <button type="button" onClick={() => onClose?.()} className="btn-ghost btn-icon shrink-0" aria-label="Fermer la grille">
+              <X aria-hidden="true" />
             </button>
           </div>
 
-          <div className="p-4 sm:p-5 space-y-3 border-b border-slate-100">
+          <div className="px-5 py-4 space-y-3 border-b border-slate-100 shrink-0">
             <div className="relative">
               <label htmlFor={rechercheId} className="sr-only">Rechercher dans la grille</label>
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
               <input
                 id={rechercheId}
                 type="search"
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Écran, batterie, OLED, connecteur…"
-                className="input pl-9 min-h-11"
-                style={{ fontSize: '16px' }}
+                className="input pl-9"
                 autoComplete="off"
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {appareil && (
-                <label className="inline-flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-50">
+                <label className="inline-flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
                   <input type="checkbox" checked={surAppareil} onChange={e => setSurAppareil(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                    className="checkbox" />
                   {appareil} uniquement
                 </label>
               )}
               {qualites.length > 1 && (
-                <div role="group" aria-label="Filtrer par qualité" className="flex flex-wrap gap-1.5">
+                <div role="group" aria-label="Filtrer par qualité" className="segmented flex-wrap">
                   {['', ...qualites].map(v => (
                     <button
                       key={v || 'toutes'}
                       type="button"
                       aria-pressed={qualite === v}
                       onClick={() => setQualite(v)}
-                      className={`min-h-11 px-3 rounded-lg text-xs font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
-                        qualite === v ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                      className={`segmented-item ${qualite === v ? 'segmented-item-active' : ''}`}
                     >
                       {v || 'Toutes qualités'}
                     </button>
@@ -371,8 +369,8 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
               )}
             </div>
             {filtreAppareil && !etat.modeleTrouve && !etat.chargement && !etat.erreur && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+              <p className="callout callout-warning">
+                <AlertTriangle aria-hidden="true" />
                 <span>« {appareil} » n’est pas reconnu dans les grilles : résultats approchants. Décochez le filtre pour chercher partout.</span>
               </p>
             )}
@@ -383,15 +381,15 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
               {etat.chargement ? 'Recherche…' : etat.erreur ? '' : `${visibles.length} résultat${visibles.length > 1 ? 's' : ''}`}
             </p>
             {etat.erreur ? (
-              <div className="p-4 text-center space-y-2">
-                <p className="text-sm text-red-700 font-medium" role="alert">Grille indisponible : {etat.erreur}</p>
-                <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-11 text-xs">
-                  <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+              <div className="p-3 space-y-3">
+                <p className="callout callout-danger" role="alert"><AlertTriangle aria-hidden="true" /><span>Grille indisponible : {etat.erreur}</span></p>
+                <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+                  <RotateCcw aria-hidden="true" /> Réessayer
                 </button>
               </div>
             ) : etat.chargement && etat.suggestions.length === 0 ? (
               <ul className="space-y-2 p-1" aria-hidden="true">
-                {[1, 2, 3].map(i => <li key={i} className="h-14 rounded-xl bg-slate-100 motion-safe:animate-pulse" />)}
+                {[1, 2, 3].map(i => <li key={i} className="skeleton-row" />)}
               </ul>
             ) : visibles.length === 0 ? (
               <p className="p-6 text-center text-sm text-slate-600">
@@ -400,7 +398,7 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
             ) : groupes.replie ? (
               <div className="space-y-3">
                 <section aria-label="Grille boutique">
-                  <h3 className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">Grille boutique</h3>
+                  <h3 className="px-1 pb-2 t-h3">Grille boutique</h3>
                   <ListeSuggestions liste={groupes.boutique} {...propsLigne} />
                 </section>
                 <section>
@@ -409,10 +407,10 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
                     aria-expanded={voirFournisseur}
                     aria-controls={fournisseurId}
                     onClick={() => setVoirFournisseur(v => !v)}
-                    className="w-full min-h-11 flex items-center justify-between gap-2 px-3 rounded-xl border border-dashed border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                    className="btn-secondary btn-block justify-between"
                   >
                     <span>Autres pièces (fournisseur) · {groupes.fournisseur.length}</span>
-                    <ChevronDown className={`w-4 h-4 shrink-0 motion-safe:transition-transform ${voirFournisseur ? 'rotate-180' : ''}`} aria-hidden="true" />
+                    <ChevronDown className={`motion-safe:transition-transform duration-150 ${voirFournisseur ? 'rotate-180' : ''}`} aria-hidden="true" />
                   </button>
                   <div id={fournisseurId} hidden={!voirFournisseur} className="pt-1.5">
                     {voirFournisseur && <ListeSuggestions liste={groupes.fournisseur} {...propsLigne} />}
@@ -420,7 +418,7 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
                 </section>
                 {groupes.vente.length > 0 && (
                   <section aria-label="Téléphones à la vente">
-                    <h3 className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">Téléphones à la vente</h3>
+                    <h3 className="px-1 pb-2 t-h3">Téléphones à la vente</h3>
                     <ListeSuggestions liste={groupes.vente} {...propsLigne} />
                   </section>
                 )}
@@ -430,9 +428,9 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
             )}
           </div>
 
-          <div className="p-3 sm:p-4 border-t border-slate-100 flex items-center justify-between gap-3">
-            <p className="text-[11px] text-slate-600">Prix client TTC. La ligne reste modifiable après l’ajout.</p>
-            <button type="button" onClick={() => onClose?.()} className="btn-secondary min-h-11 shrink-0">Fermer</button>
+          <div className="modal-footer justify-between">
+            <p className="t-caption">Prix client TTC. La ligne reste modifiable après l’ajout.</p>
+            <button type="button" onClick={() => onClose?.()} className="btn-secondary shrink-0">Fermer</button>
           </div>
         </div>
       </div>

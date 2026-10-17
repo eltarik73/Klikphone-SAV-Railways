@@ -70,6 +70,7 @@ function formatCountdown(ms) {
   return `${totalH}h${String(m).padStart(2, '0')}`;
 }
 
+// Couleurs sémantiques AA sur fond clair : vert = dans les temps, ambre = < 2 h, rouge = dépassé
 export default function LiveCountdown({ dateStr, visible }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -88,12 +89,12 @@ export default function LiveCountdown({ dateStr, visible }) {
   const isUrgent = diff > 0 && diff < 2 * 3600000; // < 2h
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
+    <span className={`inline-flex items-center gap-1 h-5 px-2 rounded-full text-xs font-semibold tabular-nums whitespace-nowrap leading-none ${
       isOverdue
-        ? 'bg-red-50 text-red-600'
+        ? 'bg-red-50 text-red-700'
         : isUrgent
-          ? 'bg-amber-50 text-amber-600'
-          : 'bg-emerald-50 text-emerald-600'
+          ? 'bg-amber-50 text-amber-700'
+          : 'bg-emerald-50 text-emerald-700'
     }`}>
       {isOverdue ? 'Dépassé ' : 'dans '}
       {formatCountdown(diff)}

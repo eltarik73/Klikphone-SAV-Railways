@@ -13,7 +13,6 @@ import { useToast } from './Toast';
 // Grille de tous les modèles (« Choisir un autre message ») : chargée à la demande
 const MessageComposer = lazy(() => import('./MessageComposer'));
 
-const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2';
 const LIBELLE_PRET_DEFAUT = modelePret(DEFAULT_TEMPLATES).label;
 
 /** Modèles de la boutique (Config > Messages) et lien d'avis Google ; valeurs par défaut en cas d'erreur. */
@@ -32,17 +31,18 @@ export async function chargerContexteMessage() {
   };
 }
 
+// Icône teintée par canal sur les boutons secondaires ; le canal recommandé est le seul bouton plein
 const CANAUX = [
-  { id: 'sms', label: 'SMS', Icon: Send },
-  { id: 'email', label: 'E-mail', Icon: Mail },
-  { id: 'whatsapp', label: 'WhatsApp', Icon: MessageCircle },
+  { id: 'sms', label: 'SMS', Icon: Send, teinte: 'text-blue-700' },
+  { id: 'email', label: 'E-mail', Icon: Mail, teinte: 'text-slate-600' },
+  { id: 'whatsapp', label: 'WhatsApp', Icon: MessageCircle, teinte: 'text-emerald-700' },
 ];
 
 const TONS = {
-  ok: { cls: 'text-emerald-900', Icon: CircleCheckBig },
-  warn: { cls: 'text-amber-900', Icon: AlertTriangle },
-  info: { cls: 'text-slate-800', Icon: Info },
-  neutre: { cls: 'text-slate-700', Icon: Info },
+  ok: { cls: 'text-emerald-800', icone: 'text-emerald-700', Icon: CircleCheckBig },
+  warn: { cls: 'text-amber-900', icone: 'text-amber-700', Icon: AlertTriangle },
+  info: { cls: 'text-slate-800', icone: 'text-slate-500', Icon: Info },
+  neutre: { cls: 'text-slate-700', icone: 'text-slate-500', Icon: Info },
 };
 
 /**
@@ -228,16 +228,16 @@ export default function PrevenirClient({
   const libelleBascule = ouverte ? (deja ? 'Replier' : 'Plus tard') : (deja ? 'Renvoyer…' : 'Prévenir…');
 
   return (
-    <section aria-labelledby={titreId} className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200" data-carte-prevenir="">
+    <section aria-labelledby={titreId} className="card p-4" data-carte-prevenir="">
       <div className="flex items-start justify-between gap-3">
         <h3 id={titreId} ref={titreRef} tabIndex={-1}
-          className="flex min-h-[44px] items-center gap-2 rounded text-base font-bold text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-          <BellRing className="h-5 w-5 shrink-0" aria-hidden="true" />
+          className="flex min-h-[40px] items-center gap-2 rounded t-h2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          <BellRing className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
           Prévenir {prenom || 'le client'}
         </h3>
         <button type="button" aria-expanded={ouverte} aria-controls={corpsId}
           onClick={ouverte ? onReplier : onOuvrir}
-          className={`min-h-[44px] shrink-0 rounded-xl bg-white px-3 text-sm font-bold text-emerald-900 ring-1 ring-emerald-300 hover:bg-emerald-100 ${FOCUS_RING}`}>
+          className="btn-secondary btn-sm shrink-0">
           {libelleBascule}
         </button>
       </div>
@@ -245,12 +245,12 @@ export default function PrevenirClient({
       <div role="status" aria-live="polite">
         <ul className="mt-1 space-y-1">
           {lignes.map((l) => {
-            const { cls, Icon } = TONS[l.ton];
+            const { cls, icone, Icon } = TONS[l.ton];
             return (
-              <li key={l.id} className={`flex items-start gap-2 text-sm font-semibold ${cls}`}>
+              <li key={l.id} className={`flex items-start gap-2 text-sm font-medium ${cls}`}>
                 {l.spin
-                  ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                  : <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+                  ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none text-slate-500" aria-hidden="true" />
+                  : <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${icone}`} aria-hidden="true" />}
                 <span className="min-w-0 break-words">{l.texte}</span>
               </li>
             );
@@ -260,10 +260,9 @@ export default function PrevenirClient({
 
       <div id={corpsId} hidden={!ouverte} className="mt-3">
         {composer ? (
-          <div className="rounded-xl bg-white p-3">
-            <button type="button" onClick={() => setComposer(false)}
-              className={`mb-2 inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-1 text-sm font-semibold text-emerald-900 hover:underline ${FOCUS_RING}`}>
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Message « appareil prêt »
+          <div className="card-section p-3">
+            <button type="button" onClick={() => setComposer(false)} className="btn-ghost btn-sm mb-2 -ml-2 text-brand-700 hover:text-brand-800">
+              <ArrowLeft aria-hidden="true" /> Message « appareil prêt »
             </button>
             <Suspense fallback={<p className="text-sm text-slate-700">Chargement des modèles…</p>}>
               <MessageComposer ticket={t} integre
@@ -272,12 +271,12 @@ export default function PrevenirClient({
           </div>
         ) : (
           <>
-            <div className="rounded-xl bg-white p-3 ring-1 ring-emerald-100">
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-600">
+            <div className="card-section p-3">
+              <p className="t-h3">
                 {apercuSms ? (
                   <>
                     Texte du SMS · <span className="text-slate-900">{msg.segments.segments} SMS</span>
-                    <span className="font-semibold normal-case tracking-normal">
+                    <span className="font-normal">
                       {' '}({msg.segments.caracteres} caractères{msg.segments.unicode ? ', unicode : 70 par SMS' : ''})
                     </span>
                   </>
@@ -287,12 +286,13 @@ export default function PrevenirClient({
                 {apercuSms ? msg.sms : msg.texte}
               </p>
               {apercuSms && (
-                <p className="mt-1.5 text-xs text-slate-600">E-mail et WhatsApp : texte complet, avec le lien de suivi.</p>
+                <p className="mt-1.5 t-caption">E-mail et WhatsApp : texte complet, avec le lien de suivi.</p>
               )}
             </div>
 
+            {/* Canal recommandé = seul bouton plein (vert : le client est prévenu, l'appareil part) */}
             <div role="group" aria-label="Envoyer le message" aria-busy={occupe} className="mt-3 grid grid-cols-3 gap-2">
-              {CANAUX.map(({ id, label, Icon }) => {
+              {CANAUX.map(({ id, label, Icon, teinte }) => {
                 const bloque = !possible[id] || msg.sansTarif;
                 const enAvant = recommande === id;
                 return (
@@ -304,12 +304,14 @@ export default function PrevenirClient({
                     onClick={() => demander(id)}
                     disabled={occupe || bloque}
                     aria-describedby={bloque ? raisonsId : undefined}
-                    className={`inline-flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl px-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${
-                      enAvant ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-slate-50'
-                    } ${FOCUS_RING}`}>
+                    className={`btn-lg px-2 ${
+                      enAvant
+                        ? 'btn bg-emerald-700 text-white shadow-xs hover:bg-emerald-800 disabled:border disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:hover:bg-slate-100'
+                        : 'btn-secondary'
+                    }`}>
                     {sending === id
-                      ? <Loader2 className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                      : <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                      ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      : <Icon className={enAvant ? '' : teinte} aria-hidden="true" />}
                     {label}
                   </button>
                 );
@@ -317,7 +319,7 @@ export default function PrevenirClient({
             </div>
 
             {raisons.length > 0 && (
-              <ul id={raisonsId} className="mt-2 space-y-0.5 text-xs font-semibold text-slate-700">
+              <ul id={raisonsId} className="mt-2 space-y-0.5 text-xs font-medium text-slate-600">
                 {raisons.map((r) => <li key={r}>{r}</li>)}
               </ul>
             )}
@@ -330,15 +332,13 @@ export default function PrevenirClient({
                   e.stopPropagation();
                   annulerConfirmation();
                 }}
-                className="mt-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-300">
-                <p id={confirmId} className="text-sm font-semibold text-amber-950">{texteConfirmation()}</p>
+                className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p id={confirmId} className="text-sm font-semibold text-amber-900">{texteConfirmation()}</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button ref={nonRef} type="button" onClick={annulerConfirmation}
-                    className={`min-h-[44px] rounded-xl bg-white px-3 text-sm font-bold text-slate-800 ring-1 ring-slate-300 hover:bg-slate-50 ${FOCUS_RING}`}>
+                  <button ref={nonRef} type="button" onClick={annulerConfirmation} className="btn-secondary">
                     Non, ne pas renvoyer
                   </button>
-                  <button type="button" onClick={() => envoyer(confirmer)} disabled={occupe}
-                    className={`min-h-[44px] rounded-xl bg-amber-700 px-3 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-60 ${FOCUS_RING}`}>
+                  <button type="button" onClick={() => envoyer(confirmer)} disabled={occupe} className="btn-primary">
                     Oui, renvoyer
                   </button>
                 </div>
@@ -346,7 +346,7 @@ export default function PrevenirClient({
             )}
 
             <button type="button" onClick={() => { setConfirmer(null); setComposer(true); }} disabled={occupe}
-              className={`mt-2 inline-flex min-h-[44px] items-center rounded-lg px-1 text-sm font-semibold text-emerald-900 underline underline-offset-2 hover:text-emerald-950 disabled:opacity-50 ${FOCUS_RING}`}>
+              className="btn-ghost btn-sm mt-2 -ml-2 text-brand-700 underline underline-offset-2 hover:text-brand-800">
               Choisir un autre message
             </button>
           </>

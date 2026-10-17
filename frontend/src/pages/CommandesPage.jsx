@@ -7,7 +7,7 @@ import { formatDateShort, formatPrix, waLink } from '../lib/utils';
 import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { matchesQuery } from '../components/SearchPalette';
+import { matchesQuery, formatPhone } from '../components/SearchPalette';
 import { fraicheurPrix } from '../components/TarifPicker';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
@@ -174,12 +174,12 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
       <div className="col-span-2 sm:col-span-2">
         <label htmlFor={`${id}-piece`} className="input-label">Pièce de la grille</label>
         <select id={`${id}-piece`} value={valeurs.tarif_cle || ''} onChange={e => choisir(e.target.value)}
-          className="input min-h-[44px]" disabled={grille.statut !== 'pret' || (pieces.length === 0 && !horsListe)} aria-describedby={aideId}>
+          className="select min-h-[44px]" disabled={grille.statut !== 'pret' || (pieces.length === 0 && !horsListe)} aria-describedby={aideId}>
           <option value="">{grille.statut === 'chargement' ? 'Chargement des pièces…' : 'Aucune (ne pas mettre à jour la grille)'}</option>
           {horsListe && <option value={horsListe}>Pièce enregistrée ({horsListe})</option>}
           {pieces.map(s => <option key={s.id} value={String(s.id)}>{libellePiece(s, isAdmin)}</option>)}
         </select>
-        <p id={aideId} className="text-[11px] text-slate-600 mt-1">
+        <p id={aideId} className="input-help">
           {grille.statut === 'vide' ? 'Renseignez le ticket associé pour choisir la pièce de sa grille.'
             : grille.statut === 'introuvable' ? 'Ticket introuvable : pièce de la grille non proposée.'
               : grille.statut === 'erreur' ? 'Grille indisponible pour le moment.'
@@ -192,7 +192,7 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
         <input id={`${id}-ht`} type="text" inputMode="decimal" autoComplete="off" value={valeurs.prix_ht}
           onChange={e => onChange({ prix_ht: e.target.value })} className="input min-h-[44px]" placeholder="Facture fournisseur"
           aria-describedby={`${id}-ht-aide`} />
-        <p id={`${id}-ht-aide`} className="text-[11px] mt-1 text-slate-600 min-h-[2.5em]" aria-live="polite">
+        <p id={`${id}-ht-aide`} className="input-help min-h-[2.5em]" aria-live="polite">
           {valeurs.prix_ht && ht === null ? <span className="text-red-700 font-medium">Montant invalide</span>
             : ecart !== null && Math.abs(ecart) > ECART_PROPOSITION
               ? <span className="text-amber-900 font-medium">Écart de {ecart > 0 ? '+' : ''}{formatPrix(ecart)} avec la grille : proposition au gérant.</span>
@@ -222,31 +222,33 @@ function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
     try { await onEnregistrer(valeurs, grille.pieces); } finally { setEnvoi(false); }
   };
   return (
-    <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+    <div className="modal-overlay z-[110]">
       <form ref={ref} onSubmit={valider} role="dialog" aria-modal="true" aria-labelledby={titreId}
-        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-lg p-5 sm:p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
-            <Tag className="w-5 h-5 text-emerald-700" />
-          </div>
-          <div className="min-w-0">
-            <h3 id={titreId} className="text-lg font-bold text-slate-900">Pièce reçue : prix payé</h3>
-            <p className="text-sm text-slate-600 truncate">{part.description}</p>
+        className="modal">
+        <div className="modal-header">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
+              <Tag className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div className="min-w-0">
+              <h3 id={titreId} className="t-h2">Pièce reçue : prix payé</h3>
+              <p className="t-small truncate">{part.description}</p>
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <ChampsPrixPaye id={champsId} valeurs={valeurs} onChange={patch => setValeurs(v => ({ ...v, ...patch }))}
-            grille={grille} description={part.description} isAdmin={isAdmin} cleEnregistree={part.tarif_cle || ''} />
+        <div className="modal-body">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
+            <ChampsPrixPaye id={champsId} valeurs={valeurs} onChange={patch => setValeurs(v => ({ ...v, ...patch }))}
+              grille={grille} description={part.description} isAdmin={isAdmin} cleEnregistree={part.tarif_cle || ''} />
+          </div>
+          <p className="t-caption mt-3">Le prix de la grille ne change pas : le gérant valide la mise à jour.</p>
         </div>
-        <p className="text-xs text-slate-600 mt-3">Le prix de la grille ne change pas : le gérant valide la mise à jour.</p>
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-5">
-          <button type="button" onClick={onPasser} disabled={envoi}
-            className="min-h-[44px] px-4 rounded-lg bg-slate-100 text-slate-800 text-sm font-medium hover:bg-slate-200 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+        <div className="modal-footer flex-wrap">
+          <button type="button" onClick={onPasser} disabled={envoi} className="btn-ghost">
             Passer
           </button>
-          <button type="submit" disabled={envoi || ht === null} aria-busy={envoi}
-            className="btn-primary min-h-[44px] justify-center disabled:opacity-60">
-            <Save className="w-4 h-4" aria-hidden="true" /> {envoi ? 'Enregistrement…' : 'Enregistrer le prix'}
+          <button type="submit" disabled={envoi || ht === null} aria-busy={envoi} className="btn-primary">
+            <Save aria-hidden="true" /> {envoi ? 'Enregistrement…' : 'Enregistrer le prix'}
           </button>
         </div>
       </form>
@@ -254,14 +256,15 @@ function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
   );
 }
 
+// Pastille de couleur du statut (select neutre, la couleur ne porte que le statut)
 const COMMANDE_STATUS_CONFIG = {
-  'Panier': { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-300', color: '#6b7280', icon: ShoppingCart },
-  'En attente': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-300', color: '#d97706', icon: Clock },
-  'Commandée': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', color: '#2563eb', icon: Package },
-  'Reçu': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300', color: '#059669', icon: Check },
-  'En réparation': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-300', color: '#7c3aed', icon: Wrench },
-  'Donné au client': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-300', color: '#0d9488', icon: UserCheck },
-  'Clôturé': { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', color: '#64748b', icon: Archive },
+  'Panier': { dot: 'bg-slate-400', icon: ShoppingCart },
+  'En attente': { dot: 'bg-amber-500', icon: Clock },
+  'Commandée': { dot: 'bg-blue-500', icon: Package },
+  'Reçu': { dot: 'bg-emerald-500', icon: Check },
+  'En réparation': { dot: 'bg-brand-500', icon: Wrench },
+  'Donné au client': { dot: 'bg-emerald-700', icon: UserCheck },
+  'Clôturé': { dot: 'bg-slate-500', icon: Archive },
 };
 
 const FILTER_TABS = [
@@ -574,17 +577,20 @@ export default function CommandesPage() {
   };
 
   const getStatusConf = (statut) => {
-    return COMMANDE_STATUS_CONFIG[statut] || { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-300', color: '#64748b', icon: Package };
+    return COMMANDE_STATUS_CONFIG[statut] || { dot: 'bg-slate-400', icon: Package };
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="page max-w-[1280px]">
       {/* Toast */}
       {toast && (
         <div role={toast.type === 'error' ? 'alert' : 'status'}
-          className={`fixed top-4 right-4 z-[120] max-w-[calc(100vw-2rem)] px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium animate-in
-          ${toast.type === 'success' ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white'}`}>
-          {toast.msg}
+          className={`toast fixed top-16 right-4 lg:top-auto lg:bottom-20 lg:right-6 z-[120] animate-in font-medium
+          ${toast.type === 'success' ? 'border-l-emerald-600' : 'border-l-red-600'}`}>
+          {toast.type === 'success'
+            ? <Check className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
+            : <AlertTriangle className="w-5 h-5 shrink-0 text-red-700" aria-hidden="true" />}
+          <span className="flex-1 min-w-0">{toast.msg}</span>
         </div>
       )}
 
@@ -596,33 +602,35 @@ export default function CommandesPage() {
 
       {/* Notification modal on "Reçu" */}
       {showNotifModal && notifPart && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div role="dialog" aria-modal="true" aria-labelledby="notif-piece-titre" className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 animate-in">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
-                <Check className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <h3 id="notif-piece-titre" className="text-lg font-bold text-slate-900">Pi&egrave;ce re&ccedil;ue !</h3>
-                <p className="text-sm text-slate-600">Voulez-vous pr&eacute;venir le client ?</p>
+        <div className="modal-overlay z-[110]">
+          <div role="dialog" aria-modal="true" aria-labelledby="notif-piece-titre" className="modal sm:max-w-md">
+            <div className="modal-header">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
+                  <Check className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div className="min-w-0">
+                  <h3 id="notif-piece-titre" className="t-h2">Pi&egrave;ce re&ccedil;ue !</h3>
+                  <p className="t-small">Voulez-vous pr&eacute;venir le client ?</p>
+                </div>
               </div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 mb-5 text-sm text-slate-600 leading-relaxed">
-              {getNotifMessage(notifPart)}
+            <div className="modal-body">
+              <div className="card-section t-body">
+                {getNotifMessage(notifPart)}
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="modal-footer flex-col-reverse sm:flex-row">
+              <button type="button" onClick={handleNotifDismiss} disabled={notifEnvoi} className="btn-ghost w-full sm:w-auto">
+                Non merci
+              </button>
+              <button type="button" onClick={handleNotifWhatsApp} disabled={notifEnvoi} className="btn-whatsapp w-full sm:w-auto">
+                <Send aria-hidden="true" /> WhatsApp
+              </button>
               <button type="button" onClick={handleNotifSMS} disabled={notifEnvoi} aria-busy={notifEnvoi}
                 title={smsServeur && notifPart.ticket_id ? 'Envoyer le SMS depuis le serveur (Brevo)' : "Ouvrir l'app Messages de l'appareil"}
-                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
-                <MessageSquare className="w-4 h-4" aria-hidden="true" /> {notifEnvoi ? 'Envoi…' : 'SMS'}
-              </button>
-              <button type="button" onClick={handleNotifWhatsApp} disabled={notifEnvoi}
-                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-700 text-white text-sm font-medium hover:bg-green-800 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
-                <Send className="w-4 h-4" aria-hidden="true" /> WhatsApp
-              </button>
-              <button type="button" onClick={handleNotifDismiss} disabled={notifEnvoi}
-                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
-                Non merci
+                className="btn-primary w-full sm:w-auto">
+                <MessageSquare aria-hidden="true" /> {notifEnvoi ? 'Envoi…' : 'SMS'}
               </button>
             </div>
           </div>
@@ -630,70 +638,71 @@ export default function CommandesPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <Package className="w-6 h-6 text-brand-600" /> Commandes de pi&egrave;ces
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <h1 className="page-header-title">Commandes de pi&egrave;ces</h1>
+          <p className="page-header-subtitle">
             {allParts.filter(p => !STATUTS_TERMINAUX.includes(p.statut)).length} en cours &mdash; {allParts.filter(p => STATUTS_TERMINAUX.includes(p.statut)).length} cl&ocirc;tur&eacute;e(s)
           </p>
         </div>
-        <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary">
-          <Plus className="w-4 h-4" /> Nouvelle commande
-        </button>
+        <div className="page-header-actions">
+          <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary">
+            <Plus aria-hidden="true" /> Nouvelle commande
+          </button>
+        </div>
       </div>
 
       {/* Search & Filter Tabs */}
-      <div className="card overflow-hidden mb-6">
+      <div className="card mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
             <label htmlFor="commandes-search" className="sr-only">Rechercher une commande de pièce</label>
             <input id="commandes-search" type="text" placeholder="Pièce, référence, fournisseur, client, modèle, ticket..."
               value={search} onChange={(e) => setSearch(e.target.value)}
               autoComplete="off"
-              className="w-full min-h-[44px] pl-10 pr-11 py-2.5 rounded-lg border border-slate-200 bg-slate-50/50 text-base sm:text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 focus:bg-white transition-colors"
+              className="input min-h-[44px] pl-10 pr-12"
             />
             {search && (
               <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
-                className="absolute right-0.5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                <X className="w-4 h-4" aria-hidden="true" />
+                className="btn-ghost btn-icon absolute right-0.5 top-1/2 -translate-y-1/2 text-slate-500">
+                <X aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
-        <div className="px-3 sm:px-4 py-2 flex gap-1 overflow-x-auto scrollbar-none bg-slate-50/50">
-          {FILTER_TABS.map(tab => {
-            const count = statusCounts[tab.value] ?? 0;
-            const isActive = filterTab === tab.value;
-            const conf = tab.value !== 'all' ? getStatusConf(tab.value) : null;
-            const IconComp = conf?.icon;
-            return (
-              <button key={tab.value} type="button" onClick={() => setFilterTab(tab.value)}
-                aria-pressed={isActive}
-                className={`px-3 py-1.5 min-h-[44px] rounded-md text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1.5
-                  ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white hover:shadow-sm'}`}>
-                {IconComp && <IconComp className="w-3.5 h-3.5" aria-hidden="true" />}
-                {tab.label} ({count})
-              </button>
-            );
-          })}
+        <div className="p-2 sm:px-3 max-xl:scroll-fade-x">
+          <div className="segmented w-full" role="group" aria-label="Filtrer par statut">
+            {FILTER_TABS.map(tab => {
+              const count = statusCounts[tab.value] ?? 0;
+              const isActive = filterTab === tab.value;
+              const conf = tab.value !== 'all' ? getStatusConf(tab.value) : null;
+              const IconComp = conf?.icon;
+              return (
+                <button key={tab.value} type="button" onClick={() => setFilterTab(tab.value)}
+                  aria-pressed={isActive}
+                  className={`segmented-item ${isActive ? 'segmented-item-active' : ''}`}>
+                  {IconComp && <IconComp className={`w-4 h-4 ${isActive ? 'text-brand-600' : 'text-slate-400'}`} aria-hidden="true" />}
+                  {tab.label} ({count})
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Form modal */}
       {showForm && (
-        <div className="card p-5 mb-6 border-brand-200 animate-in">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-slate-800">
+        <div className="card mb-6 border-brand-300 animate-in">
+          <div className="card-header">
+            <h2 className="t-h2">
               {editingPart ? 'Modifier la commande' : 'Nouvelle commande'}
             </h2>
-            <button type="button" onClick={resetForm} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" aria-label="Fermer le formulaire">
-              <X className="w-4 h-4" aria-hidden="true" />
+            <button type="button" onClick={resetForm} className="btn-ghost btn-icon -mr-2" aria-label="Fermer le formulaire">
+              <X aria-hidden="true" />
             </button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="px-4 sm:px-5 pb-4 sm:pb-5 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
             <div className="col-span-2 sm:col-span-1">
               <label htmlFor={`${formId}-description`} className="input-label">D&eacute;signation *</label>
               <input id={`${formId}-description`} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="&Eacute;cran iPhone 15..." />
@@ -704,22 +713,22 @@ export default function CommandesPage() {
             </div>
             <div>
               <label htmlFor={`${formId}-reference`} className="input-label">R&eacute;f&eacute;rence</label>
-              <input id={`${formId}-reference`} value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input font-mono" placeholder="REF-001" />
+              <input id={`${formId}-reference`} value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input t-mono" placeholder="REF-001" />
             </div>
             <div>
               <label htmlFor={`${formId}-prix`} className="input-label">Prix client TTC (&euro;)</label>
               <input id={`${formId}-prix`} type="number" step="0.01" min="0" inputMode="decimal" value={form.prix}
-                onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-[44px]"
+                onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-[44px] tabular-nums"
                 aria-describedby={`${formId}-prix-aide`} />
-              <p id={`${formId}-prix-aide`} className="text-[11px] text-slate-600 mt-1">Prix annoncé au client. La facture du fournisseur va dans « Prix HT payé ».</p>
+              <p id={`${formId}-prix-aide`} className="input-help">Prix annoncé au client. La facture du fournisseur va dans « Prix HT payé ».</p>
             </div>
             <div>
               <label htmlFor={`${formId}-ticket`} className="input-label">Ticket associ&eacute;</label>
-              <input id={`${formId}-ticket`} value={form.ticket_code} onChange={e => setForm(f => ({ ...f, ticket_code: e.target.value }))} className="input font-mono" placeholder="KP-000001" autoComplete="off" />
+              <input id={`${formId}-ticket`} value={form.ticket_code} onChange={e => setForm(f => ({ ...f, ticket_code: e.target.value }))} className="input t-mono uppercase" placeholder="KP-000001" autoComplete="off" />
             </div>
             <div>
               <label htmlFor={`${formId}-statut`} className="input-label">Statut</label>
-              <select id={`${formId}-statut`} value={form.statut} onChange={e => setForm(f => ({ ...f, statut: e.target.value }))} className="input">
+              <select id={`${formId}-statut`} value={form.statut} onChange={e => setForm(f => ({ ...f, statut: e.target.value }))} className="select">
                 {PART_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
@@ -730,9 +739,9 @@ export default function CommandesPage() {
               <input id={`${formId}-notes`} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Notes..." />
             </div>
           </div>
-          <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
-            <button type="button" onClick={handleSubmit} disabled={!form.description || (form.prix_ht !== '' && montantSaisi(form.prix_ht) === null)} className="btn-primary min-h-[44px]">
-              <Save className="w-4 h-4" aria-hidden="true" /> {editingPart ? 'Mettre à jour' : 'Créer'}
+          <div className="card-footer">
+            <button type="button" onClick={handleSubmit} disabled={!form.description || (form.prix_ht !== '' && montantSaisi(form.prix_ht) === null)} className="btn-primary">
+              <Save aria-hidden="true" /> {editingPart ? 'Mettre à jour' : 'Créer'}
             </button>
           </div>
         </div>
@@ -740,7 +749,7 @@ export default function CommandesPage() {
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="hidden xl:grid xl:grid-cols-[minmax(180px,1fr)_130px_120px_84px_96px_140px_96px] 2xl:grid-cols-[minmax(180px,1fr)_130px_120px_110px_100px_84px_96px_140px_96px] gap-3 items-center px-5 py-3 bg-slate-50/80 border-b border-slate-100">
+        <div className="hidden xl:grid xl:grid-cols-[minmax(180px,1fr)_120px_124px_96px_120px_160px_88px] 2xl:grid-cols-[minmax(180px,1fr)_130px_130px_110px_110px_96px_120px_160px_88px] gap-3 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-100">
           <span className="table-header">D&eacute;signation</span>
           <span className="table-header">Mod&egrave;le</span>
           <span className="table-header">Client</span>
@@ -753,19 +762,19 @@ export default function CommandesPage() {
         </div>
 
         {loading ? (
-          <div className="py-16 text-center" role="status">
-            <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full motion-safe:animate-spin mx-auto mb-3" aria-hidden="true" />
-            <p className="text-sm text-slate-500">Chargement...</p>
+          <div className="p-4 space-y-3" role="status">
+            {[1, 2, 3, 4, 5].map(i => <div key={i} className="skeleton-row" aria-hidden="true" />)}
+            <p className="sr-only">Chargement...</p>
           </div>
         ) : parts.length === 0 ? (
-          <div className="py-16 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-              <Package className="w-7 h-7 text-slate-300" />
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <Package aria-hidden="true" />
             </div>
-            <p className="text-slate-600 font-medium">
+            <p className="t-h2">
               {debouncedSearch ? `Aucune commande ne correspond à « ${debouncedSearch} »` : 'Aucune commande'}
             </p>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="t-body text-slate-500 max-w-sm">
               {debouncedSearch
                 ? (filterTab !== 'all' && searchedParts.length > 0
                   ? `${searchedParts.length} résultat(s) avec un autre statut : choisissez l’onglet « Tous ».`
@@ -774,109 +783,111 @@ export default function CommandesPage() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100/80">
+          <div className="divide-y divide-slate-100">
             {parts.map((p) => {
               const conf = getStatusConf(p.statut);
-              const StatusIcon = conf.icon;
               const clientFullName = [p.client_prenom, p.client_nom].filter(Boolean).join(' ');
               const modelText = [p.marque, p.modele || p.modele_autre].filter(Boolean).join(' ');
               const panneText = p.panne || '—';
+              const aHt = p.prix_ht != null && p.prix_ht !== '';
 
               return (
                 <div key={p.id}
-                  className="xl:grid xl:grid-cols-[minmax(180px,1fr)_130px_120px_84px_96px_140px_96px] 2xl:grid-cols-[minmax(180px,1fr)_130px_120px_110px_100px_84px_96px_140px_96px] gap-3 items-center px-4 sm:px-5 py-3.5 hover:bg-slate-50 transition-colors"
+                  className="flex flex-col gap-2 xl:grid xl:grid-cols-[minmax(180px,1fr)_120px_124px_96px_120px_160px_88px] 2xl:grid-cols-[minmax(180px,1fr)_130px_130px_110px_110px_96px_120px_160px_88px] xl:gap-3 items-stretch xl:items-center px-4 sm:px-5 py-3 xl:py-2 xl:min-h-14 hover:bg-slate-50 transition-colors duration-150"
                 >
-                  {/* Désignation */}
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate" title={p.description}>{p.description}</p>
-                    {p.ticket_code && (
-                      <button type="button" onClick={() => handleGoToTicket(p)}
-                        aria-label={`Ouvrir la fiche du ticket ${p.ticket_code}`}
-                        className="min-h-[32px] text-xs text-brand-700 font-mono hover:text-brand-800 hover:underline flex items-center gap-1 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                        {p.ticket_code} <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
-                      </button>
-                    )}
-                    {(() => {
-                      // Tablette / mobile : modèle, client, fournisseur et HT payé sur une ligne
-                      const resume = [modelText, clientFullName, p.fournisseur,
-                        p.prix_ht != null && p.prix_ht !== '' ? `HT payé ${formatPrix(p.prix_ht)}` : ''].filter(Boolean).join(' · ');
-                      return resume ? <p className="xl:hidden text-xs text-slate-600 truncate">{resume}</p> : null;
-                    })()}
-                    {p.notes && <p className="text-xs text-slate-400 mt-0.5 truncate" title={p.notes}>{p.notes}</p>}
+                  {/* Désignation (+ prix à droite sous xl) */}
+                  <div className="min-w-0 flex items-start justify-between gap-3 xl:block">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900 truncate" title={p.description}>{p.description}</p>
+                      <div className="flex flex-wrap items-center gap-x-2 min-w-0">
+                        {p.ticket_code && (
+                          <button type="button" onClick={() => handleGoToTicket(p)}
+                            aria-label={`Ouvrir la fiche du ticket ${p.ticket_code}`}
+                            className="inline-flex items-center gap-1 min-h-8 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:-my-1.5 t-mono text-brand-700 font-semibold hover:text-brand-800 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                            {p.ticket_code} <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                          </button>
+                        )}
+                        {(() => {
+                          // Tablette / mobile : modèle, client, fournisseur et HT payé sur une ligne
+                          const resume = [modelText, clientFullName, p.fournisseur,
+                            aHt ? `HT payé ${formatPrix(p.prix_ht)}` : ''].filter(Boolean).join(' · ');
+                          return resume ? <p className="xl:hidden t-small truncate min-w-0 w-full sm:w-auto sm:flex-1">{resume}</p> : null;
+                        })()}
+                      </div>
+                      {p.notes && <p className="t-caption truncate" title={p.notes}>{p.notes}</p>}
+                    </div>
+                    <div className="xl:hidden text-right shrink-0">
+                      <p className="t-num" title="Prix client TTC">{p.prix ? formatPrix(p.prix) : '—'}</p>
+                    </div>
                   </div>
 
                   {/* Modèle */}
                   <div className="hidden xl:block min-w-0">
-                    <p className="text-sm text-slate-600 truncate" title={modelText}>{modelText || '—'}</p>
+                    <p className="text-sm text-slate-700 truncate" title={modelText}>{modelText || '—'}</p>
                   </div>
 
                   {/* Client */}
                   <div className="hidden xl:block min-w-0">
                     <p className="text-sm text-slate-700 truncate" title={clientFullName}>{clientFullName || '—'}</p>
-                    {p.client_tel && <p className="text-[11px] text-slate-600 font-mono">{p.client_tel}</p>}
+                    {p.client_tel && <p className="t-small tabular-nums truncate">{formatPhone(p.client_tel)}</p>}
                   </div>
 
                   {/* Fournisseur (grands écrans) */}
                   <div className="hidden 2xl:block min-w-0">
-                    <p className="text-sm text-slate-600 truncate" title={p.fournisseur || '—'}>{p.fournisseur || '—'}</p>
+                    <p className="text-sm text-slate-700 truncate" title={p.fournisseur || '—'}>{p.fournisseur || '—'}</p>
                   </div>
 
                   {/* Panne (grands écrans) */}
                   <div className="hidden 2xl:block min-w-0">
-                    <p className="text-xs text-slate-500 truncate" title={panneText}>{panneText}</p>
+                    <p className="t-small truncate" title={panneText}>{panneText}</p>
                   </div>
 
                   {/* Prix */}
                   <div className="hidden xl:block text-right">
-                    <p className="text-sm font-medium text-slate-800" title="Prix client TTC">{p.prix ? formatPrix(p.prix) : '—'}</p>
-                    {p.prix_ht != null && p.prix_ht !== '' && (
-                      <p className="text-[11px] text-slate-600" title="Prix HT payé au fournisseur">HT {formatPrix(p.prix_ht)}</p>
+                    <p className="t-num text-sm" title="Prix client TTC">{p.prix ? formatPrix(p.prix) : '—'}</p>
+                    {aHt && (
+                      <p className="t-caption tabular-nums" title="Prix HT payé au fournisseur">HT {formatPrix(p.prix_ht)}</p>
                     )}
                   </div>
 
                   {/* Dates */}
                   <div className="hidden xl:block">
-                    <p className="text-[11px] text-slate-500">
-                      <Calendar className="w-3 h-3 inline mr-0.5" />
+                    <p className="t-caption tabular-nums flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
                       {p.date_creation ? formatDateShort(p.date_creation) : '—'}
                     </p>
                     {p.date_commande && (
-                      <p className="text-[10px] text-blue-500">Cmd: {formatDateShort(p.date_commande)}</p>
+                      <p className="t-caption tabular-nums">Cmd: {formatDateShort(p.date_commande)}</p>
                     )}
                     {p.date_reception && (
-                      <p className="text-[10px] text-emerald-500">Re&ccedil;ue: {formatDateShort(p.date_reception)}</p>
+                      <p className="t-caption tabular-nums text-emerald-700">Re&ccedil;ue: {formatDateShort(p.date_reception)}</p>
                     )}
                   </div>
 
-                  {/* Status dropdown */}
-                  <div className="mt-2 xl:mt-0" onClick={e => e.stopPropagation()}>
-                    <select
-                      value={p.statut}
-                      onChange={e => handleStatusChange(p, e.target.value)}
-                      aria-label={`Statut de la commande ${p.description || ''}`.trim()}
-                      className="w-full min-w-[130px] min-h-[44px] py-1.5 px-2 text-[11px] font-semibold rounded-lg border-2 cursor-pointer appearance-none bg-no-repeat truncate"
-                      style={{
-                        borderColor: conf.color,
-                        color: conf.color,
-                        backgroundColor: conf.color + '10',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(conf.color)}' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                        backgroundPosition: 'right 4px center',
-                        backgroundSize: '14px',
-                        paddingRight: '22px',
-                      }}
-                    >
-                      {PART_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
+                  {/* Pied (sous xl) : statut à gauche, actions à droite */}
+                  <div className="flex items-center gap-2 xl:contents">
+                    {/* Status dropdown */}
+                    <div className="relative flex-1 min-w-0 xl:flex-none" onClick={e => e.stopPropagation()}>
+                      <span className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${conf.dot}`} aria-hidden="true" />
+                      <select
+                        value={p.statut}
+                        onChange={e => handleStatusChange(p, e.target.value)}
+                        aria-label={`Statut de la commande ${p.description || ''}`.trim()}
+                        className="select min-h-11 pl-7 font-medium cursor-pointer truncate"
+                      >
+                        {PART_STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
 
-                  {/* Actions */}
-                  <div className="flex justify-end gap-1 mt-1 xl:mt-0">
-                    <button type="button" onClick={() => handleEdit(p)} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" title="Modifier" aria-label={`Modifier la commande ${p.description || ''}`.trim()}>
-                      <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                    <button type="button" onClick={() => handleDelete(p.id)} className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center" title="Supprimer" aria-label={`Supprimer la commande ${p.description || ''}`.trim()}>
-                      <Trash2 className="w-3.5 h-3.5 text-red-600" aria-hidden="true" />
-                    </button>
+                    {/* Actions */}
+                    <div className="flex justify-end gap-0.5 shrink-0 xl:-mr-2">
+                      <button type="button" onClick={() => handleEdit(p)} className="btn-ghost btn-icon" title="Modifier" aria-label={`Modifier la commande ${p.description || ''}`.trim()}>
+                        <Edit3 aria-hidden="true" />
+                      </button>
+                      <button type="button" onClick={() => handleDelete(p.id)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer la commande ${p.description || ''}`.trim()}>
+                        <Trash2 aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

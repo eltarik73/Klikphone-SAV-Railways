@@ -221,18 +221,18 @@ const TABLES = {
 // ─── Badge « Prix du … » ──────────────────────────
 const TONS = {
   clair: {
-    ok: 'bg-slate-100 text-slate-700 border-slate-300',
-    a_revoir: 'bg-amber-50 text-amber-900 border-amber-400',
-    perime: 'bg-red-50 text-red-800 border-red-300',
-    inconnu: 'bg-slate-100 text-slate-600 border-slate-300',
-    estime: 'bg-white/80 text-slate-700 border-slate-300',
+    ok: 'badge-neutral',
+    a_revoir: 'badge-warning',
+    perime: 'badge-danger',
+    inconnu: 'badge-neutral text-slate-500',
+    estime: 'bg-white text-slate-600 border border-dashed border-slate-300',
   },
   sombre: {
-    ok: 'bg-slate-800 text-slate-200 border-slate-600',
-    a_revoir: 'bg-amber-500/15 text-amber-200 border-amber-500/50',
-    perime: 'bg-red-500/15 text-red-200 border-red-500/50',
-    inconnu: 'bg-slate-800 text-slate-300 border-slate-600',
-    estime: 'bg-slate-900/60 text-slate-200 border-slate-500',
+    ok: 'bg-slate-800 text-slate-200',
+    a_revoir: 'bg-amber-500/15 text-amber-200',
+    perime: 'bg-red-500/15 text-red-200',
+    inconnu: 'bg-slate-800 text-slate-300',
+    estime: 'bg-slate-900/60 text-slate-200 border border-dashed border-slate-500',
   },
 };
 
@@ -252,13 +252,13 @@ export function BadgeDatePrix({ row, seuils = SEUILS_FRAICHEUR, theme = 'clair',
   const Icone = f.niveau === 'perime' ? AlertTriangle : f.niveau === 'a_revoir' ? Clock : null;
   return (
     <span className={`inline-flex items-center gap-1 flex-wrap ${className}`} title={phrase}>
-      <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold leading-tight whitespace-nowrap ${tons[f.niveau]}`}>
+      <span className={`badge badge-sm tabular-nums ${tons[f.niveau]}`}>
         {Icone && <Icone className="w-3 h-3 shrink-0" aria-hidden="true" />}
         <span aria-hidden="true">{f.date ? (court ? dateFr(f.date, { court: true }) : `Prix du ${dateFr(f.date)}`) : 'Date inconnue'}</span>
         <span className="sr-only">{phrase}</span>
       </span>
       {f.estime && (
-        <span aria-hidden="true" className={`rounded-md border border-dashed px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${tons.estime}`}>
+        <span aria-hidden="true" className={`badge badge-sm ${tons.estime}`}>
           estimé
         </span>
       )}
@@ -273,14 +273,14 @@ export function BoutonVerrou({ verrouille, onClick, disabled = false, nom = 'ce 
     ? 'Verrouillé : jamais modifié automatiquement (import, règles, commandes).'
     : 'Non verrouillé : peut être mis à jour par un import, les règles ou une commande.');
   const classes = verrouille
-    ? (sombre ? 'bg-amber-500/20 text-amber-200 border-amber-500/50 hover:bg-amber-500/30' : 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200')
-    : (sombre ? 'bg-transparent text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:text-slate-800 hover:bg-slate-50');
+    ? (sombre ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30' : 'bg-amber-50 text-amber-800 hover:bg-amber-100 hover:text-amber-900')
+    : (sombre ? 'bg-transparent text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500');
   const Icone = verrouille ? Lock : Unlock;
   if (lectureSeule) {
     if (!verrouille) return null;
     return (
-      <span title={explication} className={`inline-flex items-center justify-center w-7 h-7 rounded-md border ${classes}`}>
-        <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+      <span title={explication} className={`badge badge-sm ${sombre ? 'bg-amber-500/20 text-amber-200' : 'badge-warning'}`}>
+        <Lock className="w-3 h-3" aria-hidden="true" />
         <span className="sr-only">{`${nom} : verrouillé`}</span>
       </span>
     );
@@ -293,9 +293,9 @@ export function BoutonVerrou({ verrouille, onClick, disabled = false, nom = 'ce 
       aria-pressed={!!verrouille}
       aria-label={verrouille ? `Déverrouiller ${nom}` : `Verrouiller ${nom}`}
       title={explication}
-      className={`inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50 disabled:cursor-wait ${classes}`}
+      className={`btn-ghost btn-icon disabled:cursor-wait ${classes}`}
     >
-      {disabled ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Icone className="w-4 h-4" aria-hidden="true" />}
+      {disabled ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Icone aria-hidden="true" />}
     </button>
   );
 }
@@ -304,19 +304,19 @@ export function BoutonVerrou({ verrouille, onClick, disabled = false, nom = 'ce 
 export function FiltreAnciens({ actif, onChange, nombre, theme = 'clair', libelle = 'Plus de 3 mois' }) {
   const sombre = theme === 'sombre';
   const classes = actif
-    ? (sombre ? 'bg-amber-500/20 text-amber-100 border-amber-500/60' : 'bg-amber-100 text-amber-900 border-amber-400')
-    : (sombre ? 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50');
+    ? (sombre ? 'bg-amber-500/20 text-amber-100 border-amber-500/60' : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 hover:border-amber-300')
+    : (sombre ? 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white' : '');
   return (
     <button
       type="button"
       onClick={() => onChange(!actif)}
       aria-pressed={!!actif}
-      className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-lg border text-xs font-semibold whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${classes}`}
+      className={`btn-secondary ${classes}`}
     >
-      <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+      <Clock aria-hidden="true" />
       {libelle}
       {Number.isFinite(nombre) && (
-        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${sombre ? 'bg-white/10' : 'bg-slate-900/10'}`}>{nombre}</span>
+        <span className={`badge-count ${sombre ? 'bg-white/10' : actif ? 'bg-amber-800 text-white' : ''}`}>{nombre}</span>
       )}
     </button>
   );
@@ -335,7 +335,7 @@ export function FenetrePrix({ open, onClose, titre, sousTitre, icone: Icone, chi
   useFocusTrap(boite, open, { onEscape: fermer });
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[55] flex items-stretch sm:items-center justify-center bg-slate-900/60 sm:p-4" onClick={fermer} data-fenetre-prix="">
+    <div className="modal-overlay z-[55] items-stretch sm:items-center" onClick={fermer} data-fenetre-prix="">
       <style>{CSS_SANS_BULLE_CHAT}</style>
       <div
         ref={boite}
@@ -343,30 +343,30 @@ export function FenetrePrix({ open, onClose, titre, sousTitre, icone: Icone, chi
         aria-modal="true"
         aria-labelledby={idTitre}
         onClick={(e) => e.stopPropagation()}
-        className={`relative flex flex-col w-full ${largeur} bg-white text-slate-900 shadow-2xl sm:rounded-2xl max-h-full sm:max-h-[92vh] overflow-hidden`}
+        className={`modal ${largeur} max-sm:rounded-none max-h-full sm:max-h-[92vh] overflow-hidden`}
       >
-        <div className="flex items-start gap-3 px-4 sm:px-6 py-4 border-b border-slate-200">
+        <div className="modal-header items-start">
           {Icone && (
-            <div className="w-10 h-10 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
               <Icone className="w-5 h-5" aria-hidden="true" />
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h2 id={idTitre} className="text-lg font-bold leading-tight">{titre}</h2>
-            {sousTitre && <p className="text-sm text-slate-600 mt-0.5">{sousTitre}</p>}
+            <h2 id={idTitre} className="t-h2">{titre}</h2>
+            {sousTitre && <p className="text-sm text-slate-500 mt-0.5">{sousTitre}</p>}
           </div>
           <button
             type="button"
             onClick={fermer}
             disabled={bloquer}
             aria-label="Fermer"
-            className="shrink-0 inline-flex items-center justify-center w-11 h-11 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-40"
+            className="btn-ghost btn-icon shrink-0"
           >
-            <X className="w-5 h-5" aria-hidden="true" />
+            <X aria-hidden="true" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">{children}</div>
-        {pied && <div className="border-t border-slate-200 px-4 sm:px-6 py-3 bg-slate-50">{pied}</div>}
+        <div className="modal-body flex-1">{children}</div>
+        {pied && <div className="border-t border-slate-100 px-5 py-4 bg-slate-50/60 shrink-0">{pied}</div>}
       </div>
     </div>
   );
@@ -607,30 +607,30 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
       bloquer={!!annulation}
     >
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <label htmlFor="historique-source" className="text-sm font-semibold text-slate-700">Origine</label>
+        <label htmlFor="historique-source" className="t-label">Origine</label>
         <select
           id="historique-source"
           value={source}
           onChange={(e) => setSource(e.target.value)}
-          className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+          className="select w-auto"
         >
           <option value="">Toutes</option>
           {sources.map((s) => <option key={s} value={s}>{libelleSource(s)}</option>)}
         </select>
-        <span className="text-sm text-slate-600" aria-live="polite">
+        <span className="text-sm text-slate-500" aria-live="polite">
           {chargement ? 'Chargement…' : `${lotsVisibles.length} lot${lotsVisibles.length > 1 ? 's' : ''} de changements`}
         </span>
       </div>
 
       {erreur && (
-        <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-center justify-between gap-2">
-          <span>{erreur}</span>
-          <button type="button" onClick={charger} className="min-h-[44px] px-3 rounded-lg font-semibold hover:bg-red-100">Réessayer</button>
+        <div role="alert" className="callout callout-danger items-center mb-4">
+          <span className="flex-1">{erreur}</span>
+          <button type="button" onClick={charger} className="btn-secondary btn-sm">Réessayer</button>
         </div>
       )}
 
       {!chargement && !erreur && lotsVisibles.length === 0 && (
-        <p className="py-10 text-center text-sm text-slate-600">Aucun changement de prix enregistré pour l’instant.</p>
+        <p className="py-10 text-center text-sm text-slate-500">Aucun changement de prix enregistré pour l’instant.</p>
       )}
 
       <ul className="space-y-3">
@@ -641,24 +641,24 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
           const annulable = !!lot.lot_id && lot.source !== 'annulation' && !lot.lot_id.startsWith(PREFIXE_ANNULATION) && !lot.annule;
           const detail = lot.lignes ? { lignes: lot.lignes } : details[lot.lot_id] || {};
           return (
-            <li key={lot.cle} className="rounded-xl border border-slate-200 bg-white">
+            <li key={lot.cle} className="card">
               <div className="flex flex-wrap items-center gap-2 p-3">
                 <button
                   type="button"
                   onClick={() => basculer(lot)}
                   aria-expanded={ouvert}
                   aria-controls={idDetail}
-                  className="flex-1 min-w-[200px] min-h-[44px] flex items-center gap-2 text-left rounded-lg px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                  className="flex-1 min-w-[200px] min-h-[44px] flex items-center gap-2 text-left rounded-lg px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
-                  {ouvert ? <ChevronDown className="w-4 h-4 text-violet-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />}
+                  {ouvert ? <ChevronDown className="w-4 h-4 text-brand-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
                   <span className="min-w-0">
-                    <span className="block font-semibold text-sm">
+                    <span className="block font-semibold text-sm text-slate-900">
                       {libelleSource(lot.source)} — {lot.nb} prix modifié{lot.nb > 1 ? 's' : ''}
                     </span>
-                    <span className="block text-xs text-slate-600">
+                    <span className="block t-caption">
                       {dateHeureFr(lot.le)}{lot.par ? ` · par ${lot.par}` : ''}
                       {lot.annule && (
-                        <span className="ml-1 font-semibold text-slate-800">
+                        <span className="ml-1 font-semibold text-slate-700">
                           · annulé{lot.annule_le ? ` le ${dateHeureFr(lot.annule_le)}` : ''}
                         </span>
                       )}
@@ -669,33 +669,33 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
                   <button
                     type="button"
                     onClick={() => setAConfirmer(lot.cle)}
-                    className="min-h-[44px] px-3 rounded-lg border border-slate-300 text-sm font-semibold text-slate-800 hover:bg-slate-50 inline-flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                    className="btn-secondary btn-sm"
                   >
-                    <RotateCcw className="w-4 h-4" aria-hidden="true" /> Annuler ce lot
+                    <RotateCcw aria-hidden="true" /> Annuler ce lot
                   </button>
                 )}
               </div>
               {confirmer && (
-                <div role="alertdialog" aria-label="Confirmer l’annulation du lot" className="mx-3 mb-3 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+                <div role="alertdialog" aria-label="Confirmer l’annulation du lot" className="mx-3 mb-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   <p className="font-semibold">Remettre ces {lot.nb} prix à leur valeur d’avant ?</p>
                   <p className="mt-1">Les tickets déjà créés gardent leur prix. Un prix modifié depuis n’est pas touché. L’annulation est elle-même notée dans l’historique.</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => annulerLot(lot)}
+                      onClick={() => setAConfirmer(null)}
                       disabled={annulation === lot.lot_id}
-                      className="min-h-[44px] px-4 rounded-lg bg-amber-700 text-white font-semibold hover:bg-amber-800 disabled:opacity-60 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800 focus-visible:ring-offset-2"
+                      className="btn-ghost"
                     >
-                      {annulation === lot.lot_id && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
-                      Oui, annuler le lot
+                      Non, garder
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAConfirmer(null)}
+                      onClick={() => annulerLot(lot)}
                       disabled={annulation === lot.lot_id}
-                      className="min-h-[44px] px-4 rounded-lg border border-amber-400 bg-white font-semibold hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800"
+                      className="btn-primary"
                     >
-                      Non, garder
+                      {annulation === lot.lot_id && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
+                      Oui, annuler le lot
                     </button>
                   </div>
                 </div>
@@ -703,32 +703,32 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
               {ouvert && (
                 <div id={idDetail} className="border-t border-slate-100 overflow-x-auto">
                   {detail.chargement && (
-                    <p className="px-3 py-4 text-sm text-slate-600 flex items-center gap-2" role="status">
-                      <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Chargement du détail…
+                    <p className="loading-inline px-3 py-4" role="status">
+                      <Loader2 aria-hidden="true" /> Chargement du détail…
                     </p>
                   )}
-                  {detail.erreur && <p role="alert" className="px-3 py-4 text-sm text-red-800">{detail.erreur}</p>}
+                  {detail.erreur && <p role="alert" className="px-3 py-4 text-sm font-medium text-red-700">{detail.erreur}</p>}
                   {detail.lignes && (
-                    <table className="w-full text-sm">
+                    <table className="table table-dense">
                       <caption className="sr-only">Détail du lot</caption>
-                      <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                      <thead className="bg-slate-50">
                         <tr>
-                          <th scope="col" className="px-3 py-2 text-left">Prix</th>
-                          <th scope="col" className="px-3 py-2 text-right">Avant</th>
-                          <th scope="col" className="px-3 py-2 text-right">Après</th>
-                          <th scope="col" className="px-3 py-2 text-right">Écart</th>
+                          <th scope="col" className="table-header">Prix</th>
+                          <th scope="col" className="table-header text-right">Avant</th>
+                          <th scope="col" className="table-header text-right">Après</th>
+                          <th scope="col" className="table-header text-right">Écart</th>
                         </tr>
                       </thead>
                       <tbody>
                         {detail.lignes.map((l) => (
-                          <tr key={l.id} className="border-t border-slate-100">
-                            <td className="px-3 py-2">
-                              <span className="font-medium">{libelle(l)}</span>
-                              {l.colonne && <span className="block text-xs text-slate-600">{libelleColonne(l.colonne)}</span>}
+                          <tr key={l.id} className="table-row">
+                            <td>
+                              <span className="font-medium text-slate-900">{libelle(l)}</span>
+                              {l.colonne && <span className="block t-caption">{libelleColonne(l.colonne)}</span>}
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-600">{euros(l.ancien)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums font-semibold">{euros(l.nouveau)}</td>
-                            <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{variationTexte(l.ancien, l.nouveau)}</td>
+                            <td className="text-right tabular-nums text-slate-500">{euros(l.ancien)}</td>
+                            <td className="table-cell-num">{euros(l.nouveau)}</td>
+                            <td className="text-right tabular-nums text-slate-700 whitespace-nowrap">{variationTexte(l.ancien, l.nouveau)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -746,7 +746,7 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
           <button
             type="button"
             onClick={() => setLimite(maximum)}
-            className="min-h-[44px] px-4 rounded-lg border border-slate-300 text-sm font-semibold hover:bg-slate-50"
+            className="btn-secondary"
           >
             Afficher les changements plus anciens
           </button>

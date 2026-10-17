@@ -18,12 +18,38 @@ import {
 } from 'lucide-react';
 
 const CATALOG_CATEGORIES = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
+// Barre « Enregistrer » collée au bas de l'écran sur les onglets longs ; décalée à droite pour ne pas
+// passer sous la bulle du chat (fixe en bas à droite, 48–56 px)
+const BARRE_ENREGISTRER = 'sticky bottom-0 z-10 -mx-4 sm:-mx-6 lg:mx-0 px-4 sm:px-6 lg:px-0 pr-20 sm:pr-24 lg:pr-24 py-3 bg-slate-50/95 backdrop-blur-sm flex justify-end';
 // Limite du backend ; pas de découpage : l'ordre (rang dans la liste) repartirait de zéro à chaque envoi
 const BULK_MAX = 500;
 
 // Secrets : l'API ne les renvoie plus en clair (absents ou masqués « •••• »). Une valeur masquée
 // n'est jamais renvoyée au serveur : seule une nouvelle saisie remplace le secret enregistré.
 const isMasked = (v) => typeof v === 'string' && (v.includes('••') || /^\*{3,}/.test(v.trim()));
+
+/** Interrupteur accessible (cible 44 px, piste brand quand actif). Le libellé reste porté par le texte voisin. */
+function Interrupteur({ actif, onClick, disabled = false, busy = false, label, labelledBy, describedBy, refBouton }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      ref={refBouton}
+      aria-checked={!!actif}
+      aria-label={label}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      aria-busy={busy || undefined}
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed"
+    >
+      <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors duration-150 ${actif ? 'bg-brand-600' : 'bg-slate-300'} ${disabled ? 'opacity-60' : ''}`}>
+        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 ${actif ? 'translate-x-5' : 'translate-x-0'}`} />
+      </span>
+    </button>
+  );
+}
 
 function SecretInput({ id, value, onChange, placeholder, className = 'input', reveal = false }) {
   const masked = isMasked(value);
@@ -165,9 +191,9 @@ function ChampMention({ champ, config, onChange, erreur }) {
         onChange={e => onChange(champ.cle, e.target.value)}
         aria-invalid={erreur ? 'true' : undefined}
         aria-describedby={[aideId, errId].filter(Boolean).join(' ') || undefined}
-        className={`input min-h-[44px] ${champ.mono ? 'font-mono' : ''} ${erreur ? 'border-red-400' : ''}`} />
-      {champ.aide && <p id={aideId} className="text-xs text-slate-600 mt-1">{champ.aide}</p>}
-      {erreur && <p id={errId} className="text-xs text-red-700 mt-1">{erreur}</p>}
+        className={`input ${champ.mono ? 'font-mono' : ''}`} />
+      {champ.aide && <p id={aideId} className="input-help">{champ.aide}</p>}
+      {erreur && <p id={errId} className="input-error" role="alert">{erreur}</p>}
     </div>
   );
 }
@@ -387,9 +413,9 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
 
   return (
     <div className="space-y-5">
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-1">Identité de la boutique</h2>
-        <p className="text-xs text-slate-600 mb-4">Imprimée sur les tickets, devis, reçus et documents PDF.</p>
+      <div className="card card-body">
+        <h2 className="t-h2 mb-1">Identité de la boutique</h2>
+        <p className="text-sm text-slate-500 mb-4">Imprimée sur les tickets, devis, reçus et documents PDF.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {CHAMPS_IDENTITE.map(ch => (
             <ChampMention key={ch.cle} champ={ch} config={config} onChange={onChange} erreur={erreurs[ch.cle]} />
@@ -397,14 +423,14 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4">Conditions imprimées</h2>
+      <div className="card card-body">
+        <h2 className="t-h2 mb-4">Conditions imprimées</h2>
         <div className="space-y-4">
           <div>
             <label htmlFor="mention-CGV_DEPOT" className="input-label">Conditions de dépôt (ticket client)</label>
             <textarea id="mention-CGV_DEPOT" value={valeurMention(config, 'CGV_DEPOT')}
               onChange={e => onChange('CGV_DEPOT', e.target.value)}
-              className="input min-h-[120px]"
+              className="textarea min-h-[120px]"
               placeholder="Ex. : l'appareil non récupéré … ; sauvegardez vos données avant le dépôt ; …" />
           </div>
           <div className="max-w-xs">
@@ -414,74 +440,75 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4">Données personnelles (RGPD)</h2>
+      <div className="card card-body">
+        <h2 className="t-h2 mb-4">Données personnelles (RGPD)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {CHAMPS_RGPD.map(ch => (
             <ChampMention key={ch.cle} champ={ch} config={config} onChange={onChange} erreur={erreurs[ch.cle]} />
           ))}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <a href="/confidentialite" target="_blank" rel="noopener noreferrer" className="btn-secondary min-h-[44px]">
-            <ExternalLink className="w-4 h-4" aria-hidden="true" /> Voir la politique de confidentialité
+          <a href="/confidentialite" target="_blank" rel="noopener noreferrer" className="btn-secondary">
+            <ExternalLink aria-hidden="true" /> Voir la politique de confidentialité
             <span className="sr-only">(nouvel onglet)</span>
           </a>
-          <p className="text-xs text-slate-600">Générée à partir des valeurs enregistrées.</p>
+          <p className="t-caption">Générée à partir des valeurs enregistrées.</p>
         </div>
       </div>
 
       {alertes.length > 0 && (
-        <div className="card p-4 border-amber-200 bg-amber-50">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-900 mb-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" /> Mentions à compléter
-          </h3>
-          <ul className="list-disc pl-5 space-y-1 text-sm text-amber-900">
-            {alertes.map(a => <li key={a}>{a}</li>)}
-          </ul>
+        <div className="callout callout-warning">
+          <AlertTriangle aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="font-semibold mb-1">Mentions à compléter</h3>
+            <ul className="list-disc pl-5 space-y-1">
+              {alertes.map(a => <li key={a}>{a}</li>)}
+            </ul>
+          </div>
         </div>
       )}
 
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-1">Aperçu du pied de document</h2>
-        <p className="text-xs text-slate-600 mb-3">Indicatif : la mise en page dépend du format (ticket, A4, PDF).</p>
-        <div className="mx-auto max-w-[320px] rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 font-mono text-[12px] leading-snug text-slate-800 text-center">
+      <div className="card card-body">
+        <h2 className="t-h2 mb-1">Aperçu du pied de document</h2>
+        <p className="text-sm text-slate-500 mb-3">Indicatif : la mise en page dépend du format (ticket, A4, PDF).</p>
+        <div className="mx-auto max-w-[320px] rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 font-mono text-xs leading-snug text-slate-800 text-center">
           {lignesPiedDocument(config, origine).map((l, i) => (
             <p key={i} className={`[overflow-wrap:anywhere] ${i === 0 ? 'font-bold' : ''}`}>{l}</p>
           ))}
           {valeurMention(config, 'CGV_DEPOT').trim() && (
-            <p className="mt-2 pt-2 border-t border-dashed border-slate-300 text-left whitespace-pre-line text-[11px] [overflow-wrap:anywhere]">
+            <p className="mt-2 pt-2 border-t border-dashed border-slate-300 text-left whitespace-pre-line text-xs [overflow-wrap:anywhere]">
               {valeurMention(config, 'CGV_DEPOT').trim()}
             </p>
           )}
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <button type="button" onClick={onSave} disabled={saving} className="btn-primary min-h-[44px]">
-          {saving ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Save className="w-4 h-4" aria-hidden="true" />}
+      <div className={BARRE_ENREGISTRER}>
+        <button type="button" onClick={onSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
           Enregistrer
         </button>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-1">Durées de conservation</h2>
+      <div className="card card-body">
+        <h2 className="t-h2 mb-1">Durées de conservation</h2>
         <p className="text-sm text-slate-600 mb-4">
           Anonymise les clients sans activité depuis {valeurMention(initial, 'RGPD_RETENTION_MOIS') || DEFAUTS_MENTIONS.RGPD_RETENTION_MOIS} mois
           et efface les codes PIN et schémas des tickets rendus ou clôturés depuis plus de {valeurMention(initial, 'PURGE_CODES_JOURS') || DEFAUTS_MENTIONS.PURGE_CODES_JOURS} jours.
           Les montants restent conservés (obligation comptable).
         </p>
         {dureesModifiees && (
-          <p className="text-sm text-amber-800 mb-3" role="status">Enregistrez d'abord les nouvelles durées : l'aperçu utilise les valeurs enregistrées.</p>
+          <p className="text-sm font-medium text-amber-800 mb-3" role="status">Enregistrez d'abord les nouvelles durées : l'aperçu utilise les valeurs enregistrées.</p>
         )}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" onClick={calculerApercu} disabled={apercuBusy || appliquerBusy || dureesModifiees}
-            aria-busy={apercuBusy} className="btn-secondary min-h-[44px]">
-            {apercuBusy ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Search className="w-4 h-4" aria-hidden="true" />}
+            aria-busy={apercuBusy} className="btn-secondary">
+            {apercuBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
             Calculer l'aperçu
           </button>
           {apercu && !rien && !confirmer && (
-            <button type="button" onClick={() => setConfirmer(true)} className="btn-danger min-h-[44px]">
-              <Trash2 className="w-4 h-4" aria-hidden="true" /> Appliquer…
+            <button type="button" onClick={() => setConfirmer(true)} className="btn-danger">
+              <Trash2 aria-hidden="true" /> Appliquer…
             </button>
           )}
         </div>
@@ -502,15 +529,15 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
           )}
         </div>
         {confirmer && apercu && (
-          <div role="group" aria-labelledby="retention-confirm-titre" className="mt-4 p-4 rounded-xl border-2 border-red-300 bg-red-50">
-            <p id="retention-confirm-titre" className="text-sm font-semibold text-red-900">
+          <div role="group" aria-labelledby="retention-confirm-titre" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <p id="retention-confirm-titre" className="font-semibold">
               Anonymiser {apercu.clients} client{apercu.clients > 1 ? 's' : ''} et effacer {apercu.codes} code{apercu.codes > 1 ? 's' : ''} ?
             </p>
-            <p className="text-sm text-red-900 mt-1">Action irréversible : noms, téléphones et e-mails seront définitivement effacés.</p>
+            <p className="mt-1">Action irréversible : noms, téléphones et e-mails seront définitivement effacés.</p>
             <div className="flex flex-wrap gap-2 mt-3">
-              <button type="button" ref={confirmerRef} onClick={() => setConfirmer(false)} className="btn-secondary min-h-[44px]">Annuler</button>
-              <button type="button" onClick={appliquer} disabled={appliquerBusy} aria-busy={appliquerBusy} className="btn-danger min-h-[44px]">
-                {appliquerBusy && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+              <button type="button" ref={confirmerRef} onClick={() => setConfirmer(false)} className="btn-ghost">Annuler</button>
+              <button type="button" onClick={appliquer} disabled={appliquerBusy} aria-busy={appliquerBusy} className="btn-danger">
+                {appliquerBusy && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
                 Confirmer l'anonymisation
               </button>
             </div>
@@ -518,24 +545,19 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
         )}
       </div>
 
-      <div className="card p-5">
+      <div className="card card-body">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h2 id="retention-auto-titre" className="text-sm font-semibold text-slate-800">Anonymisation automatique</h2>
+            <h2 id="retention-auto-titre" className="t-h2">Anonymisation automatique</h2>
             <p id="retention-auto-aide" className="text-sm text-slate-600 mt-1">
               Une fois par jour, applique les durées de conservation ci-dessus sans intervention. Désactivée par défaut.
             </p>
           </div>
-          <button type="button" role="switch" ref={interrupteurRef}
-            aria-checked={auto.actif} aria-labelledby="retention-auto-titre" aria-describedby="retention-auto-aide"
-            aria-busy={autoBusy || undefined}
+          <Interrupteur refBouton={interrupteurRef}
+            actif={auto.actif} labelledBy="retention-auto-titre" describedBy="retention-auto-aide"
+            busy={autoBusy}
             onClick={basculerAuto}
-            disabled={autoBusy || (!auto.actif && !activation && dureesModifiees)}
-            className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
-            <span aria-hidden="true" className={`relative block h-7 w-12 rounded-full motion-safe:transition-colors ${auto.actif ? 'bg-brand-600' : 'bg-slate-500'}`}>
-              <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-sm motion-safe:transition-transform ${auto.actif ? 'translate-x-5' : 'translate-x-0'}`} />
-            </span>
-          </button>
+            disabled={autoBusy || (!auto.actif && !activation && dureesModifiees)} />
         </div>
 
         <ul className="mt-3 space-y-1 text-sm" aria-live="polite">
@@ -558,7 +580,7 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
           )}
         </ul>
         {!auto.actif && !activation && dureesModifiees && (
-          <p className="text-sm text-amber-800 mt-2">Enregistrez d'abord les nouvelles durées pour activer l'anonymisation automatique.</p>
+          <p className="text-sm font-medium text-amber-800 mt-2">Enregistrez d'abord les nouvelles durées pour activer l'anonymisation automatique.</p>
         )}
 
         {activation && (
@@ -569,27 +591,27 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
               e.stopPropagation();
               fermerActivation();
             }}
-            className="mt-4 p-4 rounded-xl border-2 border-red-300 bg-red-50">
-            <p id="retention-auto-confirm-titre" className="text-sm font-bold text-red-900">Activer l'anonymisation automatique ?</p>
-            <p className="text-sm font-semibold text-red-900 mt-1">{texteActivationAuto(activation.mois, debutRetentionAuto())}</p>
-            <p className="text-sm text-red-900 mt-1">
+            className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+            <p id="retention-auto-confirm-titre" className="font-bold">Activer l'anonymisation automatique ?</p>
+            <p className="font-semibold mt-1">{texteActivationAuto(activation.mois, debutRetentionAuto())}</p>
+            <p className="mt-1">
               Noms, téléphones, e-mails et adresses seront définitivement effacés (les montants restent : obligation comptable).
               {' '}Aujourd’hui, cela concernerait {pluriel(activation.clients, 'client')} ; {pluriel(activation.codes, 'code')} de déverrouillage
               {activation.codes > 1 ? ' seraient effacés' : ' serait effacé'}. Vous pourrez la désactiver à tout moment.
             </p>
-            <label htmlFor="retention-auto-mot" className="input-label mt-3 text-red-900">
+            <label htmlFor="retention-auto-mot" className="input-label mt-3 text-red-800">
               Tapez {MOT_CONFIRMATION_AUTO} pour confirmer
             </label>
             <input id="retention-auto-mot" ref={motAutoRef} value={motAuto} autoComplete="off" spellCheck={false}
               autoCapitalize="characters"
               onChange={e => setMotAuto(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && motAutoOk) { e.preventDefault(); confirmerActivation(); } }}
-              className="input min-h-[44px] max-w-xs font-mono uppercase" />
+              className="input max-w-xs font-mono uppercase" />
             <div className="flex flex-wrap gap-2 mt-3">
-              <button type="button" onClick={fermerActivation} className="btn-secondary min-h-[44px]">Annuler</button>
+              <button type="button" onClick={fermerActivation} className="btn-ghost">Annuler</button>
               <button type="button" onClick={confirmerActivation} disabled={!motAutoOk || autoBusy} aria-busy={autoBusy || undefined}
-                className="btn-danger min-h-[44px] disabled:cursor-not-allowed disabled:opacity-60">
-                {autoBusy && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+                className="btn-danger">
+                {autoBusy && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
                 Activer l'anonymisation automatique
               </button>
             </div>
@@ -719,9 +741,9 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
 
   return (
     <div className="space-y-5">
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-brand-600" aria-hidden="true" /> Emplacements de l’étagère
+      <div className="card card-body">
+        <h2 className="t-h2 mb-1 flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-slate-400" aria-hidden="true" /> Emplacements de l’étagère
         </h2>
         <p className="text-sm text-slate-600 mb-4">
           Boutons proposés pour ranger un appareil réparé (fiche ticket, scan comptoir, étagère « À récupérer »).
@@ -730,11 +752,11 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
         {emplacements.length > 0 ? (
           <ul aria-label="Emplacements proposés" className="flex flex-wrap gap-2">
             {emplacements.map(e => (
-              <li key={e} className="inline-flex items-center rounded-lg border border-slate-300 bg-white pl-3 font-mono text-sm font-bold text-slate-900">
+              <li key={e} className="inline-flex items-center rounded-lg border border-slate-200 bg-white pl-3 t-mono font-bold text-slate-900">
                 {e}
                 <button type="button" onClick={() => retirer(e)} aria-label={`Retirer ${e}`}
-                  className="ml-1 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-r-lg text-slate-600 hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                  <X className="w-4 h-4" aria-hidden="true" />
+                  className="btn-ghost btn-icon ml-1 rounded-l-none hover:bg-red-50 hover:text-red-700">
+                  <X aria-hidden="true" />
                 </button>
               </li>
             ))}
@@ -750,25 +772,25 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
               aria-describedby="etagere-ajout-aide etagere-ajout-retour"
               onChange={e => { setSaisie(e.target.value.toUpperCase()); setRetour(null); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ajouter(); } }}
-              className="input min-h-[44px] flex-1 min-w-[10rem] font-mono uppercase placeholder:normal-case" />
-            <button type="button" onClick={ajouter} disabled={!saisie.trim()} className="btn-secondary min-h-[44px]">
-              <Plus className="w-4 h-4" aria-hidden="true" /> Ajouter
+              className="input flex-1 min-w-[10rem] font-mono uppercase placeholder:normal-case" />
+            <button type="button" onClick={ajouter} disabled={!saisie.trim()} className="btn-secondary">
+              <Plus aria-hidden="true" /> Ajouter
             </button>
           </div>
-          <p id="etagere-ajout-aide" className="text-xs text-slate-600 mt-1">
+          <p id="etagere-ajout-aide" className="input-help">
             Séparez par des virgules pour en ajouter plusieurs. {EMPLACEMENT_MAX} caractères par emplacement,
             {' '}{ETAGERE_EMPLACEMENTS_MAX} emplacements au plus ({emplacements.length} pour l’instant).
           </p>
           <p id="etagere-ajout-retour" role="status" aria-live="polite"
-            className={`text-xs mt-1 min-h-[1rem] ${retour?.erreur ? 'font-semibold text-red-700' : 'text-emerald-800'}`}>
+            className={`text-xs font-medium mt-1 min-h-[1rem] ${retour?.erreur ? 'text-red-700' : 'text-emerald-700'}`}>
             {retour?.texte || ''}
           </p>
         </div>
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <Archive className="w-4 h-4 text-brand-600" aria-hidden="true" /> Appareils non récupérés
+      <div className="card card-body">
+        <h2 className="t-h2 mb-4 flex items-center gap-2">
+          <Archive className="w-4 h-4 text-slate-400" aria-hidden="true" /> Appareils non récupérés
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -778,13 +800,13 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
               onChange={e => onChange('ETAGERE_DELAI_ABANDON_JOURS', e.target.value)}
               aria-invalid={erreurs.ETAGERE_DELAI_ABANDON_JOURS ? 'true' : undefined}
               aria-describedby={`etagere-delai-aide${erreurs.ETAGERE_DELAI_ABANDON_JOURS ? ' etagere-delai-err' : ''}`}
-              className={`input min-h-[44px] ${erreurs.ETAGERE_DELAI_ABANDON_JOURS ? 'border-red-400' : ''}`} />
-            <p id="etagere-delai-aide" className="text-xs text-slate-600 mt-1">
+              className="input" />
+            <p id="etagere-delai-aide" className="input-help">
               Loi du 31/12/1903 : 1 an minimum, vente seulement sur autorisation du juge.
               {' '}{delaiJours ? `Soit ${formatDelai(delaiJours)}${String(delai).trim() ? '' : ' (par défaut)'}.` : ''}
             </p>
             {erreurs.ETAGERE_DELAI_ABANDON_JOURS && (
-              <p id="etagere-delai-err" className="text-xs text-red-700 mt-1">{erreurs.ETAGERE_DELAI_ABANDON_JOURS}</p>
+              <p id="etagere-delai-err" className="input-error" role="alert">{erreurs.ETAGERE_DELAI_ABANDON_JOURS}</p>
             )}
           </div>
           <div>
@@ -794,21 +816,21 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
               onBlur={normaliserPaliers}
               aria-invalid={erreurs.ETAGERE_RELANCE_PALIERS ? 'true' : undefined}
               aria-describedby={`etagere-paliers-aide ${erreurs.ETAGERE_RELANCE_PALIERS ? 'etagere-paliers-err' : 'etagere-paliers-apercu'}`}
-              className={`input min-h-[44px] font-mono ${erreurs.ETAGERE_RELANCE_PALIERS ? 'border-red-400' : ''}`} />
-            <p id="etagere-paliers-aide" className="text-xs text-slate-600 mt-1">
+              className="input font-mono" />
+            <p id="etagere-paliers-aide" className="input-help">
               Jours après la fin de réparation, séparés par des virgules. Vide : aucune relance proposée.
             </p>
             {erreurs.ETAGERE_RELANCE_PALIERS ? (
-              <p id="etagere-paliers-err" className="text-xs text-red-700 mt-1">{erreurs.ETAGERE_RELANCE_PALIERS}</p>
+              <p id="etagere-paliers-err" className="input-error" role="alert">{erreurs.ETAGERE_RELANCE_PALIERS}</p>
             ) : (
-              <p id="etagere-paliers-apercu" className="text-xs text-slate-800 mt-1">
+              <p id="etagere-paliers-apercu" className="mt-1.5 text-xs font-medium text-slate-700">
                 {paliers.length ? `Relance proposée à ${paliers.map(p => `J+${p}`).join(', ')}.` : 'Aucune relance proposée.'}
                 {auDela.length > 0 && ` Au-delà du délai de garde : ${auDela.map(p => `J+${p}`).join(', ')}.`}
               </p>
             )}
             {!paliersDefaut && (
               <button type="button" onClick={() => onChange('ETAGERE_RELANCE_PALIERS', PALIERS_RELANCE_DEFAUT)}
-                className="mt-1 inline-flex min-h-[44px] items-center rounded-lg px-1 text-sm font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="btn-ghost btn-sm mt-1 -ml-3 text-brand-700 hover:text-brand-800">
                 Paliers par défaut ({PALIERS_RELANCE_DEFAUT})
               </button>
             )}
@@ -816,9 +838,9 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <button type="button" onClick={onSave} disabled={saving} className="btn-primary min-h-[44px]">
-          {saving ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Save className="w-4 h-4" aria-hidden="true" />}
+      <div className={BARRE_ENREGISTRER}>
+        <button type="button" onClick={onSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
           Enregistrer
         </button>
       </div>
@@ -1407,44 +1429,48 @@ export default function ConfigPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+      <div className="page max-w-[1280px]" role="status" aria-label="Chargement de la configuration">
+        <div className="skeleton-title mb-2" />
+        <div className="skeleton-line w-64 mb-6" />
+        <div className="skeleton h-11 w-full max-w-2xl mb-6" />
+        <div className="skeleton-card" />
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl">
+    <div className="page max-w-[1280px]">
       {adminPrompt}
-      <div className="flex items-center justify-between mb-6">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">Configuration</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Paramètres de l'application</p>
+          <h1 className="page-header-title">Configuration</h1>
+          <p className="page-header-subtitle">Paramètres de l'application</p>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1.5 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" onClick={() => setActiveTab(id)} aria-pressed={activeTab === id}
-            className={`flex items-center gap-1.5 px-3.5 py-2.5 min-h-[44px] rounded-xl text-xs font-semibold transition-all whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-              ${activeTab === id
-                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700 border border-transparent hover:border-slate-200'
-              }`}
-          >
-            <Icon className="w-3.5 h-3.5" aria-hidden="true" /> {label}
-          </button>
-        ))}
-      </div>
+      <div className="lg:grid lg:grid-cols-[200px_1fr] lg:gap-6 lg:items-start">
+        {/* Onglets : rangée défilante sous 1024 px, navigation verticale au-delà */}
+        <nav aria-label="Sections de la configuration"
+          className="scroll-fade-x mb-6 lg:mb-0 lg:sticky lg:top-6 lg:[mask-image:none] lg:[-webkit-mask-image:none]">
+          <div className="page-tabs lg:flex-col lg:gap-1 lg:border-b-0 lg:mb-0 lg:overflow-visible">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button key={id} type="button" onClick={() => setActiveTab(id)} aria-pressed={activeTab === id}
+                className={`page-tab lg:justify-start lg:rounded-lg lg:border-b-0 lg:px-3 lg:w-full ${activeTab === id ? 'page-tab-active lg:bg-brand-50' : 'lg:hover:bg-slate-100'}`}
+              >
+                <Icon className="w-4 h-4 shrink-0" aria-hidden="true" /> {label}
+              </button>
+            ))}
+          </div>
+        </nav>
 
+        <div className="min-w-0">
       {/* Unsaved changes banner */}
       {hasUnsavedChanges() && ['general', 'legal', 'etagere', 'notifications', 'fidelite'].includes(activeTab) && (
-        <div className="flex items-center gap-3 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl animate-in">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-          <p className="text-sm text-amber-800 font-medium flex-1">Modifications non sauvegardées</p>
-          <button onClick={handleSaveConfig} disabled={saving} className="btn-primary text-xs px-3 py-1.5">
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+        <div className="callout callout-warning items-center mb-5 animate-in">
+          <AlertTriangle aria-hidden="true" />
+          <p className="font-medium flex-1">Modifications non sauvegardées</p>
+          <button onClick={handleSaveConfig} disabled={saving} className="btn-primary btn-sm">
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
             Enregistrer
           </button>
         </div>
@@ -1453,8 +1479,8 @@ export default function ConfigPage() {
       {/* ═══ General tab ═══ */}
       {activeTab === 'general' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Informations boutique</h2>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Informations boutique</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="boutique-nom" className="input-label">Nom de la boutique</label>
@@ -1473,16 +1499,16 @@ export default function ConfigPage() {
                 <input id="boutique-email" type="email" value={valeurMention(config, 'BOUTIQUE_EMAIL')} onChange={e => updateMention('BOUTIQUE_EMAIL', e.target.value)} className="input" />
               </div>
               <div>
-                <label className="input-label">Site web</label>
-                <input value={config.site_web || ''} onChange={e => updateConfig('site_web', e.target.value)} className="input" />
+                <label className="input-label" htmlFor="boutique-site-web">Site web</label>
+                <input id="boutique-site-web" value={config.site_web || ''} onChange={e => updateConfig('site_web', e.target.value)} className="input" />
               </div>
               <div>
                 <label htmlFor="boutique-siret" className="input-label">SIRET</label>
                 <input id="boutique-siret" inputMode="numeric" value={valeurMention(config, 'BOUTIQUE_SIRET')} onChange={e => updateMention('BOUTIQUE_SIRET', e.target.value)} className="input font-mono" />
               </div>
               <div>
-                <label className="input-label">TVA</label>
-                <select value={config.tva || '20'} onChange={e => updateConfig('tva', e.target.value)} className="input">
+                <label className="input-label" htmlFor="boutique-tva">TVA</label>
+                <select id="boutique-tva" value={config.tva || '20'} onChange={e => updateConfig('tva', e.target.value)} className="select">
                   <option value="0">Sans TVA</option>
                   <option value="20">20%</option>
                   <option value="10">10%</option>
@@ -1492,26 +1518,26 @@ export default function ConfigPage() {
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Impression</h2>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Impression</h2>
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="card-section flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-700">Conditions de dépôt, garantie, SIRET, TVA et RGPD imprimés sur les documents.</p>
-                <button type="button" onClick={() => setActiveTab('legal')} className="btn-secondary min-h-[44px] text-xs">
-                  <Scale className="w-4 h-4" aria-hidden="true" /> Mentions &amp; RGPD
+                <button type="button" onClick={() => setActiveTab('legal')} className="btn-secondary">
+                  <Scale aria-hidden="true" /> Mentions &amp; RGPD
                 </button>
               </div>
               <div>
-                <label className="input-label">Message personnalisé (ticket client)</label>
-                <input value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
+                <label className="input-label" htmlFor="boutique-message-ticket">Message personnalisé (ticket client)</label>
+                <input id="boutique-message-ticket" value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
                   className="input" placeholder="Merci de votre confiance !" />
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className={BARRE_ENREGISTRER}>
             <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
               Enregistrer
             </button>
           </div>
@@ -1533,28 +1559,28 @@ export default function ConfigPage() {
         <div className="space-y-5">
           <div className="flex justify-end">
             <button onClick={() => { resetTeamForm(); setShowTeamForm(true); }} className="btn-primary">
-              <Plus className="w-4 h-4" /> Ajouter un membre
+              <Plus /> Ajouter un membre
             </button>
           </div>
 
           {showTeamForm && (
-            <div className="card p-5 border-brand-200 animate-in">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-slate-800">
+            <div className="card border-brand-300 animate-in">
+              <div className="card-header">
+                <h3 className="t-h2">
                   {editingMember ? 'Modifier le membre' : 'Nouveau membre'}
                 </h3>
-                <button onClick={resetTeamForm} className="btn-ghost p-1.5">
-                  <X className="w-4 h-4" />
+                <button onClick={resetTeamForm} className="btn-ghost btn-icon" aria-label="Fermer le formulaire">
+                  <X />
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-4 sm:px-5 pb-4 sm:pb-5">
                 <div>
-                  <label className="input-label">Nom *</label>
-                  <input value={teamForm.nom} onChange={e => setTeamForm(f => ({ ...f, nom: e.target.value }))} className="input" />
+                  <label className="input-label" htmlFor="team-nom">Nom *</label>
+                  <input id="team-nom" value={teamForm.nom} onChange={e => setTeamForm(f => ({ ...f, nom: e.target.value }))} className="input" />
                 </div>
                 <div>
-                  <label className="input-label">Rôle</label>
-                  <select value={teamForm.role} onChange={e => setTeamForm(f => ({ ...f, role: e.target.value }))} className="input">
+                  <label className="input-label" htmlFor="team-role">Rôle</label>
+                  <select id="team-role" value={teamForm.role} onChange={e => setTeamForm(f => ({ ...f, role: e.target.value }))} className="select">
                     <option value="tech">Technicien</option>
                     <option value="accueil">Accueil</option>
                     <option value="admin">Admin</option>
@@ -1563,11 +1589,12 @@ export default function ConfigPage() {
                 </div>
                 <div>
                   <label className="input-label">Couleur</label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Couleur du membre">
                     {COLORS.map(c => (
-                      <button key={c} onClick={() => setTeamForm(f => ({ ...f, couleur: c }))}
-                        className={`w-7 h-7 rounded-lg border-2 transition-all ${
-                          teamForm.couleur === c ? 'border-slate-900 scale-110' : 'border-transparent'
+                      <button key={c} type="button" onClick={() => setTeamForm(f => ({ ...f, couleur: c }))}
+                        aria-label={`Couleur ${c}`} aria-pressed={teamForm.couleur === c}
+                        className={`w-9 h-9 rounded-lg border-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                          teamForm.couleur === c ? 'border-slate-900' : 'border-transparent hover:border-slate-300'
                         }`}
                         style={{ backgroundColor: c }}
                       />
@@ -1575,17 +1602,17 @@ export default function ConfigPage() {
                   </div>
                 </div>
                 <div className="flex items-end">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                  <label className="flex items-center gap-3 min-h-11 py-2 cursor-pointer text-sm text-slate-700">
                     <input type="checkbox" checked={teamForm.actif}
                       onChange={e => setTeamForm(f => ({ ...f, actif: e.target.checked }))}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                    <span className="text-sm text-slate-700">Actif</span>
+                      className="checkbox" />
+                    <span>Actif</span>
                   </label>
                 </div>
               </div>
-              <div className="flex justify-end mt-4 pt-3 border-t border-slate-100">
+              <div className="card-footer">
                 <button onClick={() => handleSaveTeamMember()} disabled={!teamForm.nom} className="btn-primary">
-                  <Save className="w-4 h-4" /> {editingMember ? 'Mettre à jour' : 'Créer'}
+                  <Save /> {editingMember ? 'Mettre à jour' : 'Créer'}
                 </button>
               </div>
             </div>
@@ -1593,36 +1620,36 @@ export default function ConfigPage() {
 
           <div className="card overflow-hidden">
             {team.length === 0 ? (
-              <div className="py-12 text-center">
-                <Users className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-400">Aucun membre dans l'équipe</p>
+              <div className="empty-state">
+                <div className="empty-state-icon"><Users aria-hidden="true" /></div>
+                <p className="t-body text-slate-500">Aucun membre dans l'équipe</p>
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {team.map(member => (
-                  <div key={member.id} className="flex items-center gap-4 px-5 py-3.5">
+                  <div key={member.id} className="flex items-center gap-4 px-4 sm:px-5 py-3 min-h-14">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: (member.couleur || '#3B82F6') + '20' }}>
-                      <span className="font-bold text-sm" style={{ color: member.couleur || '#3B82F6' }}>
+                      style={{ backgroundColor: (member.couleur || '#3B82F6') + '20' }} aria-hidden="true">
+                      <span className="font-bold text-sm text-slate-900">
                         {(member.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-slate-800">{member.nom}</p>
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: member.couleur || '#94A3B8' }} />
+                        <p className="text-sm font-semibold text-slate-900">{member.nom}</p>
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: member.couleur || '#94A3B8' }} aria-hidden="true" />
                         {!member.actif && (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-400">Inactif</span>
+                          <span className="badge badge-sm badge-neutral">Inactif</span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 capitalize">{member.role}</p>
+                      <p className="t-caption capitalize">{member.role}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => handleEditMember(member)} className="btn-ghost p-1.5">
-                        <Edit3 className="w-3.5 h-3.5" />
+                      <button onClick={() => handleEditMember(member)} className="btn-ghost btn-icon" aria-label={`Modifier ${member.nom}`}>
+                        <Edit3 />
                       </button>
-                      <button onClick={() => handleDeleteMember(member.id)} className="btn-ghost p-1.5">
-                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <button onClick={() => handleDeleteMember(member.id)} className="btn-danger-ghost btn-icon" aria-label={`Supprimer ${member.nom}`}>
+                        <Trash2 />
                       </button>
                     </div>
                   </div>
@@ -1633,30 +1660,35 @@ export default function ConfigPage() {
 
           {/* Admin code modal for Manager role */}
           {showAdminCodeModal && (
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAdminCodeModal(false)}>
-              <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm mx-4 animate-in" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center gap-2 mb-4">
-                  <Shield className="w-5 h-5 text-amber-500" />
-                  <h3 className="text-sm font-bold text-slate-800">Code administrateur requis</h3>
+            <div className="modal-overlay" onClick={() => setShowAdminCodeModal(false)}>
+              <div className="modal sm:max-w-sm" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 className="t-h2 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-slate-400" aria-hidden="true" /> Code administrateur requis
+                  </h3>
                 </div>
-                <p className="text-xs text-slate-500 mb-4">Le rôle Manager donne accès aux données financières. Entrez le code administrateur pour continuer.</p>
-                <input
-                  type="password"
-                  value={adminCode}
-                  onChange={e => { setAdminCode(e.target.value); setAdminCodeError(''); }}
-                  onKeyDown={e => e.key === 'Enter' && handleSaveTeamMember(adminCode)}
-                  className="input w-full mb-2"
-                  placeholder="Code administrateur"
-                  autoFocus
-                />
-                {adminCodeError && (
-                  <p className="text-xs text-red-500 mb-3">{adminCodeError}</p>
-                )}
-                <div className="flex justify-end gap-2 mt-3">
-                  <button onClick={() => setShowAdminCodeModal(false)} className="btn-ghost text-sm px-3 py-1.5">
+                <div className="modal-body">
+                  <p className="text-sm text-slate-600 mb-4">Le rôle Manager donne accès aux données financières. Entrez le code administrateur pour continuer.</p>
+                  <input
+                    type="password"
+                    value={adminCode}
+                    onChange={e => { setAdminCode(e.target.value); setAdminCodeError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveTeamMember(adminCode)}
+                    className="input w-full"
+                    placeholder="Code administrateur"
+                    aria-label="Code administrateur"
+                    aria-invalid={adminCodeError ? 'true' : undefined}
+                    autoFocus
+                  />
+                  {adminCodeError && (
+                    <p className="input-error" role="alert">{adminCodeError}</p>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button onClick={() => setShowAdminCodeModal(false)} className="btn-ghost">
                     Annuler
                   </button>
-                  <button onClick={() => handleSaveTeamMember(adminCode)} disabled={!adminCode} className="btn-primary text-sm px-3 py-1.5">
+                  <button onClick={() => handleSaveTeamMember(adminCode)} disabled={!adminCode} className="btn-primary">
                     Valider
                   </button>
                 </div>
@@ -1670,39 +1702,36 @@ export default function ConfigPage() {
       {activeTab === 'catalog' && (
         <div className="space-y-5">
           {/* Catégorie */}
-          <div className="card p-5">
+          <div className="card card-body">
             <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
-              <h2 className="text-sm font-semibold text-slate-800">Catégorie</h2>
-              <p className="text-xs text-slate-500" aria-live="polite">
+              <h2 className="t-h2">Catégorie</h2>
+              <p className="t-caption" aria-live="polite">
                 {catalogLoading ? 'Chargement…' : `${catalog.marques.length} marque${catalog.marques.length > 1 ? 's' : ''} · ${catalogNbModeles} modèle${catalogNbModeles > 1 ? 's' : ''}`}
                 {catalog.version && <span className="ml-2 font-mono">v{catalog.version}</span>}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Catégorie du catalogue">
+            <div className="segmented" role="group" aria-label="Catégorie du catalogue">
               {catalogCategories.map(cat => (
                 <button
                   key={cat}
                   type="button"
                   aria-pressed={catalogCategorie === cat}
                   onClick={() => selectCatalogCategorie(cat)}
-                  className={`min-h-11 px-4 rounded-xl text-sm font-semibold border motion-safe:transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1
-                    ${catalogCategorie === cat
-                      ? 'bg-brand-600 border-brand-600 text-white'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+                  className={`segmented-item ${catalogCategorie === cat ? 'segmented-item-active' : ''}`}
                 >
                   {cat}
                 </button>
               ))}
             </div>
             {catalog.repli && !catalogLoading && (
-              <p className="mt-3 text-xs text-amber-700">Affichage de secours (ordre alphabétique, sans années) : l'arbre du catalogue est indisponible.</p>
+              <p className="mt-3 text-xs font-medium text-amber-800">Affichage de secours (ordre alphabétique, sans années) : l'arbre du catalogue est indisponible.</p>
             )}
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
             {/* Add marque */}
-            <div className="card p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter une marque <span className="font-normal text-slate-500">({catalogCategorie})</span></h2>
+            <div className="card card-body">
+              <h2 className="t-h2 mb-3">Ajouter une marque <span className="font-normal text-slate-500">({catalogCategorie})</span></h2>
               <div className="flex gap-2">
                 <label htmlFor="catalog-new-marque" className="sr-only">Nom de la marque</label>
                 <input
@@ -1710,19 +1739,19 @@ export default function ConfigPage() {
                   value={newMarque}
                   onChange={e => setNewMarque(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddMarque(); } }}
-                  className="input flex-1 min-h-11"
+                  className="input flex-1"
                   placeholder="Nom de la marque"
                   autoComplete="off"
                 />
-                <button type="button" onClick={handleAddMarque} disabled={catalogBusy || !newMarque.trim()} className="btn-primary min-h-11 min-w-11 px-3" aria-label="Ajouter la marque">
-                  <Plus className="w-4 h-4" aria-hidden="true" />
+                <button type="button" onClick={handleAddMarque} disabled={catalogBusy || !newMarque.trim()} className="btn-primary btn-icon" aria-label="Ajouter la marque">
+                  <Plus aria-hidden="true" />
                 </button>
               </div>
             </div>
 
             {/* Add modele(s) */}
-            <div className="card p-5">
-              <h2 className="text-sm font-semibold text-slate-800 mb-3">Ajouter des modèles</h2>
+            <div className="card card-body">
+              <h2 className="t-h2 mb-3">Ajouter des modèles</h2>
               <div className="grid grid-cols-[1fr_8rem] gap-2">
                 <div>
                   <label htmlFor="catalog-new-modele-marque" className="input-label">Marque</label>
@@ -1730,7 +1759,7 @@ export default function ConfigPage() {
                     id="catalog-new-modele-marque"
                     value={newModele.marque}
                     onChange={e => { setNewModele(f => ({ ...f, marque: e.target.value })); setBulkResult(null); }}
-                    className="input min-h-11"
+                    className="select"
                   >
                     <option value="">— Marque —</option>
                     {catalog.marques.map(x => <option key={x.marque} value={x.marque}>{x.marque}</option>)}
@@ -1746,13 +1775,13 @@ export default function ConfigPage() {
                     max={2100}
                     value={newModele.annee}
                     onChange={e => setNewModele(f => ({ ...f, annee: e.target.value }))}
-                    className="input min-h-11"
+                    className="input"
                     placeholder="Optionnel"
                     aria-describedby="catalog-annee-help"
                   />
                 </div>
               </div>
-              <p id="catalog-annee-help" className="mt-1 text-xs text-slate-500">Sans année, le modèle est classé en fin de liste.</p>
+              <p id="catalog-annee-help" className="input-help">Sans année, le modèle est classé en fin de liste.</p>
 
               <div className="flex gap-2 mt-3">
                 <label htmlFor="catalog-new-modele" className="sr-only">Nom du modèle</label>
@@ -1761,14 +1790,14 @@ export default function ConfigPage() {
                   value={newModele.modele}
                   onChange={e => setNewModele(f => ({ ...f, modele: e.target.value }))}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddModele(); } }}
-                  className="input flex-1 min-h-11"
+                  className="input flex-1"
                   placeholder={newModele.marque ? `Nom du modèle (sans « ${newModele.marque} »)` : 'Choisissez d\'abord la marque'}
                   disabled={!newModele.marque}
                   maxLength={80}
                   autoComplete="off"
                 />
-                <button type="button" onClick={handleAddModele} disabled={catalogBusy || !newModele.modele.trim() || !newModele.marque} className="btn-primary min-h-11 min-w-11 px-3" aria-label="Ajouter le modèle">
-                  <Plus className="w-4 h-4" aria-hidden="true" />
+                <button type="button" onClick={handleAddModele} disabled={catalogBusy || !newModele.modele.trim() || !newModele.marque} className="btn-primary btn-icon" aria-label="Ajouter le modèle">
+                  <Plus aria-hidden="true" />
                 </button>
               </div>
 
@@ -1777,9 +1806,9 @@ export default function ConfigPage() {
                 onClick={() => setBulkOpen(o => !o)}
                 aria-expanded={bulkOpen}
                 aria-controls="catalog-bulk"
-                className="mt-3 inline-flex items-center gap-1.5 min-h-11 px-2 -ml-2 rounded-lg text-sm font-semibold text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                className="btn-ghost btn-sm mt-3 -ml-3 text-brand-700 hover:text-brand-800 hover:bg-brand-50"
               >
-                {bulkOpen ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
+                {bulkOpen ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
                 Ajout en masse
               </button>
 
@@ -1791,18 +1820,18 @@ export default function ConfigPage() {
                     value={bulkText}
                     onChange={e => { setBulkText(e.target.value); setBulkResult(null); }}
                     rows={8}
-                    className="input font-mono text-sm resize-y"
+                    className="textarea font-mono resize-y"
                     placeholder={'Galaxy S25 Ultra\nGalaxy S25+\nGalaxy S25'}
                     disabled={!newModele.marque}
                     aria-describedby="catalog-bulk-help"
                   />
-                  <p id="catalog-bulk-help" className="text-xs text-slate-500">
+                  <p id="catalog-bulk-help" className="input-help">
                     {newModele.marque
                       ? <>
                           {bulkApercu.modeles.length} modèle{bulkApercu.modeles.length > 1 ? 's' : ''} {newModele.marque}
                           {anneeCatalogue() ? ` · année ${anneeCatalogue()}` : ' · sans année'}
-                          {bulkApercu.tropLongs.length > 0 && <span className="text-amber-700"> · {bulkApercu.tropLongs.length} ligne{bulkApercu.tropLongs.length > 1 ? 's' : ''} de plus de 80 caractères ignorée{bulkApercu.tropLongs.length > 1 ? 's' : ''}</span>}
-                          {bulkApercu.modeles.length > BULK_MAX && <span className="text-amber-700"> · {BULK_MAX} modèles maximum par envoi</span>}
+                          {bulkApercu.tropLongs.length > 0 && <span className="font-medium text-amber-800"> · {bulkApercu.tropLongs.length} ligne{bulkApercu.tropLongs.length > 1 ? 's' : ''} de plus de 80 caractères ignorée{bulkApercu.tropLongs.length > 1 ? 's' : ''}</span>}
+                          {bulkApercu.modeles.length > BULK_MAX && <span className="font-medium text-amber-800"> · {BULK_MAX} modèles maximum par envoi</span>}
                           . Doublons, lignes vides et préfixe « {newModele.marque} » retirés.
                         </>
                       : 'Choisissez d\'abord la marque.'}
@@ -1811,13 +1840,13 @@ export default function ConfigPage() {
                     type="button"
                     onClick={handleBulkAdd}
                     disabled={catalogBusy || !newModele.marque || bulkApercu.modeles.length === 0 || bulkApercu.modeles.length > BULK_MAX}
-                    className="btn-primary min-h-11"
+                    className="btn-secondary"
                   >
-                    {catalogBusy ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Upload className="w-4 h-4" aria-hidden="true" />}
+                    {catalogBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
                     Ajouter {bulkApercu.modeles.length || ''} modèle{bulkApercu.modeles.length > 1 ? 's' : ''}
                   </button>
                   {bulkResult && (
-                    <p className="text-sm text-emerald-700" role="status">
+                    <p className="text-sm font-medium text-emerald-700" role="status">
                       {bulkResult.marque} : {bulkResult.ajoutes} ajouté{bulkResult.ajoutes > 1 ? 's' : ''}
                       {bulkResult.reactives > 0 && `, ${bulkResult.reactives} réactivé${bulkResult.reactives > 1 ? 's' : ''}`}
                       {bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives > 0 && `, ${bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives} déjà présent${bulkResult.envoyes - bulkResult.ajoutes - bulkResult.reactives > 1 ? 's' : ''}`}
@@ -1831,17 +1860,17 @@ export default function ConfigPage() {
 
           {/* Catalog list */}
           <div className="card overflow-hidden">
-            <div className="px-5 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-wrap items-center gap-2">
-              <span className="table-header mr-auto">Catalogue {catalogCategorie}</span>
+            <div className="px-4 sm:px-5 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-2">
+              <span className="t-h3 mr-auto">Catalogue {catalogCategorie}</span>
               <div className="relative flex-1 min-w-[12rem] sm:flex-none sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
                 <label htmlFor="catalog-search" className="sr-only">Rechercher un modèle</label>
                 <input
                   id="catalog-search"
                   type="search"
                   value={catalogSearch}
                   onChange={e => setCatalogSearch(e.target.value)}
-                  className="input min-h-11 pl-9"
+                  className="input pl-9"
                   placeholder="Rechercher (ex. s24u, 15 pro)"
                   autoComplete="off"
                   spellCheck={false}
@@ -1852,7 +1881,7 @@ export default function ConfigPage() {
                 id="catalog-filtre-marque"
                 value={catalogMarqueFiltre}
                 onChange={e => setCatalogMarqueFiltre(e.target.value)}
-                className="input min-h-11 w-auto"
+                className="select w-auto"
               >
                 <option value="">Toutes les marques</option>
                 {catalog.marques.map(x => <option key={x.marque} value={x.marque}>{x.marque}</option>)}
@@ -1878,11 +1907,11 @@ export default function ConfigPage() {
                         aria-expanded={ouvert}
                         aria-controls={panelId}
                         disabled={catalogFiltreActif}
-                        className="flex-1 min-w-0 flex items-center gap-2 min-h-11 px-2 rounded-lg text-left text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                        className="flex-1 min-w-0 flex items-center gap-2 min-h-12 px-2 rounded-lg text-left text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
-                        {ouvert ? <ChevronDown className="w-4 h-4 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0" aria-hidden="true" />}
+                        {ouvert ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />}
                         <span className="truncate">{marque}</span>
-                        <span className="text-xs font-normal text-slate-500 shrink-0">
+                        <span className="t-caption shrink-0">
                           {visibles.length !== modeles.length ? `${visibles.length} / ${modeles.length}` : modeles.length} modèle{modeles.length > 1 ? 's' : ''}
                         </span>
                       </button>
@@ -1892,30 +1921,30 @@ export default function ConfigPage() {
                         disabled={catalogBusy}
                         aria-label={`Supprimer la marque ${marque}`}
                         title={`Supprimer la marque ${marque}`}
-                        className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                        className="btn-danger-ghost btn-icon shrink-0"
                       >
-                        <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        <Trash2 aria-hidden="true" />
                       </button>
                     </div>
                     {ouvert && (
                       <div id={panelId} className="px-5 pb-3">
                         {visibles.length === 0 ? (
-                          <p className="text-xs text-slate-500 py-2">Aucun modèle — ajoutez-en via « Ajouter des modèles ».</p>
+                          <p className="t-caption py-2">Aucun modèle — ajoutez-en via « Ajouter des modèles ».</p>
                         ) : (
                           <ul className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
                             {visibles.map(({ m, a }) => (
-                              <li key={m} className="flex items-center gap-2 pl-3 rounded-lg bg-slate-50 border border-slate-100">
+                              <li key={m} className="flex items-center gap-2 pl-3 rounded-lg bg-slate-50">
                                 <span className="flex-1 min-w-0 truncate text-sm text-slate-800" title={m}>{m}</span>
-                                {a && <span className="text-xs text-slate-500 tabular-nums shrink-0">{a}</span>}
+                                {a && <span className="t-caption tabular-nums shrink-0">{a}</span>}
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteModele(marque, m)}
                                   disabled={catalogBusy}
                                   aria-label={`Supprimer le modèle ${marque} ${m}`}
                                   title="Supprimer"
-                                  className="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                  className="btn-ghost btn-icon shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50"
                                 >
-                                  <X className="w-4 h-4" aria-hidden="true" />
+                                  <X aria-hidden="true" />
                                 </button>
                               </li>
                             ))}
@@ -1934,18 +1963,19 @@ export default function ConfigPage() {
       {/* ═══ Messages tab ═══ */}
       {activeTab === 'messages' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-              <MessageCircle className="w-4 h-4" /> Messages predefinis
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" /> Messages predefinis
             </h2>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="t-caption mb-4">
               Variables disponibles : {'{prenom}'} {'{nom}'} {'{appareil}'} {'{code}'} {'{montant}'} {'{adresse}'} {'{tel_boutique}'} {'{horaires}'}
             </p>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {msgTemplates.map((tp, i) => (
                 <div key={tp.id}>
-                  <label className="text-xs font-semibold text-slate-600 mb-1 block">{tp.label}</label>
+                  <label className="input-label" htmlFor={`cfg-msg-${tp.id}`}>{tp.label}</label>
                   <textarea
+                    id={`cfg-msg-${tp.id}`}
                     value={tp.message}
                     onChange={e => {
                       const updated = [...msgTemplates];
@@ -1953,13 +1983,13 @@ export default function ConfigPage() {
                       setMsgTemplates(updated);
                     }}
                     rows={2}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+                    className="textarea min-h-[72px] resize-none"
                     placeholder={tp.id === 10 ? 'Template libre (le texte sera modifiable)' : 'Message...'}
                   />
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-100">
               <button
                 onClick={async () => {
                   setMsgSaving(true);
@@ -1972,7 +2002,7 @@ export default function ConfigPage() {
                 disabled={msgSaving}
                 className="btn-primary"
               >
-                <Save className="w-4 h-4" /> {msgSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+                <Save /> {msgSaving ? 'Sauvegarde...' : 'Sauvegarder'}
               </button>
               <button
                 onClick={() => { setMsgTemplates(DEFAULT_MSG_TEMPLATES); toast.success('Templates reinitialises (sauvegarder pour appliquer)'); }}
@@ -1988,12 +2018,12 @@ export default function ConfigPage() {
       {/* ═══ Notifications tab ═══ */}
       {activeTab === 'notifications' && (
         <div className="space-y-5">
-          <fieldset className="card p-5">
+          <fieldset className="card card-body">
             <legend className="sr-only">Message proposé au client</legend>
-            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-brand-600" aria-hidden="true" /> Message proposé au client
+            <h2 className="t-h2 mb-1 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" /> Message proposé au client
             </h2>
-            <p className="text-xs text-slate-600 mb-4">
+            <p className="text-sm text-slate-500 mb-4">
               Au passage à ces statuts (fiche ticket et scan comptoir), le message WhatsApp / SMS correspondant
               s’ouvre pré-rempli. Rien n’est envoyé sans un clic.
             </p>
@@ -2001,28 +2031,28 @@ export default function ConfigPage() {
               {STATUTS_MESSAGE.map(statut => {
                 const actifs = statutsNotifies(config.NOTIFICATIONS_STATUTS);
                 return (
-                  <label key={statut} className="flex items-center gap-2.5 min-h-11 px-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                  <label key={statut} className="flex items-center gap-3 min-h-11 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors text-sm text-slate-700">
                     <input
                       type="checkbox"
                       checked={actifs.includes(statut)}
                       onChange={e => updateConfig('NOTIFICATIONS_STATUTS', basculerStatutNotifie(config.NOTIFICATIONS_STATUTS, statut, e.target.checked))}
-                      className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                      className="checkbox"
                     />
-                    <span className="text-sm font-medium text-slate-700">{statut}</span>
+                    <span className="font-medium">{statut}</span>
                   </label>
                 );
               })}
             </div>
           </fieldset>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Discord Webhook</h2>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Discord Webhook</h2>
             <div className="space-y-4">
               <div>
                 <label className="input-label" htmlFor="cfg-discord">URL du webhook</label>
                 <div className="flex gap-2">
                   <SecretInput id="cfg-discord" reveal value={config.DISCORD_WEBHOOK} onChange={v => updateSecret('DISCORD_WEBHOOK', v)}
-                    className="input font-mono text-xs flex-1" placeholder="https://discord.com/api/webhooks/..." />
+                    className="input font-mono flex-1" placeholder="https://discord.com/api/webhooks/..." />
                   <button
                     onClick={async () => {
                       setDiscordTesting(true);
@@ -2038,15 +2068,15 @@ export default function ConfigPage() {
                       }
                     }}
                     disabled={discordTesting}
-                    className="btn-primary px-3 py-2 text-xs whitespace-nowrap"
+                    className="btn-secondary"
                   >
-                    {discordTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Tester'}
+                    {discordTesting ? <Loader2 className="animate-spin" /> : 'Tester'}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="input-label mb-2">Notifications activées</label>
+                <p className="input-label mb-2">Notifications activées</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {[
                     { key: 'nouveau_ticket', label: 'Nouveau ticket', desc: 'Quand un ticket est créé' },
@@ -2055,16 +2085,16 @@ export default function ConfigPage() {
                     { key: 'accord_client', label: 'Accord client', desc: 'Acceptation ou refus du devis' },
                     { key: 'connexion', label: 'Connexions', desc: 'Connexions / déconnexions' },
                   ].map(n => (
-                    <label key={n.key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer transition">
+                    <label key={n.key} className="flex items-start gap-3 min-h-11 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
                       <input
                         type="checkbox"
                         checked={(config[`discord_notif_${n.key}`] || '1') !== '0'}
                         onChange={e => updateConfig(`discord_notif_${n.key}`, e.target.checked ? '1' : '0')}
-                        className="rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5"
+                        className="checkbox mt-0.5"
                       />
                       <div>
                         <p className="text-sm font-medium text-slate-700">{n.label}</p>
-                        <p className="text-[10px] text-slate-400">{n.desc}</p>
+                        <p className="t-caption">{n.desc}</p>
                       </div>
                     </label>
                   ))}
@@ -2073,45 +2103,48 @@ export default function ConfigPage() {
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <Mail className="w-4 h-4 text-brand-600" /> Email
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4 flex items-center gap-2">
+              <Mail className="w-4 h-4 text-slate-400" aria-hidden="true" /> Email
             </h2>
 
-            <div className="p-3 bg-brand-50 border border-brand-100 rounded-lg mb-4">
-              <p className="text-xs font-semibold text-brand-700 mb-1">Resend (recommandé)</p>
-              <p className="text-[10px] text-brand-600">Créez un compte gratuit sur resend.com, récupérez votre clé API. 100 emails/jour gratuits.</p>
+            <div className="callout callout-info mb-4">
+              <Mail aria-hidden="true" />
+              <div>
+                <p className="font-semibold">Resend (recommandé)</p>
+                <p>Créez un compte gratuit sur resend.com, récupérez votre clé API. 100 emails/jour gratuits.</p>
+              </div>
             </div>
 
-            <div className="space-y-3 mb-4">
+            <div className="space-y-4 mb-4">
               <div>
                 <label className="input-label" htmlFor="cfg-resend">Clé API Resend</label>
                 <SecretInput id="cfg-resend" value={config.RESEND_API_KEY} onChange={v => updateSecret('RESEND_API_KEY', v)}
-                  className="input font-mono text-xs" placeholder="re_xxxxxxxx..." />
+                  className="input font-mono" placeholder="re_xxxxxxxx..." />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="input-label">Email expéditeur</label>
-                  <input value={config.SMTP_USER || ''} onChange={e => updateConfig('SMTP_USER', e.target.value)} className="input" placeholder="contact@klikphone.com" />
-                  <p className="text-[10px] text-slate-400 mt-0.5">Doit correspondre au domaine vérifié sur Resend</p>
+                  <label className="input-label" htmlFor="cfg-smtp-user">Email expéditeur</label>
+                  <input id="cfg-smtp-user" value={config.SMTP_USER || ''} onChange={e => updateConfig('SMTP_USER', e.target.value)} className="input" placeholder="contact@klikphone.com" />
+                  <p className="input-help">Doit correspondre au domaine vérifié sur Resend</p>
                 </div>
                 <div>
-                  <label className="input-label">Nom affiché</label>
-                  <input value={config.SMTP_NAME || ''} onChange={e => updateConfig('SMTP_NAME', e.target.value)} className="input" placeholder="Klikphone" />
+                  <label className="input-label" htmlFor="cfg-smtp-name">Nom affiché</label>
+                  <input id="cfg-smtp-name" value={config.SMTP_NAME || ''} onChange={e => updateConfig('SMTP_NAME', e.target.value)} className="input" placeholder="Klikphone" />
                 </div>
               </div>
             </div>
 
             <details className="group">
-              <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600 mb-3">SMTP avancé (fallback si Resend non configuré)</summary>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+              <summary className="min-h-11 flex items-center gap-1.5 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />SMTP avancé (fallback si Resend non configuré)</summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
                 <div>
-                  <label className="input-label">Serveur SMTP</label>
-                  <input value={config.SMTP_HOST || ''} onChange={e => updateConfig('SMTP_HOST', e.target.value)} className="input" placeholder="ex4.mail.ovh.net" />
+                  <label className="input-label" htmlFor="cfg-smtp-host">Serveur SMTP</label>
+                  <input id="cfg-smtp-host" value={config.SMTP_HOST || ''} onChange={e => updateConfig('SMTP_HOST', e.target.value)} className="input" placeholder="ex4.mail.ovh.net" />
                 </div>
                 <div>
-                  <label className="input-label">Port</label>
-                  <input value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
+                  <label className="input-label" htmlFor="cfg-smtp-port">Port</label>
+                  <input id="cfg-smtp-port" value={config.SMTP_PORT || ''} onChange={e => updateConfig('SMTP_PORT', e.target.value)} className="input" placeholder="465" />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="input-label" htmlFor="cfg-smtp-pwd">Mot de passe SMTP</label>
@@ -2121,12 +2154,13 @@ export default function ConfigPage() {
             </details>
 
             <div className="mt-4 pt-4 border-t border-slate-100">
-              <label className="input-label mb-1">Envoyer un email de test</label>
-              <div className="flex gap-2">
+              <label className="input-label" htmlFor="cfg-smtp-test">Envoyer un email de test</label>
+              <div className="flex flex-wrap gap-2">
                 <input
+                  id="cfg-smtp-test"
                   value={smtpTestEmail}
                   onChange={e => setSmtpTestEmail(e.target.value)}
-                  className="input flex-1"
+                  className="input flex-1 min-w-[12rem]"
                   placeholder="destinataire@email.com"
                   type="email"
                 />
@@ -2146,9 +2180,9 @@ export default function ConfigPage() {
                     }
                   }}
                   disabled={smtpTesting || !smtpTestEmail.trim()}
-                  className="btn-primary px-4 text-xs whitespace-nowrap"
+                  className="btn-secondary"
                 >
-                  {smtpTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                  {smtpTesting ? <Loader2 className="animate-spin" /> : <Mail />}
                   Envoyer un email de test
                 </button>
               </div>
@@ -2157,26 +2191,26 @@ export default function ConfigPage() {
 
           <SmsBrevoConfig config={config} updateConfig={updateConfig} saveParamNow={saveParamNow} />
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Chat & Assistant IA</h2>
-            <div className="space-y-3">
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Chat & Assistant IA</h2>
+            <div className="space-y-4">
               <div>
                 <label className="input-label" htmlFor="cfg-anthropic">Cle API Anthropic</label>
                 <SecretInput id="cfg-anthropic" value={config.ANTHROPIC_API_KEY} onChange={v => updateSecret('ANTHROPIC_API_KEY', v)}
-                  className="input font-mono text-xs" placeholder="sk-ant-..." />
-                <p className="text-[10px] text-slate-400 mt-1">Necessaire pour l'assistant IA. Obtenir sur console.anthropic.com</p>
+                  className="input font-mono" placeholder="sk-ant-..." />
+                <p className="input-help">Necessaire pour l'assistant IA. Obtenir sur console.anthropic.com</p>
               </div>
               <div>
-                <label className="input-label">Modele Claude (optionnel)</label>
-                <input value={config.ANTHROPIC_MODEL || ''} onChange={e => updateConfig('ANTHROPIC_MODEL', e.target.value)}
-                  className="input text-xs" placeholder="claude-sonnet-4-5-20250929" />
+                <label className="input-label" htmlFor="cfg-anthropic-model">Modele Claude (optionnel)</label>
+                <input id="cfg-anthropic-model" value={config.ANTHROPIC_MODEL || ''} onChange={e => updateConfig('ANTHROPIC_MODEL', e.target.value)}
+                  className="input font-mono" placeholder="claude-sonnet-4-5-20250929" />
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className={BARRE_ENREGISTRER}>
             <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
               Enregistrer
             </button>
           </div>
@@ -2186,73 +2220,69 @@ export default function ConfigPage() {
       {/* ═══ Fidélité & Jeu tab ═══ */}
       {activeTab === 'fidelite' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Programme de fidélité</h2>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Programme de fidélité</h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-800">Activer le programme fidélité</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Les clients cumulent des points sur chaque réparation</p>
+                  <p id="cfg-fidelite-actif" className="text-sm font-medium text-slate-800">Activer le programme fidélité</p>
+                  <p className="t-caption mt-0.5">Les clients cumulent des points sur chaque réparation</p>
                 </div>
-                <button
-                  onClick={() => updateConfig('fidelite_active', (config.fidelite_active || '1') === '1' ? '0' : '1')}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${(config.fidelite_active || '1') === '1' ? 'bg-brand-600' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${(config.fidelite_active || '1') === '1' ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
+                <Interrupteur
+                  actif={(config.fidelite_active || '1') === '1'}
+                  labelledBy="cfg-fidelite-actif"
+                  onClick={() => updateConfig('fidelite_active', (config.fidelite_active || '1') === '1' ? '0' : '1')} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="input-label">Points par euro dépensé</label>
-                  <input type="number" value={config.fidelite_points_par_euro || '10'} onChange={e => updateConfig('fidelite_points_par_euro', e.target.value)}
+                  <label className="input-label" htmlFor="cfg-fidelite-points">Points par euro dépensé</label>
+                  <input id="cfg-fidelite-points" type="number" value={config.fidelite_points_par_euro || '10'} onChange={e => updateConfig('fidelite_points_par_euro', e.target.value)}
                     className="input" min="1" />
                 </div>
                 <div>
-                  <label className="input-label">Palier film verre trempé (pts)</label>
-                  <input type="number" value={config.fidelite_palier_film || '1000'} onChange={e => updateConfig('fidelite_palier_film', e.target.value)}
+                  <label className="input-label" htmlFor="cfg-fidelite-palier-film">Palier film verre trempé (pts)</label>
+                  <input id="cfg-fidelite-palier-film" type="number" value={config.fidelite_palier_film || '1000'} onChange={e => updateConfig('fidelite_palier_film', e.target.value)}
                     className="input" min="100" step="100" />
                 </div>
                 <div>
-                  <label className="input-label">Palier réduction (pts)</label>
-                  <input type="number" value={config.fidelite_palier_reduction || '5000'} onChange={e => updateConfig('fidelite_palier_reduction', e.target.value)}
+                  <label className="input-label" htmlFor="cfg-fidelite-palier-reduction">Palier réduction (pts)</label>
+                  <input id="cfg-fidelite-palier-reduction" type="number" value={config.fidelite_palier_reduction || '5000'} onChange={e => updateConfig('fidelite_palier_reduction', e.target.value)}
                     className="input" min="100" step="100" />
                 </div>
                 <div>
-                  <label className="input-label">Montant réduction (€)</label>
-                  <input type="number" value={config.fidelite_montant_reduction || '10'} onChange={e => updateConfig('fidelite_montant_reduction', e.target.value)}
+                  <label className="input-label" htmlFor="cfg-fidelite-montant-reduction">Montant réduction (€)</label>
+                  <input id="cfg-fidelite-montant-reduction" type="number" value={config.fidelite_montant_reduction || '10'} onChange={e => updateConfig('fidelite_montant_reduction', e.target.value)}
                     className="input" min="1" />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Jeu de grattage</h2>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Jeu de grattage</h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-800">Activer le jeu de grattage</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Un ticket grattable sur la page de suivi client</p>
+                  <p id="cfg-grattage-actif" className="text-sm font-medium text-slate-800">Activer le jeu de grattage</p>
+                  <p className="t-caption mt-0.5">Un ticket grattable sur la page de suivi client</p>
                 </div>
-                <button
-                  onClick={() => updateConfig('grattage_actif', (config.grattage_actif || '1') === '1' ? '0' : '1')}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${(config.grattage_actif || '1') === '1' ? 'bg-brand-600' : 'bg-slate-300'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${(config.grattage_actif || '1') === '1' ? 'translate-x-5' : 'translate-x-0'}`} />
-                </button>
+                <Interrupteur
+                  actif={(config.grattage_actif || '1') === '1'}
+                  labelledBy="cfg-grattage-actif"
+                  onClick={() => updateConfig('grattage_actif', (config.grattage_actif || '1') === '1' ? '0' : '1')} />
               </div>
               <div>
-                <label className="input-label">Fréquence de gain (1 gagnant tous les N tickets)</label>
-                <input type="number" value={config.grattage_frequence || '10'} onChange={e => updateConfig('grattage_frequence', e.target.value)}
+                <label className="input-label" htmlFor="cfg-grattage-frequence">Fréquence de gain (1 gagnant tous les N tickets)</label>
+                <input id="cfg-grattage-frequence" type="number" value={config.grattage_frequence || '10'} onChange={e => updateConfig('grattage_frequence', e.target.value)}
                   className="input w-40" min="2" />
-                <p className="text-[10px] text-slate-400 mt-1">Ex: 10 = en moyenne 1 gagnant sur 10 tickets grattés</p>
+                <p className="input-help">Ex: 10 = en moyenne 1 gagnant sur 10 tickets grattés</p>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className={BARRE_ENREGISTRER}>
             <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
               Enregistrer
             </button>
           </div>
@@ -2262,55 +2292,55 @@ export default function ConfigPage() {
       {/* ═══ Caisse tab ═══ */}
       {activeTab === 'caisse' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h3 className="font-bold text-sm text-slate-800 mb-4 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-brand-600" /> Caisse Enregistreuse
+          <div className="card card-body">
+            <h3 className="t-h2 mb-4 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-slate-400" aria-hidden="true" /> Caisse Enregistreuse
             </h3>
 
-            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+            <label className="flex items-center gap-3 min-h-11 py-2 mb-4 cursor-pointer">
               <input type="checkbox" checked={caisseConfig.CAISSE_ENABLED === '1'}
                 onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ENABLED: e.target.checked ? '1' : '0' }))}
-                className="rounded border-slate-300 text-brand-600 focus:ring-brand-500 w-5 h-5" />
+                className="checkbox" />
               <span className="text-sm font-semibold text-slate-700">Activer l'intégration Caisse Enregistreuse</span>
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="input-label">Email de connexion</label>
-                <input value={caisseConfig.CAISSE_LOGIN || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_LOGIN: e.target.value }))} className="input" />
+                <label className="input-label" htmlFor="cfg-caisse-login">Email de connexion</label>
+                <input id="cfg-caisse-login" value={caisseConfig.CAISSE_LOGIN || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_LOGIN: e.target.value }))} className="input" />
               </div>
               <div>
                 <label className="input-label" htmlFor="cfg-caisse-apikey">Token API (APIKEY)</label>
-                <SecretInput id="cfg-caisse-apikey" value={caisseConfig.CAISSE_APIKEY} onChange={v => updateCaisseSecret('CAISSE_APIKEY', v)} className="input font-mono text-xs" />
+                <SecretInput id="cfg-caisse-apikey" value={caisseConfig.CAISSE_APIKEY} onChange={v => updateCaisseSecret('CAISSE_APIKEY', v)} className="input font-mono" />
               </div>
               <div>
                 <label className="input-label" htmlFor="cfg-caisse-pwd">Mot de passe</label>
                 <SecretInput id="cfg-caisse-pwd" value={caisseConfig.CAISSE_PASSWORD} onChange={v => updateCaisseSecret('CAISSE_PASSWORD', v)} className="input" />
               </div>
               <div>
-                <label className="input-label">ID Boutique (SHOPID)</label>
-                <input value={caisseConfig.CAISSE_SHOPID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_SHOPID: e.target.value }))} className="input font-mono" />
+                <label className="input-label" htmlFor="cfg-caisse-shopid">ID Boutique (SHOPID)</label>
+                <input id="cfg-caisse-shopid" value={caisseConfig.CAISSE_SHOPID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_SHOPID: e.target.value }))} className="input font-mono" />
               </div>
               <div>
-                <label className="input-label">ID Carte bancaire</label>
-                <input value={caisseConfig.CAISSE_CB_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_CB_ID: e.target.value }))} className="input font-mono" />
+                <label className="input-label" htmlFor="cfg-caisse-cb-id">ID Carte bancaire</label>
+                <input id="cfg-caisse-cb-id" value={caisseConfig.CAISSE_CB_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_CB_ID: e.target.value }))} className="input font-mono" />
               </div>
               <div>
-                <label className="input-label">ID Espèces</label>
-                <input value={caisseConfig.CAISSE_ESP_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ESP_ID: e.target.value }))} className="input font-mono" />
+                <label className="input-label" htmlFor="cfg-caisse-esp-id">ID Espèces</label>
+                <input id="cfg-caisse-esp-id" value={caisseConfig.CAISSE_ESP_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ESP_ID: e.target.value }))} className="input font-mono" />
               </div>
               <div>
-                <label className="input-label">ID Caisse (GENERALE)</label>
-                <input value={caisseConfig.CAISSE_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ID: e.target.value }))} className="input font-mono" />
+                <label className="input-label" htmlFor="cfg-caisse-id">ID Caisse (GENERALE)</label>
+                <input id="cfg-caisse-id" value={caisseConfig.CAISSE_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ID: e.target.value }))} className="input font-mono" />
               </div>
               <div>
-                <label className="input-label">ID Utilisateur</label>
-                <input value={caisseConfig.CAISSE_USER_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_USER_ID: e.target.value }))} className="input font-mono" />
+                <label className="input-label" htmlFor="cfg-caisse-user-id">ID Utilisateur</label>
+                <input id="cfg-caisse-user-id" value={caisseConfig.CAISSE_USER_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_USER_ID: e.target.value }))} className="input font-mono" />
               </div>
               <div className="sm:col-span-2">
-                <label className="input-label">Rayon (pour TVA)</label>
+                <label className="input-label" htmlFor="cfg-caisse-rayon-id">Rayon (pour TVA)</label>
                 <div className="flex gap-2">
-                  <input value={caisseConfig.CAISSE_RAYON_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: e.target.value }))} className="input font-mono flex-1" placeholder="ID du rayon" />
+                  <input id="cfg-caisse-rayon-id" value={caisseConfig.CAISSE_RAYON_ID || ''} onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: e.target.value }))} className="input font-mono flex-1" placeholder="ID du rayon" />
                   <button
                     type="button"
                     onClick={async () => {
@@ -2328,16 +2358,16 @@ export default function ConfigPage() {
                         }
                       } catch (err) { toast.error(err.message || 'Erreur chargement rayons'); }
                     }}
-                    className="btn-ghost text-xs px-3 py-2 whitespace-nowrap border border-slate-200"
+                    className="btn-secondary"
                   >
-                    <Search className="w-3.5 h-3.5 inline mr-1" />Charger rayons
+                    <Search aria-hidden="true" />Charger rayons
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">Rayon avec le bon taux de TVA (ex: "Réparations" à 20%). Cliquez "Charger rayons" pour voir la liste. Sans rayon, pas de TVA.</p>
+                <p className="input-help">Rayon avec le bon taux de TVA (ex: "Réparations" à 20%). Cliquez "Charger rayons" pour voir la liste. Sans rayon, pas de TVA.</p>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-5">
+            <div className="flex flex-wrap gap-2 mt-5">
               <button
                 onClick={async () => {
                   setCaisseTesting(true);
@@ -2355,7 +2385,7 @@ export default function ConfigPage() {
                 disabled={caisseTesting}
                 className="btn-secondary"
               >
-                {caisseTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                {caisseTesting ? <Loader2 className="animate-spin" /> : <Zap />}
                 Tester la connexion
               </button>
               <button
@@ -2374,7 +2404,7 @@ export default function ConfigPage() {
                 disabled={caisseSaving}
                 className="btn-primary"
               >
-                {caisseSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {caisseSaving ? <Loader2 className="animate-spin" /> : <Save />}
                 Enregistrer
               </button>
             </div>
@@ -2385,24 +2415,24 @@ export default function ConfigPage() {
       {/* ═══ Security tab ═══ */}
       {activeTab === 'security' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Changer le PIN d'accès</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Changer le PIN d'accès</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="input-label">Espace</label>
-                <select value={pinForm.target} onChange={e => setPinForm(f => ({ ...f, target: e.target.value }))} className="input">
+                <label className="input-label" htmlFor="cfg-pin-espace">Espace</label>
+                <select id="cfg-pin-espace" value={pinForm.target} onChange={e => setPinForm(f => ({ ...f, target: e.target.value }))} className="select">
                   <option value="accueil">Accueil</option>
                   <option value="tech">Technicien</option>
                 </select>
               </div>
               <div>
-                <label className="input-label">Ancien PIN</label>
-                <input type="password" value={pinForm.old_pin} onChange={e => setPinForm(f => ({ ...f, old_pin: e.target.value }))}
+                <label className="input-label" htmlFor="cfg-pin-ancien">Ancien PIN</label>
+                <input id="cfg-pin-ancien" type="password" value={pinForm.old_pin} onChange={e => setPinForm(f => ({ ...f, old_pin: e.target.value }))}
                   className="input font-mono text-center tracking-widest" maxLength={4} placeholder="····" />
               </div>
               <div>
-                <label className="input-label">Nouveau PIN</label>
-                <input type="password" value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value }))}
+                <label className="input-label" htmlFor="cfg-pin-nouveau">Nouveau PIN</label>
+                <input id="cfg-pin-nouveau" type="password" value={pinForm.new_pin} onChange={e => setPinForm(f => ({ ...f, new_pin: e.target.value }))}
                   className="input font-mono text-center tracking-widest" maxLength={4} placeholder="····" />
               </div>
             </div>
@@ -2410,49 +2440,49 @@ export default function ConfigPage() {
               <button onClick={handleChangePin}
                 disabled={pinChanging || pinForm.old_pin.length !== 4 || pinForm.new_pin.length !== 4}
                 className="btn-primary">
-                {pinChanging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Key className="w-4 h-4" />}
+                {pinChanging ? <Loader2 className="animate-spin" /> : <Key />}
                 Changer le PIN
               </button>
             </div>
           </div>
 
           {/* Admin password */}
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-red-500" />
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-slate-400" aria-hidden="true" />
               Mot de passe administrateur
             </h2>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-sm text-slate-500 mb-4">
               Ce mot de passe protège l'accès à la section Administration (Reporting, Avis, Community, Config).
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="input-label">Ancien mot de passe</label>
-                <input type="password" value={adminPwdForm.old_password}
+                <label className="input-label" htmlFor="cfg-admin-ancien">Ancien mot de passe</label>
+                <input id="cfg-admin-ancien" type="password" value={adminPwdForm.old_password}
                   onChange={e => { setAdminPwdForm(f => ({ ...f, old_password: e.target.value })); setAdminPwdError(''); }}
                   className="input" placeholder="••••••••" />
               </div>
               <div>
-                <label className="input-label">Nouveau mot de passe</label>
-                <input type="password" value={adminPwdForm.new_password}
+                <label className="input-label" htmlFor="cfg-admin-nouveau">Nouveau mot de passe</label>
+                <input id="cfg-admin-nouveau" type="password" value={adminPwdForm.new_password}
                   onChange={e => { setAdminPwdForm(f => ({ ...f, new_password: e.target.value })); setAdminPwdError(''); }}
                   className="input" placeholder="••••••••" />
               </div>
               <div>
-                <label className="input-label">Confirmer</label>
-                <input type="password" value={adminPwdForm.confirm}
+                <label className="input-label" htmlFor="cfg-admin-confirmer">Confirmer</label>
+                <input id="cfg-admin-confirmer" type="password" value={adminPwdForm.confirm}
                   onChange={e => { setAdminPwdForm(f => ({ ...f, confirm: e.target.value })); setAdminPwdError(''); }}
                   className="input" placeholder="••••••••" />
               </div>
             </div>
             {adminPwdError && (
-              <p className="text-xs text-red-500 mt-2">{adminPwdError}</p>
+              <p className="input-error mt-2" role="alert">{adminPwdError}</p>
             )}
             <div className="flex justify-end mt-4">
               <button onClick={handleChangeAdminPassword}
                 disabled={adminPwdChanging || !adminPwdForm.old_password || !adminPwdForm.new_password || !adminPwdForm.confirm}
                 className="btn-primary">
-                {adminPwdChanging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                {adminPwdChanging ? <Loader2 className="animate-spin" /> : <Shield />}
                 Changer le mot de passe
               </button>
             </div>
@@ -2463,51 +2493,43 @@ export default function ConfigPage() {
       {/* ═══ Modules tab ═══ */}
       {activeTab === 'modules' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Modules optionnels</h2>
-            <p className="text-xs text-slate-400 mb-4">Activez ou désactivez les modules pour afficher les pages correspondantes dans le menu latéral.</p>
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1">Modules optionnels</h2>
+            <p className="text-sm text-slate-500 mb-4">Activez ou désactivez les modules pour afficher les pages correspondantes dans le menu latéral.</p>
 
             {/* Module Devis */}
-            <div className="flex items-center justify-between py-3 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
               <div>
                 <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-brand-500" /> Module Devis
+                  <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" /> Module Devis
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">Gestion complète des devis clients avec statuts, impression et conversion en ticket</p>
+                <p className="t-caption mt-0.5">Gestion complète des devis clients avec statuts, impression et conversion en ticket</p>
               </div>
-              <button
+              <Interrupteur
                 onClick={() => {
                   const newVal = config.MODULE_DEVIS_VISIBLE === 'true' ? 'false' : 'true';
                   saveParamNow('MODULE_DEVIS_VISIBLE', newVal, newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
                 }}
-                role="switch" aria-checked={config.MODULE_DEVIS_VISIBLE === 'true'} aria-label="Module Devis"
-                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
+                actif={config.MODULE_DEVIS_VISIBLE === 'true'} label="Module Devis" />
             </div>
 
             {/* Module Devis Flash */}
-            <div className="flex items-center justify-between py-3 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
               <div>
                 <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-500" /> Module Devis Flash
+                  <Zap className="w-4 h-4 text-slate-400" aria-hidden="true" /> Module Devis Flash
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">Consultation rapide des prix de réparation et catalogue de téléphones en vente</p>
+                <p className="t-caption mt-0.5">Consultation rapide des prix de réparation et catalogue de téléphones en vente</p>
               </div>
-              <button
+              <Interrupteur
                 onClick={() => {
                   const newVal = config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'false' : 'true';
                   saveParamNow('MODULE_DEVIS_FLASH_VISIBLE', newVal, newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
                 }}
-                role="switch" aria-checked={config.MODULE_DEVIS_FLASH_VISIBLE === 'true'} aria-label="Module Devis Flash"
-                className={`relative w-11 h-6 rounded-full transition-colors ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'bg-brand-600' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
+                actif={config.MODULE_DEVIS_FLASH_VISIBLE === 'true'} label="Module Devis Flash" />
             </div>
 
-            <p className="text-[11px] text-slate-400 mt-4 pt-3 border-t border-slate-100">
+            <p className="t-caption mt-4 pt-3 border-t border-slate-100">
               Rechargez la page après activation pour voir les changements dans le menu.
             </p>
           </div>
@@ -2517,44 +2539,35 @@ export default function ConfigPage() {
       {/* ═══ Appearance tab ═══ */}
       {activeTab === 'appearance' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Apparence</h2>
-            <div className="flex items-center justify-between py-3">
+          <div className="card card-body">
+            <h2 className="t-h2 mb-4">Apparence</h2>
+            <div className="flex items-center justify-between gap-4 py-3">
               <div>
-                <p className="text-sm font-medium text-slate-800">Activer les animations</p>
-                <p className="text-xs text-slate-400 mt-0.5">Transitions, effets de survol, apparitions progressives</p>
+                <p id="cfg-animations" className="text-sm font-medium text-slate-800">Activer les animations</p>
+                <p className="t-caption mt-0.5">Transitions, effets de survol, apparitions progressives</p>
               </div>
-              <button
-                onClick={() => setAnimations(!animations)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${animations ? 'bg-brand-600' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${animations ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
+              <Interrupteur actif={animations} labelledBy="cfg-animations" onClick={() => setAnimations(!animations)} />
             </div>
-            <p className="text-[11px] text-slate-400 mt-2 pt-3 border-t border-slate-100">
+            <p className="t-caption mt-2 pt-3 border-t border-slate-100">
               Désactivez les animations pour améliorer la fluidité sur les appareils plus lents.
             </p>
 
             {/* Autocomplétion toggle */}
-            <div className="flex items-center justify-between py-3 mt-3 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between gap-4 py-3 mt-3 pt-3 border-t border-slate-100">
               <div>
                 <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <Search className="w-3.5 h-3.5 text-slate-500" /> Autocomplétion intelligente
+                  <Search className="w-4 h-4 text-slate-400" aria-hidden="true" /> Autocomplétion intelligente
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">Suggestions dans les formulaires de modification de tickets</p>
+                <p className="t-caption mt-0.5">Suggestions dans les formulaires de modification de tickets</p>
               </div>
-              <button
+              <Interrupteur
                 onClick={() => {
                   const newVal = config.AFFICHER_AUTOCOMPLETION === 'false' ? 'true' : 'false';
                   saveParamNow('AFFICHER_AUTOCOMPLETION', newVal, newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
                 }}
-                role="switch" aria-checked={config.AFFICHER_AUTOCOMPLETION !== 'false'} aria-label="Autocomplétion intelligente"
-                className={`relative w-11 h-6 rounded-full transition-colors ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'bg-brand-600' : 'bg-slate-300'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${config.AFFICHER_AUTOCOMPLETION !== 'false' ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
+                actif={config.AFFICHER_AUTOCOMPLETION !== 'false'} label="Autocomplétion intelligente" />
             </div>
-            <p className="text-[11px] text-slate-400 mt-2">
+            <p className="t-caption mt-2">
               L'apprentissage continue en arrière-plan même si l'affichage est désactivé.
             </p>
           </div>
@@ -2564,45 +2577,50 @@ export default function ConfigPage() {
       {/* ═══ Backup tab ═══ */}
       {activeTab === 'backup' && (
         <div className="space-y-5">
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Export clients</h2>
-            <p className="text-sm text-slate-500 mb-3">Téléchargez la liste de tous les clients (avec nombre de tickets).</p>
-            <div className="flex gap-2">
-              <button onClick={handleExportCSV} className="btn-primary">
-                <Download className="w-4 h-4" /> CSV
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1">Export clients</h2>
+            <p className="text-sm text-slate-500 mb-4">Téléchargez la liste de tous les clients (avec nombre de tickets).</p>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handleExportCSV} className="btn-secondary">
+                <Download /> CSV
               </button>
-              <button onClick={handleExportExcel} className="btn-primary">
-                <Download className="w-4 h-4" /> Excel (.xlsx)
+              <button onClick={handleExportExcel} className="btn-secondary">
+                <Download /> Excel (.xlsx)
               </button>
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Sauvegarde complète</h2>
-            <p className="text-sm text-slate-500 mb-3">
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1">Sauvegarde complète</h2>
+            <p className="text-sm text-slate-500 mb-4">
               Téléchargez un backup JSON complet de la base de données (clients, tickets, config, équipe, catalogue).
             </p>
             <div className="flex gap-2">
-              <button onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary min-h-[44px]">
-                {backupBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Database className="w-4 h-4" aria-hidden="true" />}
+              <button onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary">
+                {backupBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Database aria-hidden="true" />}
                 {backupBusy ? 'Export en cours… (peut prendre une minute)' : 'Télécharger le backup (JSON)'}
               </button>
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-slate-800 mb-4">Restaurer un backup</h2>
-            <p className="text-sm text-slate-500 mb-3">
-              Importez un fichier JSON de backup pour restaurer les données. Attention : cela remplacera toutes les données actuelles.
-            </p>
-            <label className={`btn-primary min-h-[44px] inline-flex focus-within:ring-2 focus-within:ring-brand-400 focus-within:ring-offset-2 ${importBusy ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}>
-              {importBusy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Upload className="w-4 h-4" aria-hidden="true" />}
+          <div className="card card-body">
+            <h2 className="t-h2 mb-1">Restaurer un backup</h2>
+            <div className="callout callout-warning mb-4">
+              <AlertTriangle aria-hidden="true" />
+              <p>
+                Importez un fichier JSON de backup pour restaurer les données. Attention : cela remplacera toutes les données actuelles.
+              </p>
+            </div>
+            <label className={`btn-secondary focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2 ${importBusy ? 'cursor-wait text-slate-400' : 'cursor-pointer'}`}>
+              {importBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
               {importBusy ? 'Restauration en cours…' : 'Importer un backup (.json)'}
               <input type="file" accept=".json" onChange={handleImportBackup} disabled={importBusy} className="sr-only" />
             </label>
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Klikphone SAV — système de style partagé (design V2, « polish »)
+
+   Principe : la couleur porte un sens, la hiérarchie vient du poids et de l'espace.
+   Violet (brand) = marque/action · vert = ok/payé · ambre = attention · rouge = danger ·
+   bleu = information · tout le reste est slate.
+
+   Les pages n'utilisent QUE les classes ci-dessous + les utilitaires Tailwind.
+   Rayons : rounded-lg (contrôles, badges) · rounded-xl (cartes, modales, toasts) · rounded-full.
+   Ombres : shadow-xs (cartes, boutons) · shadow-lg (modales, menus, toasts, FAB).
+   Texte : jamais < 12 px ; texte secondaire = slate-500 minimum sur fond clair.
+   Contraste : slate-500 (.t-small, .t-caption, .input-help) ne se pose que sur blanc (4,6:1) ou
+   slate-50 (4,55:1) ; sur slate-100 (fond des .segmented, pastilles, lignes alternées) il passe
+   sous AA (4,34:1) → utiliser slate-600 (6,9:1). Même règle pour slate-400 : jamais pour du texte.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 @layer base {
   * { -webkit-tap-highlight-color: transparent; }
   html { scroll-behavior: smooth; }
@@ -14,73 +30,310 @@
 }
 
 @layer components {
-  /* ─── Cards ─── */
-  .card {
-    @apply bg-white rounded-2xl border border-slate-200/60 shadow-sm;
+  /* ─── 1. Échelle typographique (Plus Jakarta Sans) ─────────────────────── */
+  .t-display { @apply text-3xl font-bold leading-[1.15] tracking-tight text-slate-900; }
+  .t-h1 { @apply text-2xl font-bold leading-tight tracking-tight text-slate-900; }
+  .t-h2 { @apply text-base font-semibold leading-snug text-slate-900; }
+  .t-h3 { @apply text-[13px] font-semibold leading-snug text-slate-600; }
+  .t-body { @apply text-sm leading-relaxed text-slate-700; }
+  .t-body-lg { @apply text-base leading-relaxed text-slate-700; }
+  .t-small { @apply text-[13px] font-medium leading-snug text-slate-500; }
+  .t-caption { @apply text-xs font-medium leading-snug text-slate-500; }
+  .t-label { @apply text-[13px] font-semibold leading-snug text-slate-700; }
+  .t-overline { @apply text-xs font-semibold uppercase tracking-[0.06em] text-slate-500; }
+  .t-num { @apply tabular-nums font-semibold text-slate-900; }
+  .t-mono { @apply font-mono text-[13px] tabular-nums; }
+
+  /* ─── 2. Mise en page ──────────────────────────────────────────────────── */
+  .page {
+    @apply w-full min-w-0 overflow-x-clip mx-auto px-4 py-4 pb-24 sm:px-6 sm:py-6 lg:px-8 lg:py-8 lg:pb-8;
+  }
+  .page-header {
+    @apply flex flex-wrap items-start justify-between gap-x-6 gap-y-3 mb-6 min-h-[48px];
+  }
+  .page-header-title { @apply t-h1; }
+  .page-header-subtitle { @apply mt-1 text-sm text-slate-500; }
+  .page-header-actions { @apply flex flex-wrap items-center gap-2 shrink-0; }
+
+  .page-tabs {
+    @apply flex gap-1 border-b border-slate-200 -mb-px overflow-x-auto scrollbar-none;
+  }
+  .page-tab {
+    @apply inline-flex items-center gap-2 min-h-11 px-3 text-sm font-medium text-slate-600
+           border-b-2 border-transparent whitespace-nowrap transition-colors duration-150
+           hover:text-slate-900 hover:border-slate-300
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset;
+  }
+  .page-tab-active { @apply text-brand-700 border-brand-600 hover:border-brand-600; }
+
+  .segmented {
+    @apply inline-flex p-1 rounded-lg bg-slate-100 gap-0.5 max-w-full overflow-x-auto scrollbar-none;
+  }
+  .segmented-item {
+    @apply inline-flex items-center justify-center gap-1.5 min-h-9 px-3 rounded-md text-sm font-medium
+           text-slate-600 whitespace-nowrap transition-colors duration-150 hover:text-slate-900
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
+  }
+  .segmented-item-active { @apply bg-white text-slate-900 shadow-xs; }
+  /* Compteurs « (12) » dans un segment : slate-500 sur le fond slate-100 ferait 4,34:1 (< AA) */
+  .segmented .text-slate-500 { @apply text-slate-600; }
+
+  .scroll-fade-x {
+    position: relative;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+  }
+  /* Wrapper d'un défilement vertical : fondu bas = « il y a encore du contenu » (à poser/retirer
+     selon scrollTop + clientHeight < scrollHeight, cf. Navbar) */
+  .scroll-fade-y {
+    position: relative;
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 40px), transparent);
   }
 
-  /* ─── Buttons ─── */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold
-           cursor-pointer select-none
-           disabled:opacity-50 disabled:cursor-not-allowed
-           active:scale-[0.97];
-    transition: background-color 120ms, border-color 120ms, color 120ms, box-shadow 120ms, opacity 120ms, transform 80ms;
+  /* ─── 3. Cartes ────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-xl border border-slate-200 shadow-xs;
   }
+  .card-body { @apply p-4 sm:p-5; }
+  .card-header {
+    @apply flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5 pb-3;
+  }
+  .card-footer {
+    @apply flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-xl;
+  }
+  .card-section { @apply rounded-lg bg-slate-50 p-4; }
+  .card-interactive {
+    @apply card cursor-pointer transition-colors duration-150 hover:border-slate-300
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
+  }
+  .card-selected { @apply border-brand-300 bg-brand-50/40; }
+
+  .callout { @apply flex gap-3 rounded-lg border px-4 py-3 text-sm leading-relaxed; }
+  .callout > svg { @apply w-5 h-5 shrink-0 mt-0.5; }
+  .callout-info { @apply bg-blue-50 border-blue-200 text-blue-800; }
+  .callout-success { @apply bg-emerald-50 border-emerald-200 text-emerald-800; }
+  .callout-warning { @apply bg-amber-50 border-amber-200 text-amber-800; }
+  .callout-danger { @apply bg-red-50 border-red-200 text-red-800; }
+
+  /* ─── 4. Boutons ───────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg
+           text-sm font-semibold leading-5 whitespace-nowrap select-none cursor-pointer
+           transition-colors duration-150 active:scale-[0.98]
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+           disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn > svg { @apply w-4 h-4 shrink-0; }
+  /* Désactivé : fond neutre + texte slate-500 (4,3–4,6:1, lisible au comptoir ; slate-400 ferait 2,4:1) */
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 shadow-sm;
+    @apply btn bg-brand-600 text-white shadow-xs hover:bg-brand-700 active:bg-brand-800
+           disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
+           disabled:hover:bg-slate-100;
   }
   .btn-secondary {
-    @apply btn bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300;
-  }
-  .btn-danger {
-    @apply btn bg-red-600 text-white hover:bg-red-700 shadow-sm;
-  }
-  .btn-success {
-    @apply btn bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm;
+    @apply btn bg-white text-slate-700 border border-slate-200 shadow-xs hover:bg-slate-50 hover:border-slate-300
+           disabled:text-slate-500 disabled:bg-slate-50 disabled:hover:border-slate-200 disabled:shadow-none;
   }
   .btn-ghost {
-    @apply btn bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700;
+    @apply btn bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900
+           disabled:text-slate-500 disabled:hover:bg-transparent;
+  }
+  .btn-success {
+    @apply btn bg-emerald-700 text-white shadow-xs hover:bg-emerald-800
+           disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
+           disabled:hover:bg-slate-100;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white shadow-xs hover:bg-red-700
+           disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
+           disabled:hover:bg-slate-100;
+  }
+  .btn-danger-ghost {
+    @apply btn bg-transparent text-red-700 hover:bg-red-50 disabled:text-slate-500 disabled:hover:bg-transparent;
   }
   .btn-whatsapp {
-    @apply btn bg-[#25D366] text-white hover:bg-[#1da851] shadow-sm;
+    @apply btn bg-[#25D366] text-slate-950 shadow-xs hover:bg-[#1fb956]
+           disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none;
   }
+  .btn-sm { @apply min-h-[36px] px-3 py-1.5 text-[13px] gap-1.5; }
+  .btn-lg { @apply min-h-[48px] px-5 py-2.5 text-base; }
+  .btn-lg > svg { @apply w-5 h-5; }
+  .btn-icon { @apply w-10 h-10 min-w-[40px] p-0; }
+  .btn-icon.btn-sm { @apply w-9 h-9 min-w-[36px]; }
+  .btn-icon.btn-lg { @apply w-12 h-12 min-w-[48px]; }
+  .btn-block { @apply w-full; }
 
-  /* ─── Inputs ─── */
+  /* ─── 5. Formulaires ───────────────────────────────────────────────────── */
   .input {
-    @apply w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm
-           placeholder:text-slate-400
-           focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500
-           transition-colors duration-150;
+    @apply w-full min-h-[40px] px-3 py-2 rounded-lg border border-slate-200 bg-white text-base lg:text-sm text-slate-900
+           placeholder:text-slate-500 hover:border-slate-300
+           focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40
+           transition-colors duration-150
+           disabled:bg-slate-50 disabled:text-slate-500 disabled:hover:border-slate-200;
   }
-  .input:hover:not(:focus) {
-    @apply border-slate-300;
+  .input[aria-invalid="true"] { @apply border-red-400 focus:border-red-500 focus:ring-red-500/30; }
+  .textarea { @apply input min-h-[96px] py-2.5 leading-relaxed; }
+  /* Compatibilité : <textarea className="input"> garde une hauteur libre */
+  textarea.input { @apply min-h-[96px] py-2.5 leading-relaxed; }
+  .select {
+    @apply input pr-9 appearance-none bg-no-repeat;
+    background-position: right 0.75rem center;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
-  .input-label {
-    @apply block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5;
+  .input-lg { @apply min-h-[48px] px-4 text-base; }
+  .input-label { @apply block t-label mb-1.5; }
+  .input-help { @apply mt-1.5 text-xs text-slate-500; }
+  .input-error { @apply mt-1.5 text-xs font-medium text-red-700 flex items-center gap-1; }
+  .input-group { @apply space-y-1.5; }
+  .checkbox, .radio {
+    @apply w-5 h-5 shrink-0 border-slate-300 text-brand-600 focus:ring-brand-500 focus:ring-offset-0 cursor-pointer;
   }
+  .checkbox { @apply rounded; }
+  .radio { @apply rounded-full; }
 
-  /* ─── Depot form — tablet-optimized ─── */
+  .choice {
+    @apply inline-flex items-center justify-center gap-1.5 min-h-11 px-3.5 rounded-lg border border-slate-200 bg-white
+           text-sm font-medium text-slate-700 cursor-pointer transition-colors duration-150 hover:bg-slate-50
+           peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2;
+  }
+  .choice-on { @apply bg-brand-600 border-brand-600 text-white hover:bg-brand-700; }
+  .choice-ok { @apply bg-emerald-700 border-emerald-700 text-white hover:bg-emerald-800; }
+  .choice-ko { @apply bg-red-600 border-red-600 text-white hover:bg-red-700; }
+  .choice-muted { @apply bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-100; }
+
+  /* Bornes (/depot, /client…) : saisies 56 px / 16 px, jamais de zoom iOS */
   .depot-form .input {
-    @apply px-5 py-4 text-base rounded-xl;
-    font-size: 16px; /* prevents iOS auto-zoom */
-  }
-  .depot-form .input-label {
-    @apply text-sm mb-2;
-  }
-  .depot-form select.input {
+    @apply min-h-14 px-5 py-4 rounded-xl;
     font-size: 16px;
   }
+  .depot-form .textarea, .depot-form textarea.input { @apply min-h-[120px] py-4; }
+  .depot-form .input-label { @apply text-sm mb-2; }
+  .depot-form select.input { font-size: 16px; }
+  /* Paragraphes des bornes : 16 px slate-700 par défaut, en spécificité (0,0,1) grâce à :where() —
+     un utilitaire posé sur le <p> (text-sm, text-red-600, .t-caption…) reprend la main */
+  :where(.depot-form) p { @apply text-base text-slate-700; }
 
-  /* ─── Badges ─── */
+  /* ─── 6. Badges ────────────────────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+    @apply inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap leading-none;
   }
+  .badge-dot { @apply w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0; }
+  .badge-neutral { @apply bg-slate-100 text-slate-700; }
+  .badge-brand { @apply bg-brand-50 text-brand-700; }
+  .badge-success { @apply bg-emerald-50 text-emerald-700; }
+  .badge-warning { @apply bg-amber-50 text-amber-800; }
+  .badge-danger { @apply bg-red-50 text-red-700; }
+  .badge-danger-solid { @apply bg-red-600 text-white; }
+  .badge-info { @apply bg-blue-50 text-blue-700; }
+  .badge-lg { @apply h-8 px-3 text-sm; }
+  .badge-sm { @apply h-5 px-2 text-xs; }
+  .badge-count {
+    @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full
+           text-xs font-bold tabular-nums leading-none bg-slate-700 text-white;
+  }
+  .badge-count-danger { @apply bg-red-600 text-white; }
+  .badge-count-brand { @apply bg-brand-600 text-white; }
 
-  /* ─── Tables ─── */
-  .table-header {
-    @apply text-[11px] font-semibold text-slate-400 uppercase tracking-wider;
+  /* ─── 7. Tableaux et listes ────────────────────────────────────────────── */
+  .table-wrap { @apply w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white; }
+  .table { @apply w-full text-sm text-slate-700; }
+  .table td { @apply px-3 py-3 align-middle; }
+  .table td:first-child { @apply pl-4; }
+  .table td:last-child { @apply pr-4; }
+  .table th { @apply px-3 py-2.5 text-left align-middle; }
+  .table th:first-child { @apply pl-4; }
+  .table th:last-child { @apply pr-4; }
+  .table-header { @apply text-xs font-semibold text-slate-500 uppercase tracking-wide; }
+  .table-header-sortable {
+    @apply min-h-11 inline-flex items-center gap-1 cursor-pointer transition-colors duration-150 hover:text-slate-900
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded;
   }
+  .table-row { @apply border-b border-slate-100 min-h-14 transition-colors duration-150 hover:bg-slate-50; }
+  .table-row-selected { @apply bg-brand-50/60; }
+  .table-dense .table-row { @apply min-h-12; }
+  .table-cell-num { @apply text-right tabular-nums font-semibold text-slate-900; }
+  .table-cell-muted { @apply text-[13px] text-slate-500; }
+  .table-sticky-col { @apply sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_#E2E8F0]; }
+  .list-card { @apply card card-interactive p-4 flex flex-col gap-2; }
+
+  /* ─── 8. KPI ───────────────────────────────────────────────────────────── */
+  .kpi-card { @apply card p-4 flex items-start gap-3 min-h-[96px]; }
+  .kpi-card-sm { @apply card p-3 flex items-start gap-3 min-w-[140px] min-h-[72px]; }
+  .kpi-icon {
+    @apply w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0;
+  }
+  .kpi-icon > svg { @apply w-4 h-4; }
+  .kpi-value { @apply text-2xl font-semibold text-slate-900 tabular-nums leading-none; }
+  .kpi-card-sm .kpi-value { @apply text-xl; }
+  .kpi-label { @apply t-caption mt-1; }
+  .kpi-delta { @apply badge badge-sm; }
+
+  /* ─── 9. États ─────────────────────────────────────────────────────────── */
+  .empty-state {
+    @apply flex flex-col items-center justify-center text-center gap-3 py-10 px-6 min-h-[200px] max-h-[260px];
+  }
+  .empty-state-icon {
+    @apply w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0;
+  }
+  .empty-state-icon > svg { @apply w-8 h-8; }
+  .error-state { @apply callout callout-danger; }
+  .loading-inline { @apply inline-flex items-center gap-2 text-sm text-slate-500; }
+  .loading-inline > svg { @apply w-4 h-4 animate-spin; }
+
+  .skeleton {
+    @apply rounded-lg;
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+  .skeleton-line { @apply skeleton h-4; }
+  .skeleton-row { @apply skeleton h-14; }
+  .skeleton-card { @apply skeleton h-24; }
+  .skeleton-title { @apply skeleton h-7 w-48; }
+
+  /* ─── 10. Modales, panneaux, toasts, FAB ───────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-slate-900/50 flex items-end sm:items-center justify-center p-0 sm:p-4;
+  }
+  .modal {
+    @apply w-full sm:max-w-lg bg-white rounded-t-xl sm:rounded-xl shadow-lg max-h-[92vh] flex flex-col animate-scale-in;
+  }
+  .modal-header { @apply flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 shrink-0; }
+  .modal-body { @apply px-5 py-4 overflow-y-auto min-h-0; }
+  .modal-footer {
+    @apply flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-xl shrink-0;
+  }
+  .drawer {
+    @apply fixed inset-y-0 right-0 z-50 w-full sm:w-[420px] bg-white shadow-lg flex flex-col animate-slide-in;
+  }
+  .drawer-header {
+    @apply sticky top-0 z-10 flex items-center justify-between gap-3 min-h-14 px-4 sm:px-5 bg-white border-b border-slate-100 shrink-0;
+  }
+  .drawer-body { @apply flex-1 overflow-y-auto min-h-0 p-4 sm:p-5; }
+  .drawer-footer {
+    @apply sticky bottom-0 z-10 px-4 sm:px-5 py-3 bg-white border-t border-slate-100 shrink-0;
+  }
+  .toast {
+    @apply flex items-start gap-3 max-w-full bg-white rounded-xl border border-slate-200 border-l-4
+           shadow-lg p-3 pr-2 text-sm text-slate-800;
+    width: min(100vw - 2rem, 380px);
+  }
+  .fab {
+    @apply fixed z-40 w-12 h-12 lg:w-14 lg:h-14 rounded-full bg-brand-600 text-white shadow-lg
+           flex items-center justify-center transition-colors duration-150 hover:bg-brand-700 right-4
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
+    bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* ─── Tactile (doigt) : toute cible cliquable passe à 44 px, toute saisie à 16 px ───
+   Saisies : 16 px sur tout écran tactile (iPad paysage 1024 compris, où `lg:text-sm` s'applique) —
+   c'est le pointeur qui décide, pas la largeur : un portable à souris garde ses 14 px. */
+@media (pointer: coarse) {
+  .btn, .btn-sm, .page-tab, .segmented-item, .choice { min-height: 44px; }
+  .btn-icon, .btn-icon.btn-sm { min-width: 44px; min-height: 44px; }
+  .input, .textarea, .select { min-height: 44px; font-size: 16px; }
 }
 
 /* ─── Animations ─── */
@@ -113,16 +366,16 @@
   animation: progressBar 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-.animate-in { animation: fadeIn 0.3s ease-out forwards; }
+.animate-in { animation: fadeIn 0.2s ease-out forwards; }
 /* Apparition d'un bloc (remplace framer-motion) : `backwards` ne laisse aucun transform
    après l'animation, donc pas de containing block parasite pour les descendants fixed. */
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade-up { animation: fadeUp 0.6s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-.animate-slide-in { animation: slideInLeft 0.25s ease-out forwards; }
-.animate-scale-in { animation: scaleIn 0.2s ease-out forwards; }
+.animate-fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.animate-slide-in { animation: slideInLeft 0.2s ease-out forwards; }
+.animate-scale-in { animation: scaleIn 0.15s ease-out forwards; }
 .animate-shimmer {
   background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
   background-size: 200% 100%;
@@ -150,6 +403,7 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .animate-shimmer, .skeleton { animation: none; background: #f1f5f9; }
 }
 
 @media print {

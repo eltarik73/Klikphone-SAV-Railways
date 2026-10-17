@@ -22,12 +22,107 @@ const AVIS_EVERY_MS = 5 * 60_000;
 // Propositions de prix en attente (santé des prix) : une fois par minute au plus, rôle admin seulement
 const SANTE_PRIX_EVERY_MS = 60_000;
 
+// Design V2 : une seule couleur d'accent (brand) dans la barre latérale ; les rubriques ne sont plus
+// colorées, la hiérarchie vient du poids et de l'espace. Texte slate-300, secondaire slate-400 (AA).
+const FOCUS_DARK = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset';
+
+// La préférence « barre repliée » (kp_sidebar_collapsed) n'a de sens qu'au bureau (≥ lg, barre fixe) :
+// sous lg la barre est un tiroir qui s'ouvre toujours complet (icônes + libellés), sinon la croix
+// « Fermer le menu » se superposait au logo dans un tiroir de 72 px.
+const DESKTOP_QUERY = '(min-width: 1024px)';
+const matchDesktop = () =>
+  (typeof window !== 'undefined' && typeof window.matchMedia === 'function')
+    ? window.matchMedia(DESKTOP_QUERY).matches
+    : true;
+
+// ─── Infobulle du mode replié (visuelle ; le nom accessible vient de l'aria-label du bouton) ───
+// Composants définis hors du rendu : le menu n'est plus remonté à chaque mise à jour de compteur.
+function Tooltip({ label, children, badge, collapsed }) {
+  return (
+    <div className="group/tip relative">
+      {children}
+      {collapsed && (
+        <span
+          className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-[60]
+            whitespace-nowrap rounded-lg bg-slate-800 border border-white/10 px-2.5 py-1.5
+            text-xs font-medium text-slate-100 shadow-lg
+            opacity-0 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100
+            transition-opacity duration-150 ease-out"
+        >
+          {label}
+          {badge > 0 && (
+            <span className="badge-count badge-count-brand ml-2">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Compteur rond 18 px : slate (total), rouge (urgence), brand (total mis en avant)
+function Badge({ value, tone = 'neutral' }) {
+  if (!value || value <= 0) return null;
+  const toneCls = { neutral: '', brand: 'badge-count-brand', red: 'badge-count-danger' }[tone] || '';
+  const label = value > 99 ? '99+' : value;
+  return <span className={`badge-count ${toneCls}`}>{label}</span>;
+}
+
+// Point d'urgence 8 px quand un compteur est déjà affiché à côté (le total)
+function AlertDot({ value }) {
+  if (!value || value <= 0) return null;
+  return <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-hidden="true" />;
+}
+
+function DotBadge({ value, tone = 'neutral' }) {
+  if (!value || value <= 0) return null;
+  const bg = tone === 'red' ? 'badge-count-danger' : 'badge-count-brand';
+  return (
+    <span className={`badge-count ${bg} absolute top-0.5 right-0.5 ring-2 ring-slate-900`}>
+      {value > 9 ? '9+' : value}
+    </span>
+  );
+}
+
+// ─── Rubrique (overline discret + chevron) : plus de couleur par rubrique ───
+function SectionHeader({ label, icon: Icon, open, onToggle, collapsed }) {
+  if (collapsed) {
+    return (
+      <div className="relative my-2 flex justify-center" aria-hidden="true">
+        <span className="block w-8 h-px bg-white/10" />
+        <Icon className="w-4 h-4 absolute -top-2 bg-slate-900 px-0.5 text-slate-400" />
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!!open}
+      className={`w-full min-h-11 flex items-center justify-between px-3 py-2 mb-1 short:mb-0 rounded-lg group/sec
+        text-slate-400 hover:text-slate-200 transition-colors duration-150 ${FOCUS_DARK}`}
+    >
+      <span className="flex items-center gap-2 t-overline text-slate-400 group-hover/sec:text-slate-200">
+        <Icon className="w-4 h-4" aria-hidden="true" />
+        {label}
+      </span>
+      <ChevronDown
+        className={`w-4 h-4 transition-transform duration-150 ease-out ${open ? 'rotate-0' : '-rotate-90'}`}
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('kp_sidebar_collapsed') === '1');
+  const [collapsedPref, setCollapsedPref] = useState(() => localStorage.getItem('kp_sidebar_collapsed') === '1');
+  const [desktop, setDesktop] = useState(matchDesktop);
+  const collapsed = collapsedPref && desktop;
   const [pendingCount, setPendingCount] = useState(0);
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
@@ -81,9 +176,31 @@ export default function Navbar() {
     }).catch(() => {});
   }, [user?.utilisateur]);
 
+  // Bureau ↔ mobile (rotation d'une tablette, redimensionnement) : suit la media query
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = (e) => setDesktop(e.matches);
+    if (mq.addEventListener) mq.addEventListener('change', onChange); else mq.addListener(onChange);
+    return () => { if (mq.removeEventListener) mq.removeEventListener('change', onChange); else mq.removeListener(onChange); };
+  }, []);
+
+  // Fondu bas de la navigation tant qu'il reste des entrées sous le pli (écran bas : iPad paysage 768 px)
+  const navRef = useRef(null);
+  const [navScrollable, setNavScrollable] = useState(false);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return undefined;
+    const update = () => setNavScrollable(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => { el.removeEventListener('scroll', update); window.removeEventListener('resize', update); };
+  }, [user?.utilisateur, collapsed, mobileOpen, tarifsOpen, adminOpen, betaOpen, devisOpen, moduleDevis, moduleDevisFlash, isAdminMode]);
+
   const toggleCollapse = () => {
-    const next = !collapsed;
-    setCollapsed(next);
+    const next = !collapsedPref;
+    setCollapsedPref(next);
     localStorage.setItem('kp_sidebar_collapsed', next ? '1' : '0');
     window.dispatchEvent(new CustomEvent('sidebar-toggle', { detail: { collapsed: next } }));
   };
@@ -169,121 +286,26 @@ export default function Navbar() {
     navigate(`/login/${user.target}?switch=1`);
   };
 
-  // ─── Reusable tooltip wrapper for collapsed mode ───
-  const Tooltip = ({ label, children, badge }) => (
-    <div className="group/tip relative">
-      {children}
-      {collapsed && (
-        <span
-          className="pointer-events-none absolute left-full ml-3 top-1/2 -translate-y-1/2 z-[60]
-            whitespace-nowrap rounded-md bg-slate-800 border border-white/10 px-2.5 py-1.5
-            text-[12px] font-medium text-slate-100 shadow-xl
-            opacity-0 translate-x-[-4px] group-hover/tip:opacity-100 group-hover/tip:translate-x-0
-            transition-all duration-150 ease-out"
-        >
-          {label}
-          {badge > 0 && (
-            <span className="ml-2 bg-brand-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-              {badge > 99 ? '99+' : badge}
-            </span>
-          )}
-        </span>
-      )}
-    </div>
-  );
-
-  // ─── Item button (unified styling + hover scale + tooltip) ───
-  const navBtnClass = (active, variant = 'brand') => {
-    const base = `group/nav w-full min-h-[44px] flex items-center gap-3 rounded-lg text-[13px] font-medium
-      transition-all duration-150 ease-out relative
-      ${collapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5'}`;
-    const activeCls = {
-      brand: `bg-gradient-to-r from-brand-600/25 to-brand-500/10 text-white
-              shadow-[inset_0_0_0_1px_rgba(124,58,237,0.35)]
-              ${collapsed ? '' : 'border-l-[3px] border-brand-400 pl-[9px]'}`,
-      amber: `bg-gradient-to-r from-amber-500/25 to-amber-400/10 text-white
-              shadow-[inset_0_0_0_1px_rgba(245,158,11,0.35)]
-              ${collapsed ? '' : 'border-l-[3px] border-amber-400 pl-[9px]'}`,
-      red:   `bg-gradient-to-r from-red-500/25 to-red-400/10 text-white
-              shadow-[inset_0_0_0_1px_rgba(239,68,68,0.35)]
-              ${collapsed ? '' : 'border-l-[3px] border-red-400 pl-[9px]'}`,
-      yellow:`bg-gradient-to-r from-yellow-500/25 to-yellow-400/10 text-white
-              shadow-[inset_0_0_0_1px_rgba(234,179,8,0.35)]
-              ${collapsed ? '' : 'border-l-[3px] border-yellow-400 pl-[9px]'}`,
-    }[variant];
-    const idle = 'text-slate-400 hover:text-white hover:bg-white/[0.05]';
+  // ─── Entrée de menu : une seule teinte (brand), actif = fond brand/20 + barre gauche 3 px ───
+  const navBtnClass = (active) => {
+    const base = `group/nav w-full min-h-11 flex items-center gap-3 rounded-lg text-[13px] font-medium
+      transition-colors duration-150 ease-out relative ${FOCUS_DARK}
+      ${collapsed ? 'justify-center px-0 py-2.5 short:py-1.5' : 'px-3 py-2.5 short:py-1.5'}`;
+    const activeCls = `bg-brand-600/20 text-white
+      ${collapsed ? '' : 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-brand-500'}`;
+    const idle = 'text-slate-300 hover:text-white hover:bg-white/[0.06]';
     return `${base} ${active ? activeCls : idle}`;
   };
 
-  const iconCls = (active, variant = 'brand') => {
-    const color = { brand: 'text-brand-300', amber: 'text-amber-300', red: 'text-red-300', yellow: 'text-yellow-300' }[variant];
-    return `w-[18px] h-[18px] shrink-0 transition-transform duration-150 ease-out
-      group-hover/nav:scale-110 ${active ? color : ''}`;
-  };
-
-  const Badge = ({ value, tone = 'brand' }) => {
-    if (!value || value <= 0) return null;
-    const toneCls = {
-      brand: 'bg-brand-600 shadow-[0_0_0_2px_rgba(124,58,237,0.25)]',
-      red:   'bg-red-600 shadow-[0_0_0_2px_rgba(239,68,68,0.25)]',
-    }[tone];
-    const label = value > 99 ? '99+' : value;
-    return (
-      <span className={`${toneCls} text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full
-        min-w-[20px] text-center leading-tight`}>
-        {label}
-      </span>
-    );
-  };
-
-  const DotBadge = ({ value, tone = 'brand' }) => {
-    if (!value || value <= 0) return null;
-    const bg = tone === 'red' ? 'bg-red-600' : 'bg-brand-600';
-    return (
-      <span className={`${bg} absolute top-0.5 right-0.5 text-white text-[9px] font-bold
-        min-w-[16px] h-[16px] px-1 rounded-full flex items-center justify-center
-        ring-2 ring-slate-900 animate-in`}>
-        {value > 9 ? '9+' : value}
-      </span>
-    );
-  };
-
-  // ─── Section header (label uppercase discret + chevron) ───
-  const SectionHeader = ({ label, color, icon: Icon, open, onToggle }) => {
-    if (collapsed) {
-      return (
-        <div className="relative my-2 flex justify-center">
-          <span className="block w-8 h-px" style={{ background: `${color}40` }} />
-          <Icon className="w-[14px] h-[14px] absolute -top-[7px] bg-slate-900 px-0.5" style={{ color }} />
-        </div>
-      );
-    }
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!!open}
-        className="w-full flex items-center justify-between px-3 mb-2 group/sec"
-      >
-        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em]"
-          style={{ color }}>
-          <Icon className="w-3 h-3" />
-          {label}
-        </span>
-        <ChevronDown
-          className={`w-3 h-3 transition-transform duration-200 ease-out ${open ? 'rotate-0' : '-rotate-90'}`}
-          style={{ color }}
-        />
-      </button>
-    );
-  };
+  const iconCls = (active) =>
+    `w-5 h-5 shrink-0 ${active ? 'text-brand-300' : 'text-slate-400 group-hover/nav:text-slate-200'}`;
 
   return (
     <>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 border-b border-white/10 flex items-center px-4 z-40">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu"
-          className="w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-slate-300 hover:text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+          className={`w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
           <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
         <div className="flex items-center gap-2.5 ml-1 min-w-0">
@@ -292,11 +314,11 @@ export default function Navbar() {
         </div>
         <div className="ml-auto flex items-center gap-1">
           <button type="button" onClick={() => openSearchPalette()} aria-label="Rechercher un ticket, un client…"
-            className="w-11 h-11 flex items-center justify-center rounded-lg text-slate-200 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+            className={`w-11 h-11 flex items-center justify-center rounded-lg text-slate-200 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
             <Search className="w-5 h-5" aria-hidden="true" />
           </button>
           {pendingCount > 0 && (
-            <span className="bg-brand-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center"
+            <span className="badge-count badge-count-brand"
               aria-label={`${pendingCount} tickets actifs`}>
               {pendingCount}
             </span>
@@ -306,40 +328,40 @@ export default function Navbar() {
 
       {/* Backdrop */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-in" onClick={() => setMobileOpen(false)} />
+        <div className="lg:hidden fixed inset-0 bg-slate-900/60 z-40 animate-in" onClick={() => setMobileOpen(false)} />
       )}
 
       {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 bottom-0 bg-slate-900 flex flex-col z-50
         border-r border-white/[0.06]
-        transition-[width,transform] duration-300 ease-in-out will-change-[width,transform]
+        transition-[width,transform] duration-200 ease-in-out motion-reduce:transition-none
         ${collapsed ? 'w-[72px]' : 'w-64'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>
-        {/* Logo header with smooth collapse animation */}
+        {/* Logo header */}
         <div className={`h-16 flex items-center border-b border-white/[0.06] shrink-0 overflow-hidden
           ${collapsed ? 'px-3 justify-center' : 'px-4 gap-3'}`}>
-          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0
-            shadow-[0_2px_10px_rgba(124,58,237,0.25)]
-            transition-transform duration-300 ease-out hover:scale-105">
+          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0 shadow-xs">
             <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
           </div>
-          <div className={`flex-1 min-w-0 transition-all duration-300 ease-out
-            ${collapsed ? 'opacity-0 -translate-x-2 w-0 pointer-events-none' : 'opacity-100 translate-x-0'}`}>
-            <h1 className="text-white font-display font-bold text-[15px] tracking-tight leading-none whitespace-nowrap">KLIKPHONE</h1>
-            <p className="text-slate-500 text-[10px] uppercase tracking-[0.15em] mt-1 whitespace-nowrap">Service après-vente</p>
+          <div className={`flex-1 min-w-0 transition-opacity duration-200 ease-out
+            ${collapsed ? 'opacity-0 w-0 pointer-events-none' : 'opacity-100'}`}>
+            <h1 className="text-white font-display font-bold text-base tracking-tight leading-none whitespace-nowrap">KLIKPHONE</h1>
+            <p className="text-slate-400 text-xs uppercase tracking-[0.06em] mt-1 whitespace-nowrap">Service après-vente</p>
           </div>
           <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fermer le menu"
-            className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-            <X className="w-4 h-4" aria-hidden="true" />
+            className={`lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
-        {/* Navigation — scrollable zone with visible but discrete scrollbar */}
+        {/* Navigation — zone défilante (barre discrète) ; le wrapper porte le fondu bas tant qu'il
+            reste des entrées sous le pli. Écran bas (short:) : espacements resserrés, entrées à 44 px. */}
+        <div className={`relative flex-1 min-h-0 flex flex-col ${navScrollable ? 'scroll-fade-y' : ''}`}>
         <nav
-          className={`flex-1 overflow-y-auto overflow-x-hidden py-4 space-y-0.5
-            ${collapsed ? 'px-2' : 'px-2'}`}
+          ref={navRef}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 short:py-2 px-2 space-y-0.5"
           style={{
             scrollbarWidth: 'thin',
             scrollbarColor: 'rgba(255,255,255,0.08) transparent',
@@ -347,20 +369,20 @@ export default function Navbar() {
         >
           {/* Recherche globale (palette Ctrl/Cmd+K) */}
           <div className={`mb-3 ${collapsed ? 'flex justify-center' : ''}`}>
-            <Tooltip label={`Rechercher (${searchShortcut})`}>
+            <Tooltip collapsed={collapsed} label={`Rechercher (${searchShortcut})`}>
               <button type="button"
                 onClick={() => { setMobileOpen(false); openSearchPalette(); }}
                 aria-label={`Rechercher un ticket, un client, un devis ou une commande (${searchShortcut})`}
                 aria-keyshortcuts="Control+K Meta+K /"
-                className={`flex items-center rounded-lg bg-white/[0.07] ring-1 ring-white/10 text-slate-200
-                  hover:text-white hover:bg-white/[0.12] hover:ring-brand-400/40 transition-colors duration-150
-                  focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
-                  ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-[44px] gap-2.5 px-3'}`}
+                className={`flex items-center rounded-lg bg-white/[0.07] border border-white/10 text-slate-200
+                  hover:text-white hover:bg-white/[0.12] hover:border-white/20 transition-colors duration-150
+                  ${FOCUS_DARK}
+                  ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-11 gap-2.5 px-3'}`}
               >
-                <Search className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <Search className="w-5 h-5 shrink-0 text-slate-400" aria-hidden="true" />
                 {!collapsed && <span className="flex-1 text-left text-[13px] font-medium">Rechercher…</span>}
                 {!collapsed && (
-                  <kbd className="font-sans text-[10px] font-semibold text-slate-200 bg-white/10 rounded px-1.5 py-0.5" aria-hidden="true">
+                  <kbd className="font-sans text-xs font-semibold text-slate-300 bg-white/10 rounded px-1.5 py-0.5" aria-hidden="true">
                     {searchShortcut}
                   </kbd>
                 )}
@@ -369,7 +391,7 @@ export default function Navbar() {
           </div>
 
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-[0.14em]">
+            <p className="px-3 mb-1 min-h-8 short:min-h-6 flex items-center t-overline text-slate-400">
               Menu principal
             </p>
           )}
@@ -382,14 +404,16 @@ export default function Navbar() {
           {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => {
             const active = isActive(path);
             return (
-              <Tooltip key={path} label={label} badge={badge}>
+              <Tooltip collapsed={collapsed} key={path} label={label} badge={badge}>
                 <button onClick={() => handleNav(path)}
-                  className={navBtnClass(active, 'brand')}
+                  className={navBtnClass(active)}
+                  aria-label={collapsed ? label : undefined}
+                  aria-current={active ? 'page' : undefined}
                 >
-                  <Icon className={iconCls(active, 'brand')} />
+                  <Icon className={iconCls(active)} aria-hidden="true" />
                   {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
-                  {!collapsed && <Badge value={badge} tone="brand" />}
-                  {!collapsed && <Badge value={alertBadge} tone="red" />}
+                  {!collapsed && <Badge value={badge} tone="neutral" />}
+                  {!collapsed && (badge > 0 ? <AlertDot value={alertBadge} /> : <Badge value={alertBadge} tone="red" />)}
                   {collapsed && <DotBadge value={badge || alertBadge} tone={alertBadge && !badge ? 'red' : 'brand'} />}
                 </button>
               </Tooltip>
@@ -398,10 +422,10 @@ export default function Navbar() {
 
           {/* ─── Devis section (conditional) ─── */}
           {(moduleDevis || moduleDevisFlash) && (
-            <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+            <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
               <SectionHeader
+                collapsed={collapsed}
                 label="Devis"
-                color="#7C3AED"
                 icon={FileText}
                 open={devisOpen}
                 onToggle={() => {
@@ -415,9 +439,10 @@ export default function Navbar() {
                   {moduleDevis && (() => {
                     const p = `${basePath}/devis`; const a = isActive(p);
                     return (
-                      <Tooltip label="Devis">
-                        <button onClick={() => handleNav(p)} className={navBtnClass(a, 'brand')}>
-                          <FileText className={iconCls(a, 'brand')} />
+                      <Tooltip collapsed={collapsed} label="Devis">
+                        <button onClick={() => handleNav(p)} className={navBtnClass(a)}
+                          aria-label={collapsed ? 'Devis' : undefined} aria-current={a ? 'page' : undefined}>
+                          <FileText className={iconCls(a)} aria-hidden="true" />
                           {!collapsed && <span className="flex-1 text-left truncate">Devis</span>}
                         </button>
                       </Tooltip>
@@ -426,9 +451,10 @@ export default function Navbar() {
                   {moduleDevisFlash && (() => {
                     const p = `${basePath}/devis-flash`; const a = isActive(p);
                     return (
-                      <Tooltip label="Devis Flash">
-                        <button onClick={() => handleNav(p)} className={navBtnClass(a, 'amber')}>
-                          <Zap className={iconCls(a, 'amber')} />
+                      <Tooltip collapsed={collapsed} label="Devis Flash">
+                        <button onClick={() => handleNav(p)} className={navBtnClass(a)}
+                          aria-label={collapsed ? 'Devis Flash' : undefined} aria-current={a ? 'page' : undefined}>
+                          <Zap className={iconCls(a)} aria-hidden="true" />
                           {!collapsed && <span className="flex-1 text-left truncate">Devis Flash</span>}
                         </button>
                       </Tooltip>
@@ -440,10 +466,10 @@ export default function Navbar() {
           )}
 
           {/* ─── Tarifs section ─── */}
-          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+          <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
             <SectionHeader
+                collapsed={collapsed}
               label="Tarifs"
-              color="#F59E0B"
               icon={Tag}
               open={tarifsOpen}
               onToggle={() => {
@@ -461,9 +487,10 @@ export default function Navbar() {
                 ].map(({ path, label, icon: Icon }) => {
                   const active = isActive(path);
                   return (
-                    <Tooltip key={path} label={label}>
-                      <button onClick={() => handleNav(path)} className={navBtnClass(active, 'amber')}>
-                        <Icon className={iconCls(active, 'amber')} />
+                    <Tooltip collapsed={collapsed} key={path} label={label}>
+                      <button onClick={() => handleNav(path)} className={navBtnClass(active)}
+                        aria-label={collapsed ? label : undefined} aria-current={active ? 'page' : undefined}>
+                        <Icon className={iconCls(active)} aria-hidden="true" />
                         {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
                       </button>
                     </Tooltip>
@@ -474,10 +501,10 @@ export default function Navbar() {
           </div>
 
           {/* ─── Administration section ─── */}
-          <div className={`pt-4 mt-4 border-t border-white/[0.06] ${collapsed ? 'px-0' : ''}`}>
+          <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
             <SectionHeader
+                collapsed={collapsed}
               label="Administration"
-              color="#EF4444"
               icon={Lock}
               open={adminOpen}
               onToggle={() => {
@@ -491,13 +518,13 @@ export default function Navbar() {
                 {adminItems.map(({ path, to, label, icon: Icon, badge, pill, aria }) => {
                   const active = isActive(path);
                   return (
-                    <Tooltip key={path} label={label} badge={badge}>
-                      <button type="button" onClick={() => handleAdminNav(to || path)} className={navBtnClass(active, 'red')}
+                    <Tooltip collapsed={collapsed} key={path} label={label} badge={badge}>
+                      <button type="button" onClick={() => handleAdminNav(to || path)} className={navBtnClass(active)}
                         aria-label={aria || (collapsed ? label : undefined)} aria-current={active ? 'page' : undefined}>
-                        <Icon className={iconCls(active, 'red')} />
+                        <Icon className={iconCls(active)} aria-hidden="true" />
                         {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
                         {!collapsed && pill && (
-                          <span className="bg-amber-400 text-slate-950 text-[9px] font-extrabold rounded px-1.5 py-0.5 tracking-wider">
+                          <span className="bg-white/10 text-slate-300 text-xs font-bold rounded px-1.5 py-0.5 tracking-wide leading-none">
                             {pill}
                           </span>
                         )}
@@ -511,37 +538,40 @@ export default function Navbar() {
                 {/* ── Beta sub-group ── */}
                 {!collapsed ? (
                   <button
+                    type="button"
+                    aria-expanded={!!betaOpen}
                     onClick={() => {
                       const next = !betaOpen;
                       setBetaOpen(next);
                       localStorage.setItem('kp_beta_open', next ? '1' : '0');
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 mt-1 rounded-lg
-                      text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]
-                      transition-colors duration-150 ease-out group/beta"
+                    className={`w-full min-h-11 flex items-center gap-3 px-3 py-2 mt-1 rounded-lg
+                      text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]
+                      transition-colors duration-150 ease-out group/beta ${FOCUS_DARK}`}
                   >
-                    <FlaskConical className="w-[16px] h-[16px] shrink-0 transition-transform duration-150 group-hover/beta:scale-110" style={{ color: '#EAB308' }} />
+                    <FlaskConical className="w-5 h-5 shrink-0" aria-hidden="true" />
                     <span className="text-[13px] font-medium flex-1 text-left">Beta</span>
-                    <span className="bg-yellow-500/12 text-yellow-500 text-[9px] font-bold rounded px-1.5 py-0.5 tracking-wider">
+                    <span className="bg-white/10 text-slate-300 text-xs font-bold rounded px-1.5 py-0.5 tracking-wide leading-none">
                       DEV
                     </span>
-                    <ChevronDown className={`w-3 h-3 transition-transform duration-200 ease-out ${betaOpen ? 'rotate-0' : '-rotate-90'}`} />
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-150 ease-out ${betaOpen ? 'rotate-0' : '-rotate-90'}`} aria-hidden="true" />
                   </button>
                 ) : (
-                  <div className="relative my-2 flex justify-center">
-                    <span className="block w-6 h-px bg-yellow-500/25" />
-                    <FlaskConical className="w-[12px] h-[12px] absolute -top-[6px] bg-slate-900 px-0.5" style={{ color: '#EAB308' }} />
+                  <div className="relative my-2 flex justify-center" aria-hidden="true">
+                    <span className="block w-6 h-px bg-white/10" />
+                    <FlaskConical className="w-4 h-4 absolute -top-2 bg-slate-900 px-0.5 text-slate-400" />
                   </div>
                 )}
                 {(betaOpen || collapsed) && betaItems.map(({ path, label, icon: Icon }) => {
                   const active = isActive(path);
                   return (
-                    <Tooltip key={path} label={label}>
+                    <Tooltip collapsed={collapsed} key={path} label={label}>
                       <button onClick={() => handleAdminNav(path)}
-                        className={`${navBtnClass(active, 'yellow')} ${collapsed ? '' : 'pl-6'} opacity-75 hover:opacity-100`}
+                        className={`${navBtnClass(active)} ${collapsed ? '' : 'pl-6'}`}
+                        aria-label={collapsed ? label : undefined} aria-current={active ? 'page' : undefined}
                       >
-                        <Icon className={iconCls(active, 'yellow')} />
-                        {!collapsed && <span className="flex-1 text-left truncate text-[12px]">{label}</span>}
+                        <Icon className={iconCls(active)} aria-hidden="true" />
+                        {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
                       </button>
                     </Tooltip>
                   );
@@ -550,131 +580,134 @@ export default function Navbar() {
             )}
           </div>
         </nav>
+        </div>
 
-        {/* Collapse toggle — more visible with rotation animation */}
-        <div className="hidden lg:block px-2 py-2 border-t border-white/[0.06]">
+        {/* Collapse toggle (44 px ; nom accessible en mode replié, où le libellé disparaît) */}
+        <div className="hidden lg:block px-2 py-2 short:py-1 border-t border-white/[0.06]">
           <button onClick={toggleCollapse}
-            className={`group/col w-full flex items-center gap-2 px-3 py-2 rounded-lg
-              text-slate-400 hover:text-white hover:bg-brand-500/10
-              ring-1 ring-transparent hover:ring-brand-500/30
-              transition-all duration-200 ease-out text-xs
+            type="button"
+            className={`group/col w-full min-h-11 flex items-center gap-3 px-3 py-2 rounded-lg
+              text-slate-400 hover:text-white hover:bg-white/[0.06]
+              transition-colors duration-150 ease-out text-xs font-medium ${FOCUS_DARK}
               ${collapsed ? 'justify-center' : ''}`}
             title={collapsed ? 'Ouvrir la barre' : 'Réduire la barre'}
+            aria-label={collapsed ? 'Ouvrir la barre' : undefined}
+            aria-expanded={!collapsed}
           >
             <PanelLeftClose
-              className={`w-4 h-4 transition-transform duration-300 ease-out
-                group-hover/col:text-brand-300
+              className={`w-5 h-5 shrink-0 transition-transform duration-200 ease-out
                 ${collapsed ? 'rotate-180' : 'rotate-0'}`}
+              aria-hidden="true"
             />
-            {!collapsed && <span className="font-medium">Réduire</span>}
+            {!collapsed && <span>Réduire</span>}
           </button>
         </div>
 
         {/* Admin mode badge */}
         {isAdminMode && !collapsed && (
-          <div className="flex items-center gap-2 mx-2 mb-1 px-2.5 py-1.5 rounded-lg
+          <div className="flex items-center gap-2 mx-2 mb-1 pl-3 pr-1 py-1 rounded-lg
             bg-red-500/10 border border-red-500/20">
-            <Unlock className="w-3 h-3 text-red-400 shrink-0" />
-            <span className="text-red-300 text-[11px] font-semibold flex-1">Mode Admin</span>
-            <button onClick={lockAdmin}
-              className="text-slate-500 hover:text-red-300 text-[10px] underline underline-offset-2 transition-colors">
+            <Unlock className="w-4 h-4 text-red-300 shrink-0" aria-hidden="true" />
+            <span className="text-red-200 text-xs font-semibold flex-1">Mode Admin</span>
+            <button onClick={lockAdmin} type="button"
+              className={`min-h-11 px-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 text-xs font-medium underline underline-offset-2 transition-colors ${FOCUS_DARK}`}>
               Verrouiller
             </button>
           </div>
         )}
         {isAdminMode && collapsed && (
           <div className="flex justify-center px-2 pb-1">
-            <Tooltip label="Verrouiller admin">
-              <button onClick={lockAdmin}
-                className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
-                <Unlock className="w-3.5 h-3.5 text-red-400" />
+            <Tooltip collapsed={collapsed} label="Verrouiller admin">
+              <button onClick={lockAdmin} type="button" aria-label="Verrouiller le mode admin"
+                className={`w-10 h-10 flex items-center justify-center rounded-lg text-red-300 hover:bg-red-500/10 transition-colors ${FOCUS_DARK}`}>
+                <Unlock className="w-5 h-5" aria-hidden="true" />
               </button>
             </Tooltip>
           </div>
         )}
 
-        {/* User section — avatar + name truncated, polished actions */}
-        <div className="px-2 py-3 border-t border-white/[0.06] shrink-0 bg-slate-900">
+        {/* User section — avatar + name truncated, polished actions.
+            Écran bas (short:) : une seule ligne, avatar + nom + deux boutons icône 44 px (libellés en sr-only). */}
+        <div className="px-2 py-3 short:py-2 border-t border-white/[0.06] shrink-0 bg-slate-900">
           {collapsed ? (
-            <div className="flex flex-col items-center gap-1.5">
-              <Tooltip label={user.utilisateur || 'Utilisateur'}>
+            <div className="flex flex-col items-center gap-1">
+              <Tooltip collapsed={collapsed} label={user.utilisateur || 'Utilisateur'}>
                 <div className="relative w-9 h-9 rounded-full
                   bg-gradient-to-br from-brand-500 to-brand-700
-                  flex items-center justify-center
-                  ring-2 ring-brand-500/20
-                  shadow-[0_2px_10px_rgba(124,58,237,0.3)]">
+                  flex items-center justify-center shadow-xs">
                   <span className="text-white font-bold text-sm">
                     {user.utilisateur?.charAt(0)?.toUpperCase()}
                   </span>
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" aria-hidden="true" />
                 </div>
               </Tooltip>
-              <Tooltip label="Changer d'utilisateur">
-                <button onClick={handleSwitchUser}
-                  className="p-2 rounded-lg text-slate-500 hover:text-brand-300 hover:bg-white/5 transition-all duration-150">
-                  <RefreshCw className="w-4 h-4 transition-transform hover:rotate-180 duration-500" />
+              <Tooltip collapsed={collapsed} label="Changer d'utilisateur">
+                <button onClick={handleSwitchUser} type="button" aria-label="Changer d'utilisateur"
+                  className={`group/sw w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 ${FOCUS_DARK}`}>
+                  <RefreshCw className="w-5 h-5 transition-transform duration-300 motion-safe:group-hover/sw:rotate-180" aria-hidden="true" />
                 </button>
               </Tooltip>
-              <Tooltip label="Déconnexion">
-                <button onClick={() => { logout(); navigate('/'); }}
-                  className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all duration-150">
-                  <LogOut className="w-4 h-4" />
+              <Tooltip collapsed={collapsed} label="Déconnexion">
+                <button onClick={() => { logout(); navigate('/'); }} type="button" aria-label="Déconnexion"
+                  className={`w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-300 hover:bg-red-500/10 transition-colors duration-150 ${FOCUS_DARK}`}>
+                  <LogOut className="w-5 h-5" aria-hidden="true" />
                 </button>
               </Tooltip>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 px-2 py-2 rounded-lg
-                bg-white/[0.02] hover:bg-white/[0.04] transition-colors duration-150">
+            <div className="space-y-2 short:space-y-0 short:flex short:items-center short:gap-1">
+              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.03] short:flex-1 short:min-w-0 short:gap-2 short:px-1.5 short:py-1">
                 <div className="relative w-9 h-9 rounded-full shrink-0
                   bg-gradient-to-br from-brand-500 to-brand-700
-                  flex items-center justify-center
-                  ring-2 ring-brand-500/20
-                  shadow-[0_2px_10px_rgba(124,58,237,0.3)]">
+                  flex items-center justify-center shadow-xs">
                   <span className="text-white font-bold text-sm">
                     {user.utilisateur?.charAt(0)?.toUpperCase()}
                   </span>
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full ring-2 ring-slate-900" aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold text-white truncate leading-tight">
                     {user.utilisateur}
                   </p>
-                  <p className="text-[11px] text-slate-400 capitalize truncate leading-tight mt-0.5">
+                  <p className="text-xs text-slate-400 capitalize truncate leading-tight mt-0.5">
                     {user.target}{user.role ? ` · ${user.role}` : ''}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button onClick={handleSwitchUser}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                    text-[11px] font-medium text-slate-400 hover:text-brand-300 hover:bg-brand-500/10
-                    transition-all duration-150">
-                  <RefreshCw className="w-3 h-3" /> Changer
+              <div className="flex gap-1 short:shrink-0">
+                <button onClick={handleSwitchUser} type="button"
+                  className={`group/sw flex-1 min-h-11 flex items-center justify-center gap-1.5 px-2 rounded-lg
+                    short:flex-none short:w-11 short:px-0
+                    text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.06]
+                    transition-colors duration-150 ${FOCUS_DARK}`}>
+                  <RefreshCw className="w-4 h-4 shrink-0 transition-transform duration-300 motion-safe:group-hover/sw:rotate-180" aria-hidden="true" />
+                  <span className="short:sr-only">Changer</span>
                 </button>
-                <button onClick={() => { logout(); navigate('/'); }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                    text-[11px] font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-500/10
-                    transition-all duration-150">
-                  <LogOut className="w-3 h-3" /> Déconnexion
+                <button onClick={() => { logout(); navigate('/'); }} type="button"
+                  className={`flex-1 min-h-11 flex items-center justify-center gap-1.5 px-2 rounded-lg
+                    short:flex-none short:w-11 short:px-0
+                    text-xs font-medium text-slate-400 hover:text-red-300 hover:bg-red-500/10
+                    transition-colors duration-150 ${FOCUS_DARK}`}>
+                  <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span className="short:sr-only">Déconnexion</span>
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer branding */}
+        {/* Footer branding (masqué sur écran bas : la place va aux entrées de menu) */}
         {!collapsed && (
-          <div className="text-center py-3 text-[10px] text-slate-500 border-t border-white/[0.03]">
+          <div className="short:hidden text-center py-3 px-2 text-xs text-slate-400 border-t border-white/[0.03]">
             Propulsé par{' '}
-            <span className="font-extrabold text-[11px]">
-              <span className="text-brand-500">Tk</span>
+            <span className="font-extrabold">
+              <span className="text-brand-400">Tk</span>
               <span className="text-slate-100">S</span>
-              <span className="text-pink-500">∞</span>
+              <span className="text-pink-400">∞</span>
               <span className="text-slate-100">26</span>
             </span>
             {' '}— une solution{' '}
-            <span className="font-bold text-brand-400">Klik&Dev</span>
+            <span className="font-bold text-brand-300">Klik&Dev</span>
           </div>
         )}
       </aside>

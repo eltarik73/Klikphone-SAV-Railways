@@ -64,17 +64,18 @@ export function analyserProbe(res) {
 
 const attendre = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Boutons du système (.btn-*) ; sur fond sombre, le principal est blanc (jamais d'ambre plein)
 const STYLES_SYNCHRO = {
   sombre: {
     texte: 'text-slate-300', faible: 'text-slate-400',
-    secondaire: 'bg-slate-800 text-slate-100 border border-slate-600 hover:bg-slate-700 focus-visible:ring-amber-400',
-    principal: 'bg-amber-500 text-slate-950 hover:bg-amber-400 focus-visible:ring-amber-300',
+    secondaire: 'btn border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 focus-visible:ring-white disabled:text-slate-500 disabled:hover:bg-slate-800',
+    principal: 'btn bg-white text-slate-900 hover:bg-slate-100 focus-visible:ring-white disabled:bg-slate-700 disabled:text-slate-400 disabled:hover:bg-slate-700',
     ok: 'text-emerald-300', ko: 'text-red-300',
   },
   clair: {
     texte: 'text-slate-700', faible: 'text-slate-600',
-    secondaire: 'bg-white text-slate-800 border border-slate-300 hover:bg-slate-50 focus-visible:ring-brand-500',
-    principal: 'bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-400',
+    secondaire: 'btn-secondary',
+    principal: 'btn-primary',
     ok: 'text-emerald-700', ko: 'text-red-700',
   },
 };
@@ -180,16 +181,16 @@ export function SynchroLcdPhone({ estAdmin = false, theme = 'clair', onTerminee,
       {estAdmin && (
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={tester} disabled={test.etat === 'encours' || enCours} aria-busy={test.etat === 'encours' || undefined}
-            className={`inline-flex items-center gap-2 min-h-[44px] px-4 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 ${st.secondaire}`}>
+            className={st.secondaire}>
             {test.etat === 'encours'
-              ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
-              : <PlugZap className="w-4 h-4" aria-hidden="true" />}
+              ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+              : <PlugZap aria-hidden="true" />}
             {test.etat === 'encours' ? 'Test en cours…' : 'Tester la connexion'}
           </button>
           <button type="button" onClick={synchroniser} disabled={enCours || test.etat !== 'ok'} aria-busy={enCours || undefined}
             aria-describedby={test.etat !== 'ok' ? aideId : undefined}
-            className={`inline-flex items-center gap-2 min-h-[44px] px-4 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 ${st.principal}`}>
-            <RefreshCw className={`w-4 h-4 ${enCours ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+            className={st.principal}>
+            <RefreshCw className={enCours ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
             {enCours ? 'Synchronisation…' : 'Synchroniser'}
           </button>
         </div>
@@ -199,7 +200,7 @@ export function SynchroLcdPhone({ estAdmin = false, theme = 'clair', onTerminee,
         {!enCours && statut?.ok === false && statut.erreur ? <span className={`block ${st.ko}`}>{statut.erreur}</span> : null}
       </p>
       {estAdmin && test.etat !== 'ok' && !enCours && (
-        <p id={aideId} className={`text-[11px] ${test.etat === 'ko' ? st.ko : st.faible}`}>
+        <p id={aideId} className={`text-xs ${test.etat === 'ko' ? st.ko : st.faible}`}>
           {test.etat === 'ko' ? test.message : 'Testez la connexion avant de synchroniser.'}
         </p>
       )}
@@ -218,13 +219,13 @@ const entier = (v) => {
 };
 const fr = (n) => (n === null ? '—' : n.toLocaleString('fr-FR'));
 
+// Tuiles blanches, valeur slate-900 : la couleur (attention / danger / marque) ne porte que sur l'icône
 const TONS = {
-  neutre: 'border-slate-200 bg-white',
-  orange: 'border-amber-300 bg-amber-50',
-  rouge: 'border-red-200 bg-red-50',
-  marque: 'border-brand-200 bg-brand-50',
+  neutre: 'bg-slate-100 text-slate-600',
+  orange: 'bg-amber-50 text-amber-800',
+  rouge: 'bg-red-50 text-red-700',
+  marque: 'bg-brand-50 text-brand-700',
 };
-const TONS_ICONE = { neutre: 'text-slate-600', orange: 'text-amber-800', rouge: 'text-red-700', marque: 'text-brand-700' };
 
 /** Réponse de GET /api/tarifs/sante → tuiles affichées (exportée pour les tests). */
 export function tuilesSante(d, basePath = '/accueil', maintenant = Date.now()) {
@@ -321,24 +322,24 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
   const tuiles = statut === 'pret' ? tuilesSante(data, basePath) : [];
 
   return (
-    <section aria-labelledby={titreId} className="mt-8 pt-6 border-t border-slate-200/70">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 id={titreId} className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-600">Santé des prix</h2>
+    <section aria-labelledby={titreId} className="mt-8 pt-6 border-t border-slate-200">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-3">
+        <h2 id={titreId} className="t-h2">Santé des prix</h2>
         {statut === 'pret' && (
-          <p className="text-[11px] text-slate-600">
+          <p className="t-caption">
             {data?.derniere_veille ? `Veille hebdomadaire du ${formatDateShort(data.derniere_veille)}` : 'Veille hebdomadaire : pas encore passée'}
           </p>
         )}
       </div>
       {statut === 'chargement' ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3" aria-hidden="true">
-          {Array.from({ length: 7 }).map((_, i) => <div key={i} className="h-[88px] rounded-xl bg-slate-100 motion-safe:animate-pulse" />)}
+          {Array.from({ length: 7 }).map((_, i) => <div key={i} className="skeleton h-[88px]" />)}
         </div>
       ) : statut === 'erreur' ? (
-        <div className="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
+        <div className="card flex flex-wrap items-center gap-3 px-4 py-3">
           <p className="text-sm text-slate-700">Santé des prix indisponible pour le moment.</p>
-          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-[44px] text-xs">
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </div>
       ) : (
@@ -346,13 +347,15 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
           {tuiles.map(({ cle, icone: Icone, valeur, titre, detail, lien, ton, aria, badge }) => (
             <li key={cle}>
               <Link to={lien} aria-label={aria}
-                className={`relative flex flex-col h-full min-h-[88px] px-3 py-2.5 rounded-xl border transition-colors hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${TONS[ton] || TONS.neutre}`}>
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                  <Icone className={`w-3.5 h-3.5 shrink-0 ${TONS_ICONE[ton] || TONS_ICONE.neutre}`} aria-hidden="true" />
-                  <span className="truncate">{titre}</span>
+                className="card relative flex flex-col h-full min-h-[88px] p-3 transition-colors duration-150 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">
+                <span className="flex items-center gap-2 text-xs font-semibold leading-tight text-slate-700">
+                  <span className={`flex w-7 h-7 shrink-0 items-center justify-center rounded-lg ${TONS[ton] || TONS.neutre}`} aria-hidden="true">
+                    <Icone className="w-4 h-4" />
+                  </span>
+                  <span className="min-w-0">{titre}</span>
                 </span>
-                <span className="mt-1 text-lg font-bold text-slate-900 tracking-tight">{valeur}</span>
-                <span className="text-[11px] text-slate-600 truncate">{detail}</span>
+                <span className="mt-1.5 kpi-value text-xl">{valeur}</span>
+                <span className="mt-1 t-caption truncate">{detail}</span>
                 {badge && (
                   <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-brand-600 ring-2 ring-white" aria-hidden="true" />
                 )}

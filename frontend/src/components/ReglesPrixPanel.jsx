@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Calculator, CheckCircle2, History, Loader2, PackagePlus, RotateCcw, SlidersHorizontal, Undo2,
+  AlertTriangle, Calculator, CheckCircle2, ChevronRight, History, Loader2, PackagePlus, RotateCcw, SlidersHorizontal, Undo2,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from './Toast';
@@ -213,10 +213,10 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
   const note = ajustement && modifies ? noteEffet({ resultat, ajustement, surAchat }) : null;
   return (
     <section aria-label={titre} className="mt-4">
-      <h3 className="text-sm font-bold text-slate-800 mb-2">{titre}</h3>
+      <h3 className="t-h3 mb-2">{titre}</h3>
       {ajustement && modifies > 0 && (
-        <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-violet-950" role="status">
-          <p className="text-base font-bold">
+        <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-brand-800" role="status">
+          <p className="text-sm font-semibold">
             Vous demandez {texteAjustement(ajustement)}{surAchat ? ' sur le prix d’achat HT' : ''}. Effet réel sur le prix
             client : {pourcent(resultat.variation_moy_pct)} en moyenne ({ecartEuros(resultat.variation_moy)}),
             de {ecartEuros(resultat.variation_min)} à {ecartEuros(resultat.variation_max)}.
@@ -226,53 +226,53 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
       )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" role="status">
         {tuiles.map((t) => (
-          <div key={t.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{t.label}</div>
-            <div className={`text-xl font-extrabold tabular-nums ${t.ton}`}>{t.valeur}</div>
-            {t.detail && <div className="text-xs text-slate-600">{t.detail}</div>}
+          <div key={t.label} className="card-section px-3 py-2">
+            <div className="t-caption">{t.label}</div>
+            <div className={`text-xl font-semibold tabular-nums leading-tight ${t.ton}`}>{t.valeur}</div>
+            {t.detail && <div className="t-caption">{t.detail}</div>}
           </div>
         ))}
       </div>
       {modifies === 0 ? (
         <p className="mt-3 text-sm text-slate-700">Aucun prix ne changerait avec ces réglages.</p>
       ) : ecarts.length > 0 && (
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
-          <table className="w-full text-sm">
-            <caption className="text-left text-xs font-semibold text-slate-600 px-3 py-2 bg-white">
+        <div className="table-wrap mt-3">
+          <table className="table table-dense">
+            <caption className="text-left t-caption px-4 py-2 bg-white">
               Les {ecarts.length} plus gros écarts de prix client
             </caption>
-            <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+            <thead className="bg-slate-50">
               <tr>
-                <th scope="col" className="px-3 py-2 text-left">Prix</th>
-                {avecHt && <th scope="col" className="px-3 py-2 text-right">Achat HT</th>}
-                <th scope="col" className="px-3 py-2 text-right">Prix client avant</th>
-                <th scope="col" className="px-3 py-2 text-right">Après</th>
-                <th scope="col" className="px-3 py-2 text-right">Écart</th>
+                <th scope="col" className="table-header">Prix</th>
+                {avecHt && <th scope="col" className="table-header text-right">Achat HT</th>}
+                <th scope="col" className="table-header text-right">Prix client avant</th>
+                <th scope="col" className="table-header text-right">Après</th>
+                <th scope="col" className="table-header text-right">Écart</th>
               </tr>
             </thead>
             <tbody>
               {ecarts.map((e, i) => {
                 const alerte = texteAlerte(e.alerte, e.alertes);
                 return (
-                  <tr key={e.cle || i} className={`border-t border-slate-100 ${alerte ? 'bg-amber-50' : ''}`}>
-                    <td className="px-3 py-2">
-                      <span className="font-medium">{e.label || e.cle}</span>
+                  <tr key={e.cle || i} className={`table-row ${alerte ? 'bg-amber-50 hover:bg-amber-50' : ''}`}>
+                    <td>
+                      <span className="font-medium text-slate-900">{e.label || e.cle}</span>
                       {alerte && (
-                        <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                        <span className="badge badge-sm badge-warning ml-2">
                           <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {alerte}
                         </span>
                       )}
                     </td>
                     {avecHt && (
-                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-slate-700">
+                      <td className="text-right tabular-nums whitespace-nowrap text-slate-700">
                         {e.ancien_ht != null && e.nouveau_ht != null && Number(e.ancien_ht) !== Number(e.nouveau_ht)
                           ? <>{euros(e.ancien_ht)} → {euros(e.nouveau_ht)}</>
                           : euros(e.nouveau_ht ?? e.ancien_ht)}
                       </td>
                     )}
-                    <td className="px-3 py-2 text-right tabular-nums text-slate-600">{euros(e.ancien)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{euros(e.nouveau)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                    <td className="text-right tabular-nums text-slate-500">{euros(e.ancien)}</td>
+                    <td className="table-cell-num">{euros(e.nouveau)}</td>
+                    <td className="text-right tabular-nums whitespace-nowrap">
                       {Number(e.ancien ?? 0) === Number(e.nouveau) ? 'inchangé' : variationTexte(e.ancien, e.nouveau)}
                     </td>
                   </tr>
@@ -283,7 +283,7 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
         </div>
       )}
       {verrouillesListe.length > 0 && (
-        <details className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+        <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           <summary className="cursor-pointer min-h-[44px] flex items-center font-semibold">
             Voir les {resultat.verrouilles} prix verrouillés (non modifiés)
           </summary>
@@ -322,14 +322,14 @@ export function ResultatApplication({ resultat, sensible, onAnnule }) {
     }
   }
   return (
-    <div role="status" className={`mt-4 rounded-xl border p-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-400 bg-amber-50 text-amber-950' : annule ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+    <div role="status" className={`mt-4 rounded-lg border px-4 py-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
       <p className="font-semibold flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
         {annule ? (annule.ton === 'warning' ? annule.texte : 'Changement annulé.') : `${n} prix mis à jour.`}
         {!annule && Number(resultat.verrouilles) > 0 && ` ${resultat.verrouilles} prix verrouillés n’ont pas bougé.`}
       </p>
       {!annule && verrouillesListe.length > 0 && (
-        <details className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1 text-amber-950">
+        <details className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
           <summary className="cursor-pointer min-h-[44px] flex items-center font-semibold">
             {`Lignes verrouillées, non modifiées (${Math.max(verrouillesListe.length, Number(resultat.verrouilles) || 0)})`}
           </summary>
@@ -343,9 +343,9 @@ export function ResultatApplication({ resultat, sensible, onAnnule }) {
           type="button"
           onClick={annuler}
           disabled={annulation}
-          className="mt-2 min-h-[44px] px-3 rounded-lg border border-emerald-400 bg-white font-semibold text-emerald-900 hover:bg-emerald-100 inline-flex items-center gap-2 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+          className="btn-secondary btn-sm mt-2"
         >
-          {annulation ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Undo2 className="w-4 h-4" aria-hidden="true" />}
+          {annulation ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}
           Annuler ce changement
         </button>
       )}
@@ -405,13 +405,13 @@ function ConfirmationAlertes({ alertes, confirme, onConfirme }) {
   const id = useId();
   if (!(alertes > 0)) return null;
   return (
-    <label htmlFor={id} className="flex items-start gap-3 min-h-[44px] rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 cursor-pointer">
+    <label htmlFor={id} className="callout callout-warning items-start min-h-[44px] cursor-pointer">
       <input
         id={id}
         type="checkbox"
         checked={!!confirme}
         onChange={(e) => onConfirme(e.target.checked)}
-        className="mt-0.5 w-5 h-5 shrink-0 accent-amber-700"
+        className="checkbox mt-0.5 accent-amber-700"
       />
       <span>
         <strong>{alertes} prix signalé{alertes > 1 ? 's' : ''}</strong> (grosse variation ou marge trop faible, surlignés dans l’aperçu) :
@@ -434,16 +434,16 @@ function BoutonsSimulation({ pret, simulationValide, occupe, onSimuler, onAppliq
       {aConfirmer && <ConfirmationAlertes alertes={alertes} confirme={confirme} onConfirme={onConfirme} />}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         {erreur && <p role="alert" className="text-sm font-semibold text-red-700 sm:mr-auto">{erreur}</p>}
-        {!erreur && !simulationValide && <p className="text-sm text-slate-600 sm:mr-auto">Simulez d’abord : rien n’est modifié tant que vous n’appliquez pas.</p>}
+        {!erreur && !simulationValide && <p className="text-sm text-slate-500 sm:mr-auto">Simulez d’abord : rien n’est modifié tant que vous n’appliquez pas.</p>}
         {!erreur && simulationValide && <p className="text-sm text-slate-700 sm:mr-auto">{rien ? 'Rien à appliquer.' : 'Vérifiez l’aperçu, puis appliquez.'}</p>}
         <div className="flex gap-2 sm:ml-auto">
           <button
             type="button"
             onClick={onSimuler}
             disabled={!pret || !!occupe}
-            className="flex-1 sm:flex-none min-h-[44px] px-4 rounded-lg border border-violet-300 bg-white text-violet-800 font-semibold hover:bg-violet-50 inline-flex items-center justify-center gap-2 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            className="btn-secondary flex-1 sm:flex-none"
           >
-            {occupe === 'simuler' ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Calculator className="w-4 h-4" aria-hidden="true" />}
+            {occupe === 'simuler' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Calculator aria-hidden="true" />}
             Simuler
           </button>
           <button
@@ -451,9 +451,9 @@ function BoutonsSimulation({ pret, simulationValide, occupe, onSimuler, onAppliq
             onClick={onAppliquer}
             disabled={bloque}
             aria-describedby={aide ? idAide : undefined}
-            className="flex-1 sm:flex-none min-h-[44px] px-4 py-1.5 rounded-lg bg-violet-700 text-white font-semibold text-center hover:bg-violet-800 inline-flex items-center justify-center gap-2 disabled:bg-slate-300 disabled:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+            className="btn-primary flex-1 sm:flex-none"
           >
-            {occupe === 'appliquer' && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+            {occupe === 'appliquer' && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
             {simulationValide && libelleAppliquer ? libelleAppliquer : 'Appliquer'}
           </button>
           {aide && <span id={idAide} className="sr-only">{aide}</span>}
@@ -476,10 +476,10 @@ function libelleApplication(resultat, { surAchat = false, clientsEstimes = null 
 function ChampAjustement({ type, valeur, onType, onValeur, idBase, surAchat = false }) {
   const raccourcis = [-5, 5, 10];
   return (
-    <fieldset className="rounded-xl border border-slate-200 p-3">
-      <legend className="px-1 text-sm font-bold text-slate-800">Ajustement</legend>
+    <fieldset className="rounded-lg border border-slate-200 p-4">
+      <legend className="px-1 t-label">Ajustement</legend>
       <div className="flex flex-wrap items-end gap-3">
-        <div role="radiogroup" aria-label="Type d’ajustement" className="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+        <div role="radiogroup" aria-label="Type d’ajustement" className="segmented">
           {[['pct', 'En %'], ['eur', 'En €']].map(([v, l]) => (
             <button
               key={v}
@@ -487,14 +487,14 @@ function ChampAjustement({ type, valeur, onType, onValeur, idBase, surAchat = fa
               role="radio"
               aria-checked={type === v}
               onClick={() => onType(v)}
-              className={`min-h-[44px] px-4 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${type === v ? 'bg-violet-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+              className={`segmented-item ${type === v ? 'segmented-item-active' : ''}`}
             >
               {l}
             </button>
           ))}
         </div>
         <div>
-          <label htmlFor={`${idBase}-valeur`} className="block text-xs font-semibold text-slate-700 mb-1">
+          <label htmlFor={`${idBase}-valeur`} className="input-label">
             Valeur ({type === 'pct' ? '%' : '€'}, négative pour baisser)
           </label>
           <input
@@ -504,7 +504,7 @@ function ChampAjustement({ type, valeur, onType, onValeur, idBase, surAchat = fa
             value={valeur}
             onChange={(e) => onValeur(e.target.value)}
             placeholder={type === 'pct' ? 'ex. 5' : 'ex. 10'}
-            className="w-32 min-h-[44px] rounded-lg border border-slate-300 px-3 text-base font-semibold tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            className="input w-32 font-semibold tabular-nums"
           />
         </div>
         <div className="flex gap-1.5" aria-label="Raccourcis">
@@ -513,14 +513,14 @@ function ChampAjustement({ type, valeur, onType, onValeur, idBase, surAchat = fa
               key={r}
               type="button"
               onClick={() => onValeur(String(r))}
-              className="min-h-[44px] min-w-[52px] px-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+              className="btn-secondary min-w-[52px] px-2 tabular-nums"
             >
               {r > 0 ? '+' : '−'}{Math.abs(r)} {type === 'pct' ? '%' : '€'}
             </button>
           ))}
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-600">
+      <p className="input-help mt-2">
         {surAchat
           ? 'Le prix d’achat HT est ajusté, puis le prix client est recalculé (× TVA + marge) et arrondi au 9 : il bouge par paliers de 10 €.'
           : 'Les prix affichés sont arrondis au 9 : au-dessus pour une hausse (99 € + 5 % → 109 €), en dessous pour une baisse.'}
@@ -580,13 +580,13 @@ function OngletMarges({ sensible, onApplique }) {
 
   // Relecture après une application ou une annulation : le formulaire (et son bilan) reste affiché
   if (chargement && !saisie) {
-    return <p className="py-10 text-center text-sm text-slate-600 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />Chargement des règles…</p>;
+    return <p className="loading-inline py-10 justify-center w-full"><Loader2 aria-hidden="true" />Chargement des règles…</p>;
   }
   if (erreurChargement && !saisie) {
     return (
-      <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 flex flex-wrap items-center gap-2">
+      <div role="alert" className="callout callout-danger items-center">
         <span className="flex-1">{erreurChargement}</span>
-        <button type="button" onClick={charger} className="min-h-[44px] px-3 rounded-lg font-semibold hover:bg-red-100">Réessayer</button>
+        <button type="button" onClick={charger} className="btn-secondary btn-sm">Réessayer</button>
       </div>
     );
   }
@@ -595,8 +595,8 @@ function OngletMarges({ sensible, onApplique }) {
     const id = `regle-${c.id.replace('.', '-')}`;
     return (
       <div key={c.id}>
-        <label htmlFor={id} className="block text-sm font-semibold text-slate-800">{c.label}</label>
-        <div className="mt-1 flex items-center gap-2">
+        <label htmlFor={id} className="input-label">{c.label}</label>
+        <div className="flex items-center gap-2">
           <input
             id={id}
             type="text"
@@ -604,31 +604,31 @@ function OngletMarges({ sensible, onApplique }) {
             value={String(lire(saisie, c.id) ?? '')}
             onChange={(e) => { setSaisie((s) => ecrire(s, c.id, e.target.value)); }}
             aria-describedby={`${id}-aide`}
-            className="w-28 min-h-[44px] rounded-lg border border-slate-300 px-3 text-base font-semibold tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            className="input w-28 font-semibold tabular-nums"
           />
-          <span className="text-sm text-slate-600">{c.unite || unite}</span>
+          <span className="text-sm text-slate-500">{c.unite || unite}</span>
         </div>
-        <p id={`${id}-aide`} className="mt-0.5 text-xs text-slate-600">{c.aide}</p>
+        <p id={`${id}-aide`} className="input-help">{c.aide}</p>
       </div>
     );
   };
 
   return (
     <div>
-      <div className="rounded-xl bg-violet-50 border border-violet-200 px-3 py-2 text-sm text-violet-950">
+      <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
         <p className="font-semibold">Prix client = prix d’achat HT × {String((verif.regles || REGLES_DEFAUT).tva).replace('.', ',')} (TVA) + marge, arrondi au 9 supérieur.</p>
         <p className="mt-0.5">{exemple}</p>
       </div>
 
-      <fieldset className="mt-4">
-        <legend className="text-sm font-bold text-slate-900 mb-2">Marge ajoutée (main-d’œuvre comprise)</legend>
+      <fieldset className="mt-5">
+        <legend className="t-h3 mb-3">Marge ajoutée (main-d’œuvre comprise)</legend>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {CHAMPS_MARGE.map((c) => champ(c))}
         </div>
       </fieldset>
 
-      <details className="mt-4 rounded-xl border border-slate-200 p-3">
-        <summary className="cursor-pointer min-h-[44px] flex items-center text-sm font-bold text-slate-900">Seuils d’alerte</summary>
+      <details className="group mt-4 rounded-lg border border-slate-200 p-4">
+        <summary className="cursor-pointer min-h-[44px] flex items-center gap-1.5 t-h3 text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />Seuils d’alerte</summary>
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {CHAMPS_ALERTE.map((c) => champ(c, c.unite))}
         </div>
@@ -639,14 +639,14 @@ function OngletMarges({ sensible, onApplique }) {
           type="button"
           onClick={() => { setSaisie(fusionnerRegles(enregistrees)); sim.reinitialiser(); }}
           disabled={!modifiees}
-          className="min-h-[44px] px-3 rounded-lg border border-slate-300 text-sm font-semibold text-slate-800 hover:bg-slate-50 inline-flex items-center gap-1.5 disabled:opacity-50"
+          className="btn-secondary"
         >
-          <RotateCcw className="w-4 h-4" aria-hidden="true" /> Revenir aux règles enregistrées
+          <RotateCcw aria-hidden="true" /> Revenir aux règles enregistrées
         </button>
         <button
           type="button"
           onClick={() => { setSaisie(fusionnerRegles(REGLES_DEFAUT)); sim.reinitialiser(); toast.info('Valeurs d’origine remises : simulez pour voir l’effet.'); }}
-          className="min-h-[44px] px-3 rounded-lg border border-slate-300 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+          className="btn-ghost"
         >
           Valeurs d’origine
         </button>
@@ -733,18 +733,18 @@ function OngletAjustement({ sensible, onApplique, tarifs = AUCUNE_LIGNE, appleDe
     return compterPrixClientLocal({ cible, lignes: concernes, ajustement: charge.ajustement, typePiece, regles });
   }, [resultat, regles, cible, concernes, typePiece]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectClasses = 'w-full min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500';
+  const selectClasses = 'select';
 
   return (
     <div>
-      <p className="text-sm text-slate-700">
+      <p className="t-body">
         Pour suivre une hausse ou une baisse générale du fournisseur : l’ajustement s’applique au prix d’achat HT,
         puis le prix client est recalculé avec vos marges. Les prix verrouillés ne bougent jamais.
       </p>
 
-      <fieldset className="mt-4 rounded-xl border border-slate-200 p-3">
-        <legend className="px-1 text-sm font-bold text-slate-800">Prix concernés</legend>
-        <div role="radiogroup" aria-label="Catalogue" className="inline-flex rounded-lg border border-slate-300 overflow-hidden mb-3">
+      <fieldset className="mt-4 rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 t-label">Prix concernés</legend>
+        <div role="radiogroup" aria-label="Catalogue" className="segmented mb-3">
           {[['tarifs', 'Pièces téléphones'], ['tarifs_apple_devices', 'iPad / MacBook']].map(([v, l]) => (
             <button
               key={v}
@@ -752,16 +752,16 @@ function OngletAjustement({ sensible, onApplique, tarifs = AUCUNE_LIGNE, appleDe
               role="radio"
               aria-checked={cible === v}
               onClick={() => { setCible(v); setMarque(''); setModele(''); setTypePiece(''); }}
-              className={`min-h-[44px] px-4 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${cible === v ? 'bg-violet-700 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+              className={`segmented-item ${cible === v ? 'segmented-item-active' : ''}`}
             >
               {l}
             </button>
           ))}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {cible === 'tarifs' && (
             <div>
-              <label htmlFor="ajust-marque" className="block text-xs font-semibold text-slate-700 mb-1">Marque</label>
+              <label htmlFor="ajust-marque" className="input-label">Marque</label>
               <select id="ajust-marque" value={marque} onChange={(e) => { setMarque(e.target.value); setModele(''); }} className={selectClasses}>
                 <option value="">Toutes les marques</option>
                 {marques.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -769,14 +769,14 @@ function OngletAjustement({ sensible, onApplique, tarifs = AUCUNE_LIGNE, appleDe
             </div>
           )}
           <div>
-            <label htmlFor="ajust-modele" className="block text-xs font-semibold text-slate-700 mb-1">Modèle</label>
+            <label htmlFor="ajust-modele" className="input-label">Modèle</label>
             <select id="ajust-modele" value={modele} onChange={(e) => setModele(e.target.value)} className={selectClasses}>
               <option value="">Tous les modèles</option>
               {modeles.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           <div>
-            <label htmlFor="ajust-type" className="block text-xs font-semibold text-slate-700 mb-1">Pièce</label>
+            <label htmlFor="ajust-type" className="input-label">Pièce</label>
             <select id="ajust-type" value={typePiece} onChange={(e) => setTypePiece(e.target.value)} className={selectClasses}>
               <option value="">Toutes les pièces</option>
               {typesPiece.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -832,7 +832,7 @@ export default function ReglesPrixPanel({ open, onClose, sensible = SANS_ELEVATI
       icone={SlidersHorizontal}
       largeur="max-w-5xl"
     >
-      <div role="tablist" aria-label="Règles de prix" className="flex gap-1 border-b border-slate-200 mb-4">
+      <div role="tablist" aria-label="Règles de prix" className="page-tabs mb-4">
         {onglets.map(([v, l]) => (
           <button
             key={v}
@@ -844,7 +844,7 @@ export default function ReglesPrixPanel({ open, onClose, sensible = SANS_ELEVATI
             tabIndex={onglet === v ? 0 : -1}
             onClick={() => setOnglet(v)}
             onKeyDown={(e) => clavierOnglets(e, onglets.map(([c]) => c), onglet, setOnglet)}
-            className={`min-h-[44px] px-4 text-sm font-semibold border-b-2 -mb-px focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${onglet === v ? 'border-violet-700 text-violet-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+            className={`page-tab ${onglet === v ? 'page-tab-active' : ''}`}
           >
             {l}
           </button>
@@ -929,20 +929,20 @@ export function FenetreRecalcul({ open, onClose, sensible = SANS_ELEVATION, onAp
   const fait = execution.resultat;
   const pied = fait ? (
     <div className="flex justify-end">
-      <button type="button" onClick={onClose} disabled={execution.enCours} className="min-h-[44px] px-4 rounded-lg bg-violet-700 text-white font-semibold hover:bg-violet-800 disabled:opacity-60">Fermer</button>
+      <button type="button" onClick={onClose} disabled={execution.enCours} className="btn-primary">Fermer</button>
     </div>
   ) : (
     <div className="space-y-2">
       {resultat && alertes > 0 && modifies > 0 && <ConfirmationAlertes alertes={alertes} confirme={confirme} onConfirme={setConfirme} />}
       <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-        <button type="button" onClick={onClose} disabled={execution.enCours} className="min-h-[44px] px-4 rounded-lg border border-slate-300 bg-white font-semibold hover:bg-slate-50">Annuler</button>
+        <button type="button" onClick={onClose} disabled={execution.enCours} className="btn-ghost">Annuler</button>
         <button
           type="button"
           onClick={recalculer}
           disabled={!pretARecalculer}
-          className="min-h-[44px] px-4 rounded-lg bg-violet-700 text-white font-semibold hover:bg-violet-800 inline-flex items-center justify-center gap-2 disabled:bg-slate-300 disabled:text-slate-600"
+          className="btn-primary"
         >
-          {execution.enCours && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+          {execution.enCours && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
           {resultat ? (modifies > 0 ? `Recalculer (${modifies} prix)` : 'Rien à recalculer') : 'Recalculer'}
         </button>
       </div>
@@ -961,7 +961,7 @@ export function FenetreRecalcul({ open, onClose, sensible = SANS_ELEVATION, onAp
       pied={pied}
     >
       {fait ? (
-        <div role="status" className={`rounded-xl border p-3 text-sm ${execution.annule?.ton === 'warning' ? 'border-amber-400 bg-amber-50 text-amber-950' : execution.annule ? 'border-slate-300 bg-slate-50 text-slate-900' : 'border-emerald-300 bg-emerald-50 text-emerald-950'}`}>
+        <div role="status" className={`rounded-lg border px-4 py-3 text-sm ${execution.annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : execution.annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
           <p className="font-semibold">{execution.annule ? (execution.annule.ton === 'warning' ? execution.annule.texte : 'Recalcul annulé.') : 'Recalcul terminé.'}</p>
           {!execution.annule && (
             <ul className="mt-1 space-y-0.5">
@@ -975,8 +975,8 @@ export function FenetreRecalcul({ open, onClose, sensible = SANS_ELEVATION, onAp
           )}
           {!execution.annule && fait.lot_id && (
             <button type="button" onClick={annulerRecalcul} disabled={execution.enCours}
-              className="mt-2 min-h-[44px] px-3 rounded-lg border border-emerald-400 bg-white font-semibold text-emerald-900 hover:bg-emerald-100 inline-flex items-center gap-2 disabled:opacity-60">
-              {execution.enCours ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <History className="w-4 h-4" aria-hidden="true" />}
+              className="btn-secondary btn-sm mt-2">
+              {execution.enCours ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <History aria-hidden="true" />}
               Annuler ce recalcul
             </button>
           )}
@@ -988,19 +988,19 @@ export function FenetreRecalcul({ open, onClose, sensible = SANS_ELEVATION, onAp
             <li>Les prix verrouillés et les pièces sans prix d’achat ne bougent pas ; les tickets déjà créés gardent leur prix.</li>
           </ul>
           {apercu.chargement && (
-            <p role="status" className="mt-4 py-6 text-center text-sm text-slate-600 flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> Calcul de l’aperçu…
+            <p role="status" className="loading-inline mt-4 py-6 justify-center w-full">
+              <Loader2 aria-hidden="true" /> Calcul de l’aperçu…
             </p>
           )}
           {apercu.erreur && (
-            <div role="alert" className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 flex flex-wrap items-center gap-2">
+            <div role="alert" className="callout callout-danger items-center mt-4">
               <span className="flex-1">{apercu.erreur}</span>
-              <button type="button" onClick={simuler} className="min-h-[44px] px-3 rounded-lg font-semibold hover:bg-red-100">Réessayer</button>
+              <button type="button" onClick={simuler} className="btn-secondary btn-sm">Réessayer</button>
             </div>
           )}
           {resultat && <ApercuSimulation resultat={resultat} titre="Ce que le recalcul changerait" />}
           {resultat && modifies === 0 && (
-            <p className="mt-2 text-sm font-semibold text-emerald-900">Tous les prix client suivent déjà les règles : rien à recalculer.</p>
+            <p className="mt-2 text-sm font-semibold text-emerald-700">Tous les prix client suivent déjà les règles : rien à recalculer.</p>
           )}
         </div>
       )}
@@ -1101,17 +1101,17 @@ export function AjoutPiecePrix({ open, onClose, sensible = SANS_ELEVATION, regle
     }
   }
 
-  const champ = 'mt-1 w-full min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500';
+  const champ = 'input';
   const pied = (
     <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-      <button type="button" onClick={onClose} disabled={envoi} className="min-h-[44px] px-4 rounded-lg border border-slate-300 bg-white font-semibold hover:bg-slate-50">Annuler</button>
+      <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost">Annuler</button>
       <button
         type="button"
         onClick={enregistrer}
         disabled={!!erreurSaisie || envoi}
-        className="min-h-[44px] px-4 rounded-lg bg-violet-700 text-white font-semibold hover:bg-violet-800 inline-flex items-center justify-center gap-2 disabled:bg-slate-300 disabled:text-slate-600"
+        className="btn-primary"
       >
-        {envoi && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+        {envoi && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
         Ajouter la pièce
       </button>
     </div>
@@ -1131,49 +1131,49 @@ export function AjoutPiecePrix({ open, onClose, sensible = SANS_ELEVATION, regle
       <form id={`${idBase}-form`} onSubmit={enregistrer} className="space-y-4" noValidate>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label htmlFor={`${idBase}-marque`} className="block text-sm font-semibold text-slate-800">Marque</label>
+            <label htmlFor={`${idBase}-marque`} className="input-label">Marque</label>
             <input id={`${idBase}-marque`} type="text" list={`${idBase}-marques`} value={form.marque} onChange={maj('marque')} maxLength={50} className={champ} autoComplete="off" />
             <datalist id={`${idBase}-marques`}>{marques.map((m) => <option key={m} value={m} />)}</datalist>
           </div>
           <div>
-            <label htmlFor={`${idBase}-modele`} className="block text-sm font-semibold text-slate-800">Modèle</label>
+            <label htmlFor={`${idBase}-modele`} className="input-label">Modèle</label>
             <input id={`${idBase}-modele`} type="text" value={form.modele} onChange={maj('modele')} maxLength={100} placeholder="ex. Galaxy A12" className={champ} autoComplete="off" />
           </div>
           <div>
-            <label htmlFor={`${idBase}-type`} className="block text-sm font-semibold text-slate-800">Pièce</label>
+            <label htmlFor={`${idBase}-type`} className="input-label">Pièce</label>
             <input id={`${idBase}-type`} type="text" list={`${idBase}-types`} value={form.type_piece} onChange={maj('type_piece')} maxLength={50} className={champ} autoComplete="off" />
             <datalist id={`${idBase}-types`}>{types.map((t) => <option key={t} value={t} />)}</datalist>
           </div>
           <div>
-            <label htmlFor={`${idBase}-qualite`} className="block text-sm font-semibold text-slate-800">Qualité <span className="font-normal text-slate-600">(facultatif)</span></label>
+            <label htmlFor={`${idBase}-qualite`} className="input-label">Qualité <span className="font-normal text-slate-500">(facultatif)</span></label>
             <input id={`${idBase}-qualite`} type="text" list={`${idBase}-qualites`} value={form.qualite} onChange={maj('qualite')} maxLength={50} className={champ} autoComplete="off" />
             <datalist id={`${idBase}-qualites`}>{QUALITES_SAISIE.map((q) => <option key={q} value={q} />)}</datalist>
           </div>
           {ecran && (
             <div>
-              <label htmlFor={`${idBase}-categorie`} className="block text-sm font-semibold text-slate-800">Catégorie d’écran</label>
-              <select id={`${idBase}-categorie`} value={form.categorie} onChange={maj('categorie')} className={champ}>
+              <label htmlFor={`${idBase}-categorie`} className="input-label">Catégorie d’écran</label>
+              <select id={`${idBase}-categorie`} value={form.categorie} onChange={maj('categorie')} className="select">
                 {CATEGORIES_ECRAN.map(([v, l]) => <option key={v} value={v}>{reglesConnues ? `${l} (marge ${r.ecran[v]} €)` : l}</option>)}
               </select>
             </div>
           )}
         </div>
 
-        <fieldset className="rounded-xl border border-slate-200 p-3">
-          <legend className="px-1 text-sm font-bold text-slate-800">Prix</legend>
+        <fieldset className="rounded-lg border border-slate-200 p-4">
+          <legend className="px-1 t-label">Prix</legend>
           <div className="flex flex-wrap gap-2">
             {[['ht', 'Prix d’achat HT (prix client calculé)'], ['client', 'Prix client fixé à la main']].map(([v, l]) => (
-              <label key={v} className={`min-h-[44px] px-3 rounded-lg border inline-flex items-center gap-2 text-sm font-semibold cursor-pointer ${form.mode === v ? 'border-violet-600 bg-violet-50 text-violet-900' : 'border-slate-300 bg-white text-slate-800'}`}>
-                <input type="radio" name={`${idBase}-mode`} value={v} checked={form.mode === v} onChange={maj('mode')} className="w-4 h-4 accent-violet-700" />
+              <label key={v} className={`choice ${form.mode === v ? 'border-brand-300 bg-brand-50 text-brand-800' : ''}`}>
+                <input type="radio" name={`${idBase}-mode`} value={v} checked={form.mode === v} onChange={maj('mode')} className="radio" />
                 {l}
               </label>
             ))}
           </div>
           <div className="mt-3 flex flex-wrap items-end gap-3">
             <div>
-              <label htmlFor={`${idBase}-prix`} className="block text-xs font-semibold text-slate-700">{form.mode === 'ht' ? 'Prix d’achat HT (€)' : 'Prix client (€)'}</label>
+              <label htmlFor={`${idBase}-prix`} className="input-label">{form.mode === 'ht' ? 'Prix d’achat HT (€)' : 'Prix client (€)'}</label>
               <input id={`${idBase}-prix`} type="text" inputMode="decimal" value={form.prix} onChange={maj('prix')}
-                className="mt-1 w-36 min-h-[44px] rounded-lg border border-slate-300 px-3 text-base font-semibold tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500" />
+                className="input w-36 font-semibold tabular-nums" />
             </div>
             <p className="text-sm text-slate-800 pb-2" aria-live="polite">
               {form.mode === 'ht'
@@ -1186,22 +1186,22 @@ export function AjoutPiecePrix({ open, onClose, sensible = SANS_ELEVATION, regle
         </fieldset>
 
         {ipad && (
-          <p className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+          <p className="callout callout-info">
             Les iPad et MacBook ont leur propre grille : pour eux, utilisez « Importer une liste de prix » (pièces iPad / MacBook).
           </p>
         )}
         {erreur && (
-          <div role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 flex flex-wrap items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <div role="alert" className="callout callout-danger items-center flex-wrap">
+            <AlertTriangle aria-hidden="true" />
             <span className="flex-1">{erreur}</span>
             {existante && (
-              <button type="button" onClick={() => onAjoute?.(existante)} className="min-h-[44px] px-3 rounded-lg border border-red-300 bg-white font-semibold hover:bg-red-100">
+              <button type="button" onClick={() => onAjoute?.(existante)} className="btn-secondary btn-sm">
                 Voir la pièce
               </button>
             )}
           </div>
         )}
-        {!erreur && erreurSaisie && (form.prix || form.modele) && <p className="text-sm text-slate-600">{erreurSaisie}</p>}
+        {!erreur && erreurSaisie && (form.prix || form.modele) && <p className="text-sm text-slate-500">{erreurSaisie}</p>}
         {/* Entrée dans un champ = « Ajouter la pièce » (le bouton visible est dans le pied de fenêtre) */}
         <button type="submit" tabIndex={-1} aria-hidden="true" className="sr-only">Ajouter</button>
       </form>
@@ -1260,7 +1260,7 @@ export function AjustementColonne({ open, onClose, sensible = SANS_ELEVATION, ci
       icone={SlidersHorizontal}
     >
       {nonEnregistrees > 0 && (
-        <div role="alert" className="mb-4 rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
+        <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <p className="font-semibold flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
             {nonEnregistrees} ligne{nonEnregistrees > 1 ? 's' : ''} modifiée{nonEnregistrees > 1 ? 's' : ''} pas encore enregistrée{nonEnregistrees > 1 ? 's' : ''}.
@@ -1271,22 +1271,22 @@ export function AjustementColonne({ open, onClose, sensible = SANS_ELEVATION, ci
               type="button"
               onClick={enregistrerAvant}
               disabled={enregistrement}
-              className="mt-2 min-h-[44px] px-4 rounded-lg bg-amber-700 text-white font-semibold hover:bg-amber-800 inline-flex items-center gap-2 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-800 focus-visible:ring-offset-2"
+              className="btn-primary mt-2"
             >
-              {enregistrement && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+              {enregistrement && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
               Enregistrer {nonEnregistrees > 1 ? `les ${nonEnregistrees} modifications` : 'la modification'}
             </button>
           )}
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="ajust-colonne" className="block text-sm font-semibold text-slate-800 mb-1">Colonne</label>
+          <label htmlFor="ajust-colonne" className="input-label">Colonne</label>
           <select
             id="ajust-colonne"
             value={colonne}
             onChange={(e) => setColonne(e.target.value)}
-            className="w-full min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            className="select"
           >
             {colonnes.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
           </select>

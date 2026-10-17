@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
-import { Monitor, Wrench, ArrowLeft, Loader2, Lock, MapPin, Phone, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Loader2, MapPin, Phone, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export default function LoginPage() {
   const { target } = useParams();
@@ -94,28 +94,27 @@ export default function LoginPage() {
 
   const isAccueil = target === 'accueil';
 
+  // Cases PIN : 56 px, saisie 24 px, anneau brand au focus (contrôle 16 px minimum → pas de zoom iOS)
+  const pinCls = `w-14 h-14 text-center text-2xl font-bold rounded-lg border border-slate-200 bg-white text-slate-900
+    hover:border-slate-300 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40 transition-colors duration-150`;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 relative overflow-hidden">
-      {/* Aurora backdrop subtil (pattern Claude Design) */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[640px] h-[640px] rounded-full bg-gradient-to-br from-brand-400/20 via-fuchsia-300/10 to-amber-200/10 blur-3xl" />
-        <div className="absolute bottom-[-15%] right-[10%] w-[420px] h-[420px] rounded-full bg-gradient-to-br from-sky-300/15 to-violet-300/15 blur-3xl" />
-      </div>
-      <div className="w-full max-w-md relative z-10 animate-fade-up">
-        <button onClick={() => isSwitchMode ? navigate(-1) : navigate('/')}
-          className="min-h-[44px] -ml-1 px-1 flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 mb-6 transition-colors rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-          <ArrowLeft className="w-4 h-4" /> Retour
+    <div className="min-h-screen flex flex-col items-center justify-center px-4 py-6 sm:p-6 bg-slate-50">
+      <div className="w-full max-w-[400px] animate-fade-up">
+        <button type="button" onClick={() => isSwitchMode ? navigate(-1) : navigate('/')}
+          className="btn-ghost min-h-11 -ml-3 mb-4 text-slate-600">
+          <ArrowLeft aria-hidden="true" /> Retour
         </button>
 
-        <div className="liquid-glass bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl shadow-slate-900/5 p-8 animate-in">
+        <div className="card shadow-lg rounded-2xl p-6 sm:p-8">
           {/* Logo */}
-          <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 rounded-2xl bg-white border border-slate-100 p-1.5 overflow-hidden">
+          <div className="flex justify-center mb-5">
+            <div className="w-20 h-20 rounded-2xl bg-white border border-slate-200 p-1.5 overflow-hidden">
               <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
             </div>
           </div>
 
-          <h1 className="text-2xl font-display font-bold text-center text-slate-900 mb-1 tracking-tight">
+          <h1 className="t-display text-center mb-1">
             {isSwitchMode
               ? <>Changer d'<span className="font-editorial text-brand-600">utilisateur</span></>
               : isAccueil
@@ -123,7 +122,7 @@ export default function LoginPage() {
                 : <>Espace <span className="font-editorial text-brand-600">Technicien</span></>
             }
           </h1>
-          <p className="text-sm text-slate-500 text-center mb-8">
+          <p className="text-sm text-slate-500 text-center mb-6 sm:mb-8">
             {isSwitchMode ? 'Sélectionnez votre profil' : 'Entrez votre PIN pour continuer'}
           </p>
 
@@ -134,26 +133,25 @@ export default function LoginPage() {
                 <label className="input-label" htmlFor="login-user">Utilisateur</label>
                 {teamLoading ? (
                   <div className="input flex items-center justify-center" role="status" aria-label="Chargement de l'équipe">
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" aria-hidden="true" />
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-500" aria-hidden="true" />
                   </div>
                 ) : (
-                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="select">
                     {team.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
               </div>
 
               {error && (
-                <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700 font-medium text-center animate-in">
-                  {error}
+                <div role="alert" className="callout callout-danger animate-in">
+                  <AlertTriangle aria-hidden="true" />
+                  <span className="font-medium">{error}</span>
                 </div>
               )}
 
-              <button onClick={handleSwitchUser} disabled={loading || !selectedUser}
-                className={`w-full btn text-white shadow-sm ${
-                  isAccueil ? 'bg-sky-500 hover:bg-sky-600' : 'bg-brand-600 hover:bg-brand-700'
-                }`}>
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4" /> Continuer</>}
+              <button type="button" onClick={handleSwitchUser} disabled={loading || !selectedUser}
+                className="btn-primary btn-lg btn-block">
+                {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <><RefreshCw aria-hidden="true" /> Continuer</>}
               </button>
             </div>
           ) : (
@@ -163,10 +161,10 @@ export default function LoginPage() {
                 <label className="input-label" htmlFor="login-user">Utilisateur</label>
                 {teamLoading ? (
                   <div className="input flex items-center justify-center" role="status" aria-label="Chargement de l'équipe">
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-400" aria-hidden="true" />
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-500" aria-hidden="true" />
                   </div>
                 ) : (
-                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="input">
+                  <select id="login-user" value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="select">
                     {team.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
@@ -181,44 +179,42 @@ export default function LoginPage() {
                       value={d}
                       onChange={e => handleDigit(i, e.target.value)}
                       onKeyDown={e => handleKeyDown(i, e)}
-                      className="w-14 h-14 text-center text-2xl font-bold rounded-xl border-2 border-slate-200 bg-slate-50/50
-                        focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 focus:bg-white outline-none transition-all"
+                      className={pinCls}
                     />
                   ))}
                 </div>
               </div>
 
               {error && (
-                <div role="alert" className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700 font-medium text-center animate-in">
-                  {error}
+                <div role="alert" className="callout callout-danger animate-in">
+                  <AlertTriangle aria-hidden="true" />
+                  <span className="font-medium">{error}</span>
                 </div>
               )}
 
               <button type="submit" disabled={loading || digits.some(d => !d)}
-                className={`w-full btn text-white shadow-sm ${
-                  isAccueil ? 'bg-sky-500 hover:bg-sky-600' : 'bg-brand-600 hover:bg-brand-700'
-                }`}>
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Se connecter'}
+                className="btn-primary btn-lg btn-block">
+                {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : 'Se connecter'}
               </button>
             </form>
           )}
         </div>
 
         <div className="text-center text-xs text-slate-500 mt-6 space-y-1">
-          <p className="font-medium">Klikphone SAV</p>
-          <p className="flex items-center justify-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</p>
-          <p className="flex items-center justify-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</p>
-          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#71717A' }}>
+          <p className="font-medium text-slate-700">Klikphone SAV</p>
+          <p className="flex items-center justify-center gap-1.5"><MapPin className="w-4 h-4 text-slate-400" aria-hidden="true" /> 79 Place Saint Léger, Chambéry</p>
+          <p className="flex items-center justify-center gap-1.5"><Phone className="w-4 h-4 text-slate-400" aria-hidden="true" /> 04 79 60 89 22</p>
+          <p className="pt-3 text-xs text-slate-500">
             Propulsé par{' '}
-            <span style={{ fontWeight: 800, fontSize: 11 }}>
-              <span style={{ color: '#7C3AED' }}>Tk</span>
-              <span style={{ color: '#18181B' }}>S</span>
-              <span style={{ color: '#EC4899' }}>∞</span>
-              <span style={{ color: '#18181B' }}>26</span>
+            <span className="font-extrabold">
+              <span className="text-brand-600">Tk</span>
+              <span className="text-slate-900">S</span>
+              <span className="text-pink-700">∞</span>
+              <span className="text-slate-900">26</span>
             </span>
             {' '}— une solution{' '}
-            <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
-          </div>
+            <span className="font-bold text-brand-700">Klik&Dev</span>
+          </p>
         </div>
       </div>
     </div>

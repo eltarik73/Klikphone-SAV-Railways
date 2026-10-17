@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, Lock, Pencil, SlidersHorizontal, History } from 'lucide-react';
+import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, Lock, Pencil, SlidersHorizontal, History, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
@@ -11,23 +11,18 @@ import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../
 const PRINT_MARGIN_MM = 1;
 const TABLE = 'tarifs_reparation';
 
+// Écran : en-têtes neutres, un simple filet coloré par famille de pièce (les couleurs pleines restent à l'impression)
 const COLUMNS = [
-  { key: 'ecran_generique', label: 'Écran Générique', shortLabel: 'Générique', headerBg: 'bg-blue-600' },
-  { key: 'ecran_confort', label: 'Écran Confort', shortLabel: 'Confort', headerBg: 'bg-blue-700' },
-  { key: 'ecran_apple', label: 'Écran Apple', shortLabel: 'Apple', headerBg: 'bg-blue-800' },
-  { key: 'batterie', label: 'Batterie', shortLabel: 'Batterie', headerBg: 'bg-yellow-700' },
-  { key: 'desoxydation', label: 'Désoxydation', shortLabel: 'Désoxy.', headerBg: 'bg-green-700' },
-  { key: 'connecteur_charge', label: 'Connecteur', shortLabel: 'Connect.', headerBg: 'bg-rose-600' },
-  { key: 'reparation_divers', label: 'Réparation', shortLabel: 'Répar.', headerBg: 'bg-indigo-600' },
-  { key: 'ecouteur_apn', label: 'Écouteur/APN', shortLabel: 'Écout.', headerBg: 'bg-purple-600' },
-  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', headerBg: 'bg-orange-700' },
-  { key: 'chassis', label: 'Châssis', shortLabel: 'Châssis', headerBg: 'bg-slate-700' },
-];
-
-const ROW_COLORS = [
-  'bg-blue-50/60', '', 'bg-yellow-50/60', '', 'bg-green-50/60', '',
-  'bg-rose-50/60', '', 'bg-indigo-50/60', '', 'bg-purple-50/60', '',
-  'bg-orange-50/50', '', 'bg-slate-50/60', '',
+  { key: 'ecran_generique', label: 'Écran Générique', shortLabel: 'Générique', accent: 'border-t-blue-400' },
+  { key: 'ecran_confort', label: 'Écran Confort', shortLabel: 'Confort', accent: 'border-t-blue-500' },
+  { key: 'ecran_apple', label: 'Écran Apple', shortLabel: 'Apple', accent: 'border-t-blue-700' },
+  { key: 'batterie', label: 'Batterie', shortLabel: 'Batterie', accent: 'border-t-amber-400' },
+  { key: 'desoxydation', label: 'Désoxydation', shortLabel: 'Désoxy.', accent: 'border-t-emerald-400' },
+  { key: 'connecteur_charge', label: 'Connecteur', shortLabel: 'Connect.', accent: 'border-t-rose-400' },
+  { key: 'reparation_divers', label: 'Réparation', shortLabel: 'Répar.', accent: 'border-t-indigo-400' },
+  { key: 'ecouteur_apn', label: 'Écouteur/APN', shortLabel: 'Écout.', accent: 'border-t-violet-400' },
+  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', accent: 'border-t-orange-400' },
+  { key: 'chassis', label: 'Châssis', shortLabel: 'Châssis', accent: 'border-t-slate-400' },
 ];
 
 const ROW_PRINT_COLORS = [
@@ -224,8 +219,10 @@ export default function TarifsReparationPage() {
   };
 
   if (loading) return (
-    <div className="flex items-center justify-center h-96">
-      <div role="status" aria-label="Chargement des tarifs" className="w-8 h-8 border-4 border-brand-200 border-t-brand-600 rounded-full motion-safe:animate-spin" />
+    <div className="page max-w-[1600px]">
+      <div role="status" aria-label="Chargement des tarifs" className="loading-inline py-20 justify-center w-full">
+        <Loader2 aria-hidden="true" /><span className="sr-only">Chargement des tarifs…</span>
+      </div>
     </div>
   );
 
@@ -253,8 +250,8 @@ export default function TarifsReparationPage() {
       <div className="kp-print-root min-h-screen bg-slate-200">
         <div className="no-print sticky top-0 z-50 bg-slate-900 text-white flex flex-wrap items-center gap-2 px-3 py-2">
           <button onClick={() => setPrintMode(false)} aria-label="Fermer l'aperçu"
-            className="inline-flex items-center justify-center w-11 h-11 rounded-lg hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-            <X className="w-5 h-5" aria-hidden="true" />
+            className="btn-ghost btn-icon text-white hover:bg-white/10 hover:text-white focus-visible:ring-white">
+            <X aria-hidden="true" />
           </button>
           <span className="font-medium text-sm">Aperçu A4 paysage — {pages.length} page(s)</span>
           <div role="group" aria-label="Nombre de pages" className="flex items-center gap-1 sm:ml-2 bg-white/10 rounded-lg overflow-hidden">
@@ -274,13 +271,13 @@ export default function TarifsReparationPage() {
             ))}
             <span className="px-2 text-xs tabular-nums text-slate-200" aria-hidden="true">{Math.round(zoom * 100)} %</span>
           </div>
-          <button onClick={() => window.print()} className="ml-auto flex items-center gap-2 h-11 px-4 bg-brand-600 hover:bg-brand-700 rounded-lg text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-            <Printer className="w-4 h-4" aria-hidden="true" /> Imprimer
+          <button onClick={() => window.print()} className="btn-primary ml-auto focus-visible:ring-white">
+            <Printer aria-hidden="true" /> Imprimer
           </button>
         </div>
 
         {overflowList.length > 0 && (
-          <p role="status" className="no-print mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p role="status" className="no-print callout callout-warning mx-4 mt-3">
             {overflowList.length > 1 ? 'Pages' : 'Page'} {overflowList.join(', ')} : le contenu dépasse la feuille A4 et sera coupé.
             {printPages === 1 && ' Passez en 2 pages.'}
           </p>
@@ -370,32 +367,63 @@ export default function TarifsReparationPage() {
   }
 
   // ── Main view ──
-  const boutonBase = 'flex items-center gap-1.5 min-h-[44px] px-3 rounded-xl text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
-  const bouton = `${boutonBase} font-bold`;
   const colSpan = COLUMNS.length + (isAdmin ? 4 : 2);
+  // Prix : fond blanc pour les cellules fixes (colonne collante), fond slate-50 pour les lignes paires
+  const celluleFixe = 'bg-white group-even:bg-slate-50';
   return (
-    <div className="p-4 lg:p-6 max-w-[1600px] mx-auto">
+    <div className="page max-w-[1600px]">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-4 mb-6">
-        <div className="flex items-center gap-3 shrink-0">
-          <img src="/logo_k.png" alt="" className="w-10 h-10 rounded-xl object-contain" />
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Tarifs Réparation iPhone</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-slate-600">{tarifs.length} modèles</p>
-              {isAdmin ? (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-green-100 text-green-800">
-                  <Pencil className="w-3 h-3" aria-hidden="true" /> Mode édition
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700">
-                  <Lock className="w-3 h-3" aria-hidden="true" /> Lecture seule
-                </span>
-              )}
-            </div>
+      <div className="page-header">
+        <div className="min-w-0">
+          <h1 className="page-header-title">Tarifs Réparation iPhone</h1>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <p className="text-sm text-slate-500">{tarifs.length} modèles</p>
+            {isAdmin ? (
+              <span className="badge badge-success">
+                <Pencil className="w-3 h-3" aria-hidden="true" /> Mode édition
+              </span>
+            ) : (
+              <span className="badge badge-neutral">
+                <Lock className="w-3 h-3" aria-hidden="true" /> Lecture seule
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+        <div className="page-header-actions max-w-full">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Rechercher un modèle"
+              placeholder="Rechercher..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input pl-9 w-44"
+            />
+          </div>
+          <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
+          <button type="button" onClick={exportJSON} className="btn-secondary">
+            <FileJson aria-hidden="true" /> JSON
+          </button>
+          <button type="button" onClick={exportCSV} className="btn-secondary">
+            <FileSpreadsheet aria-hidden="true" /> CSV
+          </button>
+          <button type="button" onClick={() => setPrintMode(true)} className="btn-secondary">
+            <Printer aria-hidden="true" /> Impression
+          </button>
+          {isAdmin && (
+            <>
+              <button type="button" onClick={() => setFenetre('historique')} className="btn-secondary">
+                <History aria-hidden="true" /> Historique
+              </button>
+              <button type="button" onClick={() => setFenetre('ajuster')} className="btn-secondary">
+                <SlidersHorizontal aria-hidden="true" /> Ajuster en %
+              </button>
+              <button type="button" onClick={() => setShowAdd(true)} className="btn-primary">
+                <Plus aria-hidden="true" /> Ajouter
+              </button>
+            </>
+          )}
           {isAdmin ? (
             <button
               type="button"
@@ -406,68 +434,34 @@ export default function TarifsReparationPage() {
                 setEditCell(null);
                 setShowAdd(false);
               }}
-              className={`${bouton} bg-slate-100 text-slate-700 hover:bg-slate-200`}
+              className="btn-secondary"
               title="Repasser en lecture seule"
             >
-              <Lock className="w-4 h-4" aria-hidden="true" /> Fermer l’édition
+              <Lock aria-hidden="true" /> Fermer l’édition
             </button>
           ) : (
             <button
               type="button"
               onClick={() => setShowAdminModal(true)}
-              className={`${bouton} bg-amber-600 text-white hover:bg-amber-700`}
+              className="btn-primary"
               title="Activer le mode édition (admin)"
             >
-              <Pencil className="w-4 h-4" aria-hidden="true" /> Modifier
+              <Pencil aria-hidden="true" /> Modifier
             </button>
           )}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
-            <input
-              type="search"
-              aria-label="Rechercher un modèle"
-              placeholder="Rechercher..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="min-h-[44px] pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm w-44 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
-            />
-          </div>
-          <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
-          {isAdmin && (
-            <>
-              <button type="button" onClick={() => setShowAdd(true)} className={`${bouton} bg-emerald-700 text-white hover:bg-emerald-800`}>
-                <Plus className="w-4 h-4" aria-hidden="true" /> Ajouter
-              </button>
-              <button type="button" onClick={() => setFenetre('ajuster')} className={`${bouton} bg-violet-700 text-white hover:bg-violet-800`}>
-                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Ajuster en %
-              </button>
-              <button type="button" onClick={() => setFenetre('historique')} className={`${bouton} bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
-                <History className="w-4 h-4" aria-hidden="true" /> Historique
-              </button>
-            </>
-          )}
-          <button type="button" onClick={exportJSON} className={`${boutonBase} font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
-            <FileJson className="w-4 h-4" aria-hidden="true" /> JSON
-          </button>
-          <button type="button" onClick={exportCSV} className={`${boutonBase} font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50`}>
-            <FileSpreadsheet className="w-4 h-4" aria-hidden="true" /> CSV
-          </button>
-          <button type="button" onClick={() => setPrintMode(true)} className={`${bouton} bg-brand-600 text-white hover:bg-brand-700`}>
-            <Printer className="w-4 h-4" aria-hidden="true" /> Impression
-          </button>
         </div>
       </div>
 
       {erreurChargement && (
-        <div role="alert" className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-          <span>{erreurChargement}</span>
-          <button type="button" onClick={() => { setLoading(true); load(); }} className="min-h-[44px] px-3 rounded-lg font-semibold hover:bg-red-100">Réessayer</button>
+        <div role="alert" className="callout callout-danger items-center mb-4">
+          <span className="flex-1">{erreurChargement}</span>
+          <button type="button" onClick={() => { setLoading(true); load(); }} className="btn-secondary btn-sm">Réessayer</button>
         </div>
       )}
 
       {/* Add model bar */}
       {showAdd && (
-        <div className="mb-4 flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+        <div className="card-section mb-4 flex items-center gap-2">
           <input
             ref={addRef}
             type="text"
@@ -476,73 +470,72 @@ export default function TarifsReparationPage() {
             onChange={e => setNewModele(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setShowAdd(false); setNewModele(''); } }}
             placeholder="Nom du modèle (ex: iPhone 17 Pro Max)"
-            className="flex-1 min-h-[44px] px-3 py-2 border border-emerald-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            className="input flex-1"
           />
-          <button type="button" onClick={handleAdd} disabled={!newModele.trim()} className="min-h-[44px] px-4 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-800 disabled:opacity-40">
+          <button type="button" onClick={handleAdd} disabled={!newModele.trim()} className="btn-primary">
             Ajouter
           </button>
           <button type="button" onClick={() => { setShowAdd(false); setNewModele(''); }} aria-label="Annuler l’ajout"
-            className="w-11 h-11 inline-flex items-center justify-center rounded-lg text-slate-600 hover:text-slate-900 hover:bg-emerald-100">
-            <X className="w-4 h-4" aria-hidden="true" />
+            className="btn-ghost btn-icon">
+            <X aria-hidden="true" />
           </button>
         </div>
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse min-w-[1300px]">
+      <div className="table-wrap scroll-fade-x">
+          <table className="w-full border-collapse min-w-[960px] text-sm text-slate-700">
             <caption className="sr-only">Tarifs de réparation iPhone, prix TTC</caption>
             <thead>
-              <tr>
+              <tr className="bg-slate-50">
                 {isAdmin && (
-                  <th scope="col" className="bg-slate-900 text-white px-2 py-3 text-center text-[11px] font-bold sticky left-0 z-20 border-r border-slate-700 w-[100px]">
+                  <th scope="col" className="table-header table-sticky-col !bg-slate-50 px-2 py-3 text-center w-[100px]">
                     Ordre
                   </th>
                 )}
-                <th scope="col" className="bg-slate-900 text-white px-4 py-3 text-left text-xs font-bold border-r border-slate-700 min-w-[170px]">
+                <th scope="col" className={`table-header px-4 py-3 text-left min-w-[170px] ${isAdmin ? '' : 'table-sticky-col !bg-slate-50'}`}>
                   Modèle iPhone
                 </th>
-                <th scope="col" className="bg-slate-900 text-white px-3 py-3 text-left text-[11px] font-bold border-r border-slate-700 whitespace-nowrap">
+                <th scope="col" className="table-header px-3 py-3 text-left whitespace-nowrap hidden md:table-cell">
                   Prix du
                 </th>
                 {COLUMNS.map(c => (
-                  <th scope="col" key={c.key} className={`${c.headerBg} text-white px-3 py-3 text-center text-[11px] font-bold border-x border-white/20 whitespace-nowrap`}>
+                  <th scope="col" key={c.key} className={`table-header px-3 py-3 text-center whitespace-nowrap border-t-2 ${c.accent}`}>
                     {c.label}
                   </th>
                 ))}
-                {isAdmin && <th scope="col" className="bg-slate-900 text-white px-2 py-3 text-center text-[11px] font-bold w-[100px]">Verrou / suppr.</th>}
+                {isAdmin && <th scope="col" className="table-header px-2 py-3 text-center w-[100px]">Verrou / suppr.</th>}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t, i) => {
+              {filtered.map((t) => {
                 const realIndex = tarifs.findIndex(x => x.id === t.id);
                 const verrou = verrouilles.has(t.id);
                 return (
-                  <tr key={t.id} className={`${ROW_COLORS[i % ROW_COLORS.length]} hover:bg-brand-50/40 transition-colors group`}>
+                  <tr key={t.id} className="group border-t border-slate-100 even:bg-slate-50 hover:bg-brand-50/40 transition-colors">
                     {/* Move buttons */}
                     {isAdmin && (
-                      <td className="px-1 py-1 text-center border-r border-slate-200 bg-white sticky left-0 z-10">
+                      <td className={`px-1 py-1 text-center table-sticky-col ${celluleFixe}`}>
                         <div className="flex items-center justify-center gap-0.5">
                           <button type="button" onClick={() => handleMove(realIndex, -1)} disabled={realIndex === 0 || !!search || anciensSeuls}
-                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-200 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                            className="btn-ghost btn-icon"
                             aria-label={`Monter ${t.modele}`}>
-                            <ChevronUp className="w-4 h-4 text-slate-700" aria-hidden="true" />
+                            <ChevronUp aria-hidden="true" />
                           </button>
                           <button type="button" onClick={() => handleMove(realIndex, 1)} disabled={realIndex === tarifs.length - 1 || !!search || anciensSeuls}
-                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-200 disabled:opacity-30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                            className="btn-ghost btn-icon"
                             aria-label={`Descendre ${t.modele}`}>
-                            <ChevronDown className="w-4 h-4 text-slate-700" aria-hidden="true" />
+                            <ChevronDown aria-hidden="true" />
                           </button>
                         </div>
                       </td>
                     )}
                     {/* Model name */}
-                    <th scope="row" className="px-4 py-2.5 text-left font-bold text-sm text-slate-900 border-r border-slate-200 bg-white whitespace-nowrap">
+                    <th scope="row" className={`px-4 py-2.5 text-left font-semibold text-sm text-slate-900 whitespace-nowrap ${isAdmin ? '' : `table-sticky-col ${celluleFixe}`}`}>
                       {t.modele}
                       {verrou && <Lock className="inline w-3.5 h-3.5 ml-1.5 text-amber-700" aria-label="verrouillé" />}
                     </th>
-                    <td className="px-3 py-1.5 border-r border-slate-100 bg-white whitespace-nowrap">
+                    <td className="px-3 py-1.5 whitespace-nowrap hidden md:table-cell">
                       <BadgeDatePrix row={t} court />
                     </td>
                     {/* Price cells */}
@@ -551,17 +544,17 @@ export default function TarifsReparationPage() {
                       const val = t[c.key];
                       const barre = getBarrePrice(val, t[c.key + '_barre']);
                       const contenu = val != null ? (
-                        <span className="block">
+                        <span className="block tabular-nums">
                           {barre != null && barre > val && (
-                            <span className="block text-[11px] text-red-700 line-through leading-none mb-0.5">{barre}€</span>
+                            <span className="block text-xs text-slate-500 line-through leading-none mb-0.5">{barre}€</span>
                           )}
-                          <span className="block text-sm font-black text-slate-900">{val}€</span>
+                          <span className="block text-sm font-semibold text-slate-900">{val}€</span>
                         </span>
                       ) : (
                         <span className="text-slate-400 text-sm" aria-hidden="true">—</span>
                       );
                       return (
-                        <td key={c.key} className="px-1 py-1 text-center border-x border-slate-100">
+                        <td key={c.key} className="px-1 py-1 text-center">
                           {isEditing ? (
                             <input
                               ref={inputRef}
@@ -572,14 +565,14 @@ export default function TarifsReparationPage() {
                               onChange={e => setEditValue(e.target.value)}
                               onKeyDown={handleKeyDown}
                               onBlur={saveEdit}
-                              className="w-16 min-h-[44px] px-1.5 text-center text-sm font-bold border-2 border-brand-500 rounded-lg outline-none bg-brand-50"
+                              className="input w-16 px-1.5 text-center font-semibold border-brand-500 ring-2 ring-brand-500/40"
                             />
                           ) : isAdmin ? (
                             <button
                               type="button"
                               onClick={() => startEdit(t, c.key, val)}
                               aria-label={`${c.label} de ${t.modele} : ${val != null ? `${val} euros` : 'pas de prix'}. ${verrou ? 'Verrouillé' : 'Modifier'}`}
-                              className={`w-full min-h-[44px] rounded-lg px-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-amber-50'}`}
+                              className={`w-full min-h-[44px] rounded-lg px-1 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-brand-50 hover:ring-1 hover:ring-brand-200'}`}
                             >
                               {contenu}
                             </button>
@@ -603,10 +596,10 @@ export default function TarifsReparationPage() {
                           <button
                             type="button"
                             onClick={() => handleDelete(t.id, t.modele)}
-                            className="w-11 h-11 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                            className="btn-danger-ghost btn-icon"
                             aria-label={`Supprimer ${t.modele}`}
                           >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                            <Trash2 aria-hidden="true" />
                           </button>
                         </div>
                       </td>
@@ -616,17 +609,16 @@ export default function TarifsReparationPage() {
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={colSpan} className="text-center py-12 text-slate-600 text-sm">
+                  <td colSpan={colSpan} className="text-center py-12 text-slate-500 text-sm">
                     {anciensSeuls && !search ? 'Aucun prix de plus de 3 mois.' : `Aucun modèle trouvé pour "${search}"`}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
       </div>
 
-      <p className="text-xs text-slate-600 mt-3 text-center">
+      <p className="t-caption mt-3 text-center">
         {isAdmin
           ? `Touchez un prix pour le modifier (Entrée = enregistrer, Échap = annuler). Flèches = déplacer. ${AIDE_VERROU_BOUTIQUE.note}`
           : 'Mode lecture seule. Touchez « Modifier » en haut à droite pour activer l\'édition (admin requis).'}

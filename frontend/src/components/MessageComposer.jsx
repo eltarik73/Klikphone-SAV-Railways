@@ -8,11 +8,15 @@ import {
   modelePourStatut, DEFAULT_TEMPLATES, LIEN_AVIS_DEFAUT, contexteMessage, remplirModele, ajouterLienSuivi, ligneJournal,
   lienWhatsApp,
 } from '../lib/messages';
-import { MessageCircle, Send, Mail, Check } from 'lucide-react';
+import {
+  MessageCircle, Send, Mail, Check,
+  Smartphone, Search, FileText, Wrench, Hourglass, CheckCircle2, Package, XCircle, CalendarClock, PenLine, Star, Handshake,
+} from 'lucide-react';
 
+// Icône lucide par modèle (design V2 : plus d'emoji système, le libellé du bouton est inchangé)
 const TEMPLATE_ICONS = {
-  1: '📱', 2: '🔍', 3: '📋', 4: '🔧', 5: '⏳',
-  6: '✅', 7: '📦', 8: '❌', 9: '📅', 10: '✏️', 11: '⭐', 12: '🤝',
+  1: Smartphone, 2: Search, 3: FileText, 4: Wrench, 5: Hourglass,
+  6: CheckCircle2, 7: Package, 8: XCircle, 9: CalendarClock, 10: PenLine, 11: Star, 12: Handshake,
 };
 
 /**
@@ -134,31 +138,32 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   };
 
   const grille = (
-    <div role="group" aria-label="Modèles de message" className="grid grid-cols-2 gap-1.5 mb-3">
-      {templates.map(tp => (
-        <button
-          key={tp.id}
-          type="button"
-          aria-pressed={selectedId === tp.id}
-          onClick={() => {
-            choixManuelRef.current = true;
-            setChoixManuel(true);
-            setSelectedId(tp.id === selectedId ? null : tp.id);
-          }}
-          className={`min-h-[44px] text-left px-2.5 py-2 rounded-lg text-xs font-medium transition-colors border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
-            selectedId === tp.id
-              ? 'bg-brand-50 border-brand-300 text-brand-700 shadow-sm'
-              : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-50 hover:border-slate-200'
-          }`}
-        >
-          <span className="mr-1" aria-hidden="true">{TEMPLATE_ICONS[tp.id] || '💬'}</span>
-          {tp.label}
-        </button>
-      ))}
+    <div role="group" aria-label="Modèles de message" className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+      {templates.map(tp => {
+        const Icone = TEMPLATE_ICONS[tp.id] || MessageCircle;
+        const choisi = selectedId === tp.id;
+        return (
+          <button
+            key={tp.id}
+            type="button"
+            aria-pressed={choisi}
+            onClick={() => {
+              choixManuelRef.current = true;
+              setChoixManuel(true);
+              setSelectedId(tp.id === selectedId ? null : tp.id);
+            }}
+            className={`btn-secondary min-h-11 justify-start text-left whitespace-normal font-medium ${
+              choisi ? 'bg-brand-50 border-brand-300 text-brand-700 hover:bg-brand-50 hover:border-brand-300' : ''
+            }`}
+          >
+            <Icone className={choisi ? 'text-brand-600' : 'text-slate-500'} aria-hidden="true" />
+            {tp.label}
+          </button>
+        );
+      })}
     </div>
   );
 
-  const BOUTON = 'flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
   const apercu = selectedId ? (
     <div className="animate-in">
       {isCustom ? (
@@ -168,39 +173,41 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
           placeholder="Tapez votre message..."
           aria-label="Message personnalisé"
           rows={3}
-          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 mb-3"
+          className="textarea resize-none mb-3"
         />
       ) : (
-        <div className="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 leading-relaxed mb-3 border border-slate-100 whitespace-pre-line break-words">
+        <div className="card-section text-sm text-slate-700 leading-relaxed mb-3 whitespace-pre-line break-words">
           {previewText}
         </div>
       )}
 
       {smsText && (
         <details className="mb-3 text-xs text-slate-600">
-          <summary className="cursor-pointer select-none py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 rounded">
-            Par SMS : version courte sans lien de suivi · <strong className="font-semibold text-slate-800">{smsInfo.segments} SMS</strong>
-            {' '}({smsInfo.caracteres} caractères{smsInfo.unicode ? ', unicode : 70 par SMS' : ', 160 par SMS'})
+          <summary className="cursor-pointer select-none min-h-11 flex items-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            <span>
+              Par SMS : version courte sans lien de suivi · <strong className="font-semibold text-slate-800">{smsInfo.segments} SMS</strong>
+              {' '}({smsInfo.caracteres} caractères{smsInfo.unicode ? ', unicode : 70 par SMS' : ', 160 par SMS'})
+            </span>
           </summary>
-          <p className="mt-1 p-2 bg-white rounded border border-slate-100 break-words">{smsText}</p>
+          <p className="mt-1 p-3 bg-white rounded-lg border border-slate-200 break-words">{smsText}</p>
         </details>
       )}
 
-      {/* Send buttons */}
-      <div className="flex gap-2">
-        <button type="button" onClick={() => sendMessage('whatsapp')} disabled={!!sending}
-          className={`${BOUTON} bg-green-700 hover:bg-green-800 text-white`}>
-          {sending === 'whatsapp' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />}
+      {/* Send buttons : WhatsApp (vert reconnaissable), SMS (primaire), Email (secondaire) */}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => sendMessage('whatsapp')} disabled={!!sending} aria-busy={sending === 'whatsapp' || undefined}
+          className="btn-whatsapp flex-1 min-h-11">
+          {sending === 'whatsapp' ? <Check aria-hidden="true" /> : <MessageCircle aria-hidden="true" />}
           WhatsApp
         </button>
-        <button type="button" onClick={() => sendMessage('sms')} disabled={!!sending}
-          className={`${BOUTON} bg-white hover:bg-slate-50 text-slate-700 border border-slate-200`}>
-          {sending === 'sms' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Send className="w-3.5 h-3.5" aria-hidden="true" />}
+        <button type="button" onClick={() => sendMessage('sms')} disabled={!!sending} aria-busy={sending === 'sms' || undefined}
+          className="btn-primary flex-1 min-h-11">
+          {sending === 'sms' ? <Check aria-hidden="true" /> : <Send aria-hidden="true" />}
           SMS
         </button>
-        <button type="button" onClick={() => sendMessage('email')} disabled={!!sending}
-          className={`${BOUTON} bg-white hover:bg-slate-50 text-slate-700 border border-slate-200`}>
-          {sending === 'email' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Mail className="w-3.5 h-3.5" aria-hidden="true" />}
+        <button type="button" onClick={() => sendMessage('email')} disabled={!!sending} aria-busy={sending === 'email' || undefined}
+          className="btn-secondary flex-1 min-h-11">
+          {sending === 'email' ? <Check aria-hidden="true" /> : <Mail aria-hidden="true" />}
           Email
         </button>
       </div>
@@ -213,7 +220,7 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
       <div>
         {apercu}
         <details className="mt-3">
-          <summary className="min-h-[44px] flex items-center cursor-pointer rounded text-xs font-semibold text-slate-700 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          <summary className="min-h-[44px] flex items-center cursor-pointer rounded text-sm font-semibold text-slate-700 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
             Choisir un autre modèle
           </summary>
           <div className="mt-2">{grille}</div>
@@ -228,15 +235,13 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   }
 
   return (
-    <div className="card p-5">
+    <section className="card p-4 sm:p-5" aria-labelledby="kp-messages-titre">
       <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center" aria-hidden="true">
-          <MessageCircle className="w-4 h-4 text-green-600" />
-        </div>
-        <h2 className="text-sm font-semibold text-slate-800">Messages</h2>
+        <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" />
+        <h2 id="kp-messages-titre" className="t-h2">Messages</h2>
       </div>
       {grille}
       {apercu}
-    </div>
+    </section>
   );
 }

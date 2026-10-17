@@ -82,52 +82,55 @@ export default class ErrorBoundary extends Component {
     if (this.state.hasError) {
       const msg = this.state.error?.message || '';
       return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" role="alert" aria-live="assertive">
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 max-w-md w-full p-8 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-5">
-              <AlertTriangle className="w-7 h-7 text-red-500" aria-hidden="true" />
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-6" role="alert" aria-live="assertive">
+          <div className="card shadow-lg max-w-md w-full p-6 sm:p-8">
+            <div className="empty-state min-h-0 max-h-none py-0 px-0 mb-5">
+              <div className="empty-state-icon bg-red-50 text-red-700">
+                <AlertTriangle aria-hidden="true" />
+              </div>
+              <h2 className="t-h2">Oups, une erreur est survenue</h2>
+              <p className="t-body text-slate-500 max-w-sm">
+                L'application a rencontré un problème inattendu. Vous pouvez réessayer, recharger ou revenir en arrière.
+              </p>
             </div>
-            <h2 className="text-lg font-bold text-slate-900 mb-2">Oups, une erreur est survenue</h2>
-            <p className="text-sm text-slate-500 mb-4">
-              L'application a rencontré un problème inattendu. Vous pouvez réessayer, recharger ou revenir en arrière.
-            </p>
             {msg && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-left">
-                <p className="text-xs font-mono text-red-700 break-all">{msg}</p>
+              <div className="error-state mb-5 text-left">
+                <AlertTriangle aria-hidden="true" />
+                <p className="t-mono text-red-800 break-all min-w-0">{msg}</p>
               </div>
             )}
             <div className="space-y-2">
               <button
                 type="button"
                 onClick={this.handleRetry}
-                className="w-full py-3 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
+                className="btn-secondary btn-block"
                 aria-label="Réessayer"
               >
-                <RefreshCw className="w-4 h-4" aria-hidden="true" /> Réessayer
+                <RefreshCw aria-hidden="true" /> Réessayer
               </button>
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                className="btn-secondary btn-block"
                 aria-label="Recharger la page"
               >
-                <RefreshCw className="w-4 h-4" aria-hidden="true" /> Recharger la page
+                <RefreshCw aria-hidden="true" /> Recharger la page
               </button>
               <button
                 type="button"
                 onClick={this.handleBack}
-                className="w-full py-2.5 px-4 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2"
+                className="btn-ghost btn-block"
                 aria-label="Retour à la page précédente"
               >
-                <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Retour
+                <ArrowLeft aria-hidden="true" /> Retour
               </button>
               <button
                 type="button"
                 onClick={this.handleCopy}
-                className="w-full py-2 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-xs font-medium transition-colors flex items-center justify-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2"
+                className="btn-ghost btn-sm btn-block text-slate-500"
                 aria-label="Copier le détail de l'erreur"
               >
-                <Copy className="w-3 h-3" aria-hidden="true" /> {this.state.copied ? 'Copié' : "Copier le détail de l'erreur"}
+                <Copy aria-hidden="true" /> {this.state.copied ? 'Copié' : "Copier le détail de l'erreur"}
               </button>
             </div>
           </div>

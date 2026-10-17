@@ -17,7 +17,7 @@ import {
   canalPrevenir, numeroSms, raisonSansCanal, messagePret, ligneJournal, emailValide, erreurEnvoi, SMS_IMPOSSIBLE,
 } from '../lib/messages';
 import StatusBadge from './StatusBadge';
-import ProgressTracker from './ProgressTracker';
+import { PrioriteBadge } from './PrioriteBadge';
 import PrevenirClient, { chargerContexteMessage } from './PrevenirClient';
 import EmplacementInput from './EmplacementInput';
 import { listeEmplacements, normaliserEmplacement } from '../lib/etagere';
@@ -1037,10 +1037,11 @@ function trapTab(e, root, title) {
   }
 }
 
+// Points d'attention : encarts du système (rouge = danger, ambre = attention, bleu = information)
 const ALERT_STYLES = {
-  danger: 'bg-red-50 text-red-800 ring-red-200',
-  warning: 'bg-amber-50 text-amber-900 ring-amber-200',
-  info: 'bg-slate-100 text-slate-700 ring-slate-200',
+  danger: 'callout-danger',
+  warning: 'callout-warning',
+  info: 'callout-info',
 };
 
 function ScanDialog({
@@ -1424,28 +1425,29 @@ function ScanDialog({
         aria-labelledby={titleId}
         aria-describedby={descriptionPanneau}
         onKeyDown={onKeyDown}
-        className="relative flex max-h-[94vh] w-full flex-col overflow-hidden supports-[overflow:clip]:overflow-clip rounded-t-3xl bg-white shadow-2xl sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl"
+        className="relative flex max-h-[94vh] w-full flex-col overflow-hidden supports-[overflow:clip]:overflow-clip rounded-t-xl bg-white shadow-lg sm:max-h-[90vh] sm:max-w-2xl sm:rounded-xl motion-safe:animate-scale-in"
       >
         <div className="h-1.5 shrink-0" style={{ backgroundColor: cfg.color }} aria-hidden="true" />
 
         <header className="shrink-0 border-b border-slate-100 px-4 pb-3 pt-3 sm:px-6">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+              <p className="flex items-center gap-1.5 t-overline">
                 <ScanLine className="h-4 w-4" aria-hidden="true" /> Scan comptoir
               </p>
               <h2 id={titleId} ref={titleRef} tabIndex={-1}
-                className="mt-0.5 rounded font-mono text-3xl font-extrabold tracking-tight text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="mt-0.5 rounded font-mono text-3xl font-bold tracking-tight tabular-nums text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 {t.ticket_code || `#${view.id}`}
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <StatusBadge statut={t.statut} size="lg" />
+                <PrioriteBadge priorite={t.priorite} taille="lg" />
                 {t.est_retour_sav && (
-                  <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800">Retour SAV</span>
+                  <span className="badge badge-lg badge-warning">Retour SAV</span>
                 )}
                 {view.verified && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
-                    <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> {VERIFIED_LABELS[view.verified] || VERIFIED_LABELS.ticket}
+                  <span className="badge badge-lg badge-success">
+                    <ShieldCheck className="h-4 w-4" aria-hidden="true" /> {VERIFIED_LABELS[view.verified] || VERIFIED_LABELS.ticket}
                   </span>
                 )}
               </div>
@@ -1453,7 +1455,7 @@ function ScanDialog({
                 {modeleTicket(t)}
                 {t.date_depot ? ` · déposé le ${formatDateShort(t.date_depot)}` : ''}
                 {jours != null && (
-                  <span className={jours > 30 ? 'font-bold text-red-700' : ''}>
+                  <span className={jours > 30 ? 'font-semibold text-red-700' : ''}>
                     {jours === 0 ? ' (aujourd’hui)' : jours === 1 ? ' (hier)' : ` (il y a ${jours} j)`}
                   </span>
                 )}
@@ -1462,12 +1464,12 @@ function ScanDialog({
             <div className="flex shrink-0 items-center gap-1">
               <button type="button" onClick={toggleSound} aria-pressed={soundOn}
                 aria-label="Son de la douchette" title={soundOn ? 'Son activé' : 'Son coupé'}
-                className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 ${FOCUS_RING}`}>
+                className={`flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 ${FOCUS_RING}`}>
                 {soundOn ? <Volume2 className="h-5 w-5" aria-hidden="true" /> : <VolumeX className="h-5 w-5" aria-hidden="true" />}
               </button>
               <button type="button" onClick={onClose} disabled={busy} aria-label="Fermer le panneau"
-                className={`flex h-11 w-11 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 disabled:opacity-50 ${FOCUS_RING}`}>
-                <X className="h-6 w-6" aria-hidden="true" />
+                className={`flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 disabled:text-slate-400 disabled:hover:bg-transparent ${FOCUS_RING}`}>
+                <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1494,24 +1496,23 @@ function ScanDialog({
 
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
           {view.proposition && view.proposition !== TERMINE && !wizard && (
-            <section aria-labelledby={propositionId} className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+            <section aria-labelledby={propositionId} className="card p-4">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 id={propositionId} ref={propositionRef} tabIndex={-1}
-                    className="flex items-center gap-2 rounded text-base font-bold text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-                    <MessageCircle className="h-5 w-5 shrink-0" aria-hidden="true" />
+                    className="flex items-center gap-2 rounded t-h2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                    <MessageCircle className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
                     Prévenir {t.client_prenom || 'le client'} ?
                   </h3>
-                  <p className="mt-0.5 text-sm text-emerald-900">
+                  <p className="mt-0.5 text-sm text-slate-600">
                     « {view.proposition} » : message pré-rempli, rien n’est envoyé sans votre clic.
                   </p>
                 </div>
-                <button type="button" onClick={onDismissProposition}
-                  className={`min-h-[44px] shrink-0 rounded-xl bg-white px-3 text-sm font-bold text-emerald-900 ring-1 ring-emerald-300 hover:bg-emerald-100 ${FOCUS_RING}`}>
+                <button type="button" onClick={onDismissProposition} className="btn-secondary btn-sm shrink-0">
                   Plus tard
                 </button>
               </div>
-              <div className="rounded-xl bg-white p-3">
+              <div className="card-section p-3">
                 <Suspense fallback={<p className="text-sm text-slate-600">Chargement du message…</p>}>
                   <MessageComposer ticket={t} statutPropose={view.proposition} integre
                     onMessageSent={(r) => { if (!r?.echec) onDismissProposition(); }} />
@@ -1521,18 +1522,16 @@ function ScanDialog({
           )}
 
           {view.mismatch && (
-            <div role="alert" className="rounded-2xl bg-red-50 p-4 ring-2 ring-red-300">
-              <p className="flex items-start gap-2 font-bold text-red-800">
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4">
+              <p className="flex items-start gap-2 text-sm font-semibold text-red-800">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 {view.mismatch.code} scanné pendant la remise de {t.ticket_code} : vérifiez que c’est le bon appareil.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={() => onShowTicket(view.mismatch.id, view.mismatch.code)}
-                  className={`min-h-[44px] rounded-xl bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800 ${FOCUS_RING}`}>
+                <button type="button" onClick={() => onShowTicket(view.mismatch.id, view.mismatch.code)} className="btn-danger">
                   Afficher {view.mismatch.code}
                 </button>
-                <button type="button" onClick={onDismissMismatch}
-                  className={`min-h-[44px] rounded-xl bg-white px-4 text-sm font-bold text-red-800 ring-1 ring-red-300 hover:bg-red-100 ${FOCUS_RING}`}>
+                <button type="button" onClick={onDismissMismatch} className="btn-secondary">
                   Continuer la remise de {t.ticket_code}
                 </button>
               </div>
@@ -1540,12 +1539,12 @@ function ScanDialog({
           )}
 
           {done && (
-            <div role="status" className="rounded-2xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
-              <p className="flex items-center gap-2 text-lg font-bold text-emerald-800">
-                <CircleCheckBig className="h-6 w-6 shrink-0" aria-hidden="true" />
+            <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="flex items-center gap-2 text-base font-bold text-emerald-800">
+                <CircleCheckBig className="h-5 w-5 shrink-0" aria-hidden="true" />
                 {done.deja ? 'Déjà rendu au client' : 'Rendu au client'}
               </p>
-              <p className="mt-1 text-sm text-emerald-900">
+              <p className="mt-1 text-sm text-emerald-800">
                 {[
                   done.at ? `le ${done.at}` : null,
                   done.par ? `par ${done.par}` : null,
@@ -1560,10 +1559,10 @@ function ScanDialog({
           {alertesVisibles.length > 0 && (
             <ul className="space-y-2" aria-label="Points d’attention">
               {alertesVisibles.map((a) => (
-                <li key={a.id} className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold ring-1 ${ALERT_STYLES[a.level]}`}>
+                <li key={a.id} className={`callout font-semibold ${ALERT_STYLES[a.level]}`}>
                   {a.level === 'info'
-                    ? <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                    : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+                    ? <Info aria-hidden="true" />
+                    : <AlertTriangle aria-hidden="true" />}
                   <span className="min-w-0 break-words">{a.text}</span>
                 </li>
               ))}
@@ -1598,10 +1597,38 @@ function ScanDialog({
             <RestitutionForm t={t} m={m} verifier={verifier} state={wizard} setState={setWizard} titleRef={wizardTitleRef} />
           )}
 
+          {/* Détail du paiement (total, acompte). Le « reste à payer » n'est affiché qu'une fois : dans le point
+              d'attention rouge ci-dessus ; ce bloc ne reprend un montant en grand que pour confirmer « Payé » / « Rien à payer ». */}
+          <section aria-label="Paiement" className="card-section">
+            <h3 className="flex items-center gap-1.5 t-h3">
+              <Wallet className="h-4 w-4 text-slate-400" aria-hidden="true" /> Paiement
+            </h3>
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+              <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
+                <dt className="text-slate-600">
+                  {m.refusServeur ? 'Frais dus (devis refusé)' : m.estime ? 'Total (devis estimé)' : 'Total TTC'}
+                </dt>
+                <dd className="text-right font-semibold tabular-nums text-slate-900">{formatPrix(m.total)}</dd>
+                <dt className="text-slate-600">Acompte</dt>
+                <dd className="text-right font-semibold tabular-nums text-slate-900">{formatPrix(m.acompte)}</dd>
+              </dl>
+              {m.reste <= 0 && (
+                <div className="text-right">
+                  <span className="block text-sm font-semibold text-emerald-700">
+                    {m.paye ? 'Payé' : 'Rien à payer'}
+                  </span>
+                  <span className="block text-3xl font-bold tabular-nums leading-none text-emerald-700">
+                    {formatPrix(m.reste)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+
           <div className="grid gap-3 sm:grid-cols-2">
-            <section aria-label="Client" className="rounded-2xl border border-slate-200 p-4">
-              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
-                <UserRound className="h-4 w-4" aria-hidden="true" /> Client
+            <section aria-label="Client" className="card p-4">
+              <h3 className="flex items-center gap-1.5 t-h3">
+                <UserRound className="h-4 w-4 text-slate-400" aria-hidden="true" /> Client
               </h3>
               <p className="mt-1 text-lg font-bold text-slate-900">
                 {[t.client_prenom, String(t.client_nom ?? '').toUpperCase()].filter(Boolean).join(' ') || '—'}
@@ -1609,22 +1636,21 @@ function ScanDialog({
               {t.client_societe && <p className="text-sm text-slate-600">{t.client_societe}</p>}
               {t.client_tel && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <a href={`tel:${String(t.client_tel).replace(/[^\d+]/g, '')}`}
-                    className={`inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-slate-100 px-3 text-base font-bold text-slate-900 hover:bg-slate-200 ${FOCUS_RING}`}>
-                    <Phone className="h-4 w-4" aria-hidden="true" /> {formatTel(t.client_tel)}
+                  <a href={`tel:${String(t.client_tel).replace(/[^\d+]/g, '')}`} className="btn-secondary text-base tabular-nums">
+                    <Phone aria-hidden="true" /> {formatTel(t.client_tel)}
                   </a>
                   <a href={waLink(String(t.client_tel), '')} target="_blank" rel="noopener noreferrer"
                     aria-label={`WhatsApp ${formatTel(t.client_tel)}`}
-                    className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800 hover:bg-emerald-100 ${FOCUS_RING}`}>
-                    <MessageCircle className="h-5 w-5" aria-hidden="true" />
+                    className="btn-secondary btn-icon">
+                    <MessageCircle className="text-emerald-700" aria-hidden="true" />
                   </a>
                 </div>
               )}
             </section>
 
-            <section aria-label="Appareil" className="rounded-2xl border border-slate-200 p-4">
-              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
-                <Smartphone className="h-4 w-4" aria-hidden="true" /> Appareil
+            <section aria-label="Appareil" className="card p-4">
+              <h3 className="flex items-center gap-1.5 t-h3">
+                <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" /> Appareil
               </h3>
               <p className="mt-1 text-lg font-bold text-slate-900">{modeleTicket(t)}</p>
               <dl className="mt-2 space-y-1.5 text-sm">
@@ -1667,45 +1693,16 @@ function ScanDialog({
             </section>
           </div>
 
-          <section aria-label="Progression" className="overflow-x-auto rounded-2xl border border-slate-200 px-3 py-4">
-            <div className="min-w-[300px]">
-              <ProgressTracker statut={t.statut} hasPiece={!!Number(t.commande_piece)} />
-            </div>
-          </section>
-
-          <section aria-label="Paiement" className="rounded-2xl bg-slate-50 p-4">
-            <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-600">
-              <Wallet className="h-4 w-4" aria-hidden="true" /> Paiement
-            </h3>
-            <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-              <dt className="text-slate-600">
-                {m.refusServeur ? 'Frais dus (devis refusé)' : m.estime ? 'Total (devis estimé)' : 'Total TTC'}
-              </dt>
-              <dd className="text-right font-semibold tabular-nums text-slate-900">{formatPrix(m.total)}</dd>
-              <dt className="text-slate-600">Acompte</dt>
-              <dd className="text-right font-semibold tabular-nums text-slate-900">{formatPrix(m.acompte)}</dd>
-            </dl>
-            <div className={`mt-3 flex items-center justify-between gap-3 rounded-xl px-4 py-3 ring-1 ${
-              m.reste > 0 ? 'bg-red-50 ring-red-200' : 'bg-emerald-50 ring-emerald-200'}`}>
-              <span className={`text-sm font-extrabold uppercase tracking-wide ${m.reste > 0 ? 'text-red-800' : 'text-emerald-800'}`}>
-                {m.paye ? 'Payé' : m.reste > 0 ? 'Reste à payer' : 'Rien à payer'}
-              </span>
-              <span className={`text-3xl font-extrabold tabular-nums ${m.reste > 0 ? 'text-red-700' : 'text-emerald-800'}`}>
-                {formatPrix(m.reste)}
-              </span>
-            </div>
-          </section>
-
           {notes.length > 0 && (
-            <section aria-label="Notes importantes" className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-900">
+            <section aria-label="Notes importantes" className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <h3 className="flex items-center gap-1.5 t-h3 text-amber-900">
                 <StickyNote className="h-4 w-4" aria-hidden="true" /> Notes importantes
               </h3>
               <ul className="mt-2 space-y-2">
                 {notes.map((n) => (
                   <li key={n.id} className="text-sm text-amber-950">
                     <p className="whitespace-pre-line break-words">{n.contenu}</p>
-                    <p className="mt-0.5 text-xs text-amber-900">
+                    <p className="mt-0.5 t-caption text-amber-800">
                       {n.auteur}{n.date_creation ? ` · ${formatDateShort(n.date_creation)}` : ''}
                     </p>
                   </li>
@@ -1721,19 +1718,19 @@ function ScanDialog({
           ) : wizard ? (
             <div className="grid grid-cols-[auto_1fr] gap-2">
               <button type="button" onClick={() => setWizard(null)} disabled={wizard.submitting}
-                className={`min-h-[52px] rounded-xl bg-slate-100 px-4 text-base font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-50 ${FOCUS_RING}`}>
+                className="btn-secondary btn-lg">
                 Retour
               </button>
               <button type="button" onClick={submitRendre} disabled={wizard.submitting}
-                className={`inline-flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-base font-bold text-white hover:bg-emerald-800 disabled:opacity-60 ${FOCUS_RING}`}>
+                className="btn-success btn-lg font-bold">
                 {wizard.submitting
-                  ? <Loader2 className="h-5 w-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                  : <PackageCheck className="h-5 w-5" aria-hidden="true" />}
+                  ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  : <PackageCheck aria-hidden="true" />}
                 {wizard.submitting ? 'Enregistrement…' : 'Confirmer la remise'}
               </button>
             </div>
           ) : confirm ? (
-            <div role="group" aria-label="Confirmation" className="rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+            <div role="group" aria-label="Confirmation" className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm font-semibold text-amber-900">
                 {confirm.action.id === 'encaisser'
                   ? `Encaisser ${formatPrix(m.reste)} et marquer ${t.ticket_code} comme payé ?`
@@ -1753,12 +1750,12 @@ function ScanDialog({
               )}
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => setConfirm(null)} disabled={confirm.submitting}
-                  className={`min-h-[48px] rounded-xl bg-white px-3 text-sm font-bold text-slate-800 ring-1 ring-slate-300 hover:bg-slate-50 disabled:opacity-50 ${FOCUS_RING}`}>
+                  className="btn-secondary btn-lg px-3">
                   Annuler
                 </button>
                 <button type="button" onClick={confirmAction} disabled={confirm.submitting}
-                  className={`inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-amber-700 px-3 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-60 ${FOCUS_RING}`}>
-                  {confirm.submitting && <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                  className={`btn-lg px-3 ${confirm.action.id === 'encaisser' ? 'btn-success' : 'btn-primary'}`}>
+                  {confirm.submitting && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                   {confirm.action.id === 'encaisser' ? 'Confirmer l’encaissement' : confirm.action.warn?.ok || 'Oui, continuer'}
                 </button>
               </div>
@@ -1797,15 +1794,15 @@ function ScanDialog({
           {!wizard && (
             <div className="grid grid-cols-3 gap-2">
               <button type="button" onClick={() => onOpenTicket(view.id)} disabled={busy}
-                className={`inline-flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl bg-slate-100 px-2 text-xs font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-50 sm:flex-row sm:gap-2 sm:text-sm ${FOCUS_RING}`}>
+                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <ExternalLink className="h-4 w-4" aria-hidden="true" /> Ouvrir la fiche
               </button>
               <button type="button" onClick={() => onOpenClient(t.client_id)} disabled={busy || !t.client_id}
-                className={`inline-flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl bg-slate-100 px-2 text-xs font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-50 sm:flex-row sm:gap-2 sm:text-sm ${FOCUS_RING}`}>
+                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <UserRound className="h-4 w-4" aria-hidden="true" /> Fiche client
               </button>
               <button type="button" onClick={() => onPrint(t)} disabled={busy}
-                className={`inline-flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl bg-slate-100 px-2 text-xs font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-50 sm:flex-row sm:gap-2 sm:text-sm ${FOCUS_RING}`}>
+                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <Printer className="h-4 w-4" aria-hidden="true" /> {done || estRendu(t) ? 'Imprimer le reçu' : 'Imprimer'}
               </button>
             </div>
@@ -1828,34 +1825,34 @@ function Rangement({
   // Lisible de loin : plus le nom est long, plus la police est petite (20 caractères au plus)
   const taille = !emplacement || emplacement.length <= 4 ? 'text-5xl'
     : emplacement.length <= 8 ? 'text-4xl' : 'text-2xl';
-  const bouton = 'inline-flex min-h-[44px] shrink-0 items-center rounded-xl px-3 text-sm font-bold';
 
   let contenu;
   if (edition) {
     contenu = (
       // Hauteur bornée (téléphone à l'horizontale) : le pied du panneau reste visible
       <div ref={editeurRef} data-rangement="" tabIndex={-1}
-        className="flex max-h-[38vh] items-start gap-2 overflow-y-auto overscroll-contain rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200 focus:outline-none">
+        className="card-section flex max-h-[38vh] items-start gap-2 overflow-y-auto overscroll-contain p-3 focus:outline-none">
         <EmplacementInput ticketId={ticketId} value={emplacement} emplacements={emplacements || []}
           label="Rangé où ?" onSaved={onSaved} className="min-w-0 flex-1" />
         <button type="button" onClick={onFermer} data-rangement-fermer=""
           aria-label={edition === 'invite' ? 'Ranger l’appareil plus tard' : 'Fermer la saisie de l’emplacement'}
-          className={`${bouton} bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-slate-100 ${FOCUS_RING}`}>
+          className="btn-secondary min-h-[44px] shrink-0">
           {edition === 'invite' ? 'Plus tard' : 'Fermer'}
         </button>
       </div>
     );
   } else if (emplacement) {
     contenu = (
-      <div className="flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-2 text-white">
-        <MapPin className="h-7 w-7 shrink-0 text-amber-300" aria-hidden="true" />
+      // Pavé sombre conservé : l'emplacement se lit de loin, c'est le repère pour aller chercher l'appareil
+      <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-2 text-white">
+        <MapPin className="h-7 w-7 shrink-0 text-brand-300" aria-hidden="true" />
         <p id={descId} className="min-w-0 flex-1">
-          <span className="block text-xs font-bold uppercase tracking-wide text-slate-300">Rangé en</span>{' '}
+          <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300">Rangé en</span>{' '}
           <span className={`block break-words font-mono font-black leading-none tracking-wide ${taille}`}>{emplacement}</span>
         </p>
         {modifiable && (
           <button ref={boutonRef} type="button" onClick={onOuvrir} aria-label="Modifier l’emplacement"
-            className={`${bouton} bg-white/10 text-white ring-1 ring-white/40 hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900`}>
+            className="btn min-h-[44px] shrink-0 border border-white/30 bg-white/10 text-white hover:bg-white/20 focus-visible:ring-white focus-visible:ring-offset-slate-900">
             Modifier
           </button>
         )}
@@ -1863,13 +1860,12 @@ function Rangement({
     );
   } else {
     contenu = (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-1.5">
-        <MapPin className="h-5 w-5 shrink-0 text-slate-600" aria-hidden="true" />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-2">
+        <MapPin className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
         {/* Téléphone : le bouton passe à la ligne plutôt que d'écraser le texte */}
         <p id={descId} className="min-w-[12rem] flex-1 text-base font-bold text-slate-800">Pas d’emplacement noté</p>
         {modifiable && (
-          <button ref={boutonRef} type="button" onClick={onOuvrir}
-            className={`${bouton} bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-slate-100 ${FOCUS_RING}`}>
+          <button ref={boutonRef} type="button" onClick={onOuvrir} className="btn-secondary min-h-[44px] shrink-0">
             Noter l’emplacement
           </button>
         )}
@@ -1890,30 +1886,26 @@ const ACTION_ICONS = {
   rendre: PackageCheck, demarrer: Play, terminer: Send, terminer_seul: CircleCheckBig,
   encaisser: HandCoins, facturer: Receipt, pret: Smartphone,
 };
+// Vert plein réservé à la remise et à l'encaissement ; toute autre action principale est violette (marque)
 const ACTION_COLORS = {
-  rendre: 'bg-emerald-700 hover:bg-emerald-800 text-white',
-  facturer: 'bg-amber-700 hover:bg-amber-800 text-white',
-  pret: 'bg-amber-700 hover:bg-amber-800 text-white',
-  terminer: 'bg-emerald-700 hover:bg-emerald-800 text-white',
-  terminer_seul: 'bg-emerald-700 hover:bg-emerald-800 text-white',
-  demarrer: 'bg-blue-700 hover:bg-blue-800 text-white',
-  encaisser: 'bg-brand-600 hover:bg-brand-700 text-white',
+  rendre: 'btn-success',
+  encaisser: 'btn-success',
 };
 
 function ActionButton({ action, onClick, primary = false }) {
   const Icon = ACTION_ICONS[action.icon || action.id] || Play;
   const cls = primary
-    ? `${ACTION_COLORS[action.id] || ACTION_COLORS.rendre} min-h-[56px] text-lg`
-    : 'bg-white text-slate-800 ring-2 ring-slate-300 hover:bg-slate-50 min-h-[52px] text-base';
+    ? `${ACTION_COLORS[action.id] || 'btn-primary'} btn-lg min-h-[56px] text-lg font-bold`
+    : 'btn-secondary btn-lg';
   return (
     <button type="button" onClick={onClick}
-      className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-1.5 font-bold ${cls} ${FOCUS_RING}`}>
-      <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+      className={`${cls} w-full whitespace-normal py-1.5`}>
+      <Icon aria-hidden="true" />
       {action.hint ? (
         // Par où le client sera prévenu, sous le libellé
         <span className="flex min-w-0 flex-col items-start text-left leading-tight">
           <span>{action.label}</span>
-          <span className="break-words text-sm font-semibold">{action.hint}</span>
+          <span className="break-words text-[13px] font-medium opacity-90">{action.hint}</span>
         </span>
       ) : action.label}
     </button>
@@ -1940,27 +1932,27 @@ function UndoBar({ deferred, onCancel, onCommit }) {
         <span className="sr-only">programmé, annulable quelques secondes</span>
       </p>
       <button ref={cancelRef} type="button" onClick={onCancel}
-        className="min-h-[44px] rounded-lg bg-white px-4 text-sm font-bold text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900">
+        className="btn bg-white text-slate-900 hover:bg-slate-100 focus-visible:ring-white focus-visible:ring-offset-slate-900">
         Annuler
       </button>
       <button type="button" onClick={onCommit}
-        className="min-h-[44px] rounded-lg px-3 text-sm font-semibold text-white underline underline-offset-2 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white">
+        className="btn-ghost px-3 text-white underline underline-offset-2 hover:bg-white/10 hover:text-white focus-visible:ring-white focus-visible:ring-offset-slate-900">
         Valider maintenant
       </button>
     </div>
   );
 }
 
-const CHOICE = 'flex min-h-[48px] cursor-pointer items-start gap-3 rounded-xl border-2 p-3 text-sm';
+const CHOICE = 'flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors duration-150';
 
 function ModesPaiement({ name, value, onChange, errorId, invalid }) {
   return (
     <fieldset aria-describedby={invalid ? errorId : undefined}>
-      <legend className="mb-1 text-sm font-bold text-slate-800">Mode de paiement</legend>
+      <legend className="mb-1.5 text-sm font-semibold text-slate-800">Mode de paiement</legend>
       <div className="flex flex-wrap gap-2">
         {MODES_PAIEMENT.map((mode, i) => (
           <label key={mode}
-            className="inline-flex min-h-[44px] cursor-pointer items-center rounded-xl bg-white px-4 text-sm font-bold text-slate-800 ring-2 ring-slate-300 has-[:checked]:bg-brand-600 has-[:checked]:text-white has-[:checked]:ring-brand-600 has-[:focus-visible]:ring-brand-800">
+            className="choice font-semibold has-[:checked]:border-brand-600 has-[:checked]:bg-brand-600 has-[:checked]:text-white has-[:checked]:hover:bg-brand-700 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-500 has-[:focus-visible]:ring-offset-2">
             <input type="radio" name={name} value={mode} checked={value === mode}
               data-field={i === 0 ? 'mode' : undefined}
               onChange={() => onChange(mode)} className="sr-only" />
@@ -1983,17 +1975,17 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
   const fieldError = (field) => (err?.field === field ? { 'aria-invalid': true, 'aria-describedby': errId } : {});
 
   return (
-    <section aria-labelledby={`${ids}-title`} className="space-y-3 rounded-2xl border-2 border-emerald-300 bg-emerald-50/50 p-4">
+    <section aria-labelledby={`${ids}-title`} className="card space-y-3 p-4">
       <h3 id={`${ids}-title`} ref={titleRef} tabIndex={-1}
-        className="flex items-center gap-2 rounded text-lg font-extrabold text-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-        <PackageCheck className="h-5 w-5" aria-hidden="true" /> Remise au client
+        className="flex items-center gap-2 rounded t-h2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+        <PackageCheck className="h-5 w-5 text-emerald-700" aria-hidden="true" /> Remise au client
       </h3>
 
       {!termine && (
         <label className={`${CHOICE} border-amber-300 bg-amber-50 text-amber-950`}>
           <input type="checkbox" data-field="force" checked={state.forceOk} {...fieldError('force')}
             onChange={(e) => set({ forceOk: e.target.checked })}
-            className="mt-0.5 h-6 w-6 shrink-0 accent-amber-700" />
+            className="mt-0.5 h-5 w-5 shrink-0 accent-amber-700" />
           <span>
             <span className="font-bold">Réparation non terminée</span> (statut « {t.statut} »).
             {' '}Je confirme rendre l’appareil en l’état.
@@ -2005,7 +1997,7 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
         <label className={`${CHOICE} border-amber-300 bg-white text-slate-900`}>
           <input type="checkbox" data-field="pret" checked={state.pretOk} {...fieldError('pret')}
             onChange={(e) => set({ pretOk: e.target.checked })}
-            className="mt-0.5 h-6 w-6 shrink-0 accent-emerald-700" />
+            className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-700" />
           <span>
             <span className="font-bold">Téléphone de prêt récupéré</span> : {String(t.telephone_pret).trim()}
             {imeiCourt(t.telephone_pret_imei) ? ` (IMEI ${imeiCourt(t.telephone_pret_imei)})` : ''}, vérifié.
@@ -2014,23 +2006,23 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
       )}
 
       {verifier && reste > 0 && (
-        <p className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-950 ring-1 ring-amber-300">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {CONSEILS_FACTURATION[verifier]}
+        <p className="callout callout-warning font-semibold">
+          <AlertTriangle aria-hidden="true" /> {CONSEILS_FACTURATION[verifier]}
         </p>
       )}
 
       {reste > 0 ? (
         <fieldset className="space-y-2" data-field="paiement" tabIndex={-1}>
-          <legend className="mb-1 text-sm font-bold text-slate-800">
+          <legend className="mb-1.5 text-sm font-semibold text-slate-800">
             Paiement : <span className="tabular-nums text-red-700">{formatPrix(reste)}</span> restent dus
           </legend>
           {[
             { v: 'encaisser', label: `Encaisser maintenant ${formatPrix(reste)}` },
             { v: 'non_paye', label: 'Non payé : le client réglera plus tard' },
           ].map((o) => (
-            <label key={o.v} className={`${CHOICE} ${state.paiement === o.v ? 'border-emerald-600 bg-white' : 'border-slate-200 bg-white'}`}>
+            <label key={o.v} className={`${CHOICE} ${state.paiement === o.v ? 'border-brand-300 bg-brand-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
               <input type="radio" name={`${ids}-paiement`} value={o.v} checked={state.paiement === o.v}
-                onChange={() => set({ paiement: o.v })} className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-700" />
+                onChange={() => set({ paiement: o.v })} className="mt-0.5 h-5 w-5 shrink-0 accent-brand-600" />
               <span className="font-semibold text-slate-900">{o.label}</span>
             </label>
           ))}
@@ -2042,20 +2034,20 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
 
           {state.paiement === 'non_paye' && (
             <div>
-              <label htmlFor={`${ids}-motif`} className="mb-1 block text-sm font-bold text-slate-800">
+              <label htmlFor={`${ids}-motif`} className="input-label">
                 Motif (obligatoire)
               </label>
               <input id={`${ids}-motif`} type="text" data-field="motif" maxLength={200} value={state.motif}
                 {...fieldError('motif')}
                 onChange={(e) => set({ motif: e.target.value })}
                 placeholder="Ex. : règlera au prochain passage"
-                className="min-h-[48px] w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-base text-slate-900 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30" />
+                className="input input-lg" />
             </div>
           )}
         </fieldset>
       ) : (
-        <p className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-emerald-900 ring-1 ring-emerald-200">
-          <CircleCheckBig className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <p className="callout callout-success items-center font-semibold">
+          <CircleCheckBig aria-hidden="true" />
           {m.paye ? 'Déjà payé : rien à encaisser.' : 'Rien à encaisser.'}
         </p>
       )}

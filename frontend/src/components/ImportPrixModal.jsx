@@ -15,7 +15,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, FileSpreadsheet, Link2, Loader2, Lock, Search, Undo2, Upload, X,
+  AlertTriangle, CheckCircle2, ChevronRight, FileSpreadsheet, Link2, Loader2, Lock, Search, Undo2, Upload, X,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from './Toast';
@@ -186,16 +186,16 @@ function nomColonne(valeur, colonnes) {
 
 function Tuile({ label, valeur, ton = 'slate', detail }) {
   const tons = {
-    slate: 'border-slate-200 bg-slate-50 text-slate-900',
-    violet: 'border-violet-200 bg-violet-50 text-violet-900',
-    amber: 'border-amber-300 bg-amber-50 text-amber-900',
-    red: 'border-red-200 bg-red-50 text-red-900',
+    slate: 'bg-slate-50 text-slate-900',
+    violet: 'bg-brand-50 text-brand-800',
+    amber: 'bg-amber-50 text-amber-800',
+    red: 'bg-red-50 text-red-800',
   };
   return (
-    <div className={`rounded-xl border px-3 py-2 ${tons[ton]}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</div>
-      <div className="text-xl font-extrabold tabular-nums">{valeur}</div>
-      {detail && <div className="text-xs">{detail}</div>}
+    <div className={`rounded-lg px-3 py-2 ${tons[ton]}`}>
+      <div className="text-xs font-medium opacity-80">{label}</div>
+      <div className="text-xl font-semibold tabular-nums leading-tight">{valeur}</div>
+      {detail && <div className="text-xs font-medium opacity-80">{detail}</div>}
     </div>
   );
 }
@@ -229,19 +229,19 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
     // Prix actuels : ceux du serveur (lus avec le code admin) à défaut ceux de la grille affichée
     const ancienHt = apercu?.ancienHt !== undefined ? apercu.ancienHt : choisie.ht;
     const ancienClient = apercu?.ancienClient !== undefined ? apercu.ancienClient : choisie.client;
-    const ton = erreur ? 'border-red-300 bg-red-50' : enCours || verrou ? 'border-slate-300 bg-slate-50'
-      : alerte ? 'border-amber-400 bg-amber-50' : 'border-emerald-300 bg-emerald-50';
+    const ton = erreur ? 'border-red-200 bg-red-50' : enCours || verrou ? 'border-slate-200 bg-slate-50'
+      : alerte ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50';
     return (
-      <div className={`rounded-lg border p-2 ${ton}`} aria-busy={enCours || undefined}>
+      <div className={`rounded-lg border p-3 ${ton}`} aria-busy={enCours || undefined}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900 min-w-0">
-            <Link2 className="w-4 h-4 shrink-0 text-emerald-800" aria-hidden="true" /> {choisie.label}
+            <Link2 className="w-4 h-4 shrink-0 text-emerald-700" aria-hidden="true" /> {choisie.label}
           </span>
           <button
             ref={retirerRef}
             type="button"
             onClick={() => { focusApres.current = 'recherche'; onChoisir(null); }}
-            className="ml-auto min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+            className="btn-secondary btn-sm ml-auto"
             aria-label={`Retirer l’association de la ligne ${ligne.n}`}
           >
             Retirer
@@ -277,7 +277,7 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
           ) : null}
         </p>
         {alerte && (
-          <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-amber-900">
+          <p className="badge badge-sm badge-warning mt-1 bg-white">
             <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {alerte}
           </p>
         )}
@@ -289,13 +289,13 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
             <Lock className="w-3 h-3" aria-hidden="true" /> Pièce verrouillée : son prix ne sera pas modifié.
           </p>
         ) : (
-          <label className={`mt-1 flex items-center gap-2 min-h-[44px] text-sm font-semibold text-slate-900 ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
+          <label className={`mt-1 flex items-center gap-3 min-h-[44px] text-sm font-semibold text-slate-900 ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               checked={!!coche}
               disabled={enCours}
               onChange={(e) => onCocher(e.target.checked)}
-              className="w-5 h-5 accent-violet-700"
+              className="checkbox"
               aria-label={`Appliquer le prix de la ligne ${ligne.n} à ${choisie.label}`}
             />
             {alerte ? 'Appliquer quand même (j’ai vérifié ce prix)' : 'Appliquer ce prix'}
@@ -303,7 +303,7 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
         )}
         {absente && !coche && !enCours && !verrou && (
           // Association non appliquée : la pièce reste « absente du fichier » (obsolète si l'admin le demande)
-          <p className={`mt-1 text-xs ${obsoletes ? 'font-semibold text-amber-900' : 'text-slate-700'}`}>
+          <p className={`mt-1 text-xs ${obsoletes ? 'font-semibold text-amber-800' : 'text-slate-700'}`}>
             {obsoletes
               ? 'Non appliquée : cette pièce est absente du fichier et sera marquée obsolète (onglet « Absentes du fichier »).'
               : 'Non appliquée : cette pièce reste dans l’onglet « Absentes du fichier ».'}
@@ -316,7 +316,7 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
     <div>
       <label htmlFor={id} className="sr-only">{`Associer la ligne ${ligne.n} à une pièce`}</label>
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
         <input
           ref={rechercheRef}
           id={id}
@@ -324,18 +324,18 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Chercher la pièce (ex. iphone 13 batterie)"
-          className="w-full min-h-[44px] rounded-lg border border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+          className="input pl-9"
         />
       </div>
       {q.trim() && (
         <ul className="mt-1 space-y-1" aria-label="Pièces trouvées">
-          {resultats.length === 0 && <li className="text-xs text-slate-600 px-1 py-2">Aucune pièce trouvée.</li>}
+          {resultats.length === 0 && <li className="t-caption px-1 py-2">Aucune pièce trouvée.</li>}
           {resultats.map((o) => (
             <li key={o.cle}>
               <button
                 type="button"
                 onClick={() => { focusApres.current = 'retirer'; onChoisir(o.cle); setQ(''); }}
-                className="w-full min-h-[44px] text-left px-3 rounded-lg border border-slate-200 bg-white text-sm hover:bg-violet-50 hover:border-violet-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                className="w-full min-h-[44px] text-left px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-brand-50 hover:border-brand-300 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 {o.label}
               </button>
@@ -674,16 +674,16 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
     }
   }
 
-  const bouton = 'min-h-[44px] px-4 rounded-lg font-semibold inline-flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 disabled:opacity-50';
-  const boutonSecondaire = `${bouton} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`;
-  const boutonPrincipal = `${bouton} bg-violet-700 text-white hover:bg-violet-800 disabled:bg-slate-300 disabled:text-slate-600 focus-visible:ring-offset-2`;
+  const bouton = 'btn-secondary';
+  const boutonSecondaire = 'btn-secondary';
+  const boutonPrincipal = 'btn-primary';
 
   // ─── Pied de fenêtre selon l'étape ───
   let pied = null;
   if (etape === 'fichier') {
     pied = (
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <p className="text-sm text-slate-600 sm:mr-auto">Rien n’est modifié à cette étape : vous verrez d’abord un aperçu.</p>
+        <p className="text-sm text-slate-500 sm:mr-auto">Rien n’est modifié à cette étape : vous verrez d’abord un aperçu.</p>
         <button type="button" onClick={() => lancerApercu()} disabled={!fichier || !fournisseur.trim() || !!occupe} className={boutonPrincipal}>
           {occupe === 'apercu' && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
           Lire le fichier
@@ -728,11 +728,11 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
       bloquer={occupe === 'appliquer' || occupe === 'annuler'}
     >
       {erreur && (
-        <div role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+        <div role="alert" className="callout callout-danger mb-4 items-start">
+          <AlertTriangle aria-hidden="true" />
           <span className="flex-1 whitespace-pre-line">{erreur}</span>
-          <button type="button" onClick={() => setErreur('')} aria-label="Masquer le message" className="shrink-0 w-11 h-11 -m-2 inline-flex items-center justify-center rounded-lg hover:bg-red-100">
-            <X className="w-4 h-4" aria-hidden="true" />
+          <button type="button" onClick={() => setErreur('')} aria-label="Masquer le message" className="btn-ghost btn-icon shrink-0 -my-2 -mr-2 text-red-700 hover:bg-red-100 hover:text-red-800">
+            <X aria-hidden="true" />
           </button>
         </div>
       )}
@@ -743,11 +743,11 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             onDragOver={(e) => { e.preventDefault(); setSurvol(true); }}
             onDragLeave={() => setSurvol(false)}
             onDrop={(e) => { e.preventDefault(); setSurvol(false); choisirFichier(e.dataTransfer?.files?.[0]); }}
-            className={`rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${survol ? 'border-violet-500 bg-violet-50' : 'border-slate-300 bg-slate-50'}`}
+            className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors duration-150 ${survol ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-slate-50'}`}
           >
-            <Upload className="w-8 h-8 mx-auto text-violet-700" aria-hidden="true" />
+            <Upload className="w-8 h-8 mx-auto text-brand-600" aria-hidden="true" />
             <p className="mt-2 text-sm font-semibold text-slate-900">Déposez le fichier ici</p>
-            <p className="text-xs text-slate-600">Excel (.xlsx) ou CSV (séparateur ; ou ,), 5 Mo au maximum</p>
+            <p className="t-caption">Excel (.xlsx) ou CSV (séparateur ; ou ,), 5 Mo au maximum</p>
             <input
               ref={inputRef}
               id={idFichier}
@@ -769,27 +769,27 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="import-fournisseur" className="block text-sm font-semibold text-slate-800">Fournisseur</label>
+              <label htmlFor="import-fournisseur" className="input-label">Fournisseur</label>
               <input
                 id="import-fournisseur"
                 type="text"
                 list="import-fournisseurs"
                 value={fournisseur}
                 onChange={(e) => setFournisseur(e.target.value)}
-                className="mt-1 w-full min-h-[44px] rounded-lg border border-slate-300 px-3 text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                className="input"
               />
               <datalist id="import-fournisseurs">
                 <option value="Mobilax" />
                 <option value="Utopya" />
               </datalist>
-              <p className="mt-1 text-xs text-slate-600">La correspondance des colonnes est retenue pour ce fournisseur.</p>
+              <p className="input-help">La correspondance des colonnes est retenue pour ce fournisseur.</p>
             </div>
             <fieldset>
-              <legend className="block text-sm font-semibold text-slate-800">Le fichier contient</legend>
-              <div className="mt-1 flex flex-wrap gap-2">
+              <legend className="input-label">Le fichier contient</legend>
+              <div className="flex flex-wrap gap-2">
                 {[['tarifs', 'Pièces téléphones'], ['tarifs_apple_devices', 'Pièces iPad / MacBook']].map(([v, l]) => (
-                  <label key={v} className={`min-h-[44px] px-3 rounded-lg border inline-flex items-center gap-2 text-sm font-semibold cursor-pointer ${cible === v ? 'border-violet-600 bg-violet-50 text-violet-900' : 'border-slate-300 bg-white text-slate-800'}`}>
-                    <input type="radio" name="import-cible" value={v} checked={cible === v} onChange={() => setCible(v)} className="w-4 h-4 accent-violet-700" />
+                  <label key={v} className={`choice ${cible === v ? 'border-brand-300 bg-brand-50 text-brand-800' : ''}`}>
+                    <input type="radio" name="import-cible" value={v} checked={cible === v} onChange={() => setCible(v)} className="radio" />
                     {l}
                   </label>
                 ))}
@@ -807,22 +807,22 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             {apercu.resume?.lignes != null && <> · {apercu.resume.lignes} lignes lues</>}
           </p>
 
-          <details open={mappingIncomplet || mappingModifie} className="mb-4 rounded-xl border border-slate-200 p-3">
-            <summary className="cursor-pointer min-h-[44px] flex items-center text-sm font-bold text-slate-900">
+          <details open={mappingIncomplet || mappingModifie} className="group mb-4 rounded-lg border border-slate-200 p-4">
+            <summary className="cursor-pointer min-h-[44px] flex items-center gap-1.5 t-h3 text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />
               Correspondance des colonnes {mappingIncomplet ? '— à compléter' : '— reconnue'}
             </summary>
-            <p className="text-xs text-slate-600 mb-3">Indiquez quelle colonne du fichier contient chaque information. Ce choix sera retenu pour « {fournisseur} » à l’application.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <p className="t-caption mb-3">Indiquez quelle colonne du fichier contient chaque information. Ce choix sera retenu pour « {fournisseur} » à l’application.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {champsMapping.map((c) => (
                 <div key={c.key}>
-                  <label htmlFor={`map-${c.key}`} className="block text-xs font-semibold text-slate-800">
+                  <label htmlFor={`map-${c.key}`} className="input-label">
                     {c.label}{c.requis && <span aria-hidden="true"> *</span>}{c.requis && <span className="sr-only"> (obligatoire)</span>}
                   </label>
                   <select
                     id={`map-${c.key}`}
                     value={mapping[c.key] || ''}
                     onChange={(e) => setMapping((m) => ({ ...m, [c.key]: e.target.value }))}
-                    className="mt-1 w-full min-h-[44px] rounded-lg border border-slate-300 bg-white px-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                    className="select"
                   >
                     <option value="">— aucune —</option>
                     {(apercu.colonnes || []).map((col) => <option key={col} value={col}>{col}</option>)}
@@ -841,7 +841,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   {occupe === 'apercu' && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
                   Relire avec ces colonnes
                 </button>
-                {mappingModifie && <span className="text-sm text-amber-900">Relisez le fichier avant d’appliquer.</span>}
+                {mappingModifie && <span className="text-sm font-medium text-amber-800">Relisez le fichier avant d’appliquer.</span>}
               </div>
             )}
           </details>
@@ -854,7 +854,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
           </div>
 
           {invalides.length > 0 && (
-            <div role="alert" className="mb-4 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+            <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               <p className="font-semibold flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
                 {invalides.length} ligne{invalides.length > 1 ? 's' : ''} illisible{invalides.length > 1 ? 's' : ''} dans le fichier : rien n’est appliqué tant qu’elles y sont.
@@ -865,16 +865,16 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 ))}
                 {invalides.length > 5 && <li>… et {invalides.length - 5} autres</li>}
               </ul>
-              <label className="mt-2 flex items-center gap-2 min-h-[44px] cursor-pointer font-semibold">
-                <input type="checkbox" checked={ignorerInvalides} onChange={(e) => setIgnorerInvalides(e.target.checked)} className="w-5 h-5 accent-red-700" />
+              <label className="mt-2 flex items-center gap-3 min-h-[44px] cursor-pointer font-semibold">
+                <input type="checkbox" checked={ignorerInvalides} onChange={(e) => setIgnorerInvalides(e.target.checked)} className="checkbox accent-red-700" />
                 Appliquer quand même, sans ces lignes
               </label>
             </div>
           )}
 
           {nbAlertes > 0 && (
-            <div role="note" className="mb-4 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+            <div role="note" className="callout callout-warning mb-4">
+              <AlertTriangle aria-hidden="true" />
               <span>
                 <strong>{nbAlertes} prix à vérifier</strong> (grosse variation, marge trop faible, ligne en double…)
                 {nbDecocheesAlerte > 0 && <>, dont <strong>{nbDecocheesAlerte}</strong> décoché{nbDecocheesAlerte > 1 ? 's' : ''} par défaut</>}.
@@ -883,7 +883,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             </div>
           )}
 
-          <div role="tablist" aria-label="Contenu du fichier" className="flex gap-1 overflow-x-auto border-b border-slate-200 mb-3">
+          <div role="tablist" aria-label="Contenu du fichier" className="page-tabs mb-3">
             {ONGLETS.map(([v, l]) => {
               const n = { reconnues: reconnues.length, nouvelles: nouvelles.length, non_reconnues: nonReconnues.length, absentes: absentesVisibles.length }[v];
               return (
@@ -897,7 +897,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   tabIndex={onglet === v ? 0 : -1}
                   onClick={() => setOnglet(v)}
                   onKeyDown={(e) => clavierOnglets(e, ONGLETS.map(([c]) => c), onglet, setOnglet)}
-                  className={`min-h-[44px] px-3 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${onglet === v ? 'border-violet-700 text-violet-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+                  className={`page-tab ${onglet === v ? 'page-tab-active' : ''}`}
                 >
                   {l} ({n})
                 </button>
@@ -909,14 +909,14 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             {onglet === 'reconnues' && (
               <div>
                 <div className="flex flex-col lg:flex-row lg:items-center gap-2 mb-3">
-                  <div role="group" aria-label="Filtrer les prix" className="flex flex-wrap gap-1">
+                  <div role="group" aria-label="Filtrer les prix" className="segmented">
                     {FILTRES.map(([v, l]) => (
                       <button
                         key={v}
                         type="button"
                         aria-pressed={filtre === v}
                         onClick={() => { setFiltre(v); setPage(1); }}
-                        className={`min-h-[44px] px-3 rounded-lg border text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${filtre === v ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
+                        className={`segmented-item ${filtre === v ? 'segmented-item-active' : ''}`}
                       >
                         {l}
                       </button>
@@ -924,37 +924,37 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   </div>
                   <div className="relative lg:ml-auto lg:w-64">
                     <label htmlFor="import-recherche" className="sr-only">Rechercher une pièce dans l’aperçu</label>
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
                     <input
                       id="import-recherche"
                       type="search"
                       value={recherche}
                       onChange={(e) => { setRecherche(e.target.value); setPage(1); }}
                       placeholder="Rechercher…"
-                      className="w-full min-h-[44px] rounded-lg border border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
+                      className="input pl-9"
                     />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 mb-2">
-                  <button type="button" onClick={() => cocherVisibles(true)} className={boutonSecondaire}>Tout cocher</button>
-                  <button type="button" onClick={() => cocherVisibles(false)} className={boutonSecondaire}>Tout décocher</button>
-                  <span className="self-center text-sm text-slate-600">{reconnuesVisibles.length} ligne{reconnuesVisibles.length > 1 ? 's' : ''} affichée{reconnuesVisibles.length > 1 ? 's' : ''}</span>
+                  <button type="button" onClick={() => cocherVisibles(true)} className="btn-secondary btn-sm">Tout cocher</button>
+                  <button type="button" onClick={() => cocherVisibles(false)} className="btn-secondary btn-sm">Tout décocher</button>
+                  <span className="self-center text-sm text-slate-500">{reconnuesVisibles.length} ligne{reconnuesVisibles.length > 1 ? 's' : ''} affichée{reconnuesVisibles.length > 1 ? 's' : ''}</span>
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-sm min-w-[720px]">
+                <div className="table-wrap scroll-fade-x">
+                  <table className="table table-dense min-w-[720px]">
                     <caption className="sr-only">Prix reconnus : cochez ceux à appliquer</caption>
-                    <thead className="bg-slate-50 text-xs uppercase text-slate-600">
+                    <thead className="bg-slate-50">
                       <tr>
-                        <th scope="col" className="px-2 py-2 w-14"><span className="sr-only">Appliquer</span></th>
-                        <th scope="col" className="px-3 py-2 text-left">Pièce</th>
-                        <th scope="col" className="px-3 py-2 text-right">Achat HT</th>
-                        <th scope="col" className="px-3 py-2 text-right">Prix client</th>
-                        <th scope="col" className="px-3 py-2 text-right">Écart</th>
+                        <th scope="col" className="table-header w-14"><span className="sr-only">Appliquer</span></th>
+                        <th scope="col" className="table-header">Pièce</th>
+                        <th scope="col" className="table-header text-right">Achat HT</th>
+                        <th scope="col" className="table-header text-right">Prix client</th>
+                        <th scope="col" className="table-header text-right">Écart</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pageVisible.length === 0 && (
-                        <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-600">Aucune ligne pour ce filtre.</td></tr>
+                        <tr><td colSpan={5} className="py-8 text-center text-slate-500">Aucune ligne pour ce filtre.</td></tr>
                       )}
                       {pageVisible.map((l) => {
                         const alerte = alerteDe(l);
@@ -963,8 +963,8 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                         const coche = cochees.has(l.n);
                         const multiple = (piecesParLigne.get(l.n) || 0) > 1;
                         return (
-                          <tr key={cleLigne(l)} className={`border-t border-slate-100 ${alerte ? 'bg-amber-50' : ''} ${!modifie ? 'text-slate-600' : ''}`}>
-                            <td className="px-2 py-1 text-center">
+                          <tr key={cleLigne(l)} className={`table-row ${alerte ? 'bg-amber-50 hover:bg-amber-50' : ''} ${!modifie ? 'text-slate-500' : ''}`}>
+                            <td className="!px-1 !py-1 text-center">
                               <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                                 <input
                                   type="checkbox"
@@ -972,35 +972,35 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                                   disabled={!!verrou}
                                   onChange={() => basculer(setCochees, l.n)}
                                   aria-label={`Appliquer le nouveau prix de ${l.label}`}
-                                  className="w-5 h-5 accent-violet-700"
+                                  className="checkbox"
                                 />
                               </label>
                             </td>
-                            <td className="px-3 py-2">
+                            <td>
                               <span className="font-medium text-slate-900">{l.label || l.cle}</span>
-                              {l.designation && <span className="block text-xs text-slate-600 truncate max-w-[360px]" title={l.designation}>Ligne {l.n} : {l.designation}</span>}
+                              {l.designation && <span className="block t-caption truncate max-w-[360px]" title={l.designation}>Ligne {l.n} : {l.designation}</span>}
                               <span className="flex flex-wrap gap-1 mt-0.5">
-                                {multiple && <span className="text-[11px] text-slate-700">(même ligne du fichier que d’autres pièces)</span>}
+                                {multiple && <span className="text-xs text-slate-700">(même ligne du fichier que d’autres pièces)</span>}
                                 {alerte && (
-                                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                                  <span className="badge badge-sm badge-warning bg-white">
                                     <AlertTriangle className="w-3 h-3" aria-hidden="true" /> {alerte}
                                   </span>
                                 )}
                                 {verrou && (
-                                  <span className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                                  <span className="badge badge-sm badge-neutral">
                                     <Lock className="w-3 h-3" aria-hidden="true" /> ne sera pas modifié
                                   </span>
                                 )}
-                                {!modifie && <span className="text-[11px]">inchangé{!verrou ? ' : coché, il sera daté du jour' : ''}</span>}
+                                {!modifie && <span className="text-xs">inchangé{!verrou ? ' : coché, il sera daté du jour' : ''}</span>}
                               </span>
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                              <span className="text-slate-600">{euros(l.ancien_ht)}</span> → <strong>{euros(l.nouveau_ht)}</strong>
+                            <td className="text-right tabular-nums whitespace-nowrap">
+                              <span className="text-slate-500">{euros(l.ancien_ht)}</span> → <strong className="text-slate-900">{euros(l.nouveau_ht)}</strong>
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                              <span className="text-slate-600">{euros(l.ancien_client)}</span> → <strong>{euros(l.nouveau_client)}</strong>
+                            <td className="text-right tabular-nums whitespace-nowrap">
+                              <span className="text-slate-500">{euros(l.ancien_client)}</span> → <strong className="text-slate-900">{euros(l.nouveau_client)}</strong>
                             </td>
-                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{modifie ? variationTexte(l.ancien_ht, l.nouveau_ht) : '—'}</td>
+                            <td className="text-right tabular-nums whitespace-nowrap">{modifie ? variationTexte(l.ancien_ht, l.nouveau_ht) : '—'}</td>
                           </tr>
                         );
                       })}
@@ -1009,7 +1009,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 </div>
                 {reconnuesVisibles.length > pageVisible.length && (
                   <div className="mt-3 text-center">
-                    <button type="button" onClick={() => setPage((p) => p + 1)} className={boutonSecondaire}>
+                    <button type="button" onClick={() => setPage((p) => p + 1)} className="btn-secondary">
                       Afficher {Math.min(PAR_PAGE, reconnuesVisibles.length - pageVisible.length)} lignes de plus
                     </button>
                   </div>
@@ -1020,21 +1020,21 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             {onglet === 'nouvelles' && (
               <div>
                 <p className="text-sm text-slate-700 mb-2">Pièces du fichier absentes de votre grille. Cochez celles à ajouter (prix client calculé avec vos règles).</p>
-                {nouvelles.length === 0 ? <p className="py-6 text-center text-sm text-slate-600">Aucune nouvelle pièce.</p> : (
+                {nouvelles.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Aucune nouvelle pièce.</p> : (
                   <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
                     {nouvelles.map((l) => (
-                      <li key={l.n} className="flex items-center gap-2 px-2 py-1">
+                      <li key={l.n} className="flex items-center gap-2 px-2 py-1 min-h-12">
                         <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer shrink-0">
                           <input type="checkbox" checked={nouvellesCochees.has(l.n)} onChange={() => basculer(setNouvellesCochees, l.n)}
-                            aria-label={`Ajouter ${libelleNouvelle(l)}`} className="w-5 h-5 accent-violet-700" />
+                            aria-label={`Ajouter ${libelleNouvelle(l)}`} className="checkbox" />
                         </label>
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm font-medium text-slate-900">{libelleNouvelle(l)}</span>
-                          {l.designation && <span className="block text-xs text-slate-600 truncate">Ligne {l.n} : {texteBrut(l.designation)}</span>}
-                          {alerteDe(l) && <span className="text-[11px] font-semibold text-amber-900">{alerteDe(l)}</span>}
+                          {l.designation && <span className="block t-caption truncate">Ligne {l.n} : {texteBrut(l.designation)}</span>}
+                          {alerteDe(l) && <span className="text-xs font-semibold text-amber-800">{alerteDe(l)}</span>}
                         </span>
                         <span className="text-sm tabular-nums text-right whitespace-nowrap">
-                          {euros(l.nouveau_ht)} HT → <strong>{euros(l.nouveau_client)}</strong>
+                          {euros(l.nouveau_ht)} HT → <strong className="text-slate-900">{euros(l.nouveau_client)}</strong>
                         </span>
                       </li>
                     ))}
@@ -1048,12 +1048,12 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 <p className="text-sm text-slate-700 mb-2">
                   Lignes que le logiciel n’a pas su relier à une pièce. Associez-les à la main, ou laissez-les : elles seront ignorées.
                 </p>
-                {nonReconnues.length === 0 ? <p className="py-6 text-center text-sm text-slate-600">Toutes les lignes ont été reconnues.</p> : (
+                {nonReconnues.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Toutes les lignes ont été reconnues.</p> : (
                   <ul className="space-y-2">
                     {nonReconnues.map((l) => (
-                      <li key={l.n} className="rounded-xl border border-slate-200 p-3 grid grid-cols-1 lg:grid-cols-2 gap-2">
+                      <li key={l.n} className="card p-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
                         <div className="text-sm">
-                          <span className="text-xs font-semibold text-slate-600">Ligne {l.n}{l.raison ? ` · ${l.raison}` : ''}</span>
+                          <span className="t-caption">Ligne {l.n}{l.raison ? ` · ${l.raison}` : ''}</span>
                           <span className="block text-slate-900 break-words">{texteBrut(l.brut) || '—'}</span>
                           {(() => {
                             // Prix lu dans le fichier (nouveau_ht de l'aperçu, à défaut celui de l'évaluation)
@@ -1061,7 +1061,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                             const ht = htDuFichier(l) ?? ev?.nouveauHt ?? null;
                             return ht != null
                               ? <span className="block text-slate-700 tabular-nums">Prix du fichier : <strong>{euros(ht)} HT</strong></span>
-                              : <span className="block text-amber-900">Prix du fichier : <strong>non lu</strong></span>;
+                              : <span className="block text-amber-800">Prix du fichier : <strong>non lu</strong></span>;
                           })()}
                         </div>
                         <AssocierLigne
@@ -1087,7 +1087,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 <p className="text-sm text-slate-700 mb-2">Pièces de votre grille qui ne figurent pas dans ce fichier. Elles ne sont jamais supprimées.</p>
                 {absentesVues.retirees > 0 && (
                   <p role="note" className="mb-2 text-sm text-slate-700 flex items-start gap-1.5">
-                    <Link2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-800" aria-hidden="true" />
+                    <Link2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-700" aria-hidden="true" />
                     <span>
                       {absentesVues.retirees > 1
                         ? `${absentesVues.retirees} pièces associées à une ligne du fichier (onglet « À associer ») : retirées de cette liste, elles ne seront pas marquées obsolètes.`
@@ -1096,8 +1096,8 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   </p>
                 )}
                 {absentesAMarquer.length > 0 && (
-                  <label className="mb-3 flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3 cursor-pointer">
-                    <input type="checkbox" checked={obsoletes} onChange={(e) => setObsoletes(e.target.checked)} className="mt-1 w-5 h-5 accent-violet-700" />
+                  <label className="card-section mb-3 flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" checked={obsoletes} onChange={(e) => setObsoletes(e.target.checked)} className="checkbox mt-0.5" />
                     <span className="text-sm">
                       <strong>{absentesAMarquer.length > 1 ? `Marquer ces ${absentesAMarquer.length} pièces comme obsolètes` : 'Marquer cette pièce comme obsolète'}</strong>
                       <span className="block text-slate-700">
@@ -1108,7 +1108,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   </label>
                 )}
                 {absentesVisibles.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-slate-600">
+                  <p className="py-6 text-center text-sm text-slate-500">
                     {absentes.length ? 'Les pièces absentes du fichier sont toutes associées à une ligne : aucune ne sera marquée obsolète.' : 'Toutes vos pièces sont dans le fichier.'}
                   </p>
                 ) : (
@@ -1123,7 +1123,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                         )}
                       </li>
                     ))}
-                    {absentesVisibles.length > 300 && <li className="py-1 text-slate-600">… et {absentesVisibles.length - 300} autres</li>}
+                    {absentesVisibles.length > 300 && <li className="py-1 text-slate-500">… et {absentesVisibles.length - 300} autres</li>}
                   </ul>
                 )}
               </div>
@@ -1134,7 +1134,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
 
       {etape === 'termine' && resultat && (
         <div className="py-4">
-          <div role="status" className={`rounded-xl border p-4 ${annule?.ton === 'warning' ? 'border-amber-400 bg-amber-50 text-amber-950' : annule ? 'border-slate-300 bg-slate-50 text-slate-900' : 'border-emerald-300 bg-emerald-50 text-emerald-950'}`}>
+          <div role="status" className={`rounded-lg border px-4 py-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
             <p className="font-bold flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
               {annule ? (annule.ton === 'warning' ? annule.texte : 'Import annulé : les prix sont revenus à leur valeur d’avant.') : 'Import appliqué.'}
@@ -1147,13 +1147,13 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 {Number(resultat.obsoletes) > 0 && <li><strong>{resultat.obsoletes}</strong> pièce{resultat.obsoletes > 1 ? 's' : ''} marquée{resultat.obsoletes > 1 ? 's' : ''} obsolète{resultat.obsoletes > 1 ? 's' : ''}</li>}
                 {Number(resultat.verrouilles) > 0 && <li><strong>{resultat.verrouilles}</strong> prix verrouillé{resultat.verrouilles > 1 ? 's' : ''}, non modifié{resultat.verrouilles > 1 ? 's' : ''}</li>}
                 {Array.isArray(resultat.associations_ignorees) && resultat.associations_ignorees.length > 0 && (
-                  <li className="text-amber-950">
+                  <li className="text-amber-800">
                     <strong>{resultat.associations_ignorees.length}</strong> association{resultat.associations_ignorees.length > 1 ? 's' : ''} non appliquée{resultat.associations_ignorees.length > 1 ? 's' : ''} (à vérifier, non confirmée{resultat.associations_ignorees.length > 1 ? 's' : ''}) :
                     {' '}{resultat.associations_ignorees.slice(0, 5).map((a) => `ligne ${a.n} → ${a.label || a.cle}${alerteDe(a) ? ` (${alerteDe(a)})` : ''}`).join(' ; ')}
                     {resultat.associations_ignorees.length > 5 && ` … et ${resultat.associations_ignorees.length - 5} autres`}
                   </li>
                 )}
-                <li className="text-emerald-900">Les tickets déjà créés gardent leur prix.</li>
+                <li>Les tickets déjà créés gardent leur prix.</li>
               </ul>
             )}
           </div>
@@ -1164,14 +1164,14 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   <Undo2 className="w-4 h-4" aria-hidden="true" /> Annuler cet import
                 </button>
               ) : (
-                <div role="alertdialog" aria-label="Confirmer l’annulation de l’import" className="rounded-xl border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950">
+                <div role="alertdialog" aria-label="Confirmer l’annulation de l’import" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   <p className="font-semibold">Remettre tous les prix de cet import à leur valeur d’avant ?</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" onClick={annulerImport} disabled={occupe === 'annuler'} className={`${bouton} bg-amber-600 text-white hover:bg-amber-700`}>
-                      {occupe === 'annuler' && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
+                    <button type="button" onClick={() => setConfirmerAnnulation(false)} disabled={occupe === 'annuler'} className="btn-ghost">Non, garder</button>
+                    <button type="button" onClick={annulerImport} disabled={occupe === 'annuler'} className="btn-primary">
+                      {occupe === 'annuler' && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
                       Oui, annuler l’import
                     </button>
-                    <button type="button" onClick={() => setConfirmerAnnulation(false)} disabled={occupe === 'annuler'} className={boutonSecondaire}>Non, garder</button>
                   </div>
                 </div>
               )}

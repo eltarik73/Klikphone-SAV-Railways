@@ -6,8 +6,8 @@ import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
 import {
-  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle,
+  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, AlertCircle,
+  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle, Gift, Loader2,
 } from 'lucide-react';
 
 const isValidPhone = (tel) => {
@@ -17,6 +17,43 @@ const isValidPhone = (tel) => {
 const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 const STEPS = ['Coordonnées', 'Appareil', 'Panne'];
+
+// Tuile de choix (catégorie, panne) : 56 px, bordure 2 px, sélection = marque
+const tuile = (actif) => `min-h-14 px-4 py-3 rounded-lg border-2 text-base font-semibold text-left leading-snug
+  transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+  ${actif ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`;
+
+// En-tête d'étape : pastille marque 40 px + titre + sous-titre (span : `.depot-form p` forcerait 16 px)
+function EnTete({ icone: Icone, titre, sousTitre }) {
+  return (
+    <div className="flex items-center gap-3 mb-1">
+      <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
+        <Icone className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold leading-snug text-slate-900">{titre}</h2>
+        <span className="block text-sm text-slate-500">{sousTitre}</span>
+      </div>
+    </div>
+  );
+}
+
+// <div> et non <p> : `.depot-form p` imposerait 16 px à cette mention
+function PiedDePage() {
+  return (
+    <div className="text-center py-3 text-xs text-slate-500">
+      Propulsé par{' '}
+      <span className="font-extrabold">
+        <span className="text-brand-600">Tk</span>
+        <span className="text-slate-900">S</span>
+        <span className="text-pink-600">∞</span>
+        <span className="text-slate-900">26</span>
+      </span>
+      {' '}— une solution{' '}
+      <span className="font-bold text-brand-600">Klik&Dev</span>
+    </div>
+  );
+}
 
 export default function DeposerPage() {
   const navigate = useNavigate();
@@ -120,9 +157,11 @@ export default function DeposerPage() {
     }
   };
 
+  // <div> et non <p> : `.depot-form p` écraserait la couleur rouge de l'erreur
   const FieldError = ({ field }) => errors[field] ? (
-    <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
+    <div id={`distance-${field}-erreur`} role="alert" className="input-error text-sm">{errors[field]}</div>
   ) : null;
+  const invalide = (field) => (errors[field] ? { 'aria-invalid': 'true', 'aria-describedby': `distance-${field}-erreur` } : {});
 
   const [copied, setCopied] = useState(false);
 
@@ -157,169 +196,169 @@ export default function DeposerPage() {
   // Confirmation screen
   if (createdCode) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-brand-50/30">
-        <div className="max-w-lg mx-auto px-4 py-8">
-          <div className="card p-8 text-center animate-in">
-            <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
-              <Check className="w-10 h-10 text-emerald-500" />
+      <div className="min-h-screen bg-slate-50">
+        <div className="max-w-[640px] mx-auto px-4 py-6 sm:py-8">
+          <div className="card p-6 sm:p-8 text-center animate-in">
+            <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-5" aria-hidden="true">
+              <Check className="w-10 h-10 text-emerald-700" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">
+            <h2 className="t-display text-balance mb-5">
               Demande enregistrée !
             </h2>
 
             {/* Alerte: notez ce numéro */}
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 flex items-center gap-2 text-left">
-              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-              <p className="text-xs font-semibold text-amber-800">
+            <div className="callout callout-warning items-center text-left mb-5">
+              <AlertTriangle aria-hidden="true" />
+              <p className="font-medium">
                 Conservez ce numéro ! Il vous permettra de suivre votre réparation.
               </p>
             </div>
 
             {/* Code avec bouton copier */}
-            <p className="text-slate-500 text-sm mb-2">Votre numéro de suivi :</p>
-            <div className="bg-brand-50 rounded-xl py-5 px-6 mb-3 border-2 border-brand-200 relative">
-              <p className="text-4xl font-extrabold font-mono text-brand-600 tracking-wider select-all">{createdCode}</p>
+            <p className="text-slate-500 mb-2">Votre numéro de suivi :</p>
+            <div className="bg-brand-50 rounded-xl py-5 px-6 mb-3 border border-brand-200 relative">
+              <p className="text-4xl font-bold font-mono text-brand-700 tracking-wider tabular-nums select-all">{createdCode}</p>
               <button
+                type="button"
                 onClick={handleCopy}
-                className="absolute top-2 right-2 p-2 rounded-lg bg-white/80 hover:bg-white shadow-sm transition-all"
+                className="btn-ghost btn-icon absolute top-2 right-2 text-brand-700 hover:bg-brand-100"
                 title="Copier"
               >
-                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-brand-400" />}
+                {copied ? <Check className="text-emerald-700" aria-hidden="true" /> : <Copy aria-hidden="true" />}
               </button>
             </div>
-            {copied && <p className="text-xs text-emerald-600 font-medium mb-2">Copié !</p>}
+            <div role="status" aria-live="polite" className="min-h-5 mb-3">
+              {copied && <p className="text-sm text-emerald-700 font-medium">Copié !</p>}
+            </div>
 
             {/* Actions: partager / WhatsApp */}
-            <div className="flex gap-2 mb-5">
-              <button onClick={handleShare}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium transition-all">
-                <Share2 className="w-4 h-4" /> Partager
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
+              <button type="button" onClick={handleShare} className="btn-secondary min-h-11">
+                <Share2 aria-hidden="true" /> Partager
               </button>
-              <button onClick={handleWhatsAppSelf}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-sm font-medium transition-all">
-                <MessageCircle className="w-4 h-4" /> M'envoyer par WhatsApp
+              <button type="button" onClick={handleWhatsAppSelf} className="btn-whatsapp min-h-11">
+                <MessageCircle aria-hidden="true" /> M'envoyer par WhatsApp
               </button>
             </div>
 
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-5 text-left">
-              <h3 className="text-sm font-bold text-indigo-800 mb-2 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Prochaines étapes
-              </h3>
-              <ol className="text-sm text-indigo-700 space-y-2 list-decimal list-inside">
-                <li>Notre équipe va valider votre demande</li>
-                <li>Présentez-vous en boutique avec votre appareil</li>
-                <li>Votre dossier est déjà créé — accueil rapide</li>
-              </ol>
+            <div className="callout callout-info text-left mb-5">
+              <Clock aria-hidden="true" />
+              <div className="min-w-0">
+                <h3 className="font-semibold mb-1.5">Prochaines étapes</h3>
+                <ol className="space-y-1.5 list-decimal list-inside">
+                  <li>Notre équipe va valider votre demande</li>
+                  <li>Présentez-vous en boutique avec votre appareil</li>
+                  <li>Votre dossier est déjà créé — accueil rapide</li>
+                </ol>
+              </div>
             </div>
 
             {form.email && (
-              <p className="text-xs text-slate-400 mb-4">
-                Un email de confirmation a été envoyé à <strong>{form.email}</strong>
+              <p className="text-sm text-slate-500 mb-5 [overflow-wrap:anywhere]">
+                Un email de confirmation a été envoyé à <strong className="text-slate-700">{form.email}</strong>
               </p>
             )}
 
             {!form.email && (
-              <p className="text-xs text-slate-400 mb-4">
+              <p className="text-sm text-slate-500 mb-5">
                 Vous pouvez retrouver votre ticket avec votre numéro de téléphone sur la page de suivi.
               </p>
             )}
 
             <div className="space-y-3">
               <button
+                type="button"
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
-                className="btn-primary w-full"
+                className="btn-primary btn-lg btn-block"
               >
-                <Send className="w-4 h-4" /> Suivre ma réparation
+                <Send aria-hidden="true" /> Suivre ma réparation
               </button>
-              <a href="/" className="btn-secondary w-full inline-flex items-center justify-center gap-2">
-                <ArrowLeft className="w-4 h-4" /> Retour à l'accueil
+              <a href="/" className="btn-secondary btn-lg btn-block">
+                <ArrowLeft aria-hidden="true" /> Retour à l'accueil
               </a>
             </div>
           </div>
 
-          <div className="mt-6 card p-4">
-            <div className="flex items-center gap-3 text-sm text-slate-600">
-              <MapPin className="w-4 h-4 text-brand-600 shrink-0" />
+          <div className="mt-6 card p-4 space-y-2">
+            <div className="flex items-center gap-3 text-sm text-slate-700">
+              <MapPin className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
               <span>79 Place Saint Léger, Chambéry</span>
             </div>
-            <div className="flex items-center gap-3 text-sm text-slate-600 mt-2">
-              <Phone className="w-4 h-4 text-brand-600 shrink-0" />
+            <a href="tel:0479608922" className="flex items-center gap-3 min-h-11 text-sm font-medium text-slate-700 hover:text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+              <Phone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
               <span>04 79 60 89 22</span>
-            </div>
+            </a>
           </div>
+          <PiedDePage />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-brand-50/30">
-      <div className="max-w-lg mx-auto px-4 py-8">
+    <div className="min-h-screen bg-slate-50">
+      <div className="depot-form max-w-[640px] mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
-        <div className="text-center mb-8 animate-in">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-600/20">
-            <Globe className="w-8 h-8 text-white" />
+        <div className="text-center mb-6 animate-in">
+          <div className="w-14 h-14 rounded-xl bg-brand-600 text-white flex items-center justify-center mx-auto mb-4 shadow-xs" aria-hidden="true">
+            <Globe className="w-7 h-7" />
           </div>
-          <h1 className="text-2xl font-display font-bold text-slate-900">Dépôt à distance</h1>
-          <p className="text-sm text-slate-500 mt-1">Pré-enregistrez votre appareil en ligne</p>
+          <h1 className="t-display">Dépôt à distance</h1>
+          <span className="block text-base text-slate-500 mt-1.5">Pré-enregistrez votre appareil en ligne</span>
         </div>
 
         {/* Progress */}
-        <div className="flex items-center gap-1 mb-8">
+        <div className="flex gap-1.5 mb-6">
           {STEPS.map((s, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center">
-              <div className={`w-full h-2 rounded-full transition-all duration-500 ${
-                i < step ? 'bg-indigo-500' : i === step ? 'bg-indigo-400' : 'bg-slate-200'
+            <div key={i} className="flex-1 min-w-0">
+              <div className={`h-2 rounded-full transition-colors duration-300 ${
+                i <= step ? 'bg-brand-600' : 'bg-slate-200'
               }`} />
-              <p className={`text-xs font-medium mt-1.5 ${
-                i <= step ? 'text-indigo-600' : 'text-slate-400'
-              }`}>{s}</p>
+              <span className={`block text-xs mt-1.5 text-center leading-tight tracking-tight ${
+                i === step ? 'font-semibold text-brand-700' : i < step ? 'font-medium text-brand-700' : 'font-medium text-slate-500'
+              }`}>{s}</span>
             </div>
           ))}
         </div>
 
         {/* Step 0: Coordonnées */}
         {step === 0 && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
-                <User className="w-5 h-5 text-sky-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Vos coordonnées</h2>
-                <p className="text-xs text-slate-400">Pour vous recontacter</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={User} titre="Vos coordonnées" sousTitre="Pour vous recontacter" />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="input-label">Nom *</label>
-                <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
-                  className={`input ${errors.nom ? 'border-red-300' : ''}`} placeholder="Dupont" />
+                <label htmlFor="distance-nom" className="input-label">Nom *</label>
+                <input id="distance-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                  autoComplete="family-name" className="input" placeholder="Dupont" {...invalide('nom')} />
                 <FieldError field="nom" />
               </div>
               <div>
-                <label className="input-label">Prénom</label>
-                <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)} className="input" placeholder="Jean" />
+                <label htmlFor="distance-prenom" className="input-label">Prénom</label>
+                <input id="distance-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
+                  autoComplete="given-name" className="input" placeholder="Jean" />
               </div>
             </div>
             <div>
-              <label className="input-label">Téléphone *</label>
-              <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
-                className={`input ${errors.telephone ? 'border-red-300' : ''}`} placeholder="06 XX XX XX XX" />
+              <label htmlFor="distance-telephone" className="input-label">Téléphone *</label>
+              <input id="distance-telephone" type="tel" inputMode="tel" autoComplete="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
+                className="input" placeholder="06 XX XX XX XX" {...invalide('telephone')} />
               <FieldError field="telephone" />
             </div>
             <div>
-              <label className="input-label">Email</label>
-              <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
-                className={`input ${errors.email ? 'border-red-300' : ''}`} placeholder="pour recevoir les notifications" />
+              <label htmlFor="distance-email" className="input-label">Email</label>
+              <input id="distance-email" type="email" inputMode="email" autoComplete="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
+                className="input" placeholder="pour recevoir les notifications"
+                aria-describedby={errors.email ? 'distance-email-erreur' : 'distance-email-aide'}
+                aria-invalid={errors.email ? 'true' : undefined} />
               <FieldError field="email" />
-              <p className="text-xs text-slate-400 mt-1">Recommandé pour recevoir les mises à jour de votre réparation</p>
+              <span id="distance-email-aide" className="input-help block text-sm">Recommandé pour recevoir les mises à jour de votre réparation</span>
             </div>
-            <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
+            <label className="callout bg-brand-50 border-brand-200 text-brand-800 items-center min-h-14 cursor-pointer hover:bg-brand-100/60 transition-colors duration-150">
+              <Gift aria-hidden="true" />
               <input type="checkbox" checked={form.carte_camby} onChange={e => updateForm('carte_camby', e.target.checked)}
-                className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
-              <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
+                className="checkbox w-6 h-6" />
+              <span className="text-base font-medium">Avez-vous la carte Camby ?</span>
             </label>
             <ConsentementMarketing id="distance-consentement" checked={form.consentement_marketing}
               onChange={(v) => updateForm('consentement_marketing', v)} />
@@ -329,40 +368,32 @@ export default function DeposerPage() {
 
         {/* Step 1: Appareil */}
         {step === 1 && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                <Smartphone className="w-5 h-5 text-brand-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Votre appareil</h2>
-                <p className="text-xs text-slate-400">Type, marque et modèle</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={Smartphone} titre="Votre appareil" sousTitre="Type, marque et modèle" />
 
-            <div>
-              <label className="input-label">Catégorie *</label>
-              <div className="grid grid-cols-2 gap-2">
+            <fieldset>
+              <legend className="input-label">Catégorie *</legend>
+              <div className="grid grid-cols-2 gap-3">
                 {categories.filter(c => c !== 'Commande').map(cat => (
                   <button
                     key={cat}
+                    type="button"
+                    aria-pressed={form.categorie === cat}
                     onClick={() => updateForm('categorie', cat)}
-                    className={`p-3 rounded-xl text-sm font-medium border-2 transition-all text-left
-                      ${form.categorie === cat
-                        ? 'border-brand-500 bg-brand-50 text-brand-700'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                    className={tuile(form.categorie === cat)}
                   >
                     {cat}
                   </button>
                 ))}
               </div>
               <FieldError field="categorie" />
-            </div>
+            </fieldset>
 
             {form.categorie && (
               <div>
                 <label htmlFor="distance-marque" className="input-label">Marque *</label>
-                <select id="distance-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input text-base">
+                <select id="distance-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)}
+                  className="select input pr-12" {...invalide('marque')}>
                   <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
                   {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
                   <option value={MARQUE_AUTRE}>Autre</option>
@@ -389,7 +420,7 @@ export default function DeposerPage() {
               <div>
                 <label htmlFor="distance-modele-autre" className="input-label">Préciser marque / modèle *</label>
                 <input id="distance-modele-autre" value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
-                  className={`input text-base ${errors.modele_autre ? 'border-red-300' : ''}`} placeholder="Ex: Samsung Galaxy S24" />
+                  className="input" placeholder="Ex: Samsung Galaxy S24" {...invalide('modele_autre')} />
                 <FieldError field="modele_autre" />
               </div>
             )}
@@ -398,59 +429,55 @@ export default function DeposerPage() {
 
         {/* Step 2: Panne */}
         {step === 2 && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Le problème</h2>
-                <p className="text-xs text-slate-400">Décrivez la panne</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={AlertTriangle} titre="Le problème" sousTitre="Décrivez la panne" />
 
-            <div>
-              <label className="input-label">Type de panne *</label>
-              <div className="grid grid-cols-2 gap-2">
+            <fieldset>
+              <legend className="input-label">Type de panne *</legend>
+              <div className="grid grid-cols-2 gap-3">
                 {pannes.map(p => (
                   <button
                     key={p}
+                    type="button"
+                    aria-pressed={form.panne === p}
                     onClick={() => updateForm('panne', p)}
-                    className={`p-3 rounded-xl text-sm font-medium border-2 transition-all text-left
-                      ${form.panne === p
-                        ? 'border-brand-500 bg-brand-50 text-brand-700'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                    className={tuile(form.panne === p)}
                   >
                     {p}
                   </button>
                 ))}
               </div>
               <FieldError field="panne" />
-            </div>
+            </fieldset>
 
             <div>
-              <label className="input-label">Détails</label>
+              <label htmlFor="distance-panne-detail" className="input-label">Détails</label>
               <textarea
+                id="distance-panne-detail"
                 value={form.panne_detail}
                 onChange={e => updateForm('panne_detail', e.target.value)}
-                className="input min-h-[80px] resize-none"
+                className="input resize-none"
+                rows={3}
                 placeholder="Décrivez plus précisément le problème..."
               />
             </div>
 
             <div>
-              <label className="input-label">Notes</label>
+              <label htmlFor="distance-notes" className="input-label">Notes</label>
               <textarea
+                id="distance-notes"
                 value={form.notes_client}
                 onChange={e => updateForm('notes_client', e.target.value)}
-                className="input min-h-[60px] resize-none"
+                className="input resize-none"
+                rows={2}
                 placeholder="Informations complémentaires (accessoires, état cosmétique...)"
               />
             </div>
 
             {errors.submit && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {errors.submit}
+              <div role="alert" className="callout callout-danger">
+                <AlertCircle aria-hidden="true" />
+                <span>{errors.submit}</span>
               </div>
             )}
           </div>
@@ -459,54 +486,46 @@ export default function DeposerPage() {
         {/* Navigation */}
         <div className="flex gap-3 mt-6">
           <button
+            type="button"
             onClick={() => step === 0 ? navigate('/') : setStep(s => s - 1)}
-            className="btn-secondary flex-1 py-3"
+            className="btn-secondary btn-lg flex-1 min-h-14"
           >
-            <ArrowLeft className="w-4 h-4" /> {step === 0 ? 'Accueil' : 'Retour'}
+            <ArrowLeft aria-hidden="true" /> {step === 0 ? 'Accueil' : 'Retour'}
           </button>
 
           <button
+            type="button"
             onClick={handleNext}
             disabled={loading || !canNext()}
-            className={`flex-[2] py-3 ${step === 2 ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}`}
+            className="btn-primary btn-lg flex-[2] min-h-14"
           >
             {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <>
+                <Loader2 className="animate-spin" aria-hidden="true" />
                 Envoi...
-              </span>
+              </>
             ) : step === 2 ? (
-              <>Envoyer ma demande <Check className="w-4 h-4" /></>
+              <>Envoyer ma demande <Check aria-hidden="true" /></>
             ) : (
-              <>Suivant <ArrowRight className="w-4 h-4" /></>
+              <>Suivant <ArrowRight aria-hidden="true" /></>
             )}
           </button>
         </div>
 
         {/* Info bar */}
-        <div className="mt-8 card p-4 bg-slate-50">
-          <div className="flex items-center gap-3 text-sm text-slate-500">
-            <MapPin className="w-4 h-4 shrink-0" />
+        <div className="mt-8 card p-4 space-y-2">
+          <div className="flex items-center gap-3 text-sm text-slate-700">
+            <MapPin className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
             <span>79 Place Saint Léger, Chambéry</span>
           </div>
-          <div className="flex items-center gap-3 text-sm text-slate-500 mt-1.5">
-            <Phone className="w-4 h-4 shrink-0" />
+          <a href="tel:0479608922" className="flex items-center gap-3 min-h-11 text-sm font-medium text-slate-700 hover:text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            <Phone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
             <span>04 79 60 89 22</span>
-          </div>
+          </a>
         </div>
 
-        <div className="mt-4 text-center">
-          <div style={{ textAlign: 'center', padding: '12px 0', fontSize: 10, color: '#A1A1AA' }}>
-            Propulsé par{' '}
-            <span style={{ fontWeight: 800, fontSize: 11 }}>
-              <span style={{ color: '#7C3AED' }}>Tk</span>
-              <span style={{ color: '#18181B' }}>S</span>
-              <span style={{ color: '#EC4899' }}>∞</span>
-              <span style={{ color: '#18181B' }}>26</span>
-            </span>
-            {' '}— une solution{' '}
-            <span style={{ fontWeight: 700, color: '#7C3AED' }}>Klik&Dev</span>
-          </div>
+        <div className="mt-4">
+          <PiedDePage />
         </div>
       </div>
     </div>

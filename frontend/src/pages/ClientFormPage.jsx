@@ -10,7 +10,7 @@ import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib
 import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle,
-  Lock, Shield, FileText, Send, Package, ShoppingBag, Clock,
+  Lock, Shield, Send, Package, ShoppingBag, Clock, Gift,
 } from 'lucide-react';
 
 // Flow = ordered list of step IDs
@@ -31,6 +31,26 @@ const ACHAT_TYPES = ['Téléphone', 'Accessoire', 'Ordinateur'];
 const isValidPhone = (tel) => /^(?:0|\+33\s?)[1-9](?:[\s.-]?\d{2}){4}$/.test(tel.replace(/\s/g, '').length >= 10 ? tel : '') || /^\d{10,14}$/.test(tel.replace(/[\s.-]/g, ''));
 const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 const isValidIMEI = (imei) => !imei || /^\d{15}$/.test(imei.replace(/[\s-]/g, ''));
+
+// Tuile de choix (catégorie, panne, type d'achat) : 56 px, bordure 2 px, sélection = marque
+const tuile = (actif) => `min-h-14 px-4 py-3 rounded-lg border-2 text-base font-semibold text-left leading-snug
+  transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
+  ${actif ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`;
+
+// En-tête d'étape : pastille marque 40 px + titre + sous-titre (span : `.depot-form p` forcerait 16 px)
+function EnTete({ icone: Icone, titre, sousTitre }) {
+  return (
+    <div className="flex items-center gap-3 mb-1">
+      <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
+        <Icone className="w-5 h-5" />
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold leading-snug text-slate-900">{titre}</h2>
+        <span className="block text-sm text-slate-500">{sousTitre}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function ClientFormPage() {
   const navigate = useNavigate();
@@ -302,88 +322,85 @@ export default function ClientFormPage() {
     }
   };
 
+  // <div> et non <p> : `.depot-form p` écraserait la couleur rouge de l'erreur
   const FieldError = ({ field }) => errors[field] ? (
-    <p className="text-xs text-red-500 mt-1">{errors[field]}</p>
+    <div id={`depot-${field}-erreur`} role="alert" className="input-error text-sm">{errors[field]}</div>
   ) : null;
+  const invalide = (field) => (errors[field] ? { 'aria-invalid': 'true', 'aria-describedby': `depot-${field}-erreur` } : {});
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50/30">
-      <div className="depot-form w-[90%] lg:max-w-2xl mx-auto px-4 py-6">
+    <div className="min-h-screen bg-slate-50">
+      <div className="depot-form w-full max-w-[640px] mx-auto px-4 py-5 sm:py-6 pb-10">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-2 mb-5">
           <button
             type="button"
             onClick={handleBack}
-            className="btn-ghost p-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+            className="btn-ghost btn-icon btn-lg -ml-2"
             aria-label="Retour à l'étape précédente"
           >
-            <ArrowLeft className="w-6 h-6" aria-hidden="true" />
+            <ArrowLeft aria-hidden="true" />
           </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-display font-bold text-slate-900">Déposer un appareil</h1>
-            <p className="text-sm text-slate-400">Étape {step + 1} sur {flow.length} — {labels[currentId]}</p>
+          <div className="flex-1 min-w-0">
+            <h1 className="t-display">Déposer un appareil</h1>
+            <span className="block text-sm text-slate-500 mt-0.5">Étape {step + 1} sur {flow.length} — {labels[currentId]}</span>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="flex gap-1.5 mb-8">
+        <div className="flex gap-1.5 mb-6">
           {flow.map((id, i) => (
-            <div key={id} className="flex-1">
-              <div className={`h-2.5 rounded-full transition-all duration-500 ${
-                i < step ? 'bg-brand-500' : i === step ? 'bg-brand-400' : 'bg-slate-200'
+            <div key={id} className="flex-1 min-w-0">
+              <div className={`h-2 rounded-full transition-colors duration-300 ${
+                i <= step ? 'bg-brand-600' : 'bg-slate-200'
               }`} />
-              <p className={`text-xs font-semibold mt-1.5 text-center ${
-                i <= step ? 'text-brand-600' : 'text-slate-400'
-              }`}>{labels[id]}</p>
+              <span lang="fr" className={`block text-xs mt-1.5 text-center leading-tight tracking-tight break-words hyphens-auto ${
+                i === step ? 'font-semibold text-brand-700' : i < step ? 'font-medium text-brand-700' : 'font-medium text-slate-500'
+              }`}>{labels[id]}</span>
             </div>
           ))}
         </div>
 
         {/* ═══ Step: Client ═══ */}
         {currentId === 'client' && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center">
-                <User className="w-5 h-5 text-sky-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Vos coordonnées</h2>
-                <p className="text-xs text-slate-400">Informations de contact</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={User} titre="Vos coordonnées" sousTitre="Informations de contact" />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="input-label">Nom *</label>
-                <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
-                  className={`input ${errors.nom ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Dupont" />
+                <label htmlFor="depot-nom" className="input-label">Nom *</label>
+                <input id="depot-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                  autoComplete="family-name" className="input" placeholder="Dupont" {...invalide('nom')} />
                 <FieldError field="nom" />
               </div>
               <div>
-                <label className="input-label">Prénom</label>
-                <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)} className="input" placeholder="Jean" />
+                <label htmlFor="depot-prenom" className="input-label">Prénom</label>
+                <input id="depot-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
+                  autoComplete="given-name" className="input" placeholder="Jean" />
               </div>
             </div>
             <div>
-              <label className="input-label">Téléphone *</label>
-              <input type="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
-                className={`input ${errors.telephone ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="06 XX XX XX XX" />
+              <label htmlFor="depot-telephone" className="input-label">Téléphone *</label>
+              <input id="depot-telephone" type="tel" inputMode="tel" autoComplete="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
+                className="input" placeholder="06 XX XX XX XX" {...invalide('telephone')} />
               <FieldError field="telephone" />
             </div>
             <div>
-              <label className="input-label">Email</label>
-              <input type="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
-                className={`input ${errors.email ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="optionnel" />
+              <label htmlFor="depot-email" className="input-label">Email</label>
+              <input id="depot-email" type="email" inputMode="email" autoComplete="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
+                className="input" placeholder="optionnel" {...invalide('email')} />
               <FieldError field="email" />
             </div>
             <div>
-              <label className="input-label">Société</label>
-              <input value={form.societe} onChange={e => updateForm('societe', e.target.value)} className="input" placeholder="optionnel" />
+              <label htmlFor="depot-societe" className="input-label">Société</label>
+              <input id="depot-societe" value={form.societe} onChange={e => updateForm('societe', e.target.value)}
+                autoComplete="organization" className="input" placeholder="optionnel" />
             </div>
-            <label className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
+            <label className="callout bg-brand-50 border-brand-200 text-brand-800 items-center min-h-14 cursor-pointer hover:bg-brand-100/60 transition-colors duration-150">
+              <Gift aria-hidden="true" />
               <input type="checkbox" checked={form.carte_camby} onChange={e => updateForm('carte_camby', e.target.checked)}
-                className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
-              <span className="text-sm font-medium text-amber-800">Avez-vous la carte Camby ?</span>
+                className="checkbox w-6 h-6" />
+              <span className="text-base font-medium">Avez-vous la carte Camby ?</span>
             </label>
             <ConsentementMarketing id="depot-consentement" checked={form.consentement_marketing}
               onChange={(v) => updateForm('consentement_marketing', v)} />
@@ -393,38 +410,28 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Appareil (catégorie) ═══ */}
         {currentId === 'appareil' && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                <Smartphone className="w-5 h-5 text-brand-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Type d'appareil</h2>
-                <p className="text-xs text-slate-400">Sélectionnez la catégorie</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={Smartphone} titre="Type d'appareil" sousTitre="Sélectionnez la catégorie" />
 
             <div className="grid grid-cols-2 gap-3">
               {categories.map(cat => (
                 <button
                   key={cat}
+                  type="button"
+                  aria-pressed={form.categorie === cat}
                   onClick={() => updateForm('categorie', cat)}
-                  className={`p-5 rounded-xl text-base font-semibold border-2 transition-all text-left
-                    ${form.categorie === cat
-                      ? 'border-brand-500 bg-brand-50 text-brand-700 shadow-sm shadow-brand-500/10'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                  className={tuile(form.categorie === cat)}
                 >
                   {cat}
                 </button>
               ))}
               <button
+                type="button"
+                aria-pressed={form.categorie === 'Achat'}
                 onClick={() => updateForm('categorie', 'Achat')}
-                className={`p-5 rounded-xl text-base font-semibold border-2 transition-all text-left flex items-center gap-2
-                  ${form.categorie === 'Achat'
-                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm shadow-emerald-500/10'
-                    : 'border-emerald-200 hover:border-emerald-300 text-emerald-700 bg-emerald-50/50'}`}
+                className={`${tuile(form.categorie === 'Achat')} flex items-center gap-2`}
               >
-                <ShoppingBag className="w-5 h-5" /> Achat
+                <ShoppingBag className="w-5 h-5 shrink-0" aria-hidden="true" /> Achat
               </button>
             </div>
           </div>
@@ -432,20 +439,13 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Modèle (skipped for Commande) ═══ */}
         {currentId === 'modele' && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-                <Smartphone className="w-5 h-5 text-brand-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Marque & modèle</h2>
-                <p className="text-xs text-slate-400">{form.categorie}</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={Smartphone} titre="Marque & modèle" sousTitre={form.categorie} />
 
             <div>
               <label htmlFor="depot-marque" className="input-label">Marque *</label>
-              <select id="depot-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)} className="input">
+              <select id="depot-marque" value={form.marque} onChange={e => updateForm('marque', e.target.value)}
+                className="select input pr-12" {...invalide('marque')}>
                 <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
                 {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
                 <option value={MARQUE_AUTRE}>Autre</option>
@@ -471,7 +471,7 @@ export default function ClientFormPage() {
               <div>
                 <label htmlFor="depot-modele-autre" className="input-label">Préciser marque / modèle *</label>
                 <input id="depot-modele-autre" value={form.modele_autre} onChange={e => updateForm('modele_autre', e.target.value)}
-                  className={`input ${errors.modele_autre ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20' : ''}`} placeholder="Ex: Samsung Galaxy S24" autoFocus />
+                  className="input" placeholder="Ex: Samsung Galaxy S24" autoFocus {...invalide('modele_autre')} />
                 <FieldError field="modele_autre" />
               </div>
             )}
@@ -480,28 +480,23 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Panne / Détail commande ═══ */}
         {currentId === 'panne' && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                {isCommande ? <Package className="w-5 h-5 text-amber-600" /> : <AlertTriangle className="w-5 h-5 text-amber-600" />}
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">{isCommande ? 'Détail commande' : 'Le problème'}</h2>
-                <p className="text-xs text-slate-400">{isCommande ? 'Décrivez la pièce à commander' : 'Décrivez la panne'}</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={isCommande ? Package : AlertTriangle}
+              titre={isCommande ? 'Détail commande' : 'Le problème'}
+              sousTitre={isCommande ? 'Décrivez la pièce à commander' : 'Décrivez la panne'} />
 
             {isCommande ? (
               /* ─── Mode Commande ─── */
               <>
-                <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-700 flex items-center gap-2">
-                  <Package className="w-4 h-4 shrink-0" />
-                  La panne sera automatiquement définie comme "Pièce à commander"
+                <div className="callout callout-info">
+                  <Package aria-hidden="true" />
+                  <span>La panne sera automatiquement définie comme "Pièce à commander"</span>
                 </div>
 
                 <div>
-                  <label className="input-label">Pièce à commander *</label>
+                  <label htmlFor="depot-piece" className="input-label">Pièce à commander *</label>
                   <input
+                    id="depot-piece"
                     value={form.panne_detail}
                     onChange={e => updateForm('panne_detail', e.target.value)}
                     className="input"
@@ -511,24 +506,26 @@ export default function ClientFormPage() {
                 </div>
 
                 <div>
-                  <label className="input-label">Détails supplémentaires (référence, couleur, capacité...)</label>
+                  <label htmlFor="depot-commande-notes" className="input-label">Détails supplémentaires (référence, couleur, capacité...)</label>
                   <textarea
+                    id="depot-commande-notes"
                     value={form.notes_client}
                     onChange={e => updateForm('notes_client', e.target.value)}
-                    className="input min-h-[80px] resize-none"
+                    className="input resize-none"
+                    rows={3}
                     placeholder="Précisions sur la pièce, référence exacte, couleur, capacité..."
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="input-label">Fournisseur</label>
-                    <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
+                    <label htmlFor="depot-fournisseur" className="input-label">Fournisseur</label>
+                    <input id="depot-fournisseur" value={fournisseur} onChange={e => setFournisseur(e.target.value)}
                       className="input" placeholder="Ex: Utopya, MobileParts..." />
                   </div>
                   <div>
-                    <label className="input-label">Prix estimé (€)</label>
-                    <input type="number" step="0.01" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
+                    <label htmlFor="depot-prix-estime" className="input-label">Prix estimé (€)</label>
+                    <input id="depot-prix-estime" type="number" step="0.01" inputMode="decimal" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
                       className="input" placeholder="0.00" />
                   </div>
                 </div>
@@ -536,8 +533,8 @@ export default function ClientFormPage() {
             ) : (
               /* ─── Mode Réparation ─── */
               <>
-                <div>
-                  <label className="input-label">Type de panne *</label>
+                <fieldset>
+                  <legend className="input-label">Type de panne *</legend>
                   <div className="grid grid-cols-2 gap-3">
                     {pannes.map(p => (
                       <button
@@ -545,44 +542,45 @@ export default function ClientFormPage() {
                         type="button"
                         aria-pressed={form.panne === p}
                         onClick={() => updateForm('panne', p)}
-                        className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
-                          ${form.panne === p
-                            ? 'border-brand-500 bg-brand-50 text-brand-700'
-                            : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                        className={tuile(form.panne === p)}
                       >
                         {p}
                       </button>
                     ))}
                   </div>
-                </div>
+                </fieldset>
 
                 <div>
-                  <label className="input-label">Détails supplémentaires</label>
+                  <label htmlFor="depot-panne-detail" className="input-label">Détails supplémentaires</label>
                   <textarea
+                    id="depot-panne-detail"
                     value={form.panne_detail}
                     onChange={e => updateForm('panne_detail', e.target.value)}
-                    className="input min-h-[80px] resize-none"
+                    className="input resize-none"
+                    rows={3}
                     placeholder="Décrivez plus précisément le problème..."
                   />
                 </div>
 
                 <div>
-                  <label className="input-label">Notes</label>
+                  <label htmlFor="depot-notes" className="input-label">Notes</label>
                   <textarea
+                    id="depot-notes"
                     value={form.notes_client}
                     onChange={e => updateForm('notes_client', e.target.value)}
-                    className="input min-h-[60px] resize-none"
+                    className="input resize-none"
+                    rows={2}
                     placeholder="Informations complémentaires (accessoires, état cosmétique...)"
                   />
                 </div>
 
-                <label htmlFor="depot-attente" className="flex items-start gap-3 p-4 min-h-[44px] rounded-xl border-2 border-slate-200 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 cursor-pointer transition-colors">
+                <label htmlFor="depot-attente" className="flex items-start gap-3 p-4 min-h-14 rounded-lg border-2 border-slate-200 bg-white has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50 cursor-pointer transition-colors duration-150">
                   <input id="depot-attente" type="checkbox" checked={form.attente_boutique}
                     onChange={e => updateForm('attente_boutique', e.target.checked)}
                     aria-describedby="depot-attente-aide"
-                    className="mt-0.5 w-6 h-6 shrink-0 rounded border-slate-400 text-brand-600 focus:ring-2 focus:ring-brand-500" />
+                    className="checkbox w-6 h-6 mt-0.5" />
                   <span className="min-w-0">
-                    <span className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                    <span className="flex items-center gap-2 text-base font-semibold text-slate-900">
                       <Clock className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Je patiente en boutique
                     </span>
                     <span id="depot-attente-aide" className="block text-sm text-slate-600 mt-0.5">
@@ -593,44 +591,44 @@ export default function ClientFormPage() {
 
                 {/* Pièce à commander */}
                 <div className="border-t border-slate-100 pt-4">
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
-                      className="w-6 h-6 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
-                    <Package className="w-5 h-5 text-amber-600" />
-                    <span className="text-base font-semibold text-amber-700">Pièce à commander</span>
+                  <label htmlFor="depot-piece-a-commander" className="flex items-center gap-3 min-h-11 cursor-pointer">
+                    <input id="depot-piece-a-commander" type="checkbox" checked={pieceACommander} onChange={e => setPieceACommander(e.target.checked)}
+                      className="checkbox w-6 h-6" />
+                    <Package className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
+                    <span className="text-base font-semibold text-slate-900">Pièce à commander</span>
                   </label>
                 </div>
 
                 {pieceACommander && (
-                  <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-4 animate-in">
-                    <div className="text-sm font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2">
-                      <Package className="w-4 h-4" /> Détail de la commande
+                  <div className="card-section space-y-4 animate-in">
+                    <div className="t-h3 flex items-center gap-2">
+                      <Package className="w-4 h-4 text-slate-500" aria-hidden="true" /> Détail de la commande
                     </div>
                     <div>
-                      <label className="text-sm text-slate-600 font-semibold">Pièce à commander *</label>
-                      <input value={pieceNom} onChange={e => setPieceNom(e.target.value)}
+                      <label htmlFor="depot-piece-nom" className="input-label">Pièce à commander *</label>
+                      <input id="depot-piece-nom" value={pieceNom} onChange={e => setPieceNom(e.target.value)}
                         placeholder="Ex: Écran OLED iPhone 14 Pro, Nappe Face ID..."
-                        className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
+                        className="input" />
                     </div>
                     <div>
-                      <label className="text-sm text-slate-600 font-semibold">Détails / Commentaire</label>
-                      <textarea value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
+                      <label htmlFor="depot-piece-details" className="input-label">Détails / Commentaire</label>
+                      <textarea id="depot-piece-details" value={pieceDetails} onChange={e => setPieceDetails(e.target.value)}
                         placeholder="Précisions sur la pièce, référence, couleur, capacité..."
                         rows={2}
-                        className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5 resize-none" style={{ fontSize: '16px' }} />
+                        className="input resize-none" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm text-slate-600 font-semibold">Fournisseur</label>
-                        <input value={fournisseur} onChange={e => setFournisseur(e.target.value)}
+                        <label htmlFor="depot-piece-fournisseur" className="input-label">Fournisseur</label>
+                        <input id="depot-piece-fournisseur" value={fournisseur} onChange={e => setFournisseur(e.target.value)}
                           placeholder="Ex: Utopya, MobileParts..."
-                          className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
+                          className="input" />
                       </div>
                       <div>
-                        <label className="text-sm text-slate-600 font-semibold">Prix estimé</label>
-                        <input type="number" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
+                        <label htmlFor="depot-piece-prix" className="input-label">Prix estimé</label>
+                        <input id="depot-piece-prix" type="number" inputMode="decimal" value={prixEstime} onChange={e => setPrixEstime(e.target.value)}
                           placeholder="0.00"
-                          className="w-full px-5 py-4 rounded-xl border border-slate-200 text-base mt-1.5" style={{ fontSize: '16px' }} />
+                          className="input" />
                       </div>
                     </div>
                   </div>
@@ -642,38 +640,30 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Achat ═══ */}
         {currentId === 'achat' && (
-          <div className="card p-6 space-y-4 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <ShoppingBag className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Détail de l'achat</h2>
-                <p className="text-xs text-slate-400">Enregistrer un achat sans réparation</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={ShoppingBag} titre="Détail de l'achat" sousTitre="Enregistrer un achat sans réparation" />
 
-            <div>
-              <label className="input-label">Type d'achat *</label>
+            <fieldset>
+              <legend className="input-label">Type d'achat *</legend>
               <div className="grid grid-cols-3 gap-3">
                 {ACHAT_TYPES.map(type => (
                   <button
                     key={type}
+                    type="button"
+                    aria-pressed={achatType === type}
                     onClick={() => setAchatType(type)}
-                    className={`p-4 rounded-xl text-sm font-semibold border-2 transition-all text-center
-                      ${achatType === type
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                    className={`${tuile(achatType === type)} text-center`}
                   >
                     {type}
                   </button>
                 ))}
               </div>
-            </div>
+            </fieldset>
 
             <div>
-              <label className="input-label">Description de l'achat *</label>
+              <label htmlFor="depot-achat-description" className="input-label">Description de l'achat *</label>
               <input
+                id="depot-achat-description"
                 value={achatDescription}
                 onChange={e => setAchatDescription(e.target.value)}
                 className="input"
@@ -683,10 +673,12 @@ export default function ClientFormPage() {
             </div>
 
             <div>
-              <label className="input-label">Prix de vente (€)</label>
+              <label htmlFor="depot-achat-prix" className="input-label">Prix de vente (€)</label>
               <input
+                id="depot-achat-prix"
                 type="number"
                 step="0.01"
+                inputMode="decimal"
                 value={achatPrix}
                 onChange={e => setAchatPrix(e.target.value)}
                 className="input"
@@ -695,11 +687,13 @@ export default function ClientFormPage() {
             </div>
 
             <div>
-              <label className="input-label">Notes</label>
+              <label htmlFor="depot-achat-notes" className="input-label">Notes</label>
               <textarea
+                id="depot-achat-notes"
                 value={form.notes_client}
                 onChange={e => updateForm('notes_client', e.target.value)}
-                className="input min-h-[60px] resize-none"
+                className="input resize-none"
+                rows={2}
                 placeholder="Informations complémentaires..."
               />
             </div>
@@ -708,38 +702,33 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Sécurité (skipped for Commande) ═══ */}
         {currentId === 'securite' && (
-          <div className="card p-6 space-y-5 animate-in">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
-                <Lock className="w-5 h-5 text-violet-600" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Codes d'accès</h2>
-                <p className="text-xs text-slate-400">Optionnel — nécessaire pour le diagnostic</p>
-              </div>
-            </div>
+          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <EnTete icone={Lock} titre="Codes d'accès" sousTitre="Optionnel — nécessaire pour le diagnostic" />
 
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
-              Ces informations sont confidentielles et nécessaires uniquement pour le diagnostic de votre appareil.
+            <div className="callout callout-info">
+              <Shield aria-hidden="true" />
+              <span>Ces informations sont confidentielles et nécessaires uniquement pour le diagnostic de votre appareil.</span>
             </div>
 
             <div>
-              <label className="input-label flex items-center gap-1.5">
-                <Lock className="w-3 h-3" /> Code PIN / Mot de passe
+              <label htmlFor="depot-pin" className="input-label flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-slate-500" aria-hidden="true" /> Code PIN / Mot de passe
               </label>
               <input
+                id="depot-pin"
                 type="text"
+                autoComplete="off"
                 value={form.pin}
                 onChange={e => updateForm('pin', e.target.value)}
-                className="input text-center text-lg font-mono tracking-widest"
+                className="input text-center text-xl font-mono tracking-widest"
                 placeholder="••••"
               />
             </div>
 
             <div>
-              <label className="input-label flex items-center gap-1.5">
-                <Shield className="w-3 h-3" /> Schéma de déverrouillage
-              </label>
+              <div className="input-label flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-slate-500" aria-hidden="true" /> Schéma de déverrouillage
+              </div>
               <div className="flex justify-center">
                 <PatternGrid
                   value={form.pattern}
@@ -753,38 +742,40 @@ export default function ClientFormPage() {
 
         {/* ═══ Step: Confirmation ═══ */}
         {isConfirmation && createdCode && (
-          <div className="card p-8 text-center animate-in">
-            <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-6">
-              <Check className="w-10 h-10 text-emerald-500" />
+          <div className="card p-6 sm:p-8 text-center animate-in">
+            <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-5" aria-hidden="true">
+              <Check className="w-10 h-10 text-emerald-700" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Merci pour votre confiance !</h2>
-            <p className="text-slate-500 mb-6">Votre numéro de ticket :</p>
-            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-4 border border-brand-100">
-              <p className="text-4xl font-bold font-mono text-brand-600 tracking-wider">{createdCode}</p>
+            <h2 className="t-display text-balance mb-2">Merci pour votre confiance !</h2>
+            <p className="text-slate-500 mb-5">Votre numéro de ticket :</p>
+            <div className="bg-brand-50 rounded-xl py-4 px-6 mb-4 border border-brand-200">
+              {/* <div> et non <p> : `.depot-form p` ramènerait le code à 16 px slate-700 */}
+              <div className="text-4xl font-bold font-mono text-brand-700 tracking-wider tabular-nums">{createdCode}</div>
             </div>
-            <p className="text-sm text-slate-400 mb-6">
+            <p className="text-slate-600 mb-6">
               Conservez ce code pour suivre l'avancement de votre {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}.
             </p>
             {countdown !== null && (
               <div className="mb-6">
-                <div className="w-full bg-slate-200 rounded-full h-1.5 mb-2">
+                <div className="w-full bg-slate-200 rounded-full h-1.5 mb-2" aria-hidden="true">
                   <div
-                    className="bg-brand-500 h-1.5 rounded-full transition-all duration-1000"
+                    className="bg-brand-600 h-1.5 rounded-full transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
                     style={{ width: `${(countdown / 10) * 100}%` }}
                   />
                 </div>
-                <p className="text-xs text-slate-400">Retour automatique dans {countdown} seconde{countdown > 1 ? 's' : ''}...</p>
+                <span className="block text-sm text-slate-500 tabular-nums">Retour automatique dans {countdown} seconde{countdown > 1 ? 's' : ''}...</span>
               </div>
             )}
             <div className="space-y-3">
               <button
+                type="button"
                 onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
-                className="btn-primary w-full"
+                className="btn-primary btn-lg btn-block"
               >
-                <Send className="w-4 h-4" /> Suivre ma {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}
+                <Send aria-hidden="true" /> Suivre ma {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}
               </button>
-              <button onClick={resetForm} className="btn-secondary w-full">
-                <ArrowLeft className="w-4 h-4" /> Nouveau dépôt
+              <button type="button" onClick={resetForm} className="btn-secondary btn-lg btn-block">
+                <ArrowLeft aria-hidden="true" /> Nouveau dépôt
               </button>
             </div>
           </div>
@@ -793,18 +784,19 @@ export default function ClientFormPage() {
         {/* Navigation */}
         {!isConfirmation && (
           <div className="flex gap-3 mt-6">
-            <button onClick={handleBack} className="btn-secondary flex-1 py-4 text-lg">
-              <ArrowLeft className="w-5 h-5" /> Retour
+            <button type="button" onClick={handleBack} className="btn-secondary btn-lg flex-1 min-h-14">
+              <ArrowLeft aria-hidden="true" /> Retour
             </button>
 
             <button
+              type="button"
               onClick={handleNext}
               disabled={loading || !canNext()}
-              className={`flex-[2] py-4 text-lg ${isLastStep ? 'btn-primary bg-emerald-600 hover:bg-emerald-700' : 'btn-primary'}`}
+              className="btn-primary btn-lg flex-[2] min-h-14"
             >
               {loading ? 'Envoi...' : isLastStep ? 'Confirmer le dépôt' : 'Suivant'}
-              {!isLastStep && <ArrowRight className="w-5 h-5" />}
-              {isLastStep && <Check className="w-5 h-5" />}
+              {!isLastStep && <ArrowRight aria-hidden="true" />}
+              {isLastStep && <Check aria-hidden="true" />}
             </button>
           </div>
         )}

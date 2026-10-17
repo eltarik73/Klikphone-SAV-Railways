@@ -39,6 +39,12 @@ function pluriel(n, mot, motPluriel = `${mot}s`) {
   return `${n} ${n > 1 ? motPluriel : mot}`;
 }
 
+// « 06 00 00 01 23 » (même mise en forme que le panneau de scan), sinon la valeur telle quelle
+function formatTel(tel) {
+  const d = String(tel ?? '').replace(/\D/g, '');
+  return d.length === 10 ? d.replace(/(\d{2})(?=\d)/g, '$1 ') : String(tel ?? '').trim();
+}
+
 function Ligne({
   t, impaye, delai, seuilCourrier, basePath, onOpenTicket, onRemettre, emplacements, smsServeur,
   relanceOuverte, onOuvrirRelance, onRelance, onEmplacement, onMiseEnDemeure,
@@ -53,6 +59,7 @@ function Ligne({
   const action = impaye ? (reste > 0 ? 'Encaisser' : 'Ouvrir') : 'Remettre';
   const relances = libelleRelances(t.nb_relances, t.derniere_relance, formatDateShort);
   const aRelancer = !impaye && Boolean(t.relance_due);
+  const tel = formatTel(t.client_tel);
 
   const fermerRelance = () => {
     onOuvrirRelance(null);
@@ -62,19 +69,19 @@ function Ligne({
   return (
     <li className="px-4 sm:px-5 py-3">
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2 sm:items-center">
-        {/* Étiquette d'étagère : emplacement en gros, ancienneté dessous */}
+        {/* Étiquette d'étagère : emplacement en gros, ancienneté dessous (J+N : fonds -100 conservés) */}
         <div className="flex min-w-[4.5rem] max-w-[7.5rem] shrink-0 flex-col items-stretch gap-1.5">
           {!impaye && (
             <EmplacementInput compact ticketId={t.id} value={t.emplacement} emplacements={emplacements}
               onSaved={(v) => onEmplacement(t.id, v)} />
           )}
           {badge ? (
-            <span className={`inline-flex items-center justify-center rounded-lg px-2 py-1 font-mono text-sm font-bold tabular-nums ring-1 ${badge.classe}`}>
+            <span className={`inline-flex items-center justify-center rounded-lg px-2 py-1 t-mono text-sm font-bold ${badge.classe}`}>
               <span aria-hidden="true">{badge.label}</span>
               <span className="sr-only">Réparation terminée depuis {pluriel(badge.jours, 'jour')}</span>
             </span>
           ) : (
-            <span className="inline-flex items-center justify-center rounded-lg bg-slate-100 px-2 py-1 font-mono text-sm text-slate-700 ring-1 ring-slate-200">
+            <span className="inline-flex items-center justify-center rounded-lg bg-slate-100 px-2 py-1 t-mono text-sm text-slate-700">
               <span aria-hidden="true">J+?</span><span className="sr-only">Date de fin de réparation inconnue</span>
             </span>
           )}
@@ -88,25 +95,26 @@ function Ligne({
                   e.preventDefault();
                   onOpenTicket(t.id);
                 }}
-                className={`-my-1.5 inline-flex min-h-[44px] items-center rounded font-mono font-bold text-brand-700 hover:underline ${FOCUS_RING}`}>
+                className={`-my-1.5 inline-flex min-h-[44px] items-center rounded t-mono font-bold text-brand-700 hover:underline ${FOCUS_RING}`}>
                 {code}
               </a>
               <span className="min-w-0 truncate font-semibold text-slate-900">{client}</span>
+              {tel && <span className="t-small tabular-nums">{tel}</span>}
             </p>
-            <p className="truncate text-xs text-slate-600">
+            <p className="truncate t-small">
               {appareil(t)}{t.fin_reparation ? ` · terminé le ${formatDateShort(t.fin_reparation)}` : ''}
             </p>
             {relances && (
-              <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-700">
+              <p className="mt-0.5 flex items-center gap-1 t-caption text-slate-600">
                 <BellRing className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
                 <span>{relances}</span>
               </p>
             )}
           </div>
-          {(aRelancer || impaye || abandon?.atteint) && (
+          {(aRelancer || impaye || abandon?.atteint || reste > 0) && (
             <div className="flex flex-wrap items-center gap-1.5">
               {aRelancer && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-900 ring-1 ring-violet-300">
+                <span className="badge badge-brand">
                   <BellRing className="h-3.5 w-3.5" aria-hidden="true" /> Relance à faire
                 </span>
               )}
@@ -115,10 +123,13 @@ function Ligne({
                   {reste > 0 ? `Reste ${formatPrix(reste)}` : 'Rien à payer'}
                 </span>
               ) : abandon?.atteint ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-800 ring-1 ring-red-200">
+                <span className="badge badge-danger">
                   <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> Délai d’abandon atteint
                 </span>
               ) : null}
+              {!impaye && reste > 0 && (
+                <span className="text-sm font-bold tabular-nums text-red-700">Reste {formatPrix(reste)}</span>
+              )}
             </div>
           )}
         </div>
@@ -129,26 +140,24 @@ function Ligne({
               aria-expanded={relanceOuverte}
               aria-controls={relanceOuverte ? panneauId : undefined}
               aria-label={`Relancer ${code}`}
-              className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold sm:flex-none ${FOCUS_RING} focus-visible:ring-offset-1 ${
-                aRelancer || relanceOuverte
-                  ? 'bg-brand-700 text-white hover:bg-brand-800'
-                  : 'border border-brand-300 bg-white text-brand-800 hover:bg-brand-50'
+              className={`btn-secondary flex-1 sm:flex-none ${
+                relanceOuverte ? 'border-brand-300 bg-brand-50 text-brand-700 hover:border-brand-300 hover:bg-brand-50' : ''
               }`}>
-              <Send className="h-4 w-4" aria-hidden="true" /> Relancer
+              <Send aria-hidden="true" /> Relancer
             </button>
           )}
           {!impaye && miseEnDemeureProposee(t, seuilCourrier) && (
             <button type="button" onClick={() => onMiseEnDemeure(t)}
               aria-label={`Courrier de mise en demeure ${code}`}
-              className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800 hover:bg-red-50 sm:flex-none ${FOCUS_RING}`}>
-              <FileWarning className="h-4 w-4" aria-hidden="true" />
+              className="btn-secondary flex-1 sm:flex-none text-red-700 hover:border-red-200 hover:bg-red-50">
+              <FileWarning aria-hidden="true" />
               <span className="sm:hidden">Courrier</span>
               <span className="hidden sm:inline">Mise en demeure</span>
             </button>
           )}
           <button type="button" onClick={() => onRemettre(t)}
             aria-label={`${action} ${code}`}
-            className={`min-h-[44px] flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 sm:flex-none ${FOCUS_RING}`}>
+            className={`flex-1 sm:flex-none ${action === 'Ouvrir' ? 'btn-secondary' : 'btn-success'}`}>
             {action}
           </button>
         </div>
@@ -175,17 +184,17 @@ function Groupe({ titre, aide, tickets, parEmplacement = false, ligne }) {
   if (!tickets.length) return null;
   return (
     <section aria-labelledby={titreId}>
-      <h3 id={titreId} className="sticky top-0 z-[1] bg-slate-50 px-4 sm:px-5 py-2 text-xs font-semibold text-slate-700">
-        {titre} <span className="font-normal text-slate-600">— {aide}</span>
+      <h3 id={titreId} className="sticky top-0 z-[1] bg-slate-50 px-4 sm:px-5 py-2 text-[13px] font-semibold text-slate-700 border-b border-slate-100">
+        {titre} <span className="font-normal text-slate-500">— {aide}</span>
       </h3>
       {parEmplacement ? grouperParEmplacement(tickets).map((g) => (
         <div key={g.emplacement ?? '∅'} role="group"
           aria-label={g.emplacement ? `Emplacement ${g.emplacement}` : 'Sans emplacement'}>
           <p className="flex items-center gap-2 border-t border-slate-100 bg-white px-4 sm:px-5 pt-2 text-xs font-semibold text-slate-700">
             {g.emplacement
-              ? <span className="rounded bg-slate-900 px-1.5 py-0.5 font-mono text-white">{g.emplacement}</span>
+              ? <span className="rounded-lg bg-slate-900 px-2 py-0.5 t-mono text-xs text-white">{g.emplacement}</span>
               : <span>Sans emplacement</span>}
-            <span className="font-normal text-slate-600">{pluriel(g.tickets.length, 'appareil')}</span>
+            <span className="font-normal text-slate-500">{pluriel(g.tickets.length, 'appareil')}</span>
           </p>
           <Liste tickets={g.tickets} ligne={ligne} />
         </div>
@@ -258,23 +267,21 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
 
   return (
     <section id={id} aria-labelledby={titreId} aria-busy={loading || isRevalidating}
-      className="card mb-6 overflow-hidden motion-safe:animate-[fadeIn_0.3s_ease-out_both]">
-      <div className="border-b border-slate-100 px-4 sm:px-5 py-3">
+      className="card mb-6 overflow-hidden motion-safe:animate-in">
+      <div className="border-b border-slate-100 px-4 sm:px-5 py-3 sm:py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100" aria-hidden="true">
-            <PackageCheck className="h-4 w-4 text-emerald-700" />
+          <div className="kpi-icon bg-emerald-50 text-emerald-700" aria-hidden="true">
+            <PackageCheck />
           </div>
-          <h2 id={titreId} className="min-w-0 flex-1 text-sm font-semibold text-slate-900">À récupérer</h2>
-          <button type="button" onClick={() => mutate()} aria-label="Rafraîchir l’étagère"
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 ${FOCUS_RING}`}>
-            <RefreshCw className={`h-4 w-4 ${isRevalidating ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+          <h2 id={titreId} className="min-w-0 flex-1 t-h2">À récupérer</h2>
+          <button type="button" onClick={() => mutate()} aria-label="Rafraîchir l’étagère" className="btn-ghost btn-icon">
+            <RefreshCw className={isRevalidating ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
           </button>
-          <button type="button" onClick={onClose} aria-label="Fermer l’étagère À récupérer"
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 ${FOCUS_RING}`}>
-            <X className="h-4 w-4" aria-hidden="true" />
+          <button type="button" onClick={onClose} aria-label="Fermer l’étagère À récupérer" className="btn-ghost btn-icon">
+            <X aria-hidden="true" />
           </button>
         </div>
-        <p className="mt-1 text-xs text-slate-600">
+        <p className="mt-2 text-sm text-slate-600">
           {data
             ? `${pluriel(enBoutique.length, 'appareil réparé', 'appareils réparés')} en boutique · `
               + `${pluriel(impayes.length, 'rendu non payé', 'rendus non payés')}`
@@ -283,12 +290,12 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
             : 'Chargement…'}
           {data && aRelancer > 0 && ' '}
           {data && aRelancer > 0 && (
-            <strong className="font-semibold text-violet-900">
+            <strong className="font-semibold text-brand-700">
               {pluriel(aRelancer, 'relance à faire', 'relances à faire')}.
             </strong>
           )}
         </p>
-        <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-600">
+        <p className="mt-1 flex items-start gap-1.5 t-caption">
           <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>
             Délai d’abandon : {formatDelai(delai)} après la fin de réparation, puis vente seulement sur
@@ -307,14 +314,12 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
               <input id={rechercheId} type="search" value={recherche} onChange={(e) => setRecherche(e.target.value)}
                 placeholder="Emplacement, client, ticket…" autoComplete="off"
                 onKeyDown={(e) => { if (e.key === 'Escape' && recherche) { e.stopPropagation(); setRecherche(''); } }}
-                className={`h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 ${FOCUS_RING}`} />
+                className="input min-h-11 pl-9" />
             </div>
-            <div role="group" aria-label="Ordre de l’étagère" className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+            <div role="group" aria-label="Ordre de l’étagère" className="segmented">
               {ORDRES.map((o) => (
                 <button key={o.id} type="button" aria-pressed={ordre === o.id} onClick={() => choisirOrdre(o.id)}
-                  className={`min-h-[44px] rounded-md px-3 text-xs font-semibold ${FOCUS_RING} ${
-                    ordre === o.id ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-700 hover:bg-white/70'
-                  }`}>
+                  className={`segmented-item shrink-0 ${ordre === o.id ? 'segmented-item-active' : ''}`}>
                   {o.label}{o.id === 'relances' && aRelancer > 0 ? ` (${aRelancer})` : ''}
                 </button>
               ))}
@@ -327,29 +332,30 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
         <div className="divide-y divide-slate-100" aria-hidden="true">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 px-4 sm:px-5 py-3">
-              <div className="h-12 w-16 rounded-xl animate-shimmer" />
+              <div className="skeleton h-12 w-16" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-4 w-40 rounded animate-shimmer" />
-                <div className="h-3 w-56 rounded animate-shimmer" />
+                <div className="skeleton-line w-40" />
+                <div className="skeleton h-3 w-56" />
               </div>
             </div>
           ))}
         </div>
       ) : error && !data ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-4 text-sm text-red-800">
-          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="flex-1">Étagère indisponible : {error.message || 'erreur réseau'}</span>
-          <button type="button" onClick={() => mutate()}
-            className={`min-h-[44px] rounded-lg border border-red-200 bg-white px-3 font-semibold hover:bg-red-50 ${FOCUS_RING}`}>
-            Réessayer
-          </button>
+        <div role="alert" className="p-4 sm:p-5">
+          <div className="callout callout-danger items-center flex-wrap">
+            <AlertTriangle aria-hidden="true" />
+            <span className="flex-1">Étagère indisponible : {error.message || 'erreur réseau'}</span>
+            <button type="button" onClick={() => mutate()} className="btn-secondary btn-sm">
+              Réessayer
+            </button>
+          </div>
         </div>
       ) : recus === 0 ? (
-        <p role="status" className="px-4 sm:px-5 py-6 text-center text-sm text-slate-600">
+        <p role="status" className="px-4 sm:px-5 py-8 text-center text-sm text-slate-500">
           Rien à récupérer : aucun appareil terminé ni rendu non payé.
         </p>
       ) : filtre && !enBoutiqueVus.length && !impayesVus.length ? (
-        <p role="status" className="px-4 sm:px-5 py-6 text-center text-sm text-slate-600">
+        <p role="status" className="px-4 sm:px-5 py-8 text-center text-sm text-slate-500">
           Aucun appareil ne correspond à « {recherche.trim()} ».
         </p>
       ) : (

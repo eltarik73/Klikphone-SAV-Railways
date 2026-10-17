@@ -9,9 +9,9 @@ import { useCatalog } from '../hooks/useCatalog';
 import { normKey } from '../lib/catalog';
 import { waLink } from '../lib/utils';
 import {
-  FileText, Send, Mail, Printer, AlertTriangle, Search,
-  Check, Loader2, UserPlus, Users, Phone, Smartphone,
-  MessageCircle, X, ChevronDown, Download,
+  FileText, Mail, Printer, AlertTriangle, Search,
+  Check, Loader2, UserPlus, Users, Smartphone,
+  MessageCircle, X, Download,
 } from 'lucide-react';
 
 // Accent-insensitive search helper
@@ -227,141 +227,151 @@ export default function AttestationPage() {
   });
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl">
+    <div className="page max-w-[1120px]">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
+          <h1 className="page-header-title">
             Attestation de non-réparabilité
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="page-header-subtitle">
             Générez un document officiel A4 pour les appareils irréparables
           </p>
         </div>
-        <button
-          onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
-          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 shrink-0"
-        >
-          <FileText className="w-4 h-4" />
-          Historique
-        </button>
+        <div className="page-header-actions">
+          <button
+            type="button"
+            onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadHistory(); }}
+            aria-expanded={showHistory}
+            className="btn-secondary"
+          >
+            <FileText aria-hidden="true" />
+            Historique
+          </button>
+        </div>
       </div>
 
       {/* History panel */}
       {showHistory && (
-        <div className="mb-6 card p-5">
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">Historique des attestations</h3>
-          {historyLoading ? (
-            <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
-          ) : history.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-4">Aucune attestation enregistrée</p>
-          ) : (
-            <div className="space-y-1 max-h-64 overflow-y-auto">
-              {history.map(att => (
-                <button
-                  key={att.id}
-                  onClick={() => handleReload(att)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors text-left group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
-                    <AlertTriangle className="w-4 h-4 text-red-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">
-                      {att.marque} {att.modele} — {att.prenom} {att.nom}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {new Date(att.date_creation).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      {att.cree_par && ` · par ${att.cree_par}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {att.email_envoye && (
-                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 text-[10px] font-bold rounded-full">Email envoyé</span>
-                    )}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="mb-6 card">
+          <div className="card-header">
+            <h3 className="t-h2">Historique des attestations</h3>
+          </div>
+          <div className="px-4 sm:px-5 pb-4 sm:pb-5">
+            {historyLoading ? (
+              <p className="loading-inline justify-center w-full py-4" role="status"><Loader2 aria-hidden="true" /> Chargement…</p>
+            ) : history.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">Aucune attestation enregistrée</p>
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {history.map(att => (
+                  <button
+                    key={att.id}
+                    type="button"
+                    onClick={() => handleReload(att)}
+                    className="w-full flex items-center gap-3 px-3 min-h-14 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
+                      <FileText className="w-4 h-4 text-slate-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {att.marque} {att.modele} — {att.prenom} {att.nom}
+                      </p>
+                      <p className="t-caption tabular-nums">
+                        {new Date(att.date_creation).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {att.cree_par && ` · par ${att.cree_par}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {att.email_envoye && (
+                        <span className="badge badge-sm badge-success">Email envoyé</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ─── Form Column ─── */}
-        <div className="space-y-5">
+        <div className="space-y-4 min-w-0">
 
           {/* Client mode toggle */}
-          <div className="card p-5">
+          <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
-                <Users className="w-4 h-4 text-blue-600" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
+                <Users className="w-4 h-4 text-slate-500" />
               </div>
-              <h2 className="text-sm font-semibold text-slate-800">Client</h2>
+              <h2 className="t-h2">Client</h2>
             </div>
 
             {/* Toggle buttons */}
-            <div className="flex gap-2 mb-4">
+            <div className="segmented w-full mb-4" role="group" aria-label="Type de client">
               <button
+                type="button"
                 onClick={() => { setClientMode('existing'); handleClearClient(); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium border-2 transition-all
-                  ${clientMode === 'existing'
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                aria-pressed={clientMode === 'existing'}
+                className={`segmented-item flex-1 ${clientMode === 'existing' ? 'segmented-item-active' : ''}`}
               >
-                <Search className="w-4 h-4" /> Client existant
+                <Search className="w-4 h-4" aria-hidden="true" /> Client existant
               </button>
               <button
+                type="button"
                 onClick={() => { setClientMode('new'); handleClearClient(); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium border-2 transition-all
-                  ${clientMode === 'new'
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                aria-pressed={clientMode === 'new'}
+                className={`segmented-item flex-1 ${clientMode === 'new' ? 'segmented-item-active' : ''}`}
               >
-                <UserPlus className="w-4 h-4" /> Nouveau client
+                <UserPlus className="w-4 h-4" aria-hidden="true" /> Nouveau client
               </button>
             </div>
 
             {/* Client search (existing mode) */}
             {clientMode === 'existing' && (
               <div className="mb-4" ref={searchRef}>
-                <label className="input-label">Rechercher un client</label>
+                <label htmlFor="attestation-client-recherche" className="input-label">Rechercher un client</label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                   <input
+                    id="attestation-client-recherche"
                     value={clientSearch}
                     onChange={e => setClientSearch(e.target.value)}
-                    className="input pl-9 pr-8"
+                    className="input pl-9 pr-12"
                     placeholder="Nom, prénom ou téléphone..."
+                    autoComplete="off"
                   />
                   {clientSearchLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 motion-safe:animate-spin" aria-hidden="true" />
                   )}
                   {selectedClient && (
-                    <button onClick={handleClearClient}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-100">
-                      <X className="w-3.5 h-3.5 text-slate-400" />
+                    <button type="button" onClick={handleClearClient} aria-label="Retirer le client"
+                      className="btn-ghost btn-icon absolute right-0.5 top-1/2 -translate-y-1/2 text-slate-500">
+                      <X aria-hidden="true" />
                     </button>
                   )}
                 </div>
 
                 {/* Results dropdown */}
                 {showClientDropdown && filteredResults.length > 0 && (
-                  <div className="mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto z-30 relative">
+                  <div className="mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto z-30 relative">
                     {filteredResults.map(c => (
                       <button
                         key={c.id}
+                        type="button"
                         onClick={() => handleSelectClient(c)}
-                        className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors text-left"
+                        className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:bg-brand-50"
                       >
-                        <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                           <span className="text-brand-700 font-bold text-xs">
                             {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
                           </span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
-                          {c.telephone && <p className="text-xs text-slate-400 font-mono">{c.telephone}</p>}
+                          {c.telephone && <p className="t-caption tabular-nums">{c.telephone}</p>}
                         </div>
                       </button>
                     ))}
@@ -369,49 +379,49 @@ export default function AttestationPage() {
                 )}
 
                 {showClientDropdown && clientSearch.length >= 2 && filteredResults.length === 0 && !clientSearchLoading && (
-                  <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm text-slate-500 text-center">
+                  <div className="mt-2 card-section text-sm text-slate-500 text-center py-3">
                     Aucun client trouvé
                   </div>
                 )}
 
                 {selectedClient && (
-                  <div className="mt-2 p-2.5 bg-emerald-50 rounded-lg flex items-center gap-2 text-sm text-emerald-700">
-                    <Check className="w-4 h-4 shrink-0" />
+                  <div className="mt-2 callout callout-success items-center py-2">
+                    <Check aria-hidden="true" />
                     <span className="font-medium">{selectedClient.prenom} {selectedClient.nom}</span>
-                    {selectedClient.telephone && <span className="text-emerald-500 font-mono text-xs ml-auto">{selectedClient.telephone}</span>}
+                    {selectedClient.telephone && <span className="ml-auto tabular-nums text-xs whitespace-nowrap">{selectedClient.telephone}</span>}
                   </div>
                 )}
               </div>
             )}
 
             {/* Name fields */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4">
               <div>
-                <label className="input-label">Nom *</label>
-                <input value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                <label htmlFor="attestation-nom" className="input-label">Nom *</label>
+                <input id="attestation-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
                   className="input" readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
               <div>
-                <label className="input-label">Prénom *</label>
-                <input value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
+                <label htmlFor="attestation-prenom" className="input-label">Prénom *</label>
+                <input id="attestation-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
                   className="input" readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
             </div>
-            <div className="mt-3">
-              <label className="input-label">Adresse</label>
-              <input value={form.adresse} onChange={e => updateForm('adresse', e.target.value)}
+            <div className="mt-4">
+              <label htmlFor="attestation-adresse" className="input-label">Adresse</label>
+              <input id="attestation-adresse" value={form.adresse} onChange={e => updateForm('adresse', e.target.value)}
                 className="input" placeholder="Rue, code postal, ville" />
             </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
               <div>
-                <label className="input-label">Téléphone</label>
-                <input value={telephone} onChange={e => setTelephone(e.target.value)}
-                  className="input font-mono" placeholder="06 ..."
+                <label htmlFor="attestation-telephone" className="input-label">Téléphone</label>
+                <input id="attestation-telephone" type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+                  className="input tabular-nums" placeholder="06 ..."
                   readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
               <div>
-                <label className="input-label">Email</label>
-                <input value={email} onChange={e => setEmail(e.target.value)}
+                <label htmlFor="attestation-email" className="input-label">Email</label>
+                <input id="attestation-email" type="email" value={email} onChange={e => setEmail(e.target.value)}
                   className="input" placeholder="client@email.com"
                   readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
@@ -419,40 +429,40 @@ export default function AttestationPage() {
           </div>
 
           {/* Device info */}
-          <div className="card p-5">
+          <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
-                <Smartphone className="w-4 h-4 text-brand-600" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
+                <Smartphone className="w-4 h-4 text-slate-500" />
               </div>
-              <h2 className="text-sm font-semibold text-slate-800">Appareil</h2>
+              <h2 className="t-h2">Appareil</h2>
             </div>
 
             {/* Category tabs */}
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {categories.map(cat => (
-                <button key={cat}
-                  onClick={() => { setSelectedCategorie(cat); setMarqueManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
-                    ${selectedCategorie === cat
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                >
-                  {cat}
-                </button>
-              ))}
+            <div className="mb-4 max-sm:scroll-fade-x">
+              <div className="segmented" role="group" aria-label="Catégorie d'appareil">
+                {categories.map(cat => (
+                  <button key={cat} type="button"
+                    onClick={() => { setSelectedCategorie(cat); setMarqueManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
+                    aria-pressed={selectedCategorie === cat}
+                    className={`segmented-item ${selectedCategorie === cat ? 'segmented-item-active' : ''}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
               {/* ─── Marque (catalogue ou saisie libre via "Autre") ─── */}
               <div>
                 <label htmlFor="attestation-marque" className="input-label">Marque *</label>
                 {marqueManual ? (
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-2">
                     <input
                       id="attestation-marque"
                       value={form.marque}
                       onChange={e => updateForm('marque', e.target.value)}
-                      className="input flex-1"
+                      className="input flex-1 min-w-0"
                       placeholder="Saisir la marque"
                       autoFocus
                     />
@@ -461,34 +471,31 @@ export default function AttestationPage() {
                       title="Revenir à la liste"
                       aria-label="Revenir à la liste des marques"
                       onClick={() => { setMarqueManual(false); updateForm('marque', ''); updateForm('modele', ''); }}
-                      className="w-11 min-h-11 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      className="btn-secondary btn-icon shrink-0"
                     >
-                      <X className="w-4 h-4" aria-hidden="true" />
+                      <X aria-hidden="true" />
                     </button>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <select
-                      id="attestation-marque"
-                      value={form.marque}
-                      onChange={e => {
-                        const v = e.target.value;
-                        if (v === '__autre__') {
-                          // Marque hors liste : marque ET modèle en saisie libre
-                          setMarqueManual(true);
-                          updateForm('marque', ''); updateForm('modele', '');
-                        } else {
-                          updateForm('marque', v); updateForm('modele', '');
-                        }
-                      }}
-                      className="input appearance-none pr-8"
-                    >
-                      <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
-                      {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
-                      <option value="__autre__">✏️ Autre (saisie manuelle)</option>
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  </div>
+                  <select
+                    id="attestation-marque"
+                    value={form.marque}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v === '__autre__') {
+                        // Marque hors liste : marque ET modèle en saisie libre
+                        setMarqueManual(true);
+                        updateForm('marque', ''); updateForm('modele', '');
+                      } else {
+                        updateForm('marque', v); updateForm('modele', '');
+                      }
+                    }}
+                    className="select"
+                  >
+                    <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
+                    {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
+                    <option value="__autre__">✏️ Autre (saisie manuelle)</option>
+                  </select>
                 )}
               </div>
 
@@ -507,71 +514,71 @@ export default function AttestationPage() {
                 placeholder={!marqueManual && !form.marque ? 'Choisissez d\'abord la marque' : undefined}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 mt-4">
               <div>
-                <label className="input-label">IMEI / N° série</label>
-                <input value={form.imei} onChange={e => updateForm('imei', e.target.value)}
-                  className="input font-mono" />
+                <label htmlFor="attestation-imei" className="input-label">IMEI / N° série</label>
+                <input id="attestation-imei" value={form.imei} onChange={e => updateForm('imei', e.target.value)}
+                  className="input t-mono" />
               </div>
               <div>
-                <label className="input-label">État de l'appareil</label>
-                <div className="relative">
-                  <select
-                    value={form.etat}
-                    onChange={e => updateForm('etat', e.target.value)}
-                    className="input appearance-none pr-8"
-                  >
-                    <option value="">Sélectionner...</option>
-                    {etats.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                <label htmlFor="attestation-etat" className="input-label">État de l'appareil</label>
+                <select
+                  id="attestation-etat"
+                  value={form.etat}
+                  onChange={e => updateForm('etat', e.target.value)}
+                  className="select"
+                >
+                  <option value="">Sélectionner...</option>
+                  {etats.map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
               </div>
             </div>
           </div>
 
           {/* Motif & Compte-rendu */}
-          <div className="card p-5">
+          <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-red-500" />
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
+                <AlertTriangle className="w-4 h-4 text-slate-500" />
               </div>
-              <h2 className="text-sm font-semibold text-slate-800">Diagnostic</h2>
+              <h2 className="t-h2">Diagnostic</h2>
             </div>
-            <div className="mb-3">
-              <label className="input-label">Motif de non-réparabilité *</label>
+            <div className="mb-4">
+              <label htmlFor="attestation-motif" className="input-label">Motif de non-réparabilité *</label>
               <textarea
+                id="attestation-motif"
                 value={form.motif}
                 onChange={e => updateForm('motif', e.target.value)}
-                className="input min-h-[80px] resize-none"
+                className="textarea min-h-[96px] resize-none"
                 placeholder="Expliquez pourquoi l'appareil ne peut pas être réparé..."
               />
             </div>
             <div>
-              <label className="input-label">Compte-rendu technique</label>
+              <label htmlFor="attestation-compte-rendu" className="input-label">Compte-rendu technique</label>
               <textarea
+                id="attestation-compte-rendu"
                 value={form.compte_rendu}
                 onChange={e => updateForm('compte_rendu', e.target.value)}
-                className="input min-h-[100px] resize-none"
+                className="textarea min-h-[120px] resize-none"
                 placeholder="Détails techniques : tests effectués, composants vérifiés..."
               />
             </div>
           </div>
 
           {/* Generate button */}
-          <button onClick={handleGenerate}
+          <button type="button" onClick={handleGenerate}
             disabled={loading || !form.nom || !form.marque || !form.modele || !form.motif}
-            className="btn-primary w-full justify-center py-3 text-base">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
+            className="btn-primary btn-lg btn-block">
+            {loading ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <FileText aria-hidden="true" />}
             Générer l'attestation
           </button>
         </div>
 
         {/* ─── Preview Column ─── */}
-        <div className="space-y-4">
+        <div className="space-y-4 min-w-0">
           <div className="card overflow-hidden">
-            <div className="px-5 py-3 bg-slate-50 border-b border-slate-100">
-              <h3 className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Aperçu du document</h3>
+            <div className="px-4 sm:px-5 py-3 bg-slate-50 border-b border-slate-100">
+              <h3 className="t-h2">Aperçu du document</h3>
             </div>
             {htmlPreview ? (
               <PrintPreview
@@ -584,27 +591,28 @@ export default function AttestationPage() {
                 canvasClassName="h-[750px] max-h-[80vh] min-h-[420px]"
               />
             ) : (
-              <div className="flex flex-col items-center justify-center h-[500px] text-center px-6">
-                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                  <FileText className="w-8 h-8 text-slate-300" />
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <FileText aria-hidden="true" />
                 </div>
-                <p className="text-slate-500 font-medium">Aucun aperçu</p>
-                <p className="text-sm text-slate-400 mt-1">Remplissez le formulaire et cliquez sur "Générer"</p>
+                <p className="t-h2">Aucun aperçu</p>
+                <p className="t-body text-slate-500 max-w-sm">Remplissez le formulaire et cliquez sur "Générer"</p>
               </div>
             )}
           </div>
 
           {/* Action buttons */}
           {htmlPreview && (
-            <div className="card p-5 space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 mb-3">Actions</h3>
+            <div className="card card-body space-y-3">
+              <h3 className="t-h2 mb-3">Actions</h3>
 
               {/* Imprimer + Télécharger PDF / Word */}
-              <button onClick={handlePrint} disabled={!previewReady} className="btn-primary w-full justify-center gap-2 min-h-11">
-                <Printer className="w-4 h-4" aria-hidden="true" /> {previewReady ? 'Imprimer' : 'Préparation de l\'aperçu…'}
+              <button type="button" onClick={handlePrint} disabled={!previewReady} className="btn-primary btn-block">
+                <Printer aria-hidden="true" /> {previewReady ? 'Imprimer' : 'Préparation de l\'aperçu…'}
               </button>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={async () => {
                     try {
                       const blob = await api.downloadAttestationPdf(getPayload());
@@ -617,35 +625,37 @@ export default function AttestationPage() {
                       toast.success('PDF téléchargé');
                     } catch { toast.error('Erreur PDF'); }
                   }}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-bold"
+                  className="btn-secondary flex-1"
                 >
-                  <Download className="w-4 h-4" /> PDF
+                  <Download aria-hidden="true" /> PDF
                 </button>
                 <button
+                  type="button"
                   onClick={handleDownloadWord}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-sm font-bold"
+                  className="btn-secondary flex-1"
                 >
-                  <Download className="w-4 h-4" /> Word
+                  <Download aria-hidden="true" /> Word
                 </button>
               </div>
 
               {/* Email avec choix du format PDF / Word */}
               <div className="pt-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-medium text-slate-500">Format de la pièce jointe :</span>
-                  <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
-                    <button type="button" onClick={() => setEmailFormat('pdf')}
-                      className={`px-2.5 py-1 rounded-md transition-all ${emailFormat === 'pdf' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`}>PDF</button>
-                    <button type="button" onClick={() => setEmailFormat('word')}
-                      className={`px-2.5 py-1 rounded-md transition-all ${emailFormat === 'word' ? 'bg-white shadow-sm text-blue-700' : 'text-slate-400'}`}>Word</button>
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="t-caption">Format de la pièce jointe :</span>
+                  <div className="segmented" role="group" aria-label="Format de la pièce jointe">
+                    <button type="button" onClick={() => setEmailFormat('pdf')} aria-pressed={emailFormat === 'pdf'}
+                      className={`segmented-item text-xs min-h-8 px-2.5 ${emailFormat === 'pdf' ? 'segmented-item-active' : ''}`}>PDF</button>
+                    <button type="button" onClick={() => setEmailFormat('word')} aria-pressed={emailFormat === 'word'}
+                      className={`segmented-item text-xs min-h-8 px-2.5 ${emailFormat === 'word' ? 'segmented-item-active' : ''}`}>Word</button>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    className="input flex-1" placeholder="Email du client" />
-                  <button onClick={handleSendEmail} disabled={!email || emailSent}
-                    className={`btn-primary shrink-0 ${emailSent ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}>
-                    {emailSent ? <Check className="w-4 h-4" /> : <Mail className="w-4 h-4" />}
+                  <label htmlFor="attestation-email-envoi" className="sr-only">Email du client</label>
+                  <input id="attestation-email-envoi" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    className="input flex-1 min-w-0" placeholder="Email du client" />
+                  <button type="button" onClick={handleSendEmail} disabled={!email || emailSent}
+                    className={`shrink-0 ${emailSent ? 'btn-success' : 'btn-secondary'}`}>
+                    {emailSent ? <Check aria-hidden="true" /> : <Mail aria-hidden="true" />}
                     {emailSent ? 'Envoyé' : 'Email'}
                   </button>
                 </div>
@@ -653,11 +663,12 @@ export default function AttestationPage() {
 
               {/* WhatsApp */}
               <div className="flex gap-2">
-                <input type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
-                  className="input flex-1 font-mono" placeholder="Tél du client" />
-                <button onClick={handleWhatsApp} disabled={!telephone}
+                <label htmlFor="attestation-tel-envoi" className="sr-only">Tél du client</label>
+                <input id="attestation-tel-envoi" type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+                  className="input flex-1 min-w-0 tabular-nums" placeholder="Tél du client" />
+                <button type="button" onClick={handleWhatsApp} disabled={!telephone}
                   className="btn-whatsapp shrink-0">
-                  <MessageCircle className="w-4 h-4" /> WhatsApp
+                  <MessageCircle aria-hidden="true" /> WhatsApp
                 </button>
               </div>
             </div>

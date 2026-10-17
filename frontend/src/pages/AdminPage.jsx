@@ -14,8 +14,9 @@ import {
 
 // ─── Constants ────────────────────────────────────────────
 const VIOLET = '#7C3AED';
-const BLUE = '#3B82F6';
-const EMERALD = '#10B981';
+const SERIE_SECONDAIRE = '#64748B'; // slate-500 : 4,76:1 sur blanc (≥ 3:1 pour le trait et les barres)
+const GRILLE = '#E2E8F0';
+const TEXTE_AXES = '#64748B';
 
 const PERIOD_OPTIONS = [
   { label: "Aujourd'hui", value: 'today', gran: 'heure' },
@@ -36,17 +37,10 @@ const KPI_ICONS = {
   nouveaux_clients: UserPlus,
 };
 
-const KPI_COLORS = {
-  violet: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20' },
-  blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
-  emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
-  amber: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
-  cyan: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20' },
-  pink: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20' },
-  indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' },
-};
-
 const MEDALS = ['🥇', '🥈', '🥉'];
+
+// Texte de légende des graphiques en slate-600 (recharts le colore sinon avec la couleur de la série)
+const legendeTexte = (value) => <span className="text-slate-600">{value}</span>;
 const AUTH_KEY = 'kp_admin_auth';
 
 // ─── Helpers ──────────────────────────────────────────────
@@ -98,14 +92,15 @@ function computeDateRange(period, customStart, customEnd) {
   }
 }
 
-// Custom dark tooltip
+// Info-bulle des graphiques (thème clair)
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 shadow-xl text-xs">
-      <p className="text-slate-400 mb-1 font-medium">{label}</p>
+    <div className="card shadow-lg px-3 py-2 text-xs">
+      <p className="t-caption mb-1">{label}</p>
       {payload.map((entry, i) => (
-        <p key={i} className="font-semibold" style={{ color: entry.color || entry.fill || '#fff' }}>
+        <p key={i} className="font-semibold text-slate-900 tabular-nums">
+          <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: entry.color || entry.fill || VIOLET }} aria-hidden="true" />
           {entry.name}: {entry.value}
         </p>
       ))}
@@ -115,25 +110,25 @@ function DarkTooltip({ active, payload, label }) {
 
 function Spinner() {
   return (
-    <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" role="status" aria-label="Chargement du reporting">
+      {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton-card" />)}
     </div>
   );
 }
 
 function EmptyState({ text }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-slate-500">
-      <BarChart3 className="w-8 h-8 text-slate-600 mb-2" />
-      <p className="text-sm">{text || 'Aucune donnée disponible'}</p>
+    <div className="empty-state min-h-[160px] py-6">
+      <div className="empty-state-icon"><BarChart3 aria-hidden="true" /></div>
+      <p className="t-body text-slate-500">{text || 'Aucune donnée disponible'}</p>
     </div>
   );
 }
 
 function ChartCard({ title, children, className = '' }) {
   return (
-    <div className={`bg-slate-800 rounded-xl border border-slate-700/50 p-5 ${className}`}>
-      <h3 className="text-sm font-semibold text-white mb-4">{title}</h3>
+    <div className={`card card-body ${className}`}>
+      <h3 className="t-h2 mb-4">{title}</h3>
       {children}
     </div>
   );
@@ -144,22 +139,21 @@ function TrendBadge({ trend }) {
   if (trend === null || trend === undefined) return null;
   const isUp = trend > 0;
   const isFlat = trend === 0;
-  const color = isFlat ? 'text-slate-400 bg-slate-500/10' :
-    isUp ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10';
+  const color = isFlat ? 'badge-neutral' : isUp ? 'badge-success' : 'badge-danger';
   const Icon = isFlat ? Minus : isUp ? ChevronUp : ChevronDown;
   return (
-    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold ${color}`}>
-      <Icon className="w-3 h-3" />
+    <span className={`kpi-delta tabular-nums ${color}`}>
+      <Icon className="w-3 h-3" aria-hidden="true" />
       {Math.abs(trend)}%
     </span>
   );
 }
 
 // ─── Progress Bar ─────────────────────────────────────────
-function ProgressBar({ pct, color = 'bg-violet-500' }) {
+function ProgressBar({ pct, color = 'bg-brand-600' }) {
   return (
-    <div className="w-full bg-slate-700/50 rounded-full h-2">
-      <div className={`h-2 rounded-full transition-all ${color}`}
+    <div className="w-full bg-slate-100 rounded-full h-2">
+      <div className={`h-2 rounded-full ${color}`}
         style={{ width: `${Math.min(pct, 100)}%` }} />
     </div>
   );
@@ -169,23 +163,21 @@ function ProgressBar({ pct, color = 'bg-violet-500' }) {
 function PeriodSelector({ period, setPeriod, customStart, setCustomStart, customEnd, setCustomEnd }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700/50 flex-wrap">
+      <div className="segmented" role="group" aria-label="Période">
         {PERIOD_OPTIONS.map(({ label, value }) => (
-          <button key={value} onClick={() => setPeriod(value)}
-            className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all whitespace-nowrap ${
-              period === value ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-            }`}>
+          <button key={value} type="button" onClick={() => setPeriod(value)} aria-pressed={period === value}
+            className={`segmented-item ${period === value ? 'segmented-item-active' : ''}`}>
             {label}
           </button>
         ))}
       </div>
       {period === 'custom' && (
         <div className="flex items-center gap-2">
-          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/40" />
-          <span className="text-slate-500 text-xs">&rarr;</span>
-          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/40" />
+          <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} aria-label="Date de début"
+            className="input w-auto" />
+          <span className="text-slate-500 text-sm" aria-hidden="true">&rarr;</span>
+          <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Date de fin"
+            className="input w-auto" />
         </div>
       )}
     </div>
@@ -222,44 +214,44 @@ function AdminLogin({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="bg-slate-800 rounded-2xl border border-slate-700/50 shadow-2xl p-8">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-[400px]">
+        <div className="card shadow-lg rounded-2xl p-6 sm:p-8">
           <div className="flex justify-center mb-6">
-            <div className="w-14 h-14 rounded-xl bg-violet-600/20 flex items-center justify-center">
-              <Lock className="w-7 h-7 text-violet-400" />
+            <div className="w-14 h-14 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+              <Lock className="w-7 h-7" aria-hidden="true" />
             </div>
           </div>
-          <h1 className="text-xl font-display font-bold text-white text-center mb-1">Administration</h1>
-          <p className="text-sm text-slate-400 text-center mb-8">Accès réservé aux administrateurs</p>
+          <h1 className="t-h1 text-center mb-1">Administration</h1>
+          <p className="text-sm text-slate-500 text-center mb-8">Accès réservé aux administrateurs</p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Identifiant</label>
-              <input type="text" value={identifiant} onChange={(e) => setIdentifiant(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-all"
+              <label htmlFor="admin-identifiant" className="input-label">Identifiant</label>
+              <input id="admin-identifiant" type="text" value={identifiant} onChange={(e) => setIdentifiant(e.target.value)}
+                className="input"
                 placeholder="Votre identifiant" autoComplete="username" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Mot de passe</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 transition-all"
+              <label htmlFor="admin-mot-de-passe" className="input-label">Mot de passe</label>
+              <input id="admin-mot-de-passe" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                className="input"
                 placeholder="••••••••" autoComplete="current-password" />
             </div>
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-sm text-red-400 text-center">{error}</div>
+              <div role="alert" className="callout callout-danger justify-center font-medium">{error}</div>
             )}
             <button type="submit" disabled={loading || !identifiant || !password}
-              className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold shadow-lg shadow-violet-600/25 transition-all">
+              className="btn-primary btn-lg btn-block">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Connexion...
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" /> Connexion...
                 </span>
               ) : 'Se connecter'}
             </button>
           </form>
         </div>
-        <p className="text-center text-xs text-slate-600 mt-6">Klikphone SAV — Administration</p>
+        <p className="text-center t-caption mt-6">Klikphone SAV — Administration</p>
       </div>
     </div>
   );
@@ -299,34 +291,30 @@ function AdminDashboard({ onLogout }) {
   const granularite = dateRange.granularite;
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="page max-w-[1280px]">
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-sm border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-display font-bold text-white tracking-tight">Reporting</h1>
-                <p className="text-sm text-slate-400 mt-0.5">Vue d'ensemble de la boutique</p>
-              </div>
-              <button onClick={onLogout}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-700/50 transition-all">
-                <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Déconnexion</span>
-              </button>
-            </div>
-            {/* Period filter */}
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-500 shrink-0" />
-              <PeriodSelector period={period} setPeriod={setPeriod}
-                customStart={customStart} setCustomStart={setCustomStart}
-                customEnd={customEnd} setCustomEnd={setCustomEnd} />
-            </div>
-          </div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-header-title">Reporting</h1>
+          <p className="page-header-subtitle">Vue d'ensemble de la boutique</p>
+        </div>
+        <div className="page-header-actions max-w-full">
+          <button onClick={onLogout}
+            className="btn-secondary">
+            <LogOut />
+            <span className="hidden sm:inline">Déconnexion</span>
+          </button>
         </div>
       </div>
+      {/* Period filter */}
+      <div className="flex items-center gap-2 mb-6">
+        <Calendar className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+        <PeriodSelector period={period} setPeriod={setPeriod}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd} setCustomEnd={setCustomEnd} />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <div className="space-y-6 md:space-y-8">
 
         {/* ═══ Section 1: KPI Cards ═══ */}
         <section>
@@ -334,20 +322,18 @@ function AdminDashboard({ onLogout }) {
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
               {kpis.map((kpi) => {
                 const Icon = KPI_ICONS[kpi.id] || BarChart3;
-                const colors = KPI_COLORS[kpi.color] || KPI_COLORS.violet;
                 return (
-                  <div key={kpi.id}
-                    className={`bg-slate-800 rounded-xl border border-slate-700/50 p-4 hover:border-slate-600 transition-colors`}>
+                  <div key={kpi.id} className="kpi-card flex-col items-stretch gap-0">
                     <div className="flex items-center justify-between mb-3">
-                      <div className={`w-9 h-9 rounded-lg ${colors.bg} flex items-center justify-center`}>
-                        <Icon className={`w-4.5 h-4.5 ${colors.text}`} />
+                      <div className="kpi-icon">
+                        <Icon aria-hidden="true" />
                       </div>
                       <TrendBadge trend={kpi.trend} />
                     </div>
-                    <p className="text-2xl font-bold text-white tracking-tight">
+                    <p className="kpi-value">
                       {formatKpiValue(kpi.value, kpi.format)}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-1 font-medium">{kpi.label}</p>
+                    <p className="kpi-label">{kpi.label}</p>
                   </div>
                 );
               })}
@@ -358,34 +344,34 @@ function AdminDashboard({ onLogout }) {
         {/* ═══ Section 1b: Tracking clics vitrine tarifs ═══ */}
         {tracking && (
           <section>
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Tag className="w-4 h-4" /> Vitrine tarifs téléphones <span className="text-[10px] text-slate-500">— 30 derniers jours</span>
+            <h2 className="t-h2 mb-4 flex items-center gap-2">
+              <Tag className="w-4 h-4 text-slate-400" aria-hidden="true" /> Vitrine tarifs téléphones <span className="t-caption">— 30 derniers jours</span>
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Clics 30 jours</p>
-                <p className="text-3xl font-bold text-amber-400">{tracking.total || 0}</p>
-                <p className="text-[11px] text-slate-400 mt-1">
+              <div className="card card-body">
+                <p className="t-caption mb-1">Clics 30 jours</p>
+                <p className="kpi-value">{tracking.total || 0}</p>
+                <p className="t-caption mt-1">
                   {tracking.unique_visitors || 0} visiteur{(tracking.unique_visitors || 0) > 1 ? 's' : ''} unique{(tracking.unique_visitors || 0) > 1 ? 's' : ''}
                 </p>
               </div>
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Aujourd'hui</p>
-                <p className="text-3xl font-bold text-violet-400">{tracking.today || 0}</p>
-                <p className="text-[11px] text-slate-400 mt-1">clic{(tracking.today || 0) > 1 ? 's' : ''} sur « Voir nos tarifs »</p>
+              <div className="card card-body">
+                <p className="t-caption mb-1">Aujourd'hui</p>
+                <p className="kpi-value">{tracking.today || 0}</p>
+                <p className="t-caption mt-1">clic{(tracking.today || 0) > 1 ? 's' : ''} sur « Voir nos tarifs »</p>
               </div>
-              <div className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-2">Par source</p>
+              <div className="card card-body">
+                <p className="t-caption mb-2">Par source</p>
                 {(tracking.by_source || []).length === 0 ? (
-                  <p className="text-slate-500 text-xs">Aucun clic pour le moment</p>
+                  <p className="text-sm text-slate-500">Aucun clic pour le moment</p>
                 ) : (
                   <div className="space-y-1">
                     {tracking.by_source.slice(0, 4).map(s => (
-                      <div key={s.source} className="flex items-center justify-between text-xs">
-                        <span className="text-slate-300 font-medium">
+                      <div key={s.source} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700 font-medium">
                           {s.source === 'home' ? '🏠 Accueil' : s.source === 'suivi' ? '🔍 Page suivi' : s.source === 'autre' ? '— Autre' : s.source}
                         </span>
-                        <span className="text-amber-400 font-bold">{s.n}</span>
+                        <span className="t-num tabular-nums">{s.n}</span>
                       </div>
                     ))}
                   </div>
@@ -397,29 +383,29 @@ function AdminDashboard({ onLogout }) {
 
         {/* ═══ Section 2: Affluence Chart ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Affluence</h2>
+          <h2 className="t-h2 mb-4">Affluence</h2>
           <ChartCard title={granularite === 'heure' ? 'Dépôts par heure' : granularite === 'mois' ? 'Dépôts par mois' : 'Dépôts par jour'}>
             {affluence.length ? (
               <ResponsiveContainer width="100%" height={320}>
                 {granularite === 'mois' ? (
                   <LineChart data={affluence}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRILLE} />
+                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} />
+                    <YAxis tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} allowDecimals={false} />
                     <Tooltip content={<DarkTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11, color: '#94A3B8' }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendeTexte} />
                     <Line type="monotone" dataKey="tickets" name="Tickets" stroke={VIOLET} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey="clients" name="Clients" stroke={EMERALD} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="clients" name="Clients" stroke={SERIE_SECONDAIRE} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} strokeDasharray="5 5" />
                   </LineChart>
                 ) : (
                   <BarChart data={affluence}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} />
-                    <YAxis tick={{ fontSize: 10, fill: '#94A3B8' }} tickLine={false} axisLine={{ stroke: '#334155' }} allowDecimals={false} />
-                    <Tooltip content={<DarkTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11, color: '#94A3B8' }} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRILLE} />
+                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} />
+                    <YAxis tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} allowDecimals={false} />
+                    <Tooltip content={<DarkTooltip />} cursor={{ fill: '#F1F5F9' }} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendeTexte} />
                     <Bar dataKey="tickets" name="Tickets" fill={VIOLET} radius={[4, 4, 0, 0]} maxBarSize={32} />
-                    <Bar dataKey="clients" name="Clients" fill={EMERALD} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar dataKey="clients" name="Clients" fill={SERIE_SECONDAIRE} radius={[4, 4, 0, 0]} maxBarSize={32} />
                   </BarChart>
                 )}
               </ResponsiveContainer>
@@ -430,29 +416,29 @@ function AdminDashboard({ onLogout }) {
         {/* ═══ Section 3: Performance Accueil ═══ */}
         {perfAccueil.length > 0 && (
           <section>
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Performance Accueil</h2>
+            <h2 className="t-h2 mb-4">Performance Accueil</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {perfAccueil.map((p) => {
                 const initials = p.utilisateur.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
                 return (
-                  <div key={p.utilisateur} className="bg-slate-800 rounded-xl border border-slate-700/50 p-4">
+                  <div key={p.utilisateur} className="card card-body">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                        <span className="text-sm font-bold text-blue-400">{initials}</span>
+                      <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center">
+                        <span className="text-sm font-bold text-brand-700">{initials}</span>
                       </div>
                       <div>
-                        <p className="text-sm font-semibold text-white">{p.utilisateur}</p>
-                        <p className="text-[10px] text-slate-500">Accueil</p>
+                        <p className="text-sm font-semibold text-slate-900">{p.utilisateur}</p>
+                        <p className="t-caption">Accueil</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <p className="text-xl font-bold text-white">{p.tickets_enregistres}</p>
-                        <p className="text-[10px] text-slate-500">Tickets enregistrés</p>
+                        <p className="text-xl font-semibold text-slate-900 tabular-nums">{p.tickets_enregistres}</p>
+                        <p className="t-caption">Tickets enregistrés</p>
                       </div>
                       <div>
-                        <p className="text-xl font-bold text-blue-400">{p.clients_uniques}</p>
-                        <p className="text-[10px] text-slate-500">Clients uniques</p>
+                        <p className="text-xl font-semibold text-slate-900 tabular-nums">{p.clients_uniques}</p>
+                        <p className="t-caption">Clients uniques</p>
                       </div>
                     </div>
                   </div>
@@ -464,44 +450,44 @@ function AdminDashboard({ onLogout }) {
 
         {/* ═══ Section 4: Performance Techniciens ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Performance Techniciens</h2>
+          <h2 className="t-h2 mb-4">Performance Techniciens</h2>
           <ChartCard title="Classement des techniciens">
             {perfTech.length ? (
-              <div className="overflow-x-auto -mx-5 px-5">
-                <table className="w-full">
+              <div className="overflow-x-auto -mx-4 sm:-mx-5">
+                <table className="table">
                   <thead>
-                    <tr className="border-b border-slate-700">
-                      <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2 w-8">#</th>
-                      <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Technicien</th>
-                      <th className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Réparations</th>
-                      <th className="text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">Temps moy.</th>
-                      <th className="text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2">CA généré</th>
+                    <tr className="border-b border-slate-100">
+                      <th className="table-header w-10">#</th>
+                      <th className="table-header">Technicien</th>
+                      <th className="table-header text-center">Réparations</th>
+                      <th className="table-header text-center">Temps moy.</th>
+                      <th className="table-header text-right">CA généré</th>
                     </tr>
                   </thead>
                   <tbody>
                     {perfTech.map((t) => (
-                      <tr key={t.technicien} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
-                        <td className="py-2.5">
+                      <tr key={t.technicien} className="table-row">
+                        <td>
                           <span className="text-base">{t.rang <= 3 ? MEDALS[t.rang - 1] : t.rang}</span>
                         </td>
-                        <td className="py-2.5">
+                        <td>
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-                              style={{ backgroundColor: (t.couleur || '#7C3AED') + '20' }}>
-                              <span className="text-xs font-bold" style={{ color: t.couleur || '#7C3AED' }}>
+                              style={{ backgroundColor: (t.couleur || '#7C3AED') + '20' }} aria-hidden="true">
+                              <span className="text-xs font-bold text-slate-900">
                                 {(t.technicien || '?')[0].toUpperCase()}
                               </span>
                             </div>
-                            <span className="text-sm font-medium text-white">{t.technicien}</span>
+                            <span className="text-sm font-medium text-slate-900">{t.technicien}</span>
                           </div>
                         </td>
-                        <td className="py-2.5 text-center">
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-violet-500/20 text-violet-300">
+                        <td className="text-center">
+                          <span className="badge badge-brand tabular-nums">
                             {t.reparations}
                           </span>
                         </td>
-                        <td className="py-2.5 text-center text-sm text-slate-300">{formatTemps(t.temps_moyen_h)}</td>
-                        <td className="py-2.5 text-right text-sm font-semibold text-emerald-400">{formatEuro(t.ca_genere)}</td>
+                        <td className="text-center text-sm text-slate-700 tabular-nums">{formatTemps(t.temps_moyen_h)}</td>
+                        <td className="table-cell-num">{formatEuro(t.ca_genere)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -513,7 +499,7 @@ function AdminDashboard({ onLogout }) {
 
         {/* ═══ Section 5: Top Pannes & Top Modèles ═══ */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Analyses</h2>
+          <h2 className="t-h2 mb-4">Analyses</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top Pannes */}
             <ChartCard title="Top 10 Pannes">
@@ -522,10 +508,10 @@ function AdminDashboard({ onLogout }) {
                   {topPannes.map((p, i) => (
                     <div key={i}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-slate-300 truncate max-w-[60%]">{p.label}</span>
-                        <span className="text-xs font-semibold text-white ml-2">{p.count} <span className="text-slate-500 font-normal">({p.pct}%)</span></span>
+                        <span className="text-sm text-slate-700 truncate max-w-[60%]">{p.label}</span>
+                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{p.count} <span className="text-slate-500 font-normal">({p.pct}%)</span></span>
                       </div>
-                      <ProgressBar pct={p.pct} color="bg-violet-500" />
+                      <ProgressBar pct={p.pct} />
                     </div>
                   ))}
                 </div>
@@ -540,12 +526,12 @@ function AdminDashboard({ onLogout }) {
                     <div key={i}>
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2 truncate max-w-[60%]">
-                          <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                          <span className="text-xs text-slate-300 truncate">{m.label}</span>
+                          <Smartphone className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-slate-700 truncate">{m.label}</span>
                         </div>
-                        <span className="text-xs font-semibold text-white ml-2">{m.count} <span className="text-slate-500 font-normal">({m.pct}%)</span></span>
+                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{m.count} <span className="text-slate-500 font-normal">({m.pct}%)</span></span>
                       </div>
-                      <ProgressBar pct={m.pct} color="bg-blue-500" />
+                      <ProgressBar pct={m.pct} color="bg-brand-400" />
                     </div>
                   ))}
                 </div>
@@ -556,7 +542,7 @@ function AdminDashboard({ onLogout }) {
 
         {/* Footer */}
         <div className="pt-4 pb-8 text-center">
-          <p className="text-xs text-slate-600">Klikphone SAV — Reporting</p>
+          <p className="t-caption">Klikphone SAV — Reporting</p>
         </div>
       </div>
     </div>

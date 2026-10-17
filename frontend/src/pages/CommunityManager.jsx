@@ -3,7 +3,7 @@ import {
   FileText, Sparkles, Calendar, LayoutGrid, BarChart3,
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
-  TrendingUp, Users, MousePointerClick, Megaphone,
+  TrendingUp, Users, MousePointerClick,
   Copy, Check, Share2, X, Loader2, ImagePlus, Trash, Smartphone
 } from 'lucide-react';
 import api from '../lib/api';
@@ -27,14 +27,14 @@ function PlatformIcon({ platform, size = 16 }) {
 
 function StatusBadge({ statut }) {
   const config = {
-    'publié': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
-    'programmé': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-    'brouillon': { bg: 'bg-zinc-100', text: 'text-zinc-600', border: 'border-zinc-200' },
-    'erreur': { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
+    'publié': 'badge-success',
+    'programmé': 'badge-info',
+    'brouillon': 'badge-neutral',
+    'erreur': 'badge-danger',
   };
   const c = config[statut] || config.brouillon;
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${c.bg} ${c.text} ${c.border}`}>
+    <span className={`badge badge-sm ${c}`}>
       {statut}
     </span>
   );
@@ -415,60 +415,53 @@ export default function CommunityManager() {
   // ─── Spinner ────────────────────────────────────────────
 
   const Spinner = () => (
-    <div className="flex items-center justify-center py-16">
-      <div className="w-8 h-8 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+    <div className="loading-inline justify-center w-full py-16" role="status">
+      <Loader2 aria-hidden="true" /><span className="sr-only">Chargement…</span>
     </div>
   );
 
   // ─── RENDER ─────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-zinc-50 pb-20">
+    <div className="page max-w-[1280px]">
       {adminPrompt}
-      {/* Header (sticky) */}
-      <div className="sticky top-0 z-30 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-                <Megaphone className="w-5 h-5 text-violet-600" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-zinc-900 tracking-tight">Community Manager</h1>
-                <p className="text-sm text-zinc-500">Gérez vos réseaux sociaux et votre présence en ligne</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 bg-zinc-100 rounded-xl p-1">
-              {tabs.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => setActiveTab(id)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    activeTab === id
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'text-zinc-500 hover:text-zinc-700 hover:bg-white'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Header */}
+      <div className="page-header mb-0">
+        <div>
+          <h1 className="page-header-title">Community Manager</h1>
+          <p className="page-header-subtitle">Gérez vos réseaux sociaux et votre présence en ligne</p>
+        </div>
+      </div>
+      <div className="scroll-fade-x mb-6">
+        <div className="page-tabs" role="tablist" aria-label="Sections">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              onClick={() => setActiveTab(id)}
+              className={`page-tab ${activeTab === id ? 'page-tab-active' : ''}`}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden sr-only">{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div>
         {loadError && !loading && (
-          <div role="alert" className="flex flex-wrap items-center gap-3 mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800">
+          <div role="alert" className="callout callout-danger items-center flex-wrap mb-6">
             <p className="flex-1 min-w-0">
               {loadError.code === 'admin_cancelled'
                 ? 'Code admin requis pour afficher cet onglet.'
                 : `Données indisponibles : ${loadError.message || 'erreur du serveur'}`}
             </p>
             <button type="button" onClick={retryLoad}
-              className="min-h-[44px] px-4 rounded-lg bg-white border border-red-300 font-semibold text-red-800 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+              className="btn-secondary btn-sm">
               Réessayer
             </button>
           </div>
@@ -484,7 +477,8 @@ export default function CommunityManager() {
                 <select
                   value={filterPlateforme}
                   onChange={(e) => setFilterPlateforme(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  aria-label="Filtrer par plateforme"
+                  className="select sm:w-auto"
                 >
                   <option value="">Toutes les plateformes</option>
                   <option value="google">Google</option>
@@ -495,7 +489,8 @@ export default function CommunityManager() {
                 <select
                   value={filterStatut}
                   onChange={(e) => setFilterStatut(e.target.value)}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  aria-label="Filtrer par statut"
+                  className="select sm:w-auto"
                 >
                   <option value="">Tous les statuts</option>
                   <option value="brouillon">Brouillon</option>
@@ -506,9 +501,9 @@ export default function CommunityManager() {
               </div>
 
               {/* Info workflow */}
-              <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-200">
-                <Share2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                <p className="text-xs text-blue-700">
+              <div className="callout callout-info">
+                <Share2 aria-hidden="true" />
+                <p>
                   <span className="font-semibold">Publication :</span> Quand vous publiez un post, le contenu est copié automatiquement et vous pouvez le coller directement sur la plateforme choisie.
                 </p>
               </div>
@@ -517,24 +512,24 @@ export default function CommunityManager() {
               {loading ? (
                 <Spinner />
               ) : posts.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-4">
-                    <FileText className="w-7 h-7 text-zinc-300" />
+                <div className="empty-state card">
+                  <div className="empty-state-icon">
+                    <FileText aria-hidden="true" />
                   </div>
-                  <p className="text-zinc-500 font-medium">Aucun post trouvé</p>
-                  <p className="text-sm text-zinc-400 mt-1">Utilisez le générateur IA pour créer votre premier post</p>
+                  <p className="t-h2">Aucun post trouvé</p>
+                  <p className="t-body text-slate-500">Utilisez le générateur IA pour créer votre premier post</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {posts.map((post) => (
                     <div
                       key={post.id}
-                      className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md transition-shadow"
+                      className="card p-4"
                     >
                       {/* Top row */}
                       <div className="flex items-center gap-2 mb-2">
                         <PlatformIcon platform={post.plateforme} size={18} />
-                        <span className="text-sm font-semibold text-zinc-900 flex-1 truncate">
+                        <span className="text-sm font-semibold text-slate-900 flex-1 truncate">
                           {post.titre || 'Sans titre'}
                         </span>
                         <StatusBadge statut={post.statut} />
@@ -547,14 +542,14 @@ export default function CommunityManager() {
                         </div>
                       )}
                       {post.contenu && (
-                        <p className="text-sm text-zinc-600 line-clamp-2 mb-3">{post.contenu}</p>
+                        <p className="text-sm text-slate-600 line-clamp-2 mb-3">{post.contenu}</p>
                       )}
 
                       {/* Bottom row */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           {post.date_creation && (
-                            <span className="text-xs text-zinc-400 shrink-0">
+                            <span className="t-caption shrink-0">
                               {formatDateFr(post.date_creation)}
                             </span>
                           )}
@@ -563,13 +558,13 @@ export default function CommunityManager() {
                               {(Array.isArray(post.hashtags) ? post.hashtags : []).slice(0, 3).map((tag, i) => (
                                 <span
                                   key={i}
-                                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-100 truncate"
+                                  className="badge badge-sm badge-brand font-medium truncate"
                                 >
                                   #{tag}
                                 </span>
                               ))}
                               {Array.isArray(post.hashtags) && post.hashtags.length > 3 && (
-                                <span className="text-[10px] text-zinc-400">+{post.hashtags.length - 3}</span>
+                                <span className="t-caption">+{post.hashtags.length - 3}</span>
                               )}
                             </div>
                           )}
@@ -577,34 +572,34 @@ export default function CommunityManager() {
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => copyToClipboard(getFullPostText(post), `post-${post.id}`)}
-                            className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+                            className="btn-ghost btn-icon text-slate-500"
                             title="Copier"
                           >
                             {copiedId === `post-${post.id}` ? (
-                              <Check className="w-4 h-4 text-emerald-500" />
+                              <Check className="text-emerald-700" />
                             ) : (
-                              <Copy className="w-4 h-4" />
+                              <Copy />
                             )}
                           </button>
                           <button
-                            className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+                            className="btn-ghost btn-icon text-slate-500"
                             title="Voir"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye />
                           </button>
                           <button
-                            className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
+                            className="btn-ghost btn-icon text-slate-500"
                             title="Modifier"
                           >
-                            <Edit3 className="w-4 h-4" />
+                            <Edit3 />
                           </button>
                           {post.statut === 'brouillon' && (
                             <button
                               onClick={() => handleDelete(post.id)}
-                              className="p-1.5 rounded-lg hover:bg-red-50 text-zinc-400 hover:text-red-500 transition-colors"
+                              className="btn-danger-ghost btn-icon text-slate-500 hover:text-red-700"
                               title="Supprimer"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 />
                             </button>
                           )}
                         </div>
@@ -612,41 +607,43 @@ export default function CommunityManager() {
 
                       {/* Brouillon actions */}
                       {post.statut === 'brouillon' && (
-                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-100">
                           <button
                             onClick={() => handlePublish(post.id)}
                             disabled={publishing === post.id}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                            className="btn-primary btn-sm"
                           >
                             {publishing === post.id ? (
-                              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Publication...</>
+                              <><Loader2 className="animate-spin" /> Publication...</>
                             ) : (
-                              <><Send className="w-3.5 h-3.5" /> Publier via Late</>
+                              <><Send /> Publier via Late</>
                             )}
                           </button>
                           {programmingId === post.id ? (
-                            <div className="flex items-center gap-2 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 flex-1">
                               <input
                                 type="date"
                                 value={programDate}
                                 onChange={(e) => setProgramDate(e.target.value)}
-                                className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                aria-label="Date de publication"
+                                className="input w-auto min-h-[36px] py-1"
                               />
                               <input
                                 type="time"
                                 value={programHeure}
                                 onChange={(e) => setProgramHeure(e.target.value)}
-                                className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                                aria-label="Heure de publication"
+                                className="input w-auto min-h-[36px] py-1"
                               />
                               <button
                                 onClick={() => handleProgrammer(post.id)}
-                                className="px-2 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors"
+                                className="btn-primary btn-sm"
                               >
                                 OK
                               </button>
                               <button
                                 onClick={() => setProgrammingId(null)}
-                                className="px-2 py-1.5 rounded-lg text-xs text-zinc-500 hover:text-zinc-700"
+                                className="btn-ghost btn-sm"
                               >
                                 Annuler
                               </button>
@@ -654,9 +651,9 @@ export default function CommunityManager() {
                           ) : (
                             <button
                               onClick={() => setProgrammingId(post.id)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
+                              className="btn-secondary btn-sm"
                             >
-                              <Clock className="w-3.5 h-3.5" /> Programmer
+                              <Clock /> Programmer
                             </button>
                           )}
                         </div>
@@ -669,38 +666,37 @@ export default function CommunityManager() {
 
             {/* Right column — AI Generator */}
             <div className="lg:col-span-2 space-y-4">
-              <div className="bg-violet-50 rounded-2xl border border-violet-200 shadow-sm p-5">
+              <div className="card card-body">
                 <div className="flex items-center gap-2 mb-4">
-                  <Sparkles className="w-5 h-5 text-violet-600" />
-                  <h2 className="text-base font-bold text-zinc-900">Générer un post</h2>
+                  <Sparkles className="w-5 h-5 text-brand-600" aria-hidden="true" />
+                  <h2 className="t-h2">Générer un post</h2>
                 </div>
 
                 {/* Plateforme */}
-                <label className="block text-xs font-semibold text-zinc-600 mb-2">Plateforme</label>
-                <div className="flex items-center gap-2 mb-4">
+                <p id="cm-plateforme" className="input-label">Plateforme</p>
+                <div className="segmented flex-wrap mb-4" role="group" aria-labelledby="cm-plateforme">
                   {platformButtons.map(({ id, icon: Icon, label }) => (
                     <button
                       key={id}
+                      type="button"
+                      aria-pressed={genPlateforme === id}
                       onClick={() => setGenPlateforme(id)}
-                      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                        genPlateforme === id
-                          ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                          : 'bg-white text-zinc-600 border-slate-200 hover:border-violet-300'
-                      }`}
+                      className={`segmented-item ${genPlateforme === id ? 'segmented-item-active' : ''}`}
                       title={label}
                     >
-                      <Icon className="w-4 h-4" />
+                      <Icon className="w-4 h-4" aria-hidden="true" />
                       <span className="hidden sm:inline">{label}</span>
                     </button>
                   ))}
                 </div>
 
                 {/* Type */}
-                <label className="block text-xs font-semibold text-zinc-600 mb-2">Type de contenu</label>
+                <label htmlFor="cm-type" className="input-label">Type de contenu</label>
                 <select
+                  id="cm-type"
                   value={genType}
                   onChange={(e) => setGenType(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 mb-4 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                  className="select mb-4"
                 >
                   <option value="promo">Promo</option>
                   <option value="actualite">Actualité</option>
@@ -710,59 +706,62 @@ export default function CommunityManager() {
                 </select>
 
                 {/* Contexte */}
-                <label className="block text-xs font-semibold text-zinc-600 mb-2">Contexte</label>
+                <label htmlFor="cm-contexte" className="input-label">Contexte</label>
                 <textarea
+                  id="cm-contexte"
                   value={genContexte}
                   onChange={(e) => setGenContexte(e.target.value)}
                   placeholder="Décrivez le contexte du post..."
                   rows={4}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 resize-none mb-4 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                  className="textarea resize-none mb-4"
                 />
 
                 {/* Image */}
-                <label className="block text-xs font-semibold text-zinc-600 mb-2">
-                  Image <span className="text-zinc-400 font-normal">(obligatoire pour Instagram)</span>
+                <label htmlFor="cm-image-prompt" className="input-label">
+                  Image <span className="text-slate-500 font-normal">(obligatoire pour Instagram)</span>
                 </label>
                 <div className="mb-4">
                   {!genImageUrl ? (
                     <div className="space-y-2">
                       {/* Prompt image dédié */}
                       <textarea
+                        id="cm-image-prompt"
                         value={genImagePrompt}
                         onChange={(e) => setGenImagePrompt(e.target.value)}
                         placeholder="Décrivez l'image souhaitée... Ex: iPhone 15 Pro posé sur un bureau en bois avec des outils de réparation"
                         rows={2}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                        className="textarea min-h-[72px] resize-none"
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={handleGenerateImage}
                           disabled={generatingImage || !genImagePrompt.trim()}
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-semibold hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
+                          className="btn-secondary flex-1"
                         >
                           {generatingImage ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> Génération IA...</>
+                            <><Loader2 className="animate-spin" /> Génération IA...</>
                           ) : (
-                            <><ImagePlus className="w-4 h-4" /> Générer l'image</>
+                            <><ImagePlus className="text-brand-600" /> Générer l'image</>
                           )}
                         </button>
-                        <span className="flex items-center text-xs text-zinc-400">ou</span>
+                        <span className="t-caption">ou</span>
                         <input
                           type="url"
                           onChange={(e) => { setGenImageUrl(e.target.value); setImageLoading(true); }}
                           placeholder="Coller URL Midjourney"
-                          className="w-44 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 placeholder:text-zinc-400"
+                          aria-label="URL de l'image"
+                          className="input w-44"
                         />
                       </div>
                     </div>
                   ) : (
-                    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                    <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
                       {/* Loading placeholder */}
                       {imageLoading && (
-                        <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-violet-50 to-indigo-50">
-                          <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-                          <span className="text-xs text-violet-600 font-medium">Génération en cours...</span>
-                          <span className="text-[10px] text-zinc-400">Peut prendre 10-30 secondes</span>
+                        <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-brand-50" role="status">
+                          <Loader2 className="w-8 h-8 animate-spin text-brand-600" aria-hidden="true" />
+                          <span className="text-sm text-brand-700 font-medium">Génération en cours...</span>
+                          <span className="t-caption">Peut prendre 10-30 secondes</span>
                         </div>
                       )}
                       <img
@@ -773,24 +772,24 @@ export default function CommunityManager() {
                         onError={(e) => { setImageLoading(false); e.target.src = ''; e.target.className = 'hidden'; }}
                       />
                       {!imageLoading && (
-                        <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-gradient-to-t from-black/60 to-transparent">
+                        <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-white/90 border-t border-slate-200">
                           <button
                             onClick={handleGenerateImage}
                             disabled={generatingImage || !genImagePrompt.trim()}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-zinc-700 text-xs font-semibold hover:bg-white transition-colors"
+                            className="btn-secondary btn-sm"
                           >
                             {generatingImage ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <Loader2 className="animate-spin" />
                             ) : (
-                              <Sparkles className="w-3.5 h-3.5" />
+                              <Sparkles />
                             )}
                             Régénérer
                           </button>
                           <button
                             onClick={() => { setGenImageUrl(''); setImageLoading(false); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 text-red-600 text-xs font-semibold hover:bg-white transition-colors"
+                            className="btn-danger-ghost btn-sm"
                           >
-                            <Trash className="w-3.5 h-3.5" /> Changer
+                            <Trash /> Changer
                           </button>
                         </div>
                       )}
@@ -802,16 +801,16 @@ export default function CommunityManager() {
                 <button
                   onClick={handleGenerate}
                   disabled={generating || !genContexte.trim()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 text-white font-semibold text-sm hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                  className="btn-primary btn-block"
                 >
                   {generating ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <Loader2 className="animate-spin" />
                       Génération en cours...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" />
+                      <Sparkles />
                       Générer avec l'IA
                     </>
                   )}
@@ -820,23 +819,23 @@ export default function CommunityManager() {
 
               {/* Generated post preview */}
               {generatedPost && (
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 animate-in">
+                <div className="card card-body animate-in">
                   <div className="flex items-center gap-2 mb-3">
                     <PlatformIcon platform={generatedPost.plateforme || genPlateforme} size={18} />
-                    <span className="text-sm font-bold text-zinc-900">
+                    <span className="text-sm font-semibold text-slate-900">
                       {generatedPost.titre || 'Post généré'}
                     </span>
                   </div>
 
-                  <p className="text-sm text-zinc-600 mb-3 whitespace-pre-wrap">
+                  <p className="text-sm text-slate-700 mb-3 whitespace-pre-wrap">
                     {generatedPost.contenu}
                   </p>
 
                   {genImageUrl && (
-                    <div className="mb-3 rounded-xl overflow-hidden border border-slate-200 bg-zinc-50">
+                    <div className="mb-3 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
                       {imageLoading && (
-                        <div className="w-full h-32 flex items-center justify-center bg-violet-50">
-                          <Loader2 className="w-5 h-5 animate-spin text-violet-500" />
+                        <div className="w-full h-32 flex items-center justify-center bg-brand-50" role="status">
+                          <Loader2 className="w-5 h-5 animate-spin text-brand-600" aria-hidden="true" />
                         </div>
                       )}
                       <img
@@ -854,7 +853,7 @@ export default function CommunityManager() {
                       {(Array.isArray(generatedPost.hashtags) ? generatedPost.hashtags : []).map((tag, i) => (
                         <span
                           key={i}
-                          className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-100"
+                          className="badge badge-sm badge-brand font-medium"
                         >
                           #{tag}
                         </span>
@@ -865,30 +864,30 @@ export default function CommunityManager() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => handleSaveDraft(generatedPost)}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 transition-colors"
+                      className="btn-secondary flex-1"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText />
                       Sauvegarder en brouillon
                     </button>
                     <button
                       onClick={() => handlePublishGenerated(generatedPost)}
                       disabled={publishing === 'gen'}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                      className="btn-primary flex-1"
                     >
                       {publishing === 'gen' ? (
-                        <><Loader2 className="w-4 h-4 animate-spin" /> Publication...</>
+                        <><Loader2 className="animate-spin" /> Publication...</>
                       ) : (
-                        <><Send className="w-4 h-4" /> Publier maintenant</>
+                        <><Send /> Publier maintenant</>
                       )}
                     </button>
                     <button
                       onClick={() => copyToClipboard(getFullPostText(generatedPost), 'gen-copy')}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border-2 border-slate-200 text-zinc-600 text-sm font-medium hover:bg-zinc-50 transition-colors"
+                      className="btn-ghost"
                     >
                       {copiedId === 'gen-copy' ? (
-                        <><Check className="w-4 h-4 text-emerald-500" /> Copié !</>
+                        <><Check className="text-emerald-700" /> Copié !</>
                       ) : (
-                        <><Copy className="w-4 h-4" /> Copier</>
+                        <><Copy /> Copier</>
                       )}
                     </button>
                   </div>
@@ -902,21 +901,25 @@ export default function CommunityManager() {
         {activeTab === 'calendrier' && (
           <div className="space-y-4">
             {/* Week navigation */}
-            <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-200 shadow-sm px-5 py-3">
+            <div className="card flex items-center justify-between px-3 py-2">
               <button
+                type="button"
                 onClick={goToPrevWeek}
-                className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+                aria-label="Semaine précédente"
+                className="btn-ghost btn-icon"
               >
-                <ChevronLeft className="w-5 h-5" />
+                <ChevronLeft />
               </button>
-              <h2 className="text-sm font-bold text-zinc-900">
+              <h2 className="t-h2">
                 Semaine du {formatDateLabel(weekDays[0])}
               </h2>
               <button
+                type="button"
                 onClick={goToNextWeek}
-                className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
+                aria-label="Semaine suivante"
+                className="btn-ghost btn-icon"
               >
-                <ChevronRight className="w-5 h-5" />
+                <ChevronRight />
               </button>
             </div>
 
@@ -937,16 +940,16 @@ export default function CommunityManager() {
                     return (
                       <div
                         key={idx}
-                        className={`bg-white rounded-xl border shadow-sm min-h-[180px] ${
-                          isToday ? 'border-violet-300 ring-1 ring-violet-100' : 'border-slate-200'
+                        className={`card min-h-[180px] overflow-hidden ${
+                          isToday ? 'border-brand-300' : ''
                         }`}
                       >
                         {/* Day header */}
                         <div className={`px-3 py-2 border-b text-center ${
-                          isToday ? 'bg-violet-50 border-violet-100' : 'bg-zinc-50 border-slate-100'
+                          isToday ? 'bg-brand-50 border-brand-100' : 'bg-slate-50 border-slate-100'
                         }`}>
-                          <div className="text-xs font-semibold text-zinc-500">{JOURS[idx]}</div>
-                          <div className={`text-lg font-bold ${isToday ? 'text-violet-600' : 'text-zinc-900'}`}>
+                          <div className="t-caption">{JOURS[idx]}</div>
+                          <div className={`text-lg font-semibold tabular-nums ${isToday ? 'text-brand-700' : 'text-slate-900'}`}>
                             {day.getDate()}
                           </div>
                         </div>
@@ -956,23 +959,25 @@ export default function CommunityManager() {
                           {dayEvents.map((event) => (
                             <div
                               key={event.id}
-                              className="group relative rounded-lg p-2 text-xs bg-zinc-50 hover:bg-zinc-100 transition-colors"
+                              className="group relative rounded-lg p-2 pr-9 text-xs bg-slate-50 hover:bg-slate-100 transition-colors duration-150"
                               style={{ borderLeft: `3px solid ${event.couleur || '#7C3AED'}` }}
                             >
-                              <div className="font-semibold text-zinc-800 truncate">{event.titre}</div>
+                              <div className="font-semibold text-slate-800 truncate">{event.titre}</div>
                               {event.heure && (
-                                <div className="text-zinc-400 mt-0.5">{event.heure}</div>
+                                <div className="text-slate-500 mt-0.5 tabular-nums">{event.heure}</div>
                               )}
                               {event.type && (
-                                <span className="inline-block mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-100">
+                                <span className="badge badge-sm badge-brand mt-1">
                                   {event.type}
                                 </span>
                               )}
                               <button
+                                type="button"
                                 onClick={() => handleDeleteEvent(event.id)}
-                                className="absolute top-1 right-1 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-zinc-400 hover:text-red-500 transition-all"
+                                aria-label={`Supprimer l'événement ${event.titre}`}
+                                className="btn-danger-ghost btn-icon btn-sm absolute top-0.5 right-0.5 text-slate-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 />
                               </button>
                             </div>
                           ))}
@@ -995,39 +1000,41 @@ export default function CommunityManager() {
                     return (
                       <div
                         key={idx}
-                        className={`bg-white rounded-xl border shadow-sm p-3 ${
-                          isToday ? 'border-violet-300' : 'border-slate-200'
+                        className={`card p-3 ${
+                          isToday ? 'border-brand-300' : ''
                         }`}
                       >
                         <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-sm font-bold ${isToday ? 'text-violet-600' : 'text-zinc-900'}`}>
+                          <span className={`text-sm font-semibold ${isToday ? 'text-brand-700' : 'text-slate-900'}`}>
                             {JOURS[idx]} {day.getDate()}
                           </span>
                           {isToday && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600">
+                            <span className="badge badge-sm badge-brand">
                               Aujourd'hui
                             </span>
                           )}
                         </div>
                         {dayEvents.length === 0 ? (
-                          <p className="text-xs text-zinc-400 italic">Aucun événement</p>
+                          <p className="t-caption italic">Aucun événement</p>
                         ) : (
                           <div className="space-y-1.5">
                             {dayEvents.map((event) => (
                               <div
                                 key={event.id}
-                                className="flex items-center justify-between rounded-lg p-2 bg-zinc-50"
+                                className="flex items-center justify-between gap-2 rounded-lg p-2 bg-slate-50"
                                 style={{ borderLeft: `3px solid ${event.couleur || '#7C3AED'}` }}
                               >
-                                <div>
-                                  <div className="text-xs font-semibold text-zinc-800">{event.titre}</div>
-                                  <div className="text-[10px] text-zinc-400">{event.heure} {event.type && `· ${event.type}`}</div>
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-800 truncate">{event.titre}</div>
+                                  <div className="t-caption">{event.heure} {event.type && `· ${event.type}`}</div>
                                 </div>
                                 <button
+                                  type="button"
                                   onClick={() => handleDeleteEvent(event.id)}
-                                  className="p-1 rounded hover:bg-red-100 text-zinc-400 hover:text-red-500 transition-colors"
+                                  aria-label={`Supprimer l'événement ${event.titre}`}
+                                  className="btn-danger-ghost btn-icon text-slate-500 shrink-0"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 />
                                 </button>
                               </div>
                             ))}
@@ -1042,25 +1049,27 @@ export default function CommunityManager() {
 
             {/* Add event */}
             {showAddEvent ? (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-                <h3 className="text-sm font-bold text-zinc-900 mb-4">Ajouter un événement</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="card card-body">
+                <h3 className="t-h2 mb-4">Ajouter un événement</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 mb-1">Titre</label>
+                    <label htmlFor="cm-evt-titre" className="input-label">Titre</label>
                     <input
+                      id="cm-evt-titre"
                       type="text"
                       value={newEvent.titre}
                       onChange={(e) => setNewEvent({ ...newEvent, titre: e.target.value })}
                       placeholder="Titre de l'événement"
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                      className="input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 mb-1">Type</label>
+                    <label htmlFor="cm-evt-type" className="input-label">Type</label>
                     <select
+                      id="cm-evt-type"
                       value={newEvent.type}
                       onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                      className="select"
                     >
                       <option value="post">Post</option>
                       <option value="story">Story</option>
@@ -1070,32 +1079,37 @@ export default function CommunityManager() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 mb-1">Date</label>
+                    <label htmlFor="cm-evt-date" className="input-label">Date</label>
                     <input
+                      id="cm-evt-date"
                       type="date"
                       value={newEvent.date}
                       onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                      className="input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 mb-1">Heure</label>
+                    <label htmlFor="cm-evt-heure" className="input-label">Heure</label>
                     <input
+                      id="cm-evt-heure"
                       type="time"
                       value={newEvent.heure}
                       onChange={(e) => setNewEvent({ ...newEvent, heure: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500"
+                      className="input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-zinc-600 mb-1">Couleur</label>
-                    <div className="flex items-center gap-2">
+                    <p id="cm-evt-couleur" className="input-label">Couleur</p>
+                    <div className="flex items-center gap-2" role="group" aria-labelledby="cm-evt-couleur">
                       {['#7C3AED', '#2563eb', '#16a34a', '#e11d48', '#ea580c', '#0891b2'].map((color) => (
                         <button
                           key={color}
+                          type="button"
                           onClick={() => setNewEvent({ ...newEvent, couleur: color })}
-                          className={`w-7 h-7 rounded-full border-2 transition-all ${
-                            newEvent.couleur === color ? 'border-zinc-900 scale-110' : 'border-transparent'
+                          aria-label={`Couleur ${color}`}
+                          aria-pressed={newEvent.couleur === color}
+                          className={`w-9 h-9 rounded-full border-2 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                            newEvent.couleur === color ? 'border-slate-900' : 'border-transparent hover:border-slate-300'
                           }`}
                           style={{ backgroundColor: color }}
                         />
@@ -1103,17 +1117,17 @@ export default function CommunityManager() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 mt-4">
+                <div className="flex flex-wrap items-center gap-2 mt-4">
                   <button
                     onClick={handleAddEvent}
                     disabled={!newEvent.titre.trim() || !newEvent.date}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="btn-primary"
                   >
-                    <Plus className="w-4 h-4" /> Ajouter
+                    <Plus /> Ajouter
                   </button>
                   <button
                     onClick={() => setShowAddEvent(false)}
-                    className="px-4 py-2 rounded-xl text-sm text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+                    className="btn-ghost"
                   >
                     Annuler
                   </button>
@@ -1121,10 +1135,11 @@ export default function CommunityManager() {
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => setShowAddEvent(true)}
-                className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-300 text-sm font-semibold text-zinc-500 hover:border-violet-400 hover:text-violet-600 hover:bg-violet-50/50 transition-all flex items-center justify-center gap-2"
+                className="btn-secondary btn-block border-dashed border-slate-300 text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50"
               >
-                <Plus className="w-4 h-4" /> Ajouter un événement
+                <Plus /> Ajouter un événement
               </button>
             )}
           </div>
@@ -1136,34 +1151,34 @@ export default function CommunityManager() {
             {loading ? (
               <Spinner />
             ) : templates.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-12 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-4">
-                  <LayoutGrid className="w-7 h-7 text-zinc-300" />
+              <div className="empty-state card">
+                <div className="empty-state-icon">
+                  <LayoutGrid aria-hidden="true" />
                 </div>
-                <p className="text-zinc-500 font-medium">Aucun template disponible</p>
-                <p className="text-sm text-zinc-400 mt-1">Les templates facilitent la création de posts récurrents</p>
+                <p className="t-h2">Aucun template disponible</p>
+                <p className="t-body text-slate-500">Les templates facilitent la création de posts récurrents</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {templates.map((template) => (
                   <div
                     key={template.id}
-                    className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+                    className="card overflow-hidden"
                   >
                     {/* Colored accent bar */}
                     <div
-                      className="h-1 rounded-t-2xl"
+                      className="h-1"
                       style={{ backgroundColor: template.couleur || '#7C3AED' }}
                     />
 
-                    <div className="p-5">
+                    <div className="p-4 sm:p-5">
                       {/* Icon + name */}
                       <div className="flex items-start gap-3 mb-3">
-                        <span className="text-2xl">{template.icone || '📝'}</span>
+                        <span className="text-2xl" aria-hidden="true">{template.icone || '📝'}</span>
                         <div className="min-w-0 flex-1">
-                          <h3 className="text-sm font-bold text-zinc-900 truncate">{template.nom}</h3>
+                          <h3 className="t-h2 truncate">{template.nom}</h3>
                           {template.description && (
-                            <p className="text-sm text-zinc-500 mt-0.5 line-clamp-2">{template.description}</p>
+                            <p className="text-sm text-slate-500 mt-0.5 line-clamp-2">{template.description}</p>
                           )}
                         </div>
                       </div>
@@ -1171,14 +1186,14 @@ export default function CommunityManager() {
                       {/* Platform badge */}
                       {template.plateforme && (
                         <div className="flex items-center gap-1.5 mb-3">
-                          <PlatformIcon platform={template.plateforme} size={14} />
-                          <span className="text-xs text-zinc-500 capitalize">{template.plateforme}</span>
+                          <PlatformIcon platform={template.plateforme} size={16} />
+                          <span className="t-caption capitalize">{template.plateforme}</span>
                         </div>
                       )}
 
                       {/* Content preview */}
                       {template.contenu && (
-                        <p className="text-xs text-zinc-400 italic line-clamp-3 mb-3">
+                        <p className="text-sm text-slate-500 italic line-clamp-3 mb-3">
                           {template.contenu}
                         </p>
                       )}
@@ -1189,7 +1204,7 @@ export default function CommunityManager() {
                           {(Array.isArray(template.hashtags) ? template.hashtags : []).slice(0, 4).map((tag, i) => (
                             <span
                               key={i}
-                              className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-100"
+                              className="badge badge-sm badge-brand font-medium"
                             >
                               #{tag}
                             </span>
@@ -1200,9 +1215,9 @@ export default function CommunityManager() {
                       {/* Use button */}
                       <button
                         onClick={() => handleUseTemplate(template)}
-                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border-2 border-violet-200 text-violet-600 text-sm font-semibold hover:bg-violet-50 hover:border-violet-300 transition-all"
+                        className="btn-secondary btn-block"
                       >
-                        <Sparkles className="w-4 h-4" /> Utiliser
+                        <Sparkles className="text-brand-600" /> Utiliser
                       </button>
                     </div>
                   </div>
@@ -1225,131 +1240,125 @@ export default function CommunityManager() {
                 {/* KPI cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {/* Portée totale */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                  <div className="kpi-card flex-col items-stretch gap-0">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
-                        <TrendingUp className="w-5 h-5 text-violet-600" />
+                      <div className="kpi-icon">
+                        <TrendingUp aria-hidden="true" />
                       </div>
                       {analytics?.portee_trend != null && (
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                          analytics.portee_trend >= 0
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-red-50 text-red-600'
+                        <span className={`kpi-delta tabular-nums ${
+                          analytics.portee_trend >= 0 ? 'badge-success' : 'badge-danger'
                         }`}>
                           {analytics.portee_trend >= 0 ? '+' : ''}{analytics.portee_trend}%
                         </span>
                       )}
                     </div>
-                    <p className="text-2xl font-bold text-zinc-900">
+                    <p className="kpi-value">
                       {analytics?.portee_totale?.toLocaleString('fr-FR') ?? '—'}
                     </p>
-                    <p className="text-sm text-zinc-500 mt-0.5">Portée totale</p>
+                    <p className="kpi-label">Portée totale</p>
                   </div>
 
                   {/* Interactions */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                  <div className="kpi-card flex-col items-stretch gap-0">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                        <MousePointerClick className="w-5 h-5 text-emerald-600" />
+                      <div className="kpi-icon">
+                        <MousePointerClick aria-hidden="true" />
                       </div>
                       {analytics?.interactions_trend != null && (
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                          analytics.interactions_trend >= 0
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-red-50 text-red-600'
+                        <span className={`kpi-delta tabular-nums ${
+                          analytics.interactions_trend >= 0 ? 'badge-success' : 'badge-danger'
                         }`}>
                           {analytics.interactions_trend >= 0 ? '+' : ''}{analytics.interactions_trend}%
                         </span>
                       )}
                     </div>
-                    <p className="text-2xl font-bold text-zinc-900">
+                    <p className="kpi-value">
                       {analytics?.interactions?.toLocaleString('fr-FR') ?? '—'}
                     </p>
-                    <p className="text-sm text-zinc-500 mt-0.5">Interactions</p>
+                    <p className="kpi-label">Interactions</p>
                   </div>
 
                   {/* Nouveaux abonnés */}
-                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                  <div className="kpi-card flex-col items-stretch gap-0">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-blue-600" />
+                      <div className="kpi-icon">
+                        <Users aria-hidden="true" />
                       </div>
                       {analytics?.abonnes_trend != null && (
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                          analytics.abonnes_trend >= 0
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-red-50 text-red-600'
+                        <span className={`kpi-delta tabular-nums ${
+                          analytics.abonnes_trend >= 0 ? 'badge-success' : 'badge-danger'
                         }`}>
                           {analytics.abonnes_trend >= 0 ? '+' : ''}{analytics.abonnes_trend}%
                         </span>
                       )}
                     </div>
-                    <p className="text-2xl font-bold text-zinc-900">
+                    <p className="kpi-value">
                       {analytics?.nouveaux_abonnes?.toLocaleString('fr-FR') ?? '—'}
                     </p>
-                    <p className="text-sm text-zinc-500 mt-0.5">Nouveaux abonnés</p>
+                    <p className="kpi-label">Nouveaux abonnés</p>
                   </div>
                 </div>
 
                 {/* Posts performance table */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-100">
-                    <h3 className="text-sm font-bold text-zinc-900">Performance des posts</h3>
+                <div className="card overflow-hidden">
+                  <div className="card-header">
+                    <h3 className="t-h2">Performance des posts</h3>
                   </div>
 
                   {analyticsPosts.length === 0 ? (
                     <div className="p-8 text-center">
-                      <p className="text-sm text-zinc-400">Aucune donnée de performance disponible</p>
+                      <p className="text-sm text-slate-500">Aucune donnée de performance disponible</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="table">
                         <thead>
-                          <tr className="bg-zinc-50">
-                            <th className="text-left px-5 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                          <tr className="bg-slate-50">
+                            <th className="table-header">
                               Post
                             </th>
-                            <th className="text-left px-3 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                            <th className="table-header">
                               Plateforme
                             </th>
-                            <th className="text-left px-3 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                            <th className="table-header">
                               Date
                             </th>
-                            <th className="text-right px-3 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                            <th className="table-header text-right">
                               Vues
                             </th>
-                            <th className="text-right px-3 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                            <th className="table-header text-right">
                               Likes
                             </th>
-                            <th className="text-right px-5 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                            <th className="table-header text-right">
                               Commentaires
                             </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody>
                           {analyticsPosts.map((post, idx) => (
-                            <tr key={post.id || idx} className="hover:bg-zinc-50/50 transition-colors">
-                              <td className="px-5 py-3">
-                                <span className="font-medium text-zinc-800 truncate block max-w-[200px]">
+                            <tr key={post.id || idx} className="table-row">
+                              <td>
+                                <span className="font-medium text-slate-900 truncate block max-w-[200px]">
                                   {post.titre || 'Sans titre'}
                                 </span>
                               </td>
-                              <td className="px-3 py-3">
+                              <td>
                                 <div className="flex items-center gap-1.5">
-                                  <PlatformIcon platform={post.plateforme} size={14} />
-                                  <span className="text-zinc-600 capitalize text-xs">{post.plateforme}</span>
+                                  <PlatformIcon platform={post.plateforme} size={16} />
+                                  <span className="text-slate-600 capitalize text-sm">{post.plateforme}</span>
                                 </div>
                               </td>
-                              <td className="px-3 py-3 text-zinc-500 text-xs">
+                              <td className="table-cell-muted">
                                 {formatDateFr(post.date_publication || post.date_creation)}
                               </td>
-                              <td className="px-3 py-3 text-right text-zinc-800 font-medium">
+                              <td className="table-cell-num">
                                 {(post.vues ?? 0).toLocaleString('fr-FR')}
                               </td>
-                              <td className="px-3 py-3 text-right text-zinc-800 font-medium">
+                              <td className="table-cell-num">
                                 {(post.likes ?? 0).toLocaleString('fr-FR')}
                               </td>
-                              <td className="px-5 py-3 text-right text-zinc-800 font-medium">
+                              <td className="table-cell-num">
                                 {(post.commentaires ?? 0).toLocaleString('fr-FR')}
                               </td>
                             </tr>
@@ -1367,22 +1376,22 @@ export default function CommunityManager() {
 
       {/* ─── TOAST PUBLICATION ────────────────────────── */}
       {publishResult && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl text-sm font-semibold transition-all animate-in ${
-          publishResult.success
-            ? 'bg-emerald-600 text-white'
-            : 'bg-red-600 text-white'
-        }`}>
+        <div role={publishResult.success ? 'status' : 'alert'}
+          className={`toast fixed bottom-4 right-4 lg:bottom-20 lg:right-6 z-[60] items-center animate-in ${
+            publishResult.success ? 'border-l-emerald-600' : 'border-l-red-600'
+          }`}>
           {publishResult.success ? (
-            <Check className="w-5 h-5 flex-shrink-0" />
+            <Check className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
           ) : (
-            <X className="w-5 h-5 flex-shrink-0" />
+            <X className="w-5 h-5 shrink-0 text-red-700" aria-hidden="true" />
           )}
-          <span>{publishResult.message}</span>
+          <span className="flex-1 font-medium">{publishResult.message}</span>
           <button
             onClick={() => setPublishResult(null)}
-            className="ml-2 p-1 rounded-lg hover:bg-white/20 transition-colors"
+            aria-label="Fermer le message"
+            className="btn-ghost btn-icon shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X />
           </button>
         </div>
       )}

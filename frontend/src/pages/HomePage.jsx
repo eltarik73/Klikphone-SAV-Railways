@@ -7,6 +7,17 @@ import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone, 
 const preloadLogin = () => { import('./LoginPage').catch(() => {}); };
 const staffProps = { onMouseEnter: preloadLogin, onFocus: preloadLogin, onTouchStart: preloadLogin };
 
+// Design V2 : hero sombre conservé (identité publique) ; une seule action pleine (« Déposer un
+// appareil »), les autres en « secondaire sur fond sombre » ; aucune translation au survol.
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900';
+const ctaBase = `w-full min-h-[72px] flex items-center gap-4 p-4 rounded-xl text-left transition-colors duration-150 group ${FOCUS}`;
+const ctaPrimary = `${ctaBase} bg-brand-600 hover:bg-brand-700 text-white shadow-lg`;
+const ctaSecondary = `${ctaBase} bg-white/[0.07] border border-white/15 hover:bg-white/[0.12] hover:border-white/25 text-white`;
+// Vitrine vente (levier commercial) : même carte secondaire, liseré brand pour la distinguer des deux
+// autres sans réintroduire de dégradé ni de seconde action pleine.
+const ctaHighlight = `${ctaBase} bg-white/[0.07] border border-brand-400/50 hover:bg-white/[0.12] hover:border-brand-400/80 text-white`;
+const arrowCls = 'w-5 h-5 shrink-0 transition-transform duration-150 motion-safe:group-hover:translate-x-1';
+
 export default function HomePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -16,11 +27,11 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-brand-900 flex flex-col">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+      <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-10 sm:py-12">
         {/* Logo */}
         <div className="flex items-center gap-3 mb-2">
           <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg"
-            className="w-20 h-20 drop-shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+            className="w-20 h-20 drop-shadow-[0_8px_24px_rgba(124,58,237,0.35)]" aria-hidden="true"
           >
             <defs>
               <linearGradient id="logo-bg" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
@@ -35,83 +46,80 @@ export default function HomePage() {
         <h1 className="text-3xl sm:text-4xl font-display font-extrabold text-white text-center tracking-tight mt-3">
           KLIKPHONE
         </h1>
-        <p className="text-brand-300 text-sm font-medium uppercase tracking-[0.2em] mt-1">
+        <p className="text-brand-300 text-sm font-semibold uppercase tracking-[0.2em] mt-1 text-center">
           Spécialiste Apple & Multimarque
         </p>
-        <p className="text-slate-400 text-sm mt-3 text-center max-w-md">
+        <p className="text-slate-300 text-sm leading-relaxed mt-3 text-center max-w-md">
           Réparation smartphones, tablettes, PC portables et consoles.
           Déposez votre appareil ou suivez votre réparation.
         </p>
 
         {/* CTA buttons */}
         <div className="mt-10 w-full max-w-sm space-y-3">
-          <button onClick={() => navigate('/client')}
-            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/30 transition-all group hover:-translate-y-0.5">
-            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
-              <Smartphone className="w-5 h-5" />
+          <button type="button" onClick={() => navigate('/client')} className={ctaPrimary}>
+            <div className="w-11 h-11 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
+              <Smartphone className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div className="flex-1 text-left">
+            <div className="flex-1 min-w-0">
               <p className="font-semibold">Déposer un appareil</p>
-              <p className="text-sm text-brand-200 mt-0.5">Créer un ticket de réparation</p>
+              <p className="text-sm text-brand-100 mt-0.5">Créer un ticket de réparation</p>
             </div>
-            <ArrowRight className="w-5 h-5 text-brand-200 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className={`${arrowCls} text-brand-100`} aria-hidden="true" />
           </button>
 
-          <button onClick={() => navigate('/deposer')}
-            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-indigo-600/80 hover:bg-indigo-600 border border-indigo-500/30 text-white shadow-lg shadow-indigo-600/20 transition-all group hover:-translate-y-0.5">
-            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 backdrop-blur-sm">
-              <Globe className="w-5 h-5" />
+          <button type="button" onClick={() => navigate('/deposer')} className={ctaSecondary}>
+            <div className="w-11 h-11 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+              <Globe className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div className="flex-1 text-left">
+            <div className="flex-1 min-w-0">
               <p className="font-semibold">Dépôt à distance</p>
-              <p className="text-sm text-indigo-200 mt-0.5">Pré-enregistrez votre appareil en ligne</p>
+              <p className="text-sm text-slate-300 mt-0.5">Pré-enregistrez votre appareil en ligne</p>
             </div>
-            <ArrowRight className="w-5 h-5 text-indigo-200 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className={`${arrowCls} text-slate-400`} aria-hidden="true" />
           </button>
 
-          <button onClick={() => navigate('/suivi')}
-            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-white transition-all group backdrop-blur-sm hover:-translate-y-0.5">
-            <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0">
-              <Search className="w-5 h-5" />
+          <button type="button" onClick={() => navigate('/suivi')} className={ctaSecondary}>
+            <div className="w-11 h-11 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+              <Search className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div className="flex-1 text-left">
+            <div className="flex-1 min-w-0">
               <p className="font-semibold">Suivre ma réparation</p>
-              <p className="text-sm text-slate-400 mt-0.5">Avec mon numéro de ticket</p>
+              <p className="text-sm text-slate-300 mt-0.5">Avec mon numéro de ticket</p>
             </div>
-            <ArrowRight className="w-5 h-5 text-slate-500 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className={`${arrowCls} text-slate-400`} aria-hidden="true" />
           </button>
 
           <button
+            type="button"
             onClick={() => {
               import('../lib/api').then(({ default: api }) =>
                 api.trackEvent('tarifs_click', 'home', '/site-tarifs-iphone')
               );
               navigate('/site-tarifs-iphone');
             }}
-            className="w-full relative overflow-hidden flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-600/30 transition-all group hover:-translate-y-0.5">
-            <div aria-hidden className="pointer-events-none absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/20 blur-2xl" />
-            <div className="relative w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0 backdrop-blur-sm ring-1 ring-white/20">
-              <Tag className="w-5 h-5" />
+            className={ctaHighlight}>
+            <div className="w-11 h-11 rounded-lg bg-brand-500/25 text-brand-200 flex items-center justify-center shrink-0">
+              <Tag className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div className="relative flex-1 text-left">
-              <p className="font-semibold">Voir nos <span className="font-editorial font-normal">tarifs</span> téléphones</p>
-              <p className="text-sm text-amber-50/90 mt-0.5">iPhone, Samsung, Google, Xiaomi — reconditionnés & neufs</p>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold">Voir nos <span className="font-editorial font-normal text-brand-200">tarifs</span> téléphones</p>
+              <p className="text-sm text-slate-300 mt-0.5">iPhone, Samsung, Google, Xiaomi — reconditionnés & neufs</p>
             </div>
-            <ArrowRight className="relative w-5 h-5 text-amber-50 group-hover:translate-x-1 transition-transform" />
+            <ArrowRight className={`${arrowCls} text-slate-400`} aria-hidden="true" />
           </button>
         </div>
 
         {/* Staff */}
         <div className="mt-12 w-full max-w-sm">
-          <p className="text-center text-[11px] text-slate-400 uppercase tracking-widest font-medium mb-3">Accès staff</p>
+          <p className="text-center text-xs text-slate-400 uppercase tracking-[0.06em] font-semibold mb-3">Accès staff</p>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => navigate('/login/accueil')} {...staffProps}
-              className="min-h-[44px] flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
-              <Monitor className="w-4 h-4 text-sky-400" /> Accueil
+            <button type="button" onClick={() => navigate('/login/accueil')} {...staffProps}
+              className={`min-h-11 flex items-center justify-center gap-2 p-3 rounded-lg bg-white/[0.07] border border-white/15 text-slate-200 text-sm font-medium hover:bg-white/[0.12] hover:text-white transition-colors duration-150 ${FOCUS}`}>
+              <Monitor className="w-4 h-4 text-brand-300" aria-hidden="true" /> Accueil
             </button>
-            <button onClick={() => navigate('/login/tech')} {...staffProps}
-              className="min-h-[44px] flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm font-medium hover:bg-white/10 transition-all hover:-translate-y-0.5">
-              <Wrench className="w-4 h-4 text-violet-400" /> Technicien
+            <button type="button" onClick={() => navigate('/login/tech')} {...staffProps}
+              className={`min-h-11 flex items-center justify-center gap-2 p-3 rounded-lg bg-white/[0.07] border border-white/15 text-slate-200 text-sm font-medium hover:bg-white/[0.12] hover:text-white transition-colors duration-150 ${FOCUS}`}>
+              <Wrench className="w-4 h-4 text-brand-300" aria-hidden="true" /> Technicien
             </button>
           </div>
         </div>
@@ -119,9 +127,9 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="py-4 text-center text-xs text-slate-400 flex flex-wrap items-center justify-center gap-2 px-4">
-        <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> 79 Place Saint Léger, Chambéry</span>
-        <span className="hidden sm:block">·</span>
-        <span className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> 04 79 60 89 22</span>
+        <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" aria-hidden="true" /> 79 Place Saint Léger, Chambéry</span>
+        <span className="hidden sm:block" aria-hidden="true">·</span>
+        <span className="flex items-center gap-1.5"><Phone className="w-4 h-4" aria-hidden="true" /> 04 79 60 89 22</span>
       </footer>
     </div>
   );

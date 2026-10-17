@@ -1,15 +1,8 @@
-import { Search, FileText, Wrench, CheckCircle2, Package, Truck, Globe } from 'lucide-react';
+import { Search, FileText, Wrench, CheckCircle2, Package, Truck, Globe, Check } from 'lucide-react';
 
-const STEP_COLORS = {
-  'Pré-enregistré': { color: '#6366F1', bg: '#E0E7FF' },
-  Diagnostic:  { color: '#F59E0B', bg: '#FEF3C7' },
-  Devis:       { color: '#3B82F6', bg: '#DBEAFE' },
-  Pièce:       { color: '#F97316', bg: '#FFEDD5' },
-  Réparation:  { color: '#8B5CF6', bg: '#EDE9FE' },
-  Terminé:     { color: '#10B981', bg: '#D1FAE5' },
-  Rendu:       { color: '#18181B', bg: '#F4F4F5' },
-};
-
+// Stepper monochrome (design V2) : la progression se lit au poids, pas à la couleur.
+// Étape faite = cercle plein brand + coche ; courante = cercle blanc cerclé brand + icône ;
+// à venir = cercle slate. Libellés 12 px minimum.
 const STEPS_NORMAL = [
   { label: 'Diagnostic', icon: Search },
   { label: 'Devis', icon: FileText },
@@ -61,59 +54,53 @@ export default function ProgressTracker({ statut, hasPiece, isDistance }) {
   if (isPreRegistered) {
     return (
       <div className="text-center py-2">
-        <div className="w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center" style={{ backgroundColor: '#E0E7FF' }}>
-          <Globe className="w-6 h-6" style={{ color: '#6366F1' }} />
+        <div className="w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center bg-brand-50 text-brand-600">
+          <Globe className="w-6 h-6" aria-hidden="true" />
         </div>
-        <p className="text-sm font-bold" style={{ color: '#6366F1' }}>Pré-enregistré</p>
-        <p className="text-xs text-slate-400 mt-1">En attente de validation par l'équipe</p>
+        <p className="text-sm font-semibold text-brand-700">Pré-enregistré</p>
+        <p className="t-caption mt-1">En attente de validation par l'équipe</p>
       </div>
     );
   }
 
+  // Grille à colonnes égales : aucun chevauchement de libellés à 390 px (6 étapes) ; les connecteurs
+  // relient les centres des cercles et passent sous eux.
+  const cols = steps.length === 6 ? 'grid-cols-6' : 'grid-cols-5';
+
   return (
-    <div className="flex items-center justify-between w-full">
+    <div className={`grid ${cols} w-full min-w-0`}>
       {steps.map((step, i) => {
         const Icon = step.icon;
-        const done = i <= currentStep;
+        const done = i < currentStep;
         const isCurrent = i === currentStep;
-        const sc = STEP_COLORS[step.label];
 
-        const circleStyle = done
-          ? {
-              backgroundColor: sc.color,
-              color: '#fff',
-              ...(isCurrent
-                ? {
-                    boxShadow: `0 0 0 4px ${sc.bg}, 0 4px 12px ${sc.color}30`,
-                    transform: 'scale(1.15)',
-                  }
-                : { boxShadow: `0 2px 6px ${sc.color}30` }),
-            }
-          : { backgroundColor: '#F4F4F5', color: '#D4D4D8' };
-
-        const labelStyle = { color: done ? sc.color : '#A1A1AA' };
-
-        const lineColor = i < currentStep ? STEP_COLORS[step.label].color : '#E4E4E7';
+        const circleCls = done
+          ? 'bg-brand-600 text-white'
+          : isCurrent
+            ? 'bg-white border-2 border-brand-600 text-brand-700'
+            : 'bg-slate-100 text-slate-400';
+        const labelCls = done || isCurrent
+          ? 'text-xs font-semibold text-brand-700'
+          : 'text-xs font-medium text-slate-500';
+        const lineCls = i <= currentStep ? 'bg-brand-200' : 'bg-slate-200';
 
         return (
-          <div key={i} className="flex items-center flex-1 last:flex-none">
-            <div className="flex flex-col items-center">
+          <div key={i} className="relative flex flex-col items-center min-w-0 px-0.5">
+            {i > 0 && (
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center transition-all"
-                style={circleStyle}
-              >
-                <Icon className="w-4.5 h-4.5" />
-              </div>
-              <span className="text-[10px] mt-1.5 font-semibold" style={labelStyle}>
-                {step.label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div
-                className="flex-1 h-0.5 mx-2 rounded-full transition-colors"
-                style={{ backgroundColor: lineColor }}
+                className={`absolute top-[15px] h-0.5 rounded-full left-[calc(-50%_+_18px)] right-[calc(50%_+_18px)] ${lineCls}`}
+                aria-hidden="true"
               />
             )}
+            <div
+              className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center transition-colors duration-150 ${circleCls}`}
+              aria-current={isCurrent ? 'step' : undefined}
+            >
+              {done ? <Check className="w-4 h-4" aria-hidden="true" /> : <Icon className="w-4 h-4" aria-hidden="true" />}
+            </div>
+            <span lang="fr" className={`mt-1.5 max-w-full text-center leading-tight tracking-tight break-words hyphens-auto ${labelCls}`}>
+              {step.label}
+            </span>
           </div>
         );
       })}

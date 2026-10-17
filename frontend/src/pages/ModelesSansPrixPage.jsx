@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ListChecks, Inbox, Link2, Search, RotateCcw, Plus, Trash2, ExternalLink, Tags } from 'lucide-react';
+import { ListChecks, Inbox, Link2, Search, RotateCcw, Plus, Trash2, ExternalLink, Tags, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useAdminElevation } from '../hooks/useAdminElevation';
@@ -14,6 +14,18 @@ export const ONGLETS_PRIX = [
   { cle: 'alias', label: 'Alias de modèles', icone: Tags },
 ];
 const CATEGORIES = ['Smartphone', 'Tablette', 'PC Portable', 'Console'];
+// Liste des modèles sans prix : 50 lignes par page par défaut (376 modèles sinon sur une seule page),
+// 100 ou « Tout » au choix (retenu dans le navigateur, comme sur le tableau de bord).
+export const PAR_PAGE_SANS_PRIX = 50;
+export const TAILLES_PAGE_SANS_PRIX = [50, 100, 0]; // 0 = tout afficher
+const CLE_TAILLE_PAGE = 'kp_sans_prix_page_size';
+function lireTaillePage() {
+  try {
+    const brut = localStorage.getItem(CLE_TAILLE_PAGE);
+    const v = brut === null ? NaN : Number(brut);
+    return TAILLES_PAGE_SANS_PRIX.includes(v) ? v : PAR_PAGE_SANS_PRIX;
+  } catch { return PAR_PAGE_SANS_PRIX; }
+}
 
 const liste = (data) => (Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []);
 const nom = (m) => [m?.marque, m?.modele].filter(Boolean).join(' ');
@@ -53,7 +65,7 @@ function FormAlias({ initial, verrouAlias = false, onAnnuler, onEnregistrer }) {
     try { await onEnregistrer(v); } finally { setEnvoi(false); }
   };
   return (
-    <form onSubmit={soumettre} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end p-3 rounded-xl bg-slate-50 border border-slate-200">
+    <form onSubmit={soumettre} className="card-section grid gap-x-4 gap-y-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
       <div>
         <label htmlFor={`${id}-alias`} className="input-label">Nom saisi sur les tickets</label>
         <input id={`${id}-alias`} value={v.alias} readOnly={verrouAlias} ref={verrouAlias ? undefined : champRef}
@@ -68,18 +80,18 @@ function FormAlias({ initial, verrouAlias = false, onAnnuler, onEnregistrer }) {
       </div>
       <div>
         <label htmlFor={`${id}-categorie`} className="input-label">Catégorie</label>
-        <select id={`${id}-categorie`} value={v.categorie} onChange={e => setV(x => ({ ...x, categorie: e.target.value }))} className="input min-h-[44px]">
+        <select id={`${id}-categorie`} value={v.categorie} onChange={e => setV(x => ({ ...x, categorie: e.target.value }))} className="select min-h-[44px]">
           <option value="">Toutes</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
       <div className="flex gap-2">
-        <button type="button" onClick={onAnnuler} className="btn-secondary min-h-[44px]">Annuler</button>
-        <button type="submit" disabled={!valide || envoi} aria-busy={envoi || undefined} className="btn-primary min-h-[44px] disabled:opacity-60">
-          <Link2 className="w-4 h-4" aria-hidden="true" /> {envoi ? 'Ajout…' : 'Ajouter l’alias'}
+        <button type="button" onClick={onAnnuler} className="btn-ghost min-h-[44px]">Annuler</button>
+        <button type="submit" disabled={!valide || envoi} aria-busy={envoi || undefined} className="btn-primary min-h-[44px]">
+          <Link2 aria-hidden="true" /> {envoi ? 'Ajout…' : 'Ajouter l’alias'}
         </button>
       </div>
-      <p id={`${id}-aide`} className="sm:col-span-4 text-[11px] text-slate-600">
+      <p id={`${id}-aide`} className="sm:col-span-4 input-help mt-0">
         Nom exact tel qu’il figure dans la grille (ex. « iPhone 17 Air »). Les tickets de ce modèle recevront ses prix.
       </p>
     </form>
@@ -90,12 +102,15 @@ function ModelesSansPrix({ basePath, sensible }) {
   const toast = useToast();
   const rechercheId = useId();
   const triId = useId();
+  const tailleId = useId();
   const [etat, setEtat] = useState({ statut: 'chargement', modeles: [], erreur: '' });
   const [essai, setEssai] = useState(0);
   const [tri, setTri] = useState('tickets');
   const [categorie, setCategorie] = useState('');
   const [q, setQ] = useState('');
   const [aliasOuvert, setAliasOuvert] = useState(null);
+  const [page, setPage] = useState(0);
+  const [parPage, setParPage] = useState(lireTaillePage);
 
   useEffect(() => {
     let annule = false;
@@ -113,6 +128,19 @@ function ModelesSansPrix({ basePath, sensible }) {
       && mots.every(w => `${nom(m)} ${m.annee || ''}`.toLowerCase().includes(w))), tri);
   }, [etat.modeles, categorie, q, tri]);
 
+  // Nouveau filtre, tri ou recherche : retour à la première page
+  useEffect(() => { setPage(0); }, [categorie, q, tri, etat.modeles]);
+  const taille = parPage || Math.max(1, visibles.length); // « Tout » = une seule page
+  const nbPages = Math.max(1, Math.ceil(visibles.length / taille));
+  const pageCourante = Math.min(page, nbPages - 1);
+  const debut = pageCourante * taille;
+  const pageVisibles = visibles.slice(debut, debut + taille);
+  const changerTaille = (v) => {
+    setParPage(v);
+    setPage(0);
+    try { localStorage.setItem(CLE_TAILLE_PAGE, String(v)); } catch { /* stockage indisponible */ }
+  };
+
   const ajouterAlias = async (m, v) => {
     try {
       await sensible(() => api.ajouterAliasModele(v));
@@ -127,16 +155,17 @@ function ModelesSansPrix({ basePath, sensible }) {
   if (etat.statut === 'chargement') {
     return (
       <ul className="space-y-2" aria-hidden="true">
-        {[1, 2, 3, 4].map(i => <li key={i} className="h-16 rounded-xl bg-slate-100 motion-safe:animate-pulse" />)}
+        {[1, 2, 3, 4].map(i => <li key={i} className="skeleton-row" />)}
       </ul>
     );
   }
   if (etat.statut === 'erreur') {
     return (
-      <div className="card p-5 text-center space-y-3">
-        <p className="text-sm text-red-700 font-medium" role="alert">{etat.erreur}</p>
-        <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-[44px] text-xs">
-          <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+      <div className="error-state flex-wrap items-center">
+        <AlertTriangle aria-hidden="true" />
+        <p className="font-medium flex-1" role="alert">{etat.erreur}</p>
+        <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+          <RotateCcw aria-hidden="true" /> Réessayer
         </button>
       </div>
     );
@@ -144,83 +173,112 @@ function ModelesSansPrix({ basePath, sensible }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600">
+      <p className="t-body">
         Modèles actifs du catalogue sans aucun prix de réparation. Les plus demandés d’abord : ajoutez un alias si le
         modèle existe sous un autre nom dans la grille, sinon saisissez son prix.
       </p>
-      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
         <div className="relative flex-1">
           <label htmlFor={rechercheId} className="sr-only">Rechercher un modèle</label>
-          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
           <input id={rechercheId} type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Marque, modèle, année…"
-            className="input pl-9 min-h-[44px]" style={{ fontSize: '16px' }} autoComplete="off" />
+            className="input pl-9 min-h-11" autoComplete="off" />
         </div>
         <div className="flex items-center gap-2">
-          <label htmlFor={triId} className="text-xs font-semibold text-slate-700 whitespace-nowrap">Trier par</label>
-          <select id={triId} value={tri} onChange={e => setTri(e.target.value)} className="input min-h-[44px]">
+          <label htmlFor={triId} className="t-label whitespace-nowrap">Trier par</label>
+          <select id={triId} value={tri} onChange={e => setTri(e.target.value)} className="select min-h-11 sm:w-auto">
             <option value="tickets">Tickets (12 mois) puis année</option>
             <option value="annee">Année puis tickets</option>
           </select>
         </div>
       </div>
       {categories.length > 1 && (
-        <div role="group" aria-label="Filtrer par catégorie" className="flex flex-wrap gap-1.5">
-          {['', ...categories].map(c => (
-            <button key={c || 'toutes'} type="button" aria-pressed={categorie === c} onClick={() => setCategorie(c)}
-              className={`min-h-[44px] px-3 rounded-lg text-xs font-bold border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
-                categorie === c ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}>
-              {c || 'Toutes'}
-            </button>
-          ))}
+        <div className="max-sm:scroll-fade-x">
+          <div role="group" aria-label="Filtrer par catégorie" className="segmented">
+            {['', ...categories].map(c => (
+              <button key={c || 'toutes'} type="button" aria-pressed={categorie === c} onClick={() => setCategorie(c)}
+                className={`segmented-item ${categorie === c ? 'segmented-item-active' : ''}`}>
+                {c || 'Toutes'}
+              </button>
+            ))}
+          </div>
         </div>
       )}
-      <p className="text-xs text-slate-600" role="status" aria-live="polite">
+      <p className="t-caption" role="status" aria-live="polite">
         {visibles.length} modèle{visibles.length > 1 ? 's' : ''} sans prix{visibles.length !== etat.modeles.length ? ` (sur ${etat.modeles.length})` : ''}
       </p>
       {visibles.length === 0 ? (
-        <div className="card p-8 text-center">
-          <ListChecks className="w-8 h-8 text-emerald-600 mx-auto mb-2" aria-hidden="true" />
-          <p className="text-sm font-medium text-slate-800">{etat.modeles.length ? 'Aucun modèle ne correspond.' : 'Tous les modèles du catalogue ont un prix.'}</p>
+        <div className="card empty-state">
+          <div className="empty-state-icon bg-emerald-50 text-emerald-700"><ListChecks aria-hidden="true" /></div>
+          <p className="t-h2">{etat.modeles.length ? 'Aucun modèle ne correspond.' : 'Tous les modèles du catalogue ont un prix.'}</p>
         </div>
       ) : (
-        <ul className="card divide-y divide-slate-100 overflow-hidden">
-          {visibles.map((m, i) => {
-            const cle = `${m.categorie}|${m.marque}|${m.modele}|${i}`;
-            const ouvert = aliasOuvert === cle;
-            const tickets = Number(m.tickets_12_mois) || 0;
-            return (
-              <li key={cle} className="p-3 sm:px-4 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-900">{nom(m) || '—'}</p>
-                    <p className="text-xs text-slate-600 flex flex-wrap gap-x-3">
-                      {m.categorie && <span>{m.categorie}</span>}
-                      <span>{m.annee ? `Sortie ${m.annee}` : 'Année inconnue'}</span>
-                      <span className={tickets ? 'font-semibold text-slate-800' : ''}>
-                        {tickets} ticket{tickets > 1 ? 's' : ''} sur 12 mois
-                      </span>
-                    </p>
+        <div className="card overflow-hidden">
+          <ul className="divide-y divide-slate-100">
+            {pageVisibles.map((m, i) => {
+              const cle = `${m.categorie}|${m.marque}|${m.modele}|${debut + i}`;
+              const ouvert = aliasOuvert === cle;
+              const tickets = Number(m.tickets_12_mois) || 0;
+              return (
+                <li key={cle} className="px-3 sm:px-4 py-2 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 min-h-10">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-900">{nom(m) || '—'}</p>
+                      <p className="t-caption flex flex-wrap gap-x-3">
+                        {m.categorie && <span>{m.categorie}</span>}
+                        <span>{m.annee ? `Sortie ${m.annee}` : 'Année inconnue'}</span>
+                        <span className={tickets ? 'font-semibold text-slate-800' : ''}>
+                          {tickets} ticket{tickets > 1 ? 's' : ''} sur 12 mois
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setAliasOuvert(ouvert ? null : cle)} aria-expanded={ouvert}
+                        aria-label={`Ajouter un alias pour ${nom(m)}`}
+                        className="btn-ghost btn-sm">
+                        <Link2 aria-hidden="true" /> Ajouter un alias
+                      </button>
+                      <Link to={lienSaisiePrix(m, basePath)} aria-label={`Saisir le prix de ${nom(m)}`}
+                        className="btn-secondary btn-sm">
+                        <ExternalLink aria-hidden="true" /> Saisir le prix
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setAliasOuvert(ouvert ? null : cle)} aria-expanded={ouvert}
-                      aria-label={`Ajouter un alias pour ${nom(m)}`}
-                      className="btn-secondary min-h-[44px] text-xs">
-                      <Link2 className="w-3.5 h-3.5" aria-hidden="true" /> Ajouter un alias
-                    </button>
-                    <Link to={lienSaisiePrix(m, basePath)} aria-label={`Saisir le prix de ${nom(m)}`}
-                      className="btn-primary min-h-[44px] text-xs">
-                      <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> Saisir le prix
-                    </Link>
-                  </div>
+                  {ouvert && (
+                    <FormAlias verrouAlias initial={{ alias: m.modele, categorie: m.categorie || '' }}
+                      onAnnuler={() => setAliasOuvert(null)} onEnregistrer={v => ajouterAlias(m, v)} />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {visibles.length > PAR_PAGE_SANS_PRIX && (
+            <nav className="card-footer flex-wrap justify-between gap-2 px-3" aria-label="Pagination des modèles sans prix">
+              <div className="flex items-center gap-2">
+                <span className="t-caption tabular-nums whitespace-nowrap">
+                  {debut + 1}–{Math.min(debut + taille, visibles.length)} sur {visibles.length}
+                </span>
+                <label htmlFor={tailleId} className="sr-only">Modèles par page</label>
+                <select id={tailleId} value={parPage} onChange={e => changerTaille(Number(e.target.value))} className="select w-auto min-h-9 py-1">
+                  {TAILLES_PAGE_SANS_PRIX.map(n => (
+                    <option key={n} value={n}>{n ? `${n} / page` : 'Tout'}</option>
+                  ))}
+                </select>
+              </div>
+              {nbPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={pageCourante === 0} className="btn-ghost btn-sm">
+                    <ChevronLeft aria-hidden="true" /> Précédent
+                  </button>
+                  <span className="t-caption whitespace-nowrap">Page {pageCourante + 1} / {nbPages}</span>
+                  <button type="button" onClick={() => setPage(p => Math.min(nbPages - 1, p + 1))} disabled={pageCourante >= nbPages - 1} className="btn-ghost btn-sm">
+                    Suivant <ChevronRight aria-hidden="true" />
+                  </button>
                 </div>
-                {ouvert && (
-                  <FormAlias verrouAlias initial={{ alias: m.modele, categorie: m.categorie || '' }}
-                    onAnnuler={() => setAliasOuvert(null)} onEnregistrer={v => ajouterAlias(m, v)} />
-                )}
-              </li>
-            );
-          })}
-        </ul>
+              )}
+            </nav>
+          )}
+        </div>
       )}
     </div>
   );
@@ -267,47 +325,51 @@ function AliasModeles({ sensible }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">
+        <p className="t-body">
           Un alias relie le nom d’un modèle sur les tickets à son nom dans les grilles de prix (« iPhone Air » → « iPhone 17 Air »).
         </p>
         {!ajout && (
-          <button type="button" onClick={() => setAjout(true)} className="btn-primary min-h-[44px] text-xs shrink-0">
-            <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Nouvel alias
+          <button type="button" onClick={() => setAjout(true)} className="btn-primary shrink-0">
+            <Plus aria-hidden="true" /> Nouvel alias
           </button>
         )}
       </div>
       {ajout && <FormAlias onAnnuler={() => setAjout(false)} onEnregistrer={ajouter} />}
       {etat.statut === 'chargement' ? (
         <ul className="space-y-2" aria-hidden="true">
-          {[1, 2, 3].map(i => <li key={i} className="h-12 rounded-xl bg-slate-100 motion-safe:animate-pulse" />)}
+          {[1, 2, 3].map(i => <li key={i} className="skeleton h-12" />)}
         </ul>
       ) : etat.statut === 'erreur' ? (
-        <div className="card p-5 text-center space-y-3">
-          <p className="text-sm text-red-700 font-medium" role="alert">{etat.erreur}</p>
-          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-[44px] text-xs">
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+        <div className="error-state flex-wrap items-center">
+          <AlertTriangle aria-hidden="true" />
+          <p className="font-medium flex-1" role="alert">{etat.erreur}</p>
+          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </div>
       ) : etat.alias.length === 0 ? (
-        <p className="card p-6 text-center text-sm text-slate-600">Aucun alias pour le moment.</p>
+        <div className="card empty-state">
+          <div className="empty-state-icon"><Tags aria-hidden="true" /></div>
+          <p className="t-body text-slate-500">Aucun alias pour le moment.</p>
+        </div>
       ) : (
         <ul className="card divide-y divide-slate-100 overflow-hidden">
           {etat.alias.map(a => (
-            <li key={a.id ?? a.alias} className="flex items-center gap-3 px-3 sm:px-4 py-2">
+            <li key={a.id ?? a.alias} className="flex items-center gap-3 px-3 sm:px-4 py-1.5 min-h-12">
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-slate-900">
                   <span className="font-semibold">{a.alias}</span>
-                  <span className="text-slate-600" aria-hidden="true"> → </span>
+                  <span className="text-slate-500" aria-hidden="true"> → </span>
                   <span className="sr-only"> correspond à </span>
                   <span className="font-semibold">{a.modele_canonique}</span>
                 </p>
-                <p className="text-[11px] text-slate-600">
+                <p className="t-caption">
                   {a.categorie || 'Toutes catégories'}{a.le ? ` · ajouté le ${formatDateShort(a.le)}` : ''}
                 </p>
               </div>
               <button type="button" onClick={() => supprimer(a)} aria-label={`Supprimer l’alias ${a.alias}`}
-                className="btn-ghost p-0 min-w-[44px] min-h-[44px] justify-center text-red-700 hover:bg-red-50">
-                <Trash2 className="w-4 h-4" aria-hidden="true" />
+                className="btn-danger-ghost btn-icon -mr-2">
+                <Trash2 aria-hidden="true" />
               </button>
             </li>
           ))}
@@ -362,36 +424,37 @@ export default function ModelesSansPrixPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-6xl">
-      <div className="mb-5">
-        <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight flex items-center gap-2">
-          <ListChecks className="w-6 h-6 text-brand-600" aria-hidden="true" /> Prix à revoir
-        </h1>
-        <p className="text-sm text-slate-600 mt-0.5">
-          Les vrais prix payés, les modèles sans tarif et les correspondances de noms. Rien ne change sans votre validation.
-        </p>
+    <div className="page max-w-[1280px]">
+      <div className="page-header">
+        <div>
+          <h1 className="page-header-title">Prix à revoir</h1>
+          <p className="page-header-subtitle">
+            Les vrais prix payés, les modèles sans tarif et les correspondances de noms. Rien ne change sans votre validation.
+          </p>
+        </div>
       </div>
 
-      <div role="tablist" aria-label="Suivi des prix" className="flex gap-1 overflow-x-auto scrollbar-none border-b border-slate-200 mb-5">
-        {ONGLETS_PRIX.map(({ cle, label, icone: Icone }, i) => {
-          const actif = onglet === cle;
-          // Seul le panneau actif est rendu : aria-controls ne vise jamais un id absent du DOM
-          return (
-            <button key={cle} ref={el => { ongletsRef.current[i] = el; }} type="button" role="tab"
-              id={`${baseId}-tab-${cle}`} aria-selected={actif} aria-controls={actif ? `${baseId}-panel-${cle}` : undefined}
-              tabIndex={actif ? 0 : -1} onClick={() => choisir(cle)} onKeyDown={e => auClavier(e, i)}
-              className={`inline-flex items-center gap-2 min-h-[44px] px-3 sm:px-4 -mb-px border-b-2 text-sm font-semibold whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-t-lg ${
-                actif ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-600 hover:text-slate-900'}`}>
-              <Icone className="w-4 h-4" aria-hidden="true" />
-              {label}
-              {cle === 'propositions' && nbPropositions > 0 && (
-                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-brand-600 text-white text-[11px] font-bold">
-                  {nbPropositions}<span className="sr-only"> en attente</span>
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div className="max-sm:scroll-fade-x mb-6">
+        <div role="tablist" aria-label="Suivi des prix" className="page-tabs">
+          {ONGLETS_PRIX.map(({ cle, label, icone: Icone }, i) => {
+            const actif = onglet === cle;
+            // Seul le panneau actif est rendu : aria-controls ne vise jamais un id absent du DOM
+            return (
+              <button key={cle} ref={el => { ongletsRef.current[i] = el; }} type="button" role="tab"
+                id={`${baseId}-tab-${cle}`} aria-selected={actif} aria-controls={actif ? `${baseId}-panel-${cle}` : undefined}
+                tabIndex={actif ? 0 : -1} onClick={() => choisir(cle)} onKeyDown={e => auClavier(e, i)}
+                className={`page-tab ${actif ? 'page-tab-active' : ''}`}>
+                <Icone className="w-4 h-4" aria-hidden="true" />
+                {label}
+                {cle === 'propositions' && nbPropositions > 0 && (
+                  <span className="badge-count badge-count-brand">
+                    {nbPropositions}<span className="sr-only"> en attente</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div role="tabpanel" id={`${baseId}-panel-${onglet}`} aria-labelledby={`${baseId}-tab-${onglet}`} tabIndex={0}

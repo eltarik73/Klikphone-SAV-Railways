@@ -33,42 +33,31 @@ export default function RepairTimer({ ticket, visible }) {
     ? `${h}h ${String(m).padStart(2, '0')}min`
     : `${m}min ${String(s).padStart(2, '0')}s`;
 
+  // Design V2 : encart neutre (.card-section) ; la couleur ne porte que le sens
+  // (vert = terminé, brand = en cours), chiffres tabulaires.
   return (
-    <div className={`mt-3 px-4 py-3 rounded-xl flex items-center justify-between ${
-      hasFinished
-        ? 'bg-emerald-50 border border-emerald-200'
-        : 'bg-violet-50/60 border border-violet-200/60'
-    }`}>
-      <div className="flex items-center gap-2.5">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-          hasFinished ? 'bg-emerald-100' : 'bg-violet-100'
-        }`}>
-          {hasFinished
-            ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            : <Timer className="w-4 h-4 text-violet-600" />
-          }
-        </div>
-        <div>
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+    <div className="card-section mt-3 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        {hasFinished
+          ? <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
+          : <Timer className="w-5 h-5 shrink-0 text-brand-600" aria-hidden="true" />}
+        <div className="min-w-0">
+          <div className="t-caption">
             {hasFinished ? 'Réparé en' : 'Temps de réparation'}
           </div>
-          <div className={`text-lg font-extrabold font-mono tracking-wide ${
-            hasFinished ? 'text-emerald-600' : 'text-violet-600'
+          <div className={`text-lg font-bold tabular-nums leading-tight ${
+            hasFinished ? 'text-emerald-700' : 'text-brand-700'
           }`}>
             {display}
           </div>
         </div>
       </div>
-      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-        hasFinished
-          ? 'bg-emerald-100 text-emerald-600'
-          : 'bg-violet-100 text-violet-600'
-      }`}>
+      <span className={`badge shrink-0 ${hasFinished ? 'badge-success' : 'badge-brand'}`}>
         {isRepairing && (
-          <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-brand-600 motion-safe:animate-pulse" aria-hidden="true" />
         )}
         {hasFinished ? 'TERMINÉ' : 'EN COURS'}
-      </div>
+      </span>
     </div>
   );
 }

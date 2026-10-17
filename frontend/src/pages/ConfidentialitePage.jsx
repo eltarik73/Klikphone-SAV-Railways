@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { ArrowLeft, ShieldCheck, RefreshCw, X, ExternalLink } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, RefreshCw, X, ExternalLink, AlertCircle } from 'lucide-react';
 
 export const RETENTION_MOIS_DEFAUT = 36;
 export const PURGE_JOURS_DEFAUT = 30;
@@ -75,23 +75,23 @@ function useConfidentialite(actif = true) {
   return { ...etat, recharger: () => setEssai((n) => n + 1) };
 }
 
-function Paragraphes({ texte }) {
+function Paragraphes({ texte, grand = false }) {
   const blocs = String(texte || '').split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
   return blocs.map((b, i) => (
-    <p key={i} className="text-sm leading-relaxed text-slate-700 whitespace-pre-line [overflow-wrap:anywhere]">{b}</p>
+    <p key={i} className={`${grand ? 't-body-lg' : 't-body'} whitespace-pre-line [overflow-wrap:anywhere]`}>{b}</p>
   ));
 }
 
-/** Contenu de la politique (titres de section au niveau `niveau`). */
-export function PolitiqueContenu({ data, niveau = 2 }) {
+/** Contenu de la politique (titres de section au niveau `niveau`). `grand` : largeur de lecture, 16 px. */
+export function PolitiqueContenu({ data, niveau = 2, grand = false }) {
   const Titre = `h${Math.min(6, Math.max(2, niveau))}`;
   const sections = Array.isArray(data?.sections) ? data.sections : [];
   return (
-    <div className="space-y-6">
+    <div className={grand ? 'space-y-8' : 'space-y-6'}>
       {sections.map((s, i) => (
         <section key={`${i}-${s?.titre || ''}`} className="space-y-2">
-          {s?.titre && <Titre className="text-base font-bold text-slate-900">{s.titre}</Titre>}
-          <Paragraphes texte={s?.texte} />
+          {s?.titre && <Titre className={grand ? 't-h2 text-lg' : 't-h2'}>{s.titre}</Titre>}
+          <Paragraphes texte={s?.texte} grand={grand} />
         </section>
       ))}
     </div>
@@ -101,7 +101,7 @@ export function PolitiqueContenu({ data, niveau = 2 }) {
 function EtatChargement({ loading, error, onRetry }) {
   if (loading) {
     return (
-      <div role="status" className="py-10 flex flex-col items-center gap-3 text-slate-600">
+      <div role="status" className="py-10 flex flex-col items-center gap-3 text-slate-500">
         <RefreshCw className="w-5 h-5 motion-safe:animate-spin" aria-hidden="true" />
         <p className="text-sm">Chargement de la politique de confidentialité…</p>
       </div>
@@ -109,10 +109,13 @@ function EtatChargement({ loading, error, onRetry }) {
   }
   if (error) {
     return (
-      <div role="alert" className="py-8 text-center">
-        <p className="text-sm text-slate-700">La politique de confidentialité n'a pas pu être chargée.</p>
-        <button type="button" onClick={onRetry} className="btn-secondary mt-4 min-h-[44px]">
-          <RefreshCw className="w-4 h-4" aria-hidden="true" /> Réessayer
+      <div role="alert" className="py-6 flex flex-col items-center gap-4 text-center">
+        <div className="callout callout-danger w-full">
+          <AlertCircle aria-hidden="true" />
+          <p>La politique de confidentialité n'a pas pu être chargée.</p>
+        </div>
+        <button type="button" onClick={onRetry} className="btn-secondary min-h-11">
+          <RefreshCw aria-hidden="true" /> Réessayer
         </button>
       </div>
     );
@@ -133,33 +136,33 @@ export function PolitiqueDialog({ open, onClose, kiosque = false }) {
   useFocusTrap(boxRef, open, { onEscape: () => onClose?.() });
   if (!open || typeof document === 'undefined') return null;
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/60 p-0 sm:p-4" onClick={onClose}>
+    <div className="modal-overlay z-[60]" onClick={onClose}>
       <div ref={boxRef} role="dialog" aria-modal="true" aria-labelledby={titreId}
         onClick={(e) => e.stopPropagation()}
-        className="bg-white w-full sm:max-w-2xl max-h-[90vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 shrink-0">
-          <h2 id={titreId} className="text-base font-bold text-slate-900">
+        className="modal sm:max-w-2xl max-h-[90vh]">
+        <div className="modal-header">
+          <h2 id={titreId} className="t-h2">
             {data?.titre || 'Politique de confidentialité'}
           </h2>
           <button type="button" onClick={onClose} aria-label="Fermer la politique de confidentialité"
-            className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            className="btn-ghost btn-icon min-w-11 min-h-11">
             <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
-        <div className="overflow-y-auto overscroll-contain px-5 py-4">
+        <div className="modal-body overscroll-contain">
           <EtatChargement loading={loading} error={error} onRetry={recharger} />
           {data && <PolitiqueContenu data={data} niveau={3} />}
-          {data?.maj && <p className="mt-6 text-xs text-slate-600">Mise à jour : {data.maj}</p>}
+          {data?.maj && <p className="mt-6 t-caption">Mise à jour : {data.maj}</p>}
         </div>
-        <div className={`flex flex-wrap items-center gap-2 px-5 py-3 border-t border-slate-100 shrink-0 ${kiosque ? 'justify-end' : 'justify-between'}`}>
+        <div className={`modal-footer flex-wrap ${kiosque ? 'justify-end' : 'justify-between'}`}>
           {!kiosque && (
             <a href="/confidentialite" target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 min-h-[44px] text-sm font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded">
-              Ouvrir dans une page <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+              className="inline-flex items-center gap-1.5 min-h-11 px-1 text-sm font-medium text-brand-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded">
+              Ouvrir dans une page <ExternalLink className="w-4 h-4" aria-hidden="true" />
               <span className="sr-only">(nouvel onglet)</span>
             </a>
           )}
-          <button type="button" onClick={onClose} className="btn-primary min-h-[44px]">J'ai compris</button>
+          <button type="button" onClick={onClose} className="btn-primary min-h-11">J'ai compris</button>
         </div>
       </div>
     </div>,
@@ -178,12 +181,12 @@ export function MentionRgpd({ codes = true, kiosque = false, className = '' }) {
   const titreId = useId();
   return (
     <section aria-labelledby={titreId}
-      className={`rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 ${className}`}>
-      <h3 id={titreId} className="flex items-center gap-2 font-semibold text-slate-900 mb-1.5">
-        <ShieldCheck className="w-4 h-4 text-brand-700 shrink-0" aria-hidden="true" />
+      className={`card-section text-base text-slate-700 ${className}`}>
+      <h3 id={titreId} className="flex items-center gap-2 text-base font-semibold text-slate-900 mb-2">
+        <ShieldCheck className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" />
         Vos données personnelles
       </h3>
-      <p className="leading-relaxed">
+      <p className="t-body-lg">
         {infos.nom} utilise vos coordonnées et les informations sur votre appareil pour gérer votre réparation
         et la facturer. Elles sont conservées {infos.retention} après votre dernière visite
         {codes ? ` ; vos codes de déverrouillage sont effacés ${infos.purgeJours} jours après la remise de l'appareil` : ''}.
@@ -192,7 +195,7 @@ export function MentionRgpd({ codes = true, kiosque = false, className = '' }) {
         , et saisir la CNIL.
       </p>
       <button type="button" onClick={() => setOuvert(true)}
-        className="mt-1 inline-flex items-center min-h-[44px] font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded">
+        className="mt-1 inline-flex items-center min-h-11 text-base font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded">
         Politique de confidentialité
       </button>
       <PolitiqueDialog open={ouvert} onClose={() => setOuvert(false)} kiosque={kiosque} />
@@ -208,16 +211,17 @@ export function ConsentementMarketing({ id, checked, onChange }) {
   const { nom } = useInfosRgpd();
   const aideId = `${id}-aide`;
   return (
-    <div className="rounded-xl border border-slate-200 p-3">
-      <label htmlFor={id} className="flex items-start gap-3 min-h-[44px] cursor-pointer">
+    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <label htmlFor={id} className="flex items-start gap-3 min-h-11 cursor-pointer">
         <input id={id} type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)}
           aria-describedby={aideId}
-          className="mt-0.5 w-6 h-6 shrink-0 rounded border-slate-400 text-brand-600 focus:ring-2 focus:ring-brand-500" />
-        <span className="text-sm font-medium text-slate-800">J'accepte de recevoir par SMS ou e-mail des offres de {nom}</span>
+          className="checkbox w-6 h-6 mt-0.5" />
+        <span className="text-base font-medium leading-snug text-slate-800 pt-0.5">J'accepte de recevoir par SMS ou e-mail des offres de {nom}</span>
       </label>
-      <p id={aideId} className="mt-1 pl-9 text-xs text-slate-600">
+      {/* <span> et non <p> : `.depot-form p` imposerait 16 px slate-700 à cette aide */}
+      <span id={aideId} className="block mt-1 pl-9 text-sm leading-snug text-slate-500">
         Facultatif, sans effet sur votre réparation. Vous pouvez retirer votre accord à tout moment.
-      </p>
+      </span>
     </div>
   );
 }
@@ -236,23 +240,23 @@ export default function ConfidentialitePage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-slate-900 text-white">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
+        <div className="max-w-[720px] mx-auto px-4 py-3 flex items-center gap-3">
           <Link to="/" aria-label="Retour à l'accueil"
-            className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-xl hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+            className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
             <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </Link>
-          <div className="w-10 h-10 rounded-xl bg-white p-1 overflow-hidden shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-white p-1 overflow-hidden shrink-0">
             <img src="/logo_k.png" alt="" width="40" height="40" className="w-full h-full object-contain" />
           </div>
           <p className="font-display font-bold tracking-tight">KLIKPHONE</p>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-6 sm:py-10">
+      <main className="max-w-[720px] mx-auto px-4 py-6 sm:py-10">
         <div className="card p-5 sm:p-8">
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight mb-6">{titre}</h1>
+          <h1 className="t-h1 mb-6">{titre}</h1>
           <EtatChargement loading={loading} error={error} onRetry={recharger} />
-          {data && <PolitiqueContenu data={data} niveau={2} />}
-          {data?.maj && <p className="mt-8 pt-4 border-t border-slate-100 text-xs text-slate-600">Mise à jour : {data.maj}</p>}
+          {data && <PolitiqueContenu data={data} niveau={2} grand />}
+          {data?.maj && <p className="mt-8 pt-4 border-t border-slate-100 t-caption">Mise à jour : {data.maj}</p>}
         </div>
       </main>
     </div>

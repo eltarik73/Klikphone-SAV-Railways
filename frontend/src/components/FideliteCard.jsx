@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Star, Sparkles } from 'lucide-react';
 
 export default function FideliteCard({ clientId, ticketCode, compact = false }) {
   const [fidelite, setFidelite] = useState(null);
@@ -21,8 +21,8 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-4">
-        <Loader2 className="w-5 h-5 animate-spin text-violet-400" />
+      <div className="flex items-center justify-center py-4" aria-busy="true">
+        <Loader2 className="w-5 h-5 motion-safe:animate-spin text-brand-600" aria-hidden="true" />
       </div>
     );
   }
@@ -53,43 +53,46 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
     }
   };
 
+  // Barre de progression : monochrome brand sur slate-100, hauteur 8 px
+  const barre = (pourcent) => (
+    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden" aria-hidden="true">
+      <div className="h-full bg-brand-600 rounded-full transition-[width] duration-500 motion-reduce:transition-none"
+        style={{ width: `${pourcent}%` }} />
+    </div>
+  );
+
   if (compact) {
     return (
-      <div className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200/60 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-bold text-violet-700 flex items-center gap-1.5">
-            <span className="text-base">&#11088;</span> Fidélité
+      <div className="card p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <span className="t-h2 flex items-center gap-2">
+            <Star className="w-4 h-4 text-brand-600" aria-hidden="true" /> Fidélité
           </span>
-          <span className="text-lg font-extrabold text-violet-600">{points} pts</span>
+          <span className="text-lg font-bold tabular-nums text-brand-700">{points} pts</span>
         </div>
-        <div className="mb-2">
-          <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+        <div className="mb-3">
+          <div className="flex justify-between t-caption mb-1">
             <span>Film verre trempé</span>
-            <span>{Math.min(points, palier_film)} / {palier_film.toLocaleString()}</span>
+            <span className="tabular-nums">{Math.min(points, palier_film)} / {palier_film.toLocaleString()}</span>
           </div>
-          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-violet-500 to-violet-600 rounded-full transition-all duration-500"
-              style={{ width: `${progressFilm}%` }} />
-          </div>
+          {barre(progressFilm)}
         </div>
         <div>
-          <div className="flex justify-between text-[10px] text-slate-500 mb-0.5">
+          <div className="flex justify-between t-caption mb-1">
             <span>Réduction {montant_reduction}€</span>
-            <span>{Math.min(points, palier_reduction)} / {palier_reduction.toLocaleString()}</span>
+            <span className="tabular-nums">{Math.min(points, palier_reduction)} / {palier_reduction.toLocaleString()}</span>
           </div>
-          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all duration-500"
-              style={{ width: `${progressReduction}%` }} />
-          </div>
+          {barre(progressReduction)}
         </div>
         {prochaine_recompense.points_restants > 0 && (
-          <p className="text-center text-[10px] text-slate-500 mt-2">
-            Plus que <strong className="text-violet-600">{prochaine_recompense.points_restants} pts</strong> pour : {prochaine_recompense.type}
+          <p className="text-center t-caption mt-3">
+            Plus que <strong className="text-brand-700">{prochaine_recompense.points_restants} pts</strong> pour : {prochaine_recompense.type}
           </p>
         )}
         {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
-          <p className="mt-3 text-center text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 font-semibold">
-            ✨ Valable pour votre <strong>prochaine réparation</strong>
+          <p className="mt-3 callout bg-brand-50 border-brand-200 text-brand-800 py-2 text-xs font-semibold">
+            <Sparkles aria-hidden="true" />
+            <span>Valable pour votre <strong>prochaine réparation</strong></span>
           </p>
         )}
       </div>
@@ -97,85 +100,80 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
   }
 
   return (
-    <div className="bg-gradient-to-br from-violet-50 to-indigo-50 rounded-xl border border-violet-200 p-5">
-      <h3 className="text-sm font-bold text-violet-700 mb-3 flex items-center gap-2">
-        <span className="text-base">&#11088;</span> Programme Fidélité
+    <section className="card p-4 sm:p-5" aria-label="Programme Fidélité">
+      <h3 className="t-h2 mb-4 flex items-center gap-2">
+        <Star className="w-4 h-4 text-brand-600" aria-hidden="true" /> Programme Fidélité
       </h3>
 
       {/* Points */}
-      <div className="text-center mb-4">
-        <div className="text-4xl font-extrabold text-violet-600">{points.toLocaleString()}</div>
-        <div className="text-sm text-slate-500">points fidélité</div>
-        <div className="text-xs text-slate-400 mt-1">Total dépensé : {total_depense.toFixed(2)} €</div>
+      <div className="card-section text-center mb-4">
+        <div className="text-2xl font-bold tabular-nums text-brand-700 leading-none">{points.toLocaleString()}</div>
+        <div className="text-sm text-slate-600 mt-1">points fidélité</div>
+        <div className="t-caption mt-1">Total dépensé : {total_depense.toFixed(2)} €</div>
       </div>
 
       {/* Film progress */}
-      <div className="mb-3">
-        <div className="flex justify-between text-xs text-slate-500 mb-1">
+      <div className="mb-4">
+        <div className="flex justify-between t-caption mb-1.5">
           <span>Film verre trempé</span>
-          <span>{Math.min(points, palier_film).toLocaleString()} / {palier_film.toLocaleString()} pts</span>
+          <span className="tabular-nums">{Math.min(points, palier_film).toLocaleString()} / {palier_film.toLocaleString()} pts</span>
         </div>
-        <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-violet-500 to-violet-600 rounded-full transition-all duration-500"
-            style={{ width: `${progressFilm}%` }} />
-        </div>
+        {barre(progressFilm)}
         {recompenses_disponibles.film && clientId && (
-          <button onClick={() => utiliserRecompense('film')} disabled={using}
-            className="mt-2 w-full py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition disabled:opacity-50">
-            {using ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Offrir le film verre trempé'}
+          <button type="button" onClick={() => utiliserRecompense('film')} disabled={using} aria-busy={using || undefined}
+            className="btn-secondary btn-block mt-2">
+            {using ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : 'Offrir le film verre trempé'}
           </button>
         )}
       </div>
 
       {/* Reduction progress */}
       <div className="mb-3">
-        <div className="flex justify-between text-xs text-slate-500 mb-1">
+        <div className="flex justify-between t-caption mb-1.5">
           <span>Réduction {montant_reduction}€</span>
-          <span>{Math.min(points, palier_reduction).toLocaleString()} / {palier_reduction.toLocaleString()} pts</span>
+          <span className="tabular-nums">{Math.min(points, palier_reduction).toLocaleString()} / {palier_reduction.toLocaleString()} pts</span>
         </div>
-        <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all duration-500"
-            style={{ width: `${progressReduction}%` }} />
-        </div>
+        {barre(progressReduction)}
         {recompenses_disponibles.reduction && clientId && (
-          <button onClick={() => utiliserRecompense('reduction')} disabled={using}
-            className="mt-2 w-full py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition disabled:opacity-50">
-            {using ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : `Utiliser la réduction ${montant_reduction}€`}
+          <button type="button" onClick={() => utiliserRecompense('reduction')} disabled={using} aria-busy={using || undefined}
+            className="btn-secondary btn-block mt-2">
+            {using ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : `Utiliser la réduction ${montant_reduction}€`}
           </button>
         )}
       </div>
 
       {/* Prochaine récompense */}
       {prochaine_recompense.points_restants > 0 && (
-        <div className="text-center text-xs text-slate-500 bg-white/60 rounded-lg p-2 mt-2">
-          Plus que <strong className="text-violet-600">{prochaine_recompense.points_restants} pts</strong>
+        <p className="text-center t-caption mt-2">
+          Plus que <strong className="text-brand-700">{prochaine_recompense.points_restants} pts</strong>
           {' '}pour obtenir : {prochaine_recompense.type}
-        </div>
+        </p>
       )}
 
       {/* Rappel : les recompenses sont appliquees a la prochaine reparation */}
       {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
-        <p className="mt-3 text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 font-semibold">
-          ✨ À utiliser lors de la <strong>prochaine réparation</strong>
+        <p className="mt-3 callout bg-brand-50 border-brand-200 text-brand-800 font-semibold">
+          <Sparkles aria-hidden="true" />
+          <span>À utiliser lors de la <strong>prochaine réparation</strong></span>
         </p>
       )}
 
       {/* Historique */}
       {historique && historique.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-violet-200/50">
-          <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider mb-2">Dernières opérations</p>
-          <div className="space-y-1">
+        <div className="mt-4 pt-4 border-t border-slate-100">
+          <p className="t-h3 mb-2">Dernières opérations</p>
+          <ul className="space-y-1.5">
             {historique.slice(0, 5).map((h, i) => (
-              <div key={i} className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-600 truncate flex-1">{h.description}</span>
-                <span className={`font-bold ml-2 ${h.points > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              <li key={i} className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-600 truncate flex-1 min-w-0">{h.description}</span>
+                <span className={`font-semibold tabular-nums shrink-0 ${h.points > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                   {h.points > 0 ? '+' : ''}{h.points}
                 </span>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
-    </div>
+    </section>
   );
 }

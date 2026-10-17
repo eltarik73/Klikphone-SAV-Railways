@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle, X, Send, Bot, Users, Lock, ArrowLeft,
-  Loader2, Trash2, Sparkles, Megaphone, VolumeX, Volume2
+  Loader2, Trash2, Sparkles, Megaphone, VolumeX, Volume2,
+  BarChart3, Search, Wrench, Coins, Smartphone, Briefcase, ClipboardList,
 } from 'lucide-react';
 import api from '../lib/api';
 import { usePolling } from '../hooks/usePolling';
@@ -63,6 +64,20 @@ const announceText = (msgs) => {
   return `${msgs.length} nouveaux messages. Dernier de ${last.sender} : ${last.message}`;
 };
 
+// ─── Styles partagés du widget ──────────────────────────
+// Bulles : 14 px, rayon xl, la mienne en marque, les autres en slate
+const bulle = (mine) => `max-w-[85%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+  mine ? 'bg-brand-600 text-white rounded-br-md' : 'bg-slate-100 text-slate-700 rounded-bl-md'
+}`;
+// Compteur de non-lus (18 px, rouge = urgence)
+function Compteur({ n, label, className = '' }) {
+  return (
+    <span className={`badge-count badge-count-danger ${className}`} aria-label={label}>
+      {n > 9 ? '9+' : n}
+    </span>
+  );
+}
+
 // ─── MARKDOWN-LIKE RENDERER ──────────────────────────────
 
 function ChatMessageContent({ content }) {
@@ -84,13 +99,13 @@ function ChatMessageContent({ content }) {
   // Ticket links /tickets/{id}
   html = html.replace(
     /\/tickets\/(\d+)/g,
-    `<a href="/${target}/ticket/$1" class="text-brand-600 underline font-medium hover:text-brand-700" data-ticket-link="$1">Voir ticket #$1</a>`
+    `<a href="/${target}/ticket/$1" class="text-brand-700 underline font-medium hover:text-brand-800" data-ticket-link="$1">Voir ticket #$1</a>`
   );
 
   // KP-XXXXXX codes
   html = html.replace(
     /(KP-\d{6})/g,
-    '<span class="text-brand-600 font-mono font-bold bg-brand-50 px-1 rounded">$1</span>'
+    '<span class="text-brand-700 font-mono font-bold bg-brand-50 px-1 rounded">$1</span>'
   );
 
   // Line breaks
@@ -116,11 +131,11 @@ function ChatMessageContent({ content }) {
 // ─── AI SUGGESTIONS ──────────────────────────────────────
 
 const SUGGESTIONS = [
-  { icon: '📊', text: 'Combien de tickets en cours ?' },
-  { icon: '🔍', text: 'Quels tickets sont en attente de diagnostic ?' },
-  { icon: '🔧', text: "Comment changer l'ecran d'un iPhone 15 ?" },
-  { icon: '💰', text: 'Quel est le CA du jour ?' },
-  { icon: '📱', text: 'Quels tickets sont assignes a Marina ?' },
+  { icon: BarChart3, text: 'Combien de tickets en cours ?' },
+  { icon: Search, text: 'Quels tickets sont en attente de diagnostic ?' },
+  { icon: Wrench, text: "Comment changer l'ecran d'un iPhone 15 ?" },
+  { icon: Coins, text: 'Quel est le CA du jour ?' },
+  { icon: Smartphone, text: 'Quels tickets sont assignes a Marina ?' },
 ];
 
 // ─── HELPER: format time ────────────────────────────────
@@ -130,12 +145,11 @@ function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function roleIcon(role) {
-  if (!role) return '🔧';
-  const r = role.toLowerCase();
-  if (r.includes('manager')) return '👔';
-  if (r.includes('accueil')) return '📋';
-  return '🔧';
+// Icône du rôle d'un contact (manager, accueil, technicien)
+function RoleIcon({ role }) {
+  const r = (role || '').toLowerCase();
+  const Icone = r.includes('manager') ? Briefcase : r.includes('accueil') ? ClipboardList : Wrench;
+  return <Icone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />;
 }
 
 // ═════════════════════════════════════════════════════════
@@ -154,6 +168,8 @@ function TabAssistant() {
   const currentRole = localStorage.getItem('kp_role') || '';
 
   useEffect(() => {
+    // Rien à faire défiler tant qu'aucun message : l'accueil (icône + suggestions) reste visible en haut
+    if (messages.length === 0 && !loading) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   }, [messages, loading]);
 
@@ -191,23 +207,27 @@ function TabAssistant() {
       <LiveAnnounce text={announce} />
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
-          <div className="text-center py-6">
-            <div className="w-14 h-14 rounded-2xl bg-brand-100 flex items-center justify-center mx-auto mb-3">
-              <Sparkles className="w-7 h-7 text-brand-600" aria-hidden="true" />
+          <div className="text-center py-2">
+            <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center mx-auto mb-3" aria-hidden="true">
+              <Sparkles className="w-6 h-6 text-brand-600" />
             </div>
-            <h3 className="font-bold text-slate-700 text-sm">Assistant Klikphone</h3>
-            <p className="text-xs text-slate-500 mt-1 mb-4">Pose-moi une question technique ou sur la base !</p>
-            <div className="space-y-1.5">
-              {SUGGESTIONS.map((s, i) => (
-                <button
-                  type="button"
-                  key={i}
-                  onClick={() => sendMessage(s.text)}
-                  className="block w-full min-h-[44px] text-left text-xs px-3 py-2 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
-                >
-                  <span aria-hidden="true">{s.icon}</span> {s.text}
-                </button>
-              ))}
+            <h3 className="t-h2">Assistant Klikphone</h3>
+            <p className="text-sm text-slate-500 mt-1 mb-4">Pose-moi une question technique ou sur la base !</p>
+            <div className="space-y-2">
+              {SUGGESTIONS.map((s, i) => {
+                const Icone = s.icon;
+                return (
+                  <button
+                    type="button"
+                    key={i}
+                    onClick={() => sendMessage(s.text)}
+                    className="flex items-center gap-2.5 w-full min-h-11 text-left text-sm font-medium px-3 py-2 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  >
+                    <Icone className="w-4 h-4 shrink-0 text-brand-600" aria-hidden="true" />
+                    <span>{s.text}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -215,15 +235,11 @@ function TabAssistant() {
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'assistant' && (
-              <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
-                <Bot className="w-3.5 h-3.5 text-brand-600" />
+              <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
+                <Bot className="w-4 h-4 text-brand-600" />
               </div>
             )}
-            <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
-              msg.role === 'user'
-                ? 'bg-brand-600 text-white rounded-br-md'
-                : 'bg-slate-100 text-slate-700 rounded-bl-md'
-            }`}>
+            <div className={bulle(msg.role === 'user')}>
               {msg.role === 'user' ? msg.content : <ChatMessageContent content={msg.content} />}
             </div>
           </div>
@@ -231,24 +247,24 @@ function TabAssistant() {
 
         {loading && (
           <div className="flex justify-start" role="status" aria-label="L'assistant rédige sa réponse">
-            <div className="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
-              <Bot className="w-3.5 h-3.5 text-brand-600" />
+            <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
+              <Bot className="w-4 h-4 text-brand-600" />
             </div>
-            <div className="bg-slate-100 rounded-2xl px-4 py-3 rounded-bl-md">
+            <div className="bg-slate-100 rounded-xl px-4 py-3 rounded-bl-md">
               <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t border-slate-200 p-3 bg-white">
+      <div className="border-t border-slate-100 p-3 bg-white">
         {messages.length > 0 && (
-          <button type="button" onClick={clearChat} className="min-h-[44px] -mt-2 px-1 flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-700 transition rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-            <Trash2 className="w-3 h-3" aria-hidden="true" /> Nouvelle conversation
+          <button type="button" onClick={clearChat} className="btn-ghost btn-sm -mt-1 mb-1 -ml-1 text-xs text-slate-500">
+            <Trash2 aria-hidden="true" /> Nouvelle conversation
           </button>
         )}
         <div className="flex gap-2">
@@ -259,8 +275,7 @@ function TabAssistant() {
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
             placeholder="Pose une question..."
             aria-label="Question pour l'assistant"
-            className="flex-1 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 text-sm
-                       focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+            className="input flex-1 min-w-0 min-h-11"
             disabled={loading}
           />
           <button
@@ -268,10 +283,9 @@ function TabAssistant() {
             onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
             aria-label="Envoyer la question"
-            className="min-w-[44px] min-h-[44px] px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
-                       disabled:opacity-40 transition shrink-0 flex items-center justify-center"
+            className="btn-primary btn-icon min-w-11 min-h-11 shrink-0"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : <Send className="w-4 h-4" aria-hidden="true" />}
+            {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -377,29 +391,29 @@ function TabGeneral({ onReadMessages, registerPoll }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-1 border-b border-slate-50">
-        <span className="text-[11px] text-slate-500">{messages.length} message(s)</span>
+      <div className="flex items-center justify-between pl-4 pr-1 min-h-11 border-b border-slate-100">
+        <span className="t-caption tabular-nums">{messages.length} message(s)</span>
         <button
           type="button"
           onClick={() => setMuted(toggleMute('general'))}
-          className="w-11 h-11 -mr-3 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          className="btn-ghost btn-icon min-w-11 min-h-11 text-slate-500"
           title="Son coupé (canal général)"
           aria-label="Son coupé pour le canal général"
           aria-pressed={muted}
         >
           {muted
-            ? <VolumeX className="w-4 h-4 text-slate-500" aria-hidden="true" />
-            : <Volume2 className="w-4 h-4 text-slate-500" aria-hidden="true" />
+            ? <VolumeX aria-hidden="true" />
+            : <Volume2 aria-hidden="true" />
           }
         </button>
       </div>
       <LiveAnnounce text={announce} />
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-3 space-y-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-300"
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-3 space-y-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500"
         role="region" aria-label="Messages du canal général" tabIndex={0}>
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <Megaphone className="w-8 h-8 text-slate-300 mx-auto mb-2" aria-hidden="true" />
-            <p className="text-xs text-slate-500">Aucun message pour le moment</p>
+            <Megaphone className="w-8 h-8 text-slate-400 mx-auto mb-2" aria-hidden="true" />
+            <p className="text-sm text-slate-500">Aucun message pour le moment</p>
           </div>
         )}
 
@@ -410,20 +424,16 @@ function TabGeneral({ onReadMessages, registerPoll }) {
           return (
             <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] ${isMine ? 'items-end' : 'items-start'}`}>
-                <div className={`flex items-center gap-1 text-[10px] mb-0.5 ${isMine ? 'justify-end' : ''} text-slate-500`}>
+                <div className={`flex items-center gap-1.5 text-xs mb-1 ${isMine ? 'justify-end' : ''} text-slate-500`}>
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: color }}
                     aria-hidden="true"
                   />
                   <span className="font-medium">{msg.sender}</span>
-                  <span>{fmtTime(msg.created_at)}</span>
+                  <span className="tabular-nums">{fmtTime(msg.created_at)}</span>
                 </div>
-                <div className={`rounded-2xl px-3.5 py-2 text-sm ${
-                  isMine
-                    ? 'bg-brand-600 text-white rounded-br-sm'
-                    : 'bg-slate-100 text-slate-700 rounded-bl-sm'
-                }`}>
+                <div className={bulle(isMine)}>
                   {msg.message}
                 </div>
               </div>
@@ -432,7 +442,7 @@ function TabGeneral({ onReadMessages, registerPoll }) {
         })}
       </div>
 
-      <div className="border-t border-slate-200 p-3 bg-white flex gap-2">
+      <div className="border-t border-slate-100 p-3 bg-white flex gap-2">
         <input
           ref={inputRef}
           value={input}
@@ -440,8 +450,7 @@ function TabGeneral({ onReadMessages, registerPoll }) {
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
           placeholder="Message a tout le monde..."
           aria-label="Message à toute l'équipe"
-          className="flex-1 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 text-sm
-                     focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+          className="input flex-1 min-w-0 min-h-11"
           disabled={sending}
         />
         <button
@@ -449,10 +458,9 @@ function TabGeneral({ onReadMessages, registerPoll }) {
           onClick={sendMessage}
           disabled={sending || !input.trim()}
           aria-label="Envoyer le message"
-          className="min-w-[44px] min-h-[44px] px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
-                     disabled:opacity-40 transition shrink-0 flex items-center justify-center"
+          className="btn-primary btn-icon min-w-11 min-h-11 shrink-0"
         >
-          <Send className="w-4 h-4" aria-hidden="true" />
+          <Send aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -551,17 +559,17 @@ function TabPrivate({ onReadMessages, registerPoll }) {
   if (!selectedContact) {
     return (
       <div className="flex flex-col h-full">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-700 text-sm flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-brand-500" aria-hidden="true" />
+        <div className="px-4 min-h-11 flex items-center border-b border-slate-100">
+          <h3 className="t-h3 flex items-center gap-1.5">
+            <Lock className="w-4 h-4 text-brand-600" aria-hidden="true" />
             Messages privés
           </h3>
         </div>
         <div className="flex-1 overflow-y-auto">
           {contacts.length === 0 && (
             <div className="text-center py-8">
-              <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" aria-hidden="true" />
-              <p className="text-xs text-slate-500">Aucun contact</p>
+              <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" aria-hidden="true" />
+              <p className="text-sm text-slate-500">Aucun contact</p>
             </div>
           )}
           {contacts.map(contact => (
@@ -569,7 +577,7 @@ function TabPrivate({ onReadMessages, registerPoll }) {
               type="button"
               key={contact.name}
               onClick={() => setSelectedContact(contact.name)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition border-b border-slate-50 focus:outline-none focus-visible:bg-slate-100"
+              className="w-full flex items-center gap-3 min-h-14 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-slate-50 border-b border-slate-100 focus:outline-none focus-visible:bg-slate-100"
             >
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
@@ -578,24 +586,21 @@ function TabPrivate({ onReadMessages, registerPoll }) {
               >
                 {contact.name.charAt(0).toUpperCase()}
               </div>
-              <div className="flex-1 text-left min-w-0">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-sm text-slate-700">
-                    {roleIcon(contact.role)} {contact.name}
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="font-semibold text-sm text-slate-900 inline-flex items-center gap-1.5 min-w-0 truncate">
+                    <RoleIcon role={contact.role} /> {contact.name}
                   </span>
-                  <span className="text-[10px] text-slate-500">
+                  <span className="t-caption tabular-nums shrink-0">
                     {contact.last_message_time || ''}
                   </span>
                 </div>
-                <p className="text-xs text-slate-500 truncate">
+                <p className="t-small truncate">
                   {contact.last_message || 'Pas de message'}
                 </p>
               </div>
               {contact.unread > 0 && (
-                <span className="bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                  aria-label={`${contact.unread} non lu${contact.unread > 1 ? 's' : ''}`}>
-                  {contact.unread > 9 ? '9+' : contact.unread}
-                </span>
+                <Compteur n={contact.unread} label={`${contact.unread} non lu${contact.unread > 1 ? 's' : ''}`} className="shrink-0" />
               )}
             </button>
           ))}
@@ -610,14 +615,14 @@ function TabPrivate({ onReadMessages, registerPoll }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-2 px-2 py-0.5 border-b border-slate-100 bg-slate-50/50 shrink-0">
+      <div className="flex items-center gap-2 pl-1 pr-1 min-h-14 border-b border-slate-100 bg-slate-50/60 shrink-0">
         <button
           type="button"
           onClick={() => { setSelectedContact(null); setMessages([]); convSigRef.current = null; }}
           aria-label="Retour à la liste des contacts"
-          className="w-11 h-11 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          className="btn-ghost btn-icon min-w-11 min-h-11"
         >
-          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
+          <ArrowLeft aria-hidden="true" />
         </button>
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
@@ -626,29 +631,29 @@ function TabPrivate({ onReadMessages, registerPoll }) {
         >
           {selectedContact.charAt(0).toUpperCase()}
         </div>
-        <span className="font-semibold text-sm text-slate-700 flex-1">{selectedContact}</span>
+        <span className="font-semibold text-sm text-slate-900 flex-1 min-w-0 truncate">{selectedContact}</span>
         <button
           type="button"
           onClick={() => setContactMuted(toggleMute(`private_${selectedContact}`))}
-          className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          className="btn-ghost btn-icon min-w-11 min-h-11 text-slate-500"
           title={`Son coupé (${selectedContact})`}
           aria-label={`Son coupé pour ${selectedContact}`}
           aria-pressed={contactMuted}
         >
           {contactMuted
-            ? <VolumeX className="w-4 h-4 text-slate-500" aria-hidden="true" />
-            : <Volume2 className="w-4 h-4 text-slate-500" aria-hidden="true" />
+            ? <VolumeX aria-hidden="true" />
+            : <Volume2 aria-hidden="true" />
           }
         </button>
       </div>
 
       {/* Messages */}
       <LiveAnnounce text={announce} />
-      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-3 space-y-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-300"
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-3 space-y-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500"
         role="region" aria-label={`Conversation avec ${selectedContact}`} tabIndex={0}>
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-xs text-slate-500">Commencez une conversation avec {selectedContact}</p>
+            <p className="text-sm text-slate-500">Commencez une conversation avec {selectedContact}</p>
           </div>
         )}
         {messages.map(msg => {
@@ -656,14 +661,10 @@ function TabPrivate({ onReadMessages, registerPoll }) {
           return (
             <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
               <div className="max-w-[80%]">
-                <div className={`rounded-2xl px-3.5 py-2.5 text-sm ${
-                  isMine
-                    ? 'bg-brand-600 text-white rounded-br-sm'
-                    : 'bg-slate-100 text-slate-700 rounded-bl-sm'
-                }`}>
+                <div className={bulle(isMine)}>
                   {msg.message}
                 </div>
-                <div className={`text-[10px] text-slate-500 mt-0.5 ${isMine ? 'text-right' : ''}`}>
+                <div className={`t-caption tabular-nums mt-1 ${isMine ? 'text-right' : ''}`}>
                   {fmtTime(msg.created_at)}
                 </div>
               </div>
@@ -673,7 +674,7 @@ function TabPrivate({ onReadMessages, registerPoll }) {
       </div>
 
       {/* Input */}
-      <div className="border-t border-slate-200 p-3 bg-white flex gap-2 shrink-0">
+      <div className="border-t border-slate-100 p-3 bg-white flex gap-2 shrink-0">
         <input
           ref={inputRef}
           value={input}
@@ -681,8 +682,7 @@ function TabPrivate({ onReadMessages, registerPoll }) {
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendPrivateMessage()}
           placeholder={`Message a ${selectedContact}...`}
           aria-label={`Message privé à ${selectedContact}`}
-          className="flex-1 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 text-sm
-                     focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none"
+          className="input flex-1 min-w-0 min-h-11"
           disabled={sending}
         />
         <button
@@ -690,10 +690,9 @@ function TabPrivate({ onReadMessages, registerPoll }) {
           onClick={sendPrivateMessage}
           disabled={sending || !input.trim()}
           aria-label="Envoyer le message"
-          className="min-w-[44px] min-h-[44px] px-3 py-2 bg-brand-600 text-white rounded-xl hover:bg-brand-700
-                     disabled:opacity-40 transition shrink-0 flex items-center justify-center"
+          className="btn-primary btn-icon min-w-11 min-h-11 shrink-0"
         >
-          <Send className="w-4 h-4" aria-hidden="true" />
+          <Send aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -792,11 +791,7 @@ export default function ChatWidget() {
       .catch(() => {});
   }, [currentUser]);
 
-  const tabClass = (id) => `flex-1 min-h-[44px] flex items-center justify-center gap-1 py-2.5 text-[11px] font-medium transition relative focus:outline-none focus-visible:bg-brand-50 ${
-    tab === id
-      ? 'text-brand-700 border-b-2 border-brand-600 bg-brand-50/30'
-      : 'text-slate-500 hover:text-slate-700'
-  }`;
+  const tabClass = (id) => `page-tab flex-1 justify-center px-2 ${tab === id ? 'page-tab-active' : ''}`;
 
   return (
     <>
@@ -808,76 +803,66 @@ export default function ChatWidget() {
           onClick={() => setOpen(true)}
           aria-haspopup="dialog"
           aria-label={totalUnread > 0 ? `Ouvrir le chat (${totalUnread} message${totalUnread > 1 ? 's' : ''} non lu${totalUnread > 1 ? 's' : ''})` : 'Ouvrir le chat'}
-          className="fixed bottom-5 right-5 z-[100] w-14 h-14 rounded-full bg-brand-600 text-white
-                     shadow-lg shadow-brand-600/30 hover:bg-brand-700 motion-safe:hover:scale-105
-                     transition-all flex items-center justify-center
-                     focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-300"
+          className="fab"
         >
           <MessageCircle className="w-6 h-6" aria-hidden="true" />
           {totalUnread > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white
-                           text-[10px] font-bold flex items-center justify-center ring-2 ring-white" aria-hidden="true">
+            <span className="badge-count badge-count-danger absolute -top-1 -right-1 ring-2 ring-white" aria-hidden="true">
               {totalUnread > 9 ? '9+' : totalUnread}
             </span>
           )}
         </button>
       )}
 
-      {/* Chat panel */}
+      {/* Chat panel (z-40 : sous les modales et tiroirs z-50, sous les toasts z-60) */}
       {open && (
         <div
           role="dialog"
           aria-labelledby="chat-titre"
           onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } }}
-          className="fixed bottom-5 right-5 z-[100] w-[calc(100vw-40px)] sm:w-[380px] h-[calc(100vh-100px)] sm:h-[560px] bg-white rounded-2xl
-                     shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
-          style={{ animation: 'chatSlideUp 250ms ease-out' }}
+          className="fixed right-4 z-40 w-[calc(100vw-2rem)] sm:w-[380px] h-[min(560px,calc(100dvh-5rem))] bg-white rounded-xl
+                     shadow-lg border border-slate-200 flex flex-col overflow-hidden animate-scale-in"
+          style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between pl-4 pr-1 py-0.5 bg-brand-600 text-white shrink-0">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5" aria-hidden="true" />
-              <h2 id="chat-titre" className="font-display font-bold text-sm">Chat Klikphone</h2>
+          <div className="flex items-center justify-between gap-3 pl-4 pr-1 min-h-14 border-b border-slate-100 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <MessageCircle className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" />
+              <h2 id="chat-titre" className="t-h2 truncate">Chat Klikphone</h2>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Fermer le chat"
-              className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              className="btn-ghost btn-icon min-w-11 min-h-11"
             >
-              <X className="w-4 h-4" aria-hidden="true" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
 
           {/* 3 Tabs */}
-          <div className="flex border-b border-slate-100 shrink-0" role="tablist" aria-label="Canaux du chat">
+          <div className="page-tabs shrink-0" role="tablist" aria-label="Canaux du chat">
             {/* Assistant IA */}
             <button {...tabProps('ai')} className={tabClass('ai')}>
-              <Bot className="w-3.5 h-3.5" aria-hidden="true" />
+              <Bot className="w-4 h-4 shrink-0" aria-hidden="true" />
               Assistant
             </button>
 
             {/* General */}
             <button {...tabProps('general')} className={tabClass('general')}>
-              <Megaphone className="w-3.5 h-3.5" aria-hidden="true" />
+              <Megaphone className="w-4 h-4 shrink-0" aria-hidden="true" />
               Général
               {unreadGeneral > 0 && tab !== 'general' && (
-                <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center"
-                  aria-label={`${unreadGeneral} non lu${unreadGeneral > 1 ? 's' : ''}`}>
-                  {unreadGeneral > 9 ? '9+' : unreadGeneral}
-                </span>
+                <Compteur n={unreadGeneral} label={`${unreadGeneral} non lu${unreadGeneral > 1 ? 's' : ''}`} />
               )}
             </button>
 
             {/* Prive */}
             <button {...tabProps('private')} className={tabClass('private')}>
-              <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+              <Lock className="w-4 h-4 shrink-0" aria-hidden="true" />
               Privé
               {unreadPrivate > 0 && tab !== 'private' && (
-                <span className="w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center"
-                  aria-label={`${unreadPrivate} non lu${unreadPrivate > 1 ? 's' : ''}`}>
-                  {unreadPrivate > 9 ? '9+' : unreadPrivate}
-                </span>
+                <Compteur n={unreadPrivate} label={`${unreadPrivate} non lu${unreadPrivate > 1 ? 's' : ''}`} />
               )}
             </button>
           </div>
@@ -890,13 +875,6 @@ export default function ChatWidget() {
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes chatSlideUp {
-          from { opacity: 0; transform: translateY(20px) scale(0.95); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
     </>
   );
 }

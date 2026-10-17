@@ -299,7 +299,7 @@ export default function ModelCombobox({
           spellCheck={false}
           className={`input text-base motion-reduce:transition-none disabled:bg-slate-50 disabled:cursor-not-allowed ${errorClass}`}
         />
-        {error && <p id={errorId} className="text-xs text-red-600 mt-1">{error}</p>}
+        {error && <p id={errorId} className="input-error" role="alert">{error}</p>}
         <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3">
           <p id={hintId} className="text-xs text-slate-500">
             {hasCatalog ? 'Saisie libre : indiquez le modèle tel qu\'écrit sur l\'appareil.' : 'Indiquez le modèle tel qu\'écrit sur l\'appareil.'}
@@ -308,7 +308,7 @@ export default function ModelCombobox({
             <button
               type="button"
               onClick={revenirALaListe}
-              className="inline-flex items-center gap-1.5 min-h-11 px-3 -mr-3 rounded-xl text-sm font-semibold text-brand-700 hover:bg-brand-50 motion-safe:transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className="btn-ghost btn-sm -mr-3 text-brand-700 hover:bg-brand-50 hover:text-brand-800"
             >
               <List className="w-4 h-4" aria-hidden="true" /> Choisir dans la liste
             </button>
@@ -330,8 +330,8 @@ export default function ModelCombobox({
         aria-selected={isActive}
         onClick={() => choose(index)}
         onMouseMove={() => { if (active !== index) setActive(index); }}
-        className={`flex items-center gap-3 min-h-11 px-4 py-2 cursor-pointer text-base motion-safe:transition-colors
-          ${isActive ? 'bg-brand-50 text-brand-800' : 'text-slate-800'}`}
+        className={`flex items-center gap-3 min-h-11 px-3 py-2 cursor-pointer text-base lg:text-sm motion-safe:transition-colors
+          ${isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-800'}`}
       >
         <span className={`flex-1 min-w-0 truncate ${isCurrent ? 'font-semibold' : ''}`}>{item.m}</span>
         {hasQuery && item.a && <span className="text-xs text-slate-500 tabular-nums shrink-0">{item.a}</span>}
@@ -382,7 +382,7 @@ export default function ModelCombobox({
             type="button"
             onClick={clear}
             aria-label="Effacer le modèle"
-            className="absolute right-0 inset-y-0 w-11 flex items-center justify-center rounded-r-xl text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            className="absolute right-0 inset-y-0 w-11 flex items-center justify-center rounded-r-lg text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -410,7 +410,7 @@ export default function ModelCombobox({
                     <div
                       id={headerId}
                       role="presentation"
-                      className="sticky top-0 z-10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-600 bg-slate-50 border-b border-slate-100"
+                      className="sticky top-0 z-10 px-3 py-1.5 t-overline bg-slate-50 border-b border-slate-100"
                     >
                       {g.annee ?? 'Autres modèles'}
                     </div>
@@ -433,7 +433,7 @@ export default function ModelCombobox({
                 aria-selected={active === freeIndex}
                 onClick={() => choose(freeIndex)}
                 onMouseMove={() => { if (active !== freeIndex) setActive(freeIndex); }}
-                className={`sticky bottom-0 z-10 flex items-center gap-3 min-h-11 px-4 py-2 border-t border-slate-200 cursor-pointer text-base font-semibold motion-safe:transition-colors
+                className={`sticky bottom-0 z-10 flex items-center gap-3 min-h-11 px-3 py-2 border-t border-slate-200 cursor-pointer text-base lg:text-sm font-semibold motion-safe:transition-colors
                   ${active === freeIndex ? 'bg-brand-50 text-brand-800' : 'bg-white text-brand-700'}`}
               >
                 <PencilLine className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -444,7 +444,7 @@ export default function ModelCombobox({
         )}
       </div>
 
-      {error && <p id={errorId} className="text-xs text-red-600 mt-1">{error}</p>}
+      {error && <p id={errorId} className="input-error" role="alert">{error}</p>}
       <p id={hintId} className={`text-xs mt-1 ${pending ? 'text-amber-700' : 'text-slate-500'}`} aria-live="polite">
         {pending
           ? 'Sélectionnez votre modèle dans la liste pour le valider.'

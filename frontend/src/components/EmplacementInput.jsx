@@ -161,7 +161,7 @@ export default function EmplacementInput({
   const editeur = (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <label htmlFor={inputId} className={compact ? 'sr-only' : 'shrink-0 text-sm font-semibold text-slate-800'}>
+        <label htmlFor={inputId} className={compact ? 'sr-only' : 'shrink-0 t-label'}>
           {label}
         </label>
         <div className="relative min-w-0 flex-1">
@@ -181,16 +181,16 @@ export default function EmplacementInput({
             aria-invalid={erreur ? true : undefined}
             onChange={(e) => { setBrouillon(e.target.value.toUpperCase()); setErreur(null); }}
             onKeyDown={surTouche}
-            className={`h-11 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 font-mono text-base font-bold uppercase tracking-wide text-slate-900 placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-slate-500 ${FOCUS_RING}`}
+            className="input min-h-11 pl-9 font-mono text-base font-bold uppercase tracking-wide placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
           />
         </div>
         {compact && (
           <button type="button" onClick={() => enregistrer(brouillon)} disabled={enCours}
             aria-label="Enregistrer l’emplacement"
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60 ${FOCUS_RING} focus-visible:ring-offset-2`}>
+            className="btn-primary btn-icon min-h-11 min-w-11">
             {enCours
-              ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-              : <Check className="h-4 w-4" aria-hidden="true" />}
+              ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+              : <Check aria-hidden="true" />}
           </button>
         )}
       </div>
@@ -199,10 +199,8 @@ export default function EmplacementInput({
           {propositions.map((e) => (
             <button key={e} type="button" aria-pressed={actuel === e} disabled={enCours}
               onMouseDown={garderFocus} onClick={() => enregistrer(e)}
-              className={`min-h-[44px] min-w-[44px] rounded-lg border px-3 font-mono text-sm font-bold disabled:opacity-60 ${FOCUS_RING} ${
-                actuel === e
-                  ? 'border-brand-600 bg-brand-600 text-white'
-                  : 'border-slate-300 bg-white text-slate-800 hover:border-brand-400 hover:bg-brand-50'
+              className={`choice min-h-[44px] min-w-[44px] font-mono font-bold disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING} ${
+                actuel === e ? 'choice-on' : ''
               }`}>
               {e}
             </button>
@@ -210,7 +208,7 @@ export default function EmplacementInput({
           {actuel && (
             <button type="button" disabled={enCours} onMouseDown={garderFocus} onClick={() => enregistrer(null)}
               aria-label={`Retirer l’emplacement ${actuel}`}
-              className={`inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 ${FOCUS_RING}`}>
+              className={`choice min-h-[44px] disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING}`}>
               <X className="h-4 w-4" aria-hidden="true" /> Retirer
             </button>
           )}
@@ -248,10 +246,10 @@ export default function EmplacementInput({
         aria-controls={ouvert ? editeurId : undefined}
         aria-label={actuel ? `Emplacement ${actuel}, modifier` : 'Emplacement non renseigné, ranger l’appareil'}
         title={actuel && actuel.length > 8 ? actuel : undefined}
-        className={`flex h-12 w-full min-w-[4.5rem] items-center justify-center gap-1 rounded-xl px-2 ${FOCUS_RING} focus-visible:ring-offset-2 ${
+        className={`flex h-12 w-full min-w-[4.5rem] items-center justify-center gap-1 rounded-lg px-2 transition-colors duration-150 ${FOCUS_RING} focus-visible:ring-offset-2 ${
           actuel
             ? `bg-slate-900 font-mono font-black tracking-wide text-white hover:bg-slate-800 ${taille}`
-            : 'border-2 border-dashed border-slate-400 bg-white text-xs font-semibold text-slate-700 hover:border-brand-500 hover:text-brand-800'
+            : 'border-2 border-dashed border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:border-brand-500 hover:text-brand-700'
         }`}>
         {enCours && !ouvert
           ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
@@ -268,7 +266,7 @@ export default function EmplacementInput({
             setErreur(null);
             fermer();
           }}
-          className="absolute left-0 top-full z-20 mt-1.5 w-[19rem] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+          className="absolute left-0 top-full z-20 mt-1.5 w-[19rem] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-lg motion-safe:animate-scale-in">
           {editeur}
         </div>
       )}

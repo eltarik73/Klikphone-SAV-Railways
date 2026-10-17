@@ -175,7 +175,7 @@ export default function NotificationCenter({ collapsed = false }) {
 
   return (
     <>
-      {/* Bouton cloche dans la sidebar */}
+      {/* Bouton cloche dans la sidebar : même rendu que les entrées de menu */}
       <button
         ref={buttonRef}
         type="button"
@@ -184,24 +184,22 @@ export default function NotificationCenter({ collapsed = false }) {
         aria-expanded={open}
         aria-haspopup="dialog"
         title={unread > 0 ? `${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}` : 'Notifications'}
-        className={`relative flex items-center rounded-lg transition-all
-          ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-[44px] gap-3 px-3 py-2.5'}
+        className={`relative flex items-center rounded-lg text-[13px] font-medium transition-colors duration-150
+          ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-11 gap-3 px-3 py-2.5'}
           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
           ${unread > 0
-            ? 'text-brand-300 hover:bg-brand-600/15 ring-1 ring-brand-500/30'
+            ? 'text-brand-300 hover:text-white hover:bg-white/[0.06]'
             : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
-          ${open ? 'bg-white/[0.08]' : ''}
+          ${open ? 'bg-white/[0.08] text-white' : ''}
         `}
       >
         {unread > 0
-          ? <BellRing className="w-[18px] h-[18px] motion-safe:animate-[wiggle_1.5s_ease-in-out_infinite] shrink-0" aria-hidden="true" />
-          : <Bell className="w-[18px] h-[18px] shrink-0" aria-hidden="true" />
+          ? <BellRing className="w-5 h-5 shrink-0" aria-hidden="true" />
+          : <Bell className="w-5 h-5 shrink-0 text-slate-400" aria-hidden="true" />
         }
-        {!collapsed && <span className="flex-1 text-left text-[13px] font-medium">Notifications</span>}
+        {!collapsed && <span className="flex-1 text-left">Notifications</span>}
         {unread > 0 && (
-          <span className={`bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[20px] px-1.5 py-0.5 text-center
-            ${collapsed ? 'absolute -top-1 -right-1 w-4 h-4 text-[8px] p-0 flex items-center justify-center' : ''}`}
-          >
+          <span className={`badge-count badge-count-danger ${collapsed ? 'absolute -top-1 -right-1' : ''}`}>
             {unread > 99 ? '99+' : unread}
           </span>
         )}
@@ -212,7 +210,7 @@ export default function NotificationCenter({ collapsed = false }) {
         <>
           {/* Backdrop mobile uniquement (sur desktop, clic-outside via listener) */}
           <div
-            className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[55]"
+            className="lg:hidden fixed inset-0 bg-slate-900/50 z-[55]"
             onClick={() => setOpen(false)}
             aria-hidden="true"
           />
@@ -223,24 +221,21 @@ export default function NotificationCenter({ collapsed = false }) {
             role="dialog"
             aria-modal="true"
             aria-label="Centre de notifications"
-            className="fixed z-[60] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden
+            className="fixed z-[60] bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden
                        inset-x-2 top-16 lg:inset-x-auto lg:top-4
-                       lg:w-[420px] max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2rem)]"
-            style={{
-              animation: 'notifSlideIn 0.2s ease-out',
-              ...(typeof window !== 'undefined' && window.innerWidth >= 1024
-                ? { left: `${dropdownLeftDesktop}px` }
-                : {}),
-            }}
+                       lg:w-[420px] max-h-[calc(100vh-2rem)] lg:max-h-[calc(100vh-2rem)] motion-safe:animate-scale-in"
+            style={typeof window !== 'undefined' && window.innerWidth >= 1024
+              ? { left: `${dropdownLeftDesktop}px` }
+              : undefined}
           >
             {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-brand-600 to-fuchsia-600 text-white">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <BellRing className="w-5 h-5" aria-hidden="true" />
-                  <span className="font-display font-bold text-base">Centre de notifications</span>
+            <div className="px-4 sm:px-5 py-3 border-b border-slate-100">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <BellRing className="w-5 h-5 shrink-0 text-brand-600" aria-hidden="true" />
+                  <span className="t-h2 truncate">Centre de notifications</span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   {unread > 0 && (
                     <button
                       type="button"
@@ -248,31 +243,31 @@ export default function NotificationCenter({ collapsed = false }) {
                       disabled={loading}
                       title="Tout marquer comme lu"
                       aria-label="Marquer toutes les notifications comme lues"
-                      className="w-11 h-11 flex items-center justify-center rounded-lg hover:bg-white/20 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                      className="btn-ghost btn-icon"
                     >
-                      <CheckCheck className="w-4 h-4" aria-hidden="true" />
+                      <CheckCheck aria-hidden="true" />
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Fermer le centre de notifications"
-                    className="w-11 h-11 -mr-2 flex items-center justify-center rounded-lg hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+                    className="btn-ghost btn-icon -mr-2"
                   >
-                    <X className="w-4 h-4" aria-hidden="true" />
+                    <X aria-hidden="true" />
                   </button>
                 </div>
               </div>
-              <p className="text-[11px] text-white/80 leading-relaxed">
+              <p className="mt-1 text-xs text-slate-500 leading-relaxed">
                 Devis validés, messages clients, alertes — tout ce qu'il faut suivre,
-                au même endroit. Connecté : <span className="font-semibold">{currentUser}</span>
-                {unread > 0 && <> · <span className="font-bold">{unread} non lue{unread > 1 ? 's' : ''}</span></>}
+                au même endroit. Connecté : <span className="font-semibold text-slate-700">{currentUser}</span>
+                {unread > 0 && <> · <span className="font-semibold text-slate-700">{unread} non lue{unread > 1 ? 's' : ''}</span></>}
               </p>
             </div>
 
             {/* Banner debug si erreur (dev/troubleshooting) */}
             {debugLastError && (
-              <div className="px-3 py-1.5 bg-red-50 border-b border-red-100 text-[11px] text-red-700">
+              <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-xs font-medium text-red-700">
                 ⚠ Erreur de chargement : {debugLastError}
               </div>
             )}
@@ -280,10 +275,12 @@ export default function NotificationCenter({ collapsed = false }) {
             {/* Liste */}
             <div className="flex-1 overflow-y-auto">
               {items.length === 0 ? (
-                <div className="text-center py-12 px-6">
-                  <Inbox className="w-12 h-12 text-slate-300 mx-auto mb-3" aria-hidden="true" />
-                  <p className="text-sm font-semibold text-slate-600">Aucune notification</p>
-                  <p className="text-xs text-slate-500 mt-1">
+                <div className="empty-state">
+                  <div className="empty-state-icon" aria-hidden="true">
+                    <Inbox />
+                  </div>
+                  <p className="t-h2">Aucune notification</p>
+                  <p className="t-body text-slate-500 max-w-sm">
                     Tu seras prévenu ici quand un client valide un devis,
                     envoie un message, ou laisse un avis.
                   </p>
@@ -295,34 +292,34 @@ export default function NotificationCenter({ collapsed = false }) {
                       <button
                         type="button"
                         onClick={() => onClickItem(n)}
-                        className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100
+                        className={`w-full min-h-14 flex items-start gap-3 px-4 py-3 text-left transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500
                           ${!n.is_read ? 'bg-brand-50/40' : ''}
                         `}
                       >
-                        <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg
+                        <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg
                           ${n.important
-                            ? 'bg-gradient-to-br from-brand-600 to-fuchsia-600 text-white shadow-md shadow-brand-600/30'
+                            ? 'bg-brand-50 text-brand-700'
                             : 'bg-slate-100 text-slate-600'}
                         `}>
                           <span aria-hidden="true">{n.icon || '🔔'}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
-                            <p className={`text-sm leading-snug ${!n.is_read ? 'font-bold text-slate-800' : 'font-semibold text-slate-600'}`}>
+                            <p className={`text-sm leading-snug ${!n.is_read ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>
                               {n.title}
                             </p>
                             {!n.is_read && (
                               <span className="shrink-0 w-2 h-2 bg-brand-600 rounded-full mt-1.5" aria-label="Non lu" />
                             )}
                           </div>
-                          <p className={`text-xs mt-1 leading-relaxed ${!n.is_read ? 'text-slate-600' : 'text-slate-500'}`}>
+                          <p className={`text-[13px] mt-1 leading-snug ${!n.is_read ? 'text-slate-600' : 'text-slate-500'}`}>
                             {n.message}
                           </p>
                           <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-[10px] text-slate-500">{fmtTime(n.created_at)}</span>
+                            <span className="t-caption">{fmtTime(n.created_at)}</span>
                             {n.action_url && (
-                              <span className="text-[10px] text-brand-600 font-medium flex items-center gap-0.5">
-                                <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
+                              <span className="text-xs text-brand-700 font-medium flex items-center gap-1">
+                                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
                                 Voir le ticket
                               </span>
                             )}
@@ -342,9 +339,9 @@ export default function NotificationCenter({ collapsed = false }) {
                   type="button"
                   onClick={onMarkAll}
                   disabled={loading}
-                  className="w-full min-h-[44px] flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                  className="btn-ghost btn-sm btn-block"
                 >
-                  <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                  <Check aria-hidden="true" />
                   Tout marquer comme lu ({unread})
                 </button>
               </div>
@@ -352,22 +349,6 @@ export default function NotificationCenter({ collapsed = false }) {
           </div>
         </>
       )}
-
-      <style>{`
-        @keyframes notifSlideIn {
-          from { opacity: 0; transform: translateY(-8px) scale(0.97); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes wiggle {
-          0%, 100% { transform: rotate(0deg); }
-          25% { transform: rotate(-10deg); }
-          75% { transform: rotate(10deg); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          @keyframes notifSlideIn { from { opacity: 0; } to { opacity: 1; } }
-          @keyframes wiggle { 0%, 100% { transform: rotate(0deg); } }
-        }
-      `}</style>
     </>
   );
 }

@@ -42,7 +42,7 @@ import {
   AlertTriangle, Smartphone, Shield, Calendar, Clock,
   Zap, Edit3, X, CheckCircle2, Sparkles,
   Flag, PhoneCall, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
-  MapPin,
+  MapPin, CreditCard, FileSignature, Ticket, Gift, Coins,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 
@@ -240,27 +240,35 @@ function aujourdhuiIso() {
 }
 
 // ─── Auto-save status indicator ────────────────────────────────
+/** « 06 00 00 01 09 » pour un numéro français à 10 chiffres ; sinon la valeur telle quelle (affichage seulement). */
+function telAffiche(tel) {
+  const brut = String(tel ?? '').trim();
+  const chiffres = brut.replace(/\D/g, '');
+  return chiffres.length === 10 && chiffres.startsWith('0') ? chiffres.replace(/(\d{2})(?=\d)/g, '$1 ') : brut;
+}
+
+// Enregistrement automatique : indicateur discret (12 px, gris), rouge seulement en cas d'échec
 function AutoSaveIndicator({ etat }) {
   const status = etat?.status;
   return (
-    <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-[11px] font-medium">
+    <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs font-medium">
       {status === 'dirty' && (
-        <><span className="w-2 h-2 rounded-full bg-slate-400" aria-hidden="true" /><span className="text-slate-600">Modifié…</span></>
+        <><span className="w-2 h-2 rounded-full bg-slate-400" aria-hidden="true" /><span className="text-slate-500">Modifié…</span></>
       )}
       {status === 'saving' && (
-        <><span className="w-3 h-3 border-2 border-amber-600 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /><span className="text-amber-800">Enregistrement…</span></>
+        <><span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /><span className="text-slate-500">Enregistrement…</span></>
       )}
       {status === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
       {status === 'error' && (
         <>
-          <AlertTriangle className="w-3.5 h-3.5 text-red-600" aria-hidden="true" />
+          <AlertTriangle className="w-4 h-4 text-red-600" aria-hidden="true" />
           <span className="text-red-700">Non enregistré</span>
           <button
             type="button"
             onClick={() => etat.retry().catch(() => {})}
-            className="ml-1 inline-flex items-center gap-1 min-h-11 px-3 rounded-lg bg-red-50 text-red-700 border border-red-200 text-xs font-bold hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            className="btn-secondary btn-sm ml-1 text-red-700"
           >
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </>
       )}
@@ -273,25 +281,23 @@ function afficherIndicateur(editing, etat) {
 }
 
 // ─── Editable Section Component ────────────────────────────────
-function EditableSection({ title, icon: Icon, iconBg, iconColor, editing, onEdit, onClose, children, viewContent, autoSave }) {
+function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children, viewContent, autoSave }) {
   const titreId = useId();
   return (
-    <section className="card p-5" aria-labelledby={titreId}>
-      <div className="flex items-center justify-between gap-2 mb-4">
+    <section className="card p-4 sm:p-5" aria-labelledby={titreId}>
+      <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <div className={`w-8 h-8 rounded-lg ${iconBg} flex items-center justify-center`}>
-            <Icon className={`w-4 h-4 ${iconColor}`} aria-hidden="true" />
-          </div>
-          <h2 id={titreId} className="text-sm font-semibold text-slate-800">{title}</h2>
+          {Icon && <Icon className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
+          <h2 id={titreId} className="t-h2">{title}</h2>
           {afficherIndicateur(editing, autoSave) && <AutoSaveIndicator etat={autoSave} />}
         </div>
         {editing ? (
-          <button type="button" onClick={onClose} className="btn-ghost text-xs px-3 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-            <X className="w-3.5 h-3.5" aria-hidden="true" /> Fermer
+          <button type="button" onClick={onClose} className="btn-ghost btn-sm shrink-0">
+            <X aria-hidden="true" /> Fermer
           </button>
         ) : (
-          <button type="button" onClick={onEdit} className="btn-ghost p-0 min-w-11 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" title="Modifier" aria-label={`Modifier ${title}`}>
-            <Edit3 className="w-3.5 h-3.5" aria-hidden="true" />
+          <button type="button" onClick={onEdit} className="btn-ghost btn-icon shrink-0" title="Modifier" aria-label={`Modifier ${title}`}>
+            <Edit3 aria-hidden="true" />
           </button>
         )}
       </div>
@@ -336,15 +342,15 @@ function Modal({ labelledBy, onClose, busy = false, panelClassName = 'max-w-md p
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-50" aria-hidden="true" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 bg-slate-900/50 z-50" aria-hidden="true" />
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
         <div
           ref={panelRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={labelledBy}
           tabIndex={-1}
-          className={`bg-white rounded-2xl shadow-2xl w-full max-h-[90vh] overflow-y-auto focus:outline-none ${ANIM_ENTREE} ${panelClassName}`}
+          className={`bg-white rounded-t-xl sm:rounded-xl shadow-lg w-full max-h-[92vh] overflow-y-auto focus:outline-none animate-scale-in ${panelClassName}`}
         >
           {children}
         </div>
@@ -441,61 +447,61 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
   };
 
   const optionPaiement = (valeur, titre, detail) => (
-    <label className={`flex items-start gap-3 p-3 min-h-11 rounded-xl border-2 cursor-pointer transition-colors ${paiement === valeur ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'}`}>
+    <label className={`flex items-start gap-3 p-3 min-h-11 rounded-lg border cursor-pointer transition-colors duration-150 ${paiement === valeur ? 'border-brand-500 bg-brand-50/60' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
       <input type="radio" name={`${titreId}-paiement`} value={valeur} checked={paiement === valeur}
-        onChange={() => setPaiement(valeur)} className="mt-0.5 w-5 h-5 accent-emerald-600 shrink-0" />
+        onChange={() => setPaiement(valeur)} className="radio mt-0.5 accent-brand-600" />
       <span className="text-sm">
         <span className="block font-semibold text-slate-900">{titre}</span>
-        {detail && <span className="block text-xs text-slate-600">{detail}</span>}
+        {detail && <span className="block text-xs text-slate-500 mt-0.5">{detail}</span>}
       </span>
     </label>
   );
 
   return (
-    <Modal labelledBy={titreId} onClose={onClose} busy={envoi} panelClassName="max-w-lg p-6">
+    <Modal labelledBy={titreId} onClose={onClose} busy={envoi} panelClassName="max-w-lg p-5 sm:p-6">
       <div className="flex items-start gap-3 mb-5">
-        <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+        <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
           <PackageCheck className="w-5 h-5 text-emerald-700" aria-hidden="true" />
         </div>
-        <div className="min-w-0">
-          <h3 id={titreId} className="text-lg font-display font-bold text-slate-900">Rendre au client</h3>
-          <p className="text-sm text-slate-600 truncate">
-            <span className="font-mono font-semibold">{ticket.ticket_code}</span> — {ticket.client_prenom || ''} {ticket.client_nom || ''}
+        <div className="min-w-0 flex-1">
+          <h3 id={titreId} className="t-h2">Rendre au client</h3>
+          <p className="t-small truncate">
+            <span className="font-mono font-semibold text-slate-700">{ticket.ticket_code}</span> — {ticket.client_prenom || ''} {ticket.client_nom || ''}
           </p>
         </div>
-        <button type="button" onClick={onClose} disabled={envoi} className="ml-auto btn-ghost p-0 min-w-11 min-h-11 shrink-0" aria-label="Fermer">
-          <X className="w-4 h-4" aria-hidden="true" />
+        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
+          <X aria-hidden="true" />
         </button>
       </div>
 
       <div className="space-y-4">
         {nonTermine && (
-          <div className={`p-3 rounded-xl border ${erreur?.code === 'non_termine' ? 'border-red-300 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-            <p className="text-sm font-semibold text-amber-900">
+          <div className={`callout flex-col gap-1 ${erreur?.code === 'non_termine' ? 'callout-danger' : 'callout-warning'}`}>
+            <p className="font-semibold">
               Réparation non terminée (statut : {ticket.statut})
             </p>
-            <label className="mt-2 flex items-start gap-2.5 min-h-11 cursor-pointer">
-              <input type="checkbox" checked={confirmeNT} onChange={e => setConfirmeNT(e.target.checked)} className="mt-0.5 w-5 h-5 accent-amber-600 shrink-0" />
-              <span className="text-sm text-amber-900">Je confirme rendre l'appareil en l'état (devis refusé, non réparable, reprise par le client…)</span>
+            <label className="flex items-start gap-3 min-h-11 cursor-pointer">
+              <input type="checkbox" checked={confirmeNT} onChange={e => setConfirmeNT(e.target.checked)} className="checkbox mt-0.5 accent-brand-600" />
+              <span>Je confirme rendre l'appareil en l'état (devis refusé, non réparable, reprise par le client…)</span>
             </label>
           </div>
         )}
 
         {pretEnCours && (
-          <div className={`p-3 rounded-xl border ${erreur?.code === 'pret_non_restitue' ? 'border-red-300 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
-            <p className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
-              <PhoneCall className="w-4 h-4" aria-hidden="true" /> Téléphone de prêt : {ticket.telephone_pret || 'à récupérer'}
+          <div className={`callout flex-col gap-1 ${erreur?.code === 'pret_non_restitue' ? 'callout-danger' : 'callout-warning'}`}>
+            <p className="font-semibold flex items-center gap-1.5">
+              <PhoneCall className="w-4 h-4 shrink-0" aria-hidden="true" /> Téléphone de prêt : {ticket.telephone_pret || 'à récupérer'}
             </p>
-            {ticket.telephone_pret_imei && <p className="text-xs text-amber-800 font-mono mt-1">IMEI : {ticket.telephone_pret_imei}</p>}
-            <label className="mt-2 flex items-start gap-2.5 min-h-11 cursor-pointer">
-              <input type="checkbox" checked={pretOk} onChange={e => setPretOk(e.target.checked)} className="mt-0.5 w-5 h-5 accent-amber-600 shrink-0" />
-              <span className="text-sm text-amber-900">Téléphone de prêt récupéré et vérifié</span>
+            {ticket.telephone_pret_imei && <p className="text-xs font-mono tabular-nums">IMEI : {ticket.telephone_pret_imei}</p>}
+            <label className="flex items-start gap-3 min-h-11 cursor-pointer">
+              <input type="checkbox" checked={pretOk} onChange={e => setPretOk(e.target.checked)} className="checkbox mt-0.5 accent-brand-600" />
+              <span>Téléphone de prêt récupéré et vérifié</span>
             </label>
           </div>
         )}
 
         {devisRefuse && (ticket.montants?.refus_devis || resteAvant > 0) && (
-          <p className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-slate-700">
+          <p className="card-section text-sm text-slate-700">
             {ticket.montants?.refus_devis
               ? 'Devis refusé : la réparation n’est pas facturée, seuls les frais (diagnostic…) restent dus.'
               : 'Devis refusé : si rien n’est facturé, passez les lignes et le devis estimé à 0 € (ou au seul diagnostic) dans « Réparation & Tarifs » avant la remise.'}
@@ -504,8 +510,8 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
 
         {resteAvant > 0 ? (
           <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-slate-800 mb-2">
-              Reste à payer : <span className="text-red-700 text-base font-extrabold">{formatPrix(resteAvant)}</span>
+            <legend className="text-sm font-semibold text-slate-900 mb-2">
+              Reste à payer : <span className="text-red-700 text-base font-bold tabular-nums">{formatPrix(resteAvant)}</span>
             </legend>
             {optionPaiement('encaisser', 'Encaisser maintenant', reduction > 0
               ? `${formatPrix(montant)} à encaisser après ${formatPrix(reduction)} d'avantages`
@@ -514,27 +520,27 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
               <div className="pl-3 space-y-3">
                 <div>
                   <label htmlFor={modeId} className="input-label">Mode de paiement</label>
-                  <select id={modeId} value={mode} onChange={e => setMode(e.target.value)} className="input min-h-11">
+                  <select id={modeId} value={mode} onChange={e => setMode(e.target.value)} className="select">
                     {MODES_PAIEMENT.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
                 {(bonMontant > 0 || fidelite?.bon_grattage === 'film' || fideliteDispo) && (
-                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50/70 p-3 space-y-1">
-                    <p className="text-[11px] uppercase tracking-wider text-amber-800 font-bold flex items-center gap-1.5">
-                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" aria-hidden="true" /> Avantages client
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+                    <p className="t-h3 text-amber-800 flex items-center gap-1.5">
+                      <Star className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" aria-hidden="true" /> Avantages client
                     </p>
                     {bonMontant > 0 && (
-                      <label className="flex items-center gap-2.5 min-h-11 cursor-pointer">
-                        <input type="checkbox" checked={bon} onChange={e => setBon(e.target.checked)} className="w-5 h-5 accent-amber-600" />
+                      <label className="flex items-center gap-3 min-h-11 cursor-pointer">
+                        <input type="checkbox" checked={bon} onChange={e => setBon(e.target.checked)} className="checkbox accent-brand-600" />
                         <span className="text-sm text-slate-800">Bon de grattage : −{formatPrix(bonMontant)}</span>
                       </label>
                     )}
                     {fidelite?.bon_grattage === 'film' && (
-                      <p className="text-sm text-slate-800 flex items-center gap-2 min-h-11"><Check className="w-4 h-4 text-amber-700" aria-hidden="true" /> Film verre trempé offert à remettre</p>
+                      <p className="text-sm text-slate-800 flex items-center gap-2 min-h-11"><Check className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Film verre trempé offert à remettre</p>
                     )}
                     {fideliteDispo && (
-                      <label className="flex items-center gap-2.5 min-h-11 cursor-pointer">
-                        <input type="checkbox" checked={fid} onChange={e => setFid(e.target.checked)} className="w-5 h-5 accent-amber-600" />
+                      <label className="flex items-center gap-3 min-h-11 cursor-pointer">
+                        <input type="checkbox" checked={fid} onChange={e => setFid(e.target.checked)} className="checkbox accent-brand-600" />
                         <span className="text-sm text-slate-800">Fidélité : −{formatPrix(fideliteMontant)} ({fidelite.points} points)</span>
                       </label>
                     )}
@@ -548,35 +554,35 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
                 <label htmlFor={motifId} className="input-label">Motif (obligatoire)</label>
                 <textarea id={motifId} ref={motifRef} value={motif} onChange={e => setMotif(e.target.value)} rows={2}
                   aria-required="true" aria-invalid={motifManquant && erreur?.code === 'motif_requis' ? true : undefined}
-                  className="input resize-none" placeholder="Ex : règle demain, paiement en attente…" />
+                  className="input resize-none !min-h-[72px]" placeholder="Ex : règle demain, paiement en attente…" />
               </div>
             )}
           </fieldset>
         ) : (
-          <p className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm font-semibold text-emerald-800 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> {ticket.paye ? 'Déjà payé' : 'Rien à encaisser'}
+          <p className="callout callout-success items-center font-semibold">
+            <CheckCircle2 aria-hidden="true" /> <span>{ticket.paye ? 'Déjà payé' : 'Rien à encaisser'}</span>
           </p>
         )}
 
         {erreur && (
-          <p role="alert" className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 flex gap-2">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" /> {erreur.message}
+          <p role="alert" className="callout callout-danger">
+            <AlertTriangle aria-hidden="true" /> <span>{erreur.message}</span>
           </p>
         )}
       </div>
 
       <div className="flex gap-2 mt-6">
-        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost flex-1 min-h-12">Annuler</button>
+        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost btn-lg flex-1">Annuler</button>
         <button
           type="button"
           onClick={confirmer}
           disabled={bloque}
           aria-busy={envoi || undefined}
-          className="flex-[2] min-h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2"
+          className="btn-success btn-lg flex-[2]"
         >
           {envoi
-            ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
-            : <><CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Confirmer la remise</>}
+            ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
+            : <><CheckCircle2 aria-hidden="true" /> Confirmer la remise</>}
         </button>
       </div>
     </Modal>
@@ -586,7 +592,7 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
 // ─── Layout Config ────────────────────────────────────────────
 const DEFAULT_LAYOUT = {
   left: ['client', 'device', 'reception', 'dates', 'messages', 'notes'],
-  right: ['reparation', 'status', 'queue', 'fidelite'],
+  right: ['status', 'reparation', 'fidelite', 'queue'],
 };
 const ALL_WIDGET_IDS = new Set([...DEFAULT_LAYOUT.left, ...DEFAULT_LAYOUT.right]);
 
@@ -1907,42 +1913,24 @@ function TicketDetail({ id }) {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8" aria-busy="true" aria-label="Chargement du ticket">
-        {/* Header skeleton */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-slate-200 motion-safe:animate-pulse" />
-          <div className="space-y-2 flex-1">
-            <div className="h-5 w-48 bg-slate-200 rounded motion-safe:animate-pulse" />
-            <div className="h-3 w-32 bg-slate-100 rounded motion-safe:animate-pulse" />
-          </div>
-          <div className="h-9 w-24 bg-slate-100 rounded-xl motion-safe:animate-pulse" />
+      <div className="page max-w-7xl" aria-busy="true" aria-label="Chargement du ticket">
+        {/* Header skeleton (mêmes dimensions que l'en-tête sombre : zéro saut de mise en page) */}
+        <div className="rounded-xl bg-slate-900 p-4 sm:p-5 mb-4 min-h-[132px]">
+          <div className="h-4 w-16 rounded bg-white/10 mb-4" />
+          <div className="h-7 w-44 rounded bg-white/15 mb-3" />
+          <div className="h-4 w-2/3 rounded bg-white/10" />
         </div>
+        <div className="skeleton-card mb-4" />
         {/* Info cards skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="card p-5">
-              <div className="h-3 w-20 bg-slate-100 rounded mb-3 motion-safe:animate-pulse" />
-              <div className="space-y-2">
-                <div className="h-4 w-full bg-slate-100 rounded motion-safe:animate-pulse" />
-                <div className="h-4 w-3/4 bg-slate-100 rounded motion-safe:animate-pulse" />
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-4">
+          {[1, 2].map(i => (
+            <div key={i} className="card p-4 sm:p-5 space-y-3">
+              <div className="skeleton-title" />
+              <div className="skeleton-line" />
+              <div className="skeleton-line w-3/4" />
+              <div className="skeleton-row" />
             </div>
           ))}
-        </div>
-        {/* Timeline skeleton */}
-        <div className="card p-5">
-          <div className="h-4 w-28 bg-slate-100 rounded mb-4 motion-safe:animate-pulse" />
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-100 shrink-0 motion-safe:animate-pulse" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-3 w-full bg-slate-100 rounded motion-safe:animate-pulse" />
-                  <div className="h-3 w-2/3 bg-slate-100 rounded motion-safe:animate-pulse" />
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     );
@@ -1950,14 +1938,16 @@ function TicketDetail({ id }) {
 
   if (!ticket) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-          <Smartphone className="w-7 h-7 text-slate-400" aria-hidden="true" />
+      <div className="page max-w-7xl">
+        <div className="card empty-state">
+          <div className="empty-state-icon">
+            <Smartphone aria-hidden="true" />
+          </div>
+          <p className="t-h2">Ticket non trouvé</p>
+          <button type="button" onClick={() => navigate(basePath)} className="btn-secondary">
+            <ArrowLeft aria-hidden="true" /> Retour au dashboard
+          </button>
         </div>
-        <p className="text-slate-600 font-medium">Ticket non trouvé</p>
-        <button type="button" onClick={() => navigate(basePath)} className="btn-secondary mt-4 min-h-11">
-          <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Retour au dashboard
-        </button>
       </div>
     );
   }
@@ -2005,28 +1995,29 @@ function TicketDetail({ id }) {
   const badgeCommande = (cmd, compact = false) => {
     if (!cmd) return null;
     const st = cmd.statut || 'En attente';
-    const cfg = st === 'Reçu' ? 'bg-green-100 text-green-800'
-      : st === 'Commandée' ? 'bg-blue-100 text-blue-800'
-      : st === 'En réparation' ? 'bg-violet-100 text-violet-800'
-      : 'bg-amber-100 text-amber-800';
+    const cfg = st === 'Reçu' ? 'badge-success'
+      : st === 'Commandée' ? 'badge-info'
+      : st === 'En réparation' ? 'badge-brand'
+      : 'badge-warning';
     return (
-      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${compact ? '' : 'ml-2'} ${cfg}`}>
-        {compact && <Package className="w-2.5 h-2.5 inline mr-0.5" aria-hidden="true" />}{st}
+      <span className={`badge badge-sm ${compact ? '' : 'ml-2'} ${cfg}`}>
+        {compact && <Package className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}{st}
       </span>
     );
   };
 
   const prixLigne = (prix) => (prixNombre(prix) === 0 && surDevisSansPrix
-    ? <span className="text-sm font-medium text-slate-500">Sur devis</span>
-    : <span className="text-sm font-bold text-slate-800">{formatPrix(prixNombre(prix))}</span>);
+    ? <span className="text-sm font-medium text-slate-500 whitespace-nowrap">Sur devis</span>
+    : <span className="text-sm t-num whitespace-nowrap">{formatPrix(prixNombre(prix))}</span>);
 
+  // Vert plein réservé à la restitution ; « grand » = pleine largeur dans la carte Statut
   const boutonRendre = (taille = 'normal') => (
     <button
       type="button"
       onClick={() => ouvrirRestitution('Rendu au client')}
-      className={`inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 ${taille === 'grand' ? 'w-full min-h-12 px-4 text-sm' : 'min-h-11 px-4 text-sm'}`}
+      className={`btn-success btn-lg ${taille === 'grand' ? 'btn-block' : ''}`}
     >
-      <PackageCheck className="w-4 h-4" aria-hidden="true" /> Rendre au client
+      <PackageCheck aria-hidden="true" /> Rendre au client
     </button>
   );
 
@@ -2037,14 +2028,14 @@ function TicketDetail({ id }) {
       case 'client':
         return (
           <EditableSection
-            title="Client" icon={User} iconBg="bg-blue-50" iconColor="text-blue-600"
+            title="Client" icon={User}
             editing={editingClient}
             autoSave={clientSave}
             onEdit={() => setEditingClient(true)}
             onClose={() => { flushSilencieux(clientSave)(); setEditingClient(false); }}
             viewContent={
               <>
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
                     <span className="text-brand-700 font-bold text-sm">
                       {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
@@ -2052,34 +2043,30 @@ function TicketDetail({ id }) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
-                    {t.client_societe && <p className="text-xs text-slate-600">{t.client_societe}</p>}
-                    {t.client_carte_camby ? <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">🎫 Camby</span> : null}
+                    {t.client_societe && <p className="t-small">{t.client_societe}</p>}
+                    {t.client_carte_camby ? <span className="badge badge-brand mt-1"><Ticket className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Camby</span> : null}
                   </div>
                   {t.client_id && (
                     <button
                       type="button"
                       onClick={() => navigate(`${basePath}/clients?client=${t.client_id}`)}
-                      className="btn-ghost text-xs px-3 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                      className="btn-ghost btn-sm shrink-0"
                     >
-                      <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> Fiche client
+                      <ExternalLink aria-hidden="true" /> Fiche client
                     </button>
                   )}
                 </div>
-                <div className="space-y-2">
+                <div className="-mx-2">
                   {t.client_tel && (
-                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-2.5 min-h-11 text-sm text-slate-700 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Phone className="w-4 h-4 text-slate-500" aria-hidden="true" />
-                      </div>
-                      <span className="font-mono text-xs">{t.client_tel}</span>
+                    <a href={`tel:${t.client_tel}`} className="flex items-center gap-3 min-h-11 px-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 hover:text-brand-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      <Phone className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                      <span className="font-medium tabular-nums">{telAffiche(t.client_tel)}</span>
                     </a>
                   )}
                   {t.client_email && (
-                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-2.5 min-h-11 text-sm text-slate-700 hover:text-brand-600 transition-colors">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                        <Mail className="w-4 h-4 text-slate-500" aria-hidden="true" />
-                      </div>
-                      <span className="text-xs truncate">{t.client_email}</span>
+                    <a href={`mailto:${t.client_email}`} className="flex items-center gap-3 min-h-11 px-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      <Mail className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t.client_email}</span>
                     </a>
                   )}
                 </div>
@@ -2087,10 +2074,10 @@ function TicketDetail({ id }) {
                 {/* Autres réparations du client (garantie, appareils en cours) */}
                 {autresTickets && autresTickets.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
-                    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                      <History className="w-3.5 h-3.5" aria-hidden="true" /> Autres réparations ({autresTickets.length})
+                    <p className="t-h3 mb-2 flex items-center gap-1.5">
+                      <History className="w-4 h-4 text-slate-400" aria-hidden="true" /> Autres réparations ({autresTickets.length})
                     </p>
-                    <ul className="space-y-1">
+                    <ul className="space-y-0.5 -mx-2">
                       {autresTickets.slice(0, 5).map(o => {
                         const garantie = STATUTS_REMISE.has(o.statut) ? finGarantie(o.date_cloture) : null;
                         const sousGarantie = !!garantie && garantie.iso >= aujourdHui;
@@ -2100,12 +2087,12 @@ function TicketDetail({ id }) {
                             <button
                               type="button"
                               onClick={() => navigate(`${basePath}/ticket/${o.id}`)}
-                              className="w-full min-h-11 flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                              className="w-full min-h-11 flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
-                              <span className="font-mono text-xs font-bold text-slate-800 shrink-0">{o.ticket_code}</span>
-                              <span className="text-xs text-slate-600 truncate flex-1 min-w-0">{appareilO}{o.panne ? ` · ${o.panne}` : ''}</span>
+                              <span className="t-mono font-semibold text-slate-900 shrink-0">{o.ticket_code}</span>
+                              <span className="t-small truncate flex-1 min-w-0">{appareilO}{o.panne ? ` · ${o.panne}` : ''}</span>
                               {sousGarantie && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 shrink-0" title={`Garantie jusqu'au ${garantie.texte}`}>
+                                <span className="badge badge-sm badge-success shrink-0" title={`Garantie jusqu'au ${garantie.texte}`}>
                                   Garantie → {garantie.texte}
                                 </span>
                               )}
@@ -2116,7 +2103,7 @@ function TicketDetail({ id }) {
                       })}
                     </ul>
                     {autresTickets.length > 5 && (
-                      <button type="button" onClick={() => navigate(`${basePath}/clients?client=${t.client_id}`)} className="mt-1 text-xs font-semibold text-brand-700 hover:underline min-h-11 px-2">
+                      <button type="button" onClick={() => navigate(`${basePath}/clients?client=${t.client_id}`)} className="btn-ghost btn-sm mt-1 -ml-3 text-brand-700 hover:text-brand-800 hover:bg-brand-50">
                         Voir les {autresTickets.length} réparations sur la fiche client
                       </button>
                     )}
@@ -2129,20 +2116,18 @@ function TicketDetail({ id }) {
                     <button
                       type="button"
                       onClick={() => { setRetourSAVForm({ panne: '', panne_detail: '' }); setShowRetourSAVModal(true); }}
-                      className="w-full flex items-center justify-center gap-2 min-h-11 px-3 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold border border-red-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+                      className="btn-secondary btn-block"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Retour SAV
+                      <RotateCcw aria-hidden="true" /> Retour SAV
                     </button>
                   </div>
                 )}
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <p className="text-[11px] text-slate-500 text-center">Messages dans le bloc Messages ci-dessous</p>
-                </div>
+                <p className="mt-3 t-caption text-center">Messages dans le bloc Messages ci-dessous</p>
               </>
             }
           >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                 <div>
                   <label htmlFor={`${uid}-prenom`} className="input-label">Prénom</label>
                   <input id={`${uid}-prenom`} value={clientForm.prenom} onChange={e => updateClientForm({ prenom: e.target.value })} onBlur={flushSilencieux(clientSave)} className="input" autoComplete="off" />
@@ -2154,7 +2139,7 @@ function TicketDetail({ id }) {
               </div>
               <div>
                 <label htmlFor={`${uid}-tel`} className="input-label">Téléphone</label>
-                <input id={`${uid}-tel`} type="tel" value={clientForm.telephone} onChange={e => updateClientForm({ telephone: e.target.value })} onBlur={flushSilencieux(clientSave)} className="input font-mono" autoComplete="off" />
+                <input id={`${uid}-tel`} type="tel" value={clientForm.telephone} onChange={e => updateClientForm({ telephone: e.target.value })} onBlur={flushSilencieux(clientSave)} className="input tabular-nums" autoComplete="off" />
               </div>
               <div>
                 <label htmlFor={`${uid}-email`} className="input-label">Email</label>
@@ -2171,7 +2156,7 @@ function TicketDetail({ id }) {
       case 'device':
         return (
           <EditableSection
-            title="Appareil" icon={Smartphone} iconBg="bg-brand-50" iconColor="text-brand-600"
+            title="Appareil" icon={Smartphone}
             editing={editingDevice}
             autoSave={deviceSave}
             onEdit={() => setEditingDevice(true)}
@@ -2187,20 +2172,19 @@ function TicketDetail({ id }) {
                     { label: 'IMEI / N° série', value: t.imei, mono: true },
                     { label: 'Détail panne', value: t.panne_detail },
                   ].map(({ label, value, mono }) => (
-                    <div key={label}>
-                      <p className="text-slate-500 text-xs mb-0.5">{label}</p>
-                      <p className={`font-medium text-slate-800 ${mono ? 'font-mono text-xs' : ''}`}>{value || '—'}</p>
+                    <div key={label} className="min-w-0">
+                      <p className="t-caption mb-0.5">{label}</p>
+                      <p className={`font-medium text-slate-900 break-words ${mono ? 'font-mono tabular-nums text-[13px]' : ''}`}>{value || '—'}</p>
                     </div>
                   ))}
                 </div>
                 {String(t.telephone_pret || '').trim() && (
-                  <div className={`mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border p-3 text-sm ${
-                    pretRendu(t) ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
-                    <PhoneCall className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <div className={`mt-4 callout flex-wrap items-center gap-x-3 gap-y-1.5 ${
+                    pretRendu(t) ? 'bg-slate-50 border-slate-200 text-slate-700' : 'callout-warning'}`}>
+                    <PhoneCall aria-hidden="true" />
                     <span><span className="font-semibold">Téléphone de prêt :</span> {t.telephone_pret}</span>
-                    {t.telephone_pret_imei && <span className="font-mono text-xs">IMEI {t.telephone_pret_imei}</span>}
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ring-1 ${
-                      pretRendu(t) ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-amber-100 text-amber-900 ring-amber-300'}`}>
+                    {t.telephone_pret_imei && <span className="font-mono tabular-nums text-xs">IMEI {t.telephone_pret_imei}</span>}
+                    <span className={`badge ${pretRendu(t) ? 'badge-success' : 'badge-warning'}`}>
                       {pretRendu(t) ? 'Récupéré' : 'À récupérer avant la remise'}
                     </span>
                   </div>
@@ -2209,27 +2193,27 @@ function TicketDetail({ id }) {
                   <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-6">
                     {t.pin && (
                       <div>
-                        <p className="text-slate-500 text-xs mb-1 flex items-center gap-1"><Lock className="w-3 h-3" aria-hidden="true" /> Code PIN</p>
-                        <p className="text-lg font-bold font-mono text-slate-800 tracking-widest">{t.pin}</p>
+                        <p className="t-caption mb-1 flex items-center gap-1"><Lock className="w-3.5 h-3.5" aria-hidden="true" /> Code PIN</p>
+                        <p className="text-lg font-bold font-mono tabular-nums text-slate-900 tracking-widest">{t.pin}</p>
                       </div>
                     )}
                     {t.pattern && (
                       <div>
-                        <p className="text-slate-500 text-xs mb-1 flex items-center gap-1"><Shield className="w-3 h-3" aria-hidden="true" /> Pattern</p>
+                        <p className="t-caption mb-1 flex items-center gap-1"><Shield className="w-3.5 h-3.5" aria-hidden="true" /> Pattern</p>
                         <PatternGrid value={t.pattern} readOnly size={120} />
                       </div>
                     )}
                   </div>
                 )}
                 {t.notes_client && (
-                  <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-sm text-amber-900">
-                    <span className="font-semibold">Note client :</span> {t.notes_client}
+                  <div className="mt-4 card-section text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">Note client :</span> {t.notes_client}
                   </div>
                 )}
               </>
             }
           >
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
               <div>
                 <label htmlFor={`${uid}-categorie`} className="input-label">Catégorie</label>
                 <input id={`${uid}-categorie`} value={deviceForm.categorie} onChange={e => updateDeviceForm({ categorie: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input" />
@@ -2265,7 +2249,7 @@ function TicketDetail({ id }) {
               <div onBlur={finSaisieAppareil}><AutocompleteField label="Panne (motif client)" categorie="panne" value={deviceForm.panne} onChange={v => updateDeviceForm({ panne: v })} onSelect={s => { updateDeviceForm({ panne: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
               <div>
                 <label htmlFor={`${uid}-imei`} className="input-label">IMEI</label>
-                <input id={`${uid}-imei`} data-scan-target="imei" inputMode="numeric" value={deviceForm.imei} onChange={e => updateDeviceForm({ imei: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input font-mono" autoComplete="off" />
+                <input id={`${uid}-imei`} data-scan-target="imei" inputMode="numeric" value={deviceForm.imei} onChange={e => updateDeviceForm({ imei: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input font-mono tabular-nums" autoComplete="off" />
               </div>
               <div onBlur={finSaisieAppareil}><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => updateDeviceForm({ panne_detail: v })} onSelect={s => { updateDeviceForm({ panne_detail: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>
               <div>
@@ -2278,21 +2262,21 @@ function TicketDetail({ id }) {
               </div>
               <div className="col-span-2 sm:col-span-3">
                 <label htmlFor={`${uid}-notes-client`} className="input-label">Note client</label>
-                <textarea id={`${uid}-notes-client`} value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input resize-none" rows={2} />
+                <textarea id={`${uid}-notes-client`} value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input resize-none !min-h-[72px]" rows={2} />
               </div>
               {(() => {
                 const modelePret = String(deviceForm.telephone_pret || '').trim();
                 const chiffres = digitsOnly(deviceForm.telephone_pret_imei);
                 const imeiFaux = !imeiPretValide(deviceForm.telephone_pret_imei) && (pretImeiVu || chiffres.length >= 15);
                 return (
-                  <fieldset className="col-span-2 sm:col-span-3 min-w-0 pt-3 border-t border-slate-100">
+                  <fieldset className="col-span-2 sm:col-span-3 min-w-0 pt-4 border-t border-slate-100">
                     <legend className="sr-only">Téléphone de prêt</legend>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
                       <div>
-                        <label htmlFor={`${uid}-pret`} className="input-label flex items-center gap-1"><PhoneCall className="w-3 h-3" aria-hidden="true" /> Téléphone de prêt</label>
+                        <label htmlFor={`${uid}-pret`} className="input-label flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> Téléphone de prêt</label>
                         <input id={`${uid}-pret`} value={deviceForm.telephone_pret} onChange={e => updatePretModele(e.target.value)} onBlur={flushSilencieux(deviceSave)}
                           className="input" placeholder="Modèle prêté (ex. iPhone 8)" autoComplete="off" aria-describedby={`${uid}-pret-aide`} />
-                        <p id={`${uid}-pret-aide`} className="text-[11px] text-slate-600 mt-1">Tant qu’il n’est pas récupéré, la remise au client est bloquée.</p>
+                        <p id={`${uid}-pret-aide`} className="input-help">Tant qu’il n’est pas récupéré, la remise au client est bloquée.</p>
                       </div>
                       <div>
                         <label htmlFor={`${uid}-pret-imei`} className="input-label">IMEI du prêt</label>
@@ -2301,18 +2285,18 @@ function TicketDetail({ id }) {
                           onBlur={() => { setPretImeiVu(true); flushSilencieux(deviceSave)(); }}
                           disabled={!modelePret && !deviceForm.telephone_pret_imei}
                           aria-invalid={imeiFaux || undefined} aria-describedby={`${uid}-pret-imei-aide`}
-                          className={`input font-mono ${imeiFaux ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : ''}`} autoComplete="off" />
+                          className="input font-mono tabular-nums" autoComplete="off" />
                         <p id={`${uid}-pret-imei-aide`} role={imeiFaux ? 'alert' : undefined}
-                          className={`text-[11px] mt-1 ${imeiFaux ? 'font-semibold text-red-700' : 'text-slate-600'}`}>
+                          className={imeiFaux ? 'input-error' : 'input-help'}>
                           {imeiFaux
                             ? 'IMEI invalide (15 chiffres, clé de contrôle) : non enregistré'
                             : modelePret ? '15 chiffres (*#06# sur le téléphone), scannable' : 'Indiquez d’abord le modèle prêté'}
                         </p>
                       </div>
                       {modelePret && (
-                        <label className="sm:col-span-2 justify-self-start flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-50">
+                        <label className="sm:col-span-2 justify-self-start flex items-center gap-3 min-h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
                           <input type="checkbox" checked={!!deviceForm.telephone_pret_rendu} onChange={e => basculerPretRendu(e.target.checked)}
-                            className="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                            className="checkbox accent-brand-600" />
                           Prêt récupéré
                         </label>
                       )}
@@ -2341,32 +2325,32 @@ function TicketDetail({ id }) {
 
       case 'dates':
         return (
-          <div className="card p-5">
+          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-dates-titre`}>
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center"><Calendar className="w-4 h-4 text-slate-500" aria-hidden="true" /></div>
-              <h2 className="text-sm font-semibold text-slate-800">Dates</h2>
+              <Calendar className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+              <h2 id={`${uid}-dates-titre`} className="t-h2">Dates</h2>
             </div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between items-center"><span className="text-slate-600">Dépôt</span><span className="font-medium text-slate-800">{formatDate(t.date_depot)}</span></div>
-              <div className="flex justify-between items-center"><span className="text-slate-600">Mise à jour</span><span className="font-medium text-slate-800">{formatDate(t.date_maj)}</span></div>
+            <div className="space-y-2.5 text-sm tabular-nums">
+              <div className="flex justify-between items-center gap-3"><span className="text-slate-500">Dépôt</span><span className="font-medium text-slate-900">{formatDate(t.date_depot)}</span></div>
+              <div className="flex justify-between items-center gap-3"><span className="text-slate-500">Mise à jour</span><span className="font-medium text-slate-900">{formatDate(t.date_maj)}</span></div>
               {t.date_rendu && (
                 <div className="flex justify-between items-center gap-3">
-                  <span className="text-slate-600">Rendu</span>
-                  <span className="font-medium text-slate-800 text-right">{formatDate(t.date_rendu)}{t.rendu_par ? ` · ${t.rendu_par}` : ''}</span>
+                  <span className="text-slate-500">Rendu</span>
+                  <span className="font-medium text-slate-900 text-right">{formatDate(t.date_rendu)}{t.rendu_par ? ` · ${t.rendu_par}` : ''}</span>
                 </div>
               )}
-              {t.date_cloture && <div className="flex justify-between items-center"><span className="text-slate-600">Clôture</span><span className="font-medium text-slate-800">{formatDate(t.date_cloture)}</span></div>}
+              {t.date_cloture && <div className="flex justify-between items-center gap-3"><span className="text-slate-500">Clôture</span><span className="font-medium text-slate-900">{formatDate(t.date_cloture)}</span></div>}
               {t.date_recuperation && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Récupération</span>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-800">{t.date_recuperation}</span>
+                <div className="flex justify-between items-center gap-3">
+                  <span className="text-slate-500">Récupération</span>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <span className="font-medium text-slate-900">{t.date_recuperation}</span>
                     <LiveCountdown dateStr={t.date_recuperation} visible={widgetPrefs.countdown} />
                   </div>
                 </div>
               )}
             </div>
-          </div>
+          </section>
         );
 
       case 'messages':
@@ -2379,12 +2363,12 @@ function TicketDetail({ id }) {
 
       case 'notes':
         return (
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center"><FileText className="w-4 h-4 text-amber-600" aria-hidden="true" /></div>
-                <h2 className="text-sm font-semibold text-slate-800">Notes internes</h2>
-                <span className="text-[11px] text-slate-500">
+          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-notes-titre`}>
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <FileText className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                <h2 id={`${uid}-notes-titre`} className="t-h2">Notes internes</h2>
+                <span className="t-caption">
                   {(() => {
                     const allNotes = [
                       ...privateNotes,
@@ -2394,30 +2378,28 @@ function TicketDetail({ id }) {
                   })()}
                 </span>
               </div>
-              <button type="button" onClick={handleAddAttention} className="btn-ghost text-xs gap-1 min-h-11 text-red-600 hover:bg-red-50" title="Ajouter flag attention">
-                <Flag className="w-3.5 h-3.5" aria-hidden="true" /> Attention
+              <button type="button" onClick={handleAddAttention} className="btn-danger-ghost btn-sm shrink-0" title="Ajouter flag attention">
+                <Flag aria-hidden="true" /> Attention
               </button>
             </div>
 
             {/* Add note input */}
             <div className="flex gap-2 mb-4">
-              <div className="flex-1 flex gap-2">
-                <button type="button" onClick={() => setNotePrivate(!notePrivate)}
-                  className={`shrink-0 min-w-11 min-h-11 flex items-center justify-center rounded-lg border transition-colors ${
-                    notePrivate ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-blue-50 border-blue-200 text-blue-600'
-                  }`}
-                  title={notePrivate ? 'Note interne' : 'Note visible client'}
-                  aria-label={notePrivate ? 'Note interne (cliquer pour la rendre visible au client)' : 'Note visible par le client (cliquer pour la rendre interne)'}
-                  aria-pressed={!notePrivate}>
-                  {notePrivate ? <Lock className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
-                </button>
-                <input type="text" value={noteText} onChange={e => setNoteText(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleAddNote()}
-                  placeholder={notePrivate ? 'Note interne...' : 'Note visible par le client...'}
-                  aria-label={notePrivate ? 'Nouvelle note interne' : 'Nouvelle note visible par le client'}
-                  className="input flex-1" />
-              </div>
-              <button type="button" onClick={handleAddNote} className="btn-primary px-3 min-w-11 min-h-11" aria-label="Ajouter la note"><Plus className="w-4 h-4" aria-hidden="true" /></button>
+              <button type="button" onClick={() => setNotePrivate(!notePrivate)}
+                className={`btn-secondary btn-icon shrink-0 ${
+                  notePrivate ? '' : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-50 hover:border-blue-300'
+                }`}
+                title={notePrivate ? 'Note interne' : 'Note visible client'}
+                aria-label={notePrivate ? 'Note interne (cliquer pour la rendre visible au client)' : 'Note visible par le client (cliquer pour la rendre interne)'}
+                aria-pressed={!notePrivate}>
+                {notePrivate ? <Lock aria-hidden="true" /> : <Eye aria-hidden="true" />}
+              </button>
+              <input type="text" value={noteText} onChange={e => setNoteText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+                placeholder={notePrivate ? 'Note interne...' : 'Note visible par le client...'}
+                aria-label={notePrivate ? 'Nouvelle note interne' : 'Nouvelle note visible par le client'}
+                className="input flex-1 min-w-0" />
+              <button type="button" onClick={handleAddNote} className="btn-primary btn-icon shrink-0" aria-label="Ajouter la note"><Plus aria-hidden="true" /></button>
             </div>
 
             {/* Compact notes list with type badges */}
@@ -2432,74 +2414,72 @@ function TicketDetail({ id }) {
                 // Badge selon le type de note : on identifie visuellement
                 // CLIENT (message via /suivi), ACCORD (validation devis), AVIS,
                 // et les canaux d'envoi staff (WhatsApp/SMS/Email).
-                const badge = isClientMsg ? { bg: 'bg-violet-100 text-violet-800 ring-1 ring-violet-300', label: '💬 CLIENT' }
-                  : tn === 'whatsapp' ? { bg: 'bg-green-100 text-green-800', label: 'WhatsApp' }
-                  : tn === 'sms' ? { bg: 'bg-blue-100 text-blue-800', label: 'SMS' }
-                  : tn === 'sms_echec' ? { bg: 'bg-red-100 text-red-800 ring-1 ring-red-300', label: 'SMS non envoyé' }
-                  : tn === 'email' ? { bg: 'bg-amber-100 text-amber-800', label: 'Email' }
+                const badge = isClientMsg ? { bg: 'bg-violet-100 text-violet-800', icon: MessageCircle, label: 'CLIENT' }
+                  : tn === 'whatsapp' ? { bg: 'bg-emerald-50 text-emerald-700', label: 'WhatsApp' }
+                  : tn === 'sms' ? { bg: 'bg-blue-50 text-blue-700', label: 'SMS' }
+                  : tn === 'sms_echec' ? { bg: 'bg-red-100 text-red-700', label: 'SMS non envoyé' }
+                  : tn === 'email' ? { bg: 'bg-slate-100 text-slate-700', label: 'Email' }
                   // Relance hors message (appel au client) notée depuis l'étagère « À récupérer »
                   : tn === 'relance' ? { bg: 'bg-violet-100 text-violet-800', label: 'Relance' }
-                  : tn === 'validation_devis' ? { bg: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300', label: '✅ ACCORD' }
-                  : tn === 'avis_client' ? { bg: 'bg-yellow-100 text-yellow-800 ring-1 ring-yellow-300', label: '⭐ AVIS' }
+                  : tn === 'validation_devis' ? { bg: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2, label: 'ACCORD' }
+                  : tn === 'avis_client' ? { bg: 'bg-amber-50 text-amber-800', icon: Star, label: 'AVIS' }
                   : null;
-                const isTechNote = note.auteur?.toLowerCase().includes('tech');
                 const textColor = note.important ? 'text-red-700 font-semibold'
-                  : isClientMsg ? 'text-violet-800 font-medium'
-                  : badge ? 'text-slate-700'
-                  : isTechNote ? 'text-blue-700'
-                  : 'text-emerald-700';
+                  : isClientMsg ? 'text-brand-800 font-medium'
+                  : 'text-slate-700';
                 return (
-                  <div key={`db-${note.id}`} className={`flex items-start gap-2 py-1.5 ${isClientMsg ? 'bg-violet-50/40 -mx-2 px-2 rounded' : ''}`}>
+                  <div key={`db-${note.id}`} className={`flex items-start gap-2 py-2 ${isClientMsg ? 'bg-brand-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
                     {badge && (
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 mt-0.5 ${badge.bg}`}>
+                      <span className={`badge badge-sm shrink-0 mt-0.5 ${badge.bg}`}>
+                        {badge.icon && <badge.icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
                         {badge.label}
                       </span>
                     )}
                     {!badge && tn === 'note' && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 uppercase tracking-wider shrink-0 mt-0.5">
+                      <span className="badge badge-sm badge-neutral shrink-0 mt-0.5">
                         {note.auteur || 'Note'}
                       </span>
                     )}
-                    <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{note.contenu}</span>
-                    <span className="text-[11px] text-slate-500 whitespace-nowrap shrink-0 mt-0.5">
+                    <span className={`text-sm flex-1 min-w-0 break-words ${textColor}`}>{note.contenu}</span>
+                    <span className="t-caption whitespace-nowrap shrink-0 mt-1 tabular-nums">
                       {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
                     </span>
-                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="min-w-11 min-h-11 -my-2 flex items-center justify-center text-slate-400 hover:text-red-600 shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" title="Supprimer" aria-label="Supprimer cette note">
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette note">
+                      <Trash2 aria-hidden="true" />
                     </button>
                   </div>
                 );
               })}
               {timelineEntries.filter(e => e.type !== 'history').map((entry) => {
-                const textColor = entry.type === 'attention' ? 'text-red-700 font-semibold' : entry.type === 'internal' ? 'text-blue-700' : 'text-emerald-700';
+                const textColor = entry.type === 'attention' ? 'text-red-700 font-semibold' : 'text-slate-700';
                 return (
-                  <div key={`tl-${entry.raw}`} className="flex items-start gap-2 py-1.5">
-                    <span className={`text-sm flex-1 min-w-0 ${textColor}`}>{entry.text}</span>
-                    {entry.timestamp && <span className="text-[11px] text-slate-500 whitespace-nowrap shrink-0 mt-0.5">{entry.timestamp}</span>}
-                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="min-w-11 min-h-11 -my-2 flex items-center justify-center text-slate-400 hover:text-red-600 shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded" title="Supprimer" aria-label="Supprimer cette entrée">
-                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  <div key={`tl-${entry.raw}`} className="flex items-start gap-2 py-2">
+                    <span className={`text-sm flex-1 min-w-0 break-words ${textColor}`}>{entry.text}</span>
+                    {entry.timestamp && <span className="t-caption whitespace-nowrap shrink-0 mt-1 tabular-nums">{entry.timestamp}</span>}
+                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette entrée">
+                      <Trash2 aria-hidden="true" />
                     </button>
                   </div>
                 );
               })}
               {privateNotes.length === 0 && timelineEntries.filter(e => e.type !== 'history').length === 0 && (
-                <p className="text-xs text-slate-500 text-center py-3">Aucune note</p>
+                <p className="t-caption text-center py-3">Aucune note</p>
               )}
             </div>
 
             {/* Timeline history */}
             {timelineEntries.filter(e => e.type === 'history').length > 0 && (
-              <div className="mt-4 pt-3 border-t border-slate-100">
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider mb-2">Historique</p>
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="t-h3 mb-2">Historique</p>
                 <div className="relative max-h-48 overflow-y-auto pl-4">
-                  <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" aria-hidden="true" />
+                  <div className="absolute left-[7px] top-2 bottom-2 w-0.5 bg-slate-200" aria-hidden="true" />
                   <div className="space-y-0.5">
                     {timelineEntries.filter(e => e.type === 'history').map((entry, i) => (
-                      <div key={`hist-${entry.timestamp || ''}-${i}`} className="relative flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors">
-                        <div className="absolute -left-4 top-3 w-2 h-2 rounded-full bg-brand-400 z-10" aria-hidden="true" />
+                      <div key={`hist-${entry.timestamp || ''}-${i}`} className="relative flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors duration-150">
+                        <div className="absolute -left-4 top-3 w-2 h-2 rounded-full bg-brand-300 ring-2 ring-white z-10" aria-hidden="true" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-600">{entry.text}</p>
-                          {entry.timestamp && <span className="text-[11px] text-slate-500">{entry.timestamp}</span>}
+                          <p className="text-xs text-slate-600 break-words">{entry.text}</p>
+                          {entry.timestamp && <span className="t-caption tabular-nums">{entry.timestamp}</span>}
                         </div>
                       </div>
                     ))}
@@ -2507,28 +2487,28 @@ function TicketDetail({ id }) {
                 </div>
               </div>
             )}
-          </div>
+          </section>
         );
 
       case 'reparation':
         return (
-          <section className="card p-5" aria-labelledby={`${uid}-reparation`}>
-            <div className="flex items-center justify-between gap-2 mb-4">
+          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-reparation`}>
+            <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center"><Wrench className="w-4 h-4 text-emerald-600" aria-hidden="true" /></div>
-                <h2 id={`${uid}-reparation`} className="text-sm font-semibold text-slate-800">Réparation & Tarifs</h2>
+                <Wrench className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                <h2 id={`${uid}-reparation`} className="t-h2">Réparation & Tarifs</h2>
                 {afficherIndicateur(editingPricing, pricingSave) && <AutoSaveIndicator etat={pricingSave} />}
               </div>
               {!editingPricing ? (
-                <button type="button" onClick={() => setEditingPricing(true)} className="btn-ghost p-0 min-w-11 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400" title="Modifier" aria-label="Modifier la réparation et les tarifs"><Edit3 className="w-3.5 h-3.5" aria-hidden="true" /></button>
+                <button type="button" onClick={() => setEditingPricing(true)} className="btn-ghost btn-icon shrink-0" title="Modifier" aria-label="Modifier la réparation et les tarifs"><Edit3 aria-hidden="true" /></button>
               ) : (
-                <button type="button" onClick={() => { flushSilencieux(pricingSave)(); setEditingPricing(false); }} className="btn-ghost text-xs px-3 min-h-11 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"><X className="w-3.5 h-3.5" aria-hidden="true" /> Fermer</button>
+                <button type="button" onClick={() => { flushSilencieux(pricingSave)(); setEditingPricing(false); }} className="btn-ghost btn-sm shrink-0"><X aria-hidden="true" /> Fermer</button>
               )}
             </div>
 
             {/* 1. Technicien assigné — EN HAUT */}
-            <div className="mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <label htmlFor={`${uid}-tech`} className="block text-[11px] text-slate-600 uppercase tracking-wider mb-2">Technicien assigné</label>
+            <div className="mb-4">
+              <label htmlFor={`${uid}-tech`} className="t-h3 block mb-1.5">Technicien assigné</label>
               <select
                 id={`${uid}-tech`}
                 value={t.technicien_assigne || ''}
@@ -2547,8 +2527,7 @@ function TicketDetail({ id }) {
                       toast.error('Erreur assignation');
                     });
                 }}
-                className="w-full min-h-11 px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold bg-white cursor-pointer"
-                style={{ WebkitAppearance: 'menulist', fontSize: '16px' }}
+                className={`select min-h-11 font-semibold cursor-pointer ${t.technicien_assigne ? 'text-brand-700 bg-brand-50 border-brand-200' : ''}`}
               >
                 <option value="">— Non assigné —</option>
                 {Array.isArray(teamMembers) && teamMembers.map(m => (
@@ -2556,7 +2535,7 @@ function TicketDetail({ id }) {
                 ))}
               </select>
               {t.personne_charge && (
-                <p className="text-[11px] text-slate-500 mt-2">Prise en charge : <span className="font-medium text-slate-700">{t.personne_charge}</span></p>
+                <p className="input-help">Prise en charge : <span className="font-medium text-slate-700">{t.personne_charge}</span></p>
               )}
             </div>
 
@@ -2565,87 +2544,92 @@ function TicketDetail({ id }) {
               <div className="space-y-4">
                 {/* 1. Lignes de réparation */}
                 <div>
-                  <div className="flex flex-wrap items-center justify-between gap-1 mb-2">
-                    <span className="input-label mb-0">Lignes de réparation</span>
-                    <div className="flex flex-wrap items-center gap-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <span className="t-h3">Lignes de réparation</span>
+                    <div className="flex flex-wrap items-center gap-2">
                       <button type="button" onClick={() => setShowTarifPicker(true)} aria-haspopup="dialog"
-                        className="btn-ghost text-xs px-3 min-h-11 text-emerald-800 hover:bg-emerald-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
-                        <Tag className="w-3 h-3" aria-hidden="true" /> Ajouter depuis la grille
+                        className="btn-secondary btn-sm">
+                        <Tag aria-hidden="true" /> Ajouter depuis la grille
                       </button>
-                      <button type="button" onClick={addRepairLine} className="btn-ghost text-xs px-3 min-h-11"><Plus className="w-3 h-3" aria-hidden="true" /> Ajouter</button>
+                      <button type="button" onClick={addRepairLine} className="btn-ghost btn-sm"><Plus aria-hidden="true" /> Ajouter</button>
                     </div>
                   </div>
                   <datalist id={`${uid}-prestations`}>
                     {(prestations?.prestations || []).map(p => <option key={p.cle} value={p.prestation} />)}
                   </datalist>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {repairLines.map((line, i) => {
                       const label = String(line.label || '').trim();
                       const cmd = commandeDe(label);
                       const enCours = label ? commandesEnCours.has(label) : false;
                       return (
                         <div key={i} className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          {/* Libellé + prix sur une ligne quand la colonne le permet ; sinon (colonne droite à
+                              1024, mobile) le prix et la corbeille passent dessous, alignés à droite. */}
+                          <div className="flex flex-wrap items-center gap-2">
                             <input
                               value={line.label}
                               list={`${uid}-prestations`}
                               onChange={e => updateRepairLine(i, 'label', e.target.value)}
                               onBlur={flushSilencieux(pricingSave)}
-                              className="input flex-1 min-w-0"
+                              className="input flex-[1_1_240px] min-w-0"
                               placeholder="Description réparation"
                               aria-label={`Description de la ligne ${i + 1}`}
                               autoComplete="off"
                             />
-                            <div className="relative w-28 shrink-0">
+                            <div className="relative w-28 shrink-0 ml-auto">
                               <input
                                 type="number" step="0.01" inputMode="decimal"
                                 value={line.prix}
                                 onChange={e => updateRepairLine(i, 'prix', e.target.value)}
                                 onBlur={flushSilencieux(pricingSave)}
-                                className="input text-right pr-7"
+                                className="input text-right pr-7 tabular-nums"
                                 placeholder="0"
                                 aria-label={`Prix de la ligne ${i + 1} en euros`}
                               />
-                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500" aria-hidden="true">€</span>
                             </div>
                             {repairLines.length > 1 && (
-                              <button type="button" onClick={() => removeRepairLine(i)} className="btn-ghost p-0 min-w-11 min-h-11 shrink-0 text-red-500 hover:text-red-700" aria-label={`Supprimer la ligne ${i + 1}`}>
-                                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                              <button type="button" onClick={() => removeRepairLine(i)} className="btn-danger-ghost btn-icon shrink-0" aria-label={`Supprimer la ligne ${i + 1}`}>
+                                <Trash2 aria-hidden="true" />
                               </button>
                             )}
                           </div>
                           {!label && prixNombre(line.prix) > 0 && (
-                            <p className="text-[11px] text-amber-800 ml-1">Ajoutez une description : sans elle, cette ligne n'est ni comptée ni imprimée.</p>
+                            <p className="input-error">Ajoutez une description : sans elle, cette ligne n'est ni comptée ni imprimée.</p>
                           )}
-                          {label && line.source && (
-                            <span className="inline-flex items-center gap-1 ml-1 mr-2 text-[11px] font-semibold text-emerald-800">
-                              <Tag className="w-3 h-3" aria-hidden="true" />Grille{line.qualite ? ` · ${line.qualite}` : ''}
-                            </span>
-                          )}
-                          {label && (
-                            <label className="inline-flex items-center gap-1.5 ml-1 min-h-11 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={!!cmd}
-                                disabled={enCours}
-                                onChange={(e) => basculerCommandeLigne(line, e.target.checked)}
-                                className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                              />
-                              <span className="text-[11px] text-amber-800 font-medium"><Package className="w-3 h-3 inline mr-0.5" aria-hidden="true" />Pièce à commander</span>
-                              {badgeCommande(cmd)}
-                            </label>
-                          )}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 ml-1">
+                            {label && line.source && (
+                              <span className="badge badge-sm badge-success">
+                                <Tag className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />Grille{line.qualite ? ` · ${line.qualite}` : ''}
+                              </span>
+                            )}
+                            {label && (
+                              <label className="inline-flex items-center gap-2 min-h-11 cursor-pointer text-xs font-medium text-slate-700">
+                                <input
+                                  type="checkbox"
+                                  checked={!!cmd}
+                                  disabled={enCours}
+                                  onChange={(e) => basculerCommandeLigne(line, e.target.checked)}
+                                  className="checkbox accent-brand-600"
+                                />
+                                <span><Package className="w-3.5 h-3.5 inline mr-1 text-slate-500" aria-hidden="true" />Pièce à commander</span>
+                                {badgeCommande(cmd)}
+                              </label>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* 2. Qualité écran + Date récupération */}
-                <div className="grid grid-cols-2 gap-3">
+                {/* 2. Qualité écran + Date récupération — 2 colonnes seulement si chacune a ≥ 176 px
+                    (le champ datetime-local a besoin de ~190 px pour « jj/mm/aaaa --:-- » + l'icône) */}
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-x-4 gap-y-4">
                   <div>
                     <label htmlFor={`${uid}-ecran`} className="input-label">Qualité écran</label>
-                    <select id={`${uid}-ecran`} value={pricingForm.type_ecran} onChange={e => updatePricingForm({ type_ecran: e.target.value }, { wait: 0 })} className="input min-h-11">
+                    <select id={`${uid}-ecran`} value={pricingForm.type_ecran} onChange={e => updatePricingForm({ type_ecran: e.target.value }, { wait: 0 })} className="select">
                       <option value="">—</option>
                       <option value="Original">Original (OEM)</option>
                       <option value="Original reconditionné">Original reconditionné</option>
@@ -2659,45 +2643,45 @@ function TicketDetail({ id }) {
                   </div>
                   <div>
                     <label htmlFor={`${uid}-recup`} className="input-label">Date récupération</label>
-                    <input id={`${uid}-recup`} type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input min-h-11" />
+                    <input id={`${uid}-recup`} type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input" />
                   </div>
                 </div>
 
                 {/* 3. Séparateur tarification + toggle Devis/Facture */}
                 <div className="relative py-1" aria-hidden="true">
                   <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
-                  <div className="relative flex justify-center"><span className="bg-white px-3 text-[11px] font-bold text-slate-500 uppercase tracking-widest">Tarification</span></div>
+                  <div className="relative flex justify-center"><span className="bg-white px-3 t-overline">Tarification</span></div>
                 </div>
 
                 {/* Toggle Devis / Facture */}
-                <div className="flex items-center gap-2" role="group" aria-labelledby={`${uid}-typedoc`}>
-                  <span id={`${uid}-typedoc`} className="input-label mb-0 flex items-center gap-1"><FileText className="w-3 h-3" aria-hidden="true" /> Type de document</span>
-                  <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                <div className="flex flex-wrap items-center gap-3" role="group" aria-labelledby={`${uid}-typedoc`}>
+                  <span id={`${uid}-typedoc`} className="t-label flex items-center gap-1.5"><FileText className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> Type de document</span>
+                  <div className="segmented">
                     <button type="button" aria-pressed={(pricingForm.type_document || 'devis') === 'devis'} onClick={() => updatePricingForm({ type_document: 'devis' }, { wait: 0 })}
-                      className={`px-3 min-h-11 rounded-md transition-colors ${(pricingForm.type_document || 'devis') === 'devis' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-600'}`}>Devis</button>
+                      className={`segmented-item ${(pricingForm.type_document || 'devis') === 'devis' ? 'segmented-item-active' : ''}`}>Devis</button>
                     <button type="button" aria-pressed={pricingForm.type_document === 'facture'} onClick={() => updatePricingForm({ type_document: 'facture' }, { wait: 0 })}
-                      className={`px-3 min-h-11 rounded-md transition-colors ${pricingForm.type_document === 'facture' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-600'}`}>Facture</button>
+                      className={`segmented-item ${pricingForm.type_document === 'facture' ? 'segmented-item-active' : ''}`}>Facture</button>
                   </div>
                 </div>
 
                 {/* 4. Devis estimé */}
                 <div>
                   <label htmlFor={`${uid}-devis`} className="input-label">Devis estimé (avant diagnostic)</label>
-                  <div className="relative"><input id={`${uid}-devis`} type="number" step="0.01" inputMode="decimal" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span></div>
+                  <div className="relative"><input id={`${uid}-devis`} type="number" step="0.01" inputMode="decimal" value={pricingForm.devis_estime} onChange={e => updatePricingForm({ devis_estime: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input pr-7 tabular-nums" placeholder="0" /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500" aria-hidden="true">€</span></div>
                 </div>
 
                 {/* 5. Réduction — toggle % / € */}
                 <div>
-                  <div className="flex items-center gap-2 mb-2" role="group" aria-labelledby={`${uid}-reduc`}>
-                    <span id={`${uid}-reduc`} className="input-label mb-0 flex items-center gap-1"><Percent className="w-3 h-3" aria-hidden="true" /> Réduction</span>
-                    <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                  <div className="flex flex-wrap items-center gap-3 mb-2" role="group" aria-labelledby={`${uid}-reduc`}>
+                    <span id={`${uid}-reduc`} className="t-label flex items-center gap-1.5"><Percent className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> Réduction</span>
+                    <div className="segmented">
                       <button type="button" aria-pressed={reductionMode === 'pct'} aria-label="Réduction en pourcentage" onClick={() => changerModeReduction('pct')}
-                        className={`px-3 min-h-11 min-w-11 rounded-md transition-colors ${reductionMode === 'pct' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-600'}`}>%</button>
+                        className={`segmented-item min-w-11 ${reductionMode === 'pct' ? 'segmented-item-active' : ''}`}>%</button>
                       <button type="button" aria-pressed={reductionMode === 'eur'} aria-label="Réduction en euros" onClick={() => changerModeReduction('eur')}
-                        className={`px-3 min-h-11 min-w-11 rounded-md transition-colors ${reductionMode === 'eur' ? 'bg-white shadow-sm text-brand-700' : 'text-slate-600'}`}>€</button>
+                        className={`segmented-item min-w-11 ${reductionMode === 'eur' ? 'segmented-item-active' : ''}`}>€</button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                     <div className="relative">
                       <input type="number" step="1" min="0" max="100" inputMode="decimal"
                         aria-label="Réduction en pourcentage"
@@ -2705,8 +2689,8 @@ function TicketDetail({ id }) {
                         onChange={reductionMode === 'pct' ? (e => updatePricingForm({ reduction_pourcentage: e.target.value, reduction_montant: '' })) : undefined}
                         onBlur={flushSilencieux(pricingSave)}
                         readOnly={reductionMode !== 'pct'}
-                        className={`input pr-7 ${reductionMode !== 'pct' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} placeholder="0" />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">%</span>
+                        className={`input pr-7 tabular-nums ${reductionMode !== 'pct' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} placeholder="0" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500" aria-hidden="true">%</span>
                     </div>
                     <div className="relative">
                       <input type="number" step="0.01" inputMode="decimal"
@@ -2715,8 +2699,8 @@ function TicketDetail({ id }) {
                         onChange={reductionMode === 'eur' ? (e => updatePricingForm({ reduction_montant: e.target.value, reduction_pourcentage: '' })) : undefined}
                         onBlur={flushSilencieux(pricingSave)}
                         readOnly={reductionMode !== 'eur'}
-                        className={`input pr-7 ${reductionMode !== 'eur' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} placeholder="0" />
-                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span>
+                        className={`input pr-7 tabular-nums ${reductionMode !== 'eur' ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} placeholder="0" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500" aria-hidden="true">€</span>
                     </div>
                   </div>
                 </div>
@@ -2724,16 +2708,16 @@ function TicketDetail({ id }) {
                 {/* 6. Acompte versé */}
                 <div>
                   <label htmlFor={`${uid}-acompte`} className="input-label">Acompte versé</label>
-                  <div className="relative"><input id={`${uid}-acompte`} type="number" step="0.01" inputMode="decimal" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input pr-7" placeholder="0" /><span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span></div>
+                  <div className="relative"><input id={`${uid}-acompte`} type="number" step="0.01" inputMode="decimal" value={pricingForm.acompte} onChange={e => updatePricingForm({ acompte: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input pr-7 tabular-nums" placeholder="0" /><span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500" aria-hidden="true">€</span></div>
                 </div>
 
                 {/* 7. Bloc récapitulatif */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <div className="card-section space-y-1.5 tabular-nums">
                   {useDevisEstime && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mb-1.5">
-                      <Sparkles className="w-3 h-3" aria-hidden="true" />
+                    <p className="callout callout-warning py-2 mb-2">
+                      <Sparkles aria-hidden="true" />
                       <span>Estimation forfaitaire (pas de détail des lignes)</span>
-                    </div>
+                    </p>
                   )}
                   {(() => {
                     const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
@@ -2741,16 +2725,16 @@ function TicketDetail({ id }) {
                     const htLabel = useDevisEstime ? 'Devis estimé HT' : 'Total lignes HT';
                     return (
                       <>
-                        <div className="flex justify-between text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
-                        <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-medium text-slate-900">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm font-bold border-t border-slate-200 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
                     );
                   })()}
-                  {effectiveReduction > 0 && <div className="flex justify-between text-sm text-emerald-700"><span>Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
-                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">{(pricingForm.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
-                  {montants.acompte > 0 && <div className="flex justify-between text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
-                  <div className={`flex justify-between text-base font-extrabold border-t-2 border-slate-300 pt-2 mt-1 ${reste > 0 ? 'text-red-700' : 'text-emerald-700'}`}><span>RESTE À PAYER</span><span>{formatPrix(Math.max(0, reste))}</span></div>
+                  {effectiveReduction > 0 && <div className="flex justify-between gap-3 text-sm text-emerald-700"><span>Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
+                  <div className="flex justify-between gap-3 text-sm font-bold"><span className="text-slate-900">{(pricingForm.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
+                  {montants.acompte > 0 && <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
+                  <div className="flex justify-between items-baseline gap-3 border-t border-slate-200 pt-2 mt-1"><span className="text-sm font-bold text-slate-900">RESTE À PAYER</span><span className={`text-lg font-bold ${reste > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPrix(Math.max(0, reste))}</span></div>
                 </div>
 
                 {/* 8. Bouton payé */}
@@ -2758,42 +2742,36 @@ function TicketDetail({ id }) {
                   disabled={paying}
                   aria-busy={paying || undefined}
                   onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
-                  className={`w-full min-h-12 rounded-xl text-sm font-bold transition-colors disabled:opacity-60 ${
-                    t.paye ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800 border-2 border-emerald-300 hover:bg-emerald-100'
-                  }`}>
-                  <CheckCircle2 className="w-4 h-4 inline mr-1.5" aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
+                  className={t.paye ? 'btn-success btn-lg btn-block' : 'btn-secondary btn-lg btn-block'}>
+                  <CheckCircle2 className={t.paye ? '' : 'text-emerald-700'} aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
                 </button>
               </div>
             ) : (
               /* ─── View mode ─── */
               <>
-                {/* Document type badge */}
-                <div className="mb-3 flex items-center gap-2">
-                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                    (t.type_document || 'devis') === 'facture' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    <FileText className="w-3 h-3 inline mr-0.5" aria-hidden="true" />{(t.type_document || 'devis') === 'facture' ? 'Facture' : 'Devis'}
+                {/* Type de document */}
+                <div className="flex items-center gap-3 mb-1">
+                  <span className={`badge ${(t.type_document || 'devis') === 'facture' ? 'badge-brand' : 'badge-neutral'}`}>
+                    <FileText className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />{(t.type_document || 'devis') === 'facture' ? 'Facture' : 'Devis'}
                   </span>
                 </div>
 
                 {/* Repair lines */}
-                <div className="mb-3">
+                <div className="mb-3 divide-y divide-slate-100">
                   {lignesAffichees.map((line, i) => (
-                    <div key={i} className="py-2 border-b border-slate-50 last:border-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <span className="text-sm font-medium text-slate-700">{line.label}</span>
-                          {t.type_ecran && i === indexEcran && (
-                            <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded">{t.type_ecran}</span>
-                          )}
-                          {line.qualite && !normaliser(line.label).includes(normaliser(line.qualite))
-                            && !(t.type_ecran && i === indexEcran && t.type_ecran === line.qualite) && (
-                            <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">{line.qualite}</span>
-                          )}
-                          {badgeCommande(commandeDe(line.label), true)}
-                        </div>
-                        {prixLigne(line.prix)}
+                    <div key={i} className="flex items-center justify-between gap-3 min-h-10 py-1.5">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        <span className="text-sm text-slate-700">{line.label}</span>
+                        {t.type_ecran && i === indexEcran && (
+                          <span className="badge badge-sm badge-brand">{t.type_ecran}</span>
+                        )}
+                        {line.qualite && !normaliser(line.label).includes(normaliser(line.qualite))
+                          && !(t.type_ecran && i === indexEcran && t.type_ecran === line.qualite) && (
+                          <span className="badge badge-sm badge-success">{line.qualite}</span>
+                        )}
+                        {badgeCommande(commandeDe(line.label), true)}
                       </div>
+                      {prixLigne(line.prix)}
                     </div>
                   ))}
                   {lignesAffichees.length === 0 && (
@@ -2803,17 +2781,17 @@ function TicketDetail({ id }) {
 
                 {/* Pièces commandées (compact) */}
                 {commandes.length > 0 && (
-                  <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
-                    <div className="text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-1.5 flex items-center gap-1">
-                      <Package className="w-3 h-3" aria-hidden="true" /> {commandes.length} pièce(s) commandée(s)
+                  <div className="mb-3 card-section">
+                    <div className="t-h3 mb-1.5 flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-slate-400" aria-hidden="true" /> {commandes.length} pièce(s) commandée(s)
                     </div>
                     {commandes.map(cmd => (
-                      <div key={cmd.id} className="flex items-center justify-between py-1 text-xs">
-                        <span className="text-slate-700 font-medium">{cmd.description}</span>
-                        <span className={`font-bold px-1.5 py-0.5 rounded-full text-[10px] ${
-                          cmd.statut === 'Reçu' ? 'bg-green-100 text-green-800' :
-                          cmd.statut === 'Commandée' ? 'bg-blue-100 text-blue-800' :
-                          'bg-amber-100 text-amber-800'
+                      <div key={cmd.id} className="flex items-center justify-between gap-3 py-1 text-sm">
+                        <span className="text-slate-700">{cmd.description}</span>
+                        <span className={`badge badge-sm ${
+                          cmd.statut === 'Reçu' ? 'badge-success' :
+                          cmd.statut === 'Commandée' ? 'badge-info' :
+                          'badge-warning'
                         }`}>{cmd.statut || 'En attente'}</span>
                       </div>
                     ))}
@@ -2821,18 +2799,18 @@ function TicketDetail({ id }) {
                 )}
 
                 {/* Récap tarification */}
-                <div className="border-t border-slate-200 mt-2 pt-2 space-y-1">
+                <div className="border-t border-slate-200 mt-2 pt-3 space-y-1.5 tabular-nums">
                   {montantsServeur?.refus_devis && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-red-800 bg-red-50 border border-red-200 rounded-md px-2 py-1 mb-1.5">
-                      <X className="w-3 h-3" aria-hidden="true" />
+                    <p className="callout callout-danger py-2 mb-2">
+                      <X aria-hidden="true" />
                       <span>Devis refusé : seuls les frais (diagnostic…) sont dus</span>
-                    </div>
+                    </p>
                   )}
                   {useDevisEstime && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 mb-1.5">
-                      <Sparkles className="w-3 h-3" aria-hidden="true" />
+                    <p className="callout callout-warning py-2 mb-2">
+                      <Sparkles aria-hidden="true" />
                       <span>Estimation forfaitaire (pas de détail des lignes)</span>
-                    </div>
+                    </p>
                   )}
                   {(() => {
                     const ht = tvaRate > 0 ? totalRepairs / (1 + tvaRate / 100) : totalRepairs;
@@ -2840,57 +2818,58 @@ function TicketDetail({ id }) {
                     const htLabel = useDevisEstime ? 'Devis estimé HT' : 'Total lignes HT';
                     return (
                       <>
-                        <div className="flex justify-between text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-semibold text-slate-800">{formatPrix(ht)}</span></div>
-                        <div className="flex justify-between text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
-                        <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span className="text-slate-800">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-medium text-slate-900">{formatPrix(ht)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm font-bold border-t border-slate-100 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
                     );
                   })()}
                   {effectiveReduction > 0 && (
-                    <div className="flex justify-between text-sm text-emerald-700">
-                      <span className="flex items-center gap-1"><Percent className="w-3 h-3" aria-hidden="true" /> Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
+                    <div className="flex justify-between gap-3 text-sm text-emerald-700">
+                      <span className="flex items-center gap-1"><Percent className="w-3.5 h-3.5" aria-hidden="true" /> Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span>
                       <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-sm font-bold"><span className="text-slate-800">{(t.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
-                  {montants.acompte > 0 && <div className="flex justify-between text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
+                  <div className="flex justify-between gap-3 text-sm font-bold"><span className="text-slate-900">{(t.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
+                  {montants.acompte > 0 && <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
                 </div>
 
-                {/* Reste à payer / Payé */}
+                {/* Reste à payer / Payé : dernière ligne du récapitulatif, plus d'encart coloré */}
                 {t.paye ? (
-                  <div className="mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-100 to-green-100 border border-emerald-300 text-center">
-                    <span className="font-extrabold text-emerald-800 text-[15px]">PAYÉ</span>
-                    <div className="text-xs text-emerald-800 mt-0.5">Reste à payer : 0,00 €</div>
+                  <div className="callout callout-success items-center mt-3 py-2.5">
+                    <CheckCircle2 aria-hidden="true" />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-bold">PAYÉ</span>
+                      <span className="block text-xs">Reste à payer : 0,00 €</span>
+                    </div>
                   </div>
                 ) : reste > 0 ? (
-                  <div className="flex justify-between mt-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200">
-                    <span className="font-extrabold text-red-700 text-[15px]">RESTE À PAYER</span>
-                    <span className="font-extrabold text-red-700 text-[15px]">{formatPrix(reste)}</span>
+                  <div className="flex justify-between items-baseline gap-3 mt-2 pt-2 border-t border-slate-200">
+                    <span className="text-sm font-bold text-slate-900">RESTE À PAYER</span>
+                    <span className="text-lg font-bold text-red-700 tabular-nums">{formatPrix(reste)}</span>
                   </div>
                 ) : null}
 
-                {/* Action buttons */}
-                <div className="flex gap-2 mt-3 flex-wrap">
+                {/* Action buttons : trois secondaires identiques, l'icône porte le sens */}
+                <div className="flex flex-wrap gap-2 mt-4">
                   <button type="button"
                     disabled={paying}
                     aria-busy={paying || undefined}
                     onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
-                    className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-bold transition-colors disabled:opacity-60 ${
-                      t.paye ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800 border-2 border-emerald-300 hover:bg-emerald-100'
-                    }`}>
-                    <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
+                    className={`flex-1 ${t.paye ? 'btn-success' : 'btn-secondary'}`}>
+                    <CheckCircle2 className={t.paye ? '' : 'text-emerald-700'} aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
                   </button>
                   {caisseEnabled && (
                     <button type="button" onClick={handleSendCaisse} disabled={envoiCaisse} aria-busy={envoiCaisse || undefined}
-                      className="min-h-11 px-3 rounded-xl bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-60 inline-flex items-center gap-1">
+                      className="btn-secondary">
                       {envoiCaisse
-                        ? <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" />
-                        : <Zap className="w-3.5 h-3.5" aria-hidden="true" />}
+                        ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin shrink-0" aria-hidden="true" />
+                        : <CreditCard className="text-slate-600" aria-hidden="true" />}
                       Caisse
                     </button>
                   )}
-                  <button type="button" onClick={openAccordModal} className="min-h-11 px-3 rounded-xl bg-orange-50 text-orange-800 text-xs font-semibold border border-orange-200 hover:bg-orange-100">
-                    <AlertTriangle className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />Accord
+                  <button type="button" onClick={openAccordModal} className="btn-secondary">
+                    <FileSignature className="text-slate-600" aria-hidden="true" />Accord
                   </button>
                 </div>
               </>
@@ -2900,36 +2879,30 @@ function TicketDetail({ id }) {
 
       case 'status':
         return (
-          <div className="card p-5">
+          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-statut`}>
             <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: getStatusConfig(t.statut).color + '20' }}>
-                <ChevronDown className="w-4 h-4" style={{ color: getStatusConfig(t.statut).color }} aria-hidden="true" />
-              </div>
-              <h2 id={`${uid}-statut`} className="text-sm font-semibold text-slate-800">Changer le statut</h2>
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+              <h2 id={`${uid}-statut`} className="t-h2">Changer le statut</h2>
             </div>
-            <select
-              aria-labelledby={`${uid}-statut`}
-              value={t.statut}
-              disabled={statutEnCours}
-              aria-busy={statutEnCours || undefined}
-              onChange={e => handleStatusChange(e.target.value)}
-              className="w-full min-h-12 py-3 px-4 text-base font-semibold rounded-xl border-2 transition-colors cursor-pointer appearance-none bg-no-repeat disabled:opacity-60"
-              style={{
-                borderColor: getStatusConfig(t.statut).color,
-                color: getStatusConfig(t.statut).color,
-                backgroundColor: getStatusConfig(t.statut).color + '10',
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(getStatusConfig(t.statut).color)}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                backgroundPosition: 'right 12px center',
-                backgroundSize: '20px',
-              }}
-            >
-              {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            {/* Select neutre : la pastille porte la couleur du statut */}
+            <div className="relative">
+              <span className={`pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full ${getStatusConfig(t.statut).dot}`} aria-hidden="true" />
+              <select
+                aria-labelledby={`${uid}-statut`}
+                value={t.statut}
+                disabled={statutEnCours}
+                aria-busy={statutEnCours || undefined}
+                onChange={e => handleStatusChange(e.target.value)}
+                className="select min-h-12 pl-9 font-semibold text-base lg:text-base text-slate-900 cursor-pointer"
+              >
+                {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
             {/* Emplacement sur l'étagère : appareil en boutique, modifiable jusqu'à la remise (libéré par le serveur au rendu) */}
             {peutRendre && (
-              <div className={`mt-3 rounded-xl p-3 ring-1 ${t.statut === STATUT_TERMINE ? 'bg-emerald-50 ring-emerald-200' : 'bg-slate-50 ring-slate-200'}`}>
+              <div className="mt-3 card-section">
                 {t.statut === STATUT_TERMINE && !normaliserEmplacement(t.emplacement) && (
-                  <p className="mb-2 text-xs font-semibold text-emerald-900">
+                  <p className="mb-2 text-sm text-slate-700">
                     Appareil prêt : notez où il est rangé pour le retrouver quand le client passe.
                   </p>
                 )}
@@ -2943,36 +2916,36 @@ function TicketDetail({ id }) {
             {proposerRemise && <div className="mt-3">{boutonRendre('grand')}</div>}
             {t.statut === 'Rendu au client' && !t.paye && (
               <button type="button" onClick={() => ouvrirPaiement({ cloturer: true })}
-                className="mt-3 w-full min-h-12 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 text-sm font-bold transition-colors">
+                className="btn-success btn-lg btn-block mt-3">
                 Encaisser le solde {resteDu > 0 ? `(${formatPrix(resteDu)})` : ''}
               </button>
             )}
             {/* Accord client — quick response buttons */}
             {t.statut === "En attente d'accord client" && !devisRefuse && (
-              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-xl space-y-2">
-                <p className="text-[11px] font-semibold text-orange-800 uppercase tracking-wider">Réponse du client</p>
-                <div className="flex gap-2">
+              <div className="mt-3 card-section space-y-2">
+                <p className="t-h3">Réponse du client</p>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => handleAccordResponse(true)}
                     disabled={statutEnCours}
-                    className="flex-1 min-h-11 px-3 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-60"
+                    className="btn-secondary flex-1"
                   >
-                    <Check className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />Client a validé
+                    <Check className="text-emerald-700" aria-hidden="true" />Client a validé
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAccordResponse(false)}
                     disabled={statutEnCours}
-                    className="flex-1 min-h-11 px-3 rounded-lg bg-red-50 text-red-700 text-xs font-bold border border-red-200 hover:bg-red-100 transition-colors disabled:opacity-60"
+                    className="btn-secondary flex-1"
                   >
-                    <X className="w-3.5 h-3.5 inline mr-1" aria-hidden="true" />Client a refusé
+                    <X className="text-red-700" aria-hidden="true" />Client a refusé
                   </button>
                 </div>
               </div>
             )}
             <RepairTimer ticket={t} visible={widgetPrefs.timer} />
-          </div>
+          </section>
         );
 
       case 'queue':
@@ -2997,94 +2970,94 @@ function TicketDetail({ id }) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
-      {/* Dark Header — spacious (motion fadeUp pattern Claude Design) */}
-      <motion.div
-        initial={reduireAnimations ? false : { opacity: 0, y: 14 }}
+    <div className="page max-w-7xl">
+      {/* En-tête sombre (identité comptoir) : ≤ 140 px, sans dégradé ni marge négative */}
+      <motion.header
+        initial={reduireAnimations ? false : { opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reduireAnimations ? 0 : 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="bg-gradient-to-br from-slate-800 to-slate-900 text-white px-4 sm:px-6 lg:px-8 py-8 sm:py-10 -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 lg:-mt-8 mb-6">
-        <div className="max-w-7xl mx-auto">
-          {/* Top row: back button */}
-          <button type="button" onClick={() => navigate(-1)} className="flex items-center gap-1.5 min-h-11 text-slate-300 hover:text-white transition-colors mb-3 -ml-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 rounded-lg px-1">
-            <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            <span className="text-xs font-medium">Retour</span>
+        transition={{ duration: reduireAnimations ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="rounded-xl bg-slate-900 text-white px-4 py-4 sm:px-5 mb-4">
+        {/* Ligne 1 : retour, code, copier, badges, statut */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button type="button" onClick={() => navigate(-1)}
+            className="btn btn-sm -ml-2 px-2 text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 focus-visible:ring-offset-0">
+            <ArrowLeft aria-hidden="true" />
+            <span>Retour</span>
           </button>
-
-          <div className="flex flex-col sm:flex-row sm:items-start gap-5">
-            {/* Left: ticket info */}
-            <div className="flex-1 min-w-0 space-y-3">
-              {/* Ticket code */}
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl sm:text-3xl font-display font-bold text-white font-mono tracking-tight">{t.ticket_code}</h1>
-                <button
-                  type="button"
-                  onClick={handleCopyCode}
-                  className="min-w-11 min-h-11 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                  title="Copier le code"
-                  aria-label={copied ? 'Code copié' : 'Copier le code du ticket'}
-                >
-                  {copied ? <Check className="w-4 h-4 text-emerald-400" aria-hidden="true" /> : <Copy className="w-4 h-4 text-slate-300" aria-hidden="true" />}
-                </button>
-                <PrioriteBadge priorite={t.priorite} taille="md" />
-                {!remis && normaliserEmplacement(t.emplacement) && (
-                  <span className="liquid-glass px-2.5 py-1 rounded-full text-white text-xs font-bold flex items-center gap-1"
-                    title="Emplacement sur l’étagère">
-                    <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span className="sr-only">Emplacement</span>
-                    <span className="font-mono tracking-wide">{normaliserEmplacement(t.emplacement)}</span>
-                  </span>
-                )}
-                {t.est_retour_sav && (
-                  <span className="liquid-glass px-2.5 py-1 rounded-full text-red-300 text-xs font-bold flex items-center gap-1">
-                    <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> SAV
-                  </span>
-                )}
-                {t.source === 'distance' && (
-                  <span className="liquid-glass px-2.5 py-1 rounded-full text-indigo-300 text-xs font-bold flex items-center gap-1">
-                    <Globe className="w-3.5 h-3.5" aria-hidden="true" /> <span className="font-editorial font-normal">Distance</span>
-                  </span>
-                )}
-                {t.paye ? (
-                  <span className="liquid-glass px-2.5 py-1 rounded-full text-emerald-300 text-xs font-bold flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> <span className="font-editorial font-normal">Payé</span>
-                  </span>
-                ) : null}
-              </div>
-
-              {/* Summary line */}
-              <div className="text-sm text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="flex items-center gap-1"><User className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> {t.client_prenom || ''} {t.client_nom || ''}</span>
-                <span className="text-slate-500" aria-hidden="true">•</span>
-                <span className="flex items-center gap-1"><Smartphone className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> {appareil || '—'}</span>
-                <span className="text-slate-500" aria-hidden="true">•</span>
-                <span className="flex items-center gap-1">
-                  <Wrench className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-                  {lignesAffichees.length > 0
-                    ? lignesAffichees.map(l => l.label).join(' + ')
-                    : (t.panne || '—')}
-                </span>
-                <span className="text-slate-500" aria-hidden="true">•</span>
-                <span className="font-semibold text-emerald-400">{surDevisSansPrix ? 'Sur devis' : formatPrix(totalTTC || 0)}</span>
-                {!t.paye && reste > 0 && <span className="text-xs bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-full">Reste {formatPrix(reste)}</span>}
-              </div>
-              {t.client_tel && (
-                <a href={`tel:${t.client_tel}`} className="inline-flex items-center min-h-11 text-sm text-slate-300 hover:text-white font-mono transition-colors">{t.client_tel}</a>
-              )}
-            </div>
-
-            {/* Right: status badge + print */}
-            <div className="flex sm:flex-col items-center sm:items-end gap-3 shrink-0 flex-wrap">
-              <StatusBadge statut={t.statut} size="lg" />
-              {proposerRemise && boutonRendre()}
-              <button type="button" onClick={() => setShowPrintDrawer(true)}
-                className="flex items-center gap-2 min-h-11 px-4 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50">
-                <Printer className="w-4 h-4" aria-hidden="true" /> Imprimer
-              </button>
-            </div>
+          <div className="flex items-center gap-1 min-w-0">
+            <h1 className="text-2xl font-bold font-mono tabular-nums tracking-tight leading-tight text-white">{t.ticket_code}</h1>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="btn btn-icon text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 focus-visible:ring-offset-0"
+              title="Copier le code"
+              aria-label={copied ? 'Code copié' : 'Copier le code du ticket'}
+            >
+              {copied ? <Check className="text-emerald-300" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+            </button>
+          </div>
+          <PrioriteBadge priorite={t.priorite} taille="md" />
+          {!remis && normaliserEmplacement(t.emplacement) && (
+            <span className="badge bg-white/10 text-white" title="Emplacement sur l’étagère">
+              <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span className="sr-only">Emplacement</span>
+              <span className="font-mono tracking-wide">{normaliserEmplacement(t.emplacement)}</span>
+            </span>
+          )}
+          {t.est_retour_sav && (
+            <span className="badge bg-red-500/20 text-red-200">
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> SAV
+            </span>
+          )}
+          {t.source === 'distance' && (
+            <span className="badge bg-blue-500/20 text-blue-200">
+              <Globe className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> <span>Distance</span>
+            </span>
+          )}
+          <div className="ml-auto shrink-0">
+            <StatusBadge statut={t.statut} size="lg" />
           </div>
         </div>
-      </motion.div>
+
+        {/* Ligne 2 : client · appareil · panne · téléphone, puis montant et actions */}
+        <div className="mt-3 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+          <div className="min-w-0 text-sm text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center gap-1.5"><User className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> {t.client_prenom || ''} {t.client_nom || ''}</span>
+            <span className="text-slate-600" aria-hidden="true">•</span>
+            <span className="flex items-center gap-1.5"><Smartphone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> {appareil || '—'}</span>
+            <span className="text-slate-600" aria-hidden="true">•</span>
+            <span className="flex items-center gap-1.5">
+              <Wrench className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
+              {lignesAffichees.length > 0
+                ? lignesAffichees.map(l => l.label).join(' + ')
+                : (t.panne || '—')}
+            </span>
+            {t.client_tel && (
+              <>
+                <span className="text-slate-600" aria-hidden="true">•</span>
+                <a href={`tel:${t.client_tel}`} className="inline-flex items-center gap-1.5 min-h-10 font-medium tabular-nums text-slate-200 hover:text-white rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
+                  <Phone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />{telAffiche(t.client_tel)}
+                </a>
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 lg:justify-end shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl font-bold tabular-nums leading-none text-white">{surDevisSansPrix ? 'Sur devis' : formatPrix(totalTTC || 0)}</span>
+              {t.paye ? (
+                <span className="badge badge-success">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> <span>Payé</span>
+                </span>
+              ) : (reste > 0 && <span className="badge badge-danger-solid">Reste {formatPrix(reste)}</span>)}
+            </div>
+            {proposerRemise && <div className="hidden lg:block">{boutonRendre()}</div>}
+            <button type="button" onClick={() => setShowPrintDrawer(true)} className="btn-secondary focus-visible:ring-white/60 focus-visible:ring-offset-0">
+              <Printer aria-hidden="true" /> Imprimer
+            </button>
+          </div>
+        </div>
+      </motion.header>
 
       {/* Bannière statut devis — verte si validé, rouge si refusé, orange si en attente */}
       {(() => {
@@ -3098,39 +3071,31 @@ function TicketDetail({ id }) {
             <div
               role="status"
               aria-live="polite"
-              className="bg-emerald-50 border-l-4 border-emerald-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
+              className="callout callout-success items-center mb-4"
             >
-              <div className="max-w-7xl mx-auto flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-emerald-900">Client a validé le devis</p>
-                  {dateStr && <p className="text-xs text-emerald-800">Validé le {dateStr}</p>}
-                </div>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold uppercase tracking-wider">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" aria-hidden="true" />
-                  Confirmé
-                </span>
+              <CheckCircle2 aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold">Client a validé le devis</p>
+                {dateStr && <p className="text-xs">Validé le {dateStr}</p>}
               </div>
+              <span className="hidden sm:inline-flex badge badge-success shrink-0">
+                <span className="badge-dot bg-emerald-500 opacity-100 motion-safe:animate-pulse" aria-hidden="true" />
+                Confirmé
+              </span>
             </div>
           );
         }
 
         if (devisRefuse) {
           return (
-            <div role="status" aria-live="polite" className="bg-red-50 border-l-4 border-red-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
-              <div className="max-w-7xl mx-auto flex items-center gap-3 flex-wrap">
-                <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                  <X className="w-4 h-4 text-red-600" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-red-900">Devis refusé par le client</p>
-                  <p className="text-xs text-red-800">
-                    L'appareil est à rendre en l'état (bouton « Rendre au client »).
-                    {t.montants?.refus_devis && ` Seuls les frais (diagnostic…) sont dus : ${formatPrix(Number(t.montants.total) || 0)}.`}
-                  </p>
-                </div>
+            <div role="status" aria-live="polite" className="callout callout-danger items-center mb-4">
+              <X aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold">Devis refusé par le client</p>
+                <p className="text-xs">
+                  L'appareil est à rendre en l'état (bouton « Rendre au client »).
+                  {t.montants?.refus_devis && ` Seuls les frais (diagnostic…) sont dus : ${formatPrix(Number(t.montants.total) || 0)}.`}
+                </p>
               </div>
             </div>
           );
@@ -3141,21 +3106,17 @@ function TicketDetail({ id }) {
             <div
               role="status"
               aria-live="polite"
-              className="bg-amber-50 border-l-4 border-amber-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2"
+              className="callout callout-warning items-center mb-4"
             >
-              <div className="max-w-7xl mx-auto flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                  <Clock className="w-4 h-4 text-amber-600" aria-hidden="true" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-amber-900">En attente de l'accord client</p>
-                  <p className="text-xs text-amber-800">Le devis a été envoyé, le client n'a pas encore validé. Pense à le relancer.</p>
-                </div>
-                <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold uppercase tracking-wider">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 motion-safe:animate-pulse" aria-hidden="true" />
-                  À relancer
-                </span>
+              <Clock aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold">En attente de l'accord client</p>
+                <p className="text-xs">Le devis a été envoyé, le client n'a pas encore validé. Pense à le relancer.</p>
               </div>
+              <span className="hidden sm:inline-flex badge badge-warning shrink-0">
+                <span className="badge-dot bg-amber-500 opacity-100 motion-safe:animate-pulse" aria-hidden="true" />
+                À relancer
+              </span>
             </div>
           );
         }
@@ -3163,43 +3124,35 @@ function TicketDetail({ id }) {
         return null;
       })()}
 
-      {/* Retour SAV banner (red) */}
+      {/* Retour SAV banner */}
       {t.est_retour_sav && (
-        <div className="bg-red-50 border-l-4 border-red-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
-          <div className="max-w-7xl mx-auto flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-              <RotateCcw className="w-4 h-4 text-red-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-red-900">RETOUR SAV</p>
-              <p className="text-xs text-red-800">
-                Prise en charge garantie — Montant : 0,00 €
-                {t.ticket_original && (
-                  <> — Ticket original : <button type="button" onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="font-mono font-bold underline hover:text-red-900 min-h-11">{t.ticket_original.ticket_code}</button> ({t.ticket_original.statut})</>
-                )}
-              </p>
-            </div>
+        <div className="callout callout-warning items-center mb-4">
+          <RotateCcw aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">RETOUR SAV</p>
+            <p className="text-xs">
+              Prise en charge garantie — Montant : 0,00 €
+              {t.ticket_original && (
+                <> — Ticket original : <button type="button" onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="font-mono font-bold underline hover:text-amber-900 min-h-11 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{t.ticket_original.ticket_code}</button> ({t.ticket_original.statut})</>
+              )}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Warning: retours SAV sur ce ticket (yellow) */}
+      {/* Warning: retours SAV sur ce ticket */}
       {t.retours_sav && t.retours_sav.length > 0 && (
-        <div className="bg-amber-50 border-l-4 border-amber-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
-          <div className="max-w-7xl mx-auto flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-amber-900">{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''}</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {t.retours_sav.map(r => (
-                  <button key={r.id} type="button" onClick={() => navigate(`${basePath}/ticket/${r.id}`)}
-                    className="min-h-11 text-xs font-mono font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded-lg transition-colors">
-                    {r.ticket_code} <span className="font-normal">({r.statut})</span>
-                  </button>
-                ))}
-              </div>
+        <div className="callout callout-warning mb-4">
+          <AlertTriangle aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''}</p>
+            <div className="flex flex-wrap gap-2 mt-1.5">
+              {t.retours_sav.map(r => (
+                <button key={r.id} type="button" onClick={() => navigate(`${basePath}/ticket/${r.id}`)}
+                  className="btn-secondary btn-sm font-mono text-amber-900">
+                  {r.ticket_code} <span className="font-normal">({r.statut})</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -3207,123 +3160,119 @@ function TicketDetail({ id }) {
 
       {/* Dépôt à distance — validation banner */}
       {t.statut === 'Pré-enregistré' && t.source === 'distance' && (
-        <div className="bg-indigo-50 border-l-4 border-indigo-500 px-4 sm:px-6 lg:px-8 py-3 -mx-4 sm:-mx-6 lg:-mx-8 mb-2">
-          <div className="max-w-7xl mx-auto flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-              <Globe className="w-4 h-4 text-indigo-600" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-indigo-900">Dépôt à distance — En attente de validation</p>
-              <p className="text-xs text-indigo-800">Le client a pré-enregistré cet appareil en ligne</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await api.validerDepot(t.id);
-                    toast.success('Dépôt validé — passage en diagnostic');
-                    loadTicket(false);
-                  } catch (err) { toast.error(err.message); }
-                }}
-                className="btn-primary text-xs px-3 min-h-11 bg-emerald-600 hover:bg-emerald-700"
-              >
-                <Check className="w-3.5 h-3.5" aria-hidden="true" /> Valider
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const motif = prompt('Motif du refus :');
-                  if (motif === null) return;
-                  api.refuserDepot(t.id, motif || 'Non précisé')
-                    .then(() => { toast.success('Dépôt refusé'); loadTicket(false); })
-                    .catch(err => toast.error(err.message));
-                }}
-                className="btn-ghost text-xs px-3 min-h-11 text-red-700 hover:bg-red-50"
-              >
-                <X className="w-3.5 h-3.5" aria-hidden="true" /> Refuser
-              </button>
-            </div>
+        <div className="callout callout-info items-center flex-wrap mb-4">
+          <Globe aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">Dépôt à distance — En attente de validation</p>
+            <p className="text-xs">Le client a pré-enregistré cet appareil en ligne</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await api.validerDepot(t.id);
+                  toast.success('Dépôt validé — passage en diagnostic');
+                  loadTicket(false);
+                } catch (err) { toast.error(err.message); }
+              }}
+              className="btn-primary btn-sm"
+            >
+              <Check aria-hidden="true" /> Valider
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const motif = prompt('Motif du refus :');
+                if (motif === null) return;
+                api.refuserDepot(t.id, motif || 'Non précisé')
+                  .then(() => { toast.success('Dépôt refusé'); loadTicket(false); })
+                  .catch(err => toast.error(err.message));
+              }}
+              className="btn-danger-ghost btn-sm"
+            >
+              <X aria-hidden="true" /> Refuser
+            </button>
           </div>
         </div>
       )}
 
       {/* Accord client modal */}
       {showAccordModal && (
-        <Modal labelledBy={`${uid}-accord-titre`} onClose={() => setShowAccordModal(false)} busy={accordLoading} panelClassName="max-w-lg p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-orange-600" aria-hidden="true" />
+        <Modal labelledBy={`${uid}-accord-titre`} onClose={() => setShowAccordModal(false)} busy={accordLoading} panelClassName="max-w-lg p-5 sm:p-6">
+          <div className="flex items-start gap-3 mb-5">
+            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+              <FileSignature className="w-5 h-5 text-amber-700" aria-hidden="true" />
             </div>
-            <div>
-              <h3 id={`${uid}-accord-titre`} className="text-lg font-display font-bold text-slate-900">Demande d'accord client</h3>
-              <p className="text-sm text-slate-600">
+            <div className="min-w-0 flex-1">
+              <h3 id={`${uid}-accord-titre`} className="t-h2">Demande d'accord client</h3>
+              <p className="t-small">
                 {t.ticket_code} — {t.client_prenom} {t.client_nom}
               </p>
             </div>
-            <button type="button" onClick={() => setShowAccordModal(false)} className="ml-auto btn-ghost p-0 min-w-11 min-h-11" aria-label="Fermer">
-              <X className="w-4 h-4" aria-hidden="true" />
+            <button type="button" onClick={() => setShowAccordModal(false)} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
+              <X aria-hidden="true" />
             </button>
           </div>
 
           {/* Recap réparations */}
-          <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
-            <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">Récapitulatif des réparations</div>
+          <div className="card-section mb-4">
+            <div className="t-h3 mb-2">Récapitulatif des réparations</div>
             {lignesAffichees.map((line, i) => (
-              <div key={i} className="flex justify-between gap-2 py-1.5 border-b border-slate-100 last:border-0">
+              <div key={i} className="flex justify-between gap-3 py-1.5 border-b border-slate-200/70 last:border-0">
                 <span className="text-sm text-slate-700">
                   {line.label}
                   {t.type_ecran && i === indexEcran && (
-                    <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded ml-2">{t.type_ecran}</span>
+                    <span className="badge badge-sm badge-brand ml-2">{t.type_ecran}</span>
                   )}
                 </span>
-                <span className="text-sm font-bold text-slate-800">{formatPrix(prixNombre(line.prix))}</span>
+                <span className="text-sm t-num whitespace-nowrap">{formatPrix(prixNombre(line.prix))}</span>
               </div>
             ))}
-            <div className="flex justify-between pt-2 mt-1 border-t border-slate-300">
+            <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-slate-300">
               <span className="text-sm font-bold text-slate-900">Montant du devis</span>
-              <span className="text-sm font-bold text-emerald-800">{formatPrix(totalNet)}</span>
+              <span className="text-sm font-bold text-slate-900 tabular-nums">{formatPrix(totalNet)}</span>
             </div>
           </div>
 
           {/* Message éditable */}
           <div className="mb-4">
-            <label htmlFor={`${uid}-accord-msg`} className="text-xs font-semibold text-slate-700 mb-1 block">Message au client</label>
+            <label htmlFor={`${uid}-accord-msg`} className="input-label">Message au client</label>
             <textarea
               id={`${uid}-accord-msg`}
               value={accordMessage}
               onChange={e => setAccordMessage(e.target.value)}
               rows={7}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              className="textarea resize-none"
             />
           </div>
 
           {/* Boutons d'envoi */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => handleSendAccord('whatsapp')}
               disabled={accordLoading}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-green-700 hover:bg-green-800 text-white text-xs font-bold transition-colors disabled:opacity-50"
+              className="btn-whatsapp flex-1"
             >
-              <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" /> WhatsApp
+              <MessageCircle aria-hidden="true" /> WhatsApp
             </button>
             <button
               type="button"
               onClick={() => handleSendAccord('sms')}
               disabled={accordLoading}
               title={smsServeur ? 'Envoyer le SMS depuis le serveur (Brevo)' : "Ouvrir l'app Messages de l'appareil"}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
+              className="btn-primary flex-1"
             >
-              <Send className="w-3.5 h-3.5" aria-hidden="true" /> SMS
+              <Send aria-hidden="true" /> SMS
             </button>
             <button
               type="button"
               onClick={() => handleSendAccord('email')}
               disabled={accordLoading}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-11 rounded-lg bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold border border-slate-200 transition-colors disabled:opacity-50"
+              className="btn-secondary flex-1"
             >
-              <Mail className="w-3.5 h-3.5" aria-hidden="true" /> Email
+              <Mail aria-hidden="true" /> Email
             </button>
           </div>
         </Modal>
@@ -3336,11 +3285,11 @@ function TicketDetail({ id }) {
         <Modal labelledBy={titreCarteId} onClose={() => setPropositionMessage(null)} busy={prevenirOccupe}
           panelClassName="max-w-lg p-4 sm:p-6">
           <div ref={prevenirRef}>
-            <p className="mb-3 text-sm text-slate-700">
+            <p className="mb-3 t-body">
               {t.ticket_code} est « {STATUT_TERMINE} ». Rien n’est envoyé sans votre clic.
             </p>
             {propositionMessage.ranger && !remis && (
-              <div className="mb-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+              <div className="mb-3 card-section">
                 <EmplacementInput
                   ticketId={id}
                   value={t.emplacement}
@@ -3364,16 +3313,16 @@ function TicketDetail({ id }) {
         </Modal>
       )}
       {propositionMessage && propositionMessage.statut !== STATUT_TERMINE && (
-        <Modal labelledBy={`${uid}-message-titre`} onClose={() => setPropositionMessage(null)} panelClassName="max-w-lg p-6">
+        <Modal labelledBy={`${uid}-message-titre`} onClose={() => setPropositionMessage(null)} panelClassName="max-w-lg p-5 sm:p-6">
           <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0" aria-hidden="true">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
               <MessageCircle className="w-5 h-5 text-emerald-700" />
             </div>
             <div className="min-w-0">
-              <h3 id={`${uid}-message-titre`} className="text-lg font-display font-bold text-slate-900">
+              <h3 id={`${uid}-message-titre`} className="t-h2">
                 Prévenir {t.client_prenom || 'le client'} ?
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="t-small">
                 {t.ticket_code} est « {propositionMessage.statut} ». Message pré-rempli : rien n’est envoyé sans votre clic.
               </p>
             </div>
@@ -3385,8 +3334,7 @@ function TicketDetail({ id }) {
             onMessageSent={(r) => { loadNotes(); if (!r?.echec) setPropositionMessage(null); }}
           />
           <div className="flex justify-end mt-4 pt-4 border-t border-slate-100">
-            <button type="button" onClick={() => setPropositionMessage(null)}
-              className="btn-ghost min-h-11 px-4 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+            <button type="button" onClick={() => setPropositionMessage(null)} className="btn-ghost">
               Plus tard
             </button>
           </div>
@@ -3408,14 +3356,14 @@ function TicketDetail({ id }) {
 
       {/* Confirmation paiement modal */}
       {paiement && (
-        <Modal labelledBy={`${uid}-paye-titre`} onClose={fermerPaiement} busy={paying} panelClassName="max-w-sm p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" aria-hidden="true" />
+        <Modal labelledBy={`${uid}-paye-titre`} onClose={fermerPaiement} busy={paying} panelClassName="max-w-sm p-5 sm:p-6">
+          <div className="flex items-start gap-3 mb-5">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="w-5 h-5 text-emerald-700" aria-hidden="true" />
             </div>
-            <div>
-              <h3 id={`${uid}-paye-titre`} className="text-lg font-display font-bold text-slate-900">Confirmer le paiement</h3>
-              <p className="text-sm text-slate-600">{paiement.cloturer ? 'Le ticket sera ensuite clôturé.' : 'Le client a-t-il bien réglé ?'}</p>
+            <div className="min-w-0">
+              <h3 id={`${uid}-paye-titre`} className="t-h2">Confirmer le paiement</h3>
+              <p className="t-small">{paiement.cloturer ? 'Le ticket sera ensuite clôturé.' : 'Le client a-t-il bien réglé ?'}</p>
             </div>
           </div>
 
@@ -3431,14 +3379,14 @@ function TicketDetail({ id }) {
             return (
               <>
                 {resteAvant > 0 && (
-                  <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 border border-emerald-200 rounded-xl mb-4 text-center">
-                    <p className="text-xs text-emerald-800 font-medium mb-1">Reste à payer</p>
+                  <div className="card-section mb-4 text-center">
+                    <p className="t-caption mb-1">Reste à payer</p>
                     {reduction > 0 && (
-                      <p className="text-sm text-slate-500 line-through">{formatPrix(resteAvant)}</p>
+                      <p className="text-sm text-slate-500 line-through tabular-nums">{formatPrix(resteAvant)}</p>
                     )}
-                    <p className="text-2xl font-extrabold text-emerald-800">{formatPrix(resteApresRed)}</p>
+                    <p className="text-2xl font-bold tabular-nums text-slate-900 leading-none">{formatPrix(resteApresRed)}</p>
                     {reduction > 0 && (
-                      <p className="text-[11px] text-amber-800 font-semibold mt-1">
+                      <p className="text-xs text-emerald-700 font-semibold mt-1.5 tabular-nums">
                         −{formatPrix(reduction)} de réduction appliquée
                       </p>
                     )}
@@ -3447,39 +3395,39 @@ function TicketDetail({ id }) {
 
                 {/* Avantages client disponibles (bon grattage + fidelite) */}
                 {(clientFidelite?.bon_grattage || fideliteDispo) && (
-                  <div className="mb-4 rounded-xl border-2 border-amber-200 bg-amber-50/70 p-3 space-y-2">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-amber-800 font-bold flex items-center gap-1.5">
-                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" aria-hidden="true" /> Avantages client disponibles
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+                    <p className="t-h3 text-amber-800 flex items-center gap-1.5">
+                      <Star className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" aria-hidden="true" /> Avantages client disponibles
                     </p>
 
                     {clientFidelite?.bon_grattage === 'reduction' && (
-                      <label className="flex items-start gap-2.5 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors">
+                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors duration-150">
                         <input type="checkbox" checked={applyBonGrattage}
                           onChange={e => setApplyBonGrattage(e.target.checked)}
-                          className="mt-0.5 w-5 h-5 rounded accent-amber-500 shrink-0" />
+                          className="checkbox mt-0.5 accent-brand-600" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-800">💰 Bon de grattage : −10€</p>
-                          <p className="text-[11px] text-slate-600">Gagné lors d'un précédent ticket</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Coins className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Bon de grattage : −10€</p>
+                          <p className="text-xs text-slate-500">Gagné lors d'un précédent ticket</p>
                         </div>
                       </label>
                     )}
                     {bonFilmDispo && (
-                      <div className="flex items-start gap-2.5 p-2 rounded-lg bg-white/80">
-                        <Check className="mt-0.5 w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" />
+                      <div className="flex items-start gap-3 p-2 rounded-lg bg-white/80">
+                        <Check className="mt-0.5 w-5 h-5 text-amber-700 shrink-0" aria-hidden="true" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-800">🎁 Film verre trempé offert</p>
-                          <p className="text-[11px] text-slate-600">À remettre au client en main propre</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Gift className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Film verre trempé offert</p>
+                          <p className="text-xs text-slate-500">À remettre au client en main propre</p>
                         </div>
                       </div>
                     )}
                     {fideliteDispo && (
-                      <label className="flex items-start gap-2.5 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors">
+                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors duration-150">
                         <input type="checkbox" checked={applyFidelite}
                           onChange={e => setApplyFidelite(e.target.checked)}
-                          className="mt-0.5 w-5 h-5 rounded accent-amber-500 shrink-0" />
+                          className="checkbox mt-0.5 accent-brand-600" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-800">⭐ Fidélité : −{formatPrix(fideliteMontant)}</p>
-                          <p className="text-[11px] text-slate-600">{clientFidelite.points} points ({clientFidelite.palier_reduction} requis)</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" aria-hidden="true" /> Fidélité : −{formatPrix(fideliteMontant)}</p>
+                          <p className="text-xs text-slate-500">{clientFidelite.points} points ({clientFidelite.palier_reduction} requis)</p>
                         </div>
                       </label>
                     )}
@@ -3488,14 +3436,14 @@ function TicketDetail({ id }) {
 
                 <div className="space-y-2">
                   <button type="button" onClick={confirmerPaiement} disabled={paying} aria-busy={paying || undefined}
-                    className="w-full min-h-12 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                    className="btn-success btn-lg btn-block">
                     {paying
-                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
-                      : <><CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Oui, confirmer le paiement</>}
+                      ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
+                      : <><CheckCircle2 aria-hidden="true" /> Oui, confirmer le paiement</>}
                   </button>
                   <button type="button" onClick={fermerPaiement} disabled={paying}
-                    className="w-full min-h-11 px-4 rounded-xl text-slate-600 hover:text-slate-800 text-sm font-medium transition-colors flex items-center justify-center gap-1">
-                    <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" /> Annuler
+                    className="btn-ghost btn-block">
+                    <ArrowLeft aria-hidden="true" /> Annuler
                   </button>
                 </div>
               </>
@@ -3506,17 +3454,17 @@ function TicketDetail({ id }) {
 
       {/* Delete ticket modal */}
       {showDeleteModal && (
-        <Modal labelledBy={`${uid}-suppr-titre`} onClose={() => setShowDeleteModal(false)} busy={deleting} panelClassName="max-w-sm p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
-              <Trash2 className="w-5 h-5 text-red-600" aria-hidden="true" />
+        <Modal labelledBy={`${uid}-suppr-titre`} onClose={() => setShowDeleteModal(false)} busy={deleting} panelClassName="max-w-sm p-5 sm:p-6">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+              <Trash2 className="w-5 h-5 text-red-700" aria-hidden="true" />
             </div>
-            <div>
-              <h3 id={`${uid}-suppr-titre`} className="text-lg font-display font-bold text-slate-900">Supprimer le ticket</h3>
-              <p className="text-sm text-slate-600">{t.ticket_code}</p>
+            <div className="min-w-0">
+              <h3 id={`${uid}-suppr-titre`} className="t-h2">Supprimer le ticket</h3>
+              <p className="t-small t-mono">{t.ticket_code}</p>
             </div>
           </div>
-          <p className="text-sm text-slate-700 mb-4">
+          <p className="t-body mb-4">
             Cette action est irréversible. Toutes les données liées (notes, commandes, historique) seront supprimées.
           </p>
           <div className="mb-4">
@@ -3534,16 +3482,17 @@ function TicketDetail({ id }) {
               autoFocus
             />
             {deleteError && (
-              <p id={`${uid}-suppr-err`} role="alert" className="text-xs text-red-600 mt-1 font-medium">{deleteError}</p>
+              <p id={`${uid}-suppr-err`} role="alert" className="input-error">{deleteError}</p>
             )}
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowDeleteModal(false)} className="btn-ghost flex-1 min-h-11">Annuler</button>
+            <button type="button" onClick={() => setShowDeleteModal(false)} className="btn-ghost flex-1">Annuler</button>
             <button
               type="button"
               onClick={handleDeleteTicket}
               disabled={deleting || !deleteCode}
-              className="flex-1 min-h-11 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              aria-busy={deleting || undefined}
+              className="btn-danger flex-1"
             >
               {deleting ? 'Suppression...' : 'Supprimer'}
             </button>
@@ -3553,28 +3502,28 @@ function TicketDetail({ id }) {
 
       {/* Retour SAV modal */}
       {showRetourSAVModal && (
-        <Modal labelledBy={`${uid}-sav-titre`} onClose={() => setShowRetourSAVModal(false)} busy={creatingSAV} panelClassName="max-w-lg p-6">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
-              <RotateCcw className="w-5 h-5 text-red-600" aria-hidden="true" />
+        <Modal labelledBy={`${uid}-sav-titre`} onClose={() => setShowRetourSAVModal(false)} busy={creatingSAV} panelClassName="max-w-lg p-5 sm:p-6">
+          <div className="flex items-start gap-3 mb-5">
+            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+              <RotateCcw className="w-5 h-5 text-amber-700" aria-hidden="true" />
             </div>
-            <div>
-              <h3 id={`${uid}-sav-titre`} className="text-lg font-display font-bold text-slate-900">Retour SAV</h3>
-              <p className="text-sm text-slate-600">Créer un ticket lié à {t.ticket_code}</p>
+            <div className="min-w-0 flex-1">
+              <h3 id={`${uid}-sav-titre`} className="t-h2">Retour SAV</h3>
+              <p className="t-small">Créer un ticket lié à {t.ticket_code}</p>
             </div>
-            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="ml-auto btn-ghost p-0 min-w-11 min-h-11" aria-label="Fermer">
-              <X className="w-4 h-4" aria-hidden="true" />
+            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
+              <X aria-hidden="true" />
             </button>
           </div>
 
           {/* Recap ticket original */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4">
-            <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">Ticket original</div>
-            <div className="text-sm font-bold text-slate-800">{t.ticket_code} — {appareil}</div>
-            <div className="text-xs text-slate-600 mt-0.5">{t.panne} {t.panne_detail ? `(${t.panne_detail})` : ''}</div>
+          <div className="card-section mb-4">
+            <div className="t-h3 mb-1">Ticket original</div>
+            <div className="text-sm font-semibold text-slate-900">{t.ticket_code} — {appareil}</div>
+            <div className="text-xs text-slate-500 mt-0.5">{t.panne} {t.panne_detail ? `(${t.panne_detail})` : ''}</div>
           </div>
 
-          <div className="space-y-3 mb-5">
+          <div className="space-y-4 mb-5">
             <div>
               <label htmlFor={`${uid}-sav-motif`} className="input-label">Motif du retour SAV *</label>
               <input
@@ -3600,40 +3549,47 @@ function TicketDetail({ id }) {
             </div>
           </div>
 
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl mb-4">
-            <p className="text-xs text-red-800 font-medium">
-              Ce ticket sera marqué comme retour SAV et lié au ticket {t.ticket_code}. Le montant sera de 0,00 € (prise en charge garantie).
-            </p>
-          </div>
+          <p className="callout callout-warning mb-4">
+            <AlertTriangle aria-hidden="true" />
+            <span>Ce ticket sera marqué comme retour SAV et lié au ticket {t.ticket_code}. Le montant sera de 0,00 € (prise en charge garantie).</span>
+          </p>
 
           <div className="flex gap-2">
-            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="btn-ghost flex-1 min-h-11">Annuler</button>
+            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="btn-ghost flex-1">Annuler</button>
             <button
               type="button"
               onClick={handleCreateRetourSAV}
               disabled={creatingSAV || !retourSAVForm.panne.trim()}
-              className="flex-1 min-h-11 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              aria-busy={creatingSAV || undefined}
+              className="btn-primary flex-1"
             >
-              {creatingSAV ? 'Création...' : <><RotateCcw className="w-4 h-4" aria-hidden="true" /> Créer le retour SAV</>}
+              {creatingSAV ? 'Création...' : <><RotateCcw aria-hidden="true" /> Créer le retour SAV</>}
             </button>
           </div>
         </Modal>
       )}
 
-      <div className="px-4 sm:px-6 lg:px-8">
-      {/* Priorité atelier + état de la réception */}
-      <div className={`card p-4 mb-5 flex flex-wrap items-end justify-between gap-3 ${
-        normaliserPriorite(t.priorite) === 'attente' ? 'ring-2 ring-red-500 border-red-200 bg-red-50/60' : ''}`}>
+      {/* Priorité atelier + état de la réception + personnalisation (une seule rangée) */}
+      <div className={`card p-4 mb-4 flex flex-wrap items-end justify-between gap-3 ${
+        normaliserPriorite(t.priorite) === 'attente' ? 'border-red-300 bg-red-50/60' : ''}`}>
         <div className="flex flex-wrap items-end gap-x-3 gap-y-2 min-w-0">
           <PrioriteSelecteur value={t.priorite} onChange={changerPriorite} />
-          {prioriteSave.status && <span className="min-h-11 inline-flex items-center"><AutoSaveIndicator etat={prioriteSave} /></span>}
+          {prioriteSave.status && <span className="min-h-10 inline-flex items-center"><AutoSaveIndicator etat={prioriteSave} /></span>}
         </div>
-        {receptionEtat?.charge === 'ok' && !receptionEtat.complete && !remis && t.statut !== 'Pré-enregistré' && (
-          <button type="button" onClick={allerReception}
-            className="inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-xl bg-amber-100 text-amber-900 border-2 border-amber-300 text-sm font-bold hover:bg-amber-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2">
-            <ClipboardCheck className="w-4 h-4" aria-hidden="true" /> Réception à compléter
+        <div className="flex flex-wrap items-center gap-2">
+          {receptionEtat?.charge === 'ok' && !receptionEtat.complete && !remis && t.statut !== 'Pré-enregistré' && (
+            <button type="button" onClick={allerReception} className="btn-secondary">
+              <ClipboardCheck className="text-amber-700" aria-hidden="true" /> Réception à compléter
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowPersonnaliser(true)}
+            className="btn-ghost btn-sm"
+          >
+            <Edit3 aria-hidden="true" /> Personnaliser
           </button>
-        )}
+        </div>
       </div>
 
       {/* Attention card — shows when important private notes exist */}
@@ -3641,74 +3597,60 @@ function TicketDetail({ id }) {
         const importantNotes = privateNotes.filter(n => n.important);
         if (!showAttention && importantNotes.length === 0) return null;
         return (
-          <div className={`flex items-start gap-3 p-4 mb-5 rounded-xl bg-red-50 border border-red-200 shadow-sm ${ANIM_ENTREE}`}>
-            <div className="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5 text-white" aria-hidden="true" />
-            </div>
+          <div className={`callout callout-danger items-start mb-4 ${ANIM_ENTREE}`}>
+            <AlertTriangle aria-hidden="true" />
             <div className="flex-1 min-w-0 space-y-1">
-              <p className="text-sm font-bold text-red-900">Note importante</p>
+              <p className="font-bold">Note importante</p>
               {importantNotes.map(note => (
-                <p key={note.id} className="text-sm text-red-800">{note.contenu.replace(/^\[ATTENTION\]\s*⚠?\s*/i, '')}</p>
+                <p key={note.id}>{note.contenu.replace(/^\[ATTENTION\]\s*⚠?\s*/i, '')}</p>
               ))}
               {importantNotes.length === 0 && t.attention && (
-                <p className="text-sm text-red-800">{t.attention}</p>
+                <p>{t.attention}</p>
               )}
             </div>
-            <button type="button" onClick={() => setShowAttention(false)} className="shrink-0 min-w-11 min-h-11 flex items-center justify-center rounded-lg text-red-400 hover:text-red-700 hover:bg-red-100 transition-colors" aria-label="Masquer la note importante">
-              <X className="w-4 h-4" aria-hidden="true" />
+            <button type="button" onClick={() => setShowAttention(false)} className="btn-ghost btn-icon shrink-0 -my-2 -mr-2 text-red-700 hover:bg-red-100 hover:text-red-800" aria-label="Masquer la note importante">
+              <X aria-hidden="true" />
             </button>
           </div>
         );
       })()}
 
       {/* Progress tracker */}
-      <div className="card p-5 mb-6">
+      <div className="card p-4 sm:p-5 mb-4">
         <ProgressTracker statut={t.statut} hasPiece={t.commande_piece === 1} />
-      </div>
-
-      {/* Layout toolbar */}
-      <div className="flex items-center gap-2 mb-5">
-        <button
-          type="button"
-          onClick={() => setShowPersonnaliser(true)}
-          className="flex items-center gap-1.5 min-h-11 px-3 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-        >
-          <Edit3 className="w-3.5 h-3.5" aria-hidden="true" /> Personnaliser
-        </button>
       </div>
 
       {/* Edit mode banner */}
       {editMode && (
-        <div className="flex items-center justify-between p-3 mb-5 rounded-xl bg-blue-50 border-2 border-dashed border-blue-300">
-          <div className="flex items-center gap-2">
-            <span className="text-blue-700 text-sm font-bold">Mode édition activé</span>
-            <span className="text-slate-600 text-xs">— Glisse les widgets par ⠿</span>
+        <div className="callout callout-info items-center mb-4 border-dashed">
+          <Edit3 aria-hidden="true" />
+          <div className="flex-1 min-w-0">
+            <span className="font-bold">Mode édition activé</span>
+            <span className="text-xs"> — Glisse les widgets par ⠿</span>
           </div>
           <button
             type="button"
             onClick={() => setEditMode(false)}
-            className="min-h-11 px-3 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors"
+            className="btn-primary btn-sm shrink-0"
           >
             Terminer
           </button>
         </div>
       )}
 
-      {/* Content grid — drag & drop layout */}
+      {/* Content grid — drag & drop layout. Sous lg, la colonne « action » (statut, tarifs) passe en premier. */}
       <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-4">
           {['left', 'right'].map(colId => (
             <Droppable key={colId} droppableId={colId} isDropDisabled={!editMode}>
               {(provided, snapshot) => (
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
-                  className={`space-y-5 min-h-[200px] rounded-xl p-1 transition-colors duration-200 ${
-                    snapshot.isDraggingOver
-                      ? colId === 'left'
-                        ? 'bg-blue-50/40 ring-2 ring-dashed ring-blue-300'
-                        : 'bg-violet-50/40 ring-2 ring-dashed ring-violet-300'
-                      : ''
+                  className={`space-y-4 min-w-0 min-h-[200px] rounded-xl p-1 transition-colors duration-150 ${
+                    colId === 'right' ? 'order-first lg:order-none' : ''
+                  } ${
+                    snapshot.isDraggingOver ? 'bg-brand-50/40 outline-dashed outline-2 outline-brand-300' : ''
                   }`}
                 >
                   {layout[colId].map((widgetId, index) => {
@@ -3721,19 +3663,19 @@ function TicketDetail({ id }) {
                           <div
                             ref={dragProvided.innerRef}
                             {...dragProvided.draggableProps}
-                            className={`relative transition-shadow ${
+                            className={`relative min-w-0 ${
                               dragSnapshot.isDragging
-                                ? 'shadow-2xl shadow-blue-500/25 motion-safe:rotate-[1.5deg] z-50 opacity-90'
+                                ? 'shadow-lg motion-safe:rotate-[1.5deg] z-50 opacity-90'
                                 : ''
-                            } ${editMode && !dragSnapshot.isDragging ? 'ring-2 ring-dashed ring-slate-200' : ''} rounded-xl`}
+                            } ${editMode && !dragSnapshot.isDragging ? 'outline-dashed outline-2 outline-slate-300 outline-offset-2' : ''} rounded-xl`}
                           >
                             {/* Drag handle — only in edit mode */}
                             {editMode && (
                               <div
                                 {...dragProvided.dragHandleProps}
-                                className="absolute -top-2.5 right-3 z-10"
+                                className="absolute -top-3 right-3 z-10"
                               >
-                                <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-700 text-[16px] cursor-grab active:cursor-grabbing shadow-sm motion-safe:animate-wiggle select-none">
+                                <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-brand-600 text-white text-base cursor-grab active:cursor-grabbing shadow-lg motion-safe:animate-wiggle select-none">
                                   ⠿
                                 </span>
                               </div>
@@ -3755,14 +3697,13 @@ function TicketDetail({ id }) {
           ))}
         </div>
       </DragDropContext>
-      </div>
 
       {/* Delete link */}
-      <div className="mt-10 mb-4 text-center">
+      <div className="mt-8 mb-4 text-center">
         <button
           type="button"
           onClick={() => { setShowDeleteModal(true); setDeleteCode(''); setDeleteError(''); }}
-          className="min-h-11 px-3 text-xs text-slate-500 hover:text-red-600 transition-colors"
+          className="btn-danger-ghost btn-sm"
         >
           Supprimer ce ticket
         </button>

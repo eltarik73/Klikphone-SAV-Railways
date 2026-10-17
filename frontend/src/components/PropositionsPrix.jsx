@@ -78,25 +78,25 @@ function BandeauLot({ lot, sensible, onAnnule, onFermer }) {
   };
   const n = lot.modifies;
   return (
-    <div className={`sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-sm ${
-      annule?.ton === 'warning' ? 'border-amber-400 bg-amber-50 text-amber-950'
-        : annule ? 'border-slate-300 bg-slate-50 text-slate-800' : 'border-emerald-300 bg-emerald-50 text-emerald-900'}`}>
+    <div className={`callout sticky top-2 z-10 flex-wrap items-center shadow-xs ${
+      annule?.ton === 'warning' ? 'callout-warning'
+        : annule ? 'bg-slate-50 border-slate-200 text-slate-800' : 'callout-success'}`}>
       {annule?.ton === 'warning'
-        ? <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-        : <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" />}
+        ? <AlertTriangle aria-hidden="true" />
+        : <CheckCircle2 aria-hidden="true" />}
       <p className="font-semibold flex-1 min-w-[12rem]">
         {annule ? annule.texte : `${n} prix mis à jour${lot.libelle ? ` : ${lot.libelle}` : ''}.`}
       </p>
       {!annule && (
         <button type="button" onClick={annuler} disabled={annulation} aria-busy={annulation || undefined}
-          className="min-h-[44px] px-3 rounded-lg border border-emerald-400 bg-white font-semibold text-emerald-900 hover:bg-emerald-100 inline-flex items-center gap-2 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
-          {annulation ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" /> : <Undo2 className="w-4 h-4" aria-hidden="true" />}
+          className="btn-secondary btn-sm">
+          {annulation ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Undo2 aria-hidden="true" />}
           Annuler ce changement
         </button>
       )}
       <button type="button" onClick={onFermer} aria-label="Masquer ce message"
-        className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center rounded-lg hover:bg-white/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-        <X className="w-4 h-4" aria-hidden="true" />
+        className="btn-ghost btn-icon -my-1 -mr-2 hover:bg-white/70">
+        <X aria-hidden="true" />
       </button>
     </div>
   );
@@ -107,12 +107,12 @@ function AvantApres({ titre, avant, apres }) {
   const b = nombre(apres);
   return (
     <div className="min-w-0">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">{titre}</p>
-      <p className="text-sm text-slate-900 flex flex-wrap items-center gap-1">
-        <span className="text-slate-600 line-through decoration-slate-400">{a !== null ? formatPrix(a) : '—'}</span>
+      <p className="t-caption">{titre}</p>
+      <p className="text-sm text-slate-900 flex flex-wrap items-center gap-1 tabular-nums">
+        <span className="text-slate-500 line-through">{a !== null ? formatPrix(a) : '—'}</span>
         <ArrowRight className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
         <span className="sr-only">devient</span>
-        <span className="font-bold">{b !== null ? formatPrix(b) : '—'}</span>
+        <span className="font-semibold">{b !== null ? formatPrix(b) : '—'}</span>
       </p>
     </div>
   );
@@ -259,31 +259,31 @@ export default function PropositionsPrix({ basePath = '/accueil', sensible: sens
     <section aria-labelledby={titreId} className="space-y-4">
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-3">
         <div>
-          <h2 id={titreId} className="text-lg font-display font-bold text-slate-900">
+          <h2 id={titreId} className="t-h2 flex items-center gap-2">
             Propositions de prix
             {statut === 'pret' && liste.length > 0 && (
-              <span className="ml-2 inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold align-middle">
+              <span className="badge-count badge-count-brand">
                 {liste.length}<span className="sr-only"> en attente</span>
               </span>
             )}
           </h2>
-          <p className="text-sm text-slate-600">
+          <p className="t-small font-normal mt-0.5">
             Nées du prix HT payé lors des commandes de pièces. Aucun prix ne change sans votre accord.
           </p>
         </div>
         {statut === 'pret' && liste.length > 0 && (
           <div className="flex flex-wrap gap-2 shrink-0">
             <button type="button" onClick={() => setCoches(selectionParDefaut(liste, seuils))}
-              className="btn-secondary min-h-[44px] text-xs">
+              className="btn-secondary">
               Cocher hors alertes
             </button>
             <button type="button" onClick={refuserLot} disabled={!ids.length || lot}
-              className="btn-secondary min-h-[44px] text-xs disabled:opacity-60">
-              <X className="w-3.5 h-3.5" aria-hidden="true" /> Refuser la sélection ({ids.length})
+              className="btn-secondary">
+              <X aria-hidden="true" /> Refuser la sélection ({ids.length})
             </button>
             <button type="button" onClick={accepterLot} disabled={!ids.length || lot} aria-busy={lot || undefined}
-              className="btn-primary min-h-[44px] text-xs disabled:opacity-60">
-              <Check className="w-3.5 h-3.5" aria-hidden="true" /> {lot ? 'Envoi…' : `Accepter la sélection (${ids.length})`}
+              className="btn-primary">
+              <Check aria-hidden="true" /> {lot ? 'Envoi…' : `Accepter la sélection (${ids.length})`}
             </button>
           </div>
         )}
@@ -300,26 +300,27 @@ export default function PropositionsPrix({ basePath = '/accueil', sensible: sens
 
       {statut === 'chargement' ? (
         <ul className="space-y-2" aria-hidden="true">
-          {[1, 2, 3].map(i => <li key={i} className="h-24 rounded-xl bg-slate-100 motion-safe:animate-pulse" />)}
+          {[1, 2, 3].map(i => <li key={i} className="skeleton-card" />)}
         </ul>
       ) : statut === 'erreur' ? (
-        <div className="card p-5 text-center space-y-3">
-          <p className="text-sm text-red-700 font-medium" role="alert">{erreur}</p>
-          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary min-h-[44px] text-xs">
-            <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Réessayer
+        <div className="error-state flex-wrap items-center">
+          <AlertTriangle aria-hidden="true" />
+          <p className="font-medium flex-1" role="alert">{erreur}</p>
+          <button type="button" onClick={() => setEssai(n => n + 1)} className="btn-secondary btn-sm">
+            <RotateCcw aria-hidden="true" /> Réessayer
           </button>
         </div>
       ) : liste.length === 0 ? (
-        <div className="card p-8 text-center">
-          <Inbox className="w-8 h-8 text-slate-400 mx-auto mb-2" aria-hidden="true" />
-          <p className="text-sm font-medium text-slate-800">Aucune proposition en attente</p>
-          <p className="text-xs text-slate-600 mt-1">Saisissez le prix HT payé à la création ou à la réception d’une commande de pièce.</p>
+        <div className="card empty-state">
+          <div className="empty-state-icon"><Inbox aria-hidden="true" /></div>
+          <p className="t-h2">Aucune proposition en attente</p>
+          <p className="t-body text-slate-500 max-w-sm">Saisissez le prix HT payé à la création ou à la réception d’une commande de pièce.</p>
         </div>
       ) : (
         <>
           {nbAlertes > 0 && (
-            <p className="flex items-start gap-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <p className="callout callout-warning">
+              <AlertTriangle aria-hidden="true" />
               <span>{nbAlertes} grosse{nbAlertes > 1 ? 's' : ''} variation{nbAlertes > 1 ? 's' : ''} (plus de {seuils.pct} % ou {seuils.eur} €) : non cochée{nbAlertes > 1 ? 's' : ''} par défaut, à vérifier sur la facture.</span>
             </p>
           )}
@@ -332,30 +333,30 @@ export default function PropositionsPrix({ basePath = '/accueil', sensible: sens
               const libelle = p.label || p.tarif_cle || `Proposition ${p.id}`;
               return (
                 <li key={p.id}
-                  className={`card p-3 sm:p-4 grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-2 gap-y-3 sm:items-center ${alerte ? 'border-amber-300 bg-amber-50/40' : ''}`}>
+                  className={`card p-3 sm:p-4 grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto] gap-x-2 gap-y-3 sm:items-center ${alerte ? 'border-amber-300' : ''}`}>
                   <label htmlFor={caseId} className="flex items-center justify-center w-11 h-11 -ml-1 cursor-pointer self-start sm:self-center">
                     <input id={caseId} type="checkbox" checked={coches.has(p.id)} onChange={() => basculer(p.id)}
                       disabled={!acceptable(p) || enCours}
                       aria-label={`Sélectionner ${libelle}${p.verrou ? ' (prix verrouillé)' : p.introuvable ? ' (pièce introuvable)' : ''}`}
                       aria-describedby={!acceptable(p) ? raisonId : undefined}
-                      className="w-5 h-5 rounded border-slate-400 text-brand-600 focus:ring-brand-500 disabled:opacity-50" />
+                      className="checkbox disabled:opacity-50" />
                   </label>
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2 min-h-[44px] sm:min-h-0">
                       <p className="text-sm font-semibold text-slate-900">{libelle}</p>
                       {alerte && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[11px] font-bold">
-                          <AlertTriangle className="w-3 h-3" aria-hidden="true" /> Grosse variation
+                        <span className="badge badge-sm badge-warning">
+                          <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Grosse variation
                         </span>
                       )}
                       {p.verrou && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-200 text-slate-800 text-[11px] font-bold">
-                          <Lock className="w-3 h-3" aria-hidden="true" /> Prix verrouillé
+                        <span className="badge badge-sm badge-neutral">
+                          <Lock className="w-3.5 h-3.5" aria-hidden="true" /> Prix verrouillé
                         </span>
                       )}
                       {p.introuvable && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-[11px] font-bold">
-                          <AlertTriangle className="w-3 h-3" aria-hidden="true" /> Pièce introuvable
+                        <span className="badge badge-sm badge-danger">
+                          <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" /> Pièce introuvable
                         </span>
                       )}
                     </div>
@@ -363,30 +364,30 @@ export default function PropositionsPrix({ basePath = '/accueil', sensible: sens
                       <AvantApres titre="Achat HT" avant={p.ancien_ht} apres={p.nouveau_ht} />
                       <AvantApres titre="Prix client" avant={p.ancien_client} apres={p.nouveau_client} />
                       <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Écart HT</p>
-                        <p className={`text-sm font-bold ${alerte ? 'text-amber-900' : 'text-slate-900'}`}>
+                        <p className="t-caption">Écart HT</p>
+                        <p className={`text-sm font-semibold tabular-nums ${alerte ? 'text-amber-800' : 'text-slate-900'}`}>
                           {eur !== null ? formatEcart(eur) : '—'}
                           {pct !== null && <span className="whitespace-nowrap">{` (${signe(pct)}${Math.abs(pct).toLocaleString('fr-FR')} %)`}</span>}
                         </p>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Origine</p>
+                      <div className="min-w-0 col-span-2 xl:col-span-1">
+                        <p className="t-caption">Origine</p>
                         <p className="text-sm text-slate-800 truncate">
                           {p.ticket_code ? (
                             <Link to={`${basePath}/commandes?q=${encodeURIComponent(p.ticket_code)}`}
-                              className="inline-flex items-center gap-1 min-h-[32px] font-mono text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                              {p.ticket_code} <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                              className="inline-flex items-center gap-1 min-h-8 t-mono font-semibold text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                              {p.ticket_code} <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
                             </Link>
                           ) : (p.source === 'commande' || p.commande_id ? `Commande n° ${p.commande_id ?? '—'}` : (p.source || '—'))}
-                          {p.le ? <span className="text-slate-600"> · {formatDateShort(p.le)}</span> : null}
+                          {p.le ? <span className="text-slate-500"> · {formatDateShort(p.le)}</span> : null}
                         </p>
                       </div>
                     </div>
                     {p.verrou && !p.introuvable && (
-                      <p id={raisonId} className="text-xs text-slate-700">Prix fixé à la main : il n’est pas modifié automatiquement. Déverrouillez-le dans la grille pour appliquer ce prix.</p>
+                      <p id={raisonId} className="text-xs text-slate-600">Prix fixé à la main : il n’est pas modifié automatiquement. Déverrouillez-le dans la grille pour appliquer ce prix.</p>
                     )}
                     {p.introuvable && (
-                      <p id={raisonId} className="text-xs text-red-800">Cette pièce n’existe plus dans la grille : refusez la proposition.</p>
+                      <p id={raisonId} className="text-xs text-red-700">Cette pièce n’existe plus dans la grille : refusez la proposition.</p>
                     )}
                   </div>
                   <div className="col-span-2 sm:col-span-1 flex sm:flex-col gap-2">
@@ -394,13 +395,13 @@ export default function PropositionsPrix({ basePath = '/accueil', sensible: sens
                       aria-label={`Accepter le nouveau prix pour ${libelle}`}
                       aria-describedby={!acceptable(p) ? raisonId : undefined}
                       title={p.verrou ? 'Prix verrouillé : déverrouillez la pièce dans la grille' : p.introuvable ? 'Pièce introuvable dans la grille' : undefined}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1">
-                      <Check className="w-4 h-4" aria-hidden="true" /> Accepter
+                      className="btn-primary flex-1">
+                      <Check aria-hidden="true" /> Accepter
                     </button>
                     <button type="button" onClick={() => traiterUne(p, false)} disabled={enCours}
                       aria-label={`Refuser la proposition pour ${libelle}`}
-                      className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg bg-slate-100 text-slate-800 text-sm font-semibold hover:bg-slate-200 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                      <X className="w-4 h-4" aria-hidden="true" /> Refuser
+                      className="btn-secondary flex-1">
+                      <X aria-hidden="true" /> Refuser
                     </button>
                   </div>
                 </li>

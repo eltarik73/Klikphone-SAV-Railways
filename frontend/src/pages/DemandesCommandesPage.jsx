@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import {
   ShoppingBag, Phone, Mail, User, Package, Clock, Check, X,
@@ -7,12 +7,13 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 const STATUS_CONFIG = {
-  nouvelle: { label: 'Nouvelle', color: 'bg-amber-500/20 text-amber-300 border-amber-400/40', dot: 'bg-amber-400' },
-  en_cours: { label: 'En cours', color: 'bg-violet-500/20 text-violet-300 border-violet-400/40', dot: 'bg-violet-400' },
-  confirmee: { label: 'Confirmée', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40', dot: 'bg-emerald-400' },
-  annulee: { label: 'Annulée', color: 'bg-slate-600/20 text-slate-400 border-slate-500/40', dot: 'bg-slate-500' },
+  nouvelle: { label: 'Nouvelle', badge: 'badge-warning' },
+  en_cours: { label: 'En cours', badge: 'badge-info' },
+  confirmee: { label: 'Confirmée', badge: 'badge-success' },
+  annulee: { label: 'Annulée', badge: 'badge-neutral' },
 };
 
 function fmtDate(iso) {
@@ -37,6 +38,12 @@ export default function DemandesCommandesPage() {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // Modale de suppression : focus piégé, Échap (hors envoi), focus rendu au bouton « Supprimer » à la fermeture
+  const supprRef = useRef(null);
+  useFocusTrap(supprRef, Boolean(deleteTarget), {
+    initialFocus: '#demande-suppr-code',
+    onEscape: () => { if (!deleting) setDeleteTarget(null); },
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,110 +105,116 @@ export default function DemandesCommandesPage() {
   }, {});
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="page max-w-[1280px]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <Link to={basePath} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-            <ArrowLeft className="w-4 h-4 text-slate-500" />
+      <div className="page-header">
+        <div className="flex items-start gap-2 min-w-0">
+          <Link to={basePath} className="btn-ghost btn-icon shrink-0 -ml-2" aria-label="Retour">
+            <ArrowLeft aria-hidden="true" />
           </Link>
-          <div>
-            <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight">
-              Demandes de <span className="font-editorial text-brand-600">commande</span>
+          <div className="min-w-0">
+            <h1 className="page-header-title">
+              Demandes de commande
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <p className="page-header-subtitle">
               Depuis la vitrine publique /site-tarifs-iphone
             </p>
           </div>
         </div>
-        <button onClick={load} className="btn-ghost p-2.5" title="Rafraîchir">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="page-header-actions">
+          <button type="button" onClick={load} className="btn-secondary btn-icon" title="Rafraîchir" aria-label="Rafraîchir">
+            <RefreshCw className={loading ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {/* Filtres */}
-      <div className="flex items-center gap-2 mb-6 flex-wrap">
-        <Filter className="w-4 h-4 text-slate-400" />
-        {[
-          ['all', 'Toutes', demandes.length],
-          ['nouvelle', 'Nouvelles', counts.nouvelle || 0],
-          ['en_cours', 'En cours', counts.en_cours || 0],
-          ['confirmee', 'Confirmées', counts.confirmee || 0],
-          ['annulee', 'Annulées', counts.annulee || 0],
-        ].map(([v, label, n]) => (
-          <button
-            key={v}
-            onClick={() => setFilterStatut(v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5
-              ${filterStatut === v
-                ? 'bg-brand-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-          >
-            {label} {n > 0 && <span className={filterStatut === v ? 'bg-white/20 px-1.5 rounded' : 'bg-slate-200 px-1.5 rounded'}>{n}</span>}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 mb-6 max-sm:scroll-fade-x">
+        <Filter className="w-4 h-4 text-slate-400 shrink-0 max-sm:hidden" aria-hidden="true" />
+        <div className="segmented" role="group" aria-label="Filtrer par statut">
+          {[
+            ['all', 'Toutes', demandes.length],
+            ['nouvelle', 'Nouvelles', counts.nouvelle || 0],
+            ['en_cours', 'En cours', counts.en_cours || 0],
+            ['confirmee', 'Confirmées', counts.confirmee || 0],
+            ['annulee', 'Annulées', counts.annulee || 0],
+          ].map(([v, label, n]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setFilterStatut(v)}
+              aria-pressed={filterStatut === v}
+              className={`segmented-item ${filterStatut === v ? 'segmented-item-active' : ''}`}
+            >
+              {label} {n > 0 && <span className={`badge badge-sm ${filterStatut === v ? 'badge-brand' : 'badge-neutral'}`}>{n}</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Liste */}
       {loading && !demandes.length ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+        <div className="space-y-3" role="status">
+          {[1, 2, 3].map(i => <div key={i} className="skeleton h-40" aria-hidden="true" />)}
+          <p className="sr-only">Chargement…</p>
         </div>
       ) : demandes.length === 0 ? (
-        <div className="card p-12 text-center">
-          <ShoppingBag className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">Aucune demande pour ce filtre</p>
-          <p className="text-xs text-slate-400 mt-1">Les commandes passées depuis la vitrine apparaîtront ici</p>
+        <div className="card empty-state">
+          <div className="empty-state-icon">
+            <ShoppingBag aria-hidden="true" />
+          </div>
+          <p className="t-h2">Aucune demande pour ce filtre</p>
+          <p className="t-body text-slate-500 max-w-sm">Les commandes passées depuis la vitrine apparaîtront ici</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {demandes.map(d => {
             const sc = STATUS_CONFIG[d.statut] || STATUS_CONFIG.nouvelle;
             const isSaving = savingId === d.id;
             return (
-              <div key={d.id} className="card p-5 border-l-4" style={{ borderLeftColor: d.statut === 'nouvelle' ? '#F59E0B' : d.statut === 'en_cours' ? '#7C3AED' : d.statut === 'confirmee' ? '#10B981' : '#64748B' }}>
+              <div key={d.id} className="card card-body">
                 <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-                      <ShoppingBag className="w-5 h-5 text-amber-600" />
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
+                      <ShoppingBag className="w-5 h-5 text-slate-500" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-display font-bold text-slate-900 text-lg leading-tight">
+                      <p className="t-h2">
                         #{d.id} · {d.marque} {d.modele}
                       </p>
-                      <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {fmtDate(d.date_creation)}</span>
+                      <p className="t-caption mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1 tabular-nums"><Clock className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> {fmtDate(d.date_creation)}</span>
                         {d.stockage && <><span>·</span><span>{d.stockage}</span></>}
-                        {d.prix > 0 && <><span>·</span><span className="font-bold text-amber-600">{d.prix}€</span></>}
+                        {d.prix > 0 && <><span>·</span><span className="t-num text-sm">{d.prix}€</span></>}
                       </p>
                     </div>
                   </div>
-                  <span className={`shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${sc.color}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />
+                  <span className={`badge ${sc.badge} shrink-0`}>
+                    <span className="badge-dot" aria-hidden="true" />
                     {sc.label}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mb-3">
-                  <div className="flex items-center gap-2 text-slate-700">
-                    <User className="w-4 h-4 text-slate-400 shrink-0" />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-1 text-sm mb-3">
+                  <div className="flex items-center gap-2 min-h-11 text-slate-800 min-w-0">
+                    <User className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
                     <span className="font-semibold truncate">{d.nom}</span>
                   </div>
-                  <a href={`tel:${d.telephone}`} className="flex items-center gap-2 text-brand-600 hover:text-brand-700 font-medium">
-                    <Phone className="w-4 h-4 shrink-0" />
+                  <a href={`tel:${d.telephone}`} className="inline-flex items-center gap-2 min-h-11 text-brand-700 hover:text-brand-800 font-medium tabular-nums rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                    <Phone className="w-4 h-4 shrink-0" aria-hidden="true" />
                     {d.telephone}
                   </a>
                   {d.email && (
-                    <a href={`mailto:${d.email}`} className="flex items-center gap-2 text-slate-600 hover:text-brand-600 truncate">
-                      <Mail className="w-4 h-4 shrink-0" />
+                    <a href={`mailto:${d.email}`} className="inline-flex items-center gap-2 min-h-11 text-slate-600 hover:text-brand-700 min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      <Mail className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span className="truncate">{d.email}</span>
                     </a>
                   )}
                 </div>
 
                 {d.message && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 mb-3 flex gap-2">
-                    <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <div className="card-section t-body mb-3 flex gap-2">
+                    <MessageSquare className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" aria-hidden="true" />
                     <span className="whitespace-pre-line">{d.message}</span>
                   </div>
                 )}
@@ -210,50 +223,55 @@ export default function DemandesCommandesPage() {
                 <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-slate-100">
                   {d.statut === 'nouvelle' && (
                     <button
+                      type="button"
                       onClick={() => changerStatut(d.id, 'en_cours')}
                       disabled={isSaving}
-                      className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      className="btn-primary grow sm:grow-0"
                     >
-                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Package className="w-3 h-3" />}
+                      {isSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Package aria-hidden="true" />}
                       Prendre en charge
                     </button>
                   )}
                   {['nouvelle', 'en_cours'].includes(d.statut) && (
                     <button
+                      type="button"
                       onClick={() => changerStatut(d.id, 'confirmee')}
                       disabled={isSaving}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      className={`${d.statut === 'en_cours' ? 'btn-primary' : 'btn-secondary'} grow sm:grow-0`}
                     >
-                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                      {isSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
                       Confirmer
                     </button>
                   )}
                   {d.statut !== 'annulee' && d.statut !== 'confirmee' && (
                     <button
+                      type="button"
                       onClick={() => changerStatut(d.id, 'annulee')}
                       disabled={isSaving}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      className="btn-ghost grow sm:grow-0"
                     >
-                      <X className="w-3 h-3" /> Annuler
+                      <X aria-hidden="true" /> Annuler
                     </button>
                   )}
                   {(d.statut === 'annulee' || d.statut === 'confirmee') && (
                     <button
+                      type="button"
                       onClick={() => changerStatut(d.id, 'nouvelle')}
                       disabled={isSaving}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      className="btn-secondary grow sm:grow-0"
                     >
-                      <RefreshCw className="w-3 h-3" /> Rouvrir
+                      <RefreshCw aria-hidden="true" /> Rouvrir
                     </button>
                   )}
                   {/* Suppression definitive (code admin requis) */}
                   <button
+                    type="button"
                     onClick={() => ouvrirSuppression(d)}
                     disabled={isSaving}
-                    className="ml-auto px-3 py-1.5 rounded-lg text-red-500 hover:bg-red-50 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    className="btn-danger-ghost grow sm:grow-0 sm:ml-auto"
                     title="Supprimer définitivement (code admin requis)"
                   >
-                    <Trash2 className="w-3 h-3" /> Supprimer
+                    <Trash2 aria-hidden="true" /> Supprimer
                   </button>
                 </div>
               </div>
@@ -264,60 +282,66 @@ export default function DemandesCommandesPage() {
 
       {/* Modal de confirmation suppression (code admin requis) */}
       {deleteTarget && (
-        <>
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={() => !deleting && setDeleteTarget(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-                  <AlertTriangle className="w-5 h-5 text-red-600" />
+        <div className="modal-overlay" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div ref={supprRef} role="dialog" aria-modal="true" aria-labelledby="demande-suppr-titre" className="modal sm:max-w-sm" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0" aria-hidden="true">
+                  <AlertTriangle className="w-5 h-5 text-red-700" />
                 </div>
-                <div>
-                  <h3 className="text-lg font-display font-bold text-slate-900">Supprimer la demande</h3>
-                  <p className="text-xs text-slate-500 mt-0.5 truncate max-w-[230px]">{deleteTarget.label}</p>
+                <div className="min-w-0">
+                  <h3 id="demande-suppr-titre" className="t-h2">Supprimer la demande</h3>
+                  <p className="t-caption truncate">{deleteTarget.label}</p>
                 </div>
               </div>
-              <p className="text-sm text-slate-600 mb-4">
-                Cette action est <strong className="text-red-600">irréversible</strong>. Entrez le code admin pour confirmer.
+            </div>
+            <div className="modal-body">
+              <p className="t-body mb-4">
+                Cette action est <strong className="text-red-700">irréversible</strong>. Entrez le code admin pour confirmer.
               </p>
-              <div className="mb-3">
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 flex items-center gap-1.5">
-                  <Lock className="w-3 h-3" /> Code administrateur
+              <div>
+                <label htmlFor="demande-suppr-code" className="input-label flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" /> Code administrateur
                 </label>
                 <input
+                  id="demande-suppr-code"
                   type="password"
                   value={deletePassword}
                   onChange={e => { setDeletePassword(e.target.value); setDeleteError(''); }}
                   onKeyDown={e => e.key === 'Enter' && confirmerSuppression()}
-                  className="w-full px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 text-slate-900 text-sm outline-none transition"
+                  className="input"
                   placeholder="Entrez le code admin"
                   autoFocus
                   disabled={deleting}
+                  aria-invalid={deleteError ? 'true' : undefined}
+                  aria-describedby={deleteError ? 'demande-suppr-erreur' : undefined}
                 />
                 {deleteError && (
-                  <p className="text-xs text-red-600 mt-1.5 font-semibold">{deleteError}</p>
+                  <p id="demande-suppr-erreur" role="alert" className="input-error">{deleteError}</p>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-5">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  disabled={deleting}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors disabled:opacity-50"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={confirmerSuppression}
-                  disabled={deleting || !deletePassword}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {deleting ? 'Suppression…' : 'Supprimer'}
-                </button>
-              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleting}
+                className="btn-ghost"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmerSuppression}
+                disabled={deleting || !deletePassword}
+                className="btn-danger"
+              >
+                {deleting ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+                {deleting ? 'Suppression…' : 'Supprimer'}
+              </button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -57,20 +57,21 @@ const ICONS = {
   important: Sparkles,
 };
 
+// Design V2 : toast blanc, bordure gauche 4 px sémantique, icône -700 (AA), texte slate-800.
 const STYLES = {
-  success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-  error: 'bg-red-50 border-red-200 text-red-800',
-  info: 'bg-blue-50 border-blue-200 text-blue-800',
-  warning: 'bg-amber-50 border-amber-200 text-amber-800',
-  important: 'bg-gradient-to-br from-brand-600 to-fuchsia-600 border-brand-700 text-white',
+  success: 'border-l-emerald-600',
+  error: 'border-l-red-600',
+  info: 'border-l-blue-600',
+  warning: 'border-l-amber-500',
+  important: 'border-l-brand-600',
 };
 
 const ICON_STYLES = {
-  success: 'text-emerald-500',
-  error: 'text-red-500',
-  info: 'text-blue-500',
-  warning: 'text-amber-500',
-  important: 'text-white',
+  success: 'text-emerald-700',
+  error: 'text-red-700',
+  info: 'text-blue-700',
+  warning: 'text-amber-700',
+  important: 'text-brand-600',
 };
 
 function ToastItem({ toast, onDismiss }) {
@@ -112,24 +113,22 @@ function ToastItem({ toast, onDismiss }) {
       aria-live={ariaLive}
       aria-atomic="true"
       onClick={toast.onClick ? handleClick : undefined}
-      className={`flex items-start gap-3 px-4 py-3 rounded-xl border transition-all duration-[250ms] ${
+      className={`toast transition-[opacity,transform] duration-[250ms] ${
         STYLES[toast.type] || STYLES.info
       } ${exiting ? 'opacity-0 translate-x-8' : 'opacity-100 translate-x-0'} ${
-        isImportant ? 'shadow-2xl shadow-brand-600/40 ring-2 ring-brand-300/40 hover:scale-[1.02]' : 'shadow-lg'
+        isImportant ? 'border-brand-200' : ''
       } ${toast.onClick ? 'cursor-pointer' : ''}`}
-      style={{ animation: exiting ? undefined : (isImportant ? 'importantToastIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'slideInToast 0.3s ease-out') }}
+      style={{ animation: exiting ? undefined : (isImportant ? 'importantToastIn 0.35s cubic-bezier(0.22, 1, 0.36, 1)' : 'slideInToast 0.25s ease-out') }}
     >
       <Icon
         aria-hidden="true"
-        className={`w-5 h-5 shrink-0 mt-0.5 ${ICON_STYLES[toast.type] || ICON_STYLES.info} ${
-          isImportant ? 'motion-safe:animate-pulse' : ''
-        }`}
+        className={`w-5 h-5 shrink-0 mt-2.5 ${ICON_STYLES[toast.type] || ICON_STYLES.info}`}
       />
-      <div className="flex-1 min-w-0">
-        {toast.title && <p className={`font-bold text-sm ${isImportant ? 'text-white' : ''}`}>{toast.title}</p>}
-        <p className={`text-sm ${isImportant ? 'text-white/90' : ''}`}>{toast.message}</p>
+      <div className="flex-1 min-w-0 py-2">
+        {toast.title && <p className="font-semibold text-sm text-slate-900">{toast.title}</p>}
+        <p className="text-sm leading-relaxed">{toast.message}</p>
         {toast.onClick && (
-          <p className={`text-xs mt-1 font-semibold ${isImportant ? 'text-white/80 underline' : 'text-brand-600 underline'}`}>
+          <p className="text-xs mt-1 font-semibold text-brand-700 underline underline-offset-2">
             Cliquer pour voir →
           </p>
         )}
@@ -138,11 +137,9 @@ function ToastItem({ toast, onDismiss }) {
         type="button"
         onClick={(e) => { e.stopPropagation(); beginExit(); }}
         aria-label="Fermer la notification"
-        className={`p-1 rounded transition-colors shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-current/40 ${
-          isImportant ? 'hover:bg-white/20' : 'hover:bg-black/5'
-        }`}
+        className="btn-ghost btn-icon shrink-0 text-slate-500"
       >
-        <X className="w-4 h-4" aria-hidden="true" />
+        <X aria-hidden="true" />
       </button>
     </div>
   );
@@ -180,27 +177,28 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      {/* Toast container */}
+      {/* Conteneur : sous la barre mobile (top-16) sur téléphone, en bas à droite dès 640 px, au-dessus
+          du bouton de chat (56 px + marge) à partir de lg ; au-dessus des modales (z-60) */}
       <div
-        className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-[calc(100vw-2rem)] w-80 sm:w-96 pointer-events-none"
+        className="fixed z-[60] flex flex-col items-end gap-2 pointer-events-none
+          top-16 left-4 right-4 sm:top-auto sm:left-auto sm:bottom-4 sm:right-4 lg:bottom-20 lg:right-6"
         aria-live="polite"
         aria-atomic="false"
       >
         {toasts.map(t => (
-          <div key={t.id} className="pointer-events-auto">
+          <div key={t.id} className="pointer-events-auto max-w-full">
             <ToastItem toast={t} onDismiss={dismissToast} />
           </div>
         ))}
       </div>
       <style>{`
         @keyframes slideInToast {
-          from { opacity: 0; transform: translateX(100%); }
-          to { opacity: 1; transform: translateX(0); }
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         @keyframes importantToastIn {
-          0% { opacity: 0; transform: translateX(100%) scale(0.8); }
-          60% { opacity: 1; transform: translateX(-8px) scale(1.05); }
-          100% { opacity: 1; transform: translateX(0) scale(1); }
+          0% { opacity: 0; transform: translateY(8px) scale(0.97); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
         }
         @media (prefers-reduced-motion: reduce) {
           @keyframes importantToastIn {

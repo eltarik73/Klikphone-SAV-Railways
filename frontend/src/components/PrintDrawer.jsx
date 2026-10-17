@@ -151,19 +151,19 @@ function ShareMenu({ doc, formatKey, ticketId, ticketCode, clientTel, clientEmai
     <div ref={wrapRef} className="relative">
       <button ref={triggerRef} type="button" onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
-        className="btn-secondary min-h-11 px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-        <Send className="h-4 w-4" aria-hidden="true" />
+        className="btn-secondary min-h-11 px-3">
+        <Send aria-hidden="true" />
         Envoyer
-        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+        <ChevronDown className={`motion-safe:transition-transform duration-150 ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-          <p aria-hidden="true" className="px-3 pt-1.5 pb-1 text-xs font-semibold text-slate-600">Envoyer au client : {label}</p>
+        <div className="absolute bottom-full right-0 z-30 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in">
+          <p aria-hidden="true" className="px-3 pt-1.5 pb-1 t-caption">Envoyer au client : {label}</p>
           <div ref={menuRef} id={menuId} role="menu" aria-label={`Envoyer le ${label} au client`} onKeyDown={onMenuKeyDown}>
-            {linkItem(waHref, MessageCircle, 'text-green-700', 'WhatsApp')}
-            {linkItem(smsHref, Send, 'text-blue-700', 'SMS')}
+            {linkItem(waHref, MessageCircle, 'text-emerald-700', 'WhatsApp')}
+            {linkItem(smsHref, Send, 'text-brand-600', 'SMS')}
             <button type="button" role="menuitem" onClick={handleEmail} disabled={!clientEmail || sending} className={ITEM_CLS}>
-              {sending ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4 text-red-700" aria-hidden="true" />}
+              {sending ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4 text-slate-500" aria-hidden="true" />}
               {sending ? 'Envoi…' : doc.pdf ? 'Email (PDF A4)' : 'Email'}
             </button>
             {clientTel && links.status === 'error' && (
@@ -172,7 +172,7 @@ function ShareMenu({ doc, formatKey, ticketId, ticketCode, clientTel, clientEmai
               </button>
             )}
           </div>
-          <div className="px-3 pb-1.5 text-xs text-slate-600" aria-live="polite">
+          <div className="px-3 pb-1.5 t-caption" aria-live="polite">
             {notes.map((n) => <p key={n}>{n}</p>)}
             {clientTel && links.status === 'error' && <p>{links.error}</p>}
           </div>
@@ -217,8 +217,8 @@ export default function PrintDrawer({
       clientTel={clientTel} clientEmail={clientEmail} links={links} onNeedLinks={loadLinks}
       notify={notify} escapeRef={escapeRef} />
   ) : (
-    <span className="inline-flex min-h-11 items-center gap-1.5 px-1 text-xs font-medium text-slate-600">
-      <Lock className="h-3.5 w-3.5" aria-hidden="true" /> Document interne, non envoyable
+    <span className="inline-flex min-h-11 items-center gap-1.5 px-1 t-caption">
+      <Lock className="h-4 w-4 text-slate-400" aria-hidden="true" /> Document interne, non envoyable
     </span>
   ));
 

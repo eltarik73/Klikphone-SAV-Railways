@@ -67,13 +67,13 @@ function StockBadge({ value, onChange, label = 'Stock' }) {
   const lvl = stockLevel(value);
   const tone =
     lvl === 'low'
-      ? 'border-red-500/40 bg-red-500/10 text-red-300 focus-within:border-red-400'
+      ? 'border-red-200 bg-red-50 text-red-700 focus-within:border-red-400'
       : lvl === 'mid'
-      ? 'border-orange-500/40 bg-orange-500/10 text-orange-300 focus-within:border-orange-400'
-      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 focus-within:border-emerald-400';
+      ? 'border-amber-200 bg-amber-50 text-amber-800 focus-within:border-amber-400'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700 focus-within:border-emerald-400';
   return (
     <div
-      className={`inline-flex items-center justify-center rounded-full border px-2 py-0.5 transition ${tone}`}
+      className={`inline-flex items-center justify-center rounded-lg border px-1 transition-colors duration-150 focus-within:ring-2 focus-within:ring-brand-500/40 ${tone}`}
       title={lvl === 'low' ? 'Stock faible' : lvl === 'mid' ? 'Stock moyen' : 'Stock OK'}
     >
       <input
@@ -82,7 +82,7 @@ function StockBadge({ value, onChange, label = 'Stock' }) {
         value={value ?? 0}
         onChange={onChange}
         aria-label={label}
-        className="w-11 min-h-[44px] bg-transparent text-center font-bold text-[13px] outline-none"
+        className="w-12 min-h-[40px] bg-transparent text-center font-semibold text-base lg:text-sm tabular-nums outline-none"
       />
     </div>
   );
@@ -90,22 +90,17 @@ function StockBadge({ value, onChange, label = 'Stock' }) {
 
 function ConditionPill({ value, onChange, label = 'Condition' }) {
   const isNeuf = value === 'Neuf';
-  const tone = isNeuf
-    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 focus-within:border-emerald-400'
-    : 'bg-blue-500/15 border-blue-500/40 text-blue-300 focus-within:border-blue-400';
   return (
-    <div
-      className={`inline-flex items-center gap-1.5 rounded-full border pl-2.5 pr-1 py-0.5 transition ${tone}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${isNeuf ? 'bg-emerald-400' : 'bg-blue-400'}`} />
+    <div className="relative">
+      <span className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${isNeuf ? 'bg-emerald-500' : 'bg-blue-500'}`} aria-hidden="true" />
       <select
         value={value || 'Reconditionné Premium'}
         onChange={onChange}
         aria-label={label}
-        className="bg-transparent min-h-[44px] text-[12px] font-semibold outline-none cursor-pointer pr-1 appearance-none"
+        className="select w-full pl-6 pr-8 font-medium"
       >
-        <option value="Neuf" className="bg-slate-900 text-emerald-300">Neuf</option>
-        <option value="Reconditionné Premium" className="bg-slate-900 text-blue-300">Recond. Premium</option>
+        <option value="Neuf">Neuf</option>
+        <option value="Reconditionné Premium">Recond. Premium</option>
       </select>
     </div>
   );
@@ -440,60 +435,53 @@ export default function AdminTarifsIphonePage() {
   }
 
   const dirtyCount = Object.keys(dirty).length;
-  const rowPadY = compact ? 'py-1' : 'py-2.5';
+  const rowPadY = compact ? 'py-1' : 'py-2';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
+    <div className="page max-w-[1280px]">
       {/* Header */}
-      <header className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4 min-w-0">
-              <Link to={basePath} aria-label="Retour" className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-800 transition shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
-                <ArrowLeft className="w-5 h-5" aria-hidden="true" />
-              </Link>
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center shrink-0">
-                  <Smartphone className="w-5 h-5 text-brand-400" />
-                </div>
-                <div className="min-w-0">
-                  <h1 className="text-xl font-bold truncate">Tarifs iPhones reconditionnés</h1>
-                  <p className="text-xs text-slate-400 truncate">Gestion catalogue & affiches boutique</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={handlePdfFull}
-                aria-label="PDF complet"
-                className="min-h-[44px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center gap-2 text-sm transition"
-              >
-                <FileDown className="w-4 h-4" />
-                <span className="hidden sm:inline">PDF complet</span>
-              </button>
-              <button
-                onClick={handlePdfAll}
-                className="min-h-[44px] px-3 py-2 rounded-lg bg-brand-500 hover:bg-brand-600 text-white flex items-center gap-2 text-sm font-semibold transition shadow-lg shadow-brand-500/20"
-              >
-                <Archive className="w-4 h-4" />
-                <span className="hidden sm:inline">Tout télécharger (ZIP)</span>
-                <span className="sm:hidden">ZIP</span>
-              </button>
+      <header>
+        <div className="page-header">
+          <div className="flex items-start gap-2 min-w-0">
+            <Link to={basePath} aria-label="Retour" className="btn-ghost btn-icon shrink-0 -ml-2">
+              <ArrowLeft aria-hidden="true" />
+            </Link>
+            <div className="min-w-0">
+              <h1 className="page-header-title truncate">Tarifs iPhones reconditionnés</h1>
+              <p className="page-header-subtitle truncate">Gestion catalogue & affiches boutique</p>
             </div>
           </div>
+          <div className="page-header-actions max-w-full">
+            <button
+              onClick={handlePdfFull}
+              aria-label="PDF complet"
+              className="btn-secondary"
+            >
+              <FileDown />
+              <span className="hidden sm:inline">PDF complet</span>
+            </button>
+            <button
+              onClick={handlePdfAll}
+              className="btn-primary"
+            >
+              <Archive />
+              <span className="hidden sm:inline">Tout télécharger (ZIP)</span>
+              <span className="sm:hidden">ZIP</span>
+            </button>
+          </div>
+        </div>
 
-          {/* Stats rapides */}
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <StatCard icon={Smartphone} label="Modèles" value={stats.total} tone="brand" />
-            <StatCard icon={CheckCircle2} label="Actifs" value={stats.actifs} tone="emerald" />
-            <StatCard icon={Package} label="Stock total" value={stats.stockTotal} tone="blue" />
-            <StatCard
-              icon={AlertTriangle}
-              label="Stock faible"
-              value={stats.lowStock}
-              tone={stats.lowStock > 0 ? 'red' : 'slate'}
-            />
-          </div>
+        {/* Stats rapides */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard icon={Smartphone} label="Modèles" value={stats.total} tone="brand" />
+          <StatCard icon={CheckCircle2} label="Actifs" value={stats.actifs} tone="emerald" />
+          <StatCard icon={Package} label="Stock total" value={stats.stockTotal} tone="blue" />
+          <StatCard
+            icon={AlertTriangle}
+            label="Stock faible"
+            value={stats.lowStock}
+            tone={stats.lowStock > 0 ? 'red' : 'slate'}
+          />
         </div>
       </header>
 
@@ -501,77 +489,74 @@ export default function AdminTarifsIphonePage() {
       {toast && (
         <div
           role={toast.type === 'error' ? 'alert' : 'status'}
-          className={`fixed top-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl border backdrop-blur flex items-center gap-2.5 kp-toast-in ${
-            toast.type === 'success'
-              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
-              : 'bg-red-500/15 border-red-500/40 text-red-200'
+          className={`toast fixed top-4 right-4 z-[60] items-center animate-in ${
+            toast.type === 'success' ? 'border-l-emerald-600' : 'border-l-red-600'
           }`}
-          style={{ minWidth: 240 }}
         >
           {toast.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
+            <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
           ) : (
-            <AlertTriangle className="w-5 h-5 shrink-0 text-red-400" />
+            <AlertTriangle className="w-5 h-5 shrink-0 text-red-700" aria-hidden="true" />
           )}
-          <span className="text-sm font-medium">{toast.msg}</span>
+          <span className="flex-1 font-medium">{toast.msg}</span>
           <button
             onClick={() => setToast(null)}
-            className="ml-1 w-11 h-11 -my-2 -mr-2 inline-flex items-center justify-center rounded hover:bg-white/10 transition"
+            className="btn-ghost btn-icon shrink-0"
             aria-label="Fermer le message"
           >
-            <X className="w-3.5 h-3.5 opacity-70" />
+            <X />
           </button>
         </div>
       )}
 
       {/* Barre flottante de sélection */}
       {selected.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white rounded-xl shadow-2xl px-3 py-2.5 flex items-center gap-2 border border-brand-500/50 kp-slide-up">
-          <span className="text-sm font-semibold px-2">
+        <div className="card fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 shadow-lg px-3 py-2 flex items-center gap-2 border-brand-300 animate-in max-w-[calc(100vw-2rem)]">
+          <span className="text-sm font-semibold text-slate-900 px-2 whitespace-nowrap">
             {selected.size} sélection{selected.size > 1 ? 's' : ''}
           </span>
-          <div className="w-px h-6 bg-slate-700" />
+          <div className="w-px h-6 bg-slate-200" aria-hidden="true" />
           <button
             onClick={handlePdfSelection}
             disabled={selected.size > 2}
             title={selected.size > 2 ? 'Maximum 2 modèles pour le PDF' : 'Générer le PDF'}
-            className="min-h-[44px] px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white font-semibold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className="btn-primary btn-sm"
           >
-            <FileDown className="w-4 h-4" />
+            <FileDown />
             PDF
           </button>
           <button
             onClick={() => bulkToggleActive(true)}
             disabled={savingId === 'bulk'}
-            className="min-h-[44px] px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition"
+            className="btn-secondary btn-sm"
           >
-            <Power className="w-4 h-4" />
+            <Power className="text-emerald-700" />
             Activer
           </button>
           <button
             onClick={() => bulkToggleActive(false)}
             disabled={savingId === 'bulk'}
-            className="min-h-[44px] px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold text-sm flex items-center gap-2 disabled:opacity-50 transition"
+            className="btn-secondary btn-sm"
           >
-            <PowerOff className="w-4 h-4" />
+            <PowerOff className="text-slate-500" />
             Désactiver
           </button>
           <button
             onClick={() => setSelected(new Set())}
-            className="w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-800 transition"
+            className="btn-ghost btn-icon"
             title="Annuler la sélection"
             aria-label="Annuler la sélection"
           >
-            <X className="w-4 h-4" />
+            <X />
           </button>
         </div>
       )}
 
       {/* Contenu */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <main className="mt-6">
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400">
-            <Loader2 className="w-6 h-6 motion-safe:animate-spin mr-3" />
+          <div className="loading-inline justify-center w-full py-20">
+            <Loader2 aria-hidden="true" />
             Chargement des tarifs…
           </div>
         ) : (
@@ -579,27 +564,27 @@ export default function AdminTarifsIphonePage() {
             {/* Barre d'outils : recherche, filtres, mode compact */}
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
                 <input
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Rechercher un modèle, stockage…"
                   aria-label="Rechercher un modèle"
-                  className="w-full min-h-[44px] bg-slate-900 border border-slate-800 focus:border-brand-500 rounded-lg pl-9 pr-12 py-2 text-sm text-white placeholder-slate-400 outline-none transition"
+                  className="input pl-9 pr-12"
                 />
                 {query && (
                   <button
                     onClick={() => setQuery('')}
-                    className="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400"
+                    className="btn-ghost btn-icon absolute right-0 top-1/2 -translate-y-1/2 text-slate-500"
                     aria-label="Effacer la recherche"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X />
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+              <div className="segmented">
                 <FilterChip
                   active={conditionFilter === 'all'}
                   onClick={() => setConditionFilter('all')}
@@ -622,7 +607,7 @@ export default function AdminTarifsIphonePage() {
                 </FilterChip>
               </div>
 
-              <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+              <div className="segmented">
                 <FilterChip
                   active={activeFilter === 'all'}
                   onClick={() => setActiveFilter('all')}
@@ -645,42 +630,38 @@ export default function AdminTarifsIphonePage() {
                 </FilterChip>
               </div>
 
-              <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} theme="sombre" />
+              <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
 
               <button
                 type="button"
                 onClick={() => setFenetre('ajuster')}
-                className="min-h-[44px] px-3 rounded-lg border border-brand-500/50 bg-brand-500/15 text-brand-200 hover:bg-brand-500/25 text-sm font-semibold flex items-center gap-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                className="btn-secondary"
               >
-                <SlidersHorizontal className="w-4 h-4" aria-hidden="true" />
+                <SlidersHorizontal aria-hidden="true" />
                 Ajuster en %
               </button>
               <button
                 type="button"
                 onClick={() => setFenetre('historique')}
-                className="min-h-[44px] px-3 rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:text-white text-sm font-semibold flex items-center gap-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+                className="btn-secondary"
               >
-                <History className="w-4 h-4" aria-hidden="true" />
+                <History aria-hidden="true" />
                 Historique
               </button>
 
               <button
                 onClick={() => setCompact(c => !c)}
                 aria-pressed={compact}
-                className={`min-h-[44px] px-3 rounded-lg border text-sm flex items-center gap-2 transition ${
-                  compact
-                    ? 'bg-brand-500/15 border-brand-500/40 text-brand-300'
-                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                }`}
+                className={`btn-secondary ${compact ? 'bg-brand-50 text-brand-700 border-brand-300 hover:bg-brand-100' : ''}`}
                 title="Mode compact"
               >
-                {compact ? <AlignJustify className="w-4 h-4" /> : <Rows className="w-4 h-4" />}
+                {compact ? <AlignJustify /> : <Rows />}
                 <span className="hidden sm:inline">{compact ? 'Compact' : 'Confort'}</span>
               </button>
 
               {dirtyCount > 0 && (
-                <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs font-semibold kp-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                <div className="ml-auto badge badge-lg badge-warning" role="status">
+                  <span className="badge-dot" aria-hidden="true" />
                   {dirtyCount} modification{dirtyCount > 1 ? 's' : ''} non sauvegardée{dirtyCount > 1 ? 's' : ''}
                 </div>
               )}
@@ -688,18 +669,18 @@ export default function AdminTarifsIphonePage() {
 
             {/* Hint scroll mobile */}
             {scrollHint && (
-              <div className="md:hidden mb-2 flex items-center justify-end gap-1 text-xs text-slate-500 pr-1">
+              <div className="md:hidden mb-2 flex items-center justify-end gap-1 t-caption pr-1">
                 <span>Glisser pour voir plus</span>
-                <ChevronRight className="w-3.5 h-3.5 motion-safe:animate-pulse" />
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </div>
             )}
 
-            <p className="text-xs text-slate-500 mb-3">
+            <p className="t-caption mb-3">
               {filteredRows.length} résultat{filteredRows.length > 1 ? 's' : ''}
               {filteredRows.length !== rows.length && ` sur ${rows.length}`}
               {' · '}
               Modifiez les valeurs puis cliquez sur{' '}
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300">
+              <span className="badge badge-sm badge-brand">
                 <Save className="w-3 h-3" aria-hidden="true" />
                 Enregistrer
               </span>. {AIDE_VERROU_BOUTIQUE.note}
@@ -707,57 +688,54 @@ export default function AdminTarifsIphonePage() {
 
             <div
               ref={scrollerRef}
-              className="relative overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900 max-h-[calc(100vh-340px)] overflow-y-auto"
+              className="table-wrap scroll-fade-x max-h-[calc(100vh-340px)] overflow-y-auto"
             >
-              {/* Fade gauche/droite sur mobile pour indiquer le scroll */}
-              {scrollHint && (
-                <div className="md:hidden pointer-events-none absolute top-0 right-0 bottom-0 w-10 bg-gradient-to-l from-slate-900 to-transparent z-10" />
-              )}
-
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur text-slate-300 text-xs uppercase shadow-[0_1px_0_0_rgba(51,65,85,1)]">
+              <table className="table table-dense min-w-[1280px]">
+                <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#E2E8F0]">
                   <tr>
-                    <th className="px-3 py-3 text-center w-12">
+                    <th className="table-header text-center w-12 !px-1">
                       <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={allVisibleSelected}
                           onChange={toggleSelectAllVisible}
                           aria-label="Tout sélectionner (lignes affichées)"
-                          className="w-5 h-5 rounded border-slate-600 bg-slate-800 accent-brand-500 cursor-pointer"
+                          className="checkbox"
                           title="Tout sélectionner (visible)"
                         />
                       </label>
                     </th>
-                    <th className="px-3 py-3 text-left">Modèle</th>
-                    <th className="px-3 py-3 text-left w-28">Prix du</th>
-                    <th className="px-3 py-3 text-left w-40">Condition</th>
-                    <th className="px-3 py-3 text-left w-24">Stockage 1</th>
-                    <th className="px-3 py-3 text-left w-20">Prix 1 (€)</th>
-                    <th className="px-3 py-3 text-center w-20">Stock 1</th>
-                    <th className="px-3 py-3 text-left w-24">Stockage 2</th>
-                    <th className="px-3 py-3 text-left w-20">Prix 2 (€)</th>
-                    <th className="px-3 py-3 text-center w-20">Stock 2</th>
-                    <th className="px-3 py-3 text-left w-20">DAS Tête</th>
-                    <th className="px-3 py-3 text-left w-20">DAS Corps</th>
-                    <th className="px-3 py-3 text-left w-20">DAS Membre</th>
-                    <th className="px-3 py-3 text-right w-48 sticky right-0 bg-slate-900/95 backdrop-blur">Actions</th>
+                    <th className="table-header">Modèle</th>
+                    <th className="table-header w-28">Prix du</th>
+                    <th className="table-header w-52">Condition</th>
+                    <th className="table-header w-24">Stockage 1</th>
+                    <th className="table-header w-20">Prix 1 (€)</th>
+                    <th className="table-header text-center w-20">Stock 1</th>
+                    <th className="table-header w-24">Stockage 2</th>
+                    <th className="table-header w-20">Prix 2 (€)</th>
+                    <th className="table-header text-center w-20">Stock 2</th>
+                    <th className="table-header w-20">DAS Tête</th>
+                    <th className="table-header w-20">DAS Corps</th>
+                    <th className="table-header w-20">DAS Membre</th>
+                    <th className="table-header text-right w-48 lg:sticky lg:right-0 bg-slate-50 lg:shadow-[inset_1px_0_0_#E2E8F0]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && (
                     <tr>
-                      <td colSpan={14} className="px-6 py-16 text-center text-slate-400">
-                        <Search className="w-6 h-6 mx-auto mb-2 opacity-50" />
-                        <div className="text-sm">Aucun résultat pour ces filtres</div>
-                        {(query || conditionFilter !== 'all' || activeFilter !== 'all' || anciensSeuls) && (
-                          <button
-                            onClick={() => { setQuery(''); setConditionFilter('all'); setActiveFilter('all'); setAnciensSeuls(false); }}
-                            className="mt-3 text-xs text-brand-400 hover:text-brand-300 underline"
-                          >
-                            Réinitialiser les filtres
-                          </button>
-                        )}
+                      <td colSpan={14}>
+                        <div className="empty-state">
+                          <div className="empty-state-icon"><Search aria-hidden="true" /></div>
+                          <div className="t-body text-slate-500">Aucun résultat pour ces filtres</div>
+                          {(query || conditionFilter !== 'all' || activeFilter !== 'all' || anciensSeuls) && (
+                            <button
+                              onClick={() => { setQuery(''); setConditionFilter('all'); setActiveFilter('all'); setAnciensSeuls(false); }}
+                              className="btn-secondary"
+                            >
+                              Réinitialiser les filtres
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -771,18 +749,18 @@ export default function AdminTarifsIphonePage() {
                     return (
                       <tr
                         key={r.id}
-                        className={`border-t border-slate-800 transition group ${
+                        className={`table-row group ${
                           isDirty
-                            ? 'bg-orange-500/5 kp-dirty'
+                            ? 'bg-amber-50/70 hover:bg-amber-50'
                             : isSelected
-                            ? 'bg-brand-500/10'
-                            : 'hover:bg-slate-800/30'
-                        } ${isInactive ? 'opacity-50' : ''}`}
+                            ? 'table-row-selected'
+                            : ''
+                        } ${isInactive ? 'opacity-60' : ''}`}
                       >
-                        <td className={`px-3 ${rowPadY} text-center relative`}>
+                        <td className={`!px-1 ${rowPadY} text-center relative`}>
                           {isDirty && (
                             <span
-                              className="absolute left-0 top-0 bottom-0 w-1 bg-orange-400 kp-pulse-bar"
+                              className="absolute left-0 top-0 bottom-0 w-1 bg-amber-400"
                               aria-hidden
                             />
                           )}
@@ -792,7 +770,7 @@ export default function AdminTarifsIphonePage() {
                               checked={isSelected}
                               onChange={() => toggleSelect(r.slug)}
                               aria-label={`Sélectionner ${r.modele}`}
-                              className="w-5 h-5 rounded border-slate-600 bg-slate-800 accent-brand-500 cursor-pointer"
+                              className="checkbox"
                             />
                           </label>
                         </td>
@@ -802,11 +780,11 @@ export default function AdminTarifsIphonePage() {
                             value={r.modele || ''}
                             onChange={(e) => updateRow(r.id, 'modele', e.target.value)}
                             aria-label={`Modèle (ligne ${r.id})`}
-                            className="bg-slate-800 border border-slate-700 hover:border-slate-600 focus:border-brand-500 rounded px-2 py-1 min-h-[44px] w-44 text-white font-semibold outline-none transition"
+                            className="input w-44 font-semibold"
                           />
                         </td>
                         <td className={`px-3 ${rowPadY} whitespace-nowrap`}>
-                          <BadgeDatePrix row={r} theme="sombre" court />
+                          <BadgeDatePrix row={r} court />
                         </td>
                         <td className={`px-3 ${rowPadY}`}>
                           <ConditionPill
@@ -821,7 +799,7 @@ export default function AdminTarifsIphonePage() {
                             value={r.stockage_1 || ''}
                             onChange={(e) => updateRow(r.id, 'stockage_1', e.target.value)}
                             aria-label={`Stockage 1 de ${r.modele}`}
-                            className="input-cell w-20"
+                            className="input w-20 px-2"
                           />
                         </td>
                         <td className={`px-3 ${rowPadY}`}>
@@ -832,7 +810,7 @@ export default function AdminTarifsIphonePage() {
                             readOnly={verrou}
                             title={aideVerrou}
                             aria-label={`Prix 1 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
-                            className={`input-cell w-16 font-semibold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`input w-20 px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
                           />
                         </td>
                         <td className={`px-3 ${rowPadY} text-center`}>
@@ -848,7 +826,7 @@ export default function AdminTarifsIphonePage() {
                             value={r.stockage_2 || ''}
                             onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
                             aria-label={`Stockage 2 de ${r.modele}`}
-                            className="input-cell w-20"
+                            className="input w-20 px-2"
                           />
                         </td>
                         <td className={`px-3 ${rowPadY}`}>
@@ -859,7 +837,7 @@ export default function AdminTarifsIphonePage() {
                             readOnly={verrou}
                             title={aideVerrou}
                             aria-label={`Prix 2 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
-                            className={`input-cell w-16 font-semibold text-brand-300 ${verrou ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`input w-20 px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`}
                           />
                         </td>
                         <td className={`px-3 ${rowPadY} text-center`}>
@@ -875,7 +853,7 @@ export default function AdminTarifsIphonePage() {
                             value={r.das_tete || ''}
                             onChange={(e) => updateRow(r.id, 'das_tete', e.target.value)}
                             aria-label={`DAS tête de ${r.modele}`}
-                            className="input-cell w-14"
+                            className="input w-16 px-2"
                           />
                         </td>
                         <td className={`px-3 ${rowPadY}`}>
@@ -884,7 +862,7 @@ export default function AdminTarifsIphonePage() {
                             value={r.das_corps || ''}
                             onChange={(e) => updateRow(r.id, 'das_corps', e.target.value)}
                             aria-label={`DAS corps de ${r.modele}`}
-                            className="input-cell w-14"
+                            className="input w-16 px-2"
                           />
                         </td>
                         <td className={`px-3 ${rowPadY}`}>
@@ -893,16 +871,15 @@ export default function AdminTarifsIphonePage() {
                             value={r.das_membre || ''}
                             onChange={(e) => updateRow(r.id, 'das_membre', e.target.value)}
                             aria-label={`DAS membre de ${r.modele}`}
-                            className="input-cell w-14"
+                            className="input w-16 px-2"
                           />
                         </td>
-                        <td className={`px-3 ${rowPadY} sticky right-0 bg-slate-900/95 backdrop-blur group-hover:bg-slate-800/60 transition`}>
-                          <div className="flex justify-end items-center gap-2">
+                        <td className={`px-3 ${rowPadY} lg:sticky lg:right-0 bg-white lg:shadow-[inset_1px_0_0_#E2E8F0] ${isDirty ? 'bg-amber-50' : isSelected ? 'bg-brand-50' : 'group-hover:bg-slate-50'}`}>
+                          <div className="flex justify-end items-center gap-1.5">
                             <BoutonVerrou
                               verrouille={verrou}
                               onClick={() => basculerVerrou(r.id, r.modele)}
                               disabled={verrouEnCours === r.id}
-                              theme="sombre"
                               nom={`les prix de ${r.modele}`}
                               aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
                             />
@@ -911,9 +888,9 @@ export default function AdminTarifsIphonePage() {
                                 onClick={() => saveRow(r)}
                                 disabled={isSaving}
                                 aria-label={`Enregistrer ${r.modele}`}
-                                className="min-h-[44px] px-3 rounded-lg bg-orange-700 hover:bg-orange-800 text-white text-xs font-semibold flex items-center gap-1 disabled:opacity-50 shadow-lg shadow-orange-500/20 transition"
+                                className="btn-primary btn-sm"
                               >
-                                {isSaving ? <Loader2 className="w-3 h-3 motion-safe:animate-spin" /> : <Save className="w-3 h-3" />}
+                                {isSaving ? <Loader2 className="motion-safe:animate-spin" /> : <Save />}
                                 Enregistrer
                               </button>
                             )}
@@ -922,16 +899,16 @@ export default function AdminTarifsIphonePage() {
                               disabled={generatingId === r.id}
                               title={r.image_url ? 'Remplacer la photo (rechercher DuckDuckGo)' : 'Rechercher une photo sur DuckDuckGo'}
                               aria-label={`${r.image_url ? 'Remplacer la photo' : 'Chercher une photo'} de ${r.modele}`}
-                              className="min-h-[44px] px-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs flex items-center gap-1 disabled:opacity-50 transition relative"
+                              className="btn-secondary btn-sm relative"
                             >
                               {generatingId === r.id ? (
-                                <Loader2 className="w-3 h-3 motion-safe:animate-spin" />
+                                <Loader2 className="motion-safe:animate-spin" />
                               ) : (
-                                <ImageIcon className="w-3 h-3" />
+                                <ImageIcon />
                               )}
                               Photo
                               {r.image_url && (
-                                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900" title="Photo personnalisée définie" />
+                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" title="Photo personnalisée définie" />
                               )}
                             </button>
                             <button
@@ -939,9 +916,9 @@ export default function AdminTarifsIphonePage() {
                               disabled={isDirty}
                               title={isDirty ? 'Enregistrez d\'abord' : 'Voir le PDF'}
                               aria-label={`PDF de ${r.modele}`}
-                              className="min-h-[44px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                              className="btn-secondary btn-sm"
                             >
-                              <FileDown className="w-3 h-3" />
+                              <FileDown />
                               PDF
                             </button>
                           </div>
@@ -955,8 +932,8 @@ export default function AdminTarifsIphonePage() {
 
             {/* PDFs par groupe (2 modèles/page comme les .docx originaux) */}
             <div className="mt-8">
-              <h2 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-brand-400" />
+              <h2 className="t-h2 mb-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-slate-400" aria-hidden="true" />
                 PDFs groupés (2 modèles par page, format original boutique)
               </h2>
               <div className="flex flex-wrap gap-2">
@@ -967,9 +944,9 @@ export default function AdminTarifsIphonePage() {
                       key={key}
                       onClick={() => openPdfInNewTab(`/api/iphone-tarifs/pdf?group=${encodeURIComponent(key)}`)
                         .catch((e) => showToast('error', `PDF : ${e.message}`))}
-                      className="min-h-[44px] px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-brand-500/40 text-xs flex items-center gap-2 transition"
+                      className="btn-secondary btn-sm"
                     >
-                      <FileDown className="w-3 h-3 text-brand-400" />
+                      <FileDown className="text-brand-600" />
                       {items.map(i => i.modele).join(' + ')}
                     </button>
                   ))}
@@ -982,21 +959,21 @@ export default function AdminTarifsIphonePage() {
       {/* Modal choix image (meme pattern que AdminTarifsSmartphonesPage) */}
       {imagePicker && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+          className="modal-overlay"
           onClick={() => setImagePicker(null)}
         >
           <div
-            className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-3xl border border-white/10 max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl"
+            className="modal sm:max-w-5xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-white/10 bg-slate-900/95 backdrop-blur-md">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-violet-500/20">
-                  <ImageIcon className="w-5 h-5 text-violet-400" />
+            <div className="modal-header">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
+                  <ImageIcon className="w-5 h-5" aria-hidden="true" />
                 </div>
-                <div>
-                  <h3 className="font-black text-lg leading-tight">Choisir la photo</h3>
-                  <p className="text-sm text-slate-400">
+                <div className="min-w-0">
+                  <h3 className="t-h2">Choisir la photo</h3>
+                  <p className="text-sm text-slate-500 truncate">
                     Apple {imagePicker.row.modele}
                   </p>
                 </div>
@@ -1004,13 +981,13 @@ export default function AdminTarifsIphonePage() {
               <button
                 onClick={() => setImagePicker(null)}
                 aria-label="Fermer le choix de photo"
-                className="w-11 h-11 inline-flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/15 transition-colors"
+                className="btn-ghost btn-icon shrink-0"
               >
-                <X className="w-5 h-5" />
+                <X />
               </button>
             </div>
 
-            <div className="px-5 pt-4 pb-2 space-y-3">
+            <div className="modal-body space-y-3">
               {/* Barre de recherche custom */}
               <form
                 onSubmit={(e) => {
@@ -1018,76 +995,77 @@ export default function AdminTarifsIphonePage() {
                   const q = e.target.query.value.trim();
                   if (q) researchWithQuery(q);
                 }}
-                className="flex items-center gap-2"
+                className="flex flex-wrap items-center gap-2"
               >
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
                   <input
                     type="text"
                     name="query"
                     defaultValue={imagePicker.query}
                     placeholder="Ex: iPhone 15 Pro back view cutout, iPhone 16 Pro Max PNG mockup..."
-                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 focus:border-violet-500 text-white text-sm outline-none transition"
+                    aria-label="Recherche de photo"
+                    className="input pl-10"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={imagePicker.searching}
-                  className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-semibold flex items-center gap-2 disabled:opacity-50 transition"
+                  className="btn-secondary"
                 >
-                  {imagePicker.searching ? <Loader2 className="w-4 h-4 motion-safe:animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {imagePicker.searching ? <Loader2 className="motion-safe:animate-spin" /> : <RefreshCw />}
                   Rechercher
                 </button>
                 <button
                   type="button"
                   onClick={generateAiVariants}
                   disabled={imagePicker.searching}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 text-sm font-bold flex items-center gap-2 disabled:opacity-50 transition shadow-lg shadow-amber-500/30"
+                  className="btn-secondary"
                   title="Génère 4 photos IA fond blanc (Pollinations.ai)"
                 >
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="text-brand-600" />
                   Générer IA
                 </button>
               </form>
 
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <Search className="w-3 h-3" />
+              <div className="flex items-center gap-2 t-caption">
+                <Search className="w-4 h-4 text-slate-400" aria-hidden="true" />
                 <span>
                   {imagePicker.candidates.length} photos — cliquez sur la meilleure. Besoin d'autre chose ?
-                  Modifie la recherche ci-dessus ou <strong className="text-amber-400">génère IA</strong> (fond blanc garanti).
+                  Modifie la recherche ci-dessus ou <strong className="text-brand-700">génère IA</strong> (fond blanc garanti).
                 </span>
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-5">
-              {imagePicker.candidates.map((url, i) => (
-                <button
-                  key={i}
-                  onClick={() => chooseImage(imagePicker.row, url)}
-                  className="group relative bg-white rounded-2xl overflow-hidden aspect-square flex items-center justify-center hover:ring-4 hover:ring-violet-500 transition-all shadow-lg hover:shadow-2xl motion-safe:hover:scale-[1.03]"
-                >
-                  <img
-                    src={url}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="max-w-full max-h-full object-contain p-4 motion-safe:group-hover:scale-110 transition-transform duration-300"
-                    onError={(e) => { e.target.style.opacity = '0.25'; }}
-                  />
-                  {i === 0 && (
-                    <div className="absolute top-2 left-2 flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg">
-                      <Star className="w-3 h-3 fill-current" />
-                      RECOMMANDÉ
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {imagePicker.candidates.map((url, i) => (
+                  <button
+                    key={i}
+                    onClick={() => chooseImage(imagePicker.row, url)}
+                    aria-label={`Choisir la photo ${i + 1}`}
+                    className="group relative card overflow-hidden aspect-square flex items-center justify-center transition-colors duration-150 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+                  >
+                    <img
+                      src={url}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="max-w-full max-h-full object-contain p-4"
+                      onError={(e) => { e.target.style.opacity = '0.25'; }}
+                    />
+                    {i === 0 && (
+                      <div className="absolute top-2 left-2 badge badge-brand">
+                        <Star className="w-3 h-3 fill-current" aria-hidden="true" />
+                        RECOMMANDÉ
+                      </div>
+                    )}
+                    <div className="absolute bottom-2 right-2 badge-count">
+                      {i + 1}
                     </div>
-                  )}
-                  <div className="absolute bottom-2 right-2 w-6 h-6 flex items-center justify-center bg-slate-900 text-white text-[11px] font-bold rounded-full shadow-lg">
-                    {i + 1}
-                  </div>
-                  <div className="absolute inset-0 bg-violet-500/0 group-hover:bg-violet-500/10 transition-colors" />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-violet-600 to-transparent text-white text-xs font-bold py-2 px-3 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
-                    <Check className="w-3.5 h-3.5" /> Choisir cette photo
-                  </div>
-                </button>
-              ))}
+                    <div className="absolute inset-x-0 bottom-0 bg-brand-600 text-white text-xs font-semibold py-2 px-3 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150 flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4" aria-hidden="true" /> Choisir cette photo
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -1115,102 +1093,36 @@ export default function AdminTarifsIphonePage() {
         onAnnule={() => load()}
       />
       {adminPrompt}
-
-      <style>{`
-        .input-cell {
-          background: rgb(30 41 59);
-          border: 1px solid rgb(51 65 85);
-          border-radius: 4px;
-          padding: 4px 8px;
-          min-height: 44px;
-          color: white;
-          font-size: 13px;
-          transition: border-color 0.15s, background-color 0.15s;
-        }
-        .input-cell:hover {
-          border-color: rgb(71 85 105);
-        }
-        .input-cell:focus {
-          outline: none;
-          border-color: rgb(139 92 246);
-          background: rgb(15 23 42);
-        }
-
-        @keyframes kpToastIn {
-          0%   { opacity: 0; transform: translateX(24px) scale(0.96); }
-          60%  { opacity: 1; transform: translateX(-4px) scale(1.01); }
-          100% { opacity: 1; transform: translateX(0) scale(1); }
-        }
-        .kp-toast-in { animation: kpToastIn 360ms cubic-bezier(.2,.9,.3,1.2) both; }
-
-        @keyframes kpSlideUp {
-          from { opacity: 0; transform: translate(-50%, 20px); }
-          to   { opacity: 1; transform: translate(-50%, 0); }
-        }
-        .kp-slide-up { animation: kpSlideUp 260ms ease-out both; }
-
-        @keyframes kpPulse {
-          0%, 100% { opacity: 1; }
-          50%      { opacity: 0.55; }
-        }
-        .kp-pulse { animation: kpPulse 1.8s ease-in-out infinite; }
-
-        @keyframes kpPulseBar {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0); }
-          50%      { box-shadow: 0 0 10px 2px rgba(251, 146, 60, 0.55); }
-        }
-        .kp-pulse-bar { animation: kpPulseBar 1.6s ease-in-out infinite; }
-
-        @keyframes kpDirtyIn {
-          from { box-shadow: inset 3px 0 0 0 rgba(251, 146, 60, 0); }
-          to   { box-shadow: inset 3px 0 0 0 rgba(251, 146, 60, 0.9); }
-        }
-        .kp-dirty { animation: kpDirtyIn 220ms ease-out both; }
-        @media (prefers-reduced-motion: reduce) {
-          .kp-toast-in, .kp-slide-up, .kp-pulse, .kp-pulse-bar, .kp-dirty { animation: none !important; }
-        }
-      `}</style>
     </div>
   );
 }
 
 // ------- UI subcomponents -------
 
+// Tuile KPI : une seule couleur de valeur ; l'icône ne se colore que pour une alerte (stock faible)
 function StatCard({ icon: Icon, label, value, tone = 'brand' }) {
-  const tones = {
-    brand: 'bg-brand-500/10 border-brand-500/20 text-brand-300',
-    emerald: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300',
-    blue: 'bg-blue-500/10 border-blue-500/20 text-blue-300',
-    red: 'bg-red-500/10 border-red-500/25 text-red-300',
-    slate: 'bg-slate-800/60 border-slate-700 text-slate-300',
-  };
+  const icone = tone === 'red' ? 'bg-red-50 text-red-700' : '';
   return (
-    <div className={`rounded-xl border px-3 py-2.5 flex items-center gap-3 ${tones[tone]}`}>
-      <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4" />
+    <div className="kpi-card-sm">
+      <div className={`kpi-icon ${icone}`}>
+        <Icon aria-hidden="true" />
       </div>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wide opacity-70 truncate">{label}</div>
-        <div className="text-lg font-bold leading-tight">{value}</div>
+        <div className="kpi-value">{value}</div>
+        <div className="kpi-label truncate">{label}</div>
       </div>
     </div>
   );
 }
 
-function FilterChip({ active, onClick, children, tone = 'brand' }) {
-  const activeTones = {
-    brand: 'bg-brand-500 text-white',
-    emerald: 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40',
-    blue: 'bg-blue-500/20 text-blue-200 border border-blue-500/40',
-    slate: 'bg-slate-700 text-slate-100',
-  };
+// Segment de filtre : neutre, la couleur « tone » n'est plus portée (le libellé suffit)
+function FilterChip({ active, onClick, children }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       aria-pressed={!!active}
-      className={`min-h-[44px] px-3 rounded-md text-xs font-semibold transition ${
-        active ? activeTones[tone] : 'text-slate-400 hover:text-white hover:bg-slate-800'
-      }`}
+      className={`segmented-item ${active ? 'segmented-item-active' : ''}`}
     >
       {children}
     </button>

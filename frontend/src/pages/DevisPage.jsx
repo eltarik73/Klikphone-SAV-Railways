@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useSearchParams } from 'react-router-dom';
 import { invalidateCache } from '../hooks/useApi';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../lib/api';
 import PrintPreview from '../components/PrintPreview';
 import {
@@ -12,13 +13,15 @@ import {
 } from 'lucide-react';
 
 const STATUTS = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Converti'];
-const STATUT_COLORS = {
-  Brouillon: { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' },
-  Envoyé:    { bg: '#eff6ff', text: '#1d4ed8', border: '#93c5fd' },
-  Accepté:   { bg: '#ecfdf5', text: '#047857', border: '#6ee7b7' },
-  Refusé:    { bg: '#fef2f2', text: '#dc2626', border: '#fca5a5' },
-  Converti:  { bg: '#f5f3ff', text: '#7c3aed', border: '#c4b5fd' },
+// Badges du système : la couleur ne porte que le statut (bleu = envoyé, vert = accepté, rouge = refusé, violet = converti)
+const STATUT_BADGE = {
+  Brouillon: 'badge-neutral',
+  Envoyé: 'badge-info',
+  Accepté: 'badge-success',
+  Refusé: 'badge-danger',
+  Converti: 'badge-brand',
 };
+const badgeStatut = (statut) => STATUT_BADGE[statut] || STATUT_BADGE.Brouillon;
 
 const fp = (v) => {
   if (v == null) return '0,00';
@@ -61,6 +64,19 @@ export default function DevisPage() {
   const [viewDevis, setViewDevis] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [printDevis, setPrintDevis] = useState(null);
+
+  // Fenêtres modales : focus piégé, Échap, focus rendu à la fermeture. Le piège du détail se lève
+  // pendant l'aperçu d'impression (PrintPreview a le sien, hors de #root, et gère Échap lui-même).
+  const formModalRef = useRef(null);
+  const detailModalRef = useRef(null);
+  useFocusTrap(formModalRef, showModal, {
+    initialFocus: '.modal-body input, .modal-body button, .modal-body select, .modal-body textarea',
+    onEscape: () => {
+      if (showClientDropdown) setShowClientDropdown(false);
+      else if (!saving) setShowModal(false);
+    },
+  });
+  useFocusTrap(detailModalRef, Boolean(showDetail && viewDevis && !printDevis), { onEscape: () => setShowDetail(false) });
 
   const printDocuments = useMemo(() => (printDevis ? [{
     id: 'devis',
@@ -332,50 +348,50 @@ export default function DevisPage() {
   const updateLigne = (i, field, val) => setLignes(l => l.map((item, idx) => idx === i ? { ...item, [field]: val } : item));
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl">
+    <div className="page max-w-[1280px]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <FileText className="w-6 h-6 text-brand-600" /> Devis
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Gestion des devis clients</p>
+          <h1 className="page-header-title">Devis</h1>
+          <p className="page-header-subtitle">Gestion des devis clients</p>
         </div>
-        <button onClick={openCreate} className="btn-primary">
-          <Plus className="w-4 h-4" /> Nouveau devis
-        </button>
+        <div className="page-header-actions">
+          <button type="button" onClick={openCreate} className="btn-primary">
+            <Plus aria-hidden="true" /> Nouveau devis
+          </button>
+        </div>
       </div>
 
       {/* Stats cards */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="card p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <FileText className="w-4 h-4 text-slate-400" />
-              <span className="text-xs text-slate-500">Total</span>
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <div className="kpi-card">
+            <div className="kpi-icon" aria-hidden="true"><FileText /></div>
+            <div className="min-w-0">
+              <p className="kpi-value">{stats.total || 0}</p>
+              <p className="kpi-label">Total</p>
             </div>
-            <p className="text-xl font-bold text-slate-900">{stats.total || 0}</p>
           </div>
-          <div className="card p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle className="w-4 h-4 text-emerald-500" />
-              <span className="text-xs text-slate-500">Acceptés</span>
+          <div className="kpi-card">
+            <div className="kpi-icon bg-emerald-50 text-emerald-700" aria-hidden="true"><CheckCircle /></div>
+            <div className="min-w-0">
+              <p className="kpi-value">{stats.acceptes || 0}</p>
+              <p className="kpi-label">Acceptés</p>
             </div>
-            <p className="text-xl font-bold text-emerald-600">{stats.acceptes || 0}</p>
           </div>
-          <div className="card p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-4 h-4 text-blue-500" />
-              <span className="text-xs text-slate-500">En attente</span>
+          <div className="kpi-card">
+            <div className="kpi-icon" aria-hidden="true"><Clock /></div>
+            <div className="min-w-0">
+              <p className="kpi-value">{stats.envoyes || 0}</p>
+              <p className="kpi-label">En attente</p>
             </div>
-            <p className="text-xl font-bold text-blue-600">{stats.envoyes || 0}</p>
           </div>
-          <div className="card p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="w-4 h-4 text-brand-500" />
-              <span className="text-xs text-slate-500">CA Accepté</span>
+          <div className="kpi-card">
+            <div className="kpi-icon" aria-hidden="true"><TrendingUp /></div>
+            <div className="min-w-0">
+              <p className="kpi-value whitespace-nowrap">{fp(stats.ca_accepte)} €</p>
+              <p className="kpi-label">CA Accepté</p>
             </div>
-            <p className="text-xl font-bold text-brand-600">{fp(stats.ca_accepte)} €</p>
           </div>
         </div>
       )}
@@ -383,14 +399,15 @@ export default function DevisPage() {
       {/* Search + Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
           <input type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)}
             placeholder="Rechercher par nom, téléphone, numéro..."
             aria-label="Rechercher un devis"
-            className="input pl-9" />
+            className="input pl-9 min-h-11" />
         </div>
         <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
-          className="input w-auto min-w-[140px]">
+          aria-label="Filtrer par statut"
+          className="select sm:w-auto sm:min-w-[160px] min-h-11">
           <option value="">Tous statuts</option>
           {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
@@ -398,167 +415,169 @@ export default function DevisPage() {
 
       {/* List */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-6 h-6 animate-spin text-brand-600" />
+        <div className="space-y-2" role="status">
+          {[1, 2, 3].map(i => <div key={i} className="skeleton h-[72px]" aria-hidden="true" />)}
+          <p className="sr-only">Chargement…</p>
         </div>
       ) : devisList.length === 0 ? (
-        <div className="text-center py-16">
-          <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-medium">Aucun devis</p>
-          <p className="text-sm text-slate-400 mt-1">Créez votre premier devis</p>
+        <div className="card empty-state">
+          <div className="empty-state-icon">
+            <FileText aria-hidden="true" />
+          </div>
+          <p className="t-h2">Aucun devis</p>
+          <p className="t-body text-slate-500 max-w-sm">Créez votre premier devis</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {devisList.map(d => {
-            const sc = STATUT_COLORS[d.statut] || STATUT_COLORS.Brouillon;
-            return (
-              <div key={d.id} className="card p-4 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => openView(d.id)}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: sc.bg }}>
-                      <FileText className="w-5 h-5" style={{ color: sc.text }} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-sm text-slate-900">{d.numero}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                          style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
-                          {d.statut}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5 truncate">
-                        {d.client_prenom} {d.client_nom}
-                        {d.appareil ? ` — ${d.appareil}` : ''}
-                      </p>
-                    </div>
+          {devisList.map(d => (
+            <div key={d.id} className="list-card p-3 sm:p-4" onClick={() => openView(d.id)}>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
+                    <FileText className="w-5 h-5 text-slate-500" />
                   </div>
-                  <div className="text-right shrink-0 ml-3">
-                    <p className="font-bold text-sm text-slate-900">{fp(d.total_ttc)} €</p>
-                    <p className="text-[11px] text-slate-400">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); openView(d.id); }}
+                        aria-label={`Ouvrir le devis ${d.numero}`}
+                        className="t-mono font-semibold text-slate-900 whitespace-nowrap min-h-8 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:-my-1.5 inline-flex items-center rounded hover:text-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                        {d.numero}
+                      </button>
+                      <span className={`badge ${badgeStatut(d.statut)}`}>
+                        {d.statut}
+                      </span>
+                    </div>
+                    <p className="t-small mt-0.5 truncate">
+                      {d.client_prenom} {d.client_nom}
+                      {d.appareil ? ` — ${d.appareil}` : ''}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="t-num whitespace-nowrap">{fp(d.total_ttc)} €</p>
+                    <p className="t-caption tabular-nums">
                       {d.date_creation ? new Date(d.date_creation).toLocaleDateString('fr-FR') : ''}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 ml-3" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => openEdit(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Modifier">
-                      <Edit3 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDuplicate(d.id)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600" title="Dupliquer">
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDelete(d.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500" title="Supprimer">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-0.5 shrink-0 -mr-2 sm:-my-2" onClick={e => e.stopPropagation()}>
+                  <button type="button" onClick={() => openEdit(d.id)} className="btn-ghost btn-icon" title="Modifier" aria-label={`Modifier le devis ${d.numero}`}>
+                    <Edit3 aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => handleDuplicate(d.id)} className="btn-ghost btn-icon" title="Dupliquer" aria-label={`Dupliquer le devis ${d.numero}`}>
+                    <Copy aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => handleDelete(d.id)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer le devis ${d.numero}`}>
+                    <Trash2 aria-hidden="true" />
+                  </button>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
       {/* ═══ CREATE/EDIT MODAL ═══ */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-display font-bold text-slate-900">
+        <div className="modal-overlay">
+          <div ref={formModalRef} role="dialog" aria-modal="true" aria-labelledby="devis-form-titre" className="modal sm:max-w-2xl">
+            <div className="modal-header">
+              <h2 id="devis-form-titre" className="t-h2">
                 {editId ? 'Modifier le devis' : 'Nouveau devis'}
               </h2>
-              <button onClick={() => setShowModal(false)} className="p-2 rounded-lg hover:bg-slate-100">
-                <X className="w-5 h-5 text-slate-400" />
+              <button type="button" onClick={() => setShowModal(false)} className="btn-ghost btn-icon -mr-2" aria-label="Fermer">
+                <X aria-hidden="true" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="modal-body space-y-6">
               {/* Client */}
               <div>
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Client</h3>
+                <h3 className="t-h3 mb-2">Client</h3>
 
                 {/* Client selected → show info */}
                 {selectedClient ? (
-                  <div className="bg-slate-50 rounded-xl p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                  <div className="card-section flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                       <span className="text-sm font-bold text-brand-700">
                         {(selectedClient.prenom?.[0] || '').toUpperCase()}{(selectedClient.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm text-slate-900">{selectedClient.prenom} {selectedClient.nom}</p>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-0.5">
-                        {selectedClient.telephone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {selectedClient.telephone}</span>}
-                        {selectedClient.email && <span>{selectedClient.email}</span>}
+                      <div className="flex items-center gap-3 t-small mt-0.5 min-w-0">
+                        {selectedClient.telephone && <span className="flex items-center gap-1 tabular-nums whitespace-nowrap"><Phone className="w-3.5 h-3.5" aria-hidden="true" /> {selectedClient.telephone}</span>}
+                        {selectedClient.email && <span className="truncate">{selectedClient.email}</span>}
                       </div>
                     </div>
-                    <button onClick={clearClient} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400">
-                      <X className="w-4 h-4" />
+                    <button type="button" onClick={clearClient} className="btn-ghost btn-icon shrink-0" aria-label="Retirer le client">
+                      <X aria-hidden="true" />
                     </button>
                   </div>
                 ) : !showNewClientFields ? (
                   /* Client search */
                   <div className="space-y-2">
                     <div className="relative" ref={clientDropdownRef}>
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                       <input value={clientQuery}
                         onChange={e => setClientQuery(e.target.value)}
                         placeholder="Nom, prénom ou téléphone..."
-                        className="input pl-9 pr-8" />
-                      {clientSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-brand-500" />}
+                        aria-label="Rechercher un client"
+                        className="input pl-9 pr-9" />
+                      {clientSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 motion-safe:animate-spin text-brand-600" aria-hidden="true" />}
 
                       {showClientDropdown && clientResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 max-h-52 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 z-50 max-h-52 overflow-y-auto">
                           {clientResults.map(c => (
-                            <button key={c.id} onClick={() => selectClient(c)}
-                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0">
-                              <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                            <button key={c.id} type="button" onClick={() => selectClient(c)}
+                              className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0 transition-colors duration-150 focus:outline-none focus-visible:bg-brand-50">
+                              <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                                 <span className="text-xs font-bold text-brand-700">
                                   {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
                                 </span>
                               </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
-                                <p className="text-xs text-slate-400">{c.telephone || ''}</p>
+                                <p className="t-caption tabular-nums">{c.telephone || ''}</p>
                               </div>
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
-                    <button onClick={() => setShowNewClientFields(true)}
-                      className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                      <Plus className="w-3.5 h-3.5" /> Nouveau client
+                    <button type="button" onClick={() => setShowNewClientFields(true)}
+                      className="btn-ghost btn-sm text-brand-700 -ml-3">
+                      <Plus aria-hidden="true" /> Nouveau client
                     </button>
                   </div>
                 ) : (
                   /* New client fields */
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-slate-400">Nouveau client</span>
-                      <button onClick={() => { setShowNewClientFields(false); clearClient(); }}
-                        className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                        <Search className="w-3 h-3" /> Rechercher
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="t-caption">Nouveau client</span>
+                      <button type="button" onClick={() => { setShowNewClientFields(false); clearClient(); }}
+                        className="btn-ghost btn-sm text-brand-700 -mr-3">
+                        <Search aria-hidden="true" /> Rechercher
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-4">
                       <div>
-                        <label className="input-label">Nom *</label>
-                        <input value={form.client_nom} onChange={e => setForm(f => ({ ...f, client_nom: e.target.value }))}
+                        <label htmlFor="devis-client-nom" className="input-label">Nom *</label>
+                        <input id="devis-client-nom" value={form.client_nom} onChange={e => setForm(f => ({ ...f, client_nom: e.target.value }))}
                           className="input" placeholder="Dupont" />
                       </div>
                       <div>
-                        <label className="input-label">Prénom</label>
-                        <input value={form.client_prenom} onChange={e => setForm(f => ({ ...f, client_prenom: e.target.value }))}
+                        <label htmlFor="devis-client-prenom" className="input-label">Prénom</label>
+                        <input id="devis-client-prenom" value={form.client_prenom} onChange={e => setForm(f => ({ ...f, client_prenom: e.target.value }))}
                           className="input" placeholder="Jean" />
                       </div>
                       <div>
-                        <label className="input-label">Téléphone</label>
-                        <input value={form.client_tel} onChange={e => setForm(f => ({ ...f, client_tel: e.target.value }))}
-                          className="input" placeholder="06 XX XX XX XX" />
+                        <label htmlFor="devis-client-tel" className="input-label">Téléphone</label>
+                        <input id="devis-client-tel" type="tel" value={form.client_tel} onChange={e => setForm(f => ({ ...f, client_tel: e.target.value }))}
+                          className="input tabular-nums" placeholder="06 XX XX XX XX" />
                       </div>
                       <div>
-                        <label className="input-label">Email</label>
-                        <input value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))}
+                        <label htmlFor="devis-client-email" className="input-label">Email</label>
+                        <input id="devis-client-email" type="email" value={form.client_email} onChange={e => setForm(f => ({ ...f, client_email: e.target.value }))}
                           className="input" placeholder="email@exemple.com" />
                       </div>
                     </div>
@@ -568,16 +587,16 @@ export default function DevisPage() {
 
               {/* Appareil */}
               <div>
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Appareil & Description</h3>
-                <div className="grid grid-cols-2 gap-3">
+                <h3 className="t-h3 mb-2">Appareil & Description</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4">
                   <div>
-                    <label className="input-label">Appareil</label>
-                    <input value={form.appareil} onChange={e => setForm(f => ({ ...f, appareil: e.target.value }))}
+                    <label htmlFor="devis-appareil" className="input-label">Appareil</label>
+                    <input id="devis-appareil" value={form.appareil} onChange={e => setForm(f => ({ ...f, appareil: e.target.value }))}
                       className="input" placeholder="iPhone 15 Pro Max" />
                   </div>
                   <div>
-                    <label className="input-label">Description</label>
-                    <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                    <label htmlFor="devis-description" className="input-label">Description</label>
+                    <input id="devis-description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                       className="input" placeholder="Remplacement écran OLED" />
                   </div>
                 </div>
@@ -585,28 +604,28 @@ export default function DevisPage() {
 
               {/* Lignes */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Lignes du devis</h3>
-                  <button onClick={addLigne} className="text-xs text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                    <Plus className="w-3.5 h-3.5" /> Ajouter
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="t-h3">Lignes du devis</h3>
+                  <button type="button" onClick={addLigne} className="btn-ghost btn-sm text-brand-700 -mr-3">
+                    <Plus aria-hidden="true" /> Ajouter
                   </button>
                 </div>
                 <div className="space-y-2">
                   {lignes.map((l, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input value={l.description} onChange={e => updateLigne(i, 'description', e.target.value)}
-                        placeholder="Description" className="input flex-1" />
+                        placeholder="Description" aria-label={`Description de la ligne ${i + 1}`} className="input flex-1 min-w-0" />
                       <input type="number" value={l.quantite} onChange={e => updateLigne(i, 'quantite', parseInt(e.target.value) || 1)}
-                        className="input w-16 text-center" min="1" />
+                        aria-label={`Quantité de la ligne ${i + 1}`} className="input w-16 text-center tabular-nums" min="1" />
                       <div className="relative">
                         <input type="number" value={l.prix_unitaire} onChange={e => updateLigne(i, 'prix_unitaire', parseFloat(e.target.value) || 0)}
-                          className="input w-24 pr-6 text-right" step="0.01" min="0" />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">€</span>
+                          aria-label={`Prix unitaire de la ligne ${i + 1}`} className="input w-24 pr-7 text-right tabular-nums" step="0.01" min="0" />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span>
                       </div>
-                      <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fp((l.quantite || 0) * (l.prix_unitaire || 0))} €</span>
+                      <span className="t-num text-sm w-20 text-right whitespace-nowrap hidden sm:inline">{fp((l.quantite || 0) * (l.prix_unitaire || 0))} €</span>
                       {lignes.length > 1 && (
-                        <button onClick={() => removeLigne(i)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500">
-                          <X className="w-4 h-4" />
+                        <button type="button" onClick={() => removeLigne(i)} className="btn-danger-ghost btn-icon shrink-0" aria-label={`Supprimer la ligne ${i + 1}`}>
+                          <X aria-hidden="true" />
                         </button>
                       )}
                     </div>
@@ -615,47 +634,47 @@ export default function DevisPage() {
               </div>
 
               {/* Totals */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="card-section">
+                <div className="grid grid-cols-3 gap-x-3 gap-y-3 mb-4">
                   <div>
-                    <label className="input-label">TVA (%)</label>
-                    <input type="number" value={form.tva} onChange={e => setForm(f => ({ ...f, tva: parseFloat(e.target.value) || 0 }))}
-                      className="input" step="0.1" />
+                    <label htmlFor="devis-tva" className="input-label">TVA (%)</label>
+                    <input id="devis-tva" type="number" value={form.tva} onChange={e => setForm(f => ({ ...f, tva: parseFloat(e.target.value) || 0 }))}
+                      className="input tabular-nums" step="0.1" />
                   </div>
                   <div>
-                    <label className="input-label">Remise (€)</label>
-                    <input type="number" value={form.remise} onChange={e => setForm(f => ({ ...f, remise: parseFloat(e.target.value) || 0 }))}
-                      className="input" step="0.01" />
+                    <label htmlFor="devis-remise" className="input-label">Remise (€)</label>
+                    <input id="devis-remise" type="number" value={form.remise} onChange={e => setForm(f => ({ ...f, remise: parseFloat(e.target.value) || 0 }))}
+                      className="input tabular-nums" step="0.01" />
                   </div>
                   <div>
-                    <label className="input-label">Validité (jours)</label>
-                    <input type="number" value={form.validite_jours} onChange={e => setForm(f => ({ ...f, validite_jours: parseInt(e.target.value) || 30 }))}
-                      className="input" />
+                    <label htmlFor="devis-validite" className="input-label">Validité (jours)</label>
+                    <input id="devis-validite" type="number" value={form.validite_jours} onChange={e => setForm(f => ({ ...f, validite_jours: parseInt(e.target.value) || 30 }))}
+                      className="input tabular-nums" />
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Total HT</span>
-                  <span className="font-semibold">{fp(totalHT)} €</span>
+                  <span className="text-slate-600">Total HT</span>
+                  <span className="t-num">{fp(totalHT)} €</span>
                 </div>
                 <div className="flex items-center justify-between text-lg font-bold mt-2 pt-2 border-t border-slate-200">
                   <span className="text-slate-900">Total TTC</span>
-                  <span className="text-brand-600">{fp(totalTTC)} €</span>
+                  <span className="text-brand-700 tabular-nums">{fp(totalTTC)} €</span>
                 </div>
               </div>
 
               {/* Notes */}
               <div>
-                <label className="input-label">Notes</label>
-                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  className="input min-h-[60px]" placeholder="Notes internes ou conditions..." />
+                <label htmlFor="devis-notes" className="input-label">Notes</label>
+                <textarea id="devis-notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                  className="textarea min-h-[80px]" placeholder="Notes internes ou conditions..." />
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
-              <button onClick={() => setShowModal(false)} className="btn-secondary">Annuler</button>
-              <button onClick={handleSave} disabled={saving || (!form.client_nom && !form.client_tel && !form.client_id)}
+            <div className="modal-footer">
+              <button type="button" onClick={() => setShowModal(false)} className="btn-ghost">Annuler</button>
+              <button type="button" onClick={handleSave} disabled={saving || (!form.client_nom && !form.client_tel && !form.client_id)}
                 className="btn-primary">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <FileText aria-hidden="true" />}
                 {editId ? 'Enregistrer' : 'Créer le devis'}
               </button>
             </div>
@@ -665,68 +684,62 @@ export default function DevisPage() {
 
       {/* ═══ DETAIL MODAL ═══ */}
       {showDetail && viewDevis && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-display font-bold text-slate-900">{viewDevis.numero}</h2>
-                {(() => {
-                  const sc = STATUT_COLORS[viewDevis.statut] || STATUT_COLORS.Brouillon;
-                  return (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-semibold"
-                      style={{ background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
-                      {viewDevis.statut}
-                    </span>
-                  );
-                })()}
+        <div className="modal-overlay">
+          <div ref={detailModalRef} role="dialog" aria-modal="true" aria-labelledby="devis-detail-titre" className="modal sm:max-w-2xl">
+            <div className="modal-header">
+              <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                <h2 id="devis-detail-titre" className="t-h2 t-mono text-base">{viewDevis.numero}</h2>
+                <span className={`badge ${badgeStatut(viewDevis.statut)}`}>
+                  {viewDevis.statut}
+                </span>
               </div>
-              <button onClick={() => setShowDetail(false)} aria-label="Fermer le détail du devis"
-                className="inline-flex items-center justify-center w-11 h-11 rounded-lg hover:bg-slate-100">
-                <X className="w-5 h-5 text-slate-500" aria-hidden="true" />
+              <button type="button" onClick={() => setShowDetail(false)} aria-label="Fermer le détail du devis"
+                className="btn-ghost btn-icon -mr-2">
+                <X aria-hidden="true" />
               </button>
             </div>
 
-            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+            <div className="modal-body space-y-5">
               {/* Client info */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Client</p>
+              <div className="card-section">
+                <p className="t-h3 mb-2">Client</p>
                 {viewDevis.client ? (
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
                       <span className="text-sm font-bold text-brand-700">
                         {(viewDevis.client.prenom?.[0] || '').toUpperCase()}{(viewDevis.client.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-slate-900">{viewDevis.client.prenom} {viewDevis.client.nom}</p>
-                      <div className="flex items-center gap-3 text-sm text-slate-500">
-                        {viewDevis.client.telephone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {viewDevis.client.telephone}</span>}
-                        {viewDevis.client.email && <span>{viewDevis.client.email}</span>}
+                      <div className="flex items-center gap-3 text-sm text-slate-600 min-w-0">
+                        {viewDevis.client.telephone && <span className="flex items-center gap-1 tabular-nums whitespace-nowrap"><Phone className="w-3.5 h-3.5" aria-hidden="true" /> {viewDevis.client.telephone}</span>}
+                        {viewDevis.client.email && <span className="truncate">{viewDevis.client.email}</span>}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <>
                     <p className="font-semibold text-slate-900">{viewDevis.client_prenom} {viewDevis.client_nom}</p>
-                    <p className="text-sm text-slate-500">{viewDevis.client_tel} {viewDevis.client_email ? `— ${viewDevis.client_email}` : ''}</p>
+                    <p className="text-sm text-slate-600">{viewDevis.client_tel} {viewDevis.client_email ? `— ${viewDevis.client_email}` : ''}</p>
                   </>
                 )}
-                {viewDevis.appareil && <p className="text-sm text-slate-600 mt-2"><b>Appareil:</b> {viewDevis.appareil}</p>}
-                {viewDevis.description && <p className="text-sm text-slate-500 mt-1">{viewDevis.description}</p>}
+                {viewDevis.appareil && <p className="text-sm text-slate-700 mt-2"><b>Appareil:</b> {viewDevis.appareil}</p>}
+                {viewDevis.description && <p className="text-sm text-slate-600 mt-1">{viewDevis.description}</p>}
               </div>
 
               {/* Lines */}
               {viewDevis.lignes?.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Détail</p>
+                  <p className="t-h3 mb-1">Détail</p>
                   <div className="divide-y divide-slate-100">
                     {viewDevis.lignes.map((l, i) => (
-                      <div key={i} className="flex items-center justify-between py-2">
-                        <div>
+                      <div key={i} className="flex items-center justify-between gap-3 py-2.5 min-h-12">
+                        <div className="min-w-0">
                           <p className="text-sm font-medium text-slate-800">{l.description}</p>
-                          <p className="text-xs text-slate-400">{l.quantite} x {fp(l.prix_unitaire)} €</p>
+                          <p className="t-caption tabular-nums">{l.quantite} x {fp(l.prix_unitaire)} €</p>
                         </div>
-                        <span className="font-semibold text-sm">{fp(l.total)} €</span>
+                        <span className="t-num text-sm whitespace-nowrap">{fp(l.total)} €</span>
                       </div>
                     ))}
                   </div>
@@ -734,59 +747,59 @@ export default function DevisPage() {
               )}
 
               {/* Totals */}
-              <div className="bg-brand-50/50 rounded-xl p-4">
-                <div className="flex justify-between text-sm"><span>Total HT</span><span>{fp(viewDevis.total_ht)} €</span></div>
-                {Number(viewDevis.remise) > 0 && <div className="flex justify-between text-sm text-red-600"><span>Remise</span><span>-{fp(viewDevis.remise)} €</span></div>}
-                <div className="flex justify-between text-sm"><span>TVA ({fp(viewDevis.tva)}%)</span><span>{fp(Number(viewDevis.total_ttc) - Number(viewDevis.total_ht))} €</span></div>
-                <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-brand-200">
-                  <span>Total TTC</span><span className="text-brand-600">{fp(viewDevis.total_ttc)} €</span>
+              <div className="card-section tabular-nums">
+                <div className="flex justify-between text-sm text-slate-700"><span>Total HT</span><span>{fp(viewDevis.total_ht)} €</span></div>
+                {Number(viewDevis.remise) > 0 && <div className="flex justify-between text-sm text-red-700"><span>Remise</span><span>-{fp(viewDevis.remise)} €</span></div>}
+                <div className="flex justify-between text-sm text-slate-700"><span>TVA ({fp(viewDevis.tva)}%)</span><span>{fp(Number(viewDevis.total_ttc) - Number(viewDevis.total_ht))} €</span></div>
+                <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-slate-200">
+                  <span className="text-slate-900">Total TTC</span><span className="text-brand-700">{fp(viewDevis.total_ttc)} €</span>
                 </div>
               </div>
 
               {viewDevis.notes && (
-                <div className="bg-amber-50 rounded-xl p-4 text-sm text-amber-800">
-                  <b>Notes:</b> {viewDevis.notes}
+                <div className="card-section t-body">
+                  <b className="text-slate-900">Notes:</b> {viewDevis.notes}
                 </div>
               )}
             </div>
 
             {/* Actions */}
-            <div className="flex flex-wrap items-center gap-2 px-6 py-4 border-t border-slate-100">
+            <div className="modal-footer justify-start flex-wrap">
               {viewDevis.statut === 'Brouillon' && (
-                <button onClick={() => handleStatusChange(viewDevis.id, 'Envoyé')}
-                  className="btn-primary text-xs">
-                  <Send className="w-3.5 h-3.5" /> Marquer envoyé
+                <button type="button" onClick={() => handleStatusChange(viewDevis.id, 'Envoyé')}
+                  className="btn-primary">
+                  <Send aria-hidden="true" /> Marquer envoyé
                 </button>
               )}
               {viewDevis.statut === 'Envoyé' && (
                 <>
-                  <button onClick={() => handleStatusChange(viewDevis.id, 'Accepté')}
-                    className="btn-primary text-xs" style={{ background: '#059669' }}>
-                    <CheckCircle className="w-3.5 h-3.5" /> Accepter
+                  <button type="button" onClick={() => handleStatusChange(viewDevis.id, 'Accepté')}
+                    className="btn-primary">
+                    <CheckCircle aria-hidden="true" /> Accepter
                   </button>
-                  <button onClick={() => handleStatusChange(viewDevis.id, 'Refusé')}
-                    className="btn-secondary text-xs text-red-600 border-red-200 hover:bg-red-50">
-                    <XCircle className="w-3.5 h-3.5" /> Refuser
+                  <button type="button" onClick={() => handleStatusChange(viewDevis.id, 'Refusé')}
+                    className="btn-secondary text-red-700 hover:bg-red-50 hover:border-red-200">
+                    <XCircle aria-hidden="true" /> Refuser
                   </button>
                 </>
               )}
               {viewDevis.statut === 'Accepté' && (
-                <button onClick={() => handleConvert(viewDevis.id)}
-                  className="btn-primary text-xs">
-                  <ArrowRightCircle className="w-3.5 h-3.5" /> Convertir en ticket
+                <button type="button" onClick={() => handleConvert(viewDevis.id)}
+                  className="btn-primary">
+                  <ArrowRightCircle aria-hidden="true" /> Convertir en ticket
                 </button>
               )}
               <button type="button" onClick={() => setPrintDevis({ id: viewDevis.id, numero: viewDevis.numero })}
-                className="btn-secondary text-xs min-h-11">
-                <Printer className="w-3.5 h-3.5" aria-hidden="true" /> Imprimer
+                className="btn-secondary">
+                <Printer aria-hidden="true" /> Imprimer
               </button>
-              <button onClick={() => { openEdit(viewDevis.id); setShowDetail(false); }}
-                className="btn-secondary text-xs">
-                <Edit3 className="w-3.5 h-3.5" /> Modifier
+              <button type="button" onClick={() => { openEdit(viewDevis.id); setShowDetail(false); }}
+                className="btn-secondary">
+                <Edit3 aria-hidden="true" /> Modifier
               </button>
-              <button onClick={() => { handleDuplicate(viewDevis.id); setShowDetail(false); }}
-                className="btn-secondary text-xs">
-                <Copy className="w-3.5 h-3.5" /> Dupliquer
+              <button type="button" onClick={() => { handleDuplicate(viewDevis.id); setShowDetail(false); }}
+                className="btn-secondary">
+                <Copy aria-hidden="true" /> Dupliquer
               </button>
             </div>
           </div>

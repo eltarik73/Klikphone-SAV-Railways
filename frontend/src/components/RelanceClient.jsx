@@ -7,7 +7,12 @@ import { useToast } from './Toast';
 import { AlertTriangle, Loader2, Mail, MessageCircle, MessageSquare, Phone, X } from 'lucide-react';
 
 const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
-const BOUTON = `inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
+
+// « 06 00 00 01 23 » à l'affichage (le lien tel: garde le numéro brut)
+const formatTel = (tel) => {
+  const d = String(tel ?? '').replace(/\D/g, '');
+  return d.length === 10 ? d.replace(/(\d{2})(?=\d)/g, '$1 ') : String(tel ?? '');
+};
 
 /**
  * Relance d'un client depuis l'étagère : message du palier (GET /api/etagere/{id}/message-relance,
@@ -104,35 +109,35 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
   }
 
   const icone = (canal, Icone) => (envoi === canal
-    ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-    : <Icone className="h-4 w-4" aria-hidden="true" />);
+    ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+    : <Icone aria-hidden="true" />);
 
   return (
     <div id={id} role="group" aria-label={`Relancer le client du ticket ${code}`} aria-busy={chargement || !!envoi}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !envoi) { e.stopPropagation(); onCancel?.(); }
       }}
-      className="mt-2 basis-full rounded-xl border border-brand-200 bg-brand-50/60 p-3">
+      className="mt-3 basis-full rounded-xl border border-brand-200 bg-brand-50/50 p-3 sm:p-4">
       <div className="flex items-start gap-2">
-        <label htmlFor={messageId} className="flex-1 text-xs font-semibold text-slate-800">
+        <label htmlFor={messageId} className="flex-1 t-label pt-2">
           Message de relance{Number.isFinite(Number(jours)) ? ` (J+${jours})` : ''}
         </label>
         <button type="button" onClick={onCancel} disabled={!!envoi} aria-label={`Fermer la relance ${code}`}
-          className={`-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-white ${FOCUS_RING}`}>
-          <X className="h-4 w-4" aria-hidden="true" />
+          className="btn-ghost btn-icon -mr-1 -mt-1 hover:bg-white">
+          <X aria-hidden="true" />
         </button>
       </div>
       {chargement ? (
-        <div className="mt-1 h-24 rounded-lg bg-white/70 animate-shimmer" aria-hidden="true" />
+        <div className="mt-1 h-24 skeleton" aria-hidden="true" />
       ) : (
         <textarea ref={champRef} id={messageId} value={message} rows={4}
           onChange={(e) => setMessage(e.target.value)}
           aria-describedby={aideId}
-          className={`mt-1 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-900 ${FOCUS_RING}`} />
+          className="textarea mt-1 resize-y" />
       )}
-      <p id={aideId} className="mt-1 text-xs text-slate-700">
+      <p id={aideId} className="mt-1.5 text-xs text-slate-600">
         {secours && !chargement && (
-          <span className="mr-1 inline-flex items-center gap-1 font-semibold text-amber-900">
+          <span className="mr-1 inline-flex items-center gap-1 font-semibold text-amber-800">
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> Modèle indisponible, texte de secours.
           </span>
         )}
@@ -141,39 +146,39 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button type="button" onClick={() => relancer('sms')} disabled={!!envoi || chargement || !tel}
-          className={`${BOUTON} bg-brand-700 text-white hover:bg-brand-800`}>
+          className="btn-primary">
           {icone('sms', MessageSquare)} SMS
         </button>
         <button type="button" onClick={() => relancer('whatsapp')} disabled={!!envoi || chargement || !tel}
-          className={`${BOUTON} bg-green-700 text-white hover:bg-green-800`}>
+          className="btn-whatsapp">
           {icone('whatsapp', MessageCircle)} WhatsApp
         </button>
         <button type="button" onClick={() => relancer('email')} disabled={!!envoi || chargement || !email}
           title={email ? undefined : 'Pas d’adresse e-mail'}
-          className={`${BOUTON} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}>
+          className="btn-secondary">
           {icone('email', Mail)} E-mail
         </button>
         <button type="button" onClick={() => relancer('appel')} disabled={!!envoi}
-          className={`${BOUTON} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}>
+          className="btn-secondary">
           {icone('appel', Phone)} J’ai appelé
         </button>
       </div>
       {(!tel || !email) && (
-        <p className="mt-1.5 text-xs text-slate-700">
+        <p className="mt-1.5 text-xs text-slate-600">
           {!tel ? 'Pas de téléphone : SMS et WhatsApp indisponibles. ' : ''}
           {!email ? 'Pas d’adresse e-mail.' : ''}
         </p>
       )}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label htmlFor={noteId} className="text-xs font-semibold text-slate-800">Note d’appel (facultatif)</label>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label htmlFor={noteId} className="t-label">Note d’appel (facultatif)</label>
         <input id={noteId} type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); relancer('appel'); } }}
           placeholder="ex. passe samedi, messagerie"
-          className={`h-11 min-w-0 flex-1 basis-48 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-500 ${FOCUS_RING}`} />
+          className="input min-w-0 flex-1 basis-48" />
         {tel && (
           <a href={`tel:${tel.replace(/[^\d+]/g, '')}`}
-            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-brand-800 underline-offset-2 hover:underline ${FOCUS_RING}`}>
-            <Phone className="h-4 w-4" aria-hidden="true" /> {tel}
+            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-sm font-semibold tabular-nums text-brand-700 underline-offset-2 hover:underline ${FOCUS_RING}`}>
+            <Phone className="h-4 w-4" aria-hidden="true" /> {formatTel(tel)}
           </a>
         )}
       </div>

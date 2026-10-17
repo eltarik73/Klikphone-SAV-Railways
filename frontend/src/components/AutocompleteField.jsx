@@ -104,7 +104,7 @@ export default function AutocompleteField({
     return (
       <>
         {text.slice(0, idx)}
-        <span className="bg-amber-100 font-bold">{text.slice(idx, idx + query.length)}</span>
+        <span className="bg-brand-100 font-bold">{text.slice(idx, idx + query.length)}</span>
         {text.slice(idx + query.length)}
       </>
     );
@@ -112,7 +112,8 @@ export default function AutocompleteField({
 
   const renderSuggestion = (item, idx) => {
     const isActive = idx === activeIdx;
-    const base = `px-3 py-2 cursor-pointer text-sm transition-colors ${isActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-700'}`;
+    // Options 44 px, active en brand-50 (design V2)
+    const base = `min-h-11 px-3 py-2 cursor-pointer text-sm transition-colors duration-150 ${isActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-700'}`;
     const optionId = `${listboxId}-opt-${idx}`;
 
     if (categorie === 'client') {
@@ -123,15 +124,15 @@ export default function AutocompleteField({
           id={optionId}
           role="option"
           aria-selected={isActive}
-          className={`${base} flex items-center gap-2`}
+          className={`${base} flex items-center gap-2.5`}
           onMouseDown={() => handleSelect(item)}
         >
-          <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[10px] font-bold shrink-0">
+          <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold shrink-0">
             {initials}
           </div>
           <div className="min-w-0">
             <div className="font-medium truncate">{highlight(`${item.prenom || ''} ${item.nom || ''}`.trim(), value)}</div>
-            <div className="text-[11px] text-slate-400">{item.telephone}</div>
+            <div className="text-xs text-slate-500 tabular-nums">{item.telephone}</div>
           </div>
         </div>
       );
@@ -144,13 +145,13 @@ export default function AutocompleteField({
         id={optionId}
         role="option"
         aria-selected={isActive}
-        className={`${base} flex items-center justify-between`}
+        className={`${base} flex items-center justify-between gap-2`}
         onMouseDown={() => handleSelect(item)}
       >
         <span className="truncate">{highlight(item.value || '', value)}</span>
-        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-          {item.marque && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{item.marque}</span>}
-          {item.count > 1 && <span className="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded font-medium">{item.count}x</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {item.marque && <span className="badge badge-sm badge-neutral">{item.marque}</span>}
+          {item.count > 1 && <span className="badge badge-sm badge-warning tabular-nums">{item.count}x</span>}
         </div>
       </div>
     );
@@ -160,7 +161,7 @@ export default function AutocompleteField({
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
-      {label && <label htmlFor={inputId} className="block text-xs font-medium text-slate-500 mb-1">{label}</label>}
+      {label && <label htmlFor={inputId} className="input-label">{label}</label>}
       <div className="relative">
         <input
           id={inputId}
@@ -171,7 +172,7 @@ export default function AutocompleteField({
           onKeyDown={handleKeyDown}
           onFocus={() => { if (enabled && suggestions.length > 0) setOpen(true); }}
           placeholder={placeholder}
-          className="input w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40"
+          className="input w-full"
           autoComplete="off"
           role="combobox"
           aria-expanded={open}
@@ -180,8 +181,8 @@ export default function AutocompleteField({
           aria-activedescendant={activeDescendant}
         />
         {loading && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2" aria-hidden="true">
-            <div className="w-4 h-4 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">
+            <div className="w-4 h-4 border-2 border-brand-600 border-t-transparent rounded-full motion-safe:animate-spin" />
           </div>
         )}
       </div>

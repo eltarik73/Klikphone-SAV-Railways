@@ -357,11 +357,11 @@ function TicketRow({ t, query }) {
       <div className="shrink-0 flex flex-col items-end gap-1 max-w-[42%]">
         <StatusBadge statut={t.statut} />
         {t.statut === 'Réparation terminée' && (
-          <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${t.paye ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+          <span className={`badge badge-sm ${t.paye ? 'badge-success' : 'badge-warning'}`}>
             {t.paye ? 'Payé' : 'À encaisser'}
           </span>
         )}
-        {archived && <span className="text-[11px] text-slate-500">Archivé</span>}
+        {archived && <span className="text-xs text-slate-500">Archivé</span>}
       </div>
     </div>
   );
@@ -387,7 +387,7 @@ function ClientRow({ c, query }) {
       </div>
       {c.dernier_statut && (
         <div className="shrink-0 max-w-[42%] flex flex-col items-end gap-0.5">
-          <span className="text-[11px] text-slate-500">Dernier ticket</span>
+          <span className="text-xs text-slate-500">Dernier ticket</span>
           <StatusBadge statut={c.dernier_statut} />
         </div>
       )}
@@ -407,7 +407,7 @@ function PlainRow({ icon: Icon, title, sub, meta, badge, query }) {
         {meta && <p className="text-xs text-slate-500 truncate">{meta}</p>}
       </div>
       {badge && (
-        <span className="shrink-0 max-w-[40%] truncate text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+        <span className="shrink-0 max-w-[40%] truncate text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
           {badge}
         </span>
       )}
@@ -852,7 +852,7 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
         aria-modal="true"
         aria-labelledby={titleId}
         data-search-palette=""
-        className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[80vh] sm:max-w-2xl bg-white sm:rounded-2xl shadow-2xl overflow-hidden pt-[env(safe-area-inset-top)] sm:pt-0 motion-safe:animate-[scaleIn_120ms_ease-out]"
+        className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[80vh] sm:max-w-2xl bg-white sm:rounded-xl shadow-lg overflow-hidden pt-[env(safe-area-inset-top)] sm:pt-0 motion-safe:animate-[scaleIn_120ms_ease-out]"
       >
         <h2 id={titleId} className="sr-only">Recherche globale</h2>
 
@@ -927,7 +927,7 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
             return (
               <div key={g.key} role="group" aria-labelledby={headingId} className="pb-1">
                 <div id={headingId} role="presentation"
-                  className="sticky top-0 z-[1] bg-white/95 px-4 pt-2 pb-1 text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                  className="sticky top-0 z-[1] bg-white/95 px-4 pt-2 pb-1 t-overline flex items-center gap-1.5">
                   {GroupIcon && <GroupIcon className="w-3.5 h-3.5" aria-hidden="true" />}
                   {g.label}
                   {showResults && <span className="font-semibold">· {g.items.length}</span>}

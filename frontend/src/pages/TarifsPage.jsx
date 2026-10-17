@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, mem
 import {
   Tag, Search, RefreshCw, ChevronDown, ChevronRight, Smartphone, Battery, Plug, Camera, Package, Volume2,
   Headphones, PackageX, Tablet, Laptop, Lock, Unlock, FileSpreadsheet, SlidersHorizontal, Calculator, History,
-  AlertTriangle, Clock, CheckCircle2, X, Inbox, PackagePlus, Filter,
+  AlertTriangle, Clock, CheckCircle2, X, Inbox, PackagePlus, Filter, Loader2,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
@@ -39,9 +39,9 @@ const BRAND_CONFIG = {
 };
 const DEFAULT_BRAND = { bg: '#6d28d9', text: '#fff', logo: null };
 
-const BrandLogo = memo(function BrandLogo({ slug, size = 18 }) {
+const BrandLogo = memo(function BrandLogo({ slug, size = 16 }) {
   const [error, setError] = useState(false);
-  if (!slug || error) return <Smartphone className="w-[18px] h-[18px] opacity-70" aria-hidden="true" />;
+  if (!slug || error) return <Smartphone className="w-4 h-4" aria-hidden="true" />;
   return (
     <img src={`https://cdn.simpleicons.org/${slug}/ffffff`} alt="" width={size} height={size}
       className="shrink-0" style={{ minWidth: size }} loading="lazy" onError={() => setError(true)} />
@@ -227,11 +227,12 @@ function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalcule
   else if (estimes > 0) titre = `Prix du fournisseur : ${total - estimes} mis à jour, ${estimes} encore estimés${dateEstimation ? ` (${dateFr(dateEstimation)})` : ''}`;
   else titre = `Prix du fournisseur : mis à jour${plusRecent ? ` le ${dateFr(plusRecent)}` : ''}`;
 
+  // Prix périmés ou à revoir = attention (ambre) ; grille à jour = succès. Jamais de rouge pour un simple rappel.
   const ton = perimes > 0
-    ? { boite: 'border-red-300 bg-red-50', texte: 'text-red-900', icone: AlertTriangle, iconeTon: 'text-red-700' }
+    ? { boite: 'callout-warning', icone: AlertTriangle }
     : aRevoir > 0
-      ? { boite: 'border-amber-300 bg-amber-50', texte: 'text-amber-950', icone: Clock, iconeTon: 'text-amber-700' }
-      : { boite: 'border-emerald-300 bg-emerald-50', texte: 'text-emerald-950', icone: CheckCircle2, iconeTon: 'text-emerald-700' };
+      ? { boite: 'callout-warning', icone: Clock }
+      : { boite: 'callout-success', icone: CheckCircle2 };
   const Icone = ton.icone;
   const details = [];
   if (perimes > 0) details.push(`${perimes} prix de plus de 6 mois`);
@@ -241,48 +242,43 @@ function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalcule
   if (sante?.marges_faibles > 0) details.push(`${sante.marges_faibles} marge${sante.marges_faibles > 1 ? 's' : ''} trop faible${sante.marges_faibles > 1 ? 's' : ''}`);
   if (nbObsoletes > 0) details.push(`${nbObsoletes} pièce${nbObsoletes > 1 ? 's' : ''} obsolète${nbObsoletes > 1 ? 's' : ''} masquée${nbObsoletes > 1 ? 's' : ''}`);
 
-  const actionBase = 'min-h-[44px] px-3 rounded-xl border text-sm font-semibold inline-flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1';
-  const action = `${actionBase} bg-white text-slate-900 border-slate-300 hover:bg-slate-50`;
-  const actionPrincipale = `${actionBase} bg-violet-700 text-white border-violet-700 hover:bg-violet-800`;
+  const action = 'btn-secondary btn-sm';
+  const actionPrincipale = 'btn-primary btn-sm';
   return (
-    <section aria-label="État des prix" className={`mt-4 rounded-2xl border p-3 ${ton.boite}`}>
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-start gap-2 min-w-[240px] flex-1">
-          <Icone className={`w-5 h-5 mt-0.5 shrink-0 ${ton.iconeTon}`} aria-hidden="true" />
-          <div className={`min-w-0 ${ton.texte}`}>
-            <p className="font-bold text-sm sm:text-base">{titre}</p>
-            {details.length > 0 && <p className="text-xs sm:text-sm">{details.join(' · ')}</p>}
-          </div>
-        </div>
-        {isAdmin ? (
-          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
-            <button type="button" onClick={onImporter} className={actionPrincipale}>
-              <FileSpreadsheet className="w-4 h-4" aria-hidden="true" /> Importer une liste de prix
-            </button>
-            <button type="button" onClick={onRegles} className={action}>
-              <SlidersHorizontal className="w-4 h-4" aria-hidden="true" /> Règles de prix
-            </button>
-            <button type="button" onClick={onRecalculer} className={action}>
-              <Calculator className="w-4 h-4" aria-hidden="true" /> Recalculer
-            </button>
-            <button type="button" onClick={onHistorique} className={action}>
-              <History className="w-4 h-4" aria-hidden="true" /> Historique
-            </button>
-            <button type="button" onClick={onAjouter} className={action}>
-              <PackagePlus className="w-4 h-4" aria-hidden="true" /> Ajouter une pièce
-            </button>
-            {sante?.propositions_en_attente > 0 && (
-              <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
-                <Inbox className="w-4 h-4" aria-hidden="true" /> Propositions des commandes ({sante.propositions_en_attente})
-              </Link>
-            )}
-          </div>
-        ) : (
-          <button type="button" onClick={onDevenirAdmin} className={action}>
-            <Lock className="w-4 h-4" aria-hidden="true" /> Mettre à jour les prix (admin)
-          </button>
-        )}
+    <section aria-label="État des prix" className={`callout ${ton.boite} mb-4 flex-wrap items-center`}>
+      <Icone aria-hidden="true" />
+      <div className="min-w-[240px] flex-1">
+        <p className="font-semibold">{titre}</p>
+        {details.length > 0 && <p className="text-xs sm:text-sm">{details.join(' · ')}</p>}
       </div>
+      {isAdmin ? (
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
+          <button type="button" onClick={onRegles} className={action}>
+            <SlidersHorizontal aria-hidden="true" /> Règles de prix
+          </button>
+          <button type="button" onClick={onRecalculer} className={action}>
+            <Calculator aria-hidden="true" /> Recalculer
+          </button>
+          <button type="button" onClick={onHistorique} className={action}>
+            <History aria-hidden="true" /> Historique
+          </button>
+          <button type="button" onClick={onAjouter} className={action}>
+            <PackagePlus aria-hidden="true" /> Ajouter une pièce
+          </button>
+          {sante?.propositions_en_attente > 0 && (
+            <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
+              <Inbox aria-hidden="true" /> Propositions des commandes ({sante.propositions_en_attente})
+            </Link>
+          )}
+          <button type="button" onClick={onImporter} className={`${actionPrincipale} col-span-2`}>
+            <FileSpreadsheet aria-hidden="true" /> Importer une liste de prix
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={onDevenirAdmin} className={action}>
+          <Lock aria-hidden="true" /> Mettre à jour les prix (admin)
+        </button>
+      )}
     </section>
   );
 }
@@ -685,10 +681,10 @@ export default function TarifsPage() {
       <button type="button" onClick={(e) => { e.stopPropagation(); handleToggleStock(tarif.id); }}
         aria-pressed={!inStock}
         aria-label={`${nomPiece(tarif)} : ${inStock ? 'en stock' : 'en rupture'}. Changer`}
-        className={`inline-flex items-center justify-center min-h-[44px] px-2 text-[11px] font-bold rounded-lg transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
-          inStock ? 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-                  : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'}`}>
-        {inStock ? 'En stock' : 'Rupture'}
+        className="inline-flex items-center justify-center min-h-[44px] -my-2 px-1 rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+        <span className={`badge badge-sm ${inStock ? 'badge-success hover:bg-emerald-100' : 'badge-danger hover:bg-red-100'}`}>
+          {inStock ? 'En stock' : 'Rupture'}
+        </span>
       </button>
     );
   }
@@ -712,7 +708,7 @@ export default function TarifsPage() {
     const m = margeEcran(row, contexteFiltres.tva, apple);
     if (m === null) return null;
     return (
-      <div className="text-[11px] mt-1 font-semibold text-red-800">
+      <div className="text-xs mt-1 font-semibold text-red-700 tabular-nums">
         Marge : {euros(m)} (seuil {euros(contexteFiltres.seuilMarge)})
       </div>
     );
@@ -739,12 +735,10 @@ export default function TarifsPage() {
   function renderPriceBadge(value, Icon, color, mobile = false) {
     if (value == null) return null;
     if (mobile) {
-      return <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md font-bold"
-        style={{ background: color.bg, color: color.color }}>
-        <Icon className="w-2.5 h-2.5" aria-hidden="true" />{formatPrice(value)}</span>;
+      return <span className="badge badge-sm badge-neutral tabular-nums gap-1">
+        <Icon className="w-3 h-3" aria-hidden="true" />{formatPrice(value)}</span>;
     }
-    return <span className="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg font-semibold border"
-      style={{ background: color.bg, color: color.color, borderColor: color.border }}>
+    return <span className="hidden sm:inline-flex badge badge-neutral tabular-nums gap-1">
       <Icon className="w-3 h-3" aria-hidden="true" />{formatPrice(value)}</span>;
   }
 
@@ -758,18 +752,18 @@ export default function TarifsPage() {
       <div key={model}>
         <button type="button" onClick={() => toggleModel(modelKey)}
           aria-expanded={isModelOpen} aria-controls={idPanneau}
-          className={`w-full min-h-[48px] flex items-center px-5 py-3 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500
-            ${idx % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'} ${isModelOpen ? '!bg-violet-50/60' : 'hover:bg-violet-50/30'}`}>
+          className={`w-full min-h-12 flex items-center px-4 sm:px-5 py-2 text-left border-t border-slate-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500
+            ${isModelOpen ? 'bg-brand-50/60' : 'bg-white hover:bg-slate-50'}`}>
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            {isModelOpen ? <ChevronDown className="w-3.5 h-3.5 text-violet-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />}
-            <span className="font-semibold text-[13px] text-zinc-900 truncate">{model}</span>
+            {isModelOpen ? <ChevronDown className="w-4 h-4 text-brand-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
+            <span className="font-semibold text-sm text-slate-900 truncate">{model}</span>
             {summary.qualityCount > 0 && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-md whitespace-nowrap font-medium ${isModelOpen ? 'bg-violet-100 text-violet-800' : 'bg-zinc-100 text-zinc-600'}`}>
+              <span className={`badge badge-sm ${isModelOpen ? 'badge-brand' : 'badge-neutral'}`}>
                 {summary.qualityCount} qualit{summary.qualityCount > 1 ? 'es' : 'e'}
               </span>
             )}
             {summary.outOfStock > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200 font-bold whitespace-nowrap">
+              <span className="badge badge-sm badge-danger">
                 {summary.outOfStock} rupture{summary.outOfStock > 1 ? 's' : ''}
               </span>
             )}
@@ -788,29 +782,28 @@ export default function TarifsPage() {
         </button>
 
         {isModelOpen && (
-          <div id={idPanneau} className="px-5 py-4 bg-violet-50/30 border-t border-violet-100/50">
+          <div id={idPanneau} className="px-4 sm:px-5 py-4 bg-slate-50 border-t border-slate-100">
             {summary.screenItems.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-3">
-                  <Smartphone className="w-4 h-4 text-violet-600" aria-hidden="true" />
-                  <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">Ecrans disponibles</span>
+                  <Smartphone className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                  <span className="t-h3">Ecrans disponibles</span>
                 </div>
-                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {summary.screenItems.map((t) => {
                     const qc = QUALITY_COLORS[t.qualite] || DEFAULT_QUALITY;
                     return (
-                      <div key={t.id} className={`rounded-xl border-2 p-3 transition-shadow hover:shadow-md ${t.en_stock === false ? 'opacity-60' : ''}`}
-                        style={{ background: qc.bg, borderColor: t.en_stock === false ? '#fca5a5' : qc.border }}>
+                      <div key={t.id} className={`card p-3 ${t.en_stock === false ? 'border-red-200 opacity-70' : ''}`}>
                         <div className="flex items-center justify-between gap-1 mb-2">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: qc.color }} aria-hidden="true" />
-                            <span className="text-[11px] font-bold truncate" style={{ color: qc.color }}>{t.qualite || 'Standard'}</span>
+                            <span className="text-xs font-semibold text-slate-700 truncate">{t.qualite || 'Standard'}</span>
                           </div>
                           {renderStockBadge(t)}
                         </div>
-                        <div className="text-2xl font-extrabold leading-none" style={{ color: qc.color }}>{formatPrice(t.prix_client)}</div>
+                        <div className="text-xl font-semibold leading-none text-slate-900 tabular-nums">{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
-                          <div className="text-[11px] mt-1.5 text-zinc-700">
+                          <div className="t-caption mt-1.5 tabular-nums">
                             Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} € HT
                           </div>
                         )}
@@ -825,25 +818,24 @@ export default function TarifsPage() {
             {Object.keys(summary.otherByType).length > 0 && (
               <div className={summary.screenItems.length > 0 ? 'mt-4' : ''}>
                 <div className="flex items-center gap-2 mb-3">
-                  <Package className="w-4 h-4 text-indigo-600" aria-hidden="true" />
-                  <span className="text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">Autres pieces</span>
+                  <Package className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                  <span className="t-h3">Autres pieces</span>
                 </div>
-                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                   {Object.entries(summary.otherByType).map(([type, pieces]) => {
                     const pc = getPieceTypeColor(type); const Icon = getPieceIcon(type);
                     return pieces.map((t) => (
-                      <div key={t.id} className={`rounded-xl border-2 p-3 transition-shadow hover:shadow-md ${t.en_stock === false ? 'opacity-60' : ''}`}
-                        style={{ background: pc.bg, borderColor: t.en_stock === false ? '#fca5a5' : pc.border }}>
+                      <div key={t.id} className={`card p-3 ${t.en_stock === false ? 'border-red-200 opacity-70' : ''}`}>
                         <div className="flex items-center justify-between gap-1 mb-2">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: pc.color }} aria-hidden="true" />
-                            <span className="text-[10px] font-bold uppercase truncate" style={{ color: pc.color }}>{type}{t.qualite ? ` ${t.qualite}` : ''}</span>
+                            <Icon className="w-4 h-4 shrink-0" style={{ color: pc.color }} aria-hidden="true" />
+                            <span className="text-xs font-semibold text-slate-700 truncate">{type}{t.qualite ? ` ${t.qualite}` : ''}</span>
                           </div>
                           {renderStockBadge(t)}
                         </div>
-                        <div className="text-lg font-extrabold" style={{ color: pc.color }}>{formatPrice(t.prix_client)}</div>
+                        <div className="text-lg font-semibold leading-none text-slate-900 tabular-nums">{formatPrice(t.prix_client)}</div>
                         {showHT && isAdmin && t.prix_fournisseur_ht != null && (
-                          <div className="text-[11px] mt-1 text-zinc-700">
+                          <div className="t-caption mt-1.5 tabular-nums">
                             Achat : {Number(t.prix_fournisseur_ht).toFixed(2)} € HT
                           </div>
                         )}
@@ -869,32 +861,31 @@ export default function TarifsPage() {
     return (
       <div key={sectionKey}>
         <button type="button" onClick={() => toggleSerie(sectionKey)} aria-expanded={isOpen}
-          className="w-full min-h-[44px] px-5 py-2.5 border-b flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500"
-          style={{ background: color.bg, borderColor: color.border }}>
+          className={`w-full min-h-12 px-4 sm:px-5 py-2 border-t border-slate-100 flex items-center justify-between cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${isOpen ? 'bg-brand-50/60' : 'bg-white hover:bg-slate-50'}`}>
           <div className="flex items-center gap-2">
-            {isOpen ? <ChevronDown className="w-3.5 h-3.5" style={{ color: color.text }} aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5" style={{ color: color.text }} aria-hidden="true" />}
-            <SIcon className="w-4 h-4" style={{ color: color.text }} aria-hidden="true" />
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: color.text }}>{label}</span>
-            <span className="text-[11px] font-medium" style={{ color: color.text }}>({devices.length})</span>
+            {isOpen ? <ChevronDown className="w-4 h-4 text-brand-600" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400" aria-hidden="true" />}
+            <SIcon className="w-4 h-4 text-slate-400" aria-hidden="true" />
+            <span className="text-sm font-semibold text-slate-900">{label}</span>
+            <span className="t-caption">({devices.length})</span>
           </div>
         </button>
 
         {isOpen && (
           <>
             {isAdmin && (
-              <div className="px-5 py-2 border-b flex items-center gap-2" style={{ background: color.formulaBg, borderColor: color.border }}>
-                <Calculator className="w-4 h-4 shrink-0" style={{ color: color.text }} aria-hidden="true" />
-                <span className="text-[13px] font-semibold" style={{ color: color.text }}>
+              <div className="px-4 sm:px-5 py-2 border-t border-slate-100 bg-slate-50 flex items-center gap-2">
+                <Calculator className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <span className="t-caption">
                   Formule : (prix pièce HT × {tva}) + {marge} € de main d’œuvre, arrondi au 9
                 </span>
               </div>
             )}
 
             {devices.length === 0 ? (
-              <div className="px-5 py-6 text-center text-xs text-zinc-600">Aucun tarif {label} pour le moment</div>
+              <div className="px-5 py-6 text-center t-caption">Aucun tarif {label} pour le moment</div>
             ) : (
-              <div className="divide-y divide-slate-100">
-                <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-50 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+              <div className="divide-y divide-slate-100 border-t border-slate-100">
+                <div className="hidden sm:flex items-center px-4 sm:px-5 py-2 bg-slate-50 table-header">
                   <div className="flex-1 pl-2">Modele</div>
                   <div className="w-28 text-center">Ecran</div>
                   {showHT && isAdmin && <div className="w-24 text-center">Ecran HT</div>}
@@ -903,27 +894,27 @@ export default function TarifsPage() {
                   <div className="w-36 text-center">Prix du</div>
                 </div>
                 {devices.map((d, i) => (
-                  <div key={d.id || i} className={`flex flex-col sm:flex-row items-start sm:items-center px-5 py-3 gap-2 sm:gap-0 ${i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'}`}>
-                    <div className="flex-1 pl-2 font-semibold text-[13px] text-zinc-900 flex items-center gap-1.5">
+                  <div key={d.id || i} className="flex flex-col sm:flex-row items-start sm:items-center px-4 sm:px-5 py-2 gap-2 sm:gap-0 min-h-12 bg-white hover:bg-slate-50 transition-colors duration-150">
+                    <div className="flex-1 pl-2 font-semibold text-sm text-slate-900 flex items-center gap-1.5">
                       {isAdmin
                         ? <BoutonVerrou verrouille={!!d.verrou_manuel} onClick={() => basculerVerrouAppareil(d)} disabled={verrouEnCours === `apple-${d.id}`} nom={`les prix de ${d.modele}`} />
                         : <BoutonVerrou verrouille={!!d.verrou_manuel} lectureSeule nom={d.modele} />}
                       {d.modele}
                     </div>
                     <div className="w-28 sm:text-center">
-                      {d.ecran_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}><span className="sm:hidden text-zinc-600 font-medium">Écran : </span>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-zinc-400" aria-label="pas de prix">-</span>}
+                      {d.ecran_prix_vente ? <span className="t-num text-sm"><span className="sm:hidden text-slate-500 font-medium">Écran : </span>{formatPrice(d.ecran_prix_vente)}</span> : <span className="text-slate-400" aria-label="pas de prix">-</span>}
                       {renderMarge(d, true)}
                     </div>
                     {showHT && isAdmin && (
-                      <div className="w-24 sm:text-center text-[11px] text-red-700 font-medium">
+                      <div className="w-24 sm:text-center t-caption tabular-nums">
                         {d.ecran_prix_ht != null ? `${Number(d.ecran_prix_ht).toFixed(2)} € HT` : '-'}
                       </div>
                     )}
                     <div className="w-28 sm:text-center">
-                      {d.batterie_prix_vente ? <span className="font-bold text-sm" style={{ color: color.text }}><span className="sm:hidden text-zinc-600 font-medium">Batterie : </span>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-zinc-400" aria-label="pas de prix">-</span>}
+                      {d.batterie_prix_vente ? <span className="t-num text-sm"><span className="sm:hidden text-slate-500 font-medium">Batterie : </span>{formatPrice(d.batterie_prix_vente)}</span> : <span className="text-slate-400" aria-label="pas de prix">-</span>}
                     </div>
                     {showHT && isAdmin && (
-                      <div className="w-24 sm:text-center text-[11px] text-red-700 font-medium">
+                      <div className="w-24 sm:text-center t-caption tabular-nums">
                         {d.batterie_prix_ht != null ? `${Number(d.batterie_prix_ht).toFixed(2)} € HT` : '-'}
                       </div>
                     )}
@@ -940,8 +931,9 @@ export default function TarifsPage() {
     );
   }
 
-  const IPAD_COLOR = { bg: 'rgba(59,130,246,0.08)', border: '#3B82F633', text: '#1d4ed8', formulaBg: 'rgba(59,130,246,0.05)' };
-  const MACBOOK_COLOR = { bg: 'rgba(139,92,246,0.08)', border: '#8B5CF633', text: '#6d28d9', formulaBg: 'rgba(139,92,246,0.05)' };
+  // Sections iPad / MacBook : mêmes neutres que le reste de la grille (la couleur ne porte plus la hiérarchie)
+  const IPAD_COLOR = {};
+  const MACBOOK_COLOR = {};
   const fermerFenetre = () => setFenetre(null);
   const marquesGrille = [...new Set(tousTarifs.map((t) => t.marque).filter(Boolean))];
   function ouvrirAjout(texte) {
@@ -958,29 +950,22 @@ export default function TarifsPage() {
 
   // ─── RENDER ────────────────────────────────────
   return (
-    <div className="min-h-screen bg-zinc-50 pb-20">
-      {/* Header sticky */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
-                <Tag className="w-5 h-5 text-violet-700" aria-hidden="true" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg font-bold text-zinc-900">Grille Tarifaire</h1>
-                <p className="text-xs text-zinc-600 truncate">
-                  {stats ? `${stats.modeles} modeles · ${stats.marques} marques · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}` : 'Chargement...'}
-                </p>
-              </div>
+    <div className="page max-w-[1280px]">
+      {/* Header */}
+      <div>
+        <div className="page-header">
+            <div className="min-w-0">
+              <h1 className="page-header-title">Grille Tarifaire</h1>
+              <p className="page-header-subtitle truncate">
+                {stats ? `${stats.modeles} modeles · ${stats.marques} marques · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}` : 'Chargement...'}
+              </p>
             </div>
-            <div className="flex gap-2 items-center">
+            <div className="page-header-actions max-w-full">
               {/* HT toggle — admin only */}
               {isAdmin && (
                 <button type="button" onClick={basculerHT} aria-pressed={showHT}
-                  className={`flex items-center gap-1.5 min-h-[44px] text-xs font-semibold px-3 rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${
-                    showHT ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                  {showHT ? <Unlock className="w-3.5 h-3.5" aria-hidden="true" /> : <Lock className="w-3.5 h-3.5" aria-hidden="true" />}
+                  className={`btn-secondary ${showHT ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' : ''}`}>
+                  {showHT ? <Unlock aria-hidden="true" /> : <Lock aria-hidden="true" />}
                   <span className="hidden sm:inline">{showHT ? 'Prix HT visibles' : 'Prix HT masques'}</span>
                   <span className="sm:hidden sr-only">Prix d’achat HT</span>
                 </button>
@@ -988,20 +973,21 @@ export default function TarifsPage() {
               {isAdmin && (
                 <button type="button" onClick={handleCheckStock} disabled={checkingStock || isRevalidating}
                   aria-label="Vérifier le stock chez Mobilax"
-                  className="flex items-center gap-2 min-h-[44px] px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-medium transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2">
-                  <PackageX className={`w-4 h-4 ${checkingStock ? 'motion-safe:animate-pulse' : ''}`} aria-hidden="true" />
+                  className="btn-secondary">
+                  <PackageX className={checkingStock ? 'motion-safe:animate-pulse' : ''} aria-hidden="true" />
                   <span className="hidden sm:inline">{checkingStock ? 'Verification...' : 'Verifier stock'}</span>
                 </button>
               )}
               <button type="button" onClick={relire}
                 disabled={isRevalidating || checkingStock}
                 aria-label="Actualiser les tarifs"
-                className="flex items-center gap-2 min-h-[44px] px-4 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-sm font-medium transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
-                <RefreshCw className={`w-4 h-4 ${isRevalidating ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
+                className="btn-secondary">
+                <RefreshCw className={isRevalidating ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
                 <span className="hidden sm:inline">{isRevalidating ? 'Chargement...' : 'Actualiser'}</span>
               </button>
             </div>
-          </div>
+        </div>
+        <div>
 
           {!loading && (
             <BandeauPrix
@@ -1020,93 +1006,97 @@ export default function TarifsPage() {
           )}
 
           {stockResult && !stockResult.error && (
-            <div role="status" className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-emerald-900">
+            <div role="status" className="callout callout-success mb-4">
+              <div className="flex items-center justify-between gap-2 flex-1">
+                <div>
                   {stockResult.models_found != null ? (
                     <>
                       <span className="font-semibold">{stockResult.models_found}</span> modeles trouves sur Mobilax
                       {' / '}<span className="font-semibold">{stockResult.models_checked}</span> verifies
                       {' — '}<span className="font-semibold">{stockResult.tarifs_updated}</span> mises a jour
                       {stockResult.now_rupture > 0 && <span className="text-red-700 font-semibold ml-2">({stockResult.now_rupture} ruptures)</span>}
-                      {stockResult.now_in_stock > 0 && <span className="text-emerald-800 font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>}
+                      {stockResult.now_in_stock > 0 && <span className="font-semibold ml-2">({stockResult.now_in_stock} retour en stock)</span>}
                     </>
                   ) : (
                     <>{stockResult.message || 'Vérification du stock lancée en arrière-plan'} : actualisez dans quelques minutes pour voir les ruptures.</>
                   )}
                 </div>
                 <button type="button" onClick={() => setStockResult(null)} aria-label="Masquer le résultat"
-                  className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-lg text-emerald-800 hover:bg-emerald-100">
-                  <X className="w-4 h-4" aria-hidden="true" />
+                  className="btn-ghost btn-icon shrink-0 -my-2 text-emerald-800 hover:bg-emerald-100 hover:text-emerald-900">
+                  <X aria-hidden="true" />
                 </button>
               </div>
             </div>
           )}
           {stockResult?.error && (
-            <div role="alert" className="mt-3 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-800 flex items-center justify-between gap-2">
-              <span>{typeof stockResult.error === 'string' ? stockResult.error : 'Erreur lors de la verification du stock.'}</span>
+            <div role="alert" className="callout callout-danger items-center mb-4">
+              <span className="flex-1">{typeof stockResult.error === 'string' ? stockResult.error : 'Erreur lors de la verification du stock.'}</span>
               <button type="button" onClick={() => setStockResult(null)} aria-label="Masquer le message"
-                className="shrink-0 w-11 h-11 inline-flex items-center justify-center rounded-lg hover:bg-red-100">
-                <X className="w-4 h-4" aria-hidden="true" />
+                className="btn-ghost btn-icon shrink-0 -my-2 text-red-700 hover:bg-red-100 hover:text-red-800">
+                <X aria-hidden="true" />
               </button>
             </div>
           )}
 
-          <div className="mt-4 flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1 sm:min-w-[220px]">
               <label htmlFor="tarifs-recherche" className="sr-only">Rechercher un modèle</label>
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" aria-hidden="true" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
               <input ref={rechercheRef} id="tarifs-recherche" type="search" placeholder="Rechercher un modele..." value={search} onChange={e => setSearch(e.target.value)}
-                className="w-full min-h-[44px] pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-colors" />
+                className="input pl-10" />
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5 min-w-0" role="group" aria-label="Filtres">
+            <div className="flex gap-2 items-center min-w-0" role="group" aria-label="Filtres">
               <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
-              {BRAND_FILTERS.filter(b => b === 'Toutes' || grouped.some(g => g.brand === b) || brandFilter === b).map(b => (
-                <button key={b} type="button" aria-pressed={brandFilter === b}
-                  onClick={() => { setBrandFilter(b); if (b === 'Toutes') { setExpandedBrands(new Set()); setExpandedModels(new Set()); setExpandedSeries(new Set()); } }}
-                  className={`min-h-[44px] px-3 rounded-lg text-xs font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 ${brandFilter === b ? 'bg-zinc-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-zinc-700 hover:bg-zinc-100'}`}>
-                  {b}
-                </button>
-              ))}
+              <div className="scroll-fade-x min-w-0">
+                <div className="segmented">
+                  {BRAND_FILTERS.filter(b => b === 'Toutes' || grouped.some(g => g.brand === b) || brandFilter === b).map(b => (
+                    <button key={b} type="button" aria-pressed={brandFilter === b}
+                      onClick={() => { setBrandFilter(b); if (b === 'Toutes') { setExpandedBrands(new Set()); setExpandedModels(new Set()); setExpandedSeries(new Set()); } }}
+                      className={`segmented-item ${brandFilter === b ? 'segmented-item-active' : ''}`}>
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Filtres arrivés par l'URL (tuiles « Santé des prix ») : visibles et effaçables */}
           {filtresActifs.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2" role="group" aria-label="Filtres actifs">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-700">
-                <Filter className="w-3.5 h-3.5" aria-hidden="true" /> Filtré :
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                <Filter className="w-4 h-4 text-slate-400" aria-hidden="true" /> Filtré :
               </span>
               {filtresActifs.map((f) => (
                 <button key={f.cle} type="button" onClick={() => retirerFiltresUrl([f.cle])}
                   aria-label={`Retirer le filtre ${f.libelle}`}
-                  className="min-h-[44px] pl-3 pr-2 rounded-full border border-violet-300 bg-violet-50 text-violet-900 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-violet-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                  className="min-h-[44px] pl-3 pr-2 rounded-full bg-brand-50 text-brand-700 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-brand-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                   {f.libelle}
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
               ))}
               {filtresActifs.length > 1 && (
                 <button type="button" onClick={() => retirerFiltresUrl(filtresActifs.map((f) => f.cle))}
-                  className="min-h-[44px] px-3 rounded-full text-xs font-semibold text-zinc-800 underline underline-offset-2 hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
+                  className="btn-ghost btn-sm underline underline-offset-2">
                   Effacer les filtres
                 </button>
               )}
               {!loading && !margesMasquees && (
-                <span role="status" className="text-xs text-zinc-700">
+                <span role="status" className="t-caption">
                   {nbCorrespondants} prix correspond{nbCorrespondants > 1 ? 'ent' : ''}
                 </span>
               )}
             </div>
           )}
           {margesMasquees && !loading && (
-            <div role="status" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 flex flex-wrap items-center gap-3">
-              <Lock className="w-4 h-4 shrink-0 text-amber-800" aria-hidden="true" />
+            <div role="status" className="callout callout-warning items-center flex-wrap mt-3">
+              <Lock aria-hidden="true" />
               <span className="flex-1 min-w-[220px]">
                 Les marges se calculent avec les prix d’achat HT, masqués tant que le code administrateur n’est pas saisi sur ce poste.
               </span>
               <button type="button" onClick={afficherMarges} disabled={lectureMarges}
-                className="min-h-[44px] px-4 rounded-xl bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800 disabled:opacity-60 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
-                <Unlock className="w-4 h-4" aria-hidden="true" />
+                className="btn-primary btn-sm">
+                <Unlock aria-hidden="true" />
                 {lectureMarges ? 'Lecture des marges…' : 'Afficher les marges (code admin)'}
               </button>
             </div>
@@ -1115,33 +1105,32 @@ export default function TarifsPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div className="mt-6 space-y-4">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20" role="status">
-            <div className="w-10 h-10 border-2 border-violet-600 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" />
-            <p className="mt-4 text-sm text-zinc-600">Chargement des tarifs...</p>
+          <div className="loading-inline justify-center w-full py-20" role="status">
+            <Loader2 aria-hidden="true" /> Chargement des tarifs...
           </div>
         ) : grouped.length === 0 && !(filtreActif && appleVisible && devicesVisibles.length) ? (
-          <div className="text-center py-20">
-            <Tag className="w-12 h-12 text-zinc-400 mx-auto mb-4" aria-hidden="true" />
-            <p className="text-zinc-700 text-sm">
+          <div className="empty-state card">
+            <div className="empty-state-icon"><Tag aria-hidden="true" /></div>
+            <p className="t-body text-slate-500 max-w-sm">
               {margesMasquees ? 'Saisissez le code administrateur pour voir les marges faibles.'
                 : filtreUrlActif ? `Aucun prix pour ce filtre : ${filtresActifs.map((f) => f.libelle).join(', ')}.`
                   : anciensSeuls ? 'Aucun prix de plus de 3 mois.' : debouncedSearch.trim() ? `Aucune pièce pour « ${debouncedSearch.trim()} ».` : 'Aucun tarif trouvé.'}
             </p>
             {filtreUrlActif && !margesMasquees && (
               <button type="button" onClick={() => retirerFiltresUrl(filtresActifs.map((f) => f.cle))}
-                className="mt-4 min-h-[44px] px-4 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-zinc-800 hover:bg-zinc-50 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">
-                <X className="w-4 h-4" aria-hidden="true" /> Voir toute la grille
+                className="btn-secondary">
+                <X aria-hidden="true" /> Voir toute la grille
               </button>
             )}
             {!filtreActif && debouncedSearch.trim() && (isAdmin ? (
               <button type="button" onClick={() => ouvrirAjout(debouncedSearch)}
-                className="mt-4 min-h-[44px] px-4 rounded-xl bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800 inline-flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">
-                <PackagePlus className="w-4 h-4" aria-hidden="true" /> Ajouter une pièce pour ce modèle
+                className="btn-primary">
+                <PackagePlus aria-hidden="true" /> Ajouter une pièce pour ce modèle
               </button>
             ) : (
-              <p className="mt-2 text-sm text-zinc-700">Un administrateur peut l’ajouter : « Mettre à jour les prix (admin) » en haut de page.</p>
+              <p className="text-sm text-slate-500">Un administrateur peut l’ajouter : « Mettre à jour les prix (admin) » en haut de page.</p>
             ))}
           </div>
         ) : (
@@ -1151,17 +1140,18 @@ export default function TarifsPage() {
             const isApple = brand === 'Apple';
 
             return (
-              <div key={brand} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                {/* NIVEAU 1 : Header marque */}
+              <div key={brand} className={`card overflow-hidden ${isBrandOpen ? 'border-brand-300' : ''}`}>
+                {/* NIVEAU 1 : Header marque — la couleur de marque tient sur une pastille de 32 px */}
                 <button type="button" onClick={() => toggleBrand(brand)} aria-expanded={isBrandOpen}
-                  className="w-full min-h-[48px] px-5 py-3.5 flex items-center justify-between cursor-pointer transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white"
-                  style={{ background: bc.bg, color: bc.text }}>
-                  <div className="flex items-center gap-2.5">
-                    {isBrandOpen ? <ChevronDown className="w-4 h-4" aria-hidden="true" /> : <ChevronRight className="w-4 h-4" aria-hidden="true" />}
-                    <BrandLogo slug={bc.logo} />
-                    <span className="font-bold text-sm tracking-wide">{brand}</span>
+                  className="w-full min-h-14 px-4 sm:px-5 py-3 flex items-center justify-between gap-3 cursor-pointer transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {isBrandOpen ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
+                    <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: bc.bg, color: bc.text }} aria-hidden="true">
+                      <BrandLogo slug={bc.logo} />
+                    </span>
+                    <span className="t-h2 truncate">{brand}</span>
                   </div>
-                  <span className="text-xs font-medium">
+                  <span className="t-caption shrink-0">
                     {models.length} modele{models.length > 1 ? 's' : ''}
                   </span>
                 </button>
@@ -1169,10 +1159,10 @@ export default function TarifsPage() {
                 {/* ═══════ APPLE: iPhone series + iPad + MacBook ═══════ */}
                 {isBrandOpen && isApple && (
                   <div>
-                    <div className="px-5 py-2.5 border-b flex items-center gap-2" style={{ background: 'rgba(245,158,11,0.08)', borderColor: '#F59E0B33' }}>
-                      <Smartphone className="w-4 h-4 text-amber-700" aria-hidden="true" />
-                      <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">iPhone</span>
-                      <span className="text-[11px] font-medium text-amber-800">({appleIPhoneSeries.reduce((s, sr) => s + sr.models.length, 0)} modeles)</span>
+                    <div className="px-4 sm:px-5 py-2 border-t border-slate-100 bg-slate-50 flex items-center gap-2">
+                      <Smartphone className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                      <span className="t-h3">iPhone</span>
+                      <span className="t-caption">({appleIPhoneSeries.reduce((s, sr) => s + sr.models.length, 0)} modeles)</span>
                     </div>
 
                     {appleIPhoneSeries.map(({ serie, models: serieModels }) => {
@@ -1181,18 +1171,18 @@ export default function TarifsPage() {
                       return (
                         <div key={serie}>
                           <button type="button" onClick={() => toggleSerie(serieKey)} aria-expanded={isSerieOpen}
-                            className={`w-full min-h-[44px] flex items-center px-5 py-2.5 text-left transition-colors border-b border-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-500 ${isSerieOpen ? 'bg-amber-50/50' : 'hover:bg-amber-50/30 bg-white'}`}>
+                            className={`w-full min-h-12 flex items-center px-4 sm:px-5 py-2 text-left transition-colors duration-150 border-t border-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${isSerieOpen ? 'bg-brand-50/60' : 'hover:bg-slate-50 bg-white'}`}>
                             <div className="flex items-center gap-2 flex-1">
-                              {isSerieOpen ? <ChevronDown className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" aria-hidden="true" />}
-                              <span className="font-bold text-[13px] text-zinc-800">Serie {serie === 'X/XS/XR' ? serie : `iPhone ${serie}`}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-900 font-medium">
+                              {isSerieOpen ? <ChevronDown className="w-4 h-4 text-brand-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
+                              <span className="font-semibold text-sm text-slate-900">Serie {serie === 'X/XS/XR' ? serie : `iPhone ${serie}`}</span>
+                              <span className="badge badge-sm badge-neutral">
                                 {serieModels.length} modele{serieModels.length > 1 ? 's' : ''}
                               </span>
                             </div>
                           </button>
                           {isSerieOpen && (
                             <div>
-                              <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+                              <div className="hidden sm:flex items-center px-4 sm:px-5 py-2 bg-slate-50 border-t border-slate-100 table-header">
                                 <div className="flex-1 pl-7">Modele</div>
                                 <div className="text-right pr-1">Pieces disponibles</div>
                               </div>
@@ -1213,7 +1203,7 @@ export default function TarifsPage() {
                 {/* ═══════ OTHER BRANDS: flat model list ═══════ */}
                 {isBrandOpen && !isApple && (
                   <div>
-                    <div className="hidden sm:flex items-center px-5 py-2 bg-zinc-100/80 border-b border-slate-200 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+                    <div className="hidden sm:flex items-center px-4 sm:px-5 py-2 bg-slate-50 border-t border-slate-100 table-header">
                       <div className="flex-1 pl-7">Modele</div>
                       <div className="text-right pr-1">Pieces disponibles</div>
                     </div>
@@ -1227,7 +1217,7 @@ export default function TarifsPage() {
 
         {/* Grille filtrée (« plus de 3 mois », filtre de l'URL) : iPad / MacBook concernés même sans pièce Apple retenue */}
         {!loading && filtreActif && appleVisible && !grouped.some((g) => g.brand === 'Apple') && devicesVisibles.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="card overflow-hidden">
             {renderDeviceSection({ devices: iPadDevices, label: 'iPad', icon: Tablet, color: IPAD_COLOR, marge: regles?.ipad ?? 110, sectionKey: 'apple-ipad' })}
             {renderDeviceSection({ devices: macBookDevices, label: 'MacBook', icon: Laptop, color: MACBOOK_COLOR, marge: regles?.macbook ?? 120, sectionKey: 'apple-macbook' })}
           </div>
@@ -1235,8 +1225,8 @@ export default function TarifsPage() {
       </div>
 
       {!loading && totalModels > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center text-xs text-zinc-600 space-y-1">
+        <div className="mt-6">
+          <div className="text-center t-caption space-y-1">
             <p>{totalModels} modèle{totalModels > 1 ? 's' : ''} · {grouped.length} marque{grouped.length > 1 ? 's' : ''} · Source : Mobilax</p>
           </div>
         </div>
