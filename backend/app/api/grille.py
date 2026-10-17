@@ -517,7 +517,10 @@ _COMPACT_SQL = "regexp_replace(" + _SANS_ACCENT_SQL + ", '[^a-z0-9]+', '', 'g')"
 
 
 def _lire_tarifs(cur, marques: Optional[list], motifs: list, mode_libre: bool):
-    conds, params = ["obsolete IS NOT TRUE"], []
+    """Pièces fournisseur candidates. Jamais une pièce sans prix client positif : les pièces
+    courantes pré-créées à 0 € HT (« prix à renseigner », api/tarifs) restent hors des
+    suggestions tant qu'elles n'ont pas de prix (_candidats écarte en plus tout prix ≤ 0)."""
+    conds, params = ["obsolete IS NOT TRUE", "COALESCE(prix_client, 0) > 0"], []
     if marques:
         conds.append("regexp_replace(lower(marque), '[^a-z0-9]+', '', 'g') = ANY(%s::text[])")
         params.append(marques)

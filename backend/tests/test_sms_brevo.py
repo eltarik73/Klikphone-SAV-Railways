@@ -231,7 +231,7 @@ def test_envoi_reussi(client, brevo):
     r = envoyer(client, gc, message="Votre iPhone 13 est prêt ! À bientôt", libelle="Appareil prêt")
     assert r.status_code == 200, r.text
     assert r.json() == {"ok": True, "message_id": "1511882900176220", "segments": 1,
-                        "destinataire": "06 12 34 56 78"}
+                        "destinataire": "06 12 34 56 78", "autre_numero": False}
     assert len(fake.appels) == 1
     methode, url, corps, entetes = fake.appels[0]
     assert (methode, url) == ("POST", "https://api.brevo.com/v3/transactionalSMS/send")

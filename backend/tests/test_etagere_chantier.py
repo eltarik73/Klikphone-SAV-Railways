@@ -439,14 +439,15 @@ def test_compteurs_de_relances_et_palier_du(reel, propre):
     assert par_id[recent]["relance_due"] is False               # J+1 : premier palier J+3
     assert par_id[rendu]["relance_due"] is False and par_id[rendu]["reste_du"] == 120
 
-    # Appel tracé : note « relance », compteur et date renvoyés, plus rien de dû
+    # Appel tracé : note 'appel' (même note que POST /api/tickets/{id}/contact), compteur et date
+    # renvoyés, plus rien de dû
     r = c.post(f"/api/etagere/{jamais}/relance",
                json={"canal": "appel", "contenu": " Pas de réponse, message laissé "}, headers=H)
     assert r.status_code == 200, r.text
     assert r.json()["nb_relances"] == 1 and r.json()["derniere_relance"]
     note = _sql(reel, "SELECT type_note, contenu, auteur FROM notes_tickets WHERE ticket_id = %s"
                       " ORDER BY id DESC LIMIT 1", jamais)[0]
-    assert note == {"type_note": "relance", "contenu": "Appel téléphonique : Pas de réponse, message laissé",
+    assert note == {"type_note": "appel", "contenu": "Appel téléphonique : Pas de réponse, message laissé",
                     "auteur": "Sophie"}
     r = c.post(f"/api/etagere/{jamais}/relance", json={"canal": "sms", "contenu": "Bonjour…"}, headers=H)
     assert r.json()["nb_relances"] == 2

@@ -179,16 +179,34 @@ describe('MessageComposer : proposition après « Réparation terminée »', () 
     expect(await screen.findByText(/Coucou Léa, c’est prêt \(79\.00 €\)/)).toBeInTheDocument();
   });
 
-  it('acompte qui couvre tout : l’envoi n’est pas bloqué par « renseigne un tarif »', async () => {
+  it('montant à 0 € (acompte qui couvre tout) : phrase du montant retirée, mention affichée, envoi possible', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     render(
       <ToastProvider>
         <MessageComposer ticket={ticket({ montants: { ...MONTANTS, acompte: 89, reste: 0 } })} statutPropose="Réparation terminée" integre />
       </ToastProvider>,
     );
+    expect(screen.getByText('Montant à 0 € : phrase du montant retirée')).toBeInTheDocument();
+    expect(screen.queryByText(/Montant : 0\.00/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'SMS' }));
     await waitFor(() => expect(open).toHaveBeenCalled());
-    expect(decodeURIComponent(open.mock.calls[0][0])).toContain('Montant : 0.00 EUR');
+    const sms = decodeURIComponent(open.mock.calls[0][0]);
+    expect(sms).toContain('Vous pouvez venir le recuperer a la boutique. Klikphone 79 Place');
+    expect(sms).not.toMatch(/Montant/);
+    await waitFor(() => expect(apiMock.logMessage).toHaveBeenCalledWith(42, 'Sophie', expect.stringMatching(/^\[Appareil pret\]/), 'sms'));
+  });
+
+  it('tarif à 0 € sans acompte : plus de blocage « renseigne un tarif », le message part sans la phrase du montant', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(
+      <ToastProvider>
+        <MessageComposer ticket={ticket({ montants: { ...MONTANTS, total: 0, acompte: 0, reste: 0 } })} statutPropose="Réparation terminée" integre />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'WhatsApp' }));
+    await waitFor(() => expect(open).toHaveBeenCalled());
+    expect(decodeURIComponent(open.mock.calls[0][0])).not.toMatch(/Montant|0\.00/);
+    expect(screen.queryByText(/Renseigne un tarif/)).not.toBeInTheDocument();
   });
 });
 

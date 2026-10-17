@@ -79,8 +79,14 @@ function Adresse() {
   return <output data-testid="adresse">{`${l.pathname}${l.search}`}</output>;
 }
 
-// En-tête d'une marque dépliable (« Samsung 1 modele ») ; les boutons de filtre par marque n'ont que le nom
-const groupe = (marque) => new RegExp(`^${marque}\\s*\\d+ modeles?$`);
+// En-tête d'une marque dépliable de la vue filtrée (« Samsung 1 modele, 2 prix ») ; hors filtre, la page
+// « Réparation smartphones » montre des puces de marque (« Samsung 1 », groupe « Marques »)
+const groupe = (marque) => new RegExp(`^${marque}\\s*\\d+ modeles?, \\d+ prix$`);
+const puceMarque = (marque) => within(screen.getByRole('group', { name: 'Marques' })).getByRole('button', { name: new RegExp(`^${marque}`) });
+const MARQUES_RS = [
+  { marque: 'Samsung', modeles: [{ modele: 'Galaxy S21', nb_pieces: 2, nb_sans_prix: 0, plus_vieux_jours: 119 }] },
+  { marque: 'Xiaomi', modeles: [{ modele: 'Redmi Note 10', nb_pieces: 1, nb_sans_prix: 0, plus_vieux_jours: 20 }] },
+];
 
 const pageTarifs = (url) => render(
   <MemoryRouter initialEntries={[url]}>
@@ -99,6 +105,7 @@ beforeEach(() => {
   apiMock.getAppleDevices.mockResolvedValue([IPAD]);
   apiMock.getSantePrix.mockResolvedValue(SANTE);
   apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT });
+  apiMock.getReparationSmartphonesMarques.mockResolvedValue(MARQUES_RS);
 });
 
 afterEach(() => {
@@ -141,7 +148,9 @@ describe('TarifsPage : filtres envoyés par le tableau de bord', () => {
     fireEvent.click(within(filtres).getByRole('button', { name: /Retirer le filtre/ }));
     expect(screen.getByTestId('adresse')).toHaveTextContent(/^\/accueil\/tarifs$/);
     expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: groupe('Samsung') })).toBeInTheDocument();
+    // Retour à la page par marque → modèle (puces de marque, Samsung ouverte)
+    await screen.findByRole('group', { name: 'Marques' });
+    expect(puceMarque('Samsung')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('Rechercher un modèle')).toHaveFocus();
   });
 
@@ -167,7 +176,8 @@ describe('TarifsPage : filtres envoyés par le tableau de bord', () => {
     expect(await screen.findByText('Aucun prix pour ce filtre : Périmés (plus de 180 jours).')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Voir toute la grille' }));
     expect(screen.getByTestId('adresse')).toHaveTextContent(/^\/tech\/tarifs$/);
-    expect(await screen.findByRole('button', { name: groupe('Samsung') })).toBeInTheDocument();
+    await screen.findByRole('group', { name: 'Marques' });
+    expect(puceMarque('Samsung')).toBeInTheDocument();
   });
 
   it('?marge=faible : écrans sous le seuil (pièces et iPad), marge affichée sur la carte', async () => {
@@ -198,7 +208,8 @@ describe('TarifsPage : filtres envoyés par le tableau de bord', () => {
 
   it('valeur inconnue ignorée : ni puce ni filtre', async () => {
     pageTarifs('/accueil/tarifs?fraicheur=vieux');
-    expect(await screen.findByRole('button', { name: groupe('Samsung') })).toBeInTheDocument();
+    await screen.findByRole('group', { name: 'Marques' });
+    expect(puceMarque('Samsung')).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Filtres actifs' })).not.toBeInTheDocument();
   });
 

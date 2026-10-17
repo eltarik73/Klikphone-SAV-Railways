@@ -85,21 +85,87 @@ def test_catalogue_kiosque():
         "Bouton volume", "Bouton power",
         "Haut-parleur (je n'entends pas les gens ou la musique)",
         "Microphone (les gens ne m'entendent pas)",
-        "Vitre arrière", "Désoxydation", "Problème logiciel", "Diagnostic", "Autre",
+        "Vitre arrière", "Désoxydation", "Problème logiciel", "Diagnostic",
+        "Ne s'allume plus", "Virus", "Reprise téléphone", "Autre",
     ]
     data = catalogue_prestations()
     assert data["pannes"] == PANNES_CATALOGUE
-    assert {"cle", "symptome", "prestation", "court", "alias"} <= set(data["prestations"][0])
+    assert {"cle", "symptome", "prestation", "court", "alias", "a_chiffrer"} <= set(data["prestations"][0])
+    assert data["mention_a_chiffrer"] == "à chiffrer par la boutique"
     json.dumps(data)
 
 
 def test_aucune_collision_dans_la_table():
+    # Symptômes, prestations et alias sont des clés de recherche : jamais partagés entre deux
+    # prestations. Le libellé court est un affichage : « Diagnostic » et « Logiciel » sont
+    # partagés, et l'index garde la première clé (la plus générale).
     vus = {}
     for cle, sympt, presta, court, alias in PRESTATIONS:
-        for v in (sympt, presta, court, *alias):
+        for v in (sympt, presta, *alias):
             if v:
                 n = normaliser(v)
                 assert vus.setdefault(n, cle) == cle, f"{v!r} déjà pris par {vus[n]}"
+    courts = {}
+    for cle, sympt, presta, court, alias in PRESTATIONS:
+        courts.setdefault(normaliser(court), cle)
+    assert cle_panne("Diagnostic") == courts["diagnostic"] == "diagnostic"
+    assert cle_panne("Logiciel") == courts["logiciel"] == "logiciel"
+
+
+# ─── Trois pannes de la borne (ne s'allume plus, virus, reprise) ───
+
+@pytest.mark.parametrize("entree,cle,prestation,court", [
+    ("Ne s'allume plus", "ne_s_allume_plus", "Diagnostic complet (ne s'allume plus)", "Diagnostic"),
+    ("Ne s'allume pas", "ne_s_allume_plus", "Diagnostic complet (ne s'allume plus)", "Diagnostic"),
+    ("Ne démarre plus", "ne_s_allume_plus", "Diagnostic complet (ne s'allume plus)", "Diagnostic"),
+    ("ne s allume plus", "ne_s_allume_plus", "Diagnostic complet (ne s'allume plus)", "Diagnostic"),
+    ("Virus", "virus", "Forfait nettoyage logiciel (virus)", "Logiciel"),
+    ("Virus / malware", "virus", "Forfait nettoyage logiciel (virus)", "Logiciel"),
+    ("Logiciel malveillant", "virus", "Forfait nettoyage logiciel (virus)", "Logiciel"),
+    ("Reprise téléphone", "reprise", "Reprise de l'appareil (rachat)", "Reprise"),
+    ("Rachat", "reprise", "Reprise de l'appareil (rachat)", "Reprise"),
+    ("Reprise de l'appareil (rachat)", "reprise", "Reprise de l'appareil (rachat)", "Reprise"),
+])
+def test_nouvelles_pannes_borne(entree, cle, prestation, court):
+    assert cle_panne(entree) == cle
+    assert libelle_prestation(entree) == prestation
+    assert libelle_prestation(prestation) == prestation
+    assert libelle_court(entree) == court and libelle_court(prestation) == court
+    # Jamais par sous-chaîne : un libellé voisin reste inconnu
+    assert cle_panne("Virus sur le PC") is None and cle_panne("Reprise accessoire") is None
+    assert cle_panne("Ne s'allume plus après chute") is None
+
+
+def test_catalogue_kiosque_exact_et_api():
+    assert PANNES_CATALOGUE[-4:] == ["Ne s'allume plus", "Virus", "Reprise téléphone", "Autre"]
+    data = catalogue_prestations()
+    par_cle = {p["cle"]: p for p in data["prestations"]}
+    assert par_cle["ne_s_allume_plus"]["symptome"] == "Ne s'allume plus"
+    assert par_cle["virus"]["symptome"] == "Virus"
+    assert par_cle["reprise"]["symptome"] == "Reprise téléphone"
+    assert [p["cle"] for p in data["prestations"] if p["a_chiffrer"]] == ["reprise"]
+    # Le dépôt à distance ramène les alias au symptôme du kiosque
+    from app.api.depot_distance import panne_catalogue
+    assert panne_catalogue("Ne démarre plus") == ("Ne s'allume plus", "")
+    assert panne_catalogue("Rachat", "iPhone 11 64 Go") == ("Reprise téléphone", "iPhone 11 64 Go")
+
+
+def test_reprise_sans_ligne_chiffree():
+    """Reprise déposée à la borne : une ligne par défaut au libellé du catalogue, prix 0 (aucune
+    grille ne la chiffre, la boutique saisit le montant), signalée a_chiffrer au front ; rien n'est
+    dû tant que la boutique n'a rien saisi. Les autres symptômes gardent leur prix."""
+    from app.services.montants import calculer_montants
+    from app.services.prestations import a_chiffrer
+    assert a_chiffrer("reprise") and not a_chiffrer("ecran") and not a_chiffrer(None)
+    t = {"panne": "Reprise téléphone", "statut": "En attente de diagnostic"}
+    assert lignes_reparation(t) == [{"label": "Reprise de l'appareil (rachat)", "prix": 0.0, "cle": "reprise"}]
+    assert calculer_montants(t)["total"] == 0 and calculer_montants(t)["reste"] == 0
+    assert lignes_reparation({"panne": "Ne s'allume plus", "devis_estime": 19})[0] == \
+        {"label": "Diagnostic complet (ne s'allume plus)", "prix": 19.0, "cle": "ne_s_allume_plus"}
+    assert lignes_reparation({"panne": "Virus", "devis_estime": 39})[0]["prix"] == 39.0
+    # Lignes saisies par l'équipe : rendues telles quelles (la boutique chiffre la reprise ici)
+    saisie = {**t, "reparation_supp": json.dumps([{"label": "Reprise de l'appareil (rachat)", "prix": 150}])}
+    assert lignes_reparation(saisie)[0]["prix"] == 150.0
 
 
 def test_libelles_encodables_latin1():

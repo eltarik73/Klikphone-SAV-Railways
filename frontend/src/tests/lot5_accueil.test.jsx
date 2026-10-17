@@ -278,31 +278,39 @@ describe('Page /confidentialite', () => {
 });
 
 // ─── Borne de dépôt ──────────────────────────────────────────────
-async function remplirJusquAuDepot({ consentir = false, attendre = false } = {}) {
+// Parcours en 4 étapes (Vous → Votre appareil → Le problème et l'accès → Vérification) :
+// l'information RGPD, la case des offres et « Je patiente en boutique » sont à la dernière
+// étape, et le code d'accès (ici « Pas de code ») doit être choisi à la troisième.
+async function allerALaVerification() {
   render(wrap(<ClientFormPage />, ['/client']));
   fireEvent.change(screen.getByPlaceholderText('Dupont'), { target: { value: 'Martin' } });
   fireEvent.change(screen.getByPlaceholderText('06 XX XX XX XX'), { target: { value: '0612345678' } });
-  const consentement = screen.getByRole('checkbox', { name: /J'accepte de recevoir par SMS ou e-mail des offres de/ });
-  expect(consentement).not.toBeChecked();
-  if (consentir) fireEvent.click(consentement);
   fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
-  fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
   fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
   fireEvent.change(screen.getByLabelText(/Préciser marque/), { target: { value: 'Fairphone 5' } });
   fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'Écran cassé' }));
+  fireEvent.click(screen.getByRole('radio', { name: /Pas de code/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
+  await screen.findByRole('heading', { name: 'Vérification' });
+}
+
+async function remplirJusquAuDepot({ consentir = false, attendre = false } = {}) {
+  await allerALaVerification();
+  const consentement = screen.getByRole('checkbox', { name: /J'accepte de recevoir par SMS ou e-mail des offres de/ });
+  expect(consentement).not.toBeChecked();
+  if (consentir) fireEvent.click(consentement);
   const attente = screen.getByRole('checkbox', { name: /Je patiente en boutique/ });
   expect(attente).not.toBeChecked();
   if (attendre) fireEvent.click(attente);
-  fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
-  fireEvent.click(screen.getByRole('button', { name: /Confirmer le dépôt/ }));
+  fireEvent.click(screen.getByRole('button', { name: /Déposer l'appareil/ }));
   await screen.findByText('KP-000070');
 }
 
 describe('Borne /client : RGPD et priorité', () => {
   it('information RGPD visible avec les valeurs de la boutique, politique en fenêtre', async () => {
-    render(wrap(<ClientFormPage />, ['/client']));
+    await allerALaVerification();
     const info = screen.getByRole('region', { name: 'Vos données personnelles' });
     await waitFor(() => expect(info).toHaveTextContent('Klikphone Chambéry'));
     expect(info).toHaveTextContent('2 ans après votre dernière visite');
@@ -316,8 +324,9 @@ describe('Borne /client : RGPD et priorité', () => {
     expect(within(dialog).queryByRole('link', { name: /Ouvrir dans une page/ })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: "J'ai compris" }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    // Le formulaire n'a pas quitté l'étape client
-    expect(screen.getByPlaceholderText('Dupont')).toBeInTheDocument();
+    // Le formulaire n'a pas quitté l'étape de vérification
+    expect(screen.getByRole('button', { name: /Déposer l'appareil/ })).toBeInTheDocument();
+    expect(apiMock.createTicket).not.toHaveBeenCalled();
   });
 
   it('hors borne (/deposer) : la fenêtre propose d’ouvrir la page', async () => {
@@ -327,7 +336,7 @@ describe('Borne /client : RGPD et priorité', () => {
   });
 
   it('libellé du consentement : canal et objet, au nom de la boutique', async () => {
-    render(wrap(<ClientFormPage />, ['/client']));
+    await allerALaVerification();
     expect(await screen.findByRole('checkbox', { name: "J'accepte de recevoir par SMS ou e-mail des offres de Klikphone Chambéry" }))
       .not.toBeChecked();
     expect(screen.queryByText(/demandes d'avis/)).not.toBeInTheDocument();

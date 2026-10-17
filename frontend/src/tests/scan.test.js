@@ -652,13 +652,15 @@ describe('montants et garde-fous du panneau', () => {
     expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'tech')).toEqual(['terminer*', 'terminer_seul', 'rendre']);
     // Celui qui scanne l'appareil réparé prévient le client, accueil compris
     expect(ids(ticketFixture({ statut: 'En cours de réparation' }), 'accueil')).toEqual(['terminer*', 'terminer_seul', 'rendre']);
-    // Réparation express sans « Démarrer » : terminer directement (technicien)
-    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'tech')).toEqual(['demarrer*', 'terminer', 'rendre']);
-    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'accueil')).toEqual(['rendre']);
+    // Réparation express sans « Démarrer » : terminer directement, accueil comme technicien
+    // (confirmation légère quand on saute « En cours », détail dans scan_termine_contact.test.jsx)
+    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'tech')).toEqual(['demarrer*', 'terminer', 'terminer_seul', 'rendre']);
+    expect(ids(ticketFixture({ statut: 'Pièce reçue' }), 'accueil')).toEqual(['terminer', 'terminer_seul', 'rendre']);
     expect(actionsTicket(ticketFixture({ statut: 'En attente de pièce' }), 'tech')[1]).toMatchObject({ id: 'terminer', warn: { ok: 'Oui, terminer' } });
-    // Accord client → terminé = devis refusé pour le serveur : jamais proposé
-    expect(ids(ticketFixture({ statut: "En attente d'accord client" }), 'tech')).toEqual(['demarrer*', 'rendre']);
+    // Accord client → terminé = devis refusé pour le serveur : jamais proposé, une ligne renvoie à la fiche
+    expect(ids(ticketFixture({ statut: "En attente d'accord client" }), 'tech')).toEqual(['demarrer*', 'accord_fiche', 'rendre']);
     expect(actionsTicket(ticketFixture({ statut: "En attente d'accord client" }), 'tech')[0].warn).toBeTruthy();
+    expect(actionsTicket(ticketFixture({ statut: "En attente d'accord client" }), 'accueil')[0]).toMatchObject({ id: 'accord_fiche', note: true });
     expect(ids(ticketFixture({ statut: 'Clôturé', paye: 1 }), 'accueil')).toEqual([]);
     expect(ids(ticketFixture({ statut: 'Rendu au client' }), 'accueil')).toEqual(['encaisser*']);
   });

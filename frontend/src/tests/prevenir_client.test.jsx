@@ -40,9 +40,9 @@ import { takePendingScan } from '../components/ScanListener';
 import QuickScanPanel, { indicationPrevenir, libelleDiffere, actionsTicket } from '../components/QuickScanPanel';
 import MessageComposer from '../components/MessageComposer';
 import {
-  contexteMessage, remplirModele, ajouterLienSuivi, messagePret, modelePret, DEFAULT_TEMPLATES,
-  numeroSms, canalPrevenir, raisonSansCanal, emailValide, dernierAvisPret, texteDejaPrevenu, texteEchecSms,
-  formatQuand, estAvisPret, ligneJournal, erreurEnvoi,
+  contexteMessage, remplirModele, remplirMessage, sansPhraseMontant, ajouterLienSuivi, messagePret, modelePret,
+  DEFAULT_TEMPLATES, numeroSms, canalPrevenir, raisonSansCanal, emailValide, dernierAvisPret, texteDejaPrevenu,
+  texteEchecSms, formatQuand, estAvisPret, ligneJournal, erreurEnvoi,
 } from '../lib/messages';
 
 const MONTANTS = { total: 89, acompte: 10, reste: 79, paye: false, lignes: [{ label: 'Écran', prix: 89 }] };
@@ -159,9 +159,40 @@ describe('rendu du modèle : variables partagées avec MessageComposer', () => {
     expect(m.segments).toMatchObject({ segments: 1, unicode: false });
     expect(m.texte).toContain('est pret ! Vous pouvez venir');
     expect(m.texte).toContain('/suivi?ticket=KP-000042');
-    expect(m.sansTarif).toBe(false);
-    expect(messagePret(DEFAULT_TEMPLATES, ticket({ montants: { ...MONTANTS, total: 0, reste: 0 } })).sansTarif).toBe(true);
-    expect(messagePret(DEFAULT_TEMPLATES, ticket({ paye: 1, montants: { ...MONTANTS, total: 0, reste: 0 } })).sansTarif).toBe(false);
+    expect(m.montantRetire).toBe(false);
+  });
+
+  it('montant à 0 € (non payé) : la phrase du montant est retirée, le message part quand même', () => {
+    const zero = messagePret(DEFAULT_TEMPLATES, ticket({ montants: { ...MONTANTS, total: 0, reste: 0 } }));
+    expect(zero.montantRetire).toBe(true);
+    expect(zero.sms).toBe('Bonjour Léa, votre Apple iPhone 13 est pret! Vous pouvez venir le recuperer a la boutique. Klikphone 79 Place Saint Leger, Chambery');
+    expect(zero.texte).not.toMatch(/Montant|0\.00/);
+    expect(zero.texte).toContain('/suivi?ticket=KP-000042');
+    // Acompte qui couvre tout : reste à 0 €, même règle
+    expect(messagePret(DEFAULT_TEMPLATES, ticket({ montants: { ...MONTANTS, acompte: 89, reste: 0 } })).montantRetire).toBe(true);
+    // Payé : « Montant : 0.00 EUR » est juste, la phrase reste
+    const paye = messagePret(DEFAULT_TEMPLATES, ticket({ paye: 1, montants: { ...MONTANTS, total: 0, reste: 0 } }));
+    expect(paye.montantRetire).toBe(false);
+    expect(paye.sms).toContain('Montant : 0.00 EUR');
+    // Modèle sans {montant} : rien à retirer
+    expect(messagePret([{ id: 6, label: 'Appareil pret', message: 'Bonjour {prenom}, c’est prêt' }], ticket({ montants: { ...MONTANTS, total: 0, reste: 0 } })))
+      .toMatchObject({ montantRetire: false, sms: 'Bonjour Léa, c\'est pret' });
+  });
+
+  it('découpe en phrases (. ! ? et retours à la ligne) : seule la phrase du montant disparaît', () => {
+    const ctx = contexteMessage(ticket({ montants: { ...MONTANTS, total: 0, reste: 0 } }));
+    const r = (modele) => remplirMessage(modele, ctx);
+    expect(r('Bonjour {prenom}, le devis pour votre {appareil} est de {montant} EUR. Merci de nous confirmer votre accord. Klikphone'))
+      .toEqual({ texte: 'Merci de nous confirmer votre accord. Klikphone', montantRetire: true });
+    expect(r('Bonjour {prenom}.\nMontant : {montant} €\nÀ bientôt !')).toEqual({ texte: 'Bonjour Léa.\nÀ bientôt !', montantRetire: true });
+    expect(r('C’est prêt ! Montant à régler : {montant} € ? Klikphone')).toEqual({ texte: 'C’est prêt ! Klikphone', montantRetire: true });
+    expect(sansPhraseMontant('Prêt. Montant : {montant} €. Merci')).toBe('Prêt. Merci');
+    // Une seule phrase : rien ne serait envoyé, le modèle est gardé tel quel (montant à 0.00)
+    expect(r('Coucou {prenom}, c’est prêt ({montant} €)')).toEqual({ texte: 'Coucou Léa, c’est prêt (0.00 €)', montantRetire: false });
+    // Montant dû : rien n'est retiré ; remplirModele garde sa forme (texte seul)
+    const du = contexteMessage(ticket());
+    expect(remplirMessage('Montant : {montant} €. Merci', du)).toEqual({ texte: 'Montant : 79.00 €. Merci', montantRetire: false });
+    expect(remplirModele('Montant : {montant} €', du.vars)).toBe('Montant : 79.00 €');
   });
 
   it('MessageComposer affiche le même texte qu’avant (substitution partagée)', async () => {
@@ -213,9 +244,12 @@ describe('choix du canal', () => {
     expect(actionsTicket(ticket(), 'accueil').map((a) => a.id)).toEqual(['terminer', 'terminer_seul', 'rendre']);
   });
 
-  it('annoncé avant le clic : tarif à 0 € (si le modèle cite {montant}), client non joignable', () => {
+  it('annoncé avant le clic : montant à 0 € (si le modèle cite {montant}), client non joignable', () => {
     const zero = ticket({ montants: { ...MONTANTS, total: 0, reste: 0 } });
-    expect(indicationPrevenir(zero, true)).toBe('Tarif à 0 € : message non envoyé, renseignez le tarif');
+    // Plus de blocage : le message part sans la phrase du montant, la mention le dit sous le bouton
+    expect(indicationPrevenir(zero, true)).toBe('SMS au 06 12 34 56 78 · Montant à 0 € : phrase du montant retirée');
+    expect(indicationPrevenir(zero, false)).toBe('SMS au 06 12 34 56 78 · à valider dans Messages · Montant à 0 € : phrase du montant retirée');
+    expect(indicationPrevenir(ticket({ ...zero, client_tel: '' }), true)).toBe('E-mail à lea@example.test · Montant à 0 € : phrase du montant retirée');
     expect(indicationPrevenir(zero, true, [{ id: 6, label: 'Appareil pret', message: 'Bonjour {prenom}, c’est prêt' }]))
       .toBe('SMS au 06 12 34 56 78');
 

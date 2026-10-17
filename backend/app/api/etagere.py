@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.services import contact
 from app.services import etagere
 from app.services.montants import calculer_montants, format_euros
 from app.services.notifications import generer_message
@@ -147,22 +148,21 @@ _LIBELLES_CANAL = {"sms": "SMS", "whatsapp": "WhatsApp", "email": "E-mail"}
 
 @router.post("/{ticket_id}/relance")
 def log_relance(ticket_id: int, data: RelanceIn, user: dict = Depends(get_current_user)):
-    """Trace une relance (note du canal ; appel → note « relance ») et renvoie le compteur."""
+    """Trace une relance (note du canal ; appel → note 'appel', la même que
+    POST /api/tickets/{id}/contact) et renvoie le compteur."""
     contenu = data.contenu.strip()
-    if data.canal == "appel":
-        type_note = "relance"
-        contenu = f"Appel téléphonique : {contenu}" if contenu else "Appel téléphonique"
-    else:
-        type_note = data.canal
-        contenu = contenu or f"Relance par {_LIBELLES_CANAL[data.canal]}"
     with get_cursor() as cur:
         cur.execute("SELECT id FROM tickets WHERE id = %s", (ticket_id,))
         if not cur.fetchone():
             raise HTTPException(404, "Ticket non trouvé")
-        cur.execute("""
-            INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
-            VALUES (%s, %s, %s, FALSE, %s)
-        """, (ticket_id, _auteur(user), contenu, type_note))
+        if data.canal == "appel":
+            contact.inserer_appel(cur, ticket_id, _auteur(user),
+                                  f"Appel téléphonique : {contenu}" if contenu else "Appel téléphonique")
+        else:
+            cur.execute("""
+                INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
+                VALUES (%s, %s, %s, FALSE, %s)
+            """, (ticket_id, _auteur(user), contenu or f"Relance par {_LIBELLES_CANAL[data.canal]}", data.canal))
         return _compteurs(cur, ticket_id)
 
 

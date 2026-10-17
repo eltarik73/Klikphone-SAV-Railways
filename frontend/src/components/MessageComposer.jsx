@@ -2,14 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import { envoyerSms, messageSmsEnvoye, versionCourteSms, smsSegments } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
+import { telJoignable } from '../lib/contact';
 import { useToast } from './Toast';
 import { useAuth } from '../hooks/useAuth';
 import {
-  modelePourStatut, DEFAULT_TEMPLATES, LIEN_AVIS_DEFAUT, contexteMessage, remplirModele, ajouterLienSuivi, ligneJournal,
-  lienWhatsApp,
+  modelePourStatut, DEFAULT_TEMPLATES, LIEN_AVIS_DEFAUT, contexteMessage, remplirMessage, ajouterLienSuivi, ligneJournal,
+  lienWhatsApp, MENTION_MONTANT_RETIRE,
 } from '../lib/messages';
 import {
-  MessageCircle, Send, Mail, Check,
+  MessageCircle, Send, Mail, Check, Info,
   Smartphone, Search, FileText, Wrench, Hourglass, CheckCircle2, Package, XCircle, CalendarClock, PenLine, Star, Handshake,
 } from 'lucide-react';
 
@@ -60,14 +61,16 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
 
   const t = ticket;
   // Variables et montants partagés avec le scan comptoir (lib/messages)
-  const { vars, totalTicket, suiviUrl } = contexteMessage(t, { lienAvis: googleReviewLink });
-  const replaceVars = (msg) => remplirModele(msg, vars);
-  const appendSuiviLink = (msg) => ajouterLienSuivi(msg, t, suiviUrl);
+  const ctx = contexteMessage(t, { lienAvis: googleReviewLink });
+  const appendSuiviLink = (msg) => ajouterLienSuivi(msg, t, ctx.suiviUrl);
 
   const selected = templates.find(tp => tp.id === selectedId);
   const isCustom = selectedId === 10;
   const isAvisTemplate = selectedId === 11;
-  const rawText = isCustom ? customText : (selected ? replaceVars(selected.message) : '');
+  // Montant à 0 € (non payé) : la phrase du montant est retirée, le message part quand même
+  const rempli = !isCustom && selected ? remplirMessage(selected.message, ctx) : { texte: isCustom ? customText : '', montantRetire: false };
+  const rawText = rempli.texte;
+  const montantRetire = rempli.montantRetire;
   const previewText = isAvisTemplate ? rawText : appendSuiviLink(rawText);
   const smsText = versionCourteSms(rawText);
   const smsInfo = smsSegments(smsText);
@@ -77,22 +80,16 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
     window.open(lienWhatsApp(telephone, message), '_blank');
   };
 
-  // Check if the selected template uses {montant}
-  const templateUsesMontant = selected && !isCustom && selected.message.includes('{montant}');
-
   const sendMessage = async (canal) => {
     if (!previewText.trim()) {
       toast.error('Message vide');
       return;
     }
-    if (templateUsesMontant && totalTicket <= 0 && !t.paye) {
-      toast.error('Renseigne un tarif avant d\'envoyer');
-      return;
-    }
     setSending(canal);
     const label = selected ? selected.label : 'Message';
     try {
-      const tel = t.client_tel;
+      // Second numéro du ticket (« pour vous joindre si différent ») avant celui de la fiche
+      const tel = telJoignable(t);
       const email = t.client_email;
       // SMS parti par le serveur (Brevo) : il a déjà noté l'envoi sur le ticket (pas de logMessage)
       let smsServeurEnvoye = null;
@@ -178,6 +175,11 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
       ) : (
         <div className="card-section text-sm text-slate-700 leading-relaxed mb-3 whitespace-pre-line break-words">
           {previewText}
+          {montantRetire && (
+            <p className="mt-2 flex items-center gap-1.5 t-caption">
+              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> {MENTION_MONTANT_RETIRE}
+            </p>
+          )}
         </div>
       )}
 

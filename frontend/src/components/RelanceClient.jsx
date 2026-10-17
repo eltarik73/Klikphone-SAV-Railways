@@ -3,21 +3,18 @@ import api from '../lib/api';
 import { envoyerSms, messageSmsEnvoye, versionCourteSms } from '../lib/sms';
 import { waLink } from '../lib/utils';
 import { contenuRelance, messageRelanceSecours } from '../lib/etagere';
+import { telJoignable, libelleJoignable } from '../lib/contact';
 import { useToast } from './Toast';
 import { AlertTriangle, Loader2, Mail, MessageCircle, MessageSquare, Phone, X } from 'lucide-react';
 
 const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 
-// « 06 00 00 01 23 » à l'affichage (le lien tel: garde le numéro brut)
-const formatTel = (tel) => {
-  const d = String(tel ?? '').replace(/\D/g, '');
-  return d.length === 10 ? d.replace(/(\d{2})(?=\d)/g, '$1 ') : String(tel ?? '');
-};
-
 /**
  * Relance d'un client depuis l'étagère : message du palier (GET /api/etagere/{id}/message-relance,
  * modifiable) puis un clic sur le canal. Chaque relance est tracée (POST /api/etagere/{id}/relance),
  * sauf le SMS parti par le serveur, déjà noté sur le ticket : onDone(null) avance alors le compteur.
+ * « J'ai appelé » passe par POST /api/tickets/{id}/contact (note 'appel', la même que « Contacté par
+ * tél. » partout ailleurs) : onDone(null, 'appel', contact) avance le compteur et allume l'icône.
  */
 export default function RelanceClient({ id, ticket: t, smsServeur = false, onDone, onCancel }) {
   const toast = useToast();
@@ -26,7 +23,8 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
   const noteId = `${uid}-note`;
   const aideId = `${uid}-aide`;
   const code = t.ticket_code || `#${t.id}`;
-  const tel = String(t.client_tel || '').trim();
+  // Second numéro du ticket s'il existe (« pour vous joindre si différent »), sinon la fiche
+  const tel = telJoignable(t);
   const email = String(t.client_email || '').trim();
 
   const [message, setMessage] = useState('');
@@ -98,7 +96,8 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
         await tracer('email', contenuRelance(texte, jours));
         toast.success('E-mail de relance envoyé');
       } else {
-        await tracer('appel', note.trim());
+        const res = await api.contacterClient(t.id, note.trim() || undefined);
+        onDone?.(null, 'appel', res?.contact || null);
         toast.success('Appel noté');
       }
     } catch (err) {
@@ -178,7 +177,7 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
         {tel && (
           <a href={`tel:${tel.replace(/[^\d+]/g, '')}`}
             className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-sm font-semibold tabular-nums text-brand-700 underline-offset-2 hover:underline ${FOCUS_RING}`}>
-            <Phone className="h-4 w-4" aria-hidden="true" /> {formatTel(tel)}
+            <Phone className="h-4 w-4" aria-hidden="true" /> {libelleJoignable(t)}
           </a>
         )}
       </div>

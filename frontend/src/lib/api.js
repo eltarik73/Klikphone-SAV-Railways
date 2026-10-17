@@ -502,6 +502,11 @@ class ApiClient {
     const qs = tech ? `?tech=${encodeURIComponent(tech)}` : '';
     return this.get(`/api/tickets/queue/repair${qs}`);
   }
+  // Appel téléphonique noté sur le ticket (note 'appel', auteur = membre connecté) → { contact, note_id }.
+  // Les autres canaux (SMS, e-mail, WhatsApp) sont tracés par leurs propres envois.
+  contacterClient(ticketId, note) {
+    return this.post(`/api/tickets/${ticketId}/contact`, note ? { canal: 'appel', note } : { canal: 'appel' });
+  }
 
   // ─── GRILLE TARIFAIRE + FICHE DE RÉCEPTION (fiche ticket) ───
   // → { modele_trouve, suggestions: [{ source, id, label, type_piece, qualite, prix (TTC client), stock, cout_ht }] }
@@ -1130,6 +1135,42 @@ class ApiClient {
       this.request('/api/tarifs/apple-devices', { cache: 'no-store' }, 20_000),
     ]);
     return { tarifs: tarifs || [], appleDevices: appleDevices || [] };
+  }
+  // ─── Réparation smartphones (grille fournisseur par marque → modèle) ───
+  // → [{ marque, modeles: [{ modele, categorie, nb_pieces, nb_sans_prix, plus_vieux_jours }] }]
+  // (catalogue ∪ pièces fournisseur, Apple iPhone exclu, iPad / Mac inclus). Jamais mis en cache ici :
+  // la page relit après chaque écriture et les comptages doivent suivre.
+  getReparationSmartphonesMarques() {
+    return this.request('/api/tarifs/reparation-smartphones/marques', { cache: 'no-store' }, 20_000);
+  }
+  // → { pieces: [{ id, type_piece, qualite, prix_fournisseur_ht (null hors admin), prix_client,
+  //   calcul: { ht, tva, marge, brut, arrondi } (null hors admin), prix_maj_le, prix_source, age_jours,
+  //   fraicheur, verrou, en_stock, ref_fournisseur, fournisseur, url_fournisseur }], liens: { utopya, mobilax } }
+  getReparationSmartphonesModele({ marque, modele } = {}) {
+    return this.request(`/api/tarifs/reparation-smartphones/modele${buildQuery({ marque, modele })}`, { cache: 'no-store' }, 20_000);
+  }
+  // Modèle du catalogue sans pièce : écran / batterie / connecteur pré-créés à 0 € HT (prix à renseigner)
+  creerPiecesCourantes({ marque, modele }) {
+    return this._ecriturePrix('/api/tarifs/reparation-smartphones/pieces-courantes', { marque, modele }, 20_000);
+  }
+  // Nouveau prix d'achat HT d'une pièce fournisseur : { prix_fournisseur_ht, source: 'manuel' | 'utopya' | 'mobilax',
+  // ref_fournisseur?, url_fournisseur? } (ou { prix_client } : pièce verrouillée) → ligne relue avec sa fraîcheur.
+  // Le prix client est toujours recalculé par le serveur (règles de marge), jamais ici.
+  async patchPrixPiece(id, body) {
+    try {
+      return await this.request(`/api/tarifs/${encodeURIComponent(id)}/prix`, { method: 'PATCH', body: JSON.stringify(body ?? {}) }, 20_000);
+    } finally {
+      this._apresEcriturePrix();
+    }
+  }
+  // Écran ou batterie d'un iPad / MacBook : { piece: 'ecran' | 'batterie', prix_fournisseur_ht, source, ref_fournisseur? }
+  // → { ok, ancien_ht, nouveau_ht, ancien_client, nouveau_client, piece, id, cle }
+  async patchPrixAppleDevice(deviceId, body) {
+    try {
+      return await this.request(`/api/tarifs/apple-devices/${encodeURIComponent(deviceId)}/prix`, { method: 'PATCH', body: JSON.stringify(body ?? {}) }, 20_000);
+    } finally {
+      this._apresEcriturePrix();
+    }
   }
   // getSantePrix() (staff) : défini plus bas avec les propositions de prix
 

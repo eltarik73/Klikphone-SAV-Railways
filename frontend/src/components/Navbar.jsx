@@ -237,8 +237,8 @@ export default function Navbar() {
     { path: '/site-tarifs-iphone', label: 'Site Tarifs iPhone', icon: Tv, pill: 'BETA' },
   ];
 
+  // « Réparation smartphones » (/tarifs) est désormais dans la rubrique Tarifs
   const betaItems = [
-    { path: `${basePath}/tarifs`, label: 'Réparations (Mobilax)', icon: Wrench },
     { path: `${basePath}/tarifs-telephones`, label: 'Téléphones', icon: Smartphone },
     { path: `${basePath}/telephones-vente`, label: 'Mes téléphones', icon: ShoppingBag },
   ];
@@ -481,9 +481,12 @@ export default function Navbar() {
             {(tarifsOpen || collapsed) && (
               <div className="space-y-0.5">
                 {[
+                  // Réparations : grille boutique iPhone, puis prix fournisseur (Mobilax / Utopya) des autres marques
                   { path: `${basePath}/tarifs-reparation`, label: 'Réparation iPhone', icon: Wrench },
-                  { path: `${basePath}/tarifs-iphone`, label: 'Tarifs iPhones', icon: Tag },
-                  { path: `${basePath}/tarifs-smartphones`, label: 'Tarifs Smartphones', icon: Smartphone },
+                  { path: `${basePath}/tarifs`, label: 'Réparation smartphones', icon: Smartphone },
+                  // Téléphones à la vente
+                  { path: `${basePath}/tarifs-iphone`, label: 'Vente iPhones', icon: Tag },
+                  { path: `${basePath}/tarifs-smartphones`, label: 'Vente smartphones', icon: ShoppingBag },
                 ].map(({ path, label, icon: Icon }) => {
                   const active = isActive(path);
                   return (

@@ -5,7 +5,7 @@ Compatible avec le schéma PostgreSQL existant de Klikphone SAV.
 
 import re
 
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from typing import Any
 from typing import Optional, List
 from datetime import datetime
@@ -36,6 +36,28 @@ def _telephone_canonique(v):
     # Un seul format en base (0612345678 / +41…) : sinon « 06 12 34 56 78 » et
     # « 0612345678 » cohabitent et créent des doublons de fiches client.
     return phone_canonical(v)
+
+
+# Numéro plausible : chiffres, espaces, points, tirets, parenthèses, « + » en tête ; 9 à 15 chiffres
+_TEL_PLAUSIBLE_RE = re.compile(r"\+?[\d\s.\-()/]+")
+
+
+def telephone_contact_canonique(v):
+    """Second numéro d'un ticket (tickets.tel_contact : joindre le client pendant la réparation).
+
+    Même forme stockée que clients.telephone (0612345678 / +41…) ; vide → None ;
+    une saisie qui n'est pas un numéro plausible (lettres, moins de 9 chiffres) est
+    refusée — le champ est facultatif, un numéro faux n'a aucune valeur.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+    chiffres = re.sub(r"\D", "", s)
+    if not _TEL_PLAUSIBLE_RE.fullmatch(s) or not 9 <= len(chiffres) <= 15:
+        raise ValueError("Numéro pour vous joindre invalide (ex. 06 12 34 56 78)")
+    return phone_canonical(s)
 
 
 class ClientCreate(BaseModel):
@@ -106,8 +128,11 @@ class TicketCreate(BaseModel):
     ticket_original_id: Optional[int] = None
     source: Optional[str] = "boutique"
     priorite: Optional[str] = "normal"
+    # Numéro pour joindre le client pendant la réparation, s'il diffère de l'appareil déposé
+    tel_contact: Optional[str] = None
 
     _priorite = field_validator("priorite")(_priorite_valide)
+    _tel_contact = field_validator("tel_contact")(telephone_contact_canonique)
 
 
 class TicketUpdate(BaseModel):
@@ -151,8 +176,11 @@ class TicketUpdate(BaseModel):
     telephone_pret_rendu: Optional[int] = None
     type_document: Optional[str] = None
     priorite: Optional[str] = None
+    # Numéro pour joindre le client pendant la réparation ; "" → NULL
+    tel_contact: Optional[str] = None
 
     _priorite = field_validator("priorite")(_priorite_valide)
+    _tel_contact = field_validator("tel_contact")(telephone_contact_canonique)
 
     @field_validator("telephone_pret_imei")
     @classmethod
@@ -171,6 +199,13 @@ class TicketUpdate(BaseModel):
 
 class StatusChange(BaseModel):
     statut: str
+
+
+class ContactRequest(BaseModel):
+    """POST /api/tickets/{id}/contact : seul « appel » se note à la main (422 sinon, contrôle
+    dans la route pour un message lisible) ; la note est facultative."""
+    canal: str = Field(..., max_length=20)
+    note: Optional[str] = Field(None, max_length=1000)
 
 
 class TicketOut(BaseModel):
@@ -229,6 +264,8 @@ class TicketOut(BaseModel):
     type_document: Optional[str] = "devis"
     priorite: Optional[str] = "normal"
     emplacement: Optional[str] = None
+    # Second numéro (joindre le client pendant la réparation) ; clients.telephone reste l'identifiant
+    tel_contact: Optional[str] = None
 
     @field_validator("date_cloture", mode="wrap")
     @classmethod
@@ -248,6 +285,8 @@ class TicketFull(TicketOut):
     client_email: Optional[str] = None
     client_societe: Optional[str] = None
     client_carte_camby: Optional[int] = 0
+    # « Client contacté » depuis le dernier changement de statut (services/contact.lire)
+    contact: Optional[dict] = None
 
 
 # ============================================================

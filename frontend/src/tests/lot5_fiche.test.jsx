@@ -29,7 +29,7 @@ import {
 } from '../components/PrioriteBadge';
 import TarifPicker, { ligneDepuisSuggestion, tonStock } from '../components/TarifPicker';
 import ReceptionCard, {
-  imeiValide, normaliserItems, resumeReception, itemsVides, receptionAttendue,
+  imeiValide, normaliserItems, resumeReception, itemsVides,
 } from '../components/ReceptionCard';
 
 const IMEI_OK = '490154203237518';
@@ -83,7 +83,8 @@ let reception;
 beforeEach(() => {
   clearCache();
   definirCatalogue(null);
-  try { localStorage.clear(); } catch { /* stockage indisponible */ }
+  // sessionStorage : état déplié de la fiche de réception, mémorisé par ticket
+  try { localStorage.clear(); sessionStorage.clear(); } catch { /* stockage indisponible */ }
   auth.user = { target: 'accueil', utilisateur: 'Sophie', role: '' };
   for (const fn of Object.values(apiMock)) fn.mockReset().mockResolvedValue([]);
   courant = ticket();
@@ -401,27 +402,22 @@ describe('Réception : modèle', () => {
     expect(r.nonTestes).toBe(9);
     expect(r.notes).toBe('Oxydation');
   });
-
-  it('réception attendue : en attente de diagnostic ou déposé depuis moins de 24 h, jamais pré-enregistré', () => {
-    const maintenant = Date.parse('2026-10-16T12:00:00');
-    expect(receptionAttendue('En attente de diagnostic', '2026-09-01T09:00:00', maintenant)).toBe(true);
-    expect(receptionAttendue('En cours de réparation', '2026-10-16T08:00:00', maintenant)).toBe(true);
-    expect(receptionAttendue('En cours de réparation', '2026-10-15 13:00:00', maintenant)).toBe(true);
-    expect(receptionAttendue('En cours de réparation', '2026-10-10T09:00:00', maintenant)).toBe(false);
-    expect(receptionAttendue('Pré-enregistré', '2026-10-16T11:00:00', maintenant)).toBe(false);
-    expect(receptionAttendue('En attente de pièce', null, maintenant)).toBe(false);
-    expect(receptionAttendue('En attente de pièce', 'hier', maintenant)).toBe(false);
-  });
 });
 
 describe('ReceptionCard', () => {
-  const renderCarte = (props = {}) => render(<ReceptionCard ticketId="42" statut="En attente de diagnostic" {...props} />);
+  const renderCarte = (props = {}) => render(<ReceptionCard ticketId="42" {...props} />);
+  // Fermée par défaut (réception facultative) : son en-tête déplie le formulaire
+  const ouvrirCarte = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Réception' }));
+    return screen.findByRole('button', { name: 'Valider la réception' });
+  };
 
-  it('fiche vide : formulaire ouvert, rien n’est envoyé sans modification', async () => {
+  it('fiche vide : fermée par défaut ; ouverte, rien n’est envoyé sans modification', async () => {
     const onEtat = vi.fn();
     renderCarte({ onEtat });
-    expect(await screen.findByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
-    expect(screen.getByText('Réception à compléter')).toBeInTheDocument();
+    expect(await screen.findByText('Réception à compléter')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
+    await ouvrirCarte();
     await waitFor(() => expect(onEtat).toHaveBeenLastCalledWith({ charge: 'ok', complete: false }));
     await new Promise((r) => setTimeout(r, 700));
     expect(apiMock.saveReception).not.toHaveBeenCalled();
@@ -430,12 +426,13 @@ describe('ReceptionCard', () => {
   it('réponse inattendue du serveur (liste) : fiche vide, pas de plantage', async () => {
     apiMock.getReception.mockResolvedValue([]);
     renderCarte();
-    expect(await screen.findByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
+    expect(await ouvrirCarte()).toBeInTheDocument();
   });
 
   it('accessoires, état et tests regroupés en un PUT complet après un court délai', async () => {
     renderCarte();
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Chargeur' }));
+    await ouvrirCarte();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Écran' })).getByRole('radio', { name: 'Rayé' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Micro' })).getByRole('radio', { name: 'Non' }));
     await waitFor(() => expect(apiMock.saveReception).toHaveBeenCalledTimes(1), { timeout: 3000 });
@@ -453,7 +450,8 @@ describe('ReceptionCard', () => {
   it('« Tests restants OK » garde les KO ; « Valider la réception » pose complete et replie la fiche', async () => {
     const onEtat = vi.fn();
     renderCarte({ onEtat });
-    fireEvent.click(within(await screen.findByRole('group', { name: 'Charge' })).getByRole('radio', { name: 'Non' }));
+    await ouvrirCarte();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Charge' })).getByRole('radio', { name: 'Non' }));
     fireEvent.click(screen.getByRole('button', { name: 'Tests restants OK' }));
     fireEvent.click(screen.getByRole('button', { name: 'Valider la réception' }));
     await waitFor(() => expect(apiMock.saveReception.mock.calls.some(([, c]) => c.complete === true)).toBe(true));
@@ -461,15 +459,18 @@ describe('ReceptionCard', () => {
     expect(dernier.complete).toBe(true);
     expect(dernier.items.tests.charge).toBe(false);
     expect(dernier.items.tests.allume).toBe(true);
-    expect(await screen.findByText('KO : Charge')).toBeInTheDocument();
+    expect(await screen.findByText('Aucun accessoire · état OK · 1 test KO')).toBeInTheDocument();
     expect(screen.getByText('Validée')).toBeInTheDocument();
-    expect(screen.getByText(/Validée par Sophie/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réception' })).toHaveAttribute('aria-expanded', 'false');
     await waitFor(() => expect(onEtat).toHaveBeenLastCalledWith({ charge: 'ok', complete: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Réception' }));
+    expect(screen.getByText(/Validée par Sophie/)).toBeInTheDocument();
   });
 
   it('IMEI invalide signalé et non envoyé ; valide envoyé ; différence avec la fiche signalée', async () => {
     renderCarte({ imeiTicket: '356938035643809' });
-    const champ = await screen.findByLabelText('IMEI / n° de série vérifié');
+    await ouvrirCarte();
+    const champ = screen.getByLabelText('IMEI / n° de série vérifié');
     fireEvent.change(champ, { target: { value: IMEI_KO } });
     expect(await screen.findByText(/IMEI invalide/)).toBeInTheDocument();
     expect(champ).toHaveAttribute('aria-invalid', 'true');
@@ -481,33 +482,33 @@ describe('ReceptionCard', () => {
     expect(screen.getByText('Différent de l’IMEI de la fiche (356938035643809)')).toBeInTheDocument();
   });
 
-  it('fiche validée : résumé replié, « Modifier » rouvre le formulaire', async () => {
+  it('fiche validée : résumé d’une ligne, « Validée » ; l’en-tête rouvre le formulaire pré-rempli', async () => {
     reception = {
       items: { accessoires: ['coque'], etat: { ecran: 'ok', dos: 'raye', chassis: 'ok', notes: '' }, tests: { micro: false }, imei_verifie: IMEI_OK },
       complete: true, auteur: 'Karim', date_maj: '2026-10-15T08:30:00',
     };
     renderCarte();
-    expect(await screen.findByText('Coque')).toBeInTheDocument();
-    expect(screen.getByText('KO : Micro')).toBeInTheDocument();
-    expect(screen.getByText(/Validée par Karim/)).toBeInTheDocument();
+    expect(await screen.findByText('Coque · dos rayé · 1 test KO · IMEI vérifié')).toBeInTheDocument();
+    expect(screen.getByText('Validée')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Modifier' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Réception' }));
     expect(screen.getByRole('checkbox', { name: 'Coque' })).toBeChecked();
+    expect(screen.getByText(/Validée par Karim/)).toBeInTheDocument();
   });
 
-  it('appareil en réparation déposé il y a plusieurs jours : repliée, « Remplir » ouvre le formulaire', async () => {
-    renderCarte({ statut: 'En cours de réparation', dateDepot: '2026-10-01T09:00:00' });
-    expect(await screen.findByText(/Aucune fiche de réception remplie/)).toBeInTheDocument();
-    expect(screen.getByText('Réception à compléter')).toBeInTheDocument();
+  it('fiche jamais remplie : fermée, l’en-tête dit ce qu’elle contient et l’ouvre', async () => {
+    renderCarte();
+    expect(await screen.findByText('Réception à compléter')).toBeInTheDocument();
+    expect(screen.getByText(/Accessoires, état, tests d’entrée, IMEI/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Remplir' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Réception' }));
     expect(screen.getByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
   });
 
   it('controleRef : flush() envoie tout de suite la modification en attente, ouvrir() déplie', async () => {
     const ref = { current: null };
-    renderCarte({ controleRef: ref, statut: 'En attente de pièce' });
-    await screen.findByText(/Aucune fiche de réception remplie/);
+    renderCarte({ controleRef: ref });
+    await screen.findByText('Réception à compléter');
     act(() => ref.current.ouvrir());
     fireEvent.click(screen.getByRole('checkbox', { name: 'Coque' }));
     expect(apiMock.saveReception).not.toHaveBeenCalled();
@@ -518,7 +519,8 @@ describe('ReceptionCard', () => {
 
   it('champ IMEI / n° de série : clavier texte (lettres d’un n° de série), majuscules', async () => {
     renderCarte();
-    const champ = await screen.findByLabelText('IMEI / n° de série vérifié');
+    await ouvrirCarte();
+    const champ = screen.getByLabelText('IMEI / n° de série vérifié');
     expect(champ).not.toHaveAttribute('inputmode');
     expect(champ).toHaveAttribute('autocapitalize', 'characters');
     fireEvent.change(champ, { target: { value: 'f2lxk0q1hg7j' } });
@@ -526,10 +528,11 @@ describe('ReceptionCard', () => {
     expect(apiMock.saveReception.mock.calls[0][1].items.imei_verifie).toBe('F2LXK0Q1HG7J');
   });
 
-  it('ticket remis sans fiche : repliée, « non remplie »', async () => {
+  it('ticket remis sans fiche : fermée, badge neutre « Non validée »', async () => {
     renderCarte({ remis: true });
-    expect(await screen.findByText(/Aucune fiche de réception remplie/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Remplir' })).toBeInTheDocument();
+    expect(await screen.findByText('Non validée')).toBeInTheDocument();
+    expect(screen.queryByText('Réception à compléter')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Réception' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('serveur indisponible : message et « Réessayer »', async () => {
@@ -537,7 +540,8 @@ describe('ReceptionCard', () => {
     renderCarte();
     expect(await screen.findByText('Fiche de réception indisponible.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
-    expect(await screen.findByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
+    expect(await screen.findByText('Réception à compléter')).toBeInTheDocument();
+    expect(await ouvrirCarte()).toBeInTheDocument();
   });
 });
 
@@ -556,32 +560,42 @@ describe('Fiche : réception', () => {
     expect(screen.queryByRole('button', { name: 'Réception à compléter' })).not.toBeInTheDocument();
   });
 
-  it('ticket déjà rendu : pas de badge en haut, fiche repliée', async () => {
+  it('ticket déjà rendu : pas de badge en haut, fiche fermée, badge neutre', async () => {
     courant = ticket({ statut: 'Rendu au client', paye: 1 });
     renderFiche();
-    expect(await screen.findByText(/Aucune fiche de réception remplie/)).toBeInTheDocument();
+    expect(await screen.findByText('Non validée')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Réception à compléter' })).not.toBeInTheDocument();
-  });
-
-  it('appareil en réparation depuis plusieurs jours : fiche repliée ; le bouton du haut l’ouvre', async () => {
-    renderFiche();
-    expect(await screen.findByText(/Aucune fiche de réception remplie/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Réception à compléter' }));
+  });
+
+  it('fiche fermée ; le bouton du haut l’ouvre', async () => {
+    renderFiche();
+    const haut = await screen.findByRole('button', { name: 'Réception à compléter' });
+    expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
+    fireEvent.click(haut);
     expect(await screen.findByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
   });
 
-  it('appareil en attente de diagnostic : formulaire ouvert', async () => {
-    courant = ticket({ statut: 'En attente de diagnostic' });
+  it('appareil en attente de diagnostic, déposé à l’instant : fermée aussi (réception facultative)', async () => {
+    courant = ticket({ statut: 'En attente de diagnostic', date_depot: new Date().toISOString() });
     renderFiche();
-    expect(await screen.findByRole('button', { name: 'Valider la réception' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Réception à compléter' });
+    expect(screen.getByRole('button', { name: 'Réception' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Valider la réception' })).not.toBeInTheDocument();
   });
+
+  // Ouvre la carte (fermée par défaut) par le bouton du haut de la fiche
+  const ouvrirReception = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Réception à compléter' }));
+    return screen.findByRole('button', { name: 'Valider la réception' });
+  };
 
   it('Imprimer juste après une modification : la réception part avant le chargement du document', async () => {
     courant = ticket({ statut: 'En attente de diagnostic' });
     apiMock.getPrintHtml.mockResolvedValue('<p>Ticket</p>');
     renderFiche();
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Chargeur' }));
+    await ouvrirReception();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
     fireEvent.click(screen.getByRole('button', { name: 'Imprimer' }));
     await waitFor(() => expect(apiMock.getPrintHtml).toHaveBeenCalled());
     expect(apiMock.saveReception).toHaveBeenCalledTimes(1);
@@ -594,7 +608,8 @@ describe('Fiche : réception', () => {
     apiMock.saveReception.mockRejectedValue(new Error('Réseau'));
     apiMock.changeStatus.mockResolvedValue({ ok: true });
     renderFiche();
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'Chargeur' }));
+    await ouvrirReception();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Chargeur' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Changer le statut' }), { target: { value: 'Pièce reçue' } });
     await waitFor(() => expect(apiMock.changeStatus).toHaveBeenCalledWith('42', 'Pièce reçue'));
     expect(apiMock.saveReception).toHaveBeenCalled();
@@ -604,7 +619,8 @@ describe('Fiche : réception', () => {
   it('IMEI vérifié copié dans la fiche appareil quand elle n’en a pas', async () => {
     courant = ticket({ statut: 'En attente de diagnostic' });
     renderFiche();
-    fireEvent.change(await screen.findByLabelText('IMEI / n° de série vérifié'), { target: { value: IMEI_OK } });
+    await ouvrirReception();
+    fireEvent.change(screen.getByLabelText('IMEI / n° de série vérifié'), { target: { value: IMEI_OK } });
     fireEvent.click(await screen.findByRole('button', { name: 'Copier dans la fiche appareil' }));
     await waitFor(() => expect(apiMock.updateTicket).toHaveBeenCalledWith('42', { imei: IMEI_OK }, { learn: false }));
   });

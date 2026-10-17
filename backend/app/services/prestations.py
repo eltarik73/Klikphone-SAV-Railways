@@ -42,6 +42,12 @@ PRESTATIONS = [
     ("desoxydation", "Désoxydation", "Forfait désoxydation", "Désoxydation", ["Oxydation"]),
     ("logiciel", "Problème logiciel", "Forfait intervention logicielle", "Logiciel", []),
     ("diagnostic", "Diagnostic", "Diagnostic", "Diagnostic", []),
+    # Libellés courts partagés (« Diagnostic », « Logiciel ») : l'index garde la première clé
+    ("ne_s_allume_plus", "Ne s'allume plus", "Diagnostic complet (ne s'allume plus)", "Diagnostic",
+     ["Ne s'allume pas", "Ne démarre plus"]),
+    ("virus", "Virus", "Forfait nettoyage logiciel (virus)", "Logiciel",
+     ["Virus / malware", "Logiciel malveillant"]),
+    ("reprise", "Reprise téléphone", "Reprise de l'appareil (rachat)", "Reprise", ["Rachat"]),
     # Hors kiosque : types de pièce des tarifs et saisie automatique
     ("ecouteur", None, "Forfait remplacement écouteur interne", "Écouteur interne",
      ["Écouteur", "Écouteur interne HS"]),
@@ -52,6 +58,15 @@ PRESTATIONS = [
 
 # Liste du kiosque (/api/catalog/pannes) : même ordre qu'avant, accents corrigés
 PANNES_CATALOGUE = [p[1] for p in PRESTATIONS if p[1]] + ["Autre"]
+
+# Prestations sans tarif : aucune grille ne chiffre la ligne par défaut (prix 0 au dépôt,
+# « à chiffrer par la boutique ») ; la boutique saisit le montant dans la fiche
+A_CHIFFRER = ("reprise",)
+MENTION_A_CHIFFRER = "à chiffrer par la boutique"
+
+
+def a_chiffrer(cle) -> bool:
+    return cle in A_CHIFFRER
 
 # Valeurs historiques encore stockées dans tickets.panne (pour une migration éventuelle)
 PANNES_RENOMMEES = [
@@ -223,7 +238,9 @@ def catalogue_prestations() -> dict:
     return {
         "pannes": list(PANNES_CATALOGUE),
         "prestations": [
-            {"cle": cle, "symptome": sympt, "prestation": presta, "court": court, "alias": list(alias)}
+            {"cle": cle, "symptome": sympt, "prestation": presta, "court": court, "alias": list(alias),
+             "a_chiffrer": a_chiffrer(cle)}
             for cle, sympt, presta, court, alias in PRESTATIONS
         ],
+        "mention_a_chiffrer": MENTION_A_CHIFFRER,
     }

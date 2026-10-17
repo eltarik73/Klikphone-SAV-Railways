@@ -7,7 +7,9 @@ import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
 import {
   DEFAULT_TEMPLATES, LIEN_AVIS_DEFAUT, CANAUX_MESSAGE, messagePret, modelePret, ligneJournal, lienWhatsApp,
   numeroSms, emailValide, canalPrevenir, dernierAvisPret, texteDejaPrevenu, texteEchecSms, erreurEnvoi,
+  MENTION_MONTANT_RETIRE,
 } from '../lib/messages';
+import { telJoignable, avecTelJoignable, estAutreNumero, libelleJoignable } from '../lib/contact';
 import { useToast } from './Toast';
 
 // Grille de tous les modèles (« Choisir un autre message ») : chargée à la demande
@@ -51,7 +53,7 @@ const TONS = {
  * ce qui a déjà été envoyé (notes du ticket) et confirmation avant un renvoi.
  *
  * auto : issue de « Terminé + prévenir le client » ({ etat: 'envoi' | 'envoye' | 'manuel' |
- * 'echec' | 'impossible' | 'sans_tarif', canal, incertain?, message }). ouverte / onOuvrir / onReplier : carte
+ * 'echec' | 'impossible', canal, incertain?, message }). ouverte / onOuvrir / onReplier : carte
  * dépliée ou réduite à une ligne. onEnvoye : message parti depuis la carte ; onNotesChange :
  * les notes du ticket ont changé (refus de Brevo noté par le serveur, autre message envoyé).
  */
@@ -94,11 +96,12 @@ export default function PrevenirClient({
   const libelles = useMemo(() => [...new Set([msg.libelle, LIBELLE_PRET_DEFAUT])], [msg.libelle]);
   const historique = useMemo(() => dernierAvisPret(notes, libelles), [notes, libelles]);
 
-  const tel = String(t.client_tel ?? '').trim();
+  // Second numéro du ticket (« pour vous joindre si différent ») avant celui de la fiche
+  const tel = telJoignable(t);
   const email = String(t.client_email ?? '').trim();
   const numero = numeroSms(tel);
   const aEmail = emailValide(email);
-  const canal = canalPrevenir(t);
+  const canal = canalPrevenir(avecTelJoignable(t));
   // Envoi automatique refusé faute de configuration : le bouton SMS ouvre l'app Messages
   const serveur = smsServeur && auto?.etat !== 'manuel' && !smsSansServeur;
   const autoEnvoi = auto?.etat === 'envoi';
@@ -113,10 +116,9 @@ export default function PrevenirClient({
   // SMS refusé (envoi automatique ou note du serveur) : l'e-mail est mis en avant à la place
   const smsRefuse = !resultat && ((auto?.etat === 'echec' && auto.canal === 'sms' && !auto.incertain)
     || (!auto && !!historique.echec));
-  const recommande = smsRefuse && possible.email && !msg.sansTarif ? 'email' : canal;
+  const recommande = smsRefuse && possible.email ? 'email' : canal;
   const apercuSms = recommande === 'sms';
   const raisons = [];
-  if (msg.sansTarif) raisons.push('Montant à 0 € : renseignez le tarif sur la fiche, ou choisissez un autre message.');
   if (!possible.sms) raisons.push(`SMS : ${numero.raison}.`);
   if (!possible.email) raisons.push(email ? `E-mail : adresse « ${email} » invalide.` : 'E-mail : aucune adresse sur la fiche.');
   if (!possible.whatsapp) raisons.push('WhatsApp : pas de numéro sur la fiche.');
@@ -136,6 +138,8 @@ export default function PrevenirClient({
     if (historique.echec && auto?.etat !== 'echec') lignes.push({ id: 'echec', ton: 'warn', texte: texteEchecSms(historique.echec) });
     if (!lignes.length) lignes.push({ id: 'rien', ton: 'neutre', texte: 'Pas encore prévenu que l’appareil est prêt.' });
   }
+  // Montant à 0 € (tarif oublié ?) : la phrase du montant n'est pas dans le message, l'envoi reste possible
+  if (msg.montantRetire) lignes.push({ id: 'montant', ton: 'neutre', texte: MENTION_MONTANT_RETIRE });
 
   const envoyer = async (c) => {
     if (sendingRef.current) return;
@@ -285,6 +289,11 @@ export default function PrevenirClient({
               <p className="mt-1 whitespace-pre-line break-words text-sm leading-relaxed text-slate-800">
                 {apercuSms ? msg.sms : msg.texte}
               </p>
+              {estAutreNumero(t) && (
+                <p className="mt-1.5 text-xs font-medium text-amber-900">
+                  SMS et WhatsApp au {libelleJoignable(t)}, pas à l’appareil déposé.
+                </p>
+              )}
               {apercuSms && (
                 <p className="mt-1.5 t-caption">E-mail et WhatsApp : texte complet, avec le lien de suivi.</p>
               )}
@@ -293,7 +302,7 @@ export default function PrevenirClient({
             {/* Canal recommandé = seul bouton plein (vert : le client est prévenu, l'appareil part) */}
             <div role="group" aria-label="Envoyer le message" aria-busy={occupe} className="mt-3 grid grid-cols-3 gap-2">
               {CANAUX.map(({ id, label, Icon, teinte }) => {
-                const bloque = !possible[id] || msg.sansTarif;
+                const bloque = !possible[id];
                 const enAvant = recommande === id;
                 return (
                   <button key={id} type="button"

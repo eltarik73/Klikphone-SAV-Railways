@@ -5,6 +5,8 @@ import api from '../lib/api';
 import { useApi } from '../hooks/useApi';
 import StatusBadge from './StatusBadge';
 import { PrioriteBadge, comparerPriorite } from './PrioriteBadge';
+import { IconesContact } from './ContactClient';
+import { libelleContact, normaliserContact } from '../lib/contact';
 
 // Le serveur trie déjà (priorité, heure promise, statut, dépôt) ; tri stable de secours sur la
 // seule priorité, qui garde l'ordre serveur à priorité égale.
@@ -40,6 +42,8 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
         const countdownMs = recupDate ? recupDate - now : null;
         const isOverdue = countdownMs !== null && countdownMs < 0;
         const isUrgent = countdownMs !== null && countdownMs > 0 && countdownMs < 6 * 3600000;
+        // Client contacté depuis le dernier changement de statut (t.contact, serveur) : seulement s'il l'a été
+        const contact = t.contact ? normaliserContact(t.contact) : null;
 
         return (
           <button
@@ -96,6 +100,12 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                     </span>
                   )}
                 </div>
+                {contact?.depuis_statut && (
+                  <div className="mt-1.5 flex items-center gap-1.5 t-caption min-w-0">
+                    <IconesContact contact={contact} decoratif />
+                    <span className="truncate">{libelleContact(contact)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </button>

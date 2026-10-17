@@ -514,6 +514,15 @@ def _ligne_info(label: str, valeur: str, size: int = 13) -> str:
     return f'<div style="font-size:{size}px"><strong>{_e(label)} :</strong> {_e(valeur)}</div>'
 
 
+def _joignable_staff(t: dict) -> str:
+    """Fiche atelier seulement : second numéro du ticket (tel_contact) pour joindre le client
+    pendant la réparation. Le ticket client n'en dit rien de plus."""
+    tel = " ".join(str(t.get("tel_contact") or "").split())
+    if not tel:
+        return ""
+    return f'<div style="font-size:14px;font-weight:900;margin-top:2px">Joignable : {_e(tel)}</div>'
+
+
 def _depot_constate(t: dict) -> str:
     """Ticket client : accessoires déposés et état constaté, si la réception est saisie."""
     r = resume_reception(t.get("reception_impression"))
@@ -814,7 +823,8 @@ def _staff_body(t: dict, cfg: dict) -> str:
 {_emplacement_staff(t)}
 {_box("Client",
       f'<div style="font-size:16px;font-weight:900">{_e(_nom_client(t))}</div>'
-      f'<div style="font-size:14px;margin-top:2px">Tél : {_e(t.get("client_tel"))}</div>')}
+      f'<div style="font-size:14px;margin-top:2px">Tél : {_e(t.get("client_tel"))}</div>'
+      + _joignable_staff(t))}
 {_box("Appareil",
       f'<div style="font-size:16px;font-weight:900">{_e(_appareil(t) or "Appareil non renseigné")}</div>'
       f'<div style="font-size:13px;margin-top:4px"><div><strong>Catégorie :</strong> {_e(t.get("categorie") or "—")}</div>'

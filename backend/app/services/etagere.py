@@ -40,9 +40,10 @@ _EMPLACEMENTS_MAX_PROPOSES = 40
 MISE_EN_DEMEURE_JOURS = 90
 MISE_EN_DEMEURE_DELAI_RETRAIT = 15
 
-# Messages comptés comme relances (message-log de la fiche, POST /api/etagere/{id}/relance)
-TYPES_RELANCE = ("whatsapp", "sms", "email", "relance")
-_TYPES_RELANCE_SQL = "('whatsapp', 'sms', 'email', 'relance')"
+# Messages comptés comme relances (message-log de la fiche, POST /api/etagere/{id}/relance,
+# appel noté par POST /api/tickets/{id}/contact) ; 'relance' = anciens appels de l'étagère
+TYPES_RELANCE = ("whatsapp", "sms", "email", "relance", "appel")
+_TYPES_RELANCE_SQL = "('whatsapp', 'sms', 'email', 'relance', 'appel')"
 
 # Ligne d'historique écrite par change_status (« Statut: X → Réparation terminée — par … »)
 _MOTIF_TERMINE = "%→ Réparation terminée%"
@@ -283,6 +284,6 @@ def enrichir(rows, maintenant: Optional[datetime] = None, paliers=None) -> list:
 
 def canal_relance(type_note: str, contenu: str = "") -> str:
     """Libellé du canal d'une relance tracée (courrier de mise en demeure)."""
-    if type_note == "relance" and (contenu or "").startswith("Appel téléphonique"):
+    if type_note == "appel" or (type_note == "relance" and (contenu or "").startswith("Appel téléphonique")):
         return "Appel téléphonique"
     return {"whatsapp": "WhatsApp", "sms": "SMS", "email": "E-mail"}.get(type_note, "Relance")

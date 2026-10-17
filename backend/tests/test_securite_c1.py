@@ -675,24 +675,22 @@ def test_upload_image_iphone(client, tmp_path, monkeypatch):
 
 
 def test_check_stock_mobilax_sans_reseau(client, monkeypatch):
+    # Lot « prix » (réparation smartphones) : la vérification automatique du stock Mobilax est
+    # retirée (robots.txt de mobilax.fr : agents automatiques interdits, portail B2B). Plus aucun
+    # code réseau dans le module ; la route reste réservée à l'admin et ne lance rien.
     from app.api import tarifs
-    monkeypatch.setattr(tarifs, "_mobilax_urls", lambda marque, modele: [])
-    cur, gc = fake_db(lambda sql, params: [{"id": 1, "marque": "Apple", "modele": "iPhone 12", "type_piece": "ecran",
-                                            "qualite": "x", "en_stock": True}])
-    with patch("app.api.tarifs.get_cursor", gc):
-        # Tâche de fond (moteur de prix) : la vérification elle-même, sans réseau
-        assert tarifs.verifier_stock_mobilax()["models_total"] == 1
-    # La route est réservée à l'admin et lance la vérification en tâche de fond
+    assert not hasattr(tarifs, "verifier_stock_mobilax") and not hasattr(tarifs, "_MOBILAX_HEADERS")
+    assert "httpx" not in open(tarifs.__file__, encoding="utf-8").read()
     _, gc_role = fake_db(lambda sql, params: None)
     with patch("app.api.auth.get_cursor", gc_role):
         assert client.post("/api/tarifs/check-stock", headers=_headers()).status_code == 403
-    lances = []
-    monkeypatch.setattr(tarifs, "_tache_stock", lambda: lances.append(1))
-    monkeypatch.setattr(tarifs, "_stock_etat", {"en_cours": False, "debut": None, "fin": None, "resultat": None})
     _, gc_admin = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
     with patch("app.api.auth.get_cursor", gc_admin):
         r = client.post("/api/tarifs/check-stock", headers=_headers())
-    assert r.status_code == 200 and r.json()["lance"] is True and "models_found" not in r.json() and lances == [1]
+    assert r.status_code == 200 and r.json()["lance"] is False and r.json()["desactive"] is True
+    assert "models_found" not in r.json() and "mobilax.fr" in r.json()["message"]
+    s = client.get("/api/tarifs/check-stock/status", headers=_headers())
+    assert s.status_code == 200 and s.json()["desactive"] is True and s.json()["en_cours"] is False
 
 
 def test_marketing_enregistrer_avis():

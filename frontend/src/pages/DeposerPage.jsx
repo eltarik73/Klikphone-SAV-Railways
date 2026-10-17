@@ -2,41 +2,17 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import ModelCombobox from '../components/ModelCombobox';
+import ChoixCodeAcces, { erreurAcces } from '../components/ChoixCodeAcces';
+import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
-import { MentionRgpd, ConsentementMarketing } from './ConfidentialitePage';
+import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
 import {
-  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, AlertCircle,
-  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle, Gift, Loader2,
+  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, AlertCircle, KeyRound,
+  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle, Loader2,
 } from 'lucide-react';
 
-const isValidPhone = (tel) => {
-  const digits = tel.replace(/[\s.\-()+ ]/g, '');
-  return digits.length >= 10 && digits.length <= 15;
-};
-const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
 const STEPS = ['Coordonnées', 'Appareil', 'Panne'];
-
-// Tuile de choix (catégorie, panne) : 56 px, bordure 2 px, sélection = marque
-const tuile = (actif) => `min-h-14 px-4 py-3 rounded-lg border-2 text-base font-semibold text-left leading-snug
-  transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
-  ${actif ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`;
-
-// En-tête d'étape : pastille marque 40 px + titre + sous-titre (span : `.depot-form p` forcerait 16 px)
-function EnTete({ icone: Icone, titre, sousTitre }) {
-  return (
-    <div className="flex items-center gap-3 mb-1">
-      <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
-        <Icone className="w-5 h-5" />
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold leading-snug text-slate-900">{titre}</h2>
-        <span className="block text-sm text-slate-500">{sousTitre}</span>
-      </div>
-    </div>
-  );
-}
 
 // <div> et non <p> : `.depot-form p` imposerait 16 px à cette mention
 function PiedDePage() {
@@ -57,6 +33,7 @@ function PiedDePage() {
 
 export default function DeposerPage() {
   const navigate = useNavigate();
+  const infosRgpd = useInfosRgpd();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -66,9 +43,10 @@ export default function DeposerPage() {
   const [pannes, setPannes] = useState([]);
 
   const [form, setForm] = useState({
-    nom: '', prenom: '', telephone: '', email: '',
+    nom: '', prenom: '', telephone: '', tel_contact: '', email: '',
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', notes_client: '',
+    pin: '', pattern: '', acces_mode: null,
     carte_camby: false, consentement_marketing: false,
   });
   const catalogue = useCatalog(form.categorie || null, form.marque);
@@ -93,12 +71,18 @@ export default function DeposerPage() {
     setErrors(e => ({ ...e, [field]: undefined }));
   };
 
+  const updateAcces = ({ pin, pattern, mode }) => {
+    setForm(f => ({ ...f, pin, pattern, acces_mode: mode }));
+    setErrors(e => ({ ...e, acces: undefined }));
+  };
+
   const validateStep = () => {
     const errs = {};
     if (step === 0) {
       if (!form.nom.trim()) errs.nom = 'Le nom est requis';
       if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      if (form.tel_contact.trim() && !isValidPhone(form.tel_contact)) errs.tel_contact = 'Numéro invalide (10 chiffres min.)';
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
     if (step === 1) {
@@ -111,6 +95,11 @@ export default function DeposerPage() {
     }
     if (step === 2) {
       if (!form.panne) errs.panne = 'Veuillez sélectionner une panne';
+      // Code facultatif à distance : seule une tuile choisie sans valeur est signalée
+      if (form.acces_mode === 'code' || form.acces_mode === 'schema') {
+        const acces = erreurAcces(form);
+        if (acces) errs.acces = acces;
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -130,6 +119,7 @@ export default function DeposerPage() {
         nom: form.nom.trim(),
         prenom: (form.prenom || '').trim(),
         telephone: form.telephone.trim(),
+        tel_contact: form.tel_contact.trim() || null,
         email: (form.email || '').trim(),
         carte_camby: form.carte_camby ? 1 : 0,
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
@@ -139,6 +129,8 @@ export default function DeposerPage() {
         panne: form.panne,
         panne_detail: (form.panne_detail || '').trim(),
         notes_client: (form.notes_client || '').trim(),
+        pin: form.pin,
+        pattern: form.pattern,
       });
       setCreatedCode(result.ticket_code);
     } catch (err) {
@@ -326,43 +318,11 @@ export default function DeposerPage() {
           <div className="card p-5 sm:p-6 space-y-5 animate-in">
             <EnTete icone={User} titre="Vos coordonnées" sousTitre="Pour vous recontacter" />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="distance-nom" className="input-label">Nom *</label>
-                <input id="distance-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
-                  autoComplete="family-name" className="input" placeholder="Dupont" {...invalide('nom')} />
-                <FieldError field="nom" />
-              </div>
-              <div>
-                <label htmlFor="distance-prenom" className="input-label">Prénom</label>
-                <input id="distance-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
-                  autoComplete="given-name" className="input" placeholder="Jean" />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="distance-telephone" className="input-label">Téléphone *</label>
-              <input id="distance-telephone" type="tel" inputMode="tel" autoComplete="tel" value={form.telephone} onChange={e => updateForm('telephone', e.target.value)}
-                className="input" placeholder="06 XX XX XX XX" {...invalide('telephone')} />
-              <FieldError field="telephone" />
-            </div>
-            <div>
-              <label htmlFor="distance-email" className="input-label">Email</label>
-              <input id="distance-email" type="email" inputMode="email" autoComplete="email" value={form.email} onChange={e => updateForm('email', e.target.value)}
-                className="input" placeholder="pour recevoir les notifications"
-                aria-describedby={errors.email ? 'distance-email-erreur' : 'distance-email-aide'}
-                aria-invalid={errors.email ? 'true' : undefined} />
-              <FieldError field="email" />
-              <span id="distance-email-aide" className="input-help block text-sm">Recommandé pour recevoir les mises à jour de votre réparation</span>
-            </div>
-            <label className="callout bg-brand-50 border-brand-200 text-brand-800 items-center min-h-14 cursor-pointer hover:bg-brand-100/60 transition-colors duration-150">
-              <Gift aria-hidden="true" />
-              <input type="checkbox" checked={form.carte_camby} onChange={e => updateForm('carte_camby', e.target.checked)}
-                className="checkbox w-6 h-6" />
-              <span className="text-base font-medium">Avez-vous la carte Camby ?</span>
-            </label>
+            <ChampsVous prefix="distance" form={form} errors={errors} onChange={updateForm} societe={false}
+              aideEmail="Recommandé pour recevoir les mises à jour de votre réparation" />
             <ConsentementMarketing id="distance-consentement" checked={form.consentement_marketing}
               onChange={(v) => updateForm('consentement_marketing', v)} />
-            <MentionRgpd codes={false} />
+            <MentionRgpd />
           </div>
         )}
 
@@ -434,19 +394,8 @@ export default function DeposerPage() {
 
             <fieldset>
               <legend className="input-label">Type de panne *</legend>
-              <div className="grid grid-cols-2 gap-3">
-                {pannes.map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    aria-pressed={form.panne === p}
-                    onClick={() => updateForm('panne', p)}
-                    className={tuile(form.panne === p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+              {/* Mêmes tuiles (icône + libellé) que les bornes /client et /depot */}
+              <TuilesPannes pannes={pannes} valeur={form.panne} onChoisir={(p) => updateForm('panne', p)} />
               <FieldError field="panne" />
             </fieldset>
 
@@ -471,6 +420,24 @@ export default function DeposerPage() {
                 className="input resize-none"
                 rows={2}
                 placeholder="Informations complémentaires (accessoires, état cosmétique...)"
+              />
+            </div>
+
+            {/* Code d'accès : facultatif à distance, il pourra être donné en boutique */}
+            <div className="border-t border-slate-100 pt-5">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                <KeyRound className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> L'accès à votre appareil (facultatif)
+              </h3>
+              <span className="block mt-1 mb-3 text-sm text-slate-600">Vous pourrez aussi nous le donner en boutique, au dépôt de l'appareil.</span>
+              <ChoixCodeAcces
+                idPrefix="distance-acces"
+                pin={form.pin}
+                pattern={form.pattern}
+                mode={form.acces_mode}
+                onChange={updateAcces}
+                taille="compact"
+                purgeJours={infosRgpd.purgeJours}
+                error={errors.acces}
               />
             </div>
 

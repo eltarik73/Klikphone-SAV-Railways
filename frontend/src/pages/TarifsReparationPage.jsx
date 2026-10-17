@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, Lock, Pencil, SlidersHorizontal, History, Loader2 } from 'lucide-react';
+import { Search, Printer, FileJson, FileSpreadsheet, X, Plus, Trash2, ChevronUp, ChevronDown, Lock, Pencil, SlidersHorizontal, History, Loader2, Info, Smartphone } from 'lucide-react';
+import { Link, useInRouterContext } from 'react-router-dom';
 import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
@@ -10,6 +11,16 @@ import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../
 
 const PRINT_MARGIN_MM = 1;
 const TABLE = 'tarifs_reparation';
+
+// Lien vers « Réparation smartphones » (même espace : /accueil ou /tech) ; simple <a> hors routeur (tests)
+function LienReparationSmartphones() {
+  const dansRouteur = useInRouterContext();
+  const chemin = typeof window !== 'undefined' && String(window.location?.pathname || '').startsWith('/tech') ? '/tech/tarifs' : '/accueil/tarifs';
+  // Cible tactile de 44 px dans la phrase : marges négatives pour ne pas écarter la ligne
+  const classes = 'font-semibold underline underline-offset-2 inline-flex items-center gap-1 min-h-[44px] -my-[10px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
+  const contenu = <><Smartphone className="w-3.5 h-3.5" aria-hidden="true" /> Réparation smartphones</>;
+  return dansRouteur ? <Link to={chemin} className={classes}>{contenu}</Link> : <a href={chemin} className={classes}>{contenu}</a>;
+}
 
 // Écran : en-têtes neutres, un simple filet coloré par famille de pièce (les couleurs pleines restent à l'impression)
 const COLUMNS = [
@@ -450,6 +461,16 @@ export default function TarifsReparationPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Où sont les prix ? iPhone ici (grille boutique) ; les autres marques et iPad / Mac dans « Réparation smartphones » */}
+      <div className="callout callout-info items-center flex-wrap mb-4">
+        <Info aria-hidden="true" />
+        <p className="flex-1 min-w-[240px]">
+          <strong>Où sont les prix ?</strong> iPhone → cette grille boutique ; autres marques et iPad / Mac →{' '}
+          <LienReparationSmartphones />
+          {' '}(prix fournisseur Mobilax / Utopya + méthode de calcul).
+        </p>
       </div>
 
       {erreurChargement && (

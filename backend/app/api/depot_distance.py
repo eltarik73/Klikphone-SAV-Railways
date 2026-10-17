@@ -15,6 +15,8 @@ from app.api.clients import enregistrer_consentements, find_client_by_phone, mem
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
 )
+from app.models import telephone_contact_canonique
+from app.services import contact
 from app.services.prestations import PRESTATIONS, cle_panne, normaliser
 from app.services.search import phone_canonical
 
@@ -49,6 +51,8 @@ class DepotDistanceRequest(BaseModel):
     nom: str = Field(..., max_length=100)
     prenom: Optional[str] = Field("", max_length=100)
     telephone: str = Field(..., max_length=30)
+    # Numéro pour joindre le client pendant la réparation, s'il diffère (tickets.tel_contact)
+    tel_contact: Optional[str] = Field(None, max_length=30)
     email: Optional[str] = Field("", max_length=254)
     categorie: str = Field("", max_length=50)
     marque: str = Field("", max_length=80)
@@ -57,12 +61,16 @@ class DepotDistanceRequest(BaseModel):
     panne: str = Field("", max_length=120)
     panne_detail: Optional[str] = Field("", max_length=1000)
     notes_client: Optional[str] = Field("", max_length=2000)
+    # Code d'accès de l'appareil (même composant ChoixCodeAcces que la borne) : facultatif
+    pin: Optional[str] = Field("", max_length=50)
+    pattern: Optional[str] = Field("", max_length=50)
     carte_camby: Optional[int] = 0
     rgpd_informe: Optional[bool] = None
     consentement_marketing: Optional[bool] = None
 
     @field_validator("nom", "prenom", "telephone", "email", "categorie", "marque",
-                     "modele", "modele_autre", "panne", "panne_detail", "notes_client")
+                     "modele", "modele_autre", "panne", "panne_detail", "notes_client",
+                     "pin", "pattern")
     @classmethod
     def _sans_espaces_superflus(cls, v):
         return v.strip() if isinstance(v, str) else v
@@ -72,6 +80,9 @@ class DepotDistanceRequest(BaseModel):
     @classmethod
     def _telephone_canonique(cls, v):
         return phone_canonical(v)
+
+    # Même règle que POST /api/tickets : vide → NULL, numéro non plausible → 422
+    _tel_contact = field_validator("tel_contact")(telephone_contact_canonique)
 
 
 class RefusMotif(BaseModel):
@@ -128,13 +139,14 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             INSERT INTO tickets
             (client_id, categorie, marque, modele, modele_autre,
              panne, panne_detail, notes_client,
-             statut, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pré-enregistré', 'distance')
+             statut, source, tel_contact, pin, pattern)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Pré-enregistré', 'distance', %s, %s, %s)
             RETURNING id
         """, (
             client_id, data.categorie, data.marque, data.modele,
             data.modele_autre, panne, panne_detail,
             data.notes_client,
+            data.tel_contact, data.pin or "", data.pattern or "",
         ))
         row = cur.fetchone()
         tid = row["id"]
@@ -159,6 +171,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             {"name": "Appareil", "value": appareil or "-", "inline": True},
             {"name": "Panne", "value": panne or "-", "inline": False},
             {"name": "Téléphone", "value": data.telephone, "inline": True},
+            *([{"name": "Joignable", "value": data.tel_contact, "inline": True}] if data.tel_contact else []),
         ],
         notif_type="depot_distance",
     )
@@ -200,10 +213,9 @@ def valider_depot(ticket_id: int, bg: BackgroundTasks, user: dict = Depends(get_
             WHERE id = %s
         """, (now, '\n' + historique_entry, ticket_id))
 
-        cur.execute(
-            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
-            (ticket_id, f"Pré-enregistrement validé → En attente de diagnostic — par {auteur}"),
-        )
+        # Ligne « Statut: … » (format de change_status) : remet « client contacté » à zéro
+        contact.historiser_statut(cur, ticket_id, "Pré-enregistré", "En attente de diagnostic", auteur,
+                                  " (pré-enregistrement validé)")
 
         # Récupérer info client pour notification
         cur.execute("SELECT email, nom, prenom FROM clients WHERE id = %s", (row["client_id"],))
@@ -259,10 +271,8 @@ def refuser_depot(
         """, (now, now, '\n' + historique_entry,
               f"\n[{ts}] Dépôt à distance refusé — {motif}", ticket_id))
 
-        cur.execute(
-            "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s)",
-            (ticket_id, f"Pré-enregistrement refusé: {motif} — par {auteur}"),
-        )
+        contact.historiser_statut(cur, ticket_id, "Pré-enregistré", "Clôturé", auteur,
+                                  f" (pré-enregistrement refusé : {motif})")
 
         cur.execute("SELECT email, nom, prenom FROM clients WHERE id = %s", (row["client_id"],))
         client = cur.fetchone()
@@ -288,7 +298,7 @@ def get_pending_depots(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("""
             SELECT t.id, t.ticket_code, t.marque, t.modele, t.modele_autre,
-                   t.panne, t.panne_detail, t.date_depot, t.notes_client,
+                   t.panne, t.panne_detail, t.date_depot, t.notes_client, t.tel_contact,
                    c.nom AS client_nom, c.prenom AS client_prenom,
                    c.telephone AS client_tel, c.email AS client_email
             FROM tickets t

@@ -17,6 +17,10 @@ export const FORFAITS_DEPUIS = '2026-10-15';
 const STATUTS_EMIS = new Set(['Rendu au client', 'Clôturé']);
 const AUTRE_MAX = 35;
 const PIECE_MAX = 60;
+// Prestations sans ligne chiffrée automatique : la reprise (rachat de l'appareil) est à chiffrer par la
+// boutique, jamais au devis estimé du dépôt. Miroir de A_CHIFFRER / MENTION_A_CHIFFRER (prestations.py).
+export const PRESTATIONS_A_CHIFFRER = new Set(['reprise']);
+export const MENTION_A_CHIFFRER = 'à chiffrer par la boutique';
 
 export function normaliser(s) {
   return String(s ?? '')
@@ -46,7 +50,11 @@ export function construireCatalogue(data) {
   const index = new Map();
   for (const p of data.prestations) {
     if (!p || !p.cle) continue;
-    parCle[p.cle] = { prestation: p.prestation, court: p.court, symptome: p.symptome ?? null };
+    parCle[p.cle] = {
+      prestation: p.prestation, court: p.court, symptome: p.symptome ?? null,
+      // Drapeau du serveur, sinon la liste locale (réponse d'une version antérieure)
+      a_chiffrer: typeof p.a_chiffrer === 'boolean' ? p.a_chiffrer : PRESTATIONS_A_CHIFFRER.has(p.cle),
+    };
     for (const v of [p.symptome, p.prestation, p.court, ...(Array.isArray(p.alias) ? p.alias : [])]) {
       if (!v) continue;
       const n = normaliser(v);
@@ -58,6 +66,7 @@ export function construireCatalogue(data) {
     prestations: data.prestations.filter(p => p && p.cle),
     parCle,
     index,
+    mentionAChiffrer: String(data.mention_a_chiffrer || '').trim() || MENTION_A_CHIFFRER,
   };
 }
 
@@ -127,6 +136,16 @@ export function memeElement(a, b, cat = _catalogue) {
   if (la === uneLigne(b)) return true;
   const ka = clePanne(a, cat);
   return !!ka && ka === clePanne(b, cat);
+}
+
+/**
+ * Prestation sans prix automatique (reprise) : aucun forfait n'est proposé au dépôt, la ligne vaut 0
+ * tant que la boutique ne l'a pas chiffrée dans la fiche (MENTION_A_CHIFFRER à afficher à côté).
+ */
+export function aChiffrer(cle, cat = _catalogue) {
+  if (!cle) return false;
+  const p = cat?.parCle?.[cle];
+  return p ? !!p.a_chiffrer : PRESTATIONS_A_CHIFFRER.has(cle);
 }
 
 export function prixNombre(v) {

@@ -11,31 +11,37 @@ import { resolve } from 'node:path';
 import {
   normaliser, construireCatalogue, definirCatalogue, cataloguePrestations, chargerPrestations,
   clePanne, libellePrestation, libelleCourt, memeElement, lignesReparation, lignesEdition,
-  indexLigneEcran, prixNombre, forfaitApplicable, lignesFiche, rattachementCommandes,
+  indexLigneEcran, prixNombre, forfaitApplicable, lignesFiche, rattachementCommandes, aChiffrer,
 } from '../lib/prestations';
 import { api } from '../lib/api';
 
 // Réponse de GET /api/catalog/prestations (copie de catalogue_prestations())
+const P = (cle, symptome, prestation, court, alias, a_chiffrer = false) => ({ cle, symptome, prestation, court, alias, a_chiffrer });
 const CATALOGUE = {
-  pannes: ['Écran cassé', 'Batterie', 'Connecteur de charge', 'Caméra avant', 'Caméra arrière', 'Bouton volume', 'Bouton power', "Haut-parleur (je n'entends pas les gens ou la musique)", "Microphone (les gens ne m'entendent pas)", 'Vitre arrière', 'Désoxydation', 'Problème logiciel', 'Diagnostic', 'Autre'],
+  pannes: ['Écran cassé', 'Batterie', 'Connecteur de charge', 'Caméra avant', 'Caméra arrière', 'Bouton volume', 'Bouton power', "Haut-parleur (je n'entends pas les gens ou la musique)", "Microphone (les gens ne m'entendent pas)", 'Vitre arrière', 'Désoxydation', 'Problème logiciel', 'Diagnostic', "Ne s'allume plus", 'Virus', 'Reprise téléphone', 'Autre'],
   prestations: [
-    { cle: 'ecran', symptome: 'Écran cassé', prestation: 'Forfait remplacement écran', court: 'Écran', alias: ['Écran HS'] },
-    { cle: 'batterie', symptome: 'Batterie', prestation: 'Forfait remplacement batterie', court: 'Batterie', alias: ['Batterie HS', 'Batterie qui gonfle', 'Batterie gonflée'] },
-    { cle: 'connecteur', symptome: 'Connecteur de charge', prestation: 'Forfait remplacement connecteur de charge', court: 'Connecteur de charge', alias: ['Connecteur', 'Connecteur charge', 'Port de charge'] },
-    { cle: 'camera_avant', symptome: 'Caméra avant', prestation: 'Forfait remplacement caméra avant', court: 'Caméra avant', alias: ['Caméra avant HS'] },
-    { cle: 'camera_arriere', symptome: 'Caméra arrière', prestation: 'Forfait remplacement caméra arrière', court: 'Caméra arrière', alias: ['Caméra arrière HS'] },
-    { cle: 'bouton_volume', symptome: 'Bouton volume', prestation: 'Forfait réparation bouton volume', court: 'Bouton volume', alias: ['Nappe volume', 'Nappe volume HS'] },
-    { cle: 'bouton_power', symptome: 'Bouton power', prestation: 'Forfait réparation bouton power', court: 'Bouton power', alias: ['Bouton power HS', 'Bouton marche/arrêt', 'Nappe power'] },
-    { cle: 'haut_parleur', symptome: "Haut-parleur (je n'entends pas les gens ou la musique)", prestation: 'Forfait remplacement haut-parleur', court: 'Haut-parleur', alias: ['Haut-parleur HS'] },
-    { cle: 'micro', symptome: "Microphone (les gens ne m'entendent pas)", prestation: 'Forfait réparation micro', court: 'Micro', alias: ['Microphone', 'Micro HS'] },
-    { cle: 'vitre_arriere', symptome: 'Vitre arrière', prestation: 'Forfait remplacement vitre arrière', court: 'Vitre arrière', alias: ['Vitre arrière cassée'] },
-    { cle: 'desoxydation', symptome: 'Désoxydation', prestation: 'Forfait désoxydation', court: 'Désoxydation', alias: ['Oxydation'] },
-    { cle: 'logiciel', symptome: 'Problème logiciel', prestation: 'Forfait intervention logicielle', court: 'Logiciel', alias: [] },
-    { cle: 'diagnostic', symptome: 'Diagnostic', prestation: 'Diagnostic', court: 'Diagnostic', alias: [] },
-    { cle: 'ecouteur', symptome: null, prestation: 'Forfait remplacement écouteur interne', court: 'Écouteur interne', alias: ['Écouteur', 'Écouteur interne HS'] },
-    { cle: 'vitre_camera', symptome: null, prestation: 'Forfait remplacement vitre caméra arrière', court: 'Vitre caméra arrière', alias: ['Lentille caméra'] },
-    { cle: 'face_id', symptome: null, prestation: 'Forfait réparation Face ID', court: 'Face ID', alias: ['Face ID HS'] },
+    P('ecran', 'Écran cassé', 'Forfait remplacement écran', 'Écran', ['Écran HS']),
+    P('batterie', 'Batterie', 'Forfait remplacement batterie', 'Batterie', ['Batterie HS', 'Batterie qui gonfle', 'Batterie gonflée']),
+    P('connecteur', 'Connecteur de charge', 'Forfait remplacement connecteur de charge', 'Connecteur de charge', ['Connecteur', 'Connecteur charge', 'Port de charge']),
+    P('camera_avant', 'Caméra avant', 'Forfait remplacement caméra avant', 'Caméra avant', ['Caméra avant HS']),
+    P('camera_arriere', 'Caméra arrière', 'Forfait remplacement caméra arrière', 'Caméra arrière', ['Caméra arrière HS']),
+    P('bouton_volume', 'Bouton volume', 'Forfait réparation bouton volume', 'Bouton volume', ['Nappe volume', 'Nappe volume HS']),
+    P('bouton_power', 'Bouton power', 'Forfait réparation bouton power', 'Bouton power', ['Bouton power HS', 'Bouton marche/arrêt', 'Nappe power']),
+    P('haut_parleur', "Haut-parleur (je n'entends pas les gens ou la musique)", 'Forfait remplacement haut-parleur', 'Haut-parleur', ['Haut-parleur HS']),
+    P('micro', "Microphone (les gens ne m'entendent pas)", 'Forfait réparation micro', 'Micro', ['Microphone', 'Micro HS']),
+    P('vitre_arriere', 'Vitre arrière', 'Forfait remplacement vitre arrière', 'Vitre arrière', ['Vitre arrière cassée']),
+    P('desoxydation', 'Désoxydation', 'Forfait désoxydation', 'Désoxydation', ['Oxydation']),
+    P('logiciel', 'Problème logiciel', 'Forfait intervention logicielle', 'Logiciel', []),
+    P('diagnostic', 'Diagnostic', 'Diagnostic', 'Diagnostic', []),
+    // Trois pannes de la borne ajoutées en octobre 2026 (libellés courts partagés : première clé gardée)
+    P('ne_s_allume_plus', "Ne s'allume plus", "Diagnostic complet (ne s'allume plus)", 'Diagnostic', ["Ne s'allume pas", 'Ne démarre plus']),
+    P('virus', 'Virus', 'Forfait nettoyage logiciel (virus)', 'Logiciel', ['Virus / malware', 'Logiciel malveillant']),
+    P('reprise', 'Reprise téléphone', "Reprise de l'appareil (rachat)", 'Reprise', ['Rachat'], true),
+    P('ecouteur', null, 'Forfait remplacement écouteur interne', 'Écouteur interne', ['Écouteur', 'Écouteur interne HS']),
+    P('vitre_camera', null, 'Forfait remplacement vitre caméra arrière', 'Vitre caméra arrière', ['Lentille caméra']),
+    P('face_id', null, 'Forfait réparation Face ID', 'Face ID', ['Face ID HS']),
   ],
+  mention_a_chiffrer: 'à chiffrer par la boutique',
 };
 
 // Mêmes cas que backend/tests/test_prestations.py
@@ -59,6 +65,12 @@ const CAS = [
   ['Désoxydation', 'Forfait désoxydation'],
   ['Problème logiciel', 'Forfait intervention logicielle'],
   ['Diagnostic', 'Diagnostic'],
+  ["Ne s'allume plus", "Diagnostic complet (ne s'allume plus)"],
+  ['Ne démarre plus', "Diagnostic complet (ne s'allume plus)"],
+  ['Virus', 'Forfait nettoyage logiciel (virus)'],
+  ['Virus / malware', 'Forfait nettoyage logiciel (virus)'],
+  ['Reprise téléphone', "Reprise de l'appareil (rachat)"],
+  ['Rachat', "Reprise de l'appareil (rachat)"],
   ['  batterie  ', 'Forfait remplacement batterie'],
   // Inconnus et sous-chaînes : jamais convertis
   ['Achat iPhone', 'Achat iPhone'],
@@ -88,6 +100,9 @@ const TICKETS = [
   { panne: 'Autre', panne_detail: 'Face ID ne marche plus', devis_estime: 80 },
   { panne: 'Pièce à commander', panne_detail: 'Écran OLED iPhone 14 Pro — fournisseur X réf 123' },
   { panne: '', devis_estime: 20 },
+  // Reprise (rachat) : pas de prix automatique au dépôt, la boutique chiffre dans la fiche
+  { panne: 'Reprise téléphone', statut: 'En attente de diagnostic' },
+  { panne: 'Rachat', reparation_supp: 'Chargeur', prix_supp: 10 },
 ];
 
 describe('prestations : table et libellés', () => {
@@ -132,6 +147,18 @@ describe('prestations : table et libellés', () => {
     expect(memeElement('', '')).toBe(false);
   });
 
+  it('libellés courts partagés : « Diagnostic » et « Logiciel » restent sur leur première clé', () => {
+    expect(clePanne("Ne s'allume plus")).toBe('ne_s_allume_plus');
+    expect(clePanne('Diagnostic')).toBe('diagnostic');
+    expect(clePanne('Virus')).toBe('virus');
+    expect(clePanne('Logiciel')).toBe('logiciel');
+    expect(libelleCourt("Diagnostic complet (ne s'allume plus)")).toBe('Diagnostic');
+    expect(aChiffrer('reprise')).toBe(true);
+    expect(aChiffrer('virus')).toBe(false);
+    expect(aChiffrer(null)).toBe(false);
+    expect(cataloguePrestations().mentionAChiffrer).toBe('à chiffrer par la boutique');
+  });
+
   it('clé inconnue → null ; sans table chargée, le symptôme reste brut', () => {
     expect(clePanne('Batterie externe')).toBe(null);
     definirCatalogue(null);
@@ -161,6 +188,14 @@ describe('prestations : lignes du ticket', () => {
 
   it('la ligne par défaut (sans JSON) reçoit le forfait', () => {
     expect(lignesReparation(TICKETS[0])).toEqual([{ label: 'Forfait remplacement écran', prix: 129, cle: 'ecran' }]);
+  });
+
+  it('reprise : ligne par défaut sans prix automatique (à chiffrer par la boutique), supplément texte chiffré', () => {
+    const [ligne] = lignesReparation(TICKETS[16]);
+    expect(ligne).toEqual({ label: "Reprise de l'appareil (rachat)", prix: 0, cle: 'reprise' });
+    expect(aChiffrer(ligne.cle)).toBe(true);
+    expect(lignesReparation(TICKETS[17]).map(l => [l.label, l.prix])).toEqual([["Reprise de l'appareil (rachat)", 0], ['Chargeur', 10]]);
+    expect(lignesEdition(TICKETS[16])).toEqual([{ label: "Reprise de l'appareil (rachat)", prix: 0 }]);
   });
 
   it('les lignes JSON enregistrées ne sont jamais réécrites', () => {

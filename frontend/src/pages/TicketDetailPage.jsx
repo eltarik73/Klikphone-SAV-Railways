@@ -22,13 +22,15 @@ import TarifPicker, { cleCommandeDepuisLigne } from '../components/TarifPicker';
 import ReceptionCard from '../components/ReceptionCard';
 import EmplacementInput from '../components/EmplacementInput';
 import PrevenirClient from '../components/PrevenirClient';
+import ContactClient from '../components/ContactClient';
 import { normaliserEmplacement } from '../lib/etagere';
+import { estAutreNumero, formatTel } from '../lib/contact';
 import { PrioriteBadge, PrioriteSelecteur, normaliserPriorite } from '../components/PrioriteBadge';
 import { useCatalog } from '../hooks/useCatalog';
 import { MARQUE_AUTRE } from '../lib/catalog';
 import {
   chargerPrestations, cataloguePrestations, lignesFiche, libelleCourt, rattachementCommandes,
-  formatJson, indexLigneEcran, prixNombre, normaliser, clePanne, memeElement,
+  formatJson, indexLigneEcran, prixNombre, normaliser, clePanne, memeElement, aChiffrer, MENTION_A_CHIFFRER,
 } from '../lib/prestations';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
@@ -41,7 +43,7 @@ import {
   FileText, Printer, Lock, Eye, Copy, Check,
   AlertTriangle, Smartphone, Shield, Calendar, Clock,
   Zap, Edit3, X, CheckCircle2, Sparkles,
-  Flag, PhoneCall, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
+  Flag, PhoneCall, PhoneForwarded, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
   MapPin, CreditCard, FileSignature, Ticket, Gift, Coins,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -303,6 +305,130 @@ function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children
       </div>
       {editing ? children : viewContent}
     </section>
+  );
+}
+
+// ─── Second numéro du ticket (tickets.tel_contact) ─────────────────────────────
+// Message du 422 pour ce champ (« Numéro pour vous joindre invalide (ex. 06 12 34 56 78) »),
+// sinon le message lisible déjà construit par l'ApiClient.
+function messageErreurTelContact(err) {
+  const items = Array.isArray(err?.detail) ? err.detail : [];
+  const item = items.find(d => Array.isArray(d?.loc) && d.loc.includes('tel_contact'));
+  const msg = typeof item?.msg === 'string' ? item.msg.replace(/^Value error,\s*/i, '').trim() : '';
+  return msg || err?.message || 'Numéro non enregistré';
+}
+
+/**
+ * « Numéro pour vous joindre (si différent) » : lecture, puis champ en place (crayon).
+ * Entrée / « Enregistrer » → onEnregistrer(numéro) (PATCH partiel ; vide = effacement),
+ * Échap annule ; un refus du serveur (422) est affiché sous le champ.
+ * Les SMS / WhatsApp partent vers ce numéro s'il est renseigné (lib/contact.js).
+ */
+function TelContactLigne({ valeur, onEnregistrer }) {
+  const uid = useId();
+  const [edition, setEdition] = useState(false);
+  const [brouillon, setBrouillon] = useState('');
+  const [erreur, setErreur] = useState('');
+  const [enCours, setEnCours] = useState(false);
+  const champRef = useRef(null);
+  const crayonRef = useRef(null);
+  const rendreFocusRef = useRef(false);
+  const enregistre = String(valeur ?? '').trim();
+
+  useEffect(() => {
+    if (edition) champRef.current?.focus();
+    else if (rendreFocusRef.current) { rendreFocusRef.current = false; crayonRef.current?.focus(); }
+  }, [edition]);
+
+  const ouvrir = () => { setBrouillon(enregistre); setErreur(''); setEdition(true); };
+  const fermer = () => { rendreFocusRef.current = true; setErreur(''); setEdition(false); };
+
+  const enregistrer = async () => {
+    if (enCours) return;
+    const tel = brouillon.trim();
+    if (tel === enregistre) { fermer(); return; }
+    setEnCours(true);
+    setErreur('');
+    try {
+      await onEnregistrer(tel);
+      fermer();
+    } catch (err) {
+      setErreur(messageErreurTelContact(err));
+      champRef.current?.focus();
+    } finally {
+      setEnCours(false);
+    }
+  };
+
+  const idChamp = `${uid}-tel-contact`;
+  const idErreur = `${idChamp}-erreur`;
+  const idAide = `${idChamp}-aide`;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100">
+      <p id={`${idChamp}-libelle`} className="t-caption mb-0.5">Numéro pour vous joindre (si différent)</p>
+      {!edition ? (
+        <div className="flex items-center gap-3 min-h-11">
+          <PhoneForwarded className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+          <span className={`flex-1 min-w-0 truncate text-sm font-medium tabular-nums ${enregistre ? 'text-slate-700' : 'text-slate-500'}`}>
+            {enregistre ? formatTel(enregistre) : '—'}
+          </span>
+          <button
+            ref={crayonRef}
+            type="button"
+            onClick={ouvrir}
+            className="btn-ghost btn-icon w-11 h-11 min-w-[44px] shrink-0 -mr-2"
+            title="Modifier le numéro pour vous joindre"
+            aria-label="Modifier le numéro pour vous joindre"
+          >
+            <Edit3 aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={(e) => { e.preventDefault(); enregistrer(); }} noValidate>
+          <label htmlFor={idChamp} className="sr-only">Numéro pour vous joindre (si différent)</label>
+          <div className="flex items-center gap-2">
+            <input
+              ref={champRef}
+              id={idChamp}
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              value={brouillon}
+              onChange={(e) => { setBrouillon(e.target.value); if (erreur) setErreur(''); }}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fermer(); } }}
+              placeholder="06 12 34 56 78"
+              className="input tabular-nums lg:text-base"
+              aria-invalid={erreur ? 'true' : undefined}
+              aria-describedby={erreur ? `${idErreur} ${idAide}` : idAide}
+              disabled={enCours}
+            />
+            <button type="submit" className="btn-primary min-h-11 shrink-0" disabled={enCours}>
+              Enregistrer
+            </button>
+            <button
+              type="button"
+              onClick={fermer}
+              className="btn-ghost btn-icon w-11 h-11 min-w-[44px] shrink-0"
+              title="Annuler (Échap)"
+              aria-label="Annuler"
+              disabled={enCours}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </div>
+          {erreur && (
+            <p id={idErreur} role="alert" className="input-error">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+              <span>{erreur}</span>
+            </p>
+          )}
+          <p id={idAide} className="input-help">
+            Les SMS et WhatsApp partent vers ce numéro. Laissez vide pour utiliser le téléphone de la fiche client.
+          </p>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -876,6 +1002,14 @@ function TicketDetail({ id }) {
     onError: () => toast.error('Priorité non enregistrée : vérifiez la connexion puis « Réessayer »'),
   });
 
+  // Second numéro (tel_contact) : PATCH partiel immédiat depuis la carte Client, '' = effacement.
+  // Le ticket renvoyé met à jour la fiche (pastille d'en-tête, carte) sans écraser une saisie en cours.
+  const enregistrerTelContact = useCallback(async (tel) => {
+    const res = await api.updateTicket(id, { tel_contact: tel });
+    fusionnerTicket(res?.ticket || { tel_contact: tel }, clesEnAttente(null));
+    invalidateCache('tickets', 'dashboard', 'interactions');
+  }, [id, fusionnerTicket, clesEnAttente]);
+
   savesRef.current = { device: deviceSave, client: clientSave, pricing: pricingSave, priorite: prioriteSave };
   const flushDevice = deviceSave.flush;
   const flushClient = clientSave.flush;
@@ -993,6 +1127,14 @@ function TicketDetail({ id }) {
       if (mountedRef.current) setPrivateNotes(Array.isArray(data) ? data : []);
     } catch { if (mountedRef.current) setPrivateNotes([]); }
   }, [id]);
+
+  // « Contacté par tél. » noté par ContactClient (POST /api/tickets/{id}/contact) : le contact renvoyé
+  // par le serveur remplace celui du ticket, la note « appel » est relue, dashboard et étagère prévenus
+  const clientContacte = useCallback((contact) => {
+    if (contact) fusionnerTicket({ contact }, null);
+    loadNotes();
+    invalidateCache('tickets', 'dashboard', 'interactions');
+  }, [fusionnerTicket, loadNotes]);
 
   // Équipe + paramètres : cache partagé entre fiches (5 min). Les modèles de message
   // ne sont lus qu'à l'ouverture de la demande d'accord, la fidélité qu'au paiement.
@@ -2010,6 +2152,11 @@ function TicketDetail({ id }) {
     ? <span className="text-sm font-medium text-slate-500 whitespace-nowrap">Sur devis</span>
     : <span className="text-sm t-num whitespace-nowrap">{formatPrix(prixNombre(prix))}</span>);
 
+  // Reprise encore à 0 € : la boutique doit la chiffrer (clé déduite du libellé via le catalogue) ;
+  // mention à côté du prix, les montants ne changent pas
+  const ligneAChiffrer = (line) => prixNombre(line?.prix) <= 0 && aChiffrer(clePanne(line?.label, prestations), prestations);
+  const mentionAChiffrer = prestations?.mentionAChiffrer || MENTION_A_CHIFFRER;
+
   // Vert plein réservé à la restitution ; « grand » = pleine largeur dans la carte Statut
   const boutonRendre = (taille = 'normal') => (
     <button
@@ -2070,6 +2217,9 @@ function TicketDetail({ id }) {
                     </a>
                   )}
                 </div>
+
+                {/* Second numéro du ticket : où joindre le client pendant la réparation */}
+                <TelContactLigne valeur={t.tel_contact} onEnregistrer={enregistrerTelContact} />
 
                 {/* Autres réparations du client (garantie, appareils en cours) */}
                 {autresTickets && autresTickets.length > 0 && (
@@ -2315,8 +2465,6 @@ function TicketDetail({ id }) {
             ticketId={id}
             imeiTicket={t.imei || ''}
             remis={remis}
-            statut={t.statut}
-            dateDepot={t.date_depot}
             controleRef={receptionCtrlRef}
             onEtat={setReceptionEtat}
             onUtiliserImei={(imei) => updateDeviceForm({ imei }, { wait: 0 })}
@@ -2771,7 +2919,13 @@ function TicketDetail({ id }) {
                         )}
                         {badgeCommande(commandeDe(line.label), true)}
                       </div>
-                      {prixLigne(line.prix)}
+                      {ligneAChiffrer(line) ? (
+                        /* Mention + prix ; sur mobile le prix passe sous la mention plutôt que d'écraser le libellé */
+                        <span className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+                          <span className="badge badge-sm badge-neutral whitespace-nowrap">{mentionAChiffrer}</span>
+                          {prixLigne(line.prix)}
+                        </span>
+                      ) : prixLigne(line.prix)}
                     </div>
                   ))}
                   {lignesAffichees.length === 0 && (
@@ -3040,6 +3194,12 @@ function TicketDetail({ id }) {
                 </a>
               </>
             )}
+            {estAutreNumero(t) && (
+              <span className="badge bg-white/10 text-white tabular-nums" title="Numéro pour joindre le client pendant la réparation">
+                <PhoneForwarded className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>Joignable au {formatTel(t.tel_contact)}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-3 lg:justify-end shrink-0">
@@ -3058,6 +3218,10 @@ function TicketDetail({ id }) {
           </div>
         </div>
       </motion.header>
+
+      {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard, le scan et
+          l'étagère) : une ligne sous l'en-tête, là où l'accueil regarde d'abord. ContactClient fait 44 px au doigt. */}
+      <ContactClient ticket={t} taille="carte" auteur={user?.utilisateur || 'Accueil'} onContacte={clientContacte} className="mb-4" />
 
       {/* Bannière statut devis — verte si validé, rouge si refusé, orange si en attente */}
       {(() => {

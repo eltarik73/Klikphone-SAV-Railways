@@ -244,7 +244,7 @@ def _anonymiser(cur, ids: list) -> tuple:
     # panne_detail = « pièce — notes » : la pièce (libellé des lignes facturées) reste, les notes partent
     cur.execute("""
         UPDATE tickets SET imei = NULL, notes_client = NULL, commentaire_client = NULL,
-               notes_internes = NULL, attention = NULL,
+               notes_internes = NULL, attention = NULL, tel_contact = NULL,
                panne_detail = NULLIF(regexp_replace(COALESCE(panne_detail, ''), '\\s*[—–].*$', ''), '')
         WHERE client_id = ANY(%s)
     """, (faits,))

@@ -1,7 +1,8 @@
 /**
  * Chantier étagère : emplacement physique (EmplacementInput), relances graduées depuis
  * l'étagère (RelanceClient : SMS, WhatsApp, e-mail, « J'ai appelé »), délai légal d'un an
- * et courrier de mise en demeure à partir de J+90.
+ * et courrier de mise en demeure à partir de J+90. « Client contacté » sur chaque ligne
+ * (ContactClient, POST /api/tickets/{id}/contact pour l'appel).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react';
@@ -18,6 +19,7 @@ const { toast, apiMock } = vi.hoisted(() => ({
     envoyerSms: vi.fn(),
     envoyerEmail: vi.fn(),
     getMiseEnDemeureHtml: vi.fn(),
+    contacterClient: vi.fn(),
   },
 }));
 
@@ -147,6 +149,10 @@ const VUE = {
     ligne(21, 'Réparation terminée', {
       jours_attente: 95, fin_reparation: '2026-07-13T10:00:00', emplacement: 'B3',
       nb_relances: 2, derniere_relance: '2026-10-12T09:00:00', relance_due: false,
+      contact: {
+        depuis_statut: true, dernier: { canal: 'sms', date: '2026-10-12T09:00:00', auteur: 'Léa' },
+        canaux: { sms: '2026-10-12T09:00:00', email: null, whatsapp: '2026-10-01T09:00:00', appel: null },
+      },
     }),
     ligne(22, 'Réparation terminée', {
       jours_attente: 40, fin_reparation: '2026-09-06T10:00:00', emplacement: null,
@@ -195,6 +201,13 @@ beforeEach(() => {
   apiMock.getSmsEtat.mockResolvedValue({ disponible: false });
   apiMock.getMessageRelance.mockResolvedValue({ message: MESSAGE, jours: 40 });
   apiMock.logRelance.mockResolvedValue({ nb_relances: 2, derniere_relance: '2026-10-16T08:00:00' });
+  apiMock.contacterClient.mockImplementation(async () => ({
+    note_id: 99,
+    contact: {
+      depuis_statut: true, dernier: { canal: 'appel', date: '2026-10-16T08:05:00Z', auteur: 'Sophie' },
+      canaux: { sms: null, email: null, whatsapp: null, appel: '2026-10-16T08:05:00Z' },
+    },
+  }));
   apiMock.setEmplacement.mockImplementation(async (_id, e) => ({ emplacement: e }));
 });
 
@@ -330,8 +343,13 @@ describe('EtagereARecuperer : relancer en deux clics', () => {
     const { r, panneau } = await ouvrirRelance(region, 'KP-000022');
     fireEvent.change(within(panneau).getByLabelText('Note d’appel (facultatif)'), { target: { value: 'passe samedi' } });
     fireEvent.click(within(panneau).getByRole('button', { name: /J’ai appelé/ }));
-    await waitFor(() => expect(apiMock.logRelance).toHaveBeenCalledWith(22, 'appel', 'passe samedi'));
+    // Même note 'appel' que « Contacté par tél. » partout ailleurs (POST /api/tickets/{id}/contact)
+    await waitFor(() => expect(apiMock.contacterClient).toHaveBeenCalledWith(22, 'passe samedi'));
+    expect(apiMock.logRelance).not.toHaveBeenCalled();
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Appel noté'));
+    // L'appel compte comme une relance et allume l'icône téléphone de la ligne
+    await waitFor(() => expect(within(r).getByText(/^2 relances, dernière le /)).toBeInTheDocument());
+    expect(within(r).getByText(/^Contacté par téléphone le /)).toBeInTheDocument();
 
     const { panneau: p2 } = await ouvrirRelance(region, 'KP-000023');
     fireEvent.keyDown(within(p2).getByRole('textbox', { name: /Message de relance/ }), { key: 'Escape' });
@@ -346,6 +364,36 @@ describe('EtagereARecuperer : relancer en deux clics', () => {
     fireEvent.click(within(r).getByRole('button', { name: 'Relancer KP-000022' }));
     expect(await within(r).findByText(/Modèle indisponible, texte de secours/)).toBeInTheDocument();
     expect(within(r).getByRole('textbox', { name: /Message de relance/ }).value).toMatch(/^Bonjour Léa, votre Apple iPhone 13 est réparé/);
+  });
+});
+
+describe('EtagereARecuperer : client contacté sur chaque ligne', () => {
+  it('icônes allumées selon le contact depuis la fin de réparation, dernier contact en clair', async () => {
+    const region = await etagere();
+    const r21 = rangee(region, 'KP-000021');
+    expect(within(r21).getByText(/^Contacté par SMS le 12\/10 à /)).toBeInTheDocument();
+    expect(within(r21).getByText(/^SMS envoyé le 12\/10 à .* par Léa$/)).toBeInTheDocument();
+    expect(within(r21).getByText(/^WhatsApp envoyé le 01\/10 à /)).toBeInTheDocument();
+    expect(within(r21).getByTitle("Pas d'appel depuis le dernier changement de statut")).toBeInTheDocument();
+    expect(within(rangee(region, 'KP-000023')).getByText('Pas encore contacté')).toBeInTheDocument();
+  });
+
+  it('« Contacté par tél. » note l’appel, met la ligne à jour sans recharger et compte une relance', async () => {
+    const region = await etagere();
+    const r23 = rangee(region, 'KP-000023');
+    expect(within(r23).getByText('Relance à faire')).toBeInTheDocument();
+    fireEvent.click(within(r23).getByRole('button', { name: 'Contacté par tél.' }));
+    await waitFor(() => expect(apiMock.contacterClient).toHaveBeenCalledWith(23));
+    await waitFor(() => expect(within(r23).getByText(/^Contacté par téléphone le 16\/10 à /)).toBeInTheDocument());
+    expect(within(r23).getByText(/^Appel passé le 16\/10 à .* par Sophie$/)).toBeInTheDocument();
+    expect(within(r23).getByText(/^1 relance le /)).toBeInTheDocument();
+    expect(within(r23).queryByText('Relance à faire')).not.toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith('Appel noté');
+    expect(apiMock.getDashboard).toHaveBeenCalledTimes(1);
+    // Une relance WhatsApp tracée allume aussi son icône
+    const { panneau } = await ouvrirRelance(region, 'KP-000022');
+    fireEvent.click(within(panneau).getByRole('button', { name: /WhatsApp/ }));
+    await waitFor(() => expect(within(rangee(region, 'KP-000022')).getByText(/^Contacté par WhatsApp le /)).toBeInTheDocument());
   });
 });
 

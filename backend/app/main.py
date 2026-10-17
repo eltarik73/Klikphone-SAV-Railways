@@ -449,6 +449,9 @@ _DDL_ALTERS = [
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS emplacement TEXT",
     # Priorité atelier : 'normal' | 'express' | 'attente' (client sur place) | 'pro' (contrôle : app/models.py)
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS priorite TEXT NOT NULL DEFAULT 'normal'",
+    # Second numéro pour joindre le client pendant la réparation (borne : « si votre téléphone
+    # reste chez nous ») ; forme canonique de clients.telephone, NULL si absent (app/models.py)
+    "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tel_contact TEXT",
     # RGPD (app/api/rgpd.py) : information, consentement marketing, anonymisation
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS rgpd_informe_le TIMESTAMP",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS consentement_marketing BOOLEAN DEFAULT FALSE",
@@ -464,6 +467,8 @@ _DDL_ALTERS = [
     "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS ref_fournisseur TEXT",
     "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS fournisseur TEXT DEFAULT 'Mobilax'",
     "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS obsolete BOOLEAN DEFAULT FALSE",
+    # Réparation smartphones (B1) : page fournisseur d'où le prix HT a été relevé (saisie admin)
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS url_fournisseur TEXT",
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS prix_source TEXT",
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS verrou_manuel BOOLEAN DEFAULT FALSE",
@@ -894,6 +899,8 @@ def _migrations_recherche():
     dev = S.doc_sql("", S.T_DEVICE_COLS)
     index_btree = [
         ("idx_clients_phone_key", "clients", "public.kp_phone_key(telephone)", ""),
+        # Second numéro du ticket : recherche du dossier par « l'autre numéro »
+        ("idx_tickets_tel_contact_key", "tickets", "public.kp_phone_key(tel_contact)", "tel_contact IS NOT NULL"),
         ("idx_tickets_imei_alnum", "tickets", "public.kp_alnum(imei)", "imei <> ''"),
         ("idx_tickets_pret_imei_alnum", "tickets", "public.kp_alnum(telephone_pret_imei)",
          "telephone_pret_imei <> ''"),
@@ -908,6 +915,8 @@ def _migrations_recherche():
         ("idx_tickets_pret_imei_trgm", "tickets", "public.kp_alnum(telephone_pret_imei)", ""),
         ("idx_clients_doc_trgm_v1", "clients", S.doc_sql("", S.C_COLS), ""),
         ("idx_clients_phone_digits_trgm", "clients", "public.kp_phone_digits(telephone)", ""),
+        ("idx_tickets_tel_contact_digits_trgm", "tickets", "public.kp_phone_digits(tel_contact)",
+         "tel_contact IS NOT NULL"),
         ("idx_notes_tickets_doc_trgm_v1", "notes_tickets", S.doc_sql("", S.NOTE_COLS),
          "type_note IN ('note', 'message_client', 'avis_client')"),
         ("idx_devis_doc_trgm_v1", "devis", S.doc_sql("", S.DEVIS_COLS), ""),

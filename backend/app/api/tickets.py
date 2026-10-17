@@ -20,13 +20,14 @@ from app.api.fidelite import crediter_ticket
 from app.services.montants import calculer_montants, format_euros, statut_paiement
 from app.models import (
     PRIORITES, TicketCreate, TicketUpdate, TicketOut, TicketFull,
-    StatusChange, KPIResponse,
+    StatusChange, KPIResponse, ContactRequest,
 )
 from app.services.notifications import (
     notif_nouveau_ticket, notif_changement_statut, notif_reparation_terminee,
     notif_accord_client,
 )
 from app.api.notifications_center import push_notification
+from app.services import contact
 from app.services import etagere
 from app.services import params as params_cache
 from app.services import search as search_engine
@@ -107,6 +108,19 @@ def _historiser(cur, ticket_id, ts, auteur, textes, type_event="statut") -> str:
 def _journal(historique, lignes: str) -> str:
     h = (historique or "").rstrip()
     return f"{h}\n{lignes}" if h else lignes
+
+
+def _texte_tel_contact(ancien, nouveau) -> Optional[str]:
+    """Ligne d'historique du second numéro (tickets.tel_contact), None s'il ne change pas.
+    Les SMS partent vers ce numéro : qui l'a posé, changé ou effacé doit se lire après coup,
+    comme pour la priorité."""
+    ancien = str(ancien or "").strip() or None
+    nouveau = str(nouveau or "").strip() or None
+    if ancien == nouveau:
+        return None
+    if not ancien:
+        return f"Numéro pour joindre : {nouveau} (ajouté)"
+    return f"Numéro pour joindre : {ancien} → {nouveau or 'effacé'}"
 
 
 def _maj_ticket(cur, ticket_id: int, sets: dict):
@@ -210,14 +224,15 @@ def _sync_pieces(cur, ticket_id, nouveau, now):
 
 
 def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
-    """Ticket + client + retours SAV + montants calculés (réponse de GET /{id})."""
-    cur.execute("""
+    """Ticket + client + retours SAV + montants calculés + contact (réponse de GET /{id})."""
+    cur.execute(f"""
         SELECT t.*,
                c.nom as client_nom, c.prenom as client_prenom,
                c.telephone as client_tel, c.email as client_email,
                c.societe as client_societe, c.carte_camby as client_carte_camby,
                (SELECT MAX(n.date_creation) FROM notes_tickets n
                  WHERE n.ticket_id = t.id AND n.type_note = 'caisse') AS caisse_envoyee_le
+               {contact.colonne_sql('t')}
         FROM tickets t
         JOIN clients c ON t.client_id = c.id
         WHERE t.id = %s
@@ -226,7 +241,7 @@ def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
     if not row:
         return None
 
-    result = dict(row)
+    result = contact.poser(row)
     result["ticket_original"] = None
     if result.get("est_retour_sav") and result.get("ticket_original_id"):
         cur.execute("""
@@ -314,10 +329,8 @@ def _lire_dashboard(today, colonne_reception, colonnes_etagere, where, order, pa
                    c.nom as client_nom, c.prenom as client_prenom,
                    c.telephone as client_tel, c.email as client_email,
                    c.societe as client_societe, c.carte_camby as client_carte_camby,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
-                   EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email,
                    {colonne_reception}
+                   {contact.colonne_sql('t')}
                    {colonnes_etagere}
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
@@ -325,7 +338,7 @@ def _lire_dashboard(today, colonne_reception, colonnes_etagere, where, order, pa
             ORDER BY {order}
             LIMIT %(limit)s OFFSET %(offset)s
         """, params_tickets)
-        tickets = cur.fetchall() or []
+        tickets = [contact.poser(r) for r in (cur.fetchall() or [])]
         # COUNT séparé et seulement si la page est pleine : un COUNT(*) OVER ()
         # empêcherait de lire les 200 premiers tickets par l'index date_depot.
         total = offset + len(tickets)
@@ -365,8 +378,9 @@ def get_dashboard(
 
     Toutes vues : chaque ticket porte aussi les colonnes de t.* dont emplacement et
     priorite (normal / express / attente = client sur place / pro, models.PRIORITES),
-    et reception_complete (fiche de réception d'entrée complète, table ticket_controles ;
-    FALSE pendant 5 min si la table manque).
+    reception_complete (fiche de réception d'entrée complète, table ticket_controles ;
+    FALSE pendant 5 min si la table manque) et contact (services/contact : derniers
+    SMS / e-mail / WhatsApp / appel depuis le dernier changement de statut).
     """
     today = datetime.now().strftime("%Y-%m-%d")
     for value in (date_from, date_to):
@@ -448,7 +462,8 @@ def get_repair_queue(
 ):
     """Tickets à réparer, triés : priorité (client sur place, express, pro, normal),
     heure promise (date_recuperation au format AAAA-MM-JJ…, la plus proche d'abord),
-    statut (en cours, pièce reçue, diagnostic, accord, pièce attendue), date de dépôt."""
+    statut (en cours, pièce reçue, diagnostic, accord, pièce attendue), date de dépôt.
+    Chaque ligne porte contact (services/contact)."""
     with get_cursor() as cur:
         conditions = [
             "t.statut IN ('En attente de diagnostic', 'En attente de pièce', "
@@ -466,8 +481,9 @@ def get_repair_queue(
         cur.execute(f"""
             SELECT t.id, t.ticket_code, t.statut, t.marque, t.modele, t.panne,
                    t.technicien_assigne, t.date_recuperation, t.date_depot,
-                   t.reparation_debut, t.reparation_duree, t.priorite,
-                   c.nom AS client_nom, c.prenom AS client_prenom
+                   t.reparation_debut, t.reparation_duree, t.priorite, t.tel_contact,
+                   c.nom AS client_nom, c.prenom AS client_prenom, c.telephone AS client_tel
+                   {contact.colonne_sql('t')}
             FROM tickets t
             JOIN clients c ON t.client_id = c.id
             {where}
@@ -489,8 +505,8 @@ def get_repair_queue(
 
     # Serialize datetimes
     result = []
-    for r in rows:
-        d = dict(r)
+    for r in rows or []:
+        d = contact.poser(r)
         for key in ("date_recuperation", "date_depot", "reparation_debut"):
             if d.get(key) and hasattr(d[key], "isoformat"):
                 d[key] = d[key].isoformat()
@@ -510,7 +526,8 @@ def list_tickets(
     offset: int = Query(0, ge=0),
     user: dict = Depends(get_current_user),
 ):
-    """Liste les tickets avec filtres optionnels (téléphone normalisé, recherche multi-mots)."""
+    """Liste les tickets avec filtres optionnels (téléphone normalisé, recherche multi-mots).
+    Chaque ticket porte contact (services/contact)."""
     conditions = []
     sp = search_engine.SqlParams()
     order = "t.date_depot DESC, t.id DESC"
@@ -552,10 +569,8 @@ def list_tickets(
         SELECT t.*,
                c.nom as client_nom, c.prenom as client_prenom,
                c.telephone as client_tel, c.email as client_email,
-               c.societe as client_societe, c.carte_camby as client_carte_camby,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'whatsapp') as msg_whatsapp,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'sms') as msg_sms,
-               EXISTS(SELECT 1 FROM notes_tickets WHERE ticket_id = t.id AND type_note = 'email') as msg_email
+               c.societe as client_societe, c.carte_camby as client_carte_camby
+               {contact.colonne_sql('t')}
         FROM tickets t
         JOIN clients c ON t.client_id = c.id
         {where}
@@ -565,7 +580,7 @@ def list_tickets(
 
     with get_cursor() as cur:
         cur.execute(query, params)
-        return cur.fetchall()
+        return [contact.poser(r) for r in (cur.fetchall() or [])]
 
 
 # ─── TICKET UNIQUE ─────────────────────────────────────────────
@@ -676,15 +691,16 @@ def create_ticket(
             INSERT INTO tickets
             (client_id, categorie, marque, modele, modele_autre, imei,
              panne, panne_detail, pin, pattern, notes_client,
-             commande_piece, statut, est_retour_sav, ticket_original_id, source, priorite)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             commande_piece, statut, est_retour_sav, ticket_original_id, source,
+             tel_contact, priorite)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             data.client_id, data.categorie, data.marque, data.modele,
             data.modele_autre, data.imei, data.panne, data.panne_detail,
             data.pin, data.pattern, data.notes_client, data.commande_piece,
             statut_initial, data.est_retour_sav or False, data.ticket_original_id,
-            data.source or "boutique", priorite,
+            data.source or "boutique", data.tel_contact, priorite,
         ))
         row = cur.fetchone()
         tid = row["id"]
@@ -777,6 +793,12 @@ def update_ticket(
                          f" → {PRIORITES[updates['priorite']]}")
                 lignes = _historiser(cur, ticket_id, ts, _auteur(user), [texte])
                 updates["historique"] = _journal(updates.get("historique", avant.get("historique")), lignes)
+
+            if "tel_contact" in updates:
+                texte = _texte_tel_contact(avant.get("tel_contact"), updates["tel_contact"])
+                if texte:
+                    lignes = _historiser(cur, ticket_id, ts, _auteur(user), [texte])
+                    updates["historique"] = _journal(updates.get("historique", avant.get("historique")), lignes)
 
             updates["date_maj"] = now
             _maj_ticket(cur, ticket_id, updates)
@@ -1245,6 +1267,32 @@ def mark_ticket_read(ticket_id: int, user: dict = Depends(get_current_user)):
     from app.api.suivi import invalider_interactions
     invalider_interactions()
     return {"ok": True}
+
+
+# ─── CLIENT CONTACTÉ PAR TÉLÉPHONE ───────────────────────────────
+@router.post("/{ticket_id}/contact", response_model=dict)
+def noter_contact(ticket_id: int, data: ContactRequest, user: dict = Depends(get_current_user)):
+    """Note un appel téléphonique au client et renvoie l'objet contact à jour.
+
+    Seul le canal « appel » se note à la main : SMS, e-mail et WhatsApp sont tracés
+    automatiquement à l'envoi (422 sinon). Note 'appel' « Appel téléphonique — client
+    contacté[ : note] », signée du membre connecté ; `contact` = services/contact
+    (depuis_statut, dernier, canaux), comme sur chaque ligne de ticket.
+    """
+    if data.canal != "appel":
+        raise HTTPException(422, detail={
+            "code": "canal_invalide",
+            "message": "Seul l'appel téléphonique se note ici : SMS, e-mail et WhatsApp sont tracés à l'envoi.",
+        })
+    note = " ".join((data.note or "").split())
+    contenu = contact.CONTENU_APPEL + (f" : {note}" if note else "")
+    with get_cursor() as cur:
+        cur.execute("SELECT id FROM tickets WHERE id = %s", (ticket_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Ticket non trouvé")
+        note_id = contact.inserer_appel(cur, ticket_id, _auteur(user), contenu)
+        etat = contact.lire_ticket(cur, ticket_id)
+    return {"contact": etat, "note_id": note_id}
 
 
 # ─── LOG MESSAGE ENVOYÉ ──────────────────────────────────────────

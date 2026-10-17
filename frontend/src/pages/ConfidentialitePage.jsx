@@ -50,7 +50,7 @@ function lireConfigPublique() {
 }
 export function _oublierConfigPublique() { configPublique = null; }
 
-function useInfosRgpd() {
+export function useInfosRgpd() {
   const [infos, setInfos] = useState(() => infosRgpd());
   useEffect(() => {
     let actif = true;

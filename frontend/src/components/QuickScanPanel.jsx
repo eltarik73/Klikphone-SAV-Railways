@@ -14,11 +14,18 @@ import { formatDateShort, formatPrix, getStatusConfig, waLink } from '../lib/uti
 import { SCAN_EVENT } from '../lib/scan';
 import { messageSmsEnvoye } from '../lib/sms';
 import {
-  canalPrevenir, numeroSms, raisonSansCanal, messagePret, ligneJournal, emailValide, erreurEnvoi, SMS_IMPOSSIBLE,
+  canalPrevenir, raisonSansCanal, messagePret, ligneJournal, emailValide, erreurEnvoi, SMS_IMPOSSIBLE,
+  MENTION_MONTANT_RETIRE,
 } from '../lib/messages';
+// Second numéro du ticket (« pour vous joindre si différent ») avant celui de la fiche
+import { telJoignable, libelleJoignable, avecTelJoignable, estAutreNumero } from '../lib/contact';
+// Prestation sans prix automatique (reprise) : « à chiffrer par la boutique » plutôt que 0.00 €
+import { aChiffrer, cataloguePrestations, chargerPrestations, clePanne, MENTION_A_CHIFFRER } from '../lib/prestations';
 import StatusBadge from './StatusBadge';
 import { PrioriteBadge } from './PrioriteBadge';
 import PrevenirClient, { chargerContexteMessage } from './PrevenirClient';
+// « Client contacté » (tickets.contact, calculé par le serveur) : icônes des canaux et « Contacté par tél. »
+import ContactClient from './ContactClient';
 import EmplacementInput from './EmplacementInput';
 import { listeEmplacements, normaliserEmplacement } from '../lib/etagere';
 import { isScanSoundOn, setScanSoundOn, playScanSound, takePendingScan } from './ScanListener';
@@ -29,8 +36,12 @@ const MessageComposer = lazy(() => import('./MessageComposer'));
 
 const TERMINE = 'Réparation terminée';
 const EN_COURS = 'En cours de réparation';
+const ACCORD = "En attente d'accord client";
 const RENDUS = ['Rendu au client', 'Clôturé'];
-const DEMARRABLES = ['En attente de diagnostic', 'Pièce reçue', 'En attente de pièce', "En attente d'accord client"];
+const DEMARRABLES = ['En attente de diagnostic', 'Pièce reçue', 'En attente de pièce', ACCORD];
+// Statuts d'où le scan passe directement en « Réparation terminée » (réparation express, sans « Démarrer »),
+// accueil comme technicien. Jamais depuis l'accord client : le serveur le lirait comme un devis refusé.
+const TERMINABLES_DIRECT = ['Pré-enregistré', 'En attente de diagnostic', 'En attente de pièce', 'Pièce reçue'];
 const UNDO_MS = 5000;
 export const MODES_PAIEMENT = ['CB', 'Espèces', 'Chèque', 'Virement', 'Autre'];
 export const TICKET_UPDATED_EVENT = 'kp:ticket-updated';
@@ -75,8 +86,10 @@ export function montantsTicket(t, tvaRate = 0) {
   const srv = t?.montants;
   if (srv && typeof srv === 'object' && Number.isFinite(Number(srv.reste))) {
     const paye = srv.paye === true || Number(t?.paye) === 1;
+    // La clé de prestation du serveur (« reprise »…) est gardée quand il la donne : elle dit si la ligne est à chiffrer
     const lignes = Array.isArray(srv.lignes)
-      ? srv.lignes.filter((l) => String(l?.label ?? '').trim()).map((l) => ({ label: String(l.label).trim(), prix: num(l.prix) }))
+      ? srv.lignes.filter((l) => String(l?.label ?? '').trim())
+        .map((l) => ({ label: String(l.label).trim(), prix: num(l.prix), ...(l.cle ? { cle: String(l.cle) } : {}) }))
       : lignesTicket(t);
     const somme = lignes.reduce((acc, l) => acc + l.prix, 0);
     return {
@@ -104,6 +117,18 @@ export function montantsTicket(t, tvaRate = 0) {
   const paye = Number(t?.paye) === 1 || t?.paye === true;
   const reste = paye ? 0 : Math.max(0, round2(total - acompte));
   return { lignes, total, acompte, reste, paye, estime, refusServeur: false, serveur: false };
+}
+
+/**
+ * Ligne sans prix automatique (reprise) encore à 0 : le scan affiche la mention « à chiffrer par la
+ * boutique » à la place de 0.00 €. Clé du serveur, sinon celle du libellé si le catalogue est chargé.
+ */
+export function ligneAChiffrer(l, cat = cataloguePrestations()) {
+  return num(l?.prix) <= 0 && aChiffrer(l?.cle ?? clePanne(l?.label, cat), cat);
+}
+
+export function mentionAChiffrer(cat = cataloguePrestations()) {
+  return cat?.mentionAChiffrer || MENTION_A_CHIFFRER;
 }
 
 /** date_rendu / date_cloture sont du TEXTE (« 2026-10-15 14:32:00 ») : reformatées sans conversion. */
@@ -157,7 +182,7 @@ export function modeleTicket(t) {
  * Sans portable ni e-mail, un simple « Réparation terminée » (la carte dira pourquoi).
  */
 function actionTerminer(t, extra = {}) {
-  const joignable = !!canalPrevenir(t);
+  const joignable = !!canalPrevenir(avecTelJoignable(t));
   return {
     id: 'terminer',
     statut: TERMINE,
@@ -168,30 +193,47 @@ function actionTerminer(t, extra = {}) {
   };
 }
 
-/** Actions proposées selon le rôle et le statut (la première « primary » est mise en avant). */
+/** « Terminé sans prévenir », à côté de « Terminé + prévenir » quand le client est joignable. */
+function actionTerminerSeul(extra = {}) {
+  return { id: 'terminer_seul', statut: TERMINE, label: 'Terminé sans prévenir', sansPrevenir: true, ...extra };
+}
+
+/**
+ * Actions proposées selon le rôle et le statut (la première « primary » est mise en avant).
+ * Une entrée `note: true` n'est pas un bouton : une ligne d'explication (accord client attendu).
+ */
 export function actionsTicket(t, role, notes = []) {
   const statut = t?.statut || '';
   const out = [];
+  const joignable = !!canalPrevenir(avecTelJoignable(t));
   if (statut === EN_COURS) {
     // Accueil comme technicien : celui qui scanne l'appareil réparé prévient le client
     out.push(actionTerminer(t, { primary: true }));
-    if (canalPrevenir(t)) out.push({ id: 'terminer_seul', statut: TERMINE, label: 'Terminé sans prévenir', sansPrevenir: true });
-  } else if (role === 'tech' && DEMARRABLES.includes(statut)) {
-    let warn = null;
-    if (statut === 'En attente de pièce') {
-      warn = { text: 'La pièce n’est pas encore marquée reçue. Démarrer la réparation quand même ?', ok: 'Oui, démarrer' };
-    } else if (statut === "En attente d'accord client") {
-      // Le serveur enregistre alors le devis comme accepté au comptoir
-      warn = { text: 'Le client a-t-il accepté le devis ? Démarrer l’enregistre comme validé au comptoir.', ok: 'Oui, devis accepté' };
+    if (joignable) out.push(actionTerminerSeul());
+  } else {
+    if (role === 'tech' && DEMARRABLES.includes(statut)) {
+      let warn = null;
+      if (statut === 'En attente de pièce') {
+        warn = { text: 'La pièce n’est pas encore marquée reçue. Démarrer la réparation quand même ?', ok: 'Oui, démarrer' };
+      } else if (statut === ACCORD) {
+        // Le serveur enregistre alors le devis comme accepté au comptoir
+        warn = { text: 'Le client a-t-il accepté le devis ? Démarrer l’enregistre comme validé au comptoir.', ok: 'Oui, devis accepté' };
+      }
+      out.push({ id: 'demarrer', statut: EN_COURS, label: 'Démarrer la réparation', primary: true, warn });
     }
-    out.push({ id: 'demarrer', statut: EN_COURS, label: 'Démarrer la réparation', primary: true, warn });
-    // Réparation express faite sans « Démarrer » : terminer directement (jamais depuis l'accord client,
-    // que le serveur lirait comme un devis refusé)
-    if (statut !== "En attente d'accord client") {
-      const warnFin = statut === 'En attente de pièce'
-        ? { text: 'La pièce n’est pas encore marquée reçue. Terminer la réparation quand même ?', ok: 'Oui, terminer' }
-        : null;
-      out.push(actionTerminer(t, { warn: warnFin }));
+    if (TERMINABLES_DIRECT.includes(statut)) {
+      // Réparation express faite sans « Démarrer » : confirmation légère, puis les 5 s d'annulation
+      const warn = {
+        text: statut === 'En attente de pièce'
+          ? 'La pièce n’est pas encore marquée reçue. Passer directement en « Réparation terminée » ?'
+          : 'Passer directement en « Réparation terminée » ?',
+        ok: 'Oui, terminer',
+      };
+      out.push(actionTerminer(t, { warn }));
+      if (joignable) out.push(actionTerminerSeul({ warn }));
+    } else if (statut === ACCORD) {
+      // « Terminé » depuis l'accord client = devis refusé pour le serveur : la fiche enregistre l'accord
+      out.push({ id: 'accord_fiche', label: 'Attente d’accord : passez par la fiche', note: true });
     }
   }
   if (!estRendu(t) && statut !== 'Pré-enregistré') {
@@ -228,20 +270,23 @@ export function actionsTicket(t, role, notes = []) {
 /**
  * Sous-titre de « Terminé + prévenir le client » : par où le client sera prévenu, ou pourquoi
  * il ne le sera pas (avant le clic, pas une fois le ticket terminé). templates : modèles de la
- * boutique (le blocage « tarif à 0 € » ne vaut que si le modèle « prêt » cite {montant}).
+ * boutique — si le modèle « prêt » cite {montant} et que le montant est à 0 € (tarif oublié ?),
+ * le message part sans la phrase du montant : la mention le dit avant le clic.
  */
 export function indicationPrevenir(t, smsServeur = false, templates = null) {
-  const canal = canalPrevenir(t);
-  if (!canal) return `Client non joignable : ${raisonSansCanal(t)}`;
-  if (messagePret(templates, t).sansTarif) return 'Tarif à 0 € : message non envoyé, renseignez le tarif';
-  if (canal === 'sms') return `SMS au ${numeroSms(t.client_tel).affichage}${smsServeur ? '' : ' · à valider dans Messages'}`;
-  return `E-mail à ${String(t.client_email).trim()}`;
+  const tj = avecTelJoignable(t);
+  const canal = canalPrevenir(tj);
+  if (!canal) return `Client non joignable : ${raisonSansCanal(tj)}`;
+  const par = canal === 'sms'
+    ? `SMS au ${libelleJoignable(t)}${smsServeur ? '' : ' · à valider dans Messages'}`
+    : `E-mail à ${String(t.client_email).trim()}`;
+  return messagePret(templates, t).montantRetire ? `${par} · ${MENTION_MONTANT_RETIRE}` : par;
 }
 
 /** Libellé de la barre « annulable » pendant les quelques secondes avant l'enregistrement. */
 export function libelleDiffere(t, action) {
   if (!action?.prevenir) return `Passage en « ${action?.statut} »`;
-  const canal = canalPrevenir(t);
+  const canal = canalPrevenir(avecTelJoignable(t));
   if (canal === 'sms' && action.manuel) return `« ${action.statut} » puis SMS à envoyer depuis Messages`;
   const suite = canal === 'sms' ? '+ SMS au client' : canal === 'email' ? '+ e-mail au client' : '(client non prévenu)';
   return `« ${action.statut} » ${suite}`;
@@ -470,6 +515,16 @@ function QuickScanHost({ user }) {
       });
   }, []);
 
+  // Catalogue des prestations (ligne de reprise « à chiffrer par la boutique ») : lu au scan d'un
+  // ticket, cache 10 min de lib/prestations ; sans lui, seule la clé donnée par le serveur compte
+  const [catalogue, setCatalogue] = useState(() => cataloguePrestations());
+  const chargerCatalogue = useCallback(() => {
+    Promise.resolve()
+      .then(() => chargerPrestations())
+      .then((c) => { if (c) setCatalogue(c); })
+      .catch(() => {});
+  }, []);
+
   // Emplacement enregistré depuis le panneau (PUT /api/etagere/{id}/emplacement déjà fait)
   const majEmplacement = useCallback((id, valeur) => {
     setView((v) => (v && v.id === id ? { ...v, emplacementSaisi: valeur } : v));
@@ -541,20 +596,17 @@ function QuickScanHost({ user }) {
     };
 
     try {
-      const canal = canalPrevenir(t);
+      const canal = canalPrevenir(avecTelJoignable(t));
       if (!canal) {
-        const raison = raisonSansCanal(t);
+        const raison = raisonSansCanal(avecTelJoignable(t));
         signaler('warning', `${code} : Terminé — client non prévenu : ${raison}`,
           { etat: 'impossible', message: `Client non prévenu : ${raison}.` });
         return;
       }
       const ctx = await chargerContexteMessage();
       const msg = messagePret(ctx.templates, t, { lienAvis: ctx.lienAvis });
-      if (msg.sansTarif) {
-        signaler('warning', `${code} : Terminé — message non envoyé : renseignez d’abord le tarif`,
-          { etat: 'sans_tarif', message: 'Message non envoyé : montant à 0 €, renseignez le tarif sur la fiche.' });
-        return;
-      }
+      // Montant à 0 € : le message part sans la phrase du montant, la notification le rappelle
+      const mention = msg.montantRetire ? ` · ${MENTION_MONTANT_RETIRE}` : '';
       const email = String(t.client_email ?? '').trim();
       const aEmail = emailValide(email);
 
@@ -596,7 +648,7 @@ function QuickScanHost({ user }) {
         } catch {
           toast.warning(`${code} : e-mail envoyé mais non noté sur le ticket.`);
         }
-        signaler('success', avant ? `${code} : Terminé · ${avant} → e-mail envoyé à ${email}` : `${code} : Terminé · e-mail envoyé`,
+        signaler('success', (avant ? `${code} : Terminé · ${avant} → e-mail envoyé à ${email}` : `${code} : Terminé · e-mail envoyé`) + mention,
           { etat: 'envoye', canal: 'email', message: avant ? `${avant} : e-mail envoyé à ${email}` : `E-mail envoyé à ${email}` });
       };
 
@@ -612,12 +664,12 @@ function QuickScanHost({ user }) {
         manuel();
         return;
       }
-      const dest = numeroSms(t.client_tel).affichage;
+      const dest = libelleJoignable(t);
       if (ouvert()) afficher({ etat: 'envoi', canal: 'sms', message: `Envoi du SMS au ${dest}…` }, { focus: false });
       try {
         const r = await api.envoyerSms(t.id, msg.sms, msg.libelle);
         const envoye = messageSmsEnvoye(r);
-        signaler('success', `${code} : Terminé · ${envoye}`, { etat: 'envoye', canal: 'sms', message: envoye });
+        signaler('success', `${code} : Terminé · ${envoye}${mention}`, { etat: 'envoye', canal: 'sms', message: envoye });
       } catch (err) {
         if (err?.code === 'sms_non_configure') {
           Promise.resolve().then(() => api.getSmsEtat({ fresh: true })).catch(() => {});
@@ -671,7 +723,7 @@ function QuickScanHost({ user }) {
       if (viewRef.current?.id === id) {
         // Carte verrouillée (« Préparation du message… ») avant même la relecture de la fiche :
         // ses boutons ne peuvent pas lancer un second envoi pendant celui-ci
-        afficherAuto(id, { etat: 'envoi', canal: canalPrevenir(d.ticket), message: 'Préparation du message…' });
+        afficherAuto(id, { etat: 'envoi', canal: canalPrevenir(avecTelJoignable(d.ticket)), message: 'Préparation du message…' });
         // Fiche relue (« Réparation terminée ») avant de rendre la main : pas de second « Terminé + prévenir »,
         // et la remise reste possible pendant l'envoi du message
         await reload(id);
@@ -779,6 +831,7 @@ function QuickScanHost({ user }) {
       const data = await fetchTicket(id);
       if (seq !== seqRef.current) return;
       if (!data.ticket?.montants) loadTva();
+      chargerCatalogue();
       wizardRef.current = false;
       if (!silent) playScanSound('ok');
       setView({
@@ -793,7 +846,7 @@ function QuickScanHost({ user }) {
     } finally {
       if (seq === seqRef.current) setLookup(null);
     }
-  }, [fetchTicket, toast, loadTva]);
+  }, [fetchTicket, toast, loadTva, chargerCatalogue]);
 
   const showTicketRef = useRef(showTicket);
   showTicketRef.current = showTicket;
@@ -939,6 +992,15 @@ function QuickScanHost({ user }) {
     }
   }, [toast, reload, user.utilisateur]);
 
+  // « Contacté par tél. » noté (POST /api/tickets/{id}/contact fait par ContactClient) : contact du
+  // serveur repris tout de suite, dashboard et fiche prévenus, notes relues (la note « appel » s'y ajoute)
+  const clientContacte = useCallback((id, contact) => {
+    if (contact) setView((v) => (v && v.id === id && v.ticket ? { ...v, ticket: { ...v.ticket, contact } } : v));
+    invalidateCache('tickets', 'dashboard');
+    notifyTicketUpdated(id);
+    reload(id);
+  }, [reload]);
+
   const goTicket = useCallback((id) => {
     closeView();
     navigate(`${basePath}/ticket/${id}`);
@@ -954,7 +1016,7 @@ function QuickScanHost({ user }) {
     setPrinting({
       id: t.id,
       code: t.ticket_code,
-      tel: t.client_tel || '',
+      tel: telJoignable(t),
       email: t.client_email || '',
       docId: estRendu(t) ? 'recu' : 'client',
     });
@@ -969,6 +1031,7 @@ function QuickScanHost({ user }) {
           view={view}
           role={role}
           tva={tva}
+          catalogue={catalogue}
           userName={user.utilisateur}
           deferred={deferred && deferred.id === view.id ? deferred : null}
           onClose={closeView}
@@ -982,6 +1045,7 @@ function QuickScanHost({ user }) {
           onRestitution={submitRestitution}
           onEncaisser={encaisserSolde}
           onPretRecupere={pretRecupere}
+          onContacte={clientContacte}
           onShowTicket={(id, label) => showTicket(id, { label })}
           emplacements={emplacements}
           onBesoinEmplacements={chargerEmplacements}
@@ -1047,8 +1111,8 @@ const ALERT_STYLES = {
 function ScanDialog({
   view, role, tva, userName, deferred, onClose, onReload, onOpenTicket, onOpenClient, onPrint,
   onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onPretRecupere, onShowTicket,
-  onDismissMismatch, onDismissProposition, onWizardChange,
-  emplacements = null, onBesoinEmplacements = () => {}, onEmplacement = () => {},
+  onDismissMismatch, onDismissProposition, onWizardChange, onContacte = () => {},
+  emplacements = null, onBesoinEmplacements = () => {}, onEmplacement = () => {}, catalogue = null,
 }) {
   const toast = useToast();
   const { actif: smsServeur } = useSmsServeur();
@@ -1408,8 +1472,10 @@ function ScanDialog({
     }
   };
 
-  const primary = actions.filter((a) => a.primary);
-  const secondary = actions.filter((a) => !a.primary);
+  const primary = actions.filter((a) => a.primary && !a.note);
+  const secondary = actions.filter((a) => !a.primary && !a.note);
+  // Lignes d'explication (pas des boutons) : « Attente d'accord : passez par la fiche »
+  const notesActions = actions.filter((a) => a.note);
   // « Rangé en B3 » lu avec le résumé à l'ouverture du panneau
   const descriptionPanneau = blocRangement && !editionRangement ? `${descId} ${rangementDescId}` : descId;
 
@@ -1634,18 +1700,26 @@ function ScanDialog({
                 {[t.client_prenom, String(t.client_nom ?? '').toUpperCase()].filter(Boolean).join(' ') || '—'}
               </p>
               {t.client_societe && <p className="text-sm text-slate-600">{t.client_societe}</p>}
-              {t.client_tel && (
+              {telJoignable(t) && (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <a href={`tel:${String(t.client_tel).replace(/[^\d+]/g, '')}`} className="btn-secondary text-base tabular-nums">
-                    <Phone aria-hidden="true" /> {formatTel(t.client_tel)}
+                  <a href={`tel:${telJoignable(t).replace(/[^\d+]/g, '')}`} className="btn-secondary text-base tabular-nums">
+                    <Phone aria-hidden="true" /> {libelleJoignable(t)}
                   </a>
-                  <a href={waLink(String(t.client_tel), '')} target="_blank" rel="noopener noreferrer"
-                    aria-label={`WhatsApp ${formatTel(t.client_tel)}`}
+                  <a href={waLink(telJoignable(t), '')} target="_blank" rel="noopener noreferrer"
+                    aria-label={`WhatsApp ${libelleJoignable(t)}`}
                     className="btn-secondary btn-icon">
                     <MessageCircle className="text-emerald-700" aria-hidden="true" />
                   </a>
                 </div>
               )}
+              {estAutreNumero(t) && t.client_tel && (
+                <p className="mt-1.5 text-sm text-slate-600 tabular-nums">Appareil déposé : {formatTel(t.client_tel)}</p>
+              )}
+              {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard et l'étagère) ;
+                  ContactClient fait lui-même 44 px au doigt */}
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <ContactClient ticket={t} taille="carte" auteur={userName} onContacte={(contact) => onContacte(view.id, contact)} />
+              </div>
             </section>
 
             <section aria-label="Appareil" className="card p-4">
@@ -1668,7 +1742,12 @@ function ScanDialog({
                         {m.lignes.map((l, i) => (
                           <li key={i} className="flex justify-between gap-3 text-slate-900">
                             <span className="min-w-0 break-words">{l.label}</span>
-                            <span className="shrink-0 tabular-nums">{formatPrix(l.prix)}</span>
+                            {ligneAChiffrer(l, catalogue) ? (
+                              // Reprise : pas de prix tant que la boutique ne l'a pas chiffré dans la fiche
+                              <span className="t-caption shrink-0 text-right">{mentionAChiffrer(catalogue)}</span>
+                            ) : (
+                              <span className="shrink-0 tabular-nums">{formatPrix(l.prix)}</span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -1767,11 +1846,13 @@ function ScanDialog({
           ) : primary.length + secondary.length > 2 ? (
             // Action principale sur toute la largeur, les autres en dessous
             <div className="space-y-2">
-              <div className="grid gap-2 sm:grid-flow-col sm:auto-cols-fr">
-                {primary.map((a) => (
-                  <ActionButton key={a.id} action={a} onClick={() => startAction(a)} primary />
-                ))}
-              </div>
+              {primary.length > 0 && (
+                <div className="grid gap-2 sm:grid-flow-col sm:auto-cols-fr">
+                  {primary.map((a) => (
+                    <ActionButton key={a.id} action={a} onClick={() => startAction(a)} primary />
+                  ))}
+                </div>
+              )}
               <div className={`grid gap-2 ${secondary.length === 2 ? 'grid-cols-2' : 'sm:grid-flow-col sm:auto-cols-fr'}`}>
                 {secondary.map((a) => (
                   <ActionButton key={a.id} action={a} onClick={() => startAction(a)} />
@@ -1790,6 +1871,12 @@ function ScanDialog({
               </div>
             )
           )}
+
+          {!wizard && !confirm && !deferred && !view.envoiStatut && notesActions.map((a) => (
+            <p key={a.id} className="flex items-center gap-1.5 text-sm font-medium text-slate-600">
+              <Info className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" /> {a.label}
+            </p>
+          ))}
 
           {!wizard && (
             <div className="grid grid-cols-3 gap-2">

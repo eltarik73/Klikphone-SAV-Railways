@@ -7,22 +7,37 @@ Moteur de prix (services/prix, services/import_prix) : règles de marge réglabl
 ajustement global et import de fichier fournisseur, toujours avec aperçu ; date, source et
 historique de chaque prix ; annulation d'un lot. Toute écriture de prix exige le rôle admin
 ET le code admin prouvé sur le poste (auth.exiger_role_admin), contrôlés par le serveur.
+
+Réparation smartphones (/reparation-smartphones/…) : marques et modèles (catalogue ∪ pièces
+fournisseur, iPhone exclus — leur grille boutique est tarifs_reparation —, iPad / Mac inclus),
+pièces d'un modèle avec le détail du calcul (prix.calcul_detail), pièces courantes à 0 € HT
+« prix à renseigner » (grille des pièces, ou fiche tarifs_apple_devices pour un iPad / MacBook :
+règle de marge iPad / MacBook), alerte sur les pièces iPad / Mac rangées dans la grille des
+pièces (marge écran standard), encadré « Méthode de calcul » écrit selon le rôle
+(/methode-calcul : montants des marges pour l'admin seulement), liens profonds Utopya / Mobilax
+(prix.sante compte à part les prix à renseigner : `a_renseigner`). Fournisseurs : AUCUNE requête
+automatique vers mobilax.fr (robots.txt : agents automatiques interdits, portail B2B) ni
+utopya.fr (challenge Cloudflare, prix non publics) ; seulement des liens que le gérant ouvre dans
+son navigateur, puis saisie manuelle (source 'utopya' / 'mobilax' / 'manuel') ou import de fichier.
 """
 
 import re
 import time
 import logging
 from typing import Optional, List, Dict, Any
+from urllib.parse import quote_plus, urlsplit
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, Request, UploadFile
 from psycopg2.extras import execute_values
 from pydantic import BaseModel, Field
 
 from app.database import get_cursor
+from app.api import grille
 from app.api.auth import exiger_role_admin, get_current_user
 from app.services import import_prix
 from app.services import params as params_cache
 from app.services import prix
+from app.services.prestations import normaliser
 
 router = APIRouter(prefix="/api/tarifs", tags=["tarifs"])
 
@@ -56,13 +71,33 @@ def _invalider_vente():
         pass
 
 
+def _a_renseigner(row: dict) -> bool:
+    """Ligne sans prix client positif : pièce courante pré-créée à 0 € HT (« prix à renseigner »).
+    tarifs → prix_client ; tarifs_apple_devices → ecran_prix_vente (convention de prix.sante).
+    Sans l'une de ces colonnes dans la ligne : False."""
+    if "prix_client" in row:
+        p = row.get("prix_client")
+    elif "ecran_prix_vente" in row:
+        p = row.get("ecran_prix_vente")
+    else:
+        return False
+    try:
+        return p is None or float(p) <= 0
+    except (TypeError, ValueError):
+        return True
+
+
 def _fraicheur(row: dict, r: dict) -> dict:
     """Âge du prix (age_jours calculé par la base), niveau de fraîcheur, prix estimé.
 
     Niveau sur l'âge exact (age_secondes, cf. _FRAICHEUR_SQL), le même critère que
     services/prix.sante (prix_maj_le < NOW() - N jours) et api/grille.fraicheur : un prix daté
     d'il y a 90 j 12 h est « à revoir » partout (age_jours 90), jamais « ok » ici et compté
-    « à revoir » dans la santé. Sans age_secondes : repli sur age_jours entier."""
+    « à revoir » dans la santé. Sans age_secondes : repli sur age_jours entier.
+
+    Ligne « prix à renseigner » (a_renseigner, prix client ≤ 0) : fraicheur None — ni fraîche
+    ni périmée, comme dans prix.sante (compteur a_renseigner) et dans l'écran Réparation
+    smartphones."""
     secondes = row.pop("age_secondes", None)
     if secondes is None and row.get("age_jours") is not None:
         secondes = row["age_jours"] * 86400
@@ -74,7 +109,8 @@ def _fraicheur(row: dict, r: dict) -> dict:
         niveau = "a_revoir"
     else:
         niveau = "ok"
-    row["fraicheur"] = niveau
+    row["a_renseigner"] = _a_renseigner(row)
+    row["fraicheur"] = None if row["a_renseigner"] else niveau
     row["estime"] = row.get("prix_source") == prix.SOURCE_ESTIMATION
     return row
 
@@ -372,7 +408,8 @@ def list_tarifs(
 
     query = f"""SELECT id, marque, modele, type_piece, qualite, nom_fournisseur,
         prix_fournisseur_ht, prix_client, categorie, source, en_stock, updated_at,
-        prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur, obsolete, {_FRAICHEUR_SQL}
+        prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur, url_fournisseur, obsolete,
+        {_FRAICHEUR_SQL}
         FROM tarifs {where} ORDER BY marque, modele, type_piece, qualite"""
 
     with get_cursor() as cur:
@@ -699,6 +736,17 @@ def _charge(body: ChargePrix) -> dict:
     return {k: v for k, v in body.model_dump().items() if k != "confirmer" and v is not None}
 
 
+@router.get("/methode-calcul")
+def get_methode_calcul(request: Request, user: dict = Depends(get_current_user)):
+    """Encadré « Méthode de calcul » (tout le personnel) : {admin, texte, regles, exemple}.
+    Les montants des marges, `regles` et `exemple` ne sont servis qu'au rôle admin prouvé
+    (ils permettraient de retrouver le coût HT masqué) ; le personnel reçoit la phrase
+    générique — jamais des valeurs par défaut (voir prix.methode_calcul)."""
+    with get_cursor() as cur:
+        r = prix.regles(cur)
+    return prix.methode_calcul(r, _est_admin(request, user))
+
+
 @router.get("/regles")
 def get_regles(user: dict = Depends(_admin)):
     """Règles de prix en vigueur (TARIFS_REGLES complétées par les valeurs par défaut)."""
@@ -969,20 +1017,60 @@ def ajouter_ligne(body: LigneManuelle, user: dict = Depends(_admin)):
     return row
 
 
+# Saisie d'un prix relevé chez un fournisseur : nom affiché (colonne fournisseur) et hôtes admis
+# pour l'URL de la page (jamais ouverte par le serveur)
+FOURNISSEURS_SAISIE = {"utopya": ("Utopya", ("utopya.fr",)), "mobilax": ("Mobilax", ("mobilax.fr",))}
+_SOURCE_SAISIE_PATTERN = "^(" + "|".join(prix.SOURCES_SAISIE) + ")$"
+
+
+def _valider_url_fournisseur(url: Optional[str], source: str) -> Optional[str]:
+    """URL http(s) propre (400 sinon) ; pour 'utopya' / 'mobilax', sur le site de ce fournisseur."""
+    u = " ".join(str(url or "").split())
+    if not u:
+        return None
+    if len(u) > 500 or " " in u or any(ord(c) < 32 for c in u):
+        raise HTTPException(400, "URL fournisseur illisible")
+    try:
+        parts = urlsplit(u)
+    except ValueError:
+        raise HTTPException(400, "URL fournisseur illisible")
+    hote = (parts.hostname or "").lower()
+    if parts.scheme not in ("http", "https") or not hote:
+        raise HTTPException(400, "URL fournisseur attendue (https://…)")
+    attendu = FOURNISSEURS_SAISIE.get(source)
+    if attendu and not any(hote == h or hote.endswith("." + h) for h in attendu[1]):
+        raise HTTPException(400, f"L'URL ne correspond pas au fournisseur choisi ({attendu[0]})")
+    return u
+
+
+def _ref_fournisseur(ref: Optional[str]) -> Optional[str]:
+    r = " ".join(str(ref or "").split())
+    return r or None
+
+
 class PrixManuel(BaseModel):
     prix_fournisseur_ht: Optional[float] = Field(None, gt=0, le=5000)
     prix_client: Optional[int] = Field(None, gt=0, le=100000)
+    # Où le prix a été relevé : 'manuel' (défaut), 'utopya' ou 'mobilax' (saisi par l'admin)
+    source: str = Field("manuel", pattern=_SOURCE_SAISIE_PATTERN)
+    ref_fournisseur: Optional[str] = Field(None, max_length=120)
+    url_fournisseur: Optional[str] = Field(None, max_length=500)
 
 
 @router.patch("/{tarif_id}/prix")
 def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin)):
-    """Modifie le prix d'une pièce à la main (source 'manuel', historique).
+    """Modifie le prix d'une pièce à la main (source 'manuel', 'utopya' ou 'mobilax' ; historique).
 
     HT seul : prix client recalculé par les règles (sauf pièce verrouillée, dont le prix
-    client ne change pas). Prix client saisi : la pièce est verrouillée.
+    client ne change pas). Prix client saisi : la pièce est verrouillée. Référence et URL de
+    la page fournisseur facultatives (jamais ouverte par le serveur) ; source 'utopya' /
+    'mobilax' : la colonne fournisseur prend ce nom. Réponse : la ligne, avec `calcul`.
     """
     if body.prix_fournisseur_ht is None and body.prix_client is None:
         raise HTTPException(400, "Prix d'achat HT ou prix client requis")
+    url = _valider_url_fournisseur(body.url_fournisseur, body.source)
+    ref = _ref_fournisseur(body.ref_fournisseur)
+    fournisseur = FOURNISSEURS_SAISIE.get(body.source, (None,))[0]
     with get_cursor() as cur:
         r = prix.regles(cur)
         cur.execute("SELECT id, type_piece, categorie, verrou_manuel FROM tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
@@ -997,13 +1085,52 @@ def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin))
         elif not row["verrou_manuel"]:
             changements.append((tarif_id, "prix_client",
                                 prix.prix_client(body.prix_fournisseur_ht, row["type_piece"], row["categorie"], r)))
-        prix.ecrire_prix_lot(cur, "tarifs", changements, "manuel", _par(user), prix.nouveau_lot())
+        prix.ecrire_prix_lot(cur, "tarifs", changements, body.source, _par(user), prix.nouveau_lot())
         if body.prix_client is not None and not row["verrou_manuel"]:
             cur.execute("UPDATE tarifs SET verrou_manuel = TRUE WHERE id = %s", (tarif_id,))
+        if ref or url or fournisseur:
+            cur.execute("""
+                UPDATE tarifs SET ref_fournisseur = COALESCE(%s, ref_fournisseur),
+                                  url_fournisseur = COALESCE(%s, url_fournisseur),
+                                  fournisseur = COALESCE(%s, fournisseur)
+                WHERE id = %s
+            """, (ref, url, fournisseur, tarif_id))
         cur.execute(f"SELECT *, {_FRAICHEUR_SQL} FROM tarifs WHERE id = %s", (tarif_id,))
         out = _fraicheur(dict(cur.fetchone()), r)
+    out["calcul"] = _calcul_tarif(out, r)
     _cache.clear()
     return out
+
+
+class PrixApple(BaseModel):
+    piece: str = Field(..., pattern="^(ecran|batterie)$")
+    prix_fournisseur_ht: float = Field(..., gt=0, le=5000)
+    source: str = Field("manuel", pattern=_SOURCE_SAISIE_PATTERN)
+    ref_fournisseur: Optional[str] = Field(None, max_length=120)
+
+
+@router.patch("/apple-devices/{device_id}/prix")
+def modifier_prix_apple(device_id: int, body: PrixApple, user: dict = Depends(_admin)):
+    """Coût HT de l'écran ou de la batterie d'un iPad / MacBook, tapé par l'admin (source
+    'manuel', 'utopya' ou 'mobilax') ; prix de vente recalculé par les règles, même ligne
+    verrouillée (saisie explicite). Réponse : {ok, ancien_ht, nouveau_ht, ancien_client,
+    nouveau_client, piece}."""
+    ref = _ref_fournisseur(body.ref_fournisseur)
+    fournisseur = FOURNISSEURS_SAISIE.get(body.source, (None,))[0]
+    cle = prix.tarif_cle("tarifs_apple_devices", device_id, body.piece)
+    with get_cursor() as cur:
+        res = prix.appliquer_ht(cur, cle, body.prix_fournisseur_ht, body.source, _par(user))
+        if res.get("absent"):
+            raise HTTPException(404, "Appareil non trouvé")
+        if ref or fournisseur:
+            cur.execute("""
+                UPDATE tarifs_apple_devices SET ref_fournisseur = COALESCE(%s, ref_fournisseur),
+                                                fournisseur = COALESCE(%s, fournisseur)
+                WHERE id = %s
+            """, (ref, fournisseur, device_id))
+    _cache.clear()
+    res.pop("absent", None)
+    return {**res, "id": device_id, "piece": body.piece, "cle": cle}
 
 
 @router.patch("/{tarif_id}/verrou")
@@ -1013,32 +1140,59 @@ def set_verrou(tarif_id: int, body: VerrouRequest, user: dict = Depends(_admin))
 
 
 # ---------------------------------------------------------------------------
-# Stock checker — scrape Mobilax pages to verify en_stock
+# Fournisseurs : liens profonds seulement (jamais ouverts par le serveur)
 # ---------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
 
-_MOBILAX_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml",
-    "Accept-Language": "fr-FR,fr;q=0.9",
-}
+# Vérification automatique du stock Mobilax : RETIRÉE. robots.txt de mobilax.fr interdit les
+# agents automatiques et le portail B2B est derrière un compte ; utopya.fr sert un challenge
+# Cloudflare. L'application n'envoie donc AUCUNE requête à un site fournisseur. Les deux routes
+# /check-stock restent pour les anciens écrans et répondent sans rien lancer : le stock se met
+# à jour à la main (PATCH /{id}/stock) ou par un import de fichier fournisseur.
+STOCK_AUTO_DESACTIVE = ("Vérification automatique du stock désactivée : mobilax.fr interdit les agents "
+                        "automatiques (robots.txt, portail B2B). Ouvrez Mobilax dans votre navigateur, puis "
+                        "mettez le stock à jour à la main ou par un import de fichier.")
+
+
+def _etat_stock() -> dict:
+    return {"en_cours": False, "debut": None, "fin": None, "dernier_resultat": None,
+            "desactive": True, "message": STOCK_AUTO_DESACTIVE}
+
+
+@router.post("/check-stock")
+def check_stock_mobilax(request: Request, user: dict = Depends(get_current_user)):
+    """Ancienne vérification du stock Mobilax (admin) : désactivée, ne lance rien, aucune requête."""
+    exiger_role_admin(request, user)
+    return {"lance": False, **_etat_stock()}
+
+
+@router.get("/check-stock/status")
+def statut_check_stock(user: dict = Depends(get_current_user)):
+    """État de la vérification du stock : désactivée (voir STOCK_AUTO_DESACTIVE)."""
+    return _etat_stock()
+
+
+UTOPYA_RECHERCHE = "https://www.utopya.fr/catalogsearch/result/?q="
+MOBILAX_RECHERCHE = "https://www.mobilax.fr/recherche?q="
 
 
 def _slugify(text: str) -> str:
-    """Convert text to URL slug."""
-    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+    """Slug d'URL : « Galaxy A54 » → « galaxy-a54 »."""
+    return re.sub(r'[^a-z0-9]+', '-', normaliser(text)).strip('-')
 
 
 def _mobilax_urls(marque: str, modele: str) -> list:
-    """Generate possible Mobilax category page URLs for a model."""
-    brand = marque.lower()
+    """Pages catégorie Mobilax probables d'un modèle (motifs connus, non vérifiés par le serveur) :
+    liens que le gérant ouvre dans son navigateur. Vide : repli sur la recherche du site."""
+    brand = normaliser(marque)
     slug = _slugify(modele)
     urls = []
 
     if brand == "apple":
-        urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/apple/iphone/{slug}")
-        urls.append(f"https://www.mobilax.fr/marques/apple/telephonie/iphone/{slug}")
+        if slug.startswith("iphone"):
+            urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/apple/iphone/{slug}")
+            urls.append(f"https://www.mobilax.fr/marques/apple/telephonie/iphone/{slug}")
     elif brand == "samsung":
         if "galaxy-a" in slug:
             urls.append(f"https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-a/{slug}")
@@ -1096,177 +1250,528 @@ def _mobilax_urls(marque: str, modele: str) -> list:
     return urls
 
 
-def _extract_products(html: str) -> list:
-    """Extract products with quantity from Mobilax HTML."""
-    products = []
-    seen = set()
-    text = html.replace('\\"', '"').replace('\\/', '/')
-
-    for m in re.finditer(r'"id":(\d+),"name":"([^"]+)"', text):
-        pid = m.group(1)
-        name = m.group(2)
-        if pid in seen or name in ('Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond'):
-            continue
-        rest = text[m.start():m.start() + 2000]
-        qty_match = re.search(r'"quantity":(\d+)', rest)
-        if qty_match:
-            seen.add(pid)
-            products.append({"name": name, "quantity": int(qty_match.group(1))})
-
-    return products
+def _requete_fournisseur(marque, modele, type_piece=None) -> str:
+    """« Samsung Galaxy A54 ecran » (marque omise si le modèle commence déjà par elle)."""
+    marque = " ".join(str(marque or "").split())
+    modele = " ".join(str(modele or "").split())
+    parties = [] if normaliser(modele).startswith(normaliser(marque)) else [marque]
+    parties.append(modele)
+    if type_piece:
+        parties.append(normaliser(type_piece))
+    return " ".join(p for p in parties if p)
 
 
-def _match_stock(type_piece: str, qualite: str, products: list):
-    """Match our tarif to Mobilax products. Returns True/False/None."""
-    tp = (type_piece or "").lower()
-    qual = (qualite or "").lower()
-    matched = []
+def lien_utopya(marque, modele, type_piece=None) -> str:
+    return UTOPYA_RECHERCHE + quote_plus(_requete_fournisseur(marque, modele, type_piece))
 
-    for p in products:
-        n = p["name"].lower()
 
-        if "ecran" in tp or "cran" in tp:
-            if "ecran" not in n and "cran" not in n:
-                continue
-            if qual == "original" and "original" in n and "pulled" not in n:
-                matched.append(p)
-            elif qual == "reconditionnee" and ("pulled" in n or "refurb" in n):
-                matched.append(p)
-            elif qual == "soft oled" and "soft oled" in n:
-                matched.append(p)
-            elif qual == "oled" and "oled" in n and "original" not in n and "soft" not in n:
-                matched.append(p)
-            elif qual == "incell" and "incell" in n:
-                matched.append(p)
-            elif qual in ("compatible", "lcd") and "oem" in n:
-                matched.append(p)
-        elif "batterie" in tp:
-            if "batterie" in n:
-                matched.append(p)
-        elif "connecteur" in tp:
-            if "connecteur" in n:
-                matched.append(p)
-        elif "camera" in tp or "cam" in tp:
-            if "cam" in n and "principale" in n:
-                matched.append(p)
-        elif "haut-parleur" in tp or "haut parleur" in tp:
-            if "haut-parleur" in n or "haut parleur" in n:
-                matched.append(p)
-        elif "ecouteur" in tp or "couteur" in tp:
-            if "couteur" in n:
-                matched.append(p)
-        elif "vitre" in tp:
-            if "vitre" in n or "cache" in n:
-                matched.append(p)
+def lien_mobilax(marque, modele, type_piece=None) -> str:
+    urls = _mobilax_urls(marque, modele)
+    if urls:
+        return urls[0]
+    return MOBILAX_RECHERCHE + quote_plus(_requete_fournisseur(marque, modele, type_piece))
 
-    if not matched:
+
+def _liens(marque, modele, type_piece=None) -> dict:
+    return {"utopya": lien_utopya(marque, modele, type_piece), "mobilax": lien_mobilax(marque, modele, type_piece)}
+
+
+# ---------------------------------------------------------------------------
+# Réparation smartphones : marques → modèles → pièces, calcul détaillé, pièces courantes
+# ---------------------------------------------------------------------------
+# Modèles = catalogue (catalog_modeles actifs) ∪ pièces fournisseur (tarifs) ∪ iPad / MacBook
+# (tarifs_apple_devices), iPhone exclus (grille boutique tarifs_reparation). Une ligne de
+# pièce est rattachée à un modèle du catalogue par les clés de api/grille (alias compris) :
+# correspondance exacte d'abord, puis « souple » (sans 5G ni année) vers l'unique modèle du
+# catalogue candidat qui n'a reçu aucune pièce exacte — la même règle que les suggestions de
+# ticket (meilleur score seulement). Sinon la pièce fait son propre modèle (nom fournisseur).
+
+PIECES_COURANTES = ("Ecran", "Batterie", "Connecteur de charge")
+SOURCE_A_RENSEIGNER = "a_renseigner"
+_CATEGORIE_APPLE = {"ipad": "Tablette", "macbook": "PC Portable"}
+_TYPE_APPLE = {"ecran": "Écran", "batterie": "Batterie"}
+_NOM_APPLE = {"ipad": "iPad", "macbook": "MacBook"}
+_LIBELLE_CATEGORIE_ECRAN = {"standard": "écran standard", "haut_de_gamme": "écran haut de gamme", "pliant": "écran pliant"}
+_ORDRE_TYPES = ("ecran", "batterie", "connecteur", "vitre arriere", "camera", "haut parleur", "ecouteur")
+
+
+def _nom_cle(s) -> str:
+    """Nom comparable : « Reno10 Pro+ » ≠ « Reno10 Pro » (le « + » compte), accents et casse ignorés."""
+    return normaliser(str(s or "").replace("+", " plus "))
+
+
+def _famille(type_piece) -> str:
+    """Famille d'un type de pièce (« Ecran », « Écran LCD » → 'ecran' ; « Connecteur de charge »
+    → 'connecteur') : une pièce courante n'est pas recréée quand sa famille est déjà là."""
+    t = normaliser(type_piece)
+    for prefixe in _ORDRE_TYPES:
+        if t.startswith(prefixe):
+            return prefixe
+    return t
+
+
+def _categorie_apple(modele, categorie_catalogue=None) -> Optional[str]:
+    """'ipad' | 'macbook' d'un appareil Apple hors iPhone — catégorie du catalogue (Tablette /
+    PC Portable) d'abord, sinon le nom (« iPad… », « MacBook… », « iMac… ») — ; None sinon.
+    C'est la catégorie de tarifs_apple_devices, donc la règle de marge iPad / MacBook."""
+    cat = normaliser(categorie_catalogue or "")
+    if cat.startswith("tablette"):
+        return "ipad"
+    if cat.startswith("pc portable") or cat.startswith("ordinateur"):
+        return "macbook"
+    premier = (grille.cle_modele(modele, "Apple").split() or [""])[0]
+    if premier.startswith("ipad"):
+        return "ipad"
+    if premier.startswith("macbook") or premier.startswith("imac") or premier == "mac":
+        return "macbook"
+    return None
+
+
+def _alerte_marge(p: dict, cat_apple: Optional[str], admin: bool, r: dict) -> Optional[dict]:
+    """Pièce iPad / MacBook rangée dans la grille des pièces (table tarifs) : son prix client suit
+    la marge des pièces (écran standard…) et non la règle iPad / MacBook de la fiche
+    tarifs_apple_devices — les deux cohabitent dans la prod (iPad 9 : « Écran 169 € » à côté
+    d'un « Ecran Compatible 99 € »). Signalé pour que le gérant arbitre ; montants (marges,
+    prix attendu) pour l'admin seulement."""
+    if p["table"] != "tarifs" or not cat_apple:
         return None
-    return any(p["quantity"] > 0 for p in matched)
-
-
-# Vérification du stock Mobilax (BE-B) : en tâche de fond (timeout HTTP Railway ~15 s), admin.
-# Stock seulement : jamais de prix lu ni écrit ; ni prix_maj_le ni prix_source ne bougent.
-from fastapi import BackgroundTasks  # noqa: E402
-
-_stock_etat = {"en_cours": False, "debut": None, "fin": None, "resultat": None}
-
-
-def _maintenant_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-
-
-def verifier_stock_mobilax() -> dict:
-    """Pages catégorie Mobilax de chaque modèle : met à jour en_stock (rien d'autre)."""
-    import httpx
-
-    with get_cursor() as cur:
-        cur.execute("SELECT id, marque, modele, type_piece, qualite, en_stock FROM tarifs WHERE obsolete IS NOT TRUE")
-        all_tarifs = [dict(r) for r in cur.fetchall()]
-
-    models = {}
-    for t in all_tarifs:
-        models.setdefault((t["marque"], t["modele"]), []).append(t)
-
-    results = {
-        "models_total": len(models), "models_checked": 0, "models_found": 0, "tarifs_checked": 0,
-        "tarifs_updated": 0, "now_in_stock": 0, "now_rupture": 0,
+    nom = _NOM_APPLE[cat_apple]
+    if prix.est_ecran(p["type_piece"]):
+        regle = "marge « " + _LIBELLE_CATEGORIE_ECRAN.get((p["categorie"] or "standard").lower(), "écran standard") + " »"
+    else:
+        regle = "marge des autres pièces"
+    out = {
+        "code": "apple_grille_pieces", "categorie_attendue": cat_apple,
+        "message": f"Pièce {nom} dans la grille des pièces : prix calculé avec la {regle}, pas avec la règle "
+                   f"{nom} de la fiche iPad / Mac — à arbitrer par le gérant",
     }
-    changements = []
-    with httpx.Client(headers=_MOBILAX_HEADERS, timeout=10, follow_redirects=True) as client:
-        for (marque, modele), model_tarifs in models.items():
-            urls = _mobilax_urls(marque, modele)
-            if not urls:
-                continue
-            html = None
-            for url in urls:
-                try:
-                    resp = client.get(url)
-                    if resp.status_code == 200 and len(resp.text) > 1000:
-                        html = resp.text
-                        break
-                except Exception:
-                    continue
-            results["models_checked"] += 1
-            if html:
-                products = _extract_products(html)
-                if products:
-                    results["models_found"] += 1
-                    for tarif in model_tarifs:
-                        stock = _match_stock(tarif["type_piece"], tarif["qualite"], products)
-                        if stock is None:
-                            continue
-                        results["tarifs_checked"] += 1
-                        old_stock = tarif["en_stock"] if tarif["en_stock"] is not None else True
-                        if stock != old_stock:
-                            changements.append((tarif["id"], stock))
-                            results["tarifs_updated"] += 1
-                            results["now_in_stock" if stock else "now_rupture"] += 1
-            time.sleep(0.3)
-
-    if changements:
-        with get_cursor() as cur:
-            execute_values(
-                cur,
-                "UPDATE tarifs AS t SET en_stock = v.stock, updated_at = NOW() "
-                "FROM (VALUES %s) AS v(id, stock) WHERE t.id = v.id",
-                changements, template="(%s::integer, %s::boolean)", page_size=max(len(changements), 1),
-            )
-    return results
+    if admin:
+        out["marge_appliquee"] = prix.marge_piece(p["type_piece"], p["categorie"], r)
+        out["marge_attendue"] = prix.marge_apple(cat_apple, r)
+        out["prix_attendu"] = None if _sans_prix(p["ht"], p["client"]) else prix.prix_apple(p["ht"], cat_apple, r)
+    return out
 
 
-def _tache_stock():
+def _sans_prix(ht, client) -> bool:
     try:
-        _stock_etat["resultat"] = verifier_stock_mobilax()
-    except Exception as e:
-        logging.getLogger(__name__).warning("Vérification du stock Mobilax : échec (%s)", type(e).__name__)
-        _stock_etat["resultat"] = {"error": "Vérification du stock impossible (Mobilax injoignable ?)"}
-    finally:
-        _stock_etat["fin"] = _maintenant_iso()
-        _stock_etat["en_cours"] = False
-        _cache.clear()
+        return ht is None or float(ht) <= 0 or client is None or float(client) <= 0
+    except (TypeError, ValueError):
+        return True
 
 
-def _etat_stock() -> dict:
-    return {"en_cours": _stock_etat["en_cours"], "debut": _stock_etat["debut"], "fin": _stock_etat["fin"],
-            "dernier_resultat": _stock_etat["resultat"]}
+def _calcul_tarif(row: dict, r: dict):
+    """Détail du calcul d'une ligne tarifs (None sans HT positif)."""
+    ht = row.get("prix_fournisseur_ht")
+    if ht is None or float(ht) <= 0:
+        return None
+    return prix.calcul_detail(ht, row.get("type_piece"), row.get("categorie"), r)
 
 
-@router.post("/check-stock")
-def check_stock_mobilax(request: Request, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
-    """Lance la vérification du stock Mobilax en tâche de fond (admin) ; avancement : GET /check-stock/status."""
-    exiger_role_admin(request, user)
-    if _stock_etat["en_cours"]:
-        return {"lance": False, "message": "Vérification déjà en cours", **_etat_stock()}
-    _stock_etat.update(en_cours=True, debut=_maintenant_iso(), fin=None)
-    background_tasks.add_task(_tache_stock)
-    return {"lance": True, "message": "Vérification du stock lancée en arrière-plan", **_etat_stock()}
+def _est_iphone(modele, marque) -> bool:
+    return grille.cle_modele(modele, marque).split()[:1] == ["iphone"]
 
 
-@router.get("/check-stock/status")
-def statut_check_stock(user: dict = Depends(get_current_user)):
-    """État de la dernière vérification du stock (en cours, début, fin, résultat)."""
-    return _etat_stock()
+def _rang_type(type_piece) -> int:
+    t = normaliser(type_piece)
+    for i, prefixe in enumerate(_ORDRE_TYPES):
+        if t.startswith(prefixe):
+            return i
+    return len(_ORDRE_TYPES)
+
+
+def _entree(marque, marque_c, modele, categorie, au_catalogue, cles, annee=None, ordre=0) -> dict:
+    return {"marque": marque, "marque_c": marque_c, "modele": modele, "categorie": categorie,
+            "annee": annee, "ordre": ordre, "au_catalogue": au_catalogue, "cles": cles,
+            "groupes": [], "exact": False}
+
+
+def _piece_tarif(row) -> dict:
+    return {"table": "tarifs", "id": row["id"], "cle": prix.tarif_cle("tarifs", row["id"]),
+            "marque": row["marque"], "modele": row["modele"], "type_piece": row["type_piece"],
+            "qualite": row["qualite"] or None, "categorie": row["categorie"] or "standard",
+            "nom_fournisseur": row["nom_fournisseur"], "ht": row["prix_fournisseur_ht"],
+            "client": row["prix_client"], "en_stock": row["en_stock"],
+            "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
+            "verrou": bool(row["verrou_manuel"]), "ref_fournisseur": row["ref_fournisseur"],
+            "fournisseur": row["fournisseur"], "url_fournisseur": row.get("url_fournisseur")}
+
+
+def _piece_apple(row, piece) -> dict:
+    return {"table": "tarifs_apple_devices", "id": None, "device_id": row["id"], "piece": piece,
+            "cle": prix.tarif_cle("tarifs_apple_devices", row["id"], piece),
+            "marque": "Apple", "modele": row["modele"], "type_piece": "Écran" if piece == "ecran" else "Batterie",
+            "qualite": None, "categorie": row["categorie"], "nom_fournisseur": None,
+            "ht": row[f"{piece}_prix_ht"], "client": row[f"{piece}_prix_vente"], "en_stock": None,
+            "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
+            "verrou": bool(row["verrou_manuel"]), "ref_fournisseur": row["ref_fournisseur"],
+            "fournisseur": row["fournisseur"], "url_fournisseur": None}
+
+
+def _groupes_pieces(cur, marque_c: Optional[str]) -> list:
+    """[{marque, marque_c, modele, categorie, pieces}] : pièces fournisseur par (marque, modèle),
+    iPhone exclus ; iPad / MacBook de tarifs_apple_devices chacun en groupe (2 pièces)."""
+    groupes = {}
+    cur.execute("""
+        SELECT id, marque, modele, type_piece, qualite, categorie, nom_fournisseur, prix_fournisseur_ht,
+               prix_client, en_stock, prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur,
+               url_fournisseur
+        FROM tarifs WHERE obsolete IS NOT TRUE
+        ORDER BY marque, modele, type_piece, qualite, id
+    """)
+    for row in cur.fetchall() or []:
+        mc = grille.marque_canonique(row["marque"])
+        if not mc or (marque_c and mc != marque_c):
+            continue
+        if mc == "apple" and _est_iphone(row["modele"], row["marque"]):
+            continue
+        k = (mc, _nom_cle(row["modele"]))
+        g = groupes.get(k)
+        if g is None:
+            g = groupes[k] = {"marque": row["marque"], "marque_c": mc, "modele": row["modele"],
+                              "categorie": None, "pieces": []}
+        g["pieces"].append(_piece_tarif(row))
+    out = list(groupes.values())
+    if marque_c in (None, "apple"):
+        cur.execute("""
+            SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
+                   prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur
+            FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE
+            ORDER BY categorie, modele, id
+        """)
+        for row in cur.fetchall() or []:
+            pieces = [_piece_apple(row, p) for p in prix.PIECES_APPLE
+                      if row[f"{p}_prix_ht"] is not None or row[f"{p}_prix_vente"] is not None]
+            if pieces:
+                out.append({"marque": "Apple", "marque_c": "apple", "modele": row["modele"],
+                            "categorie": _CATEGORIE_APPLE.get(row["categorie"]), "pieces": pieces})
+    return out
+
+
+def _modeles_reparation(cur, marque_c: Optional[str] = None) -> list:
+    """Entrées {marque, marque_c, modele, categorie, annee, ordre, au_catalogue, groupes:[…]} :
+    modèles du catalogue (iPhone exclus) avec leurs pièces rattachées, puis les pièces sans
+    modèle de catalogue en entrées à part."""
+    alias = grille.charger_alias(cur)
+    cur.execute("SELECT marque, modele, categorie, annee, ordre FROM catalog_modeles "
+                "WHERE actif IS NOT FALSE ORDER BY marque, ordre, modele")
+    entrees, par_marque = [], {}
+    for row in cur.fetchall() or []:
+        mc = grille.marque_canonique(row["marque"])
+        if not mc or (marque_c and mc != marque_c):
+            continue
+        if mc == "apple" and _est_iphone(row["modele"], row["marque"]):
+            continue
+        e = _entree(row["marque"], mc, row["modele"], row["categorie"], True,
+                    grille.cles_ticket(row["modele"], row["marque"], None, alias), row["annee"], row["ordre"] or 0)
+        entrees.append(e)
+        par_marque.setdefault(mc, []).append(e)
+
+    def score(e, g):
+        return grille._score_cles(e["cles"], g["modele"], g["marque"])
+
+    restants = []
+    for g in _groupes_pieces(cur, marque_c):
+        exacts = [e for e in par_marque.get(g["marque_c"], []) if score(e, g) == 2]
+        if exacts:
+            exacts[0]["groupes"].append(g)
+            exacts[0]["exact"] = True
+        else:
+            restants.append(g)
+    # Second niveau : vers le catalogue seulement (jamais vers une entrée fournisseur créée ici :
+    # « A2159 (2019) » et « A2289 (2020) » resteraient sinon confondus)
+    for g in restants:
+        souples = [e for e in par_marque.get(g["marque_c"], []) if not e["exact"] and score(e, g) == 1]
+        if len(souples) == 1:
+            souples[0]["groupes"].append(g)
+        else:
+            e = _entree(g["marque"], g["marque_c"], g["modele"], g["categorie"], False,
+                        grille.cles_ticket(g["modele"], g["marque"], None, alias), None, 10 ** 6)
+            e["groupes"].append(g)
+            entrees.append(e)
+    return entrees
+
+
+def _pieces_entree(e: dict) -> list:
+    pieces = [p for g in e["groupes"] for p in g["pieces"]]
+    pieces.sort(key=lambda p: (_rang_type(p["type_piece"]), normaliser(p["type_piece"]), normaliser(p["qualite"]),
+                               p["table"], p["id"] or 0))
+    return pieces
+
+
+def _resume_entree(e: dict, seuils, maintenant) -> dict:
+    pieces = _pieces_entree(e)
+    ages, niveaux, sans_prix = [], [], 0
+    for p in pieces:
+        if _sans_prix(p["ht"], p["client"]):
+            sans_prix += 1
+            continue
+        f = grille.fraicheur(p["prix_maj_le"], p["prix_source"], seuils, maintenant)
+        niveaux.append(f["fraicheur"])
+        if f["age_jours"] is not None:
+            ages.append(f["age_jours"])
+    pire = "perime" if "perime" in niveaux else "a_revoir" if "a_revoir" in niveaux else "ok" if niveaux else None
+    noms = sorted({g["modele"] for g in e["groupes"] if _nom_cle(g["modele"]) != _nom_cle(e["modele"])})
+    cat_apple = _cat_apple_entree(e)
+    return {"modele": e["modele"], "categorie": e["categorie"], "categorie_apple": cat_apple, "annee": e["annee"],
+            "au_catalogue": e["au_catalogue"], "nb_pieces": len(pieces), "nb_sans_prix": sans_prix,
+            "plus_vieux_jours": max(ages) if ages else None, "fraicheur": pire, "noms": noms,
+            "nb_alertes_marge": sum(1 for p in pieces if p["table"] == "tarifs") if cat_apple else 0}
+
+
+def _cat_apple_entree(e: dict) -> Optional[str]:
+    return _categorie_apple(e["modele"], e["categorie"]) if e["marque_c"] == "apple" else None
+
+
+def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Optional[str] = None) -> dict:
+    a_renseigner = _sans_prix(p["ht"], p["client"])
+    f = grille.fraicheur(p["prix_maj_le"], p["prix_source"], seuils, maintenant)
+    if a_renseigner:
+        f["fraicheur"] = None
+    out = {k: v for k, v in p.items() if k not in ("ht", "client")}
+    out.update(f)
+    out["prix_client"] = int(p["client"]) if p["client"] is not None else None
+    out["a_renseigner"] = a_renseigner
+    out["prix_fournisseur_ht"] = float(p["ht"]) if admin and p["ht"] is not None else None
+    calcul = None
+    if admin and not a_renseigner:
+        if p["table"] == "tarifs":
+            calcul = prix.calcul_detail(p["ht"], p["type_piece"], p["categorie"], r)
+        else:
+            calcul = prix.calcul_detail_apple(p["ht"], p["categorie"], r)
+    out["calcul"] = calcul
+    out["alerte_marge"] = _alerte_marge(p, cat_apple, admin, r)
+    out["liens"] = _liens(p["marque"], p["modele"], p["type_piece"])
+    return out
+
+
+def _trouver_entree(entrees: list, marque_c: str, modele: str, marque: str = ""):
+    """Entrée dont le nom (ou celui d'une pièce rattachée) est celui demandé ; sinon, par les
+    clés de grille (« Reno 10 Pro » trouve « Reno10 Pro »), au meilleur score."""
+    voulu = _nom_cle(modele)
+    if not voulu:
+        return None
+    siens = [e for e in entrees if e["marque_c"] == marque_c]
+    for e in siens:
+        if _nom_cle(e["modele"]) == voulu:
+            return e
+    for e in siens:
+        if any(_nom_cle(g["modele"]) == voulu for g in e["groupes"]):
+            return e
+    cles = grille.cles_ticket(modele, marque or marque_c)
+    meilleur, score_max = None, 0
+    for e in siens:
+        s = max([grille._score_cles(cles, e["modele"], e["marque"])]
+                + [grille._score_cles(cles, g["modele"], g["marque"]) for g in e["groupes"]])
+        if s > score_max:
+            meilleur, score_max = e, s
+    return meilleur
+
+
+@router.get("/reparation-smartphones/marques")
+def reparation_smartphones_marques(user: dict = Depends(get_current_user)):
+    """Marques et modèles de l'écran « Réparation smartphones » (tout le monde, aucun HT) :
+    [{marque, marque_c, nb_modeles, modeles: [{modele, categorie, annee, au_catalogue, nb_pieces,
+    nb_sans_prix, plus_vieux_jours, fraicheur, noms}]}], Apple = iPad / Mac seulement."""
+    with get_cursor() as cur:
+        entrees = _modeles_reparation(cur)
+        seuils = grille._seuils(cur)
+    maintenant = grille.maintenant_utc()
+    marques = {}
+    for e in sorted(entrees, key=lambda e: (e["marque_c"], e["ordre"], normaliser(e["modele"]))):
+        m = marques.get(e["marque_c"])
+        if m is None:
+            m = marques[e["marque_c"]] = {"marque": e["marque"], "marque_c": e["marque_c"], "modeles": []}
+        elif e["au_catalogue"] and not m.get("_catalogue"):
+            m["marque"] = e["marque"]
+        if e["au_catalogue"]:
+            m["_catalogue"] = True
+        m["modeles"].append(_resume_entree(e, seuils, maintenant))
+    out = []
+    for m in sorted(marques.values(), key=lambda m: normaliser(m["marque"])):
+        m.pop("_catalogue", None)
+        m["nb_modeles"] = len(m["modeles"])
+        out.append(m)
+    return out
+
+
+@router.get("/reparation-smartphones/modele")
+def reparation_smartphones_modele(
+    request: Request,
+    marque: str = Query(..., min_length=1, max_length=60),
+    modele: str = Query(..., min_length=1, max_length=120),
+    user: dict = Depends(get_current_user),
+):
+    """Pièces d'un modèle avec le détail du calcul : {marque, modele, categorie, categorie_apple,
+    au_catalogue, modele_trouve, admin, pieces: [{id, cle, table, type_piece, qualite, categorie,
+    prix_fournisseur_ht (admin), prix_client, calcul: {ht, tva, marge, brut, arrondi} (admin),
+    prix_maj_le, prix_source, age_jours, fraicheur, estime, verrou, en_stock, ref_fournisseur,
+    fournisseur, url_fournisseur, a_renseigner, alerte_marge, liens}], liens: {utopya, mobilax}, noms}.
+    iPad / MacBook : categorie_apple 'ipad' | 'macbook' (règle de marge) ; pièces de la fiche
+    tarifs_apple_devices avec device_id et piece (PATCH /apple-devices/{id}/prix) ; une pièce
+    iPad / Mac rangée dans la grille des pièces (table tarifs, marge des pièces) porte
+    alerte_marge (voir _alerte_marge). Modèle inconnu : modele_trouve=false et pieces=[] (jamais
+    404 : un modèle du catalogue sans pièce doit pouvoir recevoir ses pièces courantes)."""
+    marque_c = grille.marque_canonique(marque)
+    if not marque_c:
+        raise HTTPException(400, "Marque requise")
+    admin = _est_admin(request, user)
+    with get_cursor() as cur:
+        entrees = _modeles_reparation(cur, marque_c)
+        seuils = grille._seuils(cur)
+        r = prix.regles(cur)
+    e = _trouver_entree(entrees, marque_c, modele, marque)
+    maintenant = grille.maintenant_utc()
+    if e is None:
+        return {"marque": " ".join(marque.split()), "modele": " ".join(modele.split()), "categorie": None,
+                "categorie_apple": None, "au_catalogue": False, "modele_trouve": False, "admin": admin,
+                "pieces": [], "liens": _liens(marque, modele), "noms": []}
+    resume = _resume_entree(e, seuils, maintenant)
+    cat_apple = _cat_apple_entree(e)
+    return {
+        "marque": e["marque"], "modele": e["modele"], "categorie": e["categorie"], "categorie_apple": cat_apple,
+        "au_catalogue": e["au_catalogue"], "modele_trouve": True, "admin": admin,
+        "pieces": [_piece_out(p, admin, r, seuils, maintenant, cat_apple) for p in _pieces_entree(e)],
+        "liens": _liens(e["marque"], e["modele"]), "noms": resume["noms"],
+    }
+
+
+class PiecesCourantes(BaseModel):
+    marque: str = Field(..., min_length=1, max_length=50)
+    modele: str = Field(..., min_length=1, max_length=100)
+    # Catégorie d'écran des pièces créées dans la grille des pièces (ignorée pour un iPad / Mac,
+    # dont la fiche porte sa propre catégorie 'ipad' / 'macbook')
+    categorie: str = Field("standard", pattern="^(standard|haut_de_gamme|pliant)$")
+
+
+def _audit_pieces_courantes(cur, user: dict, target_type: str, target_id, details: str):
+    cur.execute("""
+        INSERT INTO admin_audit_log (user_login, user_target, action, target_type, target_id, details)
+        VALUES (%s, %s, 'prix_pieces_courantes', %s, %s, %s)
+    """, (_par(user) or "", user.get("target") or "", target_type, target_id, details))
+
+
+def _creer_pieces_apple(cur, user: dict, modele: str, cat_apple: str, pieces: list) -> dict:
+    """iPad / MacBook : les pièces courantes sont l'écran et la batterie de la fiche
+    tarifs_apple_devices (règle de marge iPad +110 € / MacBook +120 € par prix.prix_apple),
+    jamais des lignes de la grille des pièces (marge écran standard) ni un connecteur. Fiche du
+    même nom déjà là (même inactive ou obsolète) : complétée (pièces absentes à 0) et réactivée ;
+    sinon créée. Une pièce déjà présente, dans la fiche ou dans la grille des pièces, n'est pas
+    recréée."""
+    presentes = {_famille(p["type_piece"]) for p in pieces}
+    device = next((p for p in pieces if p["table"] == "tarifs_apple_devices"), None)
+    cols = "id, modele, actif, obsolete, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente"
+    if device:
+        cur.execute(f"SELECT {cols} FROM tarifs_apple_devices WHERE id = %s FOR UPDATE", (device["device_id"],))
+    else:
+        cur.execute(f"""SELECT {cols} FROM tarifs_apple_devices WHERE lower(modele) = lower(%s)
+                        ORDER BY (actif IS NOT FALSE) DESC, (obsolete IS NOT TRUE) DESC, id LIMIT 1 FOR UPDATE""",
+                    (modele,))
+    row = cur.fetchone()
+    reactive = False
+    if row:
+        for p in prix.PIECES_APPLE:
+            if row[f"{p}_prix_ht"] is not None or row[f"{p}_prix_vente"] is not None:
+                presentes.add(p)
+        reactive = row["actif"] is False or bool(row["obsolete"])
+    manquantes = [p for p in prix.PIECES_APPLE if p not in presentes]
+    crees, device_id = [], row["id"] if row else None
+    if row and (manquantes or reactive):
+        # Colonnes issues de PIECES_APPLE (liste blanche) ; une pièce existante n'est jamais écrasée
+        sets = "".join(f", {p}_prix_ht = COALESCE({p}_prix_ht, 0), {p}_prix_vente = COALESCE({p}_prix_vente, 0)"
+                       for p in manquantes)
+        cur.execute(f"""UPDATE tarifs_apple_devices
+                        SET actif = TRUE, obsolete = FALSE, updated_at = NOW(),
+                            prix_source = COALESCE(prix_source, %s){sets}
+                        WHERE id = %s""", (SOURCE_A_RENSEIGNER, row["id"]))
+    elif manquantes:
+        cur.execute("""
+            INSERT INTO tarifs_apple_devices (categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente,
+                                              batterie_prix_vente, actif, updated_at, prix_maj_le, prix_source,
+                                              fournisseur, ref_fournisseur, verrou_manuel, obsolete)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE, NOW(), NULL, %s, NULL, NULL, FALSE, FALSE)
+            RETURNING id
+        """, (cat_apple, modele, 0 if "ecran" in manquantes else None, 0 if "batterie" in manquantes else None,
+              0 if "ecran" in manquantes else None, 0 if "batterie" in manquantes else None, SOURCE_A_RENSEIGNER))
+        device_id = cur.fetchone()["id"]
+    if manquantes:
+        crees = [{"id": None, "device_id": device_id, "piece": p, "table": "tarifs_apple_devices",
+                  "cle": prix.tarif_cle("tarifs_apple_devices", device_id, p), "type_piece": _TYPE_APPLE[p]}
+                 for p in manquantes]
+        _audit_pieces_courantes(cur, user, "tarifs_apple_devices", device_id,
+                                f"Apple {modele} ({_NOM_APPLE[cat_apple]}) : "
+                                f"{', '.join(c['type_piece'] for c in crees)} à 0 € HT (prix à renseigner)")
+    return {"marque": "Apple", "modele": modele, "table": "tarifs_apple_devices", "categorie_apple": cat_apple,
+            "device_id": device_id, "reactive": reactive, "crees": crees,
+            "existants": [_TYPE_APPLE[p] for p in prix.PIECES_APPLE if p in presentes]}
+
+
+@router.post("/reparation-smartphones/pieces-courantes")
+def creer_pieces_courantes(body: PiecesCourantes, user: dict = Depends(_admin)):
+    """Pré-crée les pièces courantes d'un modèle à 0 € HT, « prix à renseigner » (prix_source
+    'a_renseigner', sans date) : exclues des suggestions tant que le prix est à 0, remplies
+    ensuite par PATCH /{id}/prix (ou /apple-devices/{id}/prix) ou un import.
+
+    Autres marques : écran, batterie, connecteur de charge dans la grille des pièces (table
+    tarifs). iPad / MacBook : écran et batterie de la fiche tarifs_apple_devices (règle de marge
+    iPad / MacBook, cf. _creer_pieces_apple). Une famille de pièce déjà présente pour le modèle
+    (toute qualité, nom rattaché compris) n'est pas recréée. iPhone refusé (grille boutique).
+    Modèle ni au catalogue ni dans la grille (faute de frappe) → 404 : pas de modèle fantôme.
+    → {marque, modele, table, crees: [{id, cle, table, type_piece, …}], existants: [type_piece]}"""
+    marque, modele = " ".join(body.marque.split()), " ".join(body.modele.split())
+    marque_c = grille.marque_canonique(marque)
+    if not marque_c:
+        raise HTTPException(400, "Marque requise")
+    if marque_c == "apple" and _est_iphone(modele, marque):
+        raise HTTPException(400, "Les iPhone ont leur grille boutique (Réparation iPhone)")
+    with get_cursor() as cur:
+        cur.execute("SELECT marque, modele, categorie FROM catalog_modeles WHERE lower(marque) = lower(%s) "
+                    "AND lower(modele) = lower(%s) ORDER BY actif DESC NULLS LAST, id LIMIT 1", (marque, modele))
+        cat = cur.fetchone()
+        if cat:
+            marque, modele = cat["marque"], cat["modele"]
+        e = _trouver_entree(_modeles_reparation(cur, marque_c), marque_c, modele, marque)
+        voulu = _nom_cle(modele)
+        # Connu : au catalogue (orthographe du catalogue reprise, même retrouvée par les clés de
+        # grille : « Reno 10 Pro » → « Reno10 Pro ») ou déjà dans la grille sous ce nom exact
+        connu = cat is not None or (e is not None and (
+            e["au_catalogue"] or _nom_cle(e["modele"]) == voulu or any(_nom_cle(g["modele"]) == voulu for g in e["groupes"])))
+        if not connu:
+            raise HTTPException(404, "Modèle inconnu du catalogue : ajoutez-le au catalogue ou utilisez « Ajouter une pièce »")
+        if e and e["au_catalogue"]:
+            marque, modele = e["marque"], e["modele"]
+        pieces = _pieces_entree(e) if e else []
+        if marque_c == "apple":
+            cat_apple = _categorie_apple(modele, cat["categorie"] if cat else (e["categorie"] if e else None))
+            if not cat_apple:
+                raise HTTPException(400, "Appareil Apple non géré : iPad et MacBook seulement")
+            out = _creer_pieces_apple(cur, user, modele, cat_apple, pieces)
+            _cache.clear()
+            return out
+        familles = {_famille(p["type_piece"]) for p in pieces}
+        a_creer = [t for t in PIECES_COURANTES if _famille(t) not in familles]
+        crees = []
+        if a_creer:
+            rows = execute_values(cur, """
+                INSERT INTO tarifs (marque, modele, type_piece, qualite, nom_fournisseur, prix_fournisseur_ht,
+                                    prix_client, categorie, source, en_stock, updated_at, prix_maj_le, prix_source,
+                                    fournisseur, ref_fournisseur, verrou_manuel, obsolete)
+                VALUES %s
+                ON CONFLICT DO NOTHING
+                RETURNING id, type_piece
+            """, [(marque, modele, t, None, None, 0, 0, body.categorie, "manuel", None, SOURCE_A_RENSEIGNER,
+                   None, None, False, False) for t in a_creer],
+                template="(%s, %s, %s, %s, %s, %s::numeric, %s::integer, %s, %s, %s::boolean, NOW(), NULL, %s, "
+                         "%s, %s, %s::boolean, %s::boolean)",
+                page_size=len(a_creer), fetch=True)
+            crees = [{"id": r["id"], "table": "tarifs", "cle": prix.tarif_cle("tarifs", r["id"]),
+                      "type_piece": r["type_piece"]} for r in rows or []]
+            if crees:
+                _audit_pieces_courantes(cur, user, "tarifs", None,
+                                        f"{marque} {modele} : {', '.join(c['type_piece'] for c in crees)} "
+                                        "à 0 € HT (prix à renseigner)")
+    _cache.clear()
+    return {"marque": marque, "modele": modele, "table": "tarifs", "categorie_apple": None, "crees": crees,
+            "existants": [t for t in PIECES_COURANTES if _famille(t) in familles]}
 
 
 # ---------------------------------------------------------------------------

@@ -257,7 +257,7 @@ describe('Navbar : entrées, états et focus', () => {
     expect(await screen.findAllByRole('button', { name: /^Devis$/ })).toHaveLength(2);
     expect(screen.getByRole('button', { name: /^Devis Flash$/ })).toBeInTheDocument();
     for (const libelle of ['Clients', 'Commandes', 'Demandes de commande', 'Attestation', 'Suivi (vue client)',
-      'Réparation iPhone', 'Tarifs iPhones', 'Tarifs Smartphones', 'Reporting', 'Prix à revoir', 'Avis Google',
+      'Réparation iPhone', 'Réparation smartphones', 'Vente iPhones', 'Vente smartphones', 'Reporting', 'Prix à revoir', 'Avis Google',
       'Community Manager', 'Configuration', 'Site Tarifs iPhone', 'Beta', 'Réduire', 'Changer', 'Déconnexion']) {
       expect(screen.getByRole('button', { name: new RegExp(`^${libelle.replace(/[()]/g, '\\$&')}`) })).toBeInTheDocument();
     }

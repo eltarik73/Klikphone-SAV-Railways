@@ -5,6 +5,7 @@ import api from '../lib/api';
 import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
 import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
+import { telJoignable, estAutreNumero, normaliserContact, appliquerContact, titreCanal } from '../lib/contact';
 import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
 import { openQuickScan } from '../components/ScanListener';
 import { useToast } from '../components/Toast';
@@ -13,7 +14,7 @@ import { PrioriteBadge, PRIORITES, comparerPriorite, normaliserPriorite } from '
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
-  Smartphone, MessageCircle, Send, Mail, Lock, Shield,
+  Smartphone, MessageCircle, Send, Mail, Phone, PhoneCall, Lock, Shield,
   SquareCheck, Square, X, ArrowUpDown, Calendar, RotateCcw, Globe, Star,
   Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck, ClipboardList, Hourglass, FileCheck,
 } from 'lucide-react';
@@ -23,12 +24,15 @@ import {
 // - iPad 1024–1279 : 6 colonnes sur DEUX lignes de grille — ligne 1 = case, code, client, statut (≥ 190 px, ≈ 222 px
 //   réels), prix, chevron ; ligne 2 = bandeau d'actions (tech · contact · date) sous le client. Rien n'est masqué au
 //   comptoir et les commandes gardent 44 px sous le doigt.
-// - ≥ 1280 : 9 colonnes sur une ligne (≈ 896 px) ; la sous-ligne « tél · appareil · panne » peut passer sur 2 lignes
+// - ≥ 1280 : 9 colonnes sur une ligne (≈ 920 px) ; la sous-ligne « tél · appareil · panne » peut passer sur 2 lignes
 //   (3 lignes de texte tiennent dans les 56 px). Pas de colonnes Appareil/Panne séparées : avec la page plafonnée à
 //   1 280 px, 11 colonnes laisseraient ≤ 120 px à l'appareil, à la panne et ≤ 206 px au statut (tout coupé), alors
-//   que la sous-ligne affiche la panne en entier dès 1440.
+//   que la sous-ligne affiche la panne en entier dès 1440. Contact : 4 icônes de 36 px (WhatsApp, SMS, e-mail, appel).
 const GRID_COLS = 'lg:grid-cols-[28px_72px_minmax(170px,1fr)_minmax(190px,1fr)_76px_20px]'
-  + ' xl:grid-cols-[28px_72px_minmax(170px,1.4fr)_116px_minmax(170px,1fr)_76px_120px_76px_20px]';
+  + ' xl:grid-cols-[28px_72px_minmax(170px,1.4fr)_116px_minmax(170px,1fr)_76px_144px_76px_20px]';
+// Icône de contact : 44 px au doigt, 40 à la souris, 36 dans la colonne de 144 px (≥ xl)
+const CONTACT_ICON = 'btn-ghost btn-icon w-11 h-11 lg:w-10 lg:h-10 xl:w-9 xl:h-9'
+  + ' [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11';
 
 // « 06 00 00 01 23 » (même mise en forme que le panneau de scan), sinon la valeur telle quelle
 const formatTel = (tel) => {
@@ -195,6 +199,8 @@ export default function DashboardPage() {
   const [activeKpi, setActiveKpi] = useState(null);
   // Étagère « À récupérer » (carte KPI) : liste filtrée et triée par le serveur, au-dessus du tableau
   const [showEtagere, setShowEtagere] = useState(false);
+  // Ticket dont l'appel téléphonique attend une confirmation (ligne sous la rangée)
+  const [appelAConfirmer, setAppelAConfirmer] = useState(null);
   const etagereId = useId();
   const [showArchived, setShowArchived] = useState(initial.archives);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -470,6 +476,30 @@ export default function DashboardPage() {
       } else {
         toast.error(`${code} : ${err?.message || 'changement de statut impossible'}`);
       }
+    }
+  };
+
+  // Ferme la confirmation et rend le focus à l'icône téléphone de la ligne (la ligne de confirmation disparaît)
+  const fermerAppel = (ticketId) => {
+    setAppelAConfirmer(null);
+    requestAnimationFrame(() => document.querySelector(`[data-appel-btn="${ticketId}"]`)?.focus());
+  };
+
+  // « Contacté par tél. » depuis la colonne contact : note 'appel' sur le ticket, icône allumée sans recharger
+  const noterAppel = async (ticket) => {
+    const ticketId = ticket.id;
+    fermerAppel(ticketId);
+    try {
+      const res = await api.contacterClient(ticketId);
+      mutate(prev => prev ? {
+        ...prev,
+        tickets: prev.tickets.map(t => (t.id === ticketId
+          ? { ...t, contact: res?.contact ? normaliserContact(res.contact) : appliquerContact(t.contact, 'appel', undefined, techName) }
+          : t)),
+      } : prev);
+      toast.success('Appel noté');
+    } catch (err) {
+      toast.error(`${ticket.ticket_code || `#${ticketId}`} : ${err?.message || 'appel non noté'}`);
     }
   };
 
@@ -1271,6 +1301,7 @@ export default function DashboardPage() {
               const showArchiveSeparator = searchMode && archivedRow
                 && (rowIdx === 0 || !ARCHIVE_STATUTS.includes(displayedTickets[rowIdx - 1].statut));
               const clientName = `${t.client_prenom || ''} ${t.client_nom || ''}`.trim();
+              const contact = normaliserContact(t.contact);
               const appareil = `${t.marque || ''} ${t.modele || t.modele_autre || ''}`.trim();
               const panne = panneAffichee(t);
               const statusCfg = getStatusConfig(t.statut);
@@ -1406,8 +1437,13 @@ export default function DashboardPage() {
                       )}
                     </div>
                     {/* ≥ xl : la panne peut passer sur une 2ᵉ ligne (3 lignes de texte tiennent dans les 56 px) */}
-                    <p className="t-small truncate xl:whitespace-normal xl:line-clamp-2 tabular-nums" title={[t.client_tel, appareil, panne.texte].filter(Boolean).join(' · ')}>
+                    <p className="t-small truncate xl:whitespace-normal xl:line-clamp-2 tabular-nums"
+                      title={[t.client_tel, estAutreNumero(t) ? `joignable ${telJoignable(t)}` : '', appareil, panne.texte].filter(Boolean).join(' · ')}>
                       {formatTel(t.client_tel)}
+                      {/* Second numéro du ticket : c'est lui que visent les icônes SMS/WhatsApp, la réceptionniste doit le voir */}
+                      {estAutreNumero(t) && (
+                        <span className="whitespace-nowrap font-medium text-slate-700">{' · '}joignable {formatTel(telJoignable(t))}</span>
+                      )}
                       {appareil ? ` · ${appareil}` : ''}
                       {panne.aCommander ? ' · Pièce à commander' : panne.texte !== '—' ? ` · ${panne.texte}` : ''}
                       {/* Côté tech : code et schéma de déverrouillage, comme avant dans la colonne Appareil */}
@@ -1469,27 +1505,38 @@ export default function DashboardPage() {
                       </select>
                     </div>
 
-                    {/* Contact — coloré seulement si un message est déjà parti par ce canal ; 40 px à la souris, 44 au doigt */}
+                    {/* Contact — vers le second numéro du ticket s'il existe (lib/contact.js). Icône allumée (emerald)
+                        quand un contact est parti par ce canal DEPUIS LE DERNIER CHANGEMENT DE STATUT (t.contact,
+                        calculé par le serveur) ; l'info-bulle donne la date, l'heure et l'auteur. Le téléphone note
+                        un appel (« Contacté par tél. ») après une confirmation légère sous la rangée. */}
                     <div className="flex items-center shrink-0 xl:col-start-7 xl:row-start-1">
-                      <a href={t.client_tel ? waLink(t.client_tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`) : '#'}
+                      <a href={telJoignable(t) ? waLink(telJoignable(t), `Bonjour, concernant votre ticket ${t.ticket_code}...`) : '#'}
                         target="_blank" rel="noopener noreferrer"
-                        onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`WhatsApp à ${clientName || 'ce client'}${t.msg_whatsapp ? ' (déjà contacté)' : ''}`}
-                        className="btn-ghost btn-icon w-11 h-11 lg:w-10 lg:h-10" title="WhatsApp">
-                        <MessageCircle className={t.msg_whatsapp ? 'text-emerald-700' : 'text-slate-500'} aria-hidden="true" />
+                        onClick={e => { if (!telJoignable(t)) e.preventDefault(); e.stopPropagation(); }}
+                        aria-label={`WhatsApp à ${clientName || 'ce client'}${contact.canaux.whatsapp ? ` (${titreCanal(contact, 'whatsapp')})` : ''}`}
+                        className={CONTACT_ICON} title={contact.canaux.whatsapp ? titreCanal(contact, 'whatsapp') : 'WhatsApp'}>
+                        <MessageCircle className={contact.canaux.whatsapp ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
                       </a>
-                      <a href={t.client_tel ? smsLink(t.client_tel, `Klikphone: Votre ticket ${t.ticket_code}...`) : '#'}
-                        onClick={e => { if (!t.client_tel) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`SMS à ${clientName || 'ce client'}${t.msg_sms ? ' (déjà contacté)' : ''}`}
-                        className="btn-ghost btn-icon w-11 h-11 lg:w-10 lg:h-10" title="SMS">
-                        <Send className={t.msg_sms ? 'text-blue-700' : 'text-slate-500'} aria-hidden="true" />
+                      <a href={telJoignable(t) ? smsLink(telJoignable(t), `Klikphone: Votre ticket ${t.ticket_code}...`) : '#'}
+                        onClick={e => { if (!telJoignable(t)) e.preventDefault(); e.stopPropagation(); }}
+                        aria-label={`SMS à ${clientName || 'ce client'}${contact.canaux.sms ? ` (${titreCanal(contact, 'sms')})` : ''}`}
+                        className={CONTACT_ICON} title={contact.canaux.sms ? titreCanal(contact, 'sms') : 'SMS'}>
+                        <Send className={contact.canaux.sms ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
                       </a>
                       <a href={t.client_email ? `mailto:${t.client_email}` : '#'}
                         onClick={e => { if (!t.client_email) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`Email à ${clientName || 'ce client'}${t.msg_email ? ' (déjà contacté)' : ''}`}
-                        className="btn-ghost btn-icon w-11 h-11 lg:w-10 lg:h-10" title="Email">
-                        <Mail className={t.msg_email ? 'text-amber-700' : 'text-slate-500'} aria-hidden="true" />
+                        aria-label={`Email à ${clientName || 'ce client'}${contact.canaux.email ? ` (${titreCanal(contact, 'email')})` : ''}`}
+                        className={CONTACT_ICON} title={contact.canaux.email ? titreCanal(contact, 'email') : 'E-mail'}>
+                        <Mail className={contact.canaux.email ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
                       </a>
+                      <button type="button" data-appel-btn={t.id}
+                        onClick={e => { e.stopPropagation(); setAppelAConfirmer(v => (v === t.id ? null : t.id)); }}
+                        aria-label={`Contacté par téléphone : ${clientName || 'ce client'}${contact.canaux.appel ? ` (${titreCanal(contact, 'appel')})` : ''}`}
+                        aria-expanded={appelAConfirmer === t.id}
+                        className={`${CONTACT_ICON} ${appelAConfirmer === t.id ? 'bg-brand-50 text-brand-700' : ''}`}
+                        title={contact.canaux.appel ? titreCanal(contact, 'appel') : 'Contacté par tél.'}>
+                        <Phone className={contact.canaux.appel ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
+                      </button>
                     </div>
 
                     {/* Date de dépôt + heure promise (≥ lg ; à droite du bandeau sur iPad) */}
@@ -1520,6 +1567,27 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
+              {/* Confirmation légère de l'appel, dans le flux (la carte défile horizontalement : pas de popover) */}
+              {appelAConfirmer === t.id && (
+                <div role="group" aria-label={`Noter un appel téléphonique à ${clientName || 'ce client'}`}
+                  onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); fermerAppel(t.id); } }}
+                  className="flex flex-wrap items-center gap-2 px-4 py-2 bg-brand-50/70 border-b border-slate-100 text-sm motion-safe:animate-in">
+                  <PhoneCall className="w-4 h-4 text-brand-700 shrink-0" aria-hidden="true" />
+                  <span className="font-medium text-slate-800">
+                    {clientName || 'Ce client'} ({t.ticket_code}) a été appelé ? L'appel sera noté sur le ticket.
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <button type="button" autoFocus onClick={() => noterAppel(t)}
+                      className="btn-primary btn-sm [@media(pointer:coarse)]:min-h-11">
+                      Oui, noter l'appel
+                    </button>
+                    <button type="button" onClick={() => fermerAppel(t.id)}
+                      className="btn-ghost btn-sm [@media(pointer:coarse)]:min-h-11">
+                      Non
+                    </button>
+                  </span>
+                </div>
+              )}
               </Fragment>
               );
             })}

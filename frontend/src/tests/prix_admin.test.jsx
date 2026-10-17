@@ -44,6 +44,11 @@ const { toast, apiMock } = vi.hoisted(() => ({
     getPrixAchat: vi.fn(),
     getSmartphonesTarifs: vi.fn(),
     updateSmartphoneTarif: vi.fn(),
+    getReparationSmartphonesMarques: vi.fn(),
+    getReparationSmartphonesModele: vi.fn(),
+    patchPrixPiece: vi.fn(),
+    patchPrixAppleDevice: vi.fn(),
+    creerPiecesCourantes: vi.fn(),
   },
 }));
 
@@ -69,6 +74,17 @@ const TARIFS = [
   { id: 3, marque: 'Apple', modele: 'iPhone 13', type_piece: 'Ecran', qualite: 'Incell', prix_client: 109, prix_fournisseur_ht: 40, categorie: 'standard', en_stock: true, verrou_manuel: false, ...ESTIME },
 ];
 const STATS = { modeles: 2, marques: 2, prix_min: 89, prix_max: 189 };
+// « Réparation smartphones » : marques → modèles (iPhone exclus) et pièces d'un modèle, dérivés de TARIFS
+const MARQUES_RS = [{ marque: 'Samsung', modeles: [{ modele: 'Galaxy S21', nb_pieces: 2, nb_sans_prix: 0, plus_vieux_jours: 243 }] }];
+const pieceRs = (t) => ({
+  ...t, table: 'tarifs', cle: `tarifs:${t.id}`, verrou: t.verrou_manuel, a_renseigner: false,
+  calcul: { ht: t.prix_fournisseur_ht, tva: 1.2, marge: 60, brut: Math.round((t.prix_fournisseur_ht * 1.2 + 60) * 100) / 100, arrondi: t.prix_client },
+});
+const modeleRs = ({ marque, modele }, { admin = true } = {}) => ({
+  marque, modele, categorie: 'Smartphone', au_catalogue: true, modele_trouve: true, admin, noms: [],
+  pieces: TARIFS.filter((t) => t.marque === marque && t.modele === modele).map((t) => (admin ? pieceRs(t) : { ...pieceRs(t), prix_fournisseur_ht: null, calcul: null })),
+  liens: { utopya: 'https://www.utopya.fr/catalogsearch/result/?q=Samsung+Galaxy+S21', mobilax: 'https://www.mobilax.fr/pieces-detachees/telephonie/samsung/galaxy-s/galaxy-s21' },
+});
 
 const pageTarifs = () => render(<MemoryRouter initialEntries={['/accueil/tarifs']}><TarifsPage /></MemoryRouter>);
 const echecAdmin = () => Object.assign(new Error('Élévation administrateur requise'), { status: 403, code: 'admin_required' });
@@ -83,6 +99,8 @@ beforeEach(() => {
   apiMock.getSantePrix.mockResolvedValue({ total: 3, estimes: 3, a_revoir: 0, perimes: 3, propositions_en_attente: 0, marges_faibles: 0 });
   apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT });
   apiMock.getConfig.mockResolvedValue([]);
+  apiMock.getReparationSmartphonesMarques.mockResolvedValue(MARQUES_RS);
+  apiMock.getReparationSmartphonesModele.mockImplementation(async (p) => modeleRs(p));
 });
 
 afterEach(() => cleanup());
@@ -141,13 +159,13 @@ describe('TarifsPage', () => {
     expect(screen.queryByRole('button', { name: /Importer une liste de prix/ })).not.toBeInTheDocument();
   });
 
-  it('carte d’une pièce : date du prix et cadenas ; le verrou passe par l’API', async () => {
+  it('ligne d’une pièce : date du prix et cadenas ; le verrou passe par l’API', async () => {
     localStorage.setItem('klikphone_admin', 'true');
     apiMock.setVerrouPrix.mockResolvedValue({ id: 1, verrou_manuel: true });
     pageTarifs();
-    fireEvent.click(await screen.findByRole('button', { name: /^Samsung\s*1 modele$/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Galaxy S21/ }));
-    expect(screen.getAllByText('15/02/26').length).toBeGreaterThan(0);
+    // Samsung est la marque ouverte d'emblée : le modèle s'ouvre en un clic
+    fireEvent.click(await screen.findByRole('button', { name: /Galaxy S21/ }));
+    expect((await screen.findAllByText('15/02/26')).length).toBeGreaterThan(0);
     // La batterie est déjà verrouillée
     expect(screen.getByRole('button', { name: 'Déverrouiller le prix de Samsung Galaxy S21 · Batterie' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Verrouiller le prix de Samsung Galaxy S21 · Ecran OLED' }));
@@ -161,9 +179,8 @@ describe('TarifsPage', () => {
     const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
     apiMock.toggleTarifStock.mockRejectedValue(Object.assign(new Error('Base indisponible'), { status: 500 }));
     pageTarifs();
-    fireEvent.click(await screen.findByRole('button', { name: /^Samsung\s*1 modele$/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Galaxy S21/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Samsung Galaxy S21 · Ecran OLED : en stock/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Galaxy S21/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Samsung Galaxy S21 · Ecran OLED : en stock/ }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Stock non modifié : Base indisponible'));
     expect(consoleErr).not.toHaveBeenCalled();
     consoleErr.mockRestore();
@@ -223,7 +240,7 @@ describe('TarifsPage', () => {
     localStorage.setItem('klikphone_admin', 'true');
     apiMock.creerLignePrix.mockResolvedValue({ id: 99, marque: 'Samsung', modele: 'Galaxy A12', type_piece: 'Batterie', prix_client: 69, prix_fournisseur_ht: 7.5 });
     render(<MemoryRouter initialEntries={['/accueil/tarifs?q=Samsung%20Galaxy%20A12']}><TarifsPage /></MemoryRouter>);
-    expect(await screen.findByText('Aucune pièce pour « Samsung Galaxy A12 ».')).toBeInTheDocument();
+    expect(await screen.findByText('Aucun modèle pour « Samsung Galaxy A12 ».')).toBeInTheDocument();
     expect(screen.getByLabelText('Rechercher un modèle')).toHaveValue('Samsung Galaxy A12');
     fireEvent.click(screen.getByRole('button', { name: 'Ajouter une pièce pour ce modèle' }));
     const fenetre = await screen.findByRole('dialog', { name: 'Ajouter une pièce' });
@@ -238,16 +255,18 @@ describe('TarifsPage', () => {
       marque: 'Samsung', modele: 'Galaxy A12', type_piece: 'Batterie', qualite: null, categorie: 'standard', prix_fournisseur_ht: 7.5,
     }));
     expect(toast.success).toHaveBeenCalledWith('Pièce ajoutée : Samsung Galaxy A12 · Batterie à 69 €.');
-    await waitFor(() => expect(apiMock.getTarifs).toHaveBeenCalledTimes(2));
+    // Grille relue, le modèle ajouté s'ouvre
+    await waitFor(() => expect(apiMock.getReparationSmartphonesMarques).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(apiMock.getReparationSmartphonesModele).toHaveBeenCalledWith({ marque: 'Samsung', modele: 'Galaxy A12' }));
   });
 
   it('recherche par mots (« Samsung Galaxy S21 ») et pièce déjà existante signalée', async () => {
     localStorage.setItem('klikphone_admin', 'true');
     apiMock.creerLignePrix.mockRejectedValue(Object.assign(new Error('Cette pièce existe déjà : modifiez son prix.'), { status: 409, code: 'piece_existante' }));
     render(<MemoryRouter initialEntries={['/accueil/tarifs?q=Samsung%20Galaxy%20S21']}><TarifsPage /></MemoryRouter>);
-    expect(await screen.findByRole('button', { name: /^Samsung\s*1 modele$/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Apple/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Ajouter une pièce/ }));
+    // Un seul modèle correspond : ouvert d'emblée ; « Ajouter une pièce » depuis son en-tête
+    expect(await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy S21' })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('region', { name: 'Samsung Galaxy S21' })).getByRole('button', { name: /Ajouter une pièce/ }));
     const fenetre = await screen.findByRole('dialog', { name: 'Ajouter une pièce' });
     fireEvent.change(within(fenetre).getByLabelText('Pièce'), { target: { value: 'Batterie' } });
     fireEvent.click(within(fenetre).getByLabelText('Prix client fixé à la main'));
@@ -259,19 +278,19 @@ describe('TarifsPage', () => {
     expect(within(fenetre).getByRole('button', { name: 'Voir la pièce' })).toBeInTheDocument();
   });
 
-  it('prix d’achat masqués sans le code admin : « Prix HT » les relit après l’identification', async () => {
+  it('prix d’achat masqués sans le code admin : « Afficher les prix d’achat » les relit après l’identification', async () => {
     localStorage.setItem('klikphone_admin', 'true');
-    const sansHt = TARIFS.map(({ prix_fournisseur_ht: _ht, ...t }) => t);
-    apiMock.getTarifs.mockResolvedValue(sansHt);
-    apiMock.getPrixAchat.mockResolvedValue({ tarifs: TARIFS, appleDevices: [] });
-    pageTarifs();
-    const bouton = await screen.findByRole('button', { name: /Prix HT masques/ });
-    fireEvent.click(bouton);
-    await waitFor(() => expect(apiMock.getPrixAchat).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole('button', { name: /Prix HT visibles/ })).toHaveAttribute('aria-pressed', 'true'));
-    fireEvent.click(screen.getByRole('button', { name: /^Samsung\s*1 modele$/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Galaxy S21/ }));
-    expect(screen.getByText('Achat : 105.00 € HT')).toBeInTheDocument();
+    apiMock.getReparationSmartphonesModele
+      .mockImplementationOnce(async (p) => modeleRs(p, { admin: false }))
+      .mockImplementation(async (p) => modeleRs(p));
+    render(<MemoryRouter initialEntries={['/accueil/tarifs?marque=Samsung&modele=Galaxy%20S21']}><TarifsPage /></MemoryRouter>);
+    expect(await screen.findByText(/Prix d’achat HT masqués tant que le code administrateur/)).toBeInTheDocument();
+    expect(screen.queryByText('105,00 € HT')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les prix d’achat (code admin)' }));
+    await waitFor(() => expect(apiMock.getReglesPrix).toHaveBeenCalled());
+    expect(await screen.findByText('105,00 € HT')).toBeInTheDocument();
+    expect(screen.getByText('105,00 × 1,2 + 60 = 186,00 → 189 €')).toBeInTheDocument();
+    expect(screen.queryByText(/Prix d’achat HT masqués/)).not.toBeInTheDocument();
   });
 
   it('les fenêtres Règles de prix et Importer s’ouvrent depuis le bandeau', async () => {

@@ -3,6 +3,7 @@ import api from '../lib/api';
 import { useApi } from '../hooks/useApi';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { formatDateShort, formatPrix } from '../lib/utils';
+import { libelleJoignable, appliquerContact } from '../lib/contact';
 import {
   ORDRES, SEUILS_ATTENTE, appliquerRelance, badgeAttente, compterRelancesDues, delaiAbandon, filtrerEtagere,
   formatDelai, grouperParEmplacement, groupesEtagere, libelleRelances, listeEmplacements, miseEnDemeureProposee,
@@ -10,6 +11,7 @@ import {
 } from '../lib/etagere';
 import EmplacementInput, { useEtagereConfig } from './EmplacementInput';
 import RelanceClient from './RelanceClient';
+import ContactClient from './ContactClient';
 import {
   AlertTriangle, BellRing, Clock, FileWarning, PackageCheck, RefreshCw, Search, Send, X,
 } from 'lucide-react';
@@ -39,15 +41,9 @@ function pluriel(n, mot, motPluriel = `${mot}s`) {
   return `${n} ${n > 1 ? motPluriel : mot}`;
 }
 
-// « 06 00 00 01 23 » (même mise en forme que le panneau de scan), sinon la valeur telle quelle
-function formatTel(tel) {
-  const d = String(tel ?? '').replace(/\D/g, '');
-  return d.length === 10 ? d.replace(/(\d{2})(?=\d)/g, '$1 ') : String(tel ?? '').trim();
-}
-
 function Ligne({
   t, impaye, delai, seuilCourrier, basePath, onOpenTicket, onRemettre, emplacements, smsServeur,
-  relanceOuverte, onOuvrirRelance, onRelance, onEmplacement, onMiseEnDemeure,
+  relanceOuverte, onOuvrirRelance, onRelance, onContacte, onEmplacement, onMiseEnDemeure,
 }) {
   const panneauId = useId();
   const boutonRef = useRef(null);
@@ -59,7 +55,8 @@ function Ligne({
   const action = impaye ? (reste > 0 ? 'Encaisser' : 'Ouvrir') : 'Remettre';
   const relances = libelleRelances(t.nb_relances, t.derniere_relance, formatDateShort);
   const aRelancer = !impaye && Boolean(t.relance_due);
-  const tel = formatTel(t.client_tel);
+  // « 06 12 34 56 78 (autre numéro) » quand le client se joint sur son second numéro
+  const tel = libelleJoignable(t);
 
   const fermerRelance = () => {
     onOuvrirRelance(null);
@@ -110,6 +107,9 @@ function Ligne({
                 <span>{relances}</span>
               </p>
             )}
+            {/* Client contacté depuis la fin de réparation (même vérité que le dashboard et le scan) */}
+            <ContactClient ticket={t} taille="ligne" className="mt-0.5 -mb-1.5"
+              onContacte={(contact) => onContacte(t.id, contact)} />
           </div>
           {(aRelancer || impaye || abandon?.atteint || reste > 0) && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -165,7 +165,7 @@ function Ligne({
       {relanceOuverte && (
         <RelanceClient id={panneauId} ticket={t} smsServeur={smsServeur}
           onCancel={fermerRelance}
-          onDone={(res) => { onRelance(t.id, res); fermerRelance(); }} />
+          onDone={(res, canal, contact) => { onRelance(t.id, res, canal, contact); fermerRelance(); }} />
       )}
     </li>
   );
@@ -240,7 +240,15 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
       ? { ...prev, tickets: prev.tickets.map((x) => (x.id === ticketId ? maj(x) : x)) }
       : prev));
   }, [mutate]);
-  const onRelance = useCallback((ticketId, res) => majTicket(ticketId, (x) => appliquerRelance(x, res)), [majTicket]);
+  // Relance tracée : compteur et date, plus le contact du canal (le serveur a noté la même chose)
+  const onRelance = useCallback((ticketId, res, canal, contact) => majTicket(ticketId, (x) => ({
+    ...appliquerRelance(x, res),
+    contact: contact || (canal ? appliquerContact(x.contact, canal) : x.contact),
+  })), [majTicket]);
+  // « Contacté par tél. » depuis la ligne : un appel compte comme une relance sur l'étagère
+  const onContacte = useCallback((ticketId, contact) => majTicket(ticketId, (x) => ({
+    ...appliquerRelance(x, null), contact,
+  })), [majTicket]);
   const onEmplacement = useCallback((ticketId, v) => majTicket(ticketId, (x) => ({ ...x, emplacement: v })), [majTicket]);
 
   const documents = useMemo(() => (courrier ? [{
@@ -259,7 +267,7 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
 
   const props = {
     delai, seuilCourrier: config?.mise_en_demeure_jours, basePath, onOpenTicket, onRemettre, emplacements, smsServeur,
-    onOuvrirRelance: setRelanceOuverte, onRelance, onEmplacement, onMiseEnDemeure: setCourrier,
+    onOuvrirRelance: setRelanceOuverte, onRelance, onContacte, onEmplacement, onMiseEnDemeure: setCourrier,
   };
   const ligne = (impaye) => (t) => (
     <Ligne key={t.id} t={t} impaye={impaye} relanceOuverte={relanceOuverte === t.id} {...props} />

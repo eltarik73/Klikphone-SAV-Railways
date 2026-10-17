@@ -19,6 +19,7 @@ from app.database import get_cursor
 from app.api.auth import client_ip, get_current_user, noter_echec, noter_succes, verifier_essais
 from app.api.notifications_center import push_notification
 from app.api.public_documents import LimiteurDebit
+from app.services import contact
 from app.services.poll_cache import PollCache, cached_json
 
 router = APIRouter(prefix="/api/suivi", tags=["suivi"])
@@ -235,6 +236,9 @@ def valider_devis(
                 "WHERE ticket_id = %s AND statut = 'Reçu'",
                 (ticket_id,),
             )
+            # Ligne « Statut: … » de la table historique : remet « client contacté » à zéro
+            contact.historiser_statut(cur, ticket_id, statut_courant, "En cours de réparation",
+                                      "Client", " (devis accepté en ligne)")
         else:
             contenu = "❌ Devis refusé par le client"
             cur.execute(

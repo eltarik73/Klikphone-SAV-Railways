@@ -6,8 +6,10 @@ Trois sources contrôlées, jamais de scraping de prix :
 - 'commande' : prix HT réellement payé lors d'une commande de pièce (proposition à valider) ;
 - 'import'   : fichier fournisseur Excel/CSV (services/import_prix, aperçu puis application) ;
 - 'formule'  : règles de marge et ajustements globaux (aperçu puis application).
-Plus 'manuel' (saisie admin), 'annulation' (lot annulé) et 'estimation_2026_02'
-(prix saisis le 2026-02-15, jamais mis à jour : initialisation unique dans main.py).
+Plus 'manuel' (saisie admin), 'utopya' / 'mobilax' (saisie admin d'un prix relevé chez ce
+fournisseur, écran « Réparation smartphones » : jamais lu automatiquement, le gérant le tape),
+'annulation' (lot annulé) et 'estimation_2026_02' (prix saisis le 2026-02-15, jamais mis à
+jour : initialisation unique dans main.py).
 
 Garde-fous :
 - toute écriture de prix passe par ecrire_prix / ecrire_prix_lot : n'écrit que si la valeur
@@ -15,8 +17,9 @@ Garde-fous :
 - une ligne verrouillée — verrou_manuel des pièces fournisseur (tarifs, tarifs_apple_devices),
   ou cadenas des grilles boutique (params PRIX_LIGNES_VERROUILLEES = {table: [ids]} pour
   tarifs_reparation, iphone_tarifs, smartphones_tarifs) — n'est modifiée que par une SAISIE
-  MANUELLE EXPLICITE d'un admin (source 'manuel', ligne par ligne : c'est le gérant qui tape le
-  prix ; le verrou reste posé). Jamais par un recalcul, un ajustement global ou de nouvelles
+  MANUELLE EXPLICITE d'un admin (source 'manuel', 'utopya' ou 'mobilax' — SOURCES_SAISIE —,
+  ligne par ligne : c'est le gérant qui tape le prix ; le verrou reste posé). Jamais par un
+  recalcul, un ajustement global ou de nouvelles
   règles (/simuler et /appliquer l'excluent et la listent), un import, une mise à jour en masse
   de grille (/reparation/bulk), une proposition, ni l'annulation d'un lot (conflit listé) ;
 - jamais de TRUNCATE ni de DELETE + INSERT : les ids restent stables (« tarifs:123 »
@@ -37,7 +40,9 @@ from app.services import params as params_cache
 
 CLE_REGLES = "TARIFS_REGLES"
 SOURCE_ESTIMATION = "estimation_2026_02"
-SOURCES = ("manuel", "formule", "import", "commande", "annulation")
+# Saisies explicites d'un admin, ligne par ligne : la source dit seulement où le prix a été relevé
+SOURCES_SAISIE = ("manuel", "utopya", "mobilax")
+SOURCES = SOURCES_SAISIE + ("formule", "import", "commande", "annulation")
 
 # Valeurs actuelles exactes (tarifs.calcul_prix_client, calc_prix_ipad, calc_prix_macbook
 # historiques) : aucun prix ne bouge au déploiement.
@@ -200,25 +205,112 @@ def est_ecran(type_piece) -> bool:
     return "ecran" in t or "écran" in t
 
 
+def marge_piece(type_piece, categorie, r) -> float:
+    """Marge (€) d'une pièce fournisseur selon les règles : écran par catégorie, sinon « autre »."""
+    cat = (categorie or "standard").lower()
+    if est_ecran(type_piece):
+        return r["ecran"].get(cat, r["ecran"]["standard"])
+    return r["autre"]
+
+
+def marge_apple(categorie, r) -> float:
+    return r["ipad"] if categorie == "ipad" else r["macbook"]
+
+
+def _brut(ht, marge_eur, r) -> float:
+    """HT × TVA + marge, avant arrondi : l'unique expression du calcul (prix_client, prix_apple,
+    calcul_detail), pour que le détail affiché corresponde au prix écrit."""
+    return float(ht) * r["tva"] + marge_eur
+
+
 def prix_client(ht, type_piece, categorie, r=None) -> int:
     """Prix client TTC d'une pièce fournisseur (table tarifs) : HT × TVA + marge, arrondi.
 
     Avec les règles par défaut : exactement l'ancien tarifs.calcul_prix_client.
     """
     r = r or regles()
-    cat = (categorie or "standard").lower()
-    if est_ecran(type_piece):
-        marge = r["ecran"].get(cat, r["ecran"]["standard"])
-    else:
-        marge = r["autre"]
-    return arrondir(float(ht) * r["tva"] + marge, r["arrondi"])
+    return arrondir(_brut(ht, marge_piece(type_piece, categorie, r), r), r["arrondi"])
 
 
 def prix_apple(ht, categorie, r=None) -> int:
     """Prix de vente iPad / MacBook (table tarifs_apple_devices)."""
     r = r or regles()
-    marge = r["ipad"] if categorie == "ipad" else r["macbook"]
-    return arrondir(float(ht) * r["tva"] + marge, r["arrondi"])
+    return arrondir(_brut(ht, marge_apple(categorie, r), r), r["arrondi"])
+
+
+def _detail(ht, marge_eur, r) -> dict:
+    brut = _brut(ht, marge_eur, r)
+    return {
+        "ht": float(Decimal(str(ht)).quantize(Decimal("0.01"), ROUND_HALF_UP)),
+        "tva": r["tva"], "marge": marge_eur,
+        "brut": round(brut, 2),
+        "arrondi": arrondir(brut, r["arrondi"]),
+    }
+
+
+def calcul_detail(ht, type_piece, categorie, r=None) -> dict:
+    """Détail du calcul d'une pièce fournisseur, pour l'afficher au gérant :
+    {ht, tva, marge, brut, arrondi} — « 42,00 × 1,2 + 60 = 110,40 → 119 € ».
+
+    `arrondi` est exactement prix_client(ht, type_piece, categorie, r) (même expression) ;
+    `brut` est arrondi à 2 décimales pour l'affichage seulement.
+    """
+    r = r or regles()
+    return _detail(ht, marge_piece(type_piece, categorie, r), r)
+
+
+def calcul_detail_apple(ht, categorie, r=None) -> dict:
+    """Détail du calcul d'un iPad / MacBook (marge ipad ou macbook) ; `arrondi` = prix_apple."""
+    r = r or regles()
+    return _detail(ht, marge_apple(categorie, r), r)
+
+
+def _euros(v) -> str:
+    """« 60 », « 62,5 », « 1,2 » : nombre lisible en français (2 décimales au plus, sans zéro final)."""
+    d = Decimal(str(v)).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    return str(int(d)) if d == d.to_integral_value() else format(d.normalize(), "f").replace(".", ",")
+
+
+def regles_publiques(r: dict) -> dict:
+    """Les règles qui font le prix (TVA, arrondi, marges), sans les seuils d'alerte."""
+    return {"tva": r["tva"], "arrondi": r["arrondi"], "ecran": dict(r["ecran"]), "autre": r["autre"],
+            "ipad": r["ipad"], "macbook": r["macbook"]}
+
+
+def methode_calcul(r: dict = None, admin: bool = False) -> dict:
+    """Encadré « Méthode de calcul » de l'écran Réparation smartphones, écrit par le serveur
+    selon le rôle : → {admin, texte, regles, exemple}.
+
+    Les montants des marges sont réservés au gérant (code admin) : avec la TVA et le prix
+    client affiché, ils permettraient de retrouver le coût HT, masqué hors admin (règle
+    cout_ht). Le personnel lit donc la méthode sans les montants — jamais des « valeurs par
+    défaut » qui seraient fausses dès qu'une marge change. Admin : phrase complète avec les
+    règles en vigueur, `regles` (regles_publiques) et `exemple` = calcul_detail(42, écran
+    standard) — « 42,00 × 1,2 + 60 = 110,40 → 119 € »."""
+    r = r or regles()
+    tva = _euros(r["tva"])
+    arrondi = "arrondi à l'euro supérieur" if r["arrondi"] == "entier" else "arrondi au 9 supérieur"
+    if not admin:
+        return {
+            "admin": False,
+            "texte": f"Prix client = {arrondi} de (prix fournisseur HT × {tva} + marge selon la pièce) · "
+                     "le montant des marges est réservé au gérant (code admin)",
+            "regles": None, "exemple": None,
+        }
+    e = r["ecran"]
+    if e["standard"] == r["autre"]:
+        marges = (f"marge {_euros(e['standard'])} € (écran standard, autres pièces), "
+                  f"{_euros(e['haut_de_gamme'])} € (écran haut de gamme), {_euros(e['pliant'])} € (pliant)")
+    else:
+        marges = (f"marge {_euros(e['standard'])} € (écran standard), {_euros(e['haut_de_gamme'])} € "
+                  f"(écran haut de gamme), {_euros(e['pliant'])} € (pliant), {_euros(r['autre'])} € (autres pièces)")
+    return {
+        "admin": True,
+        "texte": f"Prix client = {arrondi} de (prix fournisseur HT × {tva} + marge) · {marges} · "
+                 f"iPad +{_euros(r['ipad'])} €, MacBook +{_euros(r['macbook'])} €",
+        "regles": regles_publiques(r),
+        "exemple": calcul_detail(42, "Ecran", "standard", r),
+    }
 
 
 def marge(prix, ht, r=None):
@@ -384,10 +476,11 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
     d'historique par valeur écrite.
 
     Lignes verrouillées (verrou_manuel, ou cadenas d'une grille boutique) : écrites seulement par
-    une saisie manuelle explicite — source 'manuel' ET saisie vraie. `saisie` vaut par défaut
-    (source == 'manuel') : un écran qui écrit le prix tapé par l'admin n'a rien à passer ; une
-    écriture en masse de source 'manuel' (ajustement global d'une grille boutique, /bulk) passe
-    saisie=False et laisse les lignes verrouillées, listées dans « verrouilles ».
+    une saisie manuelle explicite — source de SOURCES_SAISIE ('manuel', ou 'utopya' / 'mobilax'
+    pour un prix relevé chez le fournisseur et tapé par l'admin) ET saisie vraie. `saisie` vaut
+    par défaut (source de saisie) : un écran qui écrit le prix tapé par l'admin n'a rien à
+    passer ; une écriture en masse de source 'manuel' (ajustement global d'une grille boutique,
+    /bulk) passe saisie=False et laisse les lignes verrouillées, listées dans « verrouilles ».
 
     → {ecrits: [(id, colonne, ancien, nouveau)], verrouilles: [id], inchanges: n, absents: [id]}
     """
@@ -396,8 +489,8 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
     meta = TABLES.get(table)
     if meta is None:
         raise ValueError(f"Table de prix inconnue : {table}")
-    saisie = (source == "manuel") if saisie is None else bool(saisie)
-    passe_verrou = source == "manuel" and saisie
+    saisie = (source in SOURCES_SAISIE) if saisie is None else bool(saisie)
+    passe_verrou = source in SOURCES_SAISIE and saisie
     voulu = {}
     for ligne_id, colonne, nouveau in changements:
         t = _type_colonne(table, colonne)
@@ -1188,25 +1281,35 @@ def _vrai(v) -> bool:
 
 
 def sante(cur, r=None) -> dict:
-    """Indicateurs agrégés (aucune donnée nominative) des prix fournisseur."""
+    """Indicateurs agrégés (aucune donnée nominative) des prix fournisseur.
+
+    Une ligne sans prix client positif (pièce courante pré-créée à 0 € HT, « prix à renseigner »,
+    api/tarifs) n'est ni estimée, ni à revoir, ni périmée, ni une marge faible : elle est comptée
+    à part dans `a_renseigner` (et dans `total`). iPad / MacBook : une ligne par appareil, jugée
+    sur son écran (même convention que les autres compteurs)."""
     r = r or regles(cur)
     tva = Decimal(str(r["tva"]))
     cur.execute("""
         SELECT count(*) AS total,
-               count(*) FILTER (WHERE prix_source = %(estim)s) AS estimes,
-               count(*) FILTER (WHERE prix_maj_le < NOW() - make_interval(days => %(revoir)s)
+               count(*) FILTER (WHERE sans_prix) AS a_renseigner,
+               count(*) FILTER (WHERE NOT sans_prix AND prix_source = %(estim)s) AS estimes,
+               count(*) FILTER (WHERE NOT sans_prix
+                                  AND prix_maj_le < NOW() - make_interval(days => %(revoir)s)
                                   AND prix_maj_le >= NOW() - make_interval(days => %(perime)s)) AS a_revoir,
-               count(*) FILTER (WHERE prix_maj_le IS NULL
-                                   OR prix_maj_le < NOW() - make_interval(days => %(perime)s)) AS perimes,
-               count(*) FILTER (WHERE ecran AND ht IS NOT NULL AND prix IS NOT NULL
+               count(*) FILTER (WHERE NOT sans_prix
+                                  AND (prix_maj_le IS NULL
+                                       OR prix_maj_le < NOW() - make_interval(days => %(perime)s))) AS perimes,
+               count(*) FILTER (WHERE NOT sans_prix AND ecran AND ht IS NOT NULL AND prix IS NOT NULL
                                   AND prix - ht * %(tva)s < %(seuil)s) AS marges_faibles,
                count(*) FILTER (WHERE verrou) AS verrouilles
         FROM (
             SELECT prix_source, prix_maj_le, type_piece ~* '[eé]cran' AS ecran,
-                   prix_fournisseur_ht AS ht, prix_client AS prix, verrou_manuel AS verrou
+                   prix_fournisseur_ht AS ht, prix_client AS prix, verrou_manuel AS verrou,
+                   COALESCE(prix_client, 0) <= 0 AS sans_prix
             FROM tarifs WHERE obsolete IS NOT TRUE
             UNION ALL
-            SELECT prix_source, prix_maj_le, TRUE, ecran_prix_ht, ecran_prix_vente, verrou_manuel
+            SELECT prix_source, prix_maj_le, TRUE, ecran_prix_ht, ecran_prix_vente, verrou_manuel,
+                   COALESCE(ecran_prix_vente, 0) <= 0
             FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE
         ) s
     """, {"estim": SOURCE_ESTIMATION, "revoir": r["jours_a_revoir"], "perime": r["jours_perime"],

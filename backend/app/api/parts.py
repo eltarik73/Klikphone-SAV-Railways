@@ -16,6 +16,7 @@ from pydantic import Field, field_validator
 from app.database import get_cursor
 from app.api.auth import get_current_user
 from app.models import CommandePieceCreate, CommandePieceUpdate
+from app.services import contact
 from app.services import prix as prix_srv
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
@@ -157,7 +158,8 @@ def create_part(data: CommandePieceCreatePrix, user: dict = Depends(get_current_
         ))
         row = cur.fetchone()
 
-        # Auto-set ticket status to "En attente de pièce" if linked
+        # Marque la commande sur le ticket ; le statut ne change PAS ici (c'est change_status,
+        # depuis la fiche, qui passe « En attente de pièce » et trace la ligne « Statut: … »)
         if ticket_id:
             cur.execute(
                 "UPDATE tickets SET commande_piece = 1, date_maj = %s WHERE id = %s",
@@ -176,8 +178,8 @@ def create_part_auto(data: dict):
         raise HTTPException(400, "ticket_id requis")
 
     with get_cursor() as cur:
-        # Get ticket_code
-        cur.execute("SELECT ticket_code FROM tickets WHERE id = %s", (ticket_id,))
+        # Get ticket_code (et le statut courant, pour tracer son changement)
+        cur.execute("SELECT ticket_code, statut FROM tickets WHERE id = %s", (ticket_id,))
         t = cur.fetchone()
         ticket_code = t["ticket_code"] if t else ""
 
@@ -199,6 +201,10 @@ def create_part_auto(data: dict):
             "UPDATE tickets SET statut = 'En attente de pièce', commande_piece = 1, date_maj = %s WHERE id = %s",
             (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
         )
+        # Ligne « Statut: … » : c'est elle qui remet « client contacté » à zéro (services/contact)
+        ancien = (t or {}).get("statut") or ""
+        if t and ancien != "En attente de pièce":
+            contact.historiser_statut(cur, ticket_id, ancien, "En attente de pièce", "Auto", " (pièce commandée)")
 
     return {"id": row["id"]}
 
@@ -263,6 +269,10 @@ def update_part(
                     "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
                     (now.strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
                 )
+                # Statut réellement changé (rowcount) : ligne « Statut: … » qui remet le contact à zéro
+                if cur.rowcount == 1:
+                    contact.historiser_statut(cur, row["ticket_id"], "En attente de pièce", "Pièce reçue",
+                                              user.get("sub") or "Staff", " (pièce reçue)")
                 # Append history entry on ticket
                 history_entry = f"[{now.strftime('%d/%m %H:%M')}] Pièce \"{row['description']}\" reçue"
                 cur.execute(

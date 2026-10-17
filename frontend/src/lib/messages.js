@@ -115,6 +115,7 @@ export function contexteMessage(t, { lienAvis = LIEN_AVIS_DEFAUT, origin } = {})
   return {
     montant,
     totalTicket,
+    paye: !!tk.paye,
     suiviUrl,
     vars: {
       prenom: tk.client_prenom || '',
@@ -147,6 +148,44 @@ export function remplirModele(message, vars = {}) {
   );
 }
 
+// ─── Montant à 0 € : la phrase du montant est retirée, le message part quand même ──
+
+/** Mention affichée (scan, carte « Prévenir », MessageComposer) quand la phrase du montant a été retirée. */
+export const MENTION_MONTANT_RETIRE = 'Montant à 0 € : phrase du montant retirée';
+
+// Phrase qui cite {montant} : du début de phrase (après . ! ? ou retour à la ligne) à sa ponctuation
+// finale, comme la suppression du lien de suivi dans lib/sms.js ; les retours à la ligne qui
+// l'encadrent sont capturés pour ne pas laisser de ligne vide quand elle occupait toute une ligne
+const PHRASE_MONTANT = /(\n?)[^.!?\n]*\{montant\}[^.!?\n]*[.!?]?(\n?)/g;
+
+/**
+ * Le modèle cite {montant} alors que le montant est à 0 € (tarif oublié ou rien à payer) et que
+ * le ticket n'est pas marqué payé : « Montant : 0.00 EUR » n'est pas envoyé. Payé : le montant à
+ * 0 € est juste, la phrase reste.
+ */
+export function montantARetirer(modele, ctx) {
+  return String(modele ?? '').includes('{montant}') && !(Number(ctx?.montant) > 0) && !ctx?.paye;
+}
+
+/** Le modèle sans la (les) phrase(s) qui cite(nt) {montant} ; inchangé s'il ne resterait rien. */
+export function sansPhraseMontant(modele) {
+  const src = String(modele ?? '');
+  const t = src.replace(PHRASE_MONTANT, (_m, avant, apres) => (avant && apres ? '\n' : avant || apres))
+    .replace(/[ \t]+\n/g, '\n').replace(/\n[ \t]+/g, '\n').replace(/ {2,}/g, ' ').trim();
+  return t || src;
+}
+
+/**
+ * Modèle rempli pour le ticket : { texte, montantRetire }. Montant à 0 € (non payé) : la phrase du
+ * montant est retirée avant le remplissage et montantRetire vaut true (mention à afficher) ;
+ * plus aucun blocage « renseignez le tarif ».
+ */
+export function remplirMessage(modele, ctx) {
+  const retirer = montantARetirer(modele, ctx);
+  const base = retirer ? sansPhraseMontant(modele) : String(modele ?? '');
+  return { texte: remplirModele(base, ctx?.vars), montantRetire: retirer && base !== String(modele ?? '') };
+}
+
 /** Lien de suivi ajouté aux messages WhatsApp / e-mail (jamais en double). */
 export function ajouterLienSuivi(message, t, suiviUrl) {
   if (!t?.ticket_code || message.includes(suiviUrl)) return message;
@@ -171,12 +210,13 @@ export function modelePret(templates) {
 /**
  * Message « appareil prêt » du ticket : texte complet (e-mail, WhatsApp : avec le lien de
  * suivi), version SMS courte (sans lien, alphabet GSM) et nombre de SMS facturés.
- * sansTarif : le modèle cite {montant} alors qu'aucun tarif n'est renseigné (envoi bloqué).
+ * montantRetire : le modèle cite {montant} alors que le montant est à 0 € (non payé) — la phrase
+ * du montant a été retirée, le message part quand même (mention MENTION_MONTANT_RETIRE).
  */
 export function messagePret(templates, t, opts) {
   const modele = modelePret(templates);
   const ctx = contexteMessage(t, opts);
-  const brut = remplirModele(modele.message, ctx.vars);
+  const { texte: brut, montantRetire } = remplirMessage(modele.message, ctx);
   const sms = versionCourteSms(brut);
   return {
     libelle: modele.label || 'Message',
@@ -185,7 +225,7 @@ export function messagePret(templates, t, opts) {
     segments: smsSegments(sms),
     // Objet de l'e-mail : parlant pour le client (MessageComposer garde « Klikphone SAV - KP-… »)
     sujet: `Votre ${ctx.vars.appareil} est prêt - ${t?.ticket_code || 'Klikphone'}`,
-    sansTarif: String(modele.message).includes('{montant}') && ctx.totalTicket <= 0 && !t?.paye,
+    montantRetire,
   };
 }
 

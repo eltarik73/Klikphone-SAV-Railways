@@ -632,7 +632,10 @@ def _ticket_word_sql(w: Word, P: SqlParams, t: str, c: str) -> str:
     cdoc = doc_sql("y", C_COLS)
     in_clients = [_any(cdoc, p)]
     if w.phone:
-        in_clients.append(_any("public.kp_phone_digits(y.telephone)", P.add(w.phone)))
+        ph = P.add(w.phone)
+        in_clients.append(_any("public.kp_phone_digits(y.telephone)", ph))
+        # Fragment du second numéro du ticket (idx_tickets_tel_contact_digits_trgm, partiel)
+        in_tickets.append(_tel_contact_sql("x", _any("public.kp_phone_digits(x.tel_contact)", ph)))
     if w.trgm:
         tw = P.add(w.text)
         in_tickets.append(f"public.kp_word_match({tw}, {dev})")
@@ -650,6 +653,18 @@ def _ticket_word_sql(w: Word, P: SqlParams, t: str, c: str) -> str:
 def _imei_exact_sql(alias: str, col: str, ph: str) -> str:
     # col <> '' : permet l'usage des index partiels sur kp_alnum(imei)
     return f"({alias}.{col} <> '' AND public.kp_alnum({alias}.{col}) = {ph})"
+
+
+def _tel_contact_sql(alias: str, cond: str) -> str:
+    """Condition sur le second numéro du ticket (tickets.tel_contact : joindre le client
+    pendant la réparation). IS NOT NULL explicite : c'est le prédicat des index partiels
+    idx_tickets_tel_contact_key / idx_tickets_tel_contact_digits_trgm, que le planner ne
+    déduirait pas de kp_phone_key(…) = … (fonction non STRICT)."""
+    return f"({alias}.tel_contact IS NOT NULL AND {cond})"
+
+
+def _tel_contact_key_sql(alias: str, ph: str) -> str:
+    return _tel_contact_sql(alias, f"public.kp_phone_key({alias}.tel_contact) = {ph}")
 
 
 def _emplacement_replie(pq: ParsedQuery) -> bool:
@@ -731,9 +746,14 @@ def ticket_where_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") 
         ors.append(_imei_exact_sql(t, "imei", i))
         ors.append(_imei_exact_sql(t, "telephone_pret_imei", i))
     if pq.phone_key:
+        k = P.add(pq.phone_key)
         # Sous-requête indexée plutôt que kp_phone_key(c.telephone) recalculé à chaque jointure
         ors.append(f"{t}.client_id IN (SELECT y.id FROM clients y"
-                   f" WHERE public.kp_phone_key(y.telephone) = {P.add(pq.phone_key)})")
+                   f" WHERE public.kp_phone_key(y.telephone) = {k})")
+        # Numéro donné comme « autre numéro » d'un ticket : le dossier est retrouvé aussi.
+        # Même forme (sous-requête hachée, servie par idx_tickets_tel_contact_key) : pas de
+        # kp_phone_key(t.tel_contact) évalué sur chaque ticket parcouru
+        ors.append(f"{t}.id IN (SELECT x.id FROM tickets x WHERE {_tel_contact_key_sql('x', k)})")
     if pq.emplacement:
         ors.append(_emplacement_sql(pq, t, P.add(pq.emplacement)))
     if words:
@@ -775,14 +795,20 @@ def ticket_score_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") 
             f" WHEN {_imei_exact_sql(t, 'telephone_pret_imei', i)} THEN 800 ELSE 0 END"
         )
     if pq.phone_key:
-        parts.append(f"CASE WHEN public.kp_phone_key({c}.telephone) = {P.add(pq.phone_key)} THEN 700 ELSE 0 END")
+        k = P.add(pq.phone_key)
+        # Le téléphone du client d'abord (700), un ticket joignable à ce numéro juste après (650)
+        parts.append(f"CASE WHEN public.kp_phone_key({c}.telephone) = {k} THEN 700"
+                     f" WHEN {_tel_contact_key_sql(t, k)} THEN 650 ELSE 0 END")
         parts.append(_phone_full_score(pq, P, c))
     if pq.emplacement:
         parts.append(f"CASE WHEN {_emplacement_sql(pq, t, P.add(pq.emplacement))}"
                      f" THEN {EMPLACEMENT_SCORE} ELSE 0 END")
     phones, imeis, prefixes = _all(pq.words, "phone"), _all(pq.words, "imei"), _all(pq.words, "prefixes")
     if phones:
-        parts.append(f"CASE WHEN {_any(f'public.kp_phone_digits({c}.telephone)', P.add(phones))} THEN 300 ELSE 0 END")
+        ph = P.add(phones)
+        parts.append(f"CASE WHEN {_any(f'public.kp_phone_digits({c}.telephone)', ph)} THEN 300"
+                     f" WHEN {_tel_contact_sql(t, _any(f'public.kp_phone_digits({t}.tel_contact)', ph))} THEN 250"
+                     " ELSE 0 END")
     if imeis:
         i = P.add(imeis)
         parts.append(
@@ -940,6 +966,8 @@ def _word_label(w: Word, row: dict, fallback: bool = True) -> Optional[str]:
             return label
     if w.phone and any(like_match(p, phone_digits(row.get("client_tel"))) for p in w.phone):
         return "téléphone"
+    if w.phone and row.get("tel_contact") and any(like_match(p, phone_digits(row.get("tel_contact"))) for p in w.phone):
+        return "autre numéro"
     for key, label in _DEVICE_FIELDS:
         if hit(row.get(key), w.patterns):
             return label
@@ -974,6 +1002,8 @@ def ticket_match_label(pq: ParsedQuery, row: dict) -> str:
             labels.append("IMEI prêt")
     if pq.phone_key and phone_key(row.get("client_tel")) == pq.phone_key:
         labels.append("téléphone")
+    elif pq.phone_key and phone_key(row.get("tel_contact")) == pq.phone_key:
+        labels.append("autre numéro")
     emplacement = _emplacement_trouve(pq, row)
     if emplacement:
         labels.append("emplacement")
