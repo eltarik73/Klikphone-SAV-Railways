@@ -128,7 +128,7 @@ export function infoDelai(valeur, maintenant = new Date()) {
     return {
       etat: 'retard',
       libelle: `En retard de ${duree}`,
-      titre: `Promis ${libelleEcheance(d, maintenant)} : en retard de ${duree}`,
+      titre: `Prévu ${libelleEcheance(d, maintenant)} : en retard de ${duree}`,
       date: d,
     };
   }

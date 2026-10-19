@@ -60,7 +60,7 @@ function definirEtapes({ isAchat, isCommande, avecDelai }) {
       ? { id: 'detail', court: 'Commande', titre: 'Votre commande', sousTitre: 'La pièce à commander', icone: Package }
       : {
         id: 'detail', court: 'Problème', titre: "Le problème et l'accès", icone: AlertTriangle,
-        sousTitre: avecDelai ? "La panne, l'accès à l'appareil et le délai promis au client" : "Ce qui ne va pas, et comment s'ouvre votre appareil",
+        sousTitre: avecDelai ? "La panne, l'accès à l'appareil et le délai de réparation" : "Ce qui ne va pas, et comment s'ouvre votre appareil",
       };
   return [
     { id: 'vous', court: 'Vous', titre: 'Vous', sousTitre: 'Vos coordonnées, pour vous prévenir quand c’est prêt', icone: User },
@@ -664,7 +664,7 @@ export default function ClientFormPage() {
                     </h3>
                     <DelaiReparation
                       idPrefix={`${PREFIX}-delai`}
-                      legende="Délai promis au client"
+                      legende="Délai de réparation"
                       value={delai.valeur}
                       cle={delai.cle}
                       onChange={updateDelai}

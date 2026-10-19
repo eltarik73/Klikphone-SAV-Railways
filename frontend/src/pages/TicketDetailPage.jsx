@@ -2529,7 +2529,7 @@ function TicketDetail({ id }) {
               {t.date_cloture && <div className="flex justify-between items-center gap-3"><span className="text-slate-500">Clôture</span><span className="font-medium text-slate-900">{formatDate(t.date_cloture)}</span></div>}
               {/* Délai promis au client (date_recuperation : texte libre, daté si possible) */}
               <div className="flex justify-between items-start gap-3">
-                <span className="text-slate-500 pt-0.5">Délai promis</span>
+                <span className="text-slate-500 pt-0.5">Délai de réparation</span>
                 <div className="flex flex-col items-end gap-1 min-w-0 text-right">
                   {dateDelai(t.date_recuperation) ? (
                     <span className="font-medium text-slate-900">{phrasePret(dateDelai(t.date_recuperation), new Date())}</span>
@@ -2553,7 +2553,7 @@ function TicketDetail({ id }) {
               <div id={`${uid}-delai-choix`} className="mt-3 card-section p-3 space-y-3 animate-in">
                 <DelaiReparation
                   idPrefix={`${uid}-delai`}
-                  legende="Nouveau délai promis"
+                  legende="Nouveau délai"
                   taille="compact"
                   value={brouillonDelai}
                   onChange={choisirDelai}
@@ -2866,7 +2866,7 @@ function TicketDetail({ id }) {
                   {/* Puce : enregistrée aussitôt ; « Autre… » : saisie libre enregistrée comme les autres champs de prix */}
                   <DelaiReparation
                     idPrefix={`${uid}-recup`}
-                    legende="Délai promis"
+                    legende="Délai de réparation"
                     taille="compact"
                     value={pricingForm.date_recuperation}
                     onChange={(valeur, { cle } = {}) => updatePricingForm({ date_recuperation: valeur || '' }, cle === CLE_AUTRE ? undefined : { wait: 0 })}

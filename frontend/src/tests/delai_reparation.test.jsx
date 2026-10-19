@@ -294,7 +294,7 @@ describe('/client?staff=1 : délai obligatoire pour une réparation créée par 
     localStorage.setItem('kp_target', 'accueil');
     await jusquAuProbleme();
     expect(screen.getByRole('heading', { level: 1, name: 'Nouveau ticket' })).toBeInTheDocument();
-    const groupe = screen.getByRole('radiogroup', { name: /Délai promis au client/ });
+    const groupe = screen.getByRole('radiogroup', { name: /Délai de réparation/ });
     expect(groupe).toHaveAttribute('aria-required', 'true');
     within(groupe).getAllByRole('radio').forEach((p) => expect(p).toHaveClass('min-h-14'));
 
@@ -394,7 +394,7 @@ describe('/client?staff=1 : délai obligatoire pour une réparation créée par 
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Écran cassé' }));
     fireEvent.click(screen.getByRole('radio', { name: /^Pas de code/ }));
-    expect(screen.getByRole('radiogroup', { name: /Délai promis au client/ })).toHaveAttribute('aria-required', 'true');
+    expect(screen.getByRole('radiogroup', { name: /Délai de réparation/ })).toHaveAttribute('aria-required', 'true');
     suivant();
     expect(screen.getByRole('alert')).toHaveTextContent('Choisissez un délai de réparation');
   });

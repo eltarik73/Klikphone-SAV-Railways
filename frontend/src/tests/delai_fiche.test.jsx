@@ -133,7 +133,7 @@ describe('Fiche ticket — carte « Dates » : délai promis', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Modifier la réparation et les tarifs' }));
     const carte = screen.getByRole('heading', { name: 'Réparation & Tarifs' }).closest('section');
     expect(within(carte).queryByLabelText('Date récupération')).not.toBeInTheDocument();
-    const groupe = within(carte).getByRole('radiogroup', { name: /Délai promis/ });
+    const groupe = within(carte).getByRole('radiogroup', { name: /Délai de réparation/ });
     fireEvent.click(within(groupe).getByRole('radio', { name: /^2h,/ }));
     await waitFor(() => expect(appelsDelai()).toHaveLength(1));
     expect(appelsDelai()[0][1]).toMatchObject({ date_recuperation: '2026-10-19T16:10' });

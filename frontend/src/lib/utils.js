@@ -37,6 +37,22 @@ export function formatDateShort(d) {
   }
 }
 
+/**
+ * Date de réception (dépôt) lisible d'un coup d'œil :
+ * { jour: '17/10', heure: '14:32', relatif: "aujourd'hui" | 'hier' | 'il y a 3 j', complet } ou null.
+ */
+export function infoReception(d, maintenant = new Date()) {
+  const date = parseUTC(d);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const jour = date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  const heure = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const minuit = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const jours = Math.round((minuit(maintenant) - minuit(date)) / 86400000);
+  const relatif = jours <= 0 ? "aujourd'hui" : jours === 1 ? 'hier' : `il y a ${jours} j`;
+  const complet = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return { jour, heure, relatif, complet: `${complet} à ${heure}` };
+}
+
 export function formatPrix(p) {
   if (p === null || p === undefined) return '—';
   const n = Number(p);

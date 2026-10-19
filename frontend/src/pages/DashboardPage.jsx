@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
-import { formatDateShort, formatPrix, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
+import { formatPrix, infoReception, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
 import { telJoignable, estAutreNumero, normaliserContact, appliquerContact, titreCanal } from '../lib/contact';
 import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
 import { openQuickScan } from '../components/ScanListener';
@@ -1214,7 +1214,7 @@ export default function DashboardPage() {
           <span className="table-header">Client</span>
           <span className="table-header hidden xl:block">Tech</span>
           <span className="table-header">Statut</span>
-          <span className="table-header hidden xl:block">Date</span>
+          <span className="table-header hidden xl:block">Reçu le</span>
           <span className="table-header hidden xl:block">Contact</span>
           <span className="table-header text-right">Prix</span>
           <span></span>
@@ -1275,6 +1275,7 @@ export default function DashboardPage() {
               const contact = normaliserContact(t.contact);
               const appareil = `${t.marque || ''} ${t.modele || t.modele_autre || ''}`.trim();
               const panne = panneAffichee(t);
+              const recu = infoReception(t.date_depot);
               const statusCfg = getStatusConfig(t.statut);
               const techColor = getTechColor(t.technicien_assigne);
               const selected = selectedIds.has(t.id);
@@ -1398,8 +1399,8 @@ export default function DashboardPage() {
                       </p>
                       {t.client_carte_camby ? <span className="badge badge-sm badge-brand shrink-0">Camby</span> : null}
                       <PrioriteBadge priorite={t.priorite} court className="shrink-0" />
-                      {/* Délai promis : « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer » */}
-                      <PastilleDelai ticket={t} />
+                      {/* Délai : « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer » */}
+                      <PastilleDelai ticket={t} taille="md" />
                       {receptionACompleter(t) && (
                         /* Pastille ambre (le libellé complet ne tient sur aucune ligne de 56 px sans la faire déborder) */
                         <span className="badge badge-sm badge-warning shrink-0 px-1.5"
@@ -1431,6 +1432,12 @@ export default function DashboardPage() {
                         </span>
                       )}
                     </p>
+                    {/* Mobile / tablette portrait : la colonne « Reçu le » n'existe pas, la date passe sous le client */}
+                    {recu && (
+                      <p className="lg:hidden t-small tabular-nums text-slate-700" title={`Reçu le ${recu.complet}`}>
+                        Reçu le <span className="font-semibold text-slate-900">{recu.jour}</span> à {recu.heure} · {recu.relatif}
+                      </p>
+                    )}
                   </div>
 
                   {/* Prix (mobile, à droite du titre) */}
@@ -1512,14 +1519,21 @@ export default function DashboardPage() {
                       </button>
                     </div>
 
-                    {/* Date de dépôt + heure promise (≥ lg ; à droite du bandeau sur iPad) */}
+                    {/* Date de réception (dépôt) + délai (≥ lg ; à droite du bandeau sur iPad) */}
                     <div className="hidden lg:block lg:ml-auto xl:ml-0 min-w-0 cursor-pointer xl:col-start-6 xl:row-start-1"
                       onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                      <p className="t-caption tabular-nums text-slate-600 whitespace-nowrap">{formatDateShort(t.date_depot)}</p>
-                      {/* Heure promise d'un ticket sans pastille (réparation terminée…) : rappel neutre */}
+                      {recu ? (
+                        <p className="text-sm tabular-nums whitespace-nowrap leading-tight" title={`Reçu le ${recu.complet}`}>
+                          <span className="sr-only">Reçu le </span>
+                          <span className="font-semibold text-slate-900">{recu.jour}</span>{' '}
+                          <span className="text-slate-700">{recu.heure}</span>
+                          <span className="block t-caption text-slate-600">{recu.relatif}</span>
+                        </p>
+                      ) : <p className="t-caption text-slate-600">—</p>}
+                      {/* Délai d'un ticket sans pastille (réparation terminée…) : rappel neutre */}
                       {t.date_recuperation && !delaiTicket(t) && (() => {
                         const info = infoDelai(t.date_recuperation);
-                        const texte = info.date ? `Promis ${dateHeureCourte(info.date)}` : info.libelle;
+                        const texte = info.date ? `Délai ${dateHeureCourte(info.date)}` : info.libelle;
                         return (
                           <p className="t-caption flex items-center gap-1 mt-0.5 whitespace-nowrap" title={info.titre}>
                             <Calendar className="w-3 h-3 shrink-0" aria-hidden="true" /> <span className="truncate">{texte}</span>
