@@ -11,15 +11,26 @@ import {
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import DelaiReparation from '../components/DelaiReparation';
+import { dateDelai, phrasePret } from '../lib/delai';
+import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, KeyRound,
-  Send, Package, ShoppingBag, ClipboardCheck,
+  Send, Package, ShoppingBag, ClipboardCheck, Clock,
 } from 'lucide-react';
 
 /**
  * Borne client « Déposer un appareil » (/client) en 4 étapes : Vous · Votre appareil ·
  * Le problème et l'accès (ou Votre commande / Votre achat) · Vérification. Le récapitulatif
  * de la dernière étape renvoie à l'étape à corriger ; l'envoi ne part que de là.
+ *
+ * Borne en boucle sans rechargement : à chaque retour après un dépôt, et au repos, elle se
+ * recharge d'elle-même si une nouvelle version a été déployée (lib/miseAJour.js).
+ *
+ * Mode personnel (/client?staff=1 avec une session du personnel, bouton « Nouveau ticket » du
+ * tableau de bord) : même page, mais une réparation exige le délai promis au client
+ * (date_recuperation) ; après l'envoi on revient au tableau de bord, sans compte à rebours.
+ * Sur la borne publique (/client, /depot), le client ne fixe jamais de délai.
  */
 const ETAPES = ['vous', 'appareil', 'detail', 'verification'];
 const ACHAT_TYPES = ['Téléphone', 'Accessoire', 'Ordinateur'];
@@ -32,12 +43,25 @@ const FORM_INITIAL = {
   imei: '', carte_camby: false, consentement_marketing: false, attente_boutique: false,
 };
 
-function definirEtapes({ isAchat, isCommande }) {
+// Session du personnel ouverte sur ce poste : tableau de bord de retour (/accueil ou /tech), sinon null
+function retourPersonnel() {
+  try {
+    if (!(api.token || localStorage.getItem('kp_token'))) return null;
+    return localStorage.getItem('kp_target') === 'tech' ? '/tech' : '/accueil';
+  } catch {
+    return api.token ? '/accueil' : null;
+  }
+}
+
+function definirEtapes({ isAchat, isCommande, avecDelai }) {
   const detail = isAchat
     ? { id: 'detail', court: 'Achat', titre: 'Votre achat', sousTitre: 'Ce que vous achetez', icone: ShoppingBag }
     : isCommande
       ? { id: 'detail', court: 'Commande', titre: 'Votre commande', sousTitre: 'La pièce à commander', icone: Package }
-      : { id: 'detail', court: 'Problème', titre: "Le problème et l'accès", sousTitre: "Ce qui ne va pas, et comment s'ouvre votre appareil", icone: AlertTriangle };
+      : {
+        id: 'detail', court: 'Problème', titre: "Le problème et l'accès", icone: AlertTriangle,
+        sousTitre: avecDelai ? "La panne, l'accès à l'appareil et le délai promis au client" : "Ce qui ne va pas, et comment s'ouvre votre appareil",
+      };
   return [
     { id: 'vous', court: 'Vous', titre: 'Vous', sousTitre: 'Vos coordonnées, pour vous prévenir quand c’est prêt', icone: User },
     { id: 'appareil', court: 'Appareil', titre: 'Votre appareil', sousTitre: 'Le type, la marque et le modèle', icone: Smartphone },
@@ -56,7 +80,16 @@ export default function ClientFormPage() {
   const [createdCode, setCreatedCode] = useState(null);
   const [errors, setErrors] = useState({});
   const [countdown, setCountdown] = useState(null);
+  const [retourEnCours, setRetourEnCours] = useState(false);
   const titreRef = useRef(null);
+  const minuterieRef = useRef(null);
+  const retourRef = useRef(false);
+  const monteeRef = useRef(true);
+  // Création par le personnel : /client?staff=1 ET session ouverte (sinon borne publique)
+  const [tableauDeBord] = useState(() => (searchParams.get('staff') === '1' ? retourPersonnel() : null));
+  const modePersonnel = Boolean(tableauDeBord);
+  // Délai promis (mode personnel, réparation) : valeur « AAAA-MM-JJTHH:MM » et puce choisie
+  const [delai, setDelai] = useState({ valeur: '', cle: null });
 
   const [categories, setCategories] = useState([]);
   const [pannes, setPannes] = useState([]);
@@ -80,7 +113,8 @@ export default function ClientFormPage() {
   const isCommande = form.categorie === 'Commande';
   const isAchat = form.categorie === 'Achat';
   const sansModele = isCommande || isAchat;
-  const etapes = definirEtapes({ isAchat, isCommande });
+  const delaiRequis = modePersonnel && !isAchat && !isCommande;
+  const etapes = definirEtapes({ isAchat, isCommande, avecDelai: delaiRequis });
   const currentId = ETAPES[step] || 'vous';
   const etape = etapes[step] || etapes[0];
   const isVerification = currentId === 'verification';
@@ -102,27 +136,35 @@ export default function ClientFormPage() {
     setErrors({});
     setCountdown(null);
     setModeleLibre(false);
+    setDelai({ valeur: '', cle: null });
     api.getCategories().then(setCategories).catch(() => {});
     api.getPannes().then(setPannes).catch(() => {});
   };
 
-  // Retour automatique à l'accueil 10 s après la confirmation
+  useEffect(() => {
+    monteeRef.current = true;
+    return () => { monteeRef.current = false; };
+  }, []);
+
+  // Retour automatique à l'accueil 10 s après la confirmation (remise à zéro hors du setState)
   useEffect(() => {
     if (!createdCode) return undefined;
     setCountdown(10);
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          resetForm();
-          return null;
-        }
-        return prev - 1;
-      });
+    minuterieRef.current = setInterval(() => {
+      setCountdown((prev) => (prev === null ? null : Math.max(prev - 1, 0)));
     }, 1000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => clearInterval(minuterieRef.current);
   }, [createdCode]);
+
+  useEffect(() => {
+    if (countdown === 0) retourApresDepot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
+
+  // Borne au repos (étape 1, rien de saisi, personne depuis 2 min) : rechargement si nouvelle version
+  useRechargementAuRepos({
+    auRepos: !modePersonnel && step === 0 && !createdCode && formulaireIntact(form, FORM_INITIAL),
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +213,30 @@ export default function ClientFormPage() {
     setErrors((e) => ({ ...e, [field]: undefined }));
   };
 
+  // Fin du compte à rebours ou « Nouveau dépôt » : si une nouvelle version a été déployée, la page
+  // se recharge (le formulaire repart vide avec le nouveau code) ; sinon remise à zéro habituelle.
+  const retourApresDepot = async () => {
+    if (retourRef.current) return;
+    retourRef.current = true;
+    clearInterval(minuterieRef.current);
+    setCountdown(null);
+    setRetourEnCours(true);
+    let recharge = false;
+    try {
+      recharge = await rechargerSiNouvelleVersion();
+    } finally {
+      retourRef.current = false;
+    }
+    if (recharge || !monteeRef.current) return;
+    setRetourEnCours(false);
+    resetForm();
+  };
+
+  const updateDelai = (valeur, { cle } = {}) => {
+    setDelai({ valeur: valeur || '', cle: cle || null });
+    setErrors((e) => ({ ...e, delai: undefined }));
+  };
+
   const updateAcces = ({ pin, pattern, mode }) => {
     setForm((f) => ({ ...f, pin, pattern, acces_mode: mode }));
     setErrors((e) => ({ ...e, acces: undefined }));
@@ -204,6 +270,11 @@ export default function ClientFormPage() {
       } else {
         if (!form.panne && !pieceACommander) errs.panne = 'Choisissez ce qui ne va pas';
         if (pieceACommander && !pieceNom.trim()) errs.piece_nom = 'Indiquez la pièce à commander';
+        if (delaiRequis) {
+          const promis = dateDelai(delai.valeur);
+          if (!promis) errs.delai = 'Choisissez un délai de réparation';
+          else if (promis.getTime() < Date.now() - 60_000) errs.delai = 'Choisissez une heure à venir';
+        }
         const acces = erreurAcces(form);
         if (acces) errs.acces = acces;
       }
@@ -214,6 +285,22 @@ export default function ClientFormPage() {
       return false;
     }
     return true;
+  };
+
+  // Ticket créé : la borne affiche le code (compte à rebours) ; le personnel retourne au tableau de bord
+  const aboutir = (result) => {
+    // Le dashboard se rafraîchit aussitôt avec le nouveau ticket
+    invalidateCache('tickets', 'dashboard', 'interactions', 'clients', 'commandes');
+    if (!modePersonnel) {
+      setCreatedCode(result.ticket_code);
+      return;
+    }
+    const promis = delaiRequis ? dateDelai(delai.valeur) : null;
+    toast.success(
+      `Ticket ${result.ticket_code} créé${promis ? ` · ${phrasePret(promis, new Date())}` : ''}`,
+      result.id ? { onClick: () => navigate(`${tableauDeBord}/ticket/${result.id}`) } : undefined,
+    );
+    navigate(tableauDeBord);
   };
 
   const handleSubmit = async () => {
@@ -247,7 +334,7 @@ export default function ClientFormPage() {
           });
         }
         await api.changeStatus(result.id, 'Clôturé');
-        setCreatedCode(result.ticket_code);
+        aboutir(result);
       } else {
         const appareil = champsModele(form.marque, form.modele, form.modele_autre);
         // Le symptôme choisi par le client reste dans panne (stats, forfait) ; la pièce est
@@ -267,7 +354,18 @@ export default function ClientFormPage() {
           commande_piece: (isCommande || pieceACommander) ? 1 : 0,
           tel_contact: telContact,
           ...(!isCommande && form.attente_boutique ? { priorite: 'attente' } : {}),
+          ...(delaiRequis ? { date_recuperation: delai.valeur } : {}),
         });
+
+        // Le schéma TicketCreate du serveur ignore encore date_recuperation : l'heure promise est
+        // posée aussitôt par PATCH (texte « AAAA-MM-JJTHH:MM », comme le champ de la fiche).
+        if (delaiRequis) {
+          try {
+            await api.updateTicket(result.id, { date_recuperation: delai.valeur });
+          } catch {
+            toast.warning(`${result.ticket_code} : délai non enregistré, fixez-le depuis la fiche.`);
+          }
+        }
 
         if (isCommande) {
           await api.createPartAuto({
@@ -293,10 +391,8 @@ export default function ClientFormPage() {
           api.learnTerm('modele_custom', appareil.modele).catch(() => {});
         }
 
-        setCreatedCode(result.ticket_code);
+        aboutir(result);
       }
-      // Le dashboard se rafraîchit aussitôt avec le nouveau ticket
-      invalidateCache('tickets', 'dashboard', 'interactions', 'clients', 'commandes');
     } catch (err) {
       toast.error(err.message || 'Erreur lors de la création du ticket');
     } finally {
@@ -330,7 +426,7 @@ export default function ClientFormPage() {
 
   const handleBack = () => {
     setErrors({});
-    if (step === 0) navigate('/');
+    if (step === 0) navigate(modePersonnel ? tableauDeBord : '/');
     else setStep((s) => s - 1);
   };
 
@@ -378,6 +474,10 @@ export default function ClientFormPage() {
         { label: 'Accès', valeur: resumeAcces(form), masque: true },
       ],
     },
+    ...(delaiRequis ? [{
+      id: 'delai', titre: 'Délai de réparation', icone: Clock, onModifier: () => allerA(2),
+      lignes: [{ label: 'Récupération', valeur: dateDelai(delai.valeur) ? phrasePret(dateDelai(delai.valeur), new Date()) : '' }],
+    }] : []),
   ];
 
   return (
@@ -387,14 +487,18 @@ export default function ClientFormPage() {
         <div className="flex items-center gap-2 mb-5">
           <button
             type="button"
-            onClick={termine ? resetForm : handleBack}
+            onClick={termine ? retourApresDepot : handleBack}
+            disabled={termine && retourEnCours}
             className="btn-ghost btn-icon btn-lg -ml-2"
-            aria-label={step === 0 || termine ? "Retour à l'accueil" : "Retour à l'étape précédente"}
+            aria-label={step === 0 && modePersonnel ? 'Retour au tableau de bord'
+              : step === 0 || termine ? "Retour à l'accueil" : "Retour à l'étape précédente"}
           >
             <ArrowLeft aria-hidden="true" />
           </button>
           <div className="flex-1 min-w-0">
-            <h1 ref={titreRef} tabIndex={-1} className="t-display focus:outline-none">Déposer un appareil</h1>
+            <h1 ref={titreRef} tabIndex={-1} className="t-display focus:outline-none">
+              {modePersonnel ? 'Nouveau ticket' : 'Déposer un appareil'}
+            </h1>
             {!termine && (
               <span className="block text-sm text-slate-600 mt-0.5">Étape {step + 1} sur {ETAPES.length} — {etape.titre}</span>
             )}
@@ -552,6 +656,25 @@ export default function ClientFormPage() {
               <>
                 <ChampsPanne prefix={PREFIX} form={form} errors={errors} onChange={updateForm} pannes={pannes} />
 
+                {/* Délai promis au client : obligatoire quand le personnel crée le ticket */}
+                {delaiRequis && (
+                  <div className="border-t border-slate-100 pt-5">
+                    <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900 mb-3">
+                      <Clock className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Délai de réparation
+                    </h3>
+                    <DelaiReparation
+                      idPrefix={`${PREFIX}-delai`}
+                      legende="Délai promis au client"
+                      value={delai.valeur}
+                      cle={delai.cle}
+                      onChange={updateDelai}
+                      required
+                      error={errors.delai}
+                      taille="borne"
+                    />
+                  </div>
+                )}
+
                 {/* Accès à l'appareil : code, schéma ou pas de code */}
                 <div className="border-t border-slate-100 pt-5">
                   <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900 mb-3">
@@ -669,7 +792,8 @@ export default function ClientFormPage() {
               >
                 <Send aria-hidden="true" /> Suivre {isAchat ? 'mon achat' : isCommande ? 'ma commande' : 'ma réparation'}
               </button>
-              <button type="button" onClick={resetForm} className="btn-secondary btn-lg btn-block">
+              <button type="button" onClick={retourApresDepot} disabled={retourEnCours}
+                aria-busy={retourEnCours || undefined} className="btn-secondary btn-lg btn-block">
                 <ArrowLeft aria-hidden="true" /> Nouveau dépôt
               </button>
             </div>

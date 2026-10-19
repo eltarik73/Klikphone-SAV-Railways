@@ -13,7 +13,8 @@ import PatternGrid from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
 import MessageComposer from '../components/MessageComposer';
 import RepairTimer from '../components/RepairTimer';
-import LiveCountdown from '../components/LiveCountdown';
+import DelaiReparation, { PastilleDelai, CLE_AUTRE } from '../components/DelaiReparation';
+import { dateDelai, phrasePret } from '../lib/delai';
 import RepairQueue from '../components/RepairQueue';
 import PersonnaliserPanel from '../components/PersonnaliserPanel';
 import AutocompleteField from '../components/AutocompleteField';
@@ -44,7 +45,7 @@ import {
   AlertTriangle, Smartphone, Shield, Calendar, Clock,
   Zap, Edit3, X, CheckCircle2, Sparkles,
   Flag, PhoneCall, PhoneForwarded, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
-  MapPin, CreditCard, FileSignature, Ticket, Gift, Coins,
+  MapPin, CreditCard, FileSignature, Ticket, Gift, Coins, CalendarClock,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 
@@ -769,6 +770,11 @@ function TicketDetail({ id }) {
   const [editingDevice, setEditingDevice] = useState(false);
   const [editingClient, setEditingClient] = useState(false);
   const [editingPricing, setEditingPricing] = useState(false);
+  // Carte « Dates » : choix du délai promis ouvert ; « Autre… » saisi en brouillon local,
+  // enregistré seulement par « Valider » (« Fermer » l'abandonne)
+  const [editionDelai, setEditionDelai] = useState(false);
+  const [delaiAutre, setDelaiAutre] = useState(false);
+  const [brouillonDelai, setBrouillonDelai] = useState('');
 
   // Formulaires (source de vérité pendant l'édition, jamais écrasés par une réponse serveur)
   const [deviceForm, setDeviceForm] = useState({});
@@ -1321,6 +1327,39 @@ function TicketDetail({ id }) {
   const updatePricingForm = (changes, opts) => {
     majPricingForm({ ...pricingFormRef.current, ...changes });
     programmerTarif(changes, opts);
+  };
+
+  // Délai promis (carte Dates) : même enregistrement que le champ « Récupération » des prix
+  // (date_recuperation, texte « AAAA-MM-JJTHH:MM »), puis confirmation et fermeture du choix
+  const enregistrerDelai = async (valeur) => {
+    if (valeur !== pricingFormRef.current.date_recuperation) updatePricingForm({ date_recuperation: valeur }, { wait: 0 });
+    try {
+      await pricingSave.flush();
+    } catch {
+      return; // message d'erreur déjà affiché par l'enregistrement des prix
+    }
+    const promis = dateDelai(valeur);
+    toast.success(promis ? `Délai enregistré : ${phrasePret(promis, new Date()).toLowerCase()}` : 'Délai enregistré');
+    setEditionDelai(false);
+    setDelaiAutre(false);
+  };
+
+  const choisirDelai = (valeur, { cle } = {}) => {
+    setBrouillonDelai(valeur || '');
+    if (cle === CLE_AUTRE) {
+      // Date libre : brouillon local, rien n'est envoyé avant « Valider »
+      setDelaiAutre(true);
+      return;
+    }
+    // Puce (1h … 48h) : enregistrée aussitôt
+    setDelaiAutre(false);
+    enregistrerDelai(valeur);
+  };
+
+  const ouvrirFermerDelai = () => {
+    setBrouillonDelai(pricingFormRef.current.date_recuperation || '');
+    setDelaiAutre(false);
+    setEditionDelai((v) => !v);
   };
 
   const changerModeReduction = (mode) => {
@@ -2488,16 +2527,52 @@ function TicketDetail({ id }) {
                 </div>
               )}
               {t.date_cloture && <div className="flex justify-between items-center gap-3"><span className="text-slate-500">Clôture</span><span className="font-medium text-slate-900">{formatDate(t.date_cloture)}</span></div>}
-              {t.date_recuperation && (
-                <div className="flex justify-between items-center gap-3">
-                  <span className="text-slate-500">Récupération</span>
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <span className="font-medium text-slate-900">{t.date_recuperation}</span>
-                    <LiveCountdown dateStr={t.date_recuperation} visible={widgetPrefs.countdown} />
-                  </div>
+              {/* Délai promis au client (date_recuperation : texte libre, daté si possible) */}
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-slate-500 pt-0.5">Délai promis</span>
+                <div className="flex flex-col items-end gap-1 min-w-0 text-right">
+                  {dateDelai(t.date_recuperation) ? (
+                    <span className="font-medium text-slate-900">{phrasePret(dateDelai(t.date_recuperation), new Date())}</span>
+                  ) : t.date_recuperation ? (
+                    <span className="font-medium text-slate-900 [overflow-wrap:anywhere]">{t.date_recuperation}</span>
+                  ) : (
+                    <span className="text-slate-600">Non fixé</span>
+                  )}
+                  {widgetPrefs.countdown && <PastilleDelai ticket={t} />}
                 </div>
-              )}
+              </div>
             </div>
+            {!remis && (
+              <button type="button" onClick={ouvrirFermerDelai}
+                aria-expanded={editionDelai} aria-controls={`${uid}-delai-choix`}
+                className="btn-secondary btn-sm w-full mt-4">
+                <CalendarClock aria-hidden="true" /> {t.date_recuperation ? 'Changer le délai' : 'Fixer le délai'}
+              </button>
+            )}
+            {!remis && editionDelai && (
+              <div id={`${uid}-delai-choix`} className="mt-3 card-section p-3 space-y-3 animate-in">
+                <DelaiReparation
+                  idPrefix={`${uid}-delai`}
+                  legende="Nouveau délai promis"
+                  taille="compact"
+                  value={brouillonDelai}
+                  onChange={choisirDelai}
+                />
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => { setEditionDelai(false); setDelaiAutre(false); }}
+                    className="btn-ghost btn-sm">
+                    {delaiAutre ? 'Annuler' : 'Fermer'}
+                  </button>
+                  {delaiAutre && (
+                    <button type="button" onClick={() => enregistrerDelai(brouillonDelai)}
+                      disabled={!dateDelai(brouillonDelai) || dateDelai(brouillonDelai).getTime() < Date.now() - 60_000}
+                      className="btn-primary btn-sm">
+                      <Check aria-hidden="true" /> Valider
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </section>
         );
 
@@ -3151,6 +3226,8 @@ function TicketDetail({ id }) {
             </button>
           </div>
           <PrioriteBadge priorite={t.priorite} taille="md" />
+          {/* Délai promis, lisible d'un coup d'œil (rien une fois la réparation terminée) */}
+          <PastilleDelai ticket={t} taille="md" sombre />
           {!remis && normaliserEmplacement(t.emplacement) && (
             <span className="badge bg-white/10 text-white" title="Emplacement sur l’étagère">
               <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />

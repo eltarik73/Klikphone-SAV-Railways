@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Play, Wrench, Clock, AlertTriangle, ChevronDown, Loader2 } from 'lucide-react';
+import { X, Play, Wrench, ChevronDown, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi } from '../hooks/useApi';
 import StatusBadge from './StatusBadge';
 import { PrioriteBadge, comparerPriorite } from './PrioriteBadge';
 import { IconesContact } from './ContactClient';
 import { libelleContact, normaliserContact } from '../lib/contact';
+import { PastilleDelai, useMaintenant } from './DelaiReparation';
 
 // Le serveur trie déjà (priorité, heure promise, statut, dépôt) ; tri stable de secours sur la
 // seule priorité, qui garde l'ordre serveur à priorité égale.
@@ -14,34 +15,14 @@ export function trierFile(tickets) {
   return [...(tickets || [])].sort((a, b) => comparerPriorite(a?.priorite, b?.priorite));
 }
 
-function parseDateForCountdown(str) {
-  if (!str) return null;
-  const d = new Date(str);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function formatShortCountdown(ms) {
-  const abs = Math.abs(ms);
-  const totalH = Math.floor(abs / 3600000);
-  if (totalH >= 24) {
-    const d = Math.floor(totalH / 24);
-    return `${d}j ${totalH % 24}h`;
-  }
-  const m = Math.floor((abs % 3600000) / 60000);
-  return `${totalH}h${String(m).padStart(2, '0')}`;
-}
-
 function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate }) {
+  // Une seule horloge pour toute la file (pastilles de délai)
+  const maintenant = useMaintenant();
   return (
     <div className="space-y-1.5">
       {queue.map((t, i) => {
         const isCurrent = t.id === currentTicketId;
         const isInProgress = t.statut === 'En cours de réparation';
-        const recupDate = parseDateForCountdown(t.date_recuperation);
-        const now = new Date();
-        const countdownMs = recupDate ? recupDate - now : null;
-        const isOverdue = countdownMs !== null && countdownMs < 0;
-        const isUrgent = countdownMs !== null && countdownMs > 0 && countdownMs < 6 * 3600000;
         // Client contacté depuis le dernier changement de statut (t.contact, serveur) : seulement s'il l'a été
         const contact = t.contact ? normaliserContact(t.contact) : null;
 
@@ -68,16 +49,13 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                 {isInProgress ? <Play className="w-3 h-3 fill-current" /> : i + 1}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="t-mono text-xs font-semibold text-slate-500">{t.ticket_code}</span>
+                {/* En tête de ligne pour le technicien : le délai promis (« 15:30 · dans 1 h 20 », « En retard… ») */}
+                <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
+                  <PastilleDelai ticket={t} maintenant={maintenant} />
+                  <span className="t-mono text-xs font-semibold text-slate-500 shrink-0">{t.ticket_code}</span>
                   <span className="text-sm font-semibold text-slate-900 truncate">
                     {t.client_prenom} {t.client_nom}
                   </span>
-                  {isUrgent && (
-                    <span className="badge badge-sm badge-danger shrink-0">
-                      Urgent
-                    </span>
-                  )}
                 </div>
                 <div className="t-small truncate mb-1.5">
                   {t.modele || t.marque} {t.panne ? `• ${t.panne}` : ''}
@@ -88,17 +66,6 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
                     <span className="t-caption">{t.technicien_assigne}</span>
                   )}
                   <StatusBadge statut={t.statut} />
-                  {countdownMs !== null && (
-                    <span className={`badge badge-sm ${
-                      isOverdue ? 'badge-danger' : isUrgent ? 'badge-warning' : 'badge-success'
-                    }`}>
-                      {isOverdue ? (
-                        <><AlertTriangle className="w-3 h-3" aria-hidden="true" /> Dépassé</>
-                      ) : (
-                        <><Clock className="w-3 h-3" aria-hidden="true" /> {formatShortCountdown(countdownMs)}</>
-                      )}
-                    </span>
-                  )}
                 </div>
                 {contact?.depuis_statut && (
                   <div className="mt-1.5 flex items-center gap-1.5 t-caption min-w-0">

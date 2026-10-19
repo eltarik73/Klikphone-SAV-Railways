@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   X, Volume2, VolumeX, ScanLine, Phone, MessageCircle, Smartphone, UserRound, Wallet,
   StickyNote, Printer, ExternalLink, PackageCheck, Play, CircleCheckBig, AlertTriangle,
-  Loader2, Clock, ShieldCheck, HandCoins, Info, Receipt, Send, MapPin,
+  Loader2, Clock, ShieldCheck, HandCoins, Info, Receipt, Send, MapPin, CalendarClock,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useSmsServeur } from '../hooks/useSmsServeur';
@@ -29,6 +29,9 @@ import ContactClient from './ContactClient';
 import EmplacementInput from './EmplacementInput';
 import { listeEmplacements, normaliserEmplacement } from '../lib/etagere';
 import { isScanSoundOn, setScanSoundOn, playScanSound, takePendingScan } from './ScanListener';
+// Délai promis au client : pastille près du statut, puces pour le fixer en un tap s'il manque
+import DelaiReparation, { PastilleDelai, CLE_AUTRE } from './DelaiReparation';
+import { delaiTicket, dateDelai, phrasePret } from '../lib/delai';
 
 const PrintDrawer = lazy(() => import('./PrintDrawer'));
 // Chargé à la première proposition de message (après « Réparation terminée » par défaut)
@@ -992,6 +995,20 @@ function QuickScanHost({ user }) {
     }
   }, [toast, reload, user.utilisateur]);
 
+  // Délai promis fixé depuis le panneau (PATCH date_recuperation, texte « AAAA-MM-JJTHH:MM ») :
+  // la pastille passe à l'heure promise, dashboard et fiche prévenus
+  const fixerDelai = useCallback(async (t, valeur) => {
+    const res = await api.updateTicket(t.id, { date_recuperation: valeur });
+    setView((v) => (v && v.id === t.id && v.ticket
+      ? { ...v, ticket: { ...v.ticket, ...(res?.ticket || {}), date_recuperation: valeur } } : v));
+    invalidateCache('tickets', 'dashboard');
+    notifyTicketUpdated(t.id, res?.ticket);
+    playScanSound('ok');
+    const promis = dateDelai(valeur);
+    toastRef.current.success(`${t.ticket_code} : délai fixé, ${promis ? phrasePret(promis, new Date()).toLowerCase() : valeur}`);
+    return res;
+  }, []);
+
   // « Contacté par tél. » noté (POST /api/tickets/{id}/contact fait par ContactClient) : contact du
   // serveur repris tout de suite, dashboard et fiche prévenus, notes relues (la note « appel » s'y ajoute)
   const clientContacte = useCallback((id, contact) => {
@@ -1046,6 +1063,7 @@ function QuickScanHost({ user }) {
           onEncaisser={encaisserSolde}
           onPretRecupere={pretRecupere}
           onContacte={clientContacte}
+          onDelai={fixerDelai}
           onShowTicket={(id, label) => showTicket(id, { label })}
           emplacements={emplacements}
           onBesoinEmplacements={chargerEmplacements}
@@ -1113,6 +1131,7 @@ function ScanDialog({
   onSchedule, onCancelDeferred, onCommitDeferred, onRestitution, onEncaisser, onPretRecupere, onShowTicket,
   onDismissMismatch, onDismissProposition, onWizardChange, onContacte = () => {},
   emplacements = null, onBesoinEmplacements = () => {}, onEmplacement = () => {}, catalogue = null,
+  onDelai = null,
 }) {
   const toast = useToast();
   const { actif: smsServeur } = useSmsServeur();
@@ -1140,6 +1159,9 @@ function ScanDialog({
   const notes = useMemo(() => (view.notes || []).filter((n) => n.important).slice(0, 3), [view.notes]);
   const cfg = getStatusConfig(t.statut);
   const jours = joursDepuis(t.date_depot);
+  // Réparation sans délai promis (dépôt à la borne, ancien ticket) : puces pour le fixer en un tap
+  const delaiTitreId = useId();
+  const [delaiSaisi, setDelaiSaisi] = useState({ valeur: '', cle: null, envoi: false });
 
   const titleId = useId();
   const descId = useId();
@@ -1472,6 +1494,25 @@ function ScanDialog({
     }
   };
 
+  const delaiAFixer = !!onDelai && !wizard && !done && delaiTicket(t)?.etat === 'aucun';
+  const enregistrerDelai = async (valeur) => {
+    if (!dateDelai(valeur) || delaiSaisi.envoi) return;
+    setDelaiSaisi((d) => ({ ...d, valeur, envoi: true }));
+    try {
+      await onDelai(t, valeur);
+    } catch (err) {
+      playScanSound('error');
+      toast.error(`${t.ticket_code} : ${err?.message || 'délai non enregistré'}`);
+    } finally {
+      setDelaiSaisi((d) => ({ ...d, envoi: false }));
+    }
+  };
+  const choisirDelai = (valeur, { cle } = {}) => {
+    if (delaiSaisi.envoi) return;
+    setDelaiSaisi({ valeur, cle, envoi: false });
+    if (cle !== CLE_AUTRE) enregistrerDelai(valeur);
+  };
+
   const primary = actions.filter((a) => a.primary && !a.note);
   const secondary = actions.filter((a) => !a.primary && !a.note);
   // Lignes d'explication (pas des boutons) : « Attente d'accord : passez par la fiche »
@@ -1508,6 +1549,7 @@ function ScanDialog({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <StatusBadge statut={t.statut} size="lg" />
                 <PrioriteBadge priorite={t.priorite} taille="lg" />
+                <PastilleDelai ticket={t} taille="lg" />
                 {t.est_retour_sav && (
                   <span className="badge badge-lg badge-warning">Retour SAV</span>
                 )}
@@ -1633,6 +1675,34 @@ function ScanDialog({
                 </li>
               ))}
             </ul>
+          )}
+
+          {delaiAFixer && (
+            <section aria-labelledby={delaiTitreId} aria-busy={delaiSaisi.envoi || undefined}
+              className="rounded-xl border border-dashed border-amber-400 bg-amber-50/60 p-4">
+              <h3 id={delaiTitreId} className="flex items-center gap-2 t-h2">
+                <CalendarClock className="h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" /> Délai à fixer
+              </h3>
+              <p className="mt-0.5 mb-3 text-sm text-slate-700">
+                Aucune heure promise au client : un tap l’enregistre.
+              </p>
+              <DelaiReparation
+                idPrefix={`${delaiTitreId}-puces`}
+                legende="Prêt dans"
+                taille="compact"
+                value={delaiSaisi.valeur}
+                cle={delaiSaisi.cle}
+                onChange={choisirDelai}
+              />
+              {delaiSaisi.cle === CLE_AUTRE && (
+                <button type="button" onClick={() => enregistrerDelai(delaiSaisi.valeur)}
+                  disabled={!dateDelai(delaiSaisi.valeur) || delaiSaisi.envoi}
+                  className="btn-primary mt-3 w-full sm:w-auto">
+                  {delaiSaisi.envoi && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                  Enregistrer ce délai
+                </button>
+              )}
+            </section>
           )}
 
           {carteVisible && (
@@ -1766,7 +1836,9 @@ function ScanDialog({
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="font-semibold text-slate-600">Récupération prévue</dt>
-                  <dd className="text-right text-slate-900">{t.date_recuperation || '—'}</dd>
+                  <dd className="text-right text-slate-900">
+                    {dateDelai(t.date_recuperation) ? phrasePret(dateDelai(t.date_recuperation), new Date()) : (t.date_recuperation || '—')}
+                  </dd>
                 </div>
               </dl>
             </section>

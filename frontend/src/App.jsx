@@ -5,6 +5,8 @@ import { SettingsProvider } from './hooks/useSettings';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
 import ScanListener, { QuickScanMount } from './components/ScanListener';
+// Bandeau « Nouvelle version disponible » des écrans du personnel (lib/miseAJour.js)
+import NouvelleVersion from './components/NouvelleVersion';
 import { Lock, ArrowLeft, Home, Loader2 } from 'lucide-react';
 
 // Accueil et suivi client (QR) restent dans le chunk d'entrée : premier affichage sans
@@ -365,6 +367,7 @@ function AppRoutes() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <ChatOverlay />
+      <NouvelleVersion />
       <StaffPreload />
       <ScanListener />
       <QuickScanMount />

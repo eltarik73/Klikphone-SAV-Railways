@@ -11,6 +11,8 @@ import { openQuickScan } from '../components/ScanListener';
 import { useToast } from '../components/Toast';
 import EtagereARecuperer from '../components/EtagereARecuperer';
 import { PrioriteBadge, PRIORITES, comparerPriorite, normaliserPriorite } from '../components/PrioriteBadge';
+import { PastilleDelai } from '../components/DelaiReparation';
+import { delaiTicket, infoDelai, instantDelai, dateHeureCourte } from '../lib/delai';
 import {
   Search, Plus, RefreshCw, AlertTriangle,
   Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
@@ -632,9 +634,10 @@ export default function DashboardPage() {
           cmp = (`${a.client_nom || ''} ${a.client_prenom || ''}`).localeCompare(`${b.client_nom || ''} ${b.client_prenom || ''}`);
           break;
         case 'date_recuperation': {
-          const da = a.date_recuperation ? new Date(a.date_recuperation) : new Date('2099-12-31');
-          const db = b.date_recuperation ? new Date(b.date_recuperation) : new Date('2099-12-31');
-          cmp = da - db;
+          // Texte libre : seules les valeurs datables sont ordonnées, les autres (et les vides) en dernier
+          const da = instantDelai(a.date_recuperation);
+          const db = instantDelai(b.date_recuperation);
+          cmp = da === db ? 0 : da < db ? -1 : 1;
           break;
         }
         case 'statut':
@@ -794,38 +797,6 @@ export default function DashboardPage() {
     { label: 'À récupérer', value: kpi.a_recuperer ?? 0, icon: PackageCheck, tone: 'bg-emerald-50 text-emerald-700', etagere: true },
   ] : [];
 
-  // Recovery date countdown helper
-  const getRecoveryInfo = (dateStr) => {
-    if (!dateStr) return { text: 'Non définie', color: 'text-slate-500', urgent: false };
-    // Try to parse various formats
-    const now = new Date();
-    let target;
-    // ISO date
-    if (dateStr.includes('-') && dateStr.length >= 10) {
-      target = new Date(dateStr);
-    } else {
-      // Try French format DD/MM/YYYY or free text — skip for free text
-      const match = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (match) {
-        target = new Date(`${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`);
-      } else {
-        return { text: dateStr, color: 'text-slate-500', urgent: false };
-      }
-    }
-    if (isNaN(target.getTime())) return { text: dateStr, color: 'text-slate-500', urgent: false };
-    const diffMs = target - now;
-    const diffH = Math.round(diffMs / 3600000);
-    const diffD = Math.floor(Math.abs(diffH) / 24);
-    const remH = Math.abs(diffH) % 24;
-    if (diffMs > 0) {
-      const label = diffD > 0 ? `dans ${diffD}j ${remH}h` : `dans ${Math.abs(diffH)}h`;
-      return { text: label, color: 'text-emerald-700', urgent: false };
-    } else {
-      const label = diffD > 0 ? `DÉPASSÉ ${diffD}j ${remH}h` : `DÉPASSÉ ${Math.abs(diffH)}h`;
-      return { text: label, color: 'text-red-700 font-bold', urgent: true };
-    }
-  };
-
   const filterTabs = [
     { label: 'Tous', value: '' },
     { label: 'Pré-enregistré', value: 'Pré-enregistré' },
@@ -878,7 +849,7 @@ export default function DashboardPage() {
             aria-label="Rafraîchir">
             <RefreshCw className={loading ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => navigate('/client')} className="btn-primary">
+          <button type="button" onClick={() => navigate('/client?staff=1')} className="btn-primary">
             <Plus aria-hidden="true" /> Nouveau ticket
           </button>
         </div>
@@ -1289,7 +1260,7 @@ export default function DashboardPage() {
                   {emptyState.action.label}
                 </button>
               )}
-              <button type="button" onClick={() => navigate('/client')} className="btn-primary">
+              <button type="button" onClick={() => navigate('/client?staff=1')} className="btn-primary">
                 <Plus aria-hidden="true" /> Nouveau ticket
               </button>
             </div>
@@ -1427,6 +1398,8 @@ export default function DashboardPage() {
                       </p>
                       {t.client_carte_camby ? <span className="badge badge-sm badge-brand shrink-0">Camby</span> : null}
                       <PrioriteBadge priorite={t.priorite} court className="shrink-0" />
+                      {/* Délai promis : « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer » */}
+                      <PastilleDelai ticket={t} />
                       {receptionACompleter(t) && (
                         /* Pastille ambre (le libellé complet ne tient sur aucune ligne de 56 px sans la faire déborder) */
                         <span className="badge badge-sm badge-warning shrink-0 px-1.5"
@@ -1543,11 +1516,13 @@ export default function DashboardPage() {
                     <div className="hidden lg:block lg:ml-auto xl:ml-0 min-w-0 cursor-pointer xl:col-start-6 xl:row-start-1"
                       onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
                       <p className="t-caption tabular-nums text-slate-600 whitespace-nowrap">{formatDateShort(t.date_depot)}</p>
-                      {t.date_recuperation && (() => {
-                        const ri = getRecoveryInfo(t.date_recuperation);
+                      {/* Heure promise d'un ticket sans pastille (réparation terminée…) : rappel neutre */}
+                      {t.date_recuperation && !delaiTicket(t) && (() => {
+                        const info = infoDelai(t.date_recuperation);
+                        const texte = info.date ? `Promis ${dateHeureCourte(info.date)}` : info.libelle;
                         return (
-                          <p className={`t-caption flex items-center gap-1 mt-0.5 whitespace-nowrap ${ri.color}`} title={ri.text}>
-                            <Calendar className="w-3 h-3 shrink-0" aria-hidden="true" /> <span className="truncate">{ri.text}</span>
+                          <p className="t-caption flex items-center gap-1 mt-0.5 whitespace-nowrap" title={info.titre}>
+                            <Calendar className="w-3 h-3 shrink-0" aria-hidden="true" /> <span className="truncate">{texte}</span>
                           </p>
                         );
                       })()}

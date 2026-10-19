@@ -700,9 +700,9 @@ export default function ClientsPage() {
                 )}
               </div>
 
-              {/* New repair for this client */}
+              {/* Nouvelle réparation pour ce client : création par le personnel (staff=1 → délai obligatoire) */}
               <button type="button"
-                onClick={() => navigate(`/client?client_id=${selectedClient.id}&tel=${encodeURIComponent(selectedClient.telephone || '')}`)}
+                onClick={() => navigate(`/client?client_id=${selectedClient.id}&tel=${encodeURIComponent(selectedClient.telephone || '')}&staff=1`)}
                 className="btn-primary btn-block"
               >
                 <Plus aria-hidden="true" /> Nouvelle réparation pour ce client

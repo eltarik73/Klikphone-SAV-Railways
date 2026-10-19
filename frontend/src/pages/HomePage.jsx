@@ -1,6 +1,7 @@
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone, Tag } from 'lucide-react';
+import { useRechargementAuRepos } from '../lib/miseAJour';
 
 // Page de connexion chargée à la demande : on l'anticipe dès que la souris ou le doigt
 // s'approche d'un bouton « Accès staff » (le clic n'attend alors plus le réseau).
@@ -21,6 +22,9 @@ const arrowCls = 'w-5 h-5 shrink-0 transition-transform duration-150 motion-safe
 export default function HomePage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  // Borne : la flèche retour de /client mène ici. Page sans saisie : dès que personne ne touche
+  // l'écran depuis 2 min, vérification toutes les 10 min et rechargement si nouvelle version.
+  useRechargementAuRepos({ auRepos: !user });
 
   // Auto-redirect si déjà connecté
   if (user) return <Navigate to={user.target === 'tech' ? '/tech' : '/accueil'} replace />;

@@ -10,6 +10,7 @@ import {
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
 import {
   ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, KeyRound, Plus, RotateCcw, ClipboardCheck,
 } from 'lucide-react';
@@ -17,6 +18,8 @@ import {
 /**
  * Dépôt au comptoir (/depot), même parcours en 4 étapes que la borne client : Vous · Votre
  * appareil · Le problème et l'accès · Vérification, puis le numéro de ticket (retour automatique).
+ * Borne en boucle sans rechargement : à chaque retour après un dépôt, et au repos, elle se recharge
+ * d'elle-même si une nouvelle version a été déployée (lib/miseAJour.js).
  */
 const PREFIX = 'borne';
 
@@ -43,8 +46,11 @@ export default function DepotPage() {
   const [errors, setErrors] = useState({});
   const [createdCode, setCreatedCode] = useState(null);
   const [countdown, setCountdown] = useState(null);
+  const [retourEnCours, setRetourEnCours] = useState(false);
   const timerRef = useRef(null);
   const titreRef = useRef(null);
+  const retourRef = useRef(false);
+  const monteeRef = useRef(true);
 
   const [categories, setCategories] = useState([]);
   const [pannes, setPannes] = useState([]);
@@ -73,26 +79,30 @@ export default function DepotPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.marque]);
 
-  // Retour automatique 10 s après la confirmation
   useEffect(() => {
-    if (createdCode) {
-      setCountdown(10);
-      timerRef.current = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            handleReset();
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    monteeRef.current = true;
+    return () => { monteeRef.current = false; };
+  }, []);
+
+  // Retour automatique 10 s après la confirmation (la remise à zéro se fait hors du setState)
+  useEffect(() => {
+    if (!createdCode) return undefined;
+    setCountdown(10);
+    timerRef.current = setInterval(() => {
+      setCountdown((prev) => (prev === null ? null : Math.max(prev - 1, 0)));
+    }, 1000);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createdCode]);
+
+  useEffect(() => {
+    if (countdown === 0) retourApresDepot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown]);
+
+  // Borne au repos (étape 1, rien de saisi, personne depuis 2 min) : rechargement si nouvelle version
+  useRechargementAuRepos({ auRepos: step === 0 && !termine && formulaireIntact(form, INITIAL_FORM) });
 
   // Nouvelle étape : haut de page et titre annoncé
   useEffect(() => {
@@ -107,6 +117,25 @@ export default function DepotPage() {
     setErrors({});
     setCreatedCode(null);
     setCountdown(null);
+  };
+
+  // Fin du compte à rebours ou « Nouveau dépôt » : si une nouvelle version a été déployée, la page
+  // se recharge (le formulaire repart vide avec le nouveau code) ; sinon remise à zéro habituelle.
+  const retourApresDepot = async () => {
+    if (retourRef.current) return;
+    retourRef.current = true;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setCountdown(null);
+    setRetourEnCours(true);
+    let recharge = false;
+    try {
+      recharge = await rechargerSiNouvelleVersion();
+    } finally {
+      retourRef.current = false;
+    }
+    if (recharge || !monteeRef.current) return;
+    setRetourEnCours(false);
+    handleReset();
   };
 
   const updateForm = (field, value) => {
@@ -320,7 +349,9 @@ export default function DepotPage() {
 
               <button
                 type="button"
-                onClick={handleReset}
+                onClick={retourApresDepot}
+                disabled={retourEnCours}
+                aria-busy={retourEnCours || undefined}
                 className="btn-primary btn-lg btn-block"
               >
                 <Plus aria-hidden="true" /> Nouveau dépôt
