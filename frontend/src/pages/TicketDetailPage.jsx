@@ -2847,9 +2847,8 @@ function TicketDetail({ id }) {
                   </div>
                 </div>
 
-                {/* 2. Qualité écran + Date récupération — 2 colonnes seulement si chacune a ≥ 176 px
-                    (le champ datetime-local a besoin de ~190 px pour « jj/mm/aaaa --:-- » + l'icône) */}
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-x-4 gap-y-4">
+                {/* 2. Qualité écran, puis délai promis (mêmes puces que la carte Dates et le scan) */}
+                <div className="space-y-4">
                   <div>
                     <label htmlFor={`${uid}-ecran`} className="input-label">Qualité écran</label>
                     <select id={`${uid}-ecran`} value={pricingForm.type_ecran} onChange={e => updatePricingForm({ type_ecran: e.target.value }, { wait: 0 })} className="select">
@@ -2864,10 +2863,14 @@ function TicketDetail({ id }) {
                       <option value="LCD">LCD</option>
                     </select>
                   </div>
-                  <div>
-                    <label htmlFor={`${uid}-recup`} className="input-label">Date récupération</label>
-                    <input id={`${uid}-recup`} type="datetime-local" value={pricingForm.date_recuperation} onChange={e => updatePricingForm({ date_recuperation: e.target.value })} onBlur={flushSilencieux(pricingSave)} className="input" />
-                  </div>
+                  {/* Puce : enregistrée aussitôt ; « Autre… » : saisie libre enregistrée comme les autres champs de prix */}
+                  <DelaiReparation
+                    idPrefix={`${uid}-recup`}
+                    legende="Délai promis"
+                    taille="compact"
+                    value={pricingForm.date_recuperation}
+                    onChange={(valeur, { cle } = {}) => updatePricingForm({ date_recuperation: valeur || '' }, cle === CLE_AUTRE ? undefined : { wait: 0 })}
+                  />
                 </div>
 
                 {/* 3. Séparateur tarification + toggle Devis/Facture */}

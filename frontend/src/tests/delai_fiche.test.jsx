@@ -128,6 +128,17 @@ describe('Fiche ticket — carte « Dates » : délai promis', () => {
     expect(screen.getByRole('button', { name: 'Changer le délai' })).toBeInTheDocument();
   });
 
+  it('carte « Réparation & Tarifs » (modification) : les mêmes puces remplacent le champ date brut', async () => {
+    renderFiche();
+    fireEvent.click(await screen.findByRole('button', { name: 'Modifier la réparation et les tarifs' }));
+    const carte = screen.getByRole('heading', { name: 'Réparation & Tarifs' }).closest('section');
+    expect(within(carte).queryByLabelText('Date récupération')).not.toBeInTheDocument();
+    const groupe = within(carte).getByRole('radiogroup', { name: /Délai promis/ });
+    fireEvent.click(within(groupe).getByRole('radio', { name: /^2h,/ }));
+    await waitFor(() => expect(appelsDelai()).toHaveLength(1));
+    expect(appelsDelai()[0][1]).toMatchObject({ date_recuperation: '2026-10-19T16:10' });
+  });
+
   it('puce « 1h » : enregistrée aussitôt, choix refermé', async () => {
     courant = ticket({ date_recuperation: '2026-10-22T15:00' });
     renderFiche();
