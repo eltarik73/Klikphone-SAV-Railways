@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { invalidateCache } from '../hooks/useApi';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../lib/api';
+import { useToast } from '../components/Toast';
 import PrintPreview from '../components/PrintPreview';
 import {
   FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
@@ -30,6 +31,7 @@ const fp = (v) => {
 
 export default function DevisPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   // Lien de la recherche globale : ?id= ouvre le devis ; ?q= (numéro) filtre la liste, aussi en
   // repli si le devis est introuvable. Un ?q= seul initialise le filtre (une seule requête).
@@ -108,7 +110,8 @@ export default function DevisPage() {
           const prefill = JSON.parse(raw);
           sessionStorage.removeItem('kp_devis_prefill');
           setEditId(null);
-          setForm(f => ({ ...getEmptyForm(), appareil: prefill.appareil || '' }));
+          // Devis Flash transmet des prix unitaires HT et le taux de TVA de la boutique
+          setForm(f => ({ ...getEmptyForm(), appareil: prefill.appareil || '', tva: prefill.tva ?? 20 }));
           if (prefill.lignes?.length) {
             setLignes(prefill.lignes.map(l => ({
               description: l.description || '', quantite: l.quantite || 1, prix_unitaire: l.prix_unitaire || 0,
@@ -243,8 +246,9 @@ export default function DevisPage() {
         client_nom: d.client_nom || '', client_prenom: d.client_prenom || '',
         client_tel: d.client_tel || '', client_email: d.client_email || '',
         appareil: d.appareil || '', description: d.description || '',
-        tva: d.tva || 20, remise: d.remise || 0, notes: d.notes || '',
-        validite_jours: d.validite_jours || 30,
+        // ?? et non || : une TVA de 0 % (franchise) ou une remise nulle sont des valeurs
+        tva: Number(d.tva ?? 20), remise: Number(d.remise ?? 0), notes: d.notes || '',
+        validite_jours: d.validite_jours ?? 30,
       });
       if (d.client_id && d.client) {
         setSelectedClient(d.client);
@@ -296,7 +300,7 @@ export default function DevisPage() {
       setShowModal(false);
       loadData();
     } catch (e) {
-      console.error(e);
+      toast.error(`Devis non enregistré : ${e?.message || 'erreur inconnue'}`);
     }
     setSaving(false);
   };
@@ -362,39 +366,26 @@ export default function DevisPage() {
         </div>
       </div>
 
-      {/* Stats cards */}
-      {stats && (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-          <div className="kpi-card">
-            <div className="kpi-icon" aria-hidden="true"><FileText /></div>
+      {/* Stats cards : grille rendue dès le premier affichage (valeurs en squelette), la liste ne saute pas */}
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6" aria-busy={!stats}>
+        {[
+          { cle: 'total', label: 'Total', icon: FileText, valeur: stats?.total || 0 },
+          { cle: 'acceptes', label: 'Acceptés', icon: CheckCircle, valeur: stats?.acceptes || 0, iconClass: 'bg-emerald-50 text-emerald-700' },
+          { cle: 'envoyes', label: 'En attente', icon: Clock, valeur: stats?.envoyes || 0 },
+          { cle: 'ca', label: 'CA Accepté', icon: TrendingUp, valeur: `${fp(stats?.ca_accepte)} €`, montant: true },
+        ].map(({ cle, label, icon: Icone, valeur, iconClass = '', montant }) => (
+          <div key={cle} className="kpi-card">
+            {/* Montant : sans icône sous sm, pour que « 12345,67 € » tienne dans la demi-largeur */}
+            <div className={`kpi-icon ${iconClass} ${montant ? 'hidden sm:flex' : ''}`} aria-hidden="true"><Icone /></div>
             <div className="min-w-0">
-              <p className="kpi-value">{stats.total || 0}</p>
-              <p className="kpi-label">Total</p>
+              {stats
+                ? <p className={`kpi-value ${montant ? 'whitespace-nowrap text-xl sm:text-2xl' : ''}`}>{valeur}</p>
+                : <p className="kpi-value" aria-hidden="true"><span className="skeleton-line block w-14 h-6" /></p>}
+              <p className="kpi-label">{label}</p>
             </div>
           </div>
-          <div className="kpi-card">
-            <div className="kpi-icon bg-emerald-50 text-emerald-700" aria-hidden="true"><CheckCircle /></div>
-            <div className="min-w-0">
-              <p className="kpi-value">{stats.acceptes || 0}</p>
-              <p className="kpi-label">Acceptés</p>
-            </div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-icon" aria-hidden="true"><Clock /></div>
-            <div className="min-w-0">
-              <p className="kpi-value">{stats.envoyes || 0}</p>
-              <p className="kpi-label">En attente</p>
-            </div>
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-icon" aria-hidden="true"><TrendingUp /></div>
-            <div className="min-w-0">
-              <p className="kpi-value whitespace-nowrap">{fp(stats.ca_accepte)} €</p>
-              <p className="kpi-label">CA Accepté</p>
-            </div>
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Search + Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -605,7 +596,10 @@ export default function DevisPage() {
               {/* Lignes */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="t-h3">Lignes du devis</h3>
+                  <div>
+                    <h3 className="t-h3">Lignes du devis</h3>
+                    <p className="t-caption">Prix unitaire HT : la TVA s'ajoute au total</p>
+                  </div>
                   <button type="button" onClick={addLigne} className="btn-ghost btn-sm text-brand-700 -mr-3">
                     <Plus aria-hidden="true" /> Ajouter
                   </button>
@@ -616,10 +610,10 @@ export default function DevisPage() {
                       <input value={l.description} onChange={e => updateLigne(i, 'description', e.target.value)}
                         placeholder="Description" aria-label={`Description de la ligne ${i + 1}`} className="input flex-1 min-w-0" />
                       <input type="number" value={l.quantite} onChange={e => updateLigne(i, 'quantite', parseInt(e.target.value) || 1)}
-                        aria-label={`Quantité de la ligne ${i + 1}`} className="input w-16 text-center tabular-nums" min="1" />
+                        aria-label={`Quantité de la ligne ${i + 1}`} className="input w-16 text-center tabular-nums" min="1" max="100" />
                       <div className="relative">
                         <input type="number" value={l.prix_unitaire} onChange={e => updateLigne(i, 'prix_unitaire', parseFloat(e.target.value) || 0)}
-                          aria-label={`Prix unitaire de la ligne ${i + 1}`} className="input w-24 pr-7 text-right tabular-nums" step="0.01" min="0" />
+                          aria-label={`Prix unitaire HT de la ligne ${i + 1}`} className="input w-24 pr-7 text-right tabular-nums" step="0.01" min="0" />
                         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500" aria-hidden="true">€</span>
                       </div>
                       <span className="t-num text-sm w-20 text-right whitespace-nowrap hidden sm:inline">{fp((l.quantite || 0) * (l.prix_unitaire || 0))} €</span>
@@ -639,17 +633,17 @@ export default function DevisPage() {
                   <div>
                     <label htmlFor="devis-tva" className="input-label">TVA (%)</label>
                     <input id="devis-tva" type="number" value={form.tva} onChange={e => setForm(f => ({ ...f, tva: parseFloat(e.target.value) || 0 }))}
-                      className="input tabular-nums" step="0.1" />
+                      className="input tabular-nums" step="0.1" min="0" max="30" />
                   </div>
                   <div>
                     <label htmlFor="devis-remise" className="input-label">Remise (€)</label>
                     <input id="devis-remise" type="number" value={form.remise} onChange={e => setForm(f => ({ ...f, remise: parseFloat(e.target.value) || 0 }))}
-                      className="input tabular-nums" step="0.01" />
+                      className="input tabular-nums" step="0.01" min="0" />
                   </div>
                   <div>
                     <label htmlFor="devis-validite" className="input-label">Validité (jours)</label>
                     <input id="devis-validite" type="number" value={form.validite_jours} onChange={e => setForm(f => ({ ...f, validite_jours: parseInt(e.target.value) || 30 }))}
-                      className="input tabular-nums" />
+                      className="input tabular-nums" min="1" max="365" />
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-sm">
@@ -737,7 +731,7 @@ export default function DevisPage() {
                       <div key={i} className="flex items-center justify-between gap-3 py-2.5 min-h-12">
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-slate-800">{l.description}</p>
-                          <p className="t-caption tabular-nums">{l.quantite} x {fp(l.prix_unitaire)} €</p>
+                          <p className="t-caption tabular-nums">{l.quantite} x {fp(l.prix_unitaire)} € HT</p>
                         </div>
                         <span className="t-num text-sm whitespace-nowrap">{fp(l.total)} €</span>
                       </div>
@@ -748,8 +742,14 @@ export default function DevisPage() {
 
               {/* Totals */}
               <div className="card-section tabular-nums">
+                {/* total_ht est net de la remise : avant elle, la somme des lignes */}
+                {Number(viewDevis.remise) > 0 && (
+                  <>
+                    <div className="flex justify-between text-sm text-slate-700"><span>Sous-total HT</span><span>{fp((viewDevis.lignes || []).reduce((a, l) => a + Number(l.total || 0), 0))} €</span></div>
+                    <div className="flex justify-between text-sm text-red-700"><span>Remise</span><span>-{fp(viewDevis.remise)} €</span></div>
+                  </>
+                )}
                 <div className="flex justify-between text-sm text-slate-700"><span>Total HT</span><span>{fp(viewDevis.total_ht)} €</span></div>
-                {Number(viewDevis.remise) > 0 && <div className="flex justify-between text-sm text-red-700"><span>Remise</span><span>-{fp(viewDevis.remise)} €</span></div>}
                 <div className="flex justify-between text-sm text-slate-700"><span>TVA ({fp(viewDevis.tva)}%)</span><span>{fp(Number(viewDevis.total_ttc) - Number(viewDevis.total_ht))} €</span></div>
                 <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-slate-200">
                   <span className="text-slate-900">Total TTC</span><span className="text-brand-700">{fp(viewDevis.total_ttc)} €</span>

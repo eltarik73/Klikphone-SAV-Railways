@@ -7,10 +7,11 @@ Retourne toutes les donnees de reporting en un seul appel.
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..database import get_cursor
 from .auth import get_current_user
+from .tickets import bornes_utc, jour_paris
 
 router = APIRouter(prefix="/api/reporting", tags=["reporting"])
 
@@ -29,6 +30,16 @@ def _si(val):
         return int(val) if val else 0
     except (TypeError, ValueError):
         return 0
+
+
+# Périodes = jours de Paris ; date_depot / date_creation sont des TIMESTAMP naïfs en UTC et
+# date_cloture du TEXTE en UTC : bornes UTC [d0, d1[ calculées en Python (tickets.bornes_utc),
+# jamais de ::date / ::timestamp sur date_cloture (une seule valeur mal formée ferait échouer
+# tout le reporting) ; durées via public.kp_try_ts (NULL si la valeur n'est pas datable).
+# Regroupements (heure, jour, mois) à l'heure de Paris.
+def _bornes(debut, fin):
+    d0, d1 = bornes_utc(debut, fin)
+    return {"d0": d0, "d1": d1}
 
 
 def _pct_change(current, previous):
@@ -63,11 +74,17 @@ def get_reporting(
     Retourne: kpis, affluence, performance_accueil, performance_techniciens,
               top_pannes, top_modeles.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = jour_paris()
     if not debut:
-        debut = datetime.now().strftime("%Y-%m-01")
+        debut = today[:8] + "01"
     if not fin:
         fin = today
+    try:
+        bornes_utc(debut, fin)
+    except ValueError:
+        raise HTTPException(400, "Date invalide (format AAAA-MM-JJ attendu)")
+    if debut > fin:
+        raise HTTPException(400, "La date de début doit précéder la date de fin")
 
     prev_debut, prev_fin = _compute_previous_period(debut, fin)
 
@@ -119,32 +136,26 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
             ) AS tickets_ouverts,
 
             COUNT(*) FILTER (
-                WHERE date_depot::date >= %(debut)s::date
-                  AND date_depot::date <= %(fin)s::date
+                WHERE date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS tickets_periode,
 
             COUNT(*) FILTER (
-                WHERE date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
+                  AND statut IN ('Rendu au client', 'Clôturé')
             ) AS clotures_periode,
 
             COALESCE(SUM(tarif_final) FILTER (
-                WHERE paye = 1
-                  AND date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE paye = 1 AND statut IN ('Rendu au client', 'Clôturé')
+                  AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
             ), 0) AS ca_encaisse,
 
             COUNT(*) FILTER (
-                WHERE paye = 1
-                  AND date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE paye = 1 AND statut IN ('Rendu au client', 'Clôturé')
+                  AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
                   AND tarif_final > 0
             ) AS nb_payes
         FROM tickets
-    """, {"debut": debut, "fin": fin})
+    """, _bornes(debut, fin))
     row = cur.fetchone()
 
     tickets_ouverts = _si(row["tickets_ouverts"])
@@ -158,17 +169,16 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
     cur.execute("""
         SELECT COALESCE(
             ROUND(AVG(
-                EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 3600
+                EXTRACT(EPOCH FROM (public.kp_try_ts(date_cloture) - date_depot::timestamp)) / 3600
             )::numeric, 1),
             0
         ) AS temps_moyen_h
         FROM tickets
         WHERE date_cloture IS NOT NULL
           AND date_depot IS NOT NULL
-          AND date_cloture::date >= %(debut)s::date
-          AND date_cloture::date <= %(fin)s::date
-          AND EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) > 0
-    """, {"debut": debut, "fin": fin})
+          AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
+          AND EXTRACT(EPOCH FROM (public.kp_try_ts(date_cloture) - date_depot::timestamp)) > 0
+    """, _bornes(debut, fin))
     temps_moyen_h = _sf(cur.fetchone()["temps_moyen_h"])
 
     # Taux de conversion devis (current period)
@@ -178,18 +188,16 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
                 WHERE statut IN ('En attente d''accord client', 'En cours de réparation',
                     'Réparation terminée', 'Rendu au client', 'Clôturé')
                 AND devis_estime IS NOT NULL AND devis_estime > 0
-                AND date_depot::date >= %(debut)s::date
-                AND date_depot::date <= %(fin)s::date
+                AND date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS devis_envoyes,
             COUNT(*) FILTER (
                 WHERE statut IN ('En cours de réparation', 'Réparation terminée',
                     'Rendu au client', 'Clôturé')
                 AND devis_estime IS NOT NULL AND devis_estime > 0
-                AND date_depot::date >= %(debut)s::date
-                AND date_depot::date <= %(fin)s::date
+                AND date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS devis_acceptes
         FROM tickets
-    """, {"debut": debut, "fin": fin})
+    """, _bornes(debut, fin))
     conv_row = cur.fetchone()
     devis_envoyes = _si(conv_row["devis_envoyes"])
     devis_acceptes = _si(conv_row["devis_acceptes"])
@@ -199,41 +207,34 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
     cur.execute("""
         SELECT COUNT(*) AS nb
         FROM clients
-        WHERE date_creation::date >= %(debut)s::date
-          AND date_creation::date <= %(fin)s::date
-    """, {"debut": debut, "fin": fin})
+        WHERE date_creation >= %(d0)s AND date_creation < %(d1)s
+    """, _bornes(debut, fin))
     nouveaux_clients = _si(cur.fetchone()["nb"])
 
     # ──── Previous period stats for trends ────
     cur.execute("""
         SELECT
             COUNT(*) FILTER (
-                WHERE date_depot::date >= %(debut)s::date
-                  AND date_depot::date <= %(fin)s::date
+                WHERE date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS tickets_periode,
 
             COUNT(*) FILTER (
-                WHERE date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
+                  AND statut IN ('Rendu au client', 'Clôturé')
             ) AS clotures_periode,
 
             COALESCE(SUM(tarif_final) FILTER (
-                WHERE paye = 1
-                  AND date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE paye = 1 AND statut IN ('Rendu au client', 'Clôturé')
+                  AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
             ), 0) AS ca_encaisse,
 
             COUNT(*) FILTER (
-                WHERE paye = 1
-                  AND date_cloture IS NOT NULL
-                  AND date_cloture::date >= %(debut)s::date
-                  AND date_cloture::date <= %(fin)s::date
+                WHERE paye = 1 AND statut IN ('Rendu au client', 'Clôturé')
+                  AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
                   AND tarif_final > 0
             ) AS nb_payes
         FROM tickets
-    """, {"debut": prev_debut, "fin": prev_fin})
+    """, _bornes(prev_debut, prev_fin))
     prev = cur.fetchone()
 
     prev_tickets = _si(prev["tickets_periode"])
@@ -245,15 +246,15 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
     cur.execute("""
         SELECT COALESCE(
             ROUND(AVG(
-                EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 3600
+                EXTRACT(EPOCH FROM (public.kp_try_ts(date_cloture) - date_depot::timestamp)) / 3600
             )::numeric, 1),
             0
         ) AS temps_moyen_h
         FROM tickets
         WHERE date_cloture IS NOT NULL AND date_depot IS NOT NULL
-          AND date_cloture::date >= %(debut)s::date AND date_cloture::date <= %(fin)s::date
-          AND EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) > 0
-    """, {"debut": prev_debut, "fin": prev_fin})
+          AND date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
+          AND EXTRACT(EPOCH FROM (public.kp_try_ts(date_cloture) - date_depot::timestamp)) > 0
+    """, _bornes(prev_debut, prev_fin))
     prev_temps = _sf(cur.fetchone()["temps_moyen_h"])
 
     cur.execute("""
@@ -262,23 +263,23 @@ def _compute_kpis(cur, debut, fin, prev_debut, prev_fin):
                 WHERE statut IN ('En attente d''accord client', 'En cours de réparation',
                     'Réparation terminée', 'Rendu au client', 'Clôturé')
                 AND devis_estime IS NOT NULL AND devis_estime > 0
-                AND date_depot::date >= %(debut)s::date AND date_depot::date <= %(fin)s::date
+                AND date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS de,
             COUNT(*) FILTER (
                 WHERE statut IN ('En cours de réparation', 'Réparation terminée',
                     'Rendu au client', 'Clôturé')
                 AND devis_estime IS NOT NULL AND devis_estime > 0
-                AND date_depot::date >= %(debut)s::date AND date_depot::date <= %(fin)s::date
+                AND date_depot >= %(d0)s AND date_depot < %(d1)s
             ) AS da
         FROM tickets
-    """, {"debut": prev_debut, "fin": prev_fin})
+    """, _bornes(prev_debut, prev_fin))
     pc = cur.fetchone()
     prev_taux = round(_si(pc["da"]) / _si(pc["de"]) * 100, 1) if _si(pc["de"]) > 0 else 0.0
 
     cur.execute("""
         SELECT COUNT(*) AS nb FROM clients
-        WHERE date_creation::date >= %(debut)s::date AND date_creation::date <= %(fin)s::date
-    """, {"debut": prev_debut, "fin": prev_fin})
+        WHERE date_creation >= %(d0)s AND date_creation < %(d1)s
+    """, _bornes(prev_debut, prev_fin))
     prev_clients = _si(cur.fetchone()["nb"])
 
     return [
@@ -358,29 +359,27 @@ def _compute_affluence(cur, debut, fin, granularite):
     if granularite == "heure":
         # Group by hour (for today/yesterday)
         cur.execute("""
-            SELECT EXTRACT(HOUR FROM date_depot)::int AS label,
+            SELECT EXTRACT(HOUR FROM (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int AS label,
                    COUNT(*) AS tickets
             FROM tickets
             WHERE date_depot IS NOT NULL
-              AND date_depot::date >= %(debut)s::date
-              AND date_depot::date <= %(fin)s::date
-              AND EXTRACT(HOUR FROM date_depot) BETWEEN 8 AND 19
-            GROUP BY EXTRACT(HOUR FROM date_depot)
+              AND date_depot >= %(d0)s AND date_depot < %(d1)s
+              AND EXTRACT(HOUR FROM (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) BETWEEN 8 AND 19
+            GROUP BY EXTRACT(HOUR FROM (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
             ORDER BY label
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         tickets_raw = {r["label"]: r["tickets"] for r in cur.fetchall()}
 
         cur.execute("""
-            SELECT EXTRACT(HOUR FROM date_creation)::int AS label,
+            SELECT EXTRACT(HOUR FROM (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))::int AS label,
                    COUNT(*) AS clients
             FROM clients
             WHERE date_creation IS NOT NULL
-              AND date_creation::date >= %(debut)s::date
-              AND date_creation::date <= %(fin)s::date
-              AND EXTRACT(HOUR FROM date_creation) BETWEEN 8 AND 19
-            GROUP BY EXTRACT(HOUR FROM date_creation)
+              AND date_creation >= %(d0)s AND date_creation < %(d1)s
+              AND EXTRACT(HOUR FROM (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')) BETWEEN 8 AND 19
+            GROUP BY EXTRACT(HOUR FROM (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
             ORDER BY label
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         clients_raw = {r["label"]: r["clients"] for r in cur.fetchall()}
 
         data = []
@@ -398,27 +397,25 @@ def _compute_affluence(cur, debut, fin, granularite):
                      "Juil", "Août", "Sep", "Oct", "Nov", "Déc"]
 
         cur.execute("""
-            SELECT TO_CHAR(DATE_TRUNC('month', date_depot::timestamp), 'YYYY-MM') AS mois,
+            SELECT TO_CHAR(DATE_TRUNC('month', (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')), 'YYYY-MM') AS mois,
                    COUNT(*) AS tickets
             FROM tickets
             WHERE date_depot IS NOT NULL
-              AND date_depot::date >= %(debut)s::date
-              AND date_depot::date <= %(fin)s::date
-            GROUP BY DATE_TRUNC('month', date_depot::timestamp)
-            ORDER BY DATE_TRUNC('month', date_depot::timestamp)
-        """, {"debut": debut, "fin": fin})
+              AND date_depot >= %(d0)s AND date_depot < %(d1)s
+            GROUP BY DATE_TRUNC('month', (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
+            ORDER BY DATE_TRUNC('month', (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
+        """, _bornes(debut, fin))
         tickets_raw = {r["mois"]: r["tickets"] for r in cur.fetchall()}
 
         cur.execute("""
-            SELECT TO_CHAR(DATE_TRUNC('month', date_creation::timestamp), 'YYYY-MM') AS mois,
+            SELECT TO_CHAR(DATE_TRUNC('month', (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')), 'YYYY-MM') AS mois,
                    COUNT(*) AS clients
             FROM clients
             WHERE date_creation IS NOT NULL
-              AND date_creation::date >= %(debut)s::date
-              AND date_creation::date <= %(fin)s::date
-            GROUP BY DATE_TRUNC('month', date_creation::timestamp)
-            ORDER BY DATE_TRUNC('month', date_creation::timestamp)
-        """, {"debut": debut, "fin": fin})
+              AND date_creation >= %(d0)s AND date_creation < %(d1)s
+            GROUP BY DATE_TRUNC('month', (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
+            ORDER BY DATE_TRUNC('month', (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris'))
+        """, _bornes(debut, fin))
         clients_raw = {r["mois"]: r["clients"] for r in cur.fetchall()}
 
         # Build all months in range
@@ -449,25 +446,23 @@ def _compute_affluence(cur, debut, fin, granularite):
     else:
         # Group by day (default)
         cur.execute("""
-            SELECT date_depot::date AS jour, COUNT(*) AS tickets
+            SELECT (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')::date AS jour, COUNT(*) AS tickets
             FROM tickets
             WHERE date_depot IS NOT NULL
-              AND date_depot::date >= %(debut)s::date
-              AND date_depot::date <= %(fin)s::date
-            GROUP BY date_depot::date
+              AND date_depot >= %(d0)s AND date_depot < %(d1)s
+            GROUP BY (date_depot AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')::date
             ORDER BY jour
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         tickets_raw = {str(r["jour"]): r["tickets"] for r in cur.fetchall()}
 
         cur.execute("""
-            SELECT date_creation::date AS jour, COUNT(*) AS clients
+            SELECT (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')::date AS jour, COUNT(*) AS clients
             FROM clients
             WHERE date_creation IS NOT NULL
-              AND date_creation::date >= %(debut)s::date
-              AND date_creation::date <= %(fin)s::date
-            GROUP BY date_creation::date
+              AND date_creation >= %(d0)s AND date_creation < %(d1)s
+            GROUP BY (date_creation AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Paris')::date
             ORDER BY jour
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         clients_raw = {str(r["jour"]): r["clients"] for r in cur.fetchall()}
 
         # Build all days in range
@@ -498,12 +493,11 @@ def _compute_perf_accueil(cur, debut, fin):
                 COUNT(DISTINCT client_id) FILTER (WHERE client_id IS NOT NULL) AS clients_uniques
             FROM tickets
             WHERE date_depot IS NOT NULL
-              AND date_depot::date >= %(debut)s::date
-              AND date_depot::date <= %(fin)s::date
+              AND date_depot >= %(d0)s AND date_depot < %(d1)s
               AND cree_par IS NOT NULL AND TRIM(cree_par) != ''
             GROUP BY COALESCE(NULLIF(TRIM(cree_par), ''), 'Inconnu')
             ORDER BY tickets_enregistres DESC
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         rows = cur.fetchall()
     except Exception:
         return []
@@ -528,21 +522,19 @@ def _compute_perf_techniciens(cur, debut, fin):
             COALESCE(technicien_assigne, 'Non assigné') AS technicien,
             COUNT(*) AS reparations,
             COALESCE(ROUND(AVG(
-                EXTRACT(EPOCH FROM (date_cloture::timestamp - date_depot::timestamp)) / 3600
+                EXTRACT(EPOCH FROM (public.kp_try_ts(date_cloture) - date_depot::timestamp)) / 3600
             )::numeric, 1), 0) AS temps_moyen_h,
             COALESCE(SUM(tarif_final) FILTER (WHERE paye = 1), 0) AS ca_genere,
             COUNT(*) FILTER (
                 WHERE statut IN ('Réparation terminée', 'Rendu au client', 'Clôturé')
             ) AS terminees
         FROM tickets
-        WHERE date_cloture IS NOT NULL
-          AND date_cloture::date >= %(debut)s::date
-          AND date_cloture::date <= %(fin)s::date
+        WHERE date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND date_cloture >= %(d0)s AND date_cloture < %(d1)s
           AND technicien_assigne IS NOT NULL
           AND technicien_assigne != ''
         GROUP BY technicien_assigne
         ORDER BY reparations DESC
-    """, {"debut": debut, "fin": fin})
+    """, _bornes(debut, fin))
     rows = cur.fetchall()
 
     # Get team colors
@@ -577,13 +569,12 @@ def _compute_top_pannes(cur, debut, fin):
             COUNT(*) AS count
         FROM tickets
         WHERE date_depot IS NOT NULL
-          AND date_depot::date >= %(debut)s::date
-          AND date_depot::date <= %(fin)s::date
+          AND date_depot >= %(d0)s AND date_depot < %(d1)s
           AND panne IS NOT NULL AND TRIM(panne) != ''
         GROUP BY COALESCE(NULLIF(TRIM(panne), ''), 'Non renseigné')
         ORDER BY count DESC
         LIMIT 10
-    """, {"debut": debut, "fin": fin})
+    """, _bornes(debut, fin))
     rows = cur.fetchall()
 
     total = sum(r["count"] for r in rows) if rows else 1
@@ -609,14 +600,13 @@ def _compute_top_modeles(cur, debut, fin):
             COUNT(*) AS count
         FROM tickets
         WHERE date_depot IS NOT NULL
-          AND date_depot::date >= %(debut)s::date
-          AND date_depot::date <= %(fin)s::date
+          AND date_depot >= %(d0)s AND date_depot < %(d1)s
           AND modele IS NOT NULL AND TRIM(modele) != ''
         GROUP BY COALESCE(NULLIF(TRIM(marque), ''), 'Inconnu'),
                  COALESCE(NULLIF(TRIM(modele), ''), 'Inconnu')
         ORDER BY count DESC
         LIMIT 10
-    """, {"debut": debut, "fin": fin})
+    """, _bornes(debut, fin))
     rows = cur.fetchall()
 
     total = sum(r["count"] for r in rows) if rows else 1
@@ -643,9 +633,8 @@ def _compute_retours_sav(cur, debut, fin):
             FROM tickets
             WHERE est_retour_sav = true
               AND date_depot IS NOT NULL
-              AND date_depot::date >= %(debut)s::date
-              AND date_depot::date <= %(fin)s::date
-        """, {"debut": debut, "fin": fin})
+              AND date_depot >= %(d0)s AND date_depot < %(d1)s
+        """, _bornes(debut, fin))
         total = _si(cur.fetchone()["total_retours"])
 
         # Per technicien
@@ -657,13 +646,12 @@ def _compute_retours_sav(cur, debut, fin):
             JOIN tickets orig ON t.ticket_original_id = orig.id
             WHERE t.est_retour_sav = true
               AND t.date_depot IS NOT NULL
-              AND t.date_depot::date >= %(debut)s::date
-              AND t.date_depot::date <= %(fin)s::date
+              AND t.date_depot >= %(d0)s AND t.date_depot < %(d1)s
               AND orig.technicien_assigne IS NOT NULL
               AND orig.technicien_assigne != ''
             GROUP BY orig.technicien_assigne
             ORDER BY retours DESC
-        """, {"debut": debut, "fin": fin})
+        """, _bornes(debut, fin))
         par_tech = [
             {"technicien": r["technicien"], "retours": _si(r["retours"])}
             for r in cur.fetchall()

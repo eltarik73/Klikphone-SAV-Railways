@@ -263,12 +263,16 @@ export default function TelephonesVentePage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <nav className="flex items-center justify-center gap-2 mt-6" aria-label="Pagination">
+            <nav className="flex flex-wrap items-center justify-center gap-2 mt-6 max-w-full" aria-label="Pagination">
               <button type="button" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Page précédente"
-                className="btn-ghost btn-icon">
+                className="btn-ghost btn-icon w-11 h-11 min-w-[44px]">
                 <ChevronLeft aria-hidden="true" />
               </button>
-              <div className="flex items-center gap-1">
+              {/* Téléphone : « Page X / N » entre les flèches, les numéros à partir de sm */}
+              <span className="sm:hidden px-2 text-sm font-medium tabular-nums text-slate-700" aria-current="page">
+                Page {currentPage} / {totalPages}
+              </span>
+              <div className="hidden sm:flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
                   .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
                   .reduce((acc, p, i, arr) => {
@@ -291,10 +295,10 @@ export default function TelephonesVentePage() {
                   )}
               </div>
               <button type="button" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages} aria-label="Page suivante"
-                className="btn-ghost btn-icon">
+                className="btn-ghost btn-icon w-11 h-11 min-w-[44px]">
                 <ChevronRight aria-hidden="true" />
               </button>
-              <span className="t-caption ml-2">{totalItems} résultat{totalItems > 1 ? 's' : ''}</span>
+              <span className="t-caption basis-full text-center sm:basis-auto sm:ml-2">{totalItems} résultat{totalItems > 1 ? 's' : ''}</span>
             </nav>
           )}
         </>

@@ -9,7 +9,7 @@ import { useAutoSave } from '../hooks/useAutoSave';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
-import PatternGrid from '../components/PatternGrid';
+import PatternGrid, { normaliserPattern } from '../components/PatternGrid';
 import PrintDrawer from '../components/PrintDrawer';
 import MessageComposer from '../components/MessageComposer';
 import RepairTimer from '../components/RepairTimer';
@@ -717,6 +717,9 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
 }
 
 // ─── Layout Config ────────────────────────────────────────────
+// TVA par défaut du serveur (print_tickets, pdf_documents, config, devis)
+const TVA_DEFAUT = 20;
+
 const DEFAULT_LAYOUT = {
   left: ['client', 'device', 'reception', 'dates', 'messages', 'notes'],
   right: ['status', 'reparation', 'fidelite', 'queue'],
@@ -798,7 +801,8 @@ function TicketDetail({ id }) {
 
   const [teamMembers, setTeamMembers] = useState([]);
   const [showAttention, setShowAttention] = useState(false);
-  const [tvaRate, setTvaRate] = useState(0);
+  // 20 % comme les documents imprimés et la Configuration tant que le paramètre « tva » n'est pas lu
+  const [tvaRate, setTvaRate] = useState(TVA_DEFAUT);
 
   // Notes privées
   const [privateNotes, setPrivateNotes] = useState([]);
@@ -1136,6 +1140,13 @@ function TicketDetail({ id }) {
 
   // « Contacté par tél. » noté par ContactClient (POST /api/tickets/{id}/contact) : le contact renvoyé
   // par le serveur remplace celui du ticket, la note « appel » est relue, dashboard et étagère prévenus
+  // Message parti (SMS, WhatsApp, e-mail, « Prévenir ») : le serveur a recalculé ticket.contact,
+  // la fiche se relit sans spinner (ligne « Client contacté », notes) et les listes sont prévenues
+  const messageEnvoye = useCallback(() => {
+    loadTicket(false);
+    invalidateCache('tickets', 'dashboard', 'interactions');
+  }, [loadTicket]);
+
   const clientContacte = useCallback((contact) => {
     if (contact) fusionnerTicket({ contact }, null);
     loadNotes();
@@ -1154,8 +1165,9 @@ function TicketDetail({ id }) {
       setTeamMembers(Array.isArray(team) ? team : []);
       const arr = Array.isArray(params) ? params : [];
       const valeur = (cle) => arr.find(p => p.cle === cle)?.valeur;
-      const tva = valeur('tva');
-      if (tva != null) setTvaRate(parseFloat(tva) || 0);
+      // Paramètre présent et numérique (0 compris) : sa valeur ; absent ou illisible : 20 %
+      const tva = parseFloat(valeur('tva'));
+      if (Number.isFinite(tva)) setTvaRate(tva);
       const ac = valeur('AFFICHER_AUTOCOMPLETION');
       if (ac != null) setAutocompletionEnabled(ac !== 'false');
       const caisse = valeur('CAISSE_ENABLED');
@@ -1412,6 +1424,13 @@ function TicketDetail({ id }) {
   };
 
   const flushSilencieux = (save) => () => { save.flush().catch(() => {}); };
+  // Schéma tapé sans tirets (« 15963 ») : enregistré « 1-5-9-6-3 », le format que lit la grille
+  const finSaisiePattern = () => {
+    const saisi = deviceFormRef.current.pattern ?? '';
+    const norme = normaliserPattern(saisi);
+    if (norme !== saisi) updateDeviceForm({ pattern: norme });
+    deviceSave.flush().catch(() => {});
+  };
 
   // ─── Commandes de pièces (optimiste) ─────────────────────────
   const marquerCommandeEnCours = (cle, actif) => {
@@ -2137,7 +2156,9 @@ function TicketDetail({ id }) {
   const appareil = t.modele_autre || `${t.marque || ''} ${t.modele || ''}`.trim();
   const remis = STATUTS_REMISE.has(t.statut);
   const commandeDe = rattachementCommandes(repairLines, commandes, t.panne, prestations);
-  const surDevisSansPrix = totalTTC === 0 && !t.paye && (t.type_document || 'devis') !== 'facture';
+  // Retour SAV : prise en charge sous garantie (0 €), jamais « Sur devis »
+  const garantieSav = !!t.est_retour_sav && totalTTC === 0;
+  const surDevisSansPrix = !t.est_retour_sav && totalTTC === 0 && !t.paye && (t.type_document || 'devis') !== 'facture';
   // Décision la plus récente sur le devis (notes triées de la plus récente à la plus ancienne)
   const decisionDevis = privateNotes.find(n => /^(✅|❌) Devis/.test(String(n.contenu || '').trim()));
   const devisRefuse = !remis && (t.issue === 'refus_devis' || String(decisionDevis?.contenu || '').trim().startsWith('❌'));
@@ -2447,7 +2468,7 @@ function TicketDetail({ id }) {
               </div>
               <div>
                 <label htmlFor={`${uid}-pattern`} className="input-label">Pattern</label>
-                <input id={`${uid}-pattern`} value={deviceForm.pattern} onChange={e => updateDeviceForm({ pattern: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input font-mono" placeholder="1-5-9-6-3" autoComplete="off" />
+                <input id={`${uid}-pattern`} value={deviceForm.pattern} onChange={e => updateDeviceForm({ pattern: e.target.value })} onBlur={finSaisiePattern} className="input font-mono" placeholder="1-5-9-6-3" autoComplete="off" />
               </div>
               <div className="col-span-2 sm:col-span-3">
                 <label htmlFor={`${uid}-notes-client`} className="input-label">Note client</label>
@@ -2580,7 +2601,7 @@ function TicketDetail({ id }) {
         return (
           <MessageComposer
             ticket={t}
-            onMessageSent={() => loadNotes()}
+            onMessageSent={messageEnvoye}
           />
         );
 
@@ -3284,7 +3305,7 @@ function TicketDetail({ id }) {
 
           <div className="flex flex-wrap items-center gap-3 lg:justify-end shrink-0">
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold tabular-nums leading-none text-white">{surDevisSansPrix ? 'Sur devis' : formatPrix(totalTTC || 0)}</span>
+              <span className="text-2xl font-bold tabular-nums leading-none text-white">{surDevisSansPrix ? 'Sur devis' : garantieSav ? `Garantie · ${formatPrix(0)}` : formatPrix(totalTTC || 0)}</span>
               {t.paye ? (
                 <span className="badge badge-success">
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> <span>Payé</span>
@@ -3549,7 +3570,7 @@ function TicketDetail({ id }) {
               auteur={user?.utilisateur || 'Accueil'}
               ouverte
               onReplier={() => setPropositionMessage(null)}
-              onEnvoye={() => { loadNotes(); setPropositionMessage(null); }}
+              onEnvoye={() => { messageEnvoye(); setPropositionMessage(null); }}
               onNotesChange={() => loadNotes()}
               titreRef={titreCarteRef}
             />
@@ -3575,7 +3596,7 @@ function TicketDetail({ id }) {
             ticket={t}
             statutPropose={propositionMessage.statut}
             integre
-            onMessageSent={(r) => { loadNotes(); if (!r?.echec) setPropositionMessage(null); }}
+            onMessageSent={(r) => { messageEnvoye(); if (!r?.echec) setPropositionMessage(null); }}
           />
           <div className="flex justify-end mt-4 pt-4 border-t border-slate-100">
             <button type="button" onClick={() => setPropositionMessage(null)} className="btn-ghost">

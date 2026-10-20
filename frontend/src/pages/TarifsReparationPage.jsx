@@ -6,7 +6,7 @@ import AdminLoginModal from '../components/AdminLoginModal';
 import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from '../components/Toast';
-import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
+import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, alertesPrix, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
 const PRINT_MARGIN_MM = 1;
@@ -73,6 +73,7 @@ export default function TarifsReparationPage() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [fenetre, setFenetre] = useState(null); // 'ajuster' | 'historique'
   const inputRef = useRef(null);
+  const enregistrementRef = useRef(false);
   const addRef = useRef(null);
   const { verrouilles, basculer: basculerVerrou, enCours: verrouEnCours } = useVerrousBoutique(TABLE, sensible);
 
@@ -98,7 +99,10 @@ export default function TarifsReparationPage() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [printMode, loading]);
-  useEffect(() => { if (editCell && inputRef.current) inputRef.current.focus(); }, [editCell]);
+  // Cellule ouverte : prix sélectionné, la frappe le remplace (« 74 » et non « 6974 »)
+  useEffect(() => {
+    if (editCell && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+  }, [editCell]);
   useEffect(() => { if (showAdd && addRef.current) addRef.current.focus(); }, [showAdd]);
 
   const nombreAnciens = useMemo(() => tarifs.filter((t) => plusDeTroisMois(t)).length, [tarifs]);
@@ -120,15 +124,27 @@ export default function TarifsReparationPage() {
   const cancelEdit = () => { setEditCell(null); setEditValue(''); };
 
   const saveEdit = async () => {
-    if (!editCell || saving) return;
-    const val = editValue.trim() === '' ? null : parseInt(editValue, 10);
-    if (val !== null && (isNaN(val) || val < 0)) {
+    // Garde synchrone : Entrée puis blur (ou le blur de la boîte de confirmation) n'enregistrent qu'une fois
+    if (!editCell || saving || enregistrementRef.current) return;
+    // Entier en euros uniquement : « 79,90 » est refusé au lieu d'être tronqué en 79
+    const saisie = editValue.replace(/\s|€/g, '');
+    if (saisie !== '' && !/^\d+$/.test(saisie)) {
       toast.error('Prix invalide : saisissez un nombre entier en euros (ou laissez vide).');
       cancelEdit();
       return;
     }
+    const val = saisie === '' ? null : Number(saisie);
     const courant = tarifs.find((t) => t.id === editCell.id);
-    if (courant && (courant[editCell.key] ?? null) === val) { cancelEdit(); return; }
+    const ancien = courant ? (courant[editCell.key] ?? null) : null;
+    if (courant && ancien === val) { cancelEdit(); return; }
+    enregistrementRef.current = true;
+    // Grosse variation (règles de prix : plus de 25 % ou de 30 €) : le prix part aussitôt sur la vitrine
+    const variation = ancien != null && val != null && alertesPrix({ ancienHt: ancien, nouveauHt: val }).includes('variation');
+    if (variation && !window.confirm(`${courant.modele} : passer de ${ancien} € à ${val} € ? Le prix est publié aussitôt.`)) {
+      enregistrementRef.current = false;
+      cancelEdit();
+      return;
+    }
     setSaving(true);
     try {
       const cell = editCell;
@@ -146,6 +162,7 @@ export default function TarifsReparationPage() {
       if (msg) toast.error(msg);
       cancelEdit();
     } finally {
+      enregistrementRef.current = false;
       setSaving(false);
     }
   };

@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../lib/api';
 import { usePolling } from '../hooks/usePolling';
-import AdminLoginModal from './AdminLoginModal';
+import AdminLoginModal, { ADMIN_MODE_EVENT } from './AdminLoginModal';
 import NotificationCenter from './NotificationCenter';
 import { openSearchPalette, shortcutLabel } from './SearchPalette';
 import {
@@ -14,10 +14,12 @@ import {
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
-// Demandes de commande et avis Google, moins urgents, toutes les 2 et 5 minutes. Les avis
-// (route réservée au rôle admin) ne sont interrogés que pour un membre de rôle admin.
+// Demandes de commande, commandes de pièces en cours et avis Google, moins urgents, toutes les 2,
+// 2 et 5 minutes. Les avis (rôle admin ET code admin saisi sur ce poste) ne sont interrogés qu'en
+// mode admin, et plus du tout après un refus (403) jusqu'à la prochaine saisie du code.
 const BADGES_POLL_MS = 60_000;
 const DEMANDES_EVERY_MS = 2 * 60_000;
+const COMMANDES_EVERY_MS = 2 * 60_000;
 const AVIS_EVERY_MS = 5 * 60_000;
 // Propositions de prix en attente (santé des prix) : une fois par minute au plus, rôle admin seulement
 const SANTE_PRIX_EVERY_MS = 60_000;
@@ -124,6 +126,7 @@ export default function Navbar() {
   const [desktop, setDesktop] = useState(matchDesktop);
   const collapsed = collapsedPref && desktop;
   const [pendingCount, setPendingCount] = useState(0);
+  const [commandesEnCours, setCommandesEnCours] = useState(0);
   const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
   const [betaOpen, setBetaOpen] = useState(() => localStorage.getItem('kp_beta_open') === '1');
@@ -135,36 +138,56 @@ export default function Navbar() {
   const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
   const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
 
-  // Admin mode state
+  // Admin mode state (suivi de api.setAdminMode : code saisi ailleurs, verrouillage depuis le reporting…)
   const [isAdminMode, setIsAdminMode] = useState(() => localStorage.getItem('klikphone_admin') === 'true');
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [pendingAdminPath, setPendingAdminPath] = useState(null);
+  // Avis Google refusés (403 : code admin non prouvé sur ce poste) : plus d'appel jusqu'à la prochaine élévation
+  const avisRefusRef = useRef(false);
+  useEffect(() => {
+    const onMode = (e) => {
+      const admin = Boolean(e?.detail?.admin);
+      if (admin) avisRefusRef.current = false;
+      setIsAdminMode(admin);
+    };
+    window.addEventListener(ADMIN_MODE_EVENT, onMode);
+    return () => window.removeEventListener(ADMIN_MODE_EVENT, onMode);
+  }, []);
 
   // Pause onglet masqué, rafraîchissement immédiat au retour (usePolling)
-  const lastSlowRef = useRef({ demandes: 0, avis: 0, santePrix: 0 });
+  const lastSlowRef = useRef({ demandes: 0, commandes: 0, avis: 0, santePrix: 0 });
   const isRoleAdmin = user?.role === 'admin';
   usePolling(() => {
     const now = Date.now();
     const last = lastSlowRef.current;
     const demandes = now - last.demandes >= DEMANDES_EVERY_MS;
-    const avis = isRoleAdmin && now - last.avis >= AVIS_EVERY_MS;
+    const commandes = now - last.commandes >= COMMANDES_EVERY_MS;
+    const avis = isRoleAdmin && isAdminMode && !avisRefusRef.current
+      && now - last.avis >= AVIS_EVERY_MS;
     // Retour sur l'onglet (appel immédiat) : pas de relecture si la dernière a moins d'une minute
     const santePrix = isRoleAdmin && typeof api.getSantePrix === 'function' && now - last.santePrix >= SANTE_PRIX_EVERY_MS;
     if (demandes) last.demandes = now;
+    if (commandes) last.commandes = now;
     if (avis) last.avis = now;
     if (santePrix) last.santePrix = now;
     return api.background(() => Promise.all([
       api.getKPI().then(kpi => setPendingCount(kpi?.total_actifs || 0)).catch(() => {}),
       api.getInteractions().then(d => setInteractionCount(d?.total_actions ?? 0)).catch(() => {}),
       demandes && api.countDemandesCommandesNouvelles().then(d => setDemandesCmdNew(d?.count ?? 0)).catch(() => {}),
-      avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch(() => {}),
+      // Même compteur que la pastille « commandes pièces » du tableau de bord
+      commandes && api.getParts({ statut: 'en_cours' })
+        .then(p => setCommandesEnCours(Array.isArray(p) ? p.length : 0)).catch(() => {}),
+      avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch((err) => {
+        if (err?.status === 403) { avisRefusRef.current = true; setAvisNonRepondus(0); }
+      }),
       santePrix && Promise.resolve().then(() => api.getSantePrix())
         .then(s => setPropositionsPrix(Math.max(0, Math.round(Number(s?.propositions_en_attente)) || 0)))
         .catch(() => {}),
     ]));
   }, BADGES_POLL_MS, { enabled: Boolean(user?.utilisateur) });
 
-  // Visibilité des modules : une fois par session (liste [{cle, valeur}] ou objet {cle: valeur})
+  // Visibilité des modules : une fois par session (liste [{cle, valeur}] ou objet {cle: valeur}).
+  // Partagée avec la lecture de la page (fiche ticket : getCached) : un seul GET /api/config (api.get)
   useEffect(() => {
     if (!user?.utilisateur) return;
     api.getConfig().then(cfg => {
@@ -213,7 +236,7 @@ export default function Navbar() {
   const navItems = [
     { path: basePath, label: 'Dashboard', icon: LayoutDashboard, badge: pendingCount, alertBadge: interactionCount },
     { path: `${basePath}/clients`, label: 'Clients', icon: Users },
-    { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: pendingCount },
+    { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: commandesEnCours },
     { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag, badge: demandesCmdNew },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
@@ -263,6 +286,7 @@ export default function Navbar() {
   };
 
   const handleAdminSuccess = () => {
+    avisRefusRef.current = false;
     setIsAdminMode(true);
     setShowAdminModal(false);
     if (pendingAdminPath) {
@@ -273,9 +297,12 @@ export default function Navbar() {
   };
 
   const lockAdmin = () => {
+    // Verrouiller retire la preuve du code côté serveur (POST /api/admin/lock), l'élévation (10 min)
+    // et le mode admin : plus aucune action ni lecture réservée sans ressaisir le code.
+    // Local d'abord (immédiat, même sans réseau), puis le serveur
     localStorage.removeItem('klikphone_admin');
-    // Verrouiller retire aussi l'élévation (10 min) : plus aucune action sensible sans code
     api.clearAdminToken();
+    api.lockAdmin();
     setIsAdminMode(false);
     if (isOnAdminPage) {
       navigate(basePath, { replace: true });

@@ -20,11 +20,26 @@ const BRAND_600 = '#7C3AED';
 const BRAND_700 = '#6D28D9';
 const SLATE_500 = '#64748B';
 
+// Saisi au clavier sans tirets (« 15963 », « 1 5 9 6 3 ») : chiffres 1 à 9, chacun une seule fois
+function chiffresSansSeparateur(value) {
+  const chiffres = String(value ?? '').trim().replace(/[\s,;.>→-]+/g, '');
+  if (!/^[1-9]+$/.test(chiffres) || new Set(chiffres).size !== chiffres.length) return null;
+  return [...chiffres].map(Number);
+}
+
 export function parsePattern(value) {
+  const chiffres = chiffresSansSeparateur(value);
+  if (chiffres) return chiffres;
   return String(value ?? '')
     .split('-')
     .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 1 && n <= GRID_SIZE * GRID_SIZE);
+}
+
+/** Valeur enregistrée au format attendu (« 1-5-9-6-3 ») si elle est lisible sans ambiguïté, sinon inchangée. */
+export function normaliserPattern(value) {
+  const chiffres = chiffresSansSeparateur(value);
+  return chiffres ? chiffres.join('-') : value;
 }
 
 // Point du milieu entre deux points alignés (même ligne, colonne ou diagonale), sinon null
@@ -151,6 +166,8 @@ export default function PatternGrid({
   }
 
   const trace = sequence.join(' → ');
+  // Lecture d'une valeur qui ne se lit pas comme un tracé (« Z inversé ») : le texte saisi reste visible
+  const brut = readOnly && sequence.length === 0 ? String(value ?? '').trim() : '';
 
   return (
     <div className="inline-flex flex-col items-center gap-2 rounded-lg bg-slate-50 p-2">
@@ -159,7 +176,7 @@ export default function PatternGrid({
         width={size}
         height={size}
         role={readOnly ? 'img' : 'group'}
-        aria-label={readOnly ? `${label} : ${trace || 'aucun'}` : label}
+        aria-label={readOnly ? `${label} : ${trace || brut || 'aucun'}` : label}
         aria-describedby={readOnly ? undefined : descId}
         className="select-none"
         style={{ touchAction: readOnly ? 'auto' : 'none' }}
@@ -217,7 +234,8 @@ export default function PatternGrid({
         })}
       </svg>
       {readOnly ? (
-        sequence.length > 0 && <p className="t-caption t-mono">{trace}</p>
+        sequence.length > 0 ? <p className="t-caption t-mono">{trace}</p>
+          : brut && <p className="text-sm font-mono font-semibold text-slate-900 break-words max-w-full" aria-hidden="true">{brut}</p>
       ) : (
         <>
           <p className="t-caption t-mono min-h-4" role="status" aria-live="polite">

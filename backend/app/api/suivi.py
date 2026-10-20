@@ -22,6 +22,12 @@ from app.api.public_documents import LimiteurDebit
 from app.services import contact
 from app.services.poll_cache import PollCache, cached_json
 
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:  # image sans base tz : heure du serveur
+    _PARIS = None
+
 router = APIRouter(prefix="/api/suivi", tags=["suivi"])
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
@@ -184,7 +190,8 @@ def valider_devis(
 ):
     """Le client accepte ou refuse le devis depuis la page de suivi."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ts = datetime.now().strftime("%d/%m %H:%M")
+    # Journal texte affiché « [JJ/MM HH:MM] » : heure de Chambéry (serveur en UTC)
+    ts = datetime.now(_PARIS).strftime("%d/%m %H:%M") if _PARIS else datetime.now().strftime("%d/%m %H:%M")
     ticket_id = None
     technicien = None
     client_label = "Le client"

@@ -300,10 +300,17 @@ export default function ClientFormPage() {
       `Ticket ${result.ticket_code} créé${promis ? ` · ${phrasePret(promis, new Date())}` : ''}`,
       result.id ? { onClick: () => navigate(`${tableauDeBord}/ticket/${result.id}`) } : undefined,
     );
+    // Le tableau de bord rouvre en haut, nouveau ticket visible (saut immédiat, sans défilement doux)
+    window.scrollTo(0, 0);
     navigate(tableauDeBord);
   };
 
   const handleSubmit = async () => {
+    // Achat : PATCH réservés au personnel ; sur la borne, rien n'est créé (pas de ticket orphelin)
+    if (isAchat && !modePersonnel) {
+      toast.error('Les achats sont enregistrés par le personnel en boutique.');
+      return;
+    }
     setLoading(true);
     try {
       const client = await api.createOrGetClient({
@@ -437,6 +444,18 @@ export default function ClientFormPage() {
 
   const inv = (field) => (errors[field] ? { 'aria-invalid': 'true', 'aria-describedby': `${PREFIX}-${field}-erreur` } : {});
 
+  // Achat (ticket clôturé et payé aussitôt) : réservé au personnel, jamais sur la borne publique
+  const tuileAchat = modePersonnel ? (
+    <button
+      type="button"
+      aria-pressed={isAchat}
+      onClick={() => updateForm('categorie', 'Achat')}
+      className={`${tuile(isAchat)} flex items-center gap-2`}
+    >
+      <ShoppingBag className="w-5 h-5 shrink-0" aria-hidden="true" /> Achat
+    </button>
+  ) : null;
+
   const libelleEnvoi = isAchat ? "Enregistrer l'achat" : isCommande ? 'Valider la commande' : "Déposer l'appareil";
 
   // ─── Récapitulatif ───────────────────────────────────────────
@@ -523,16 +542,7 @@ export default function ClientFormPage() {
               prefix={PREFIX} form={form} errors={errors} onChange={updateForm}
               categories={categories} catalogue={catalogue} sansModele={sansModele}
               onModeleLibre={setModeleLibre}
-              enfantsCategories={(
-                <button
-                  type="button"
-                  aria-pressed={isAchat}
-                  onClick={() => updateForm('categorie', 'Achat')}
-                  className={`${tuile(isAchat)} flex items-center gap-2`}
-                >
-                  <ShoppingBag className="w-5 h-5 shrink-0" aria-hidden="true" /> Achat
-                </button>
-              )}
+              enfantsCategories={tuileAchat}
             />
             {isCommande && (
               <div className="callout callout-info">

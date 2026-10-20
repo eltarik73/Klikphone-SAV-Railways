@@ -80,7 +80,8 @@ function KPICard({ icon: Icon, value, label }) {
 // ─── Phone Card ──────────────────────────────────
 
 const PhoneCard = memo(function PhoneCard({ phone }) {
-  const grade = phone.grade || (phone.type_produit === 'Neuf' ? 'Neuf' : null);
+  // type_produit vaut 'neuf' ou 'occasion' (minuscules) : sans grade fourni, un neuf s'affiche « Neuf »
+  const grade = phone.grade || (String(phone.type_produit || '').toLowerCase() === 'neuf' ? 'Neuf' : null);
   const gradeStyle = getGradeStyle(grade);
   const inStock = phone.en_stock !== false && phone.en_stock !== 0;
 
@@ -525,16 +526,21 @@ export default function TarifsTelephonesPage() {
           <div className="mt-8 flex flex-col items-center gap-4">
             {/* Pagination controls */}
             {totalPages > 1 && (
-              <nav className="flex items-center gap-2" aria-label="Pagination">
+              <nav className="flex flex-wrap items-center justify-center gap-2 max-w-full" aria-label="Pagination">
                 <button
                   type="button"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   aria-label="Page précédente"
-                  className="btn-secondary btn-icon"
+                  className="btn-secondary btn-icon w-11 h-11 min-w-[44px]"
                 >
                   <ChevronLeft aria-hidden="true" />
                 </button>
+
+                {/* Téléphone : « Page X / N » entre les flèches (7 numéros ne tiennent pas sur 390 px) */}
+                <span className="sm:hidden px-2 text-sm font-medium tabular-nums text-slate-700" aria-current="page">
+                  Page {currentPage} / {totalPages}
+                </span>
 
                 {/* Page numbers */}
                 {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
@@ -555,7 +561,7 @@ export default function TarifsTelephonesPage() {
                       onClick={() => setCurrentPage(pageNum)}
                       aria-label={`Page ${pageNum}`}
                       aria-current={currentPage === pageNum ? 'page' : undefined}
-                      className={`w-10 h-10 rounded-lg text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                      className={`hidden sm:inline-flex items-center justify-center w-11 h-11 rounded-lg text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
                         currentPage === pageNum
                           ? 'bg-brand-600 text-white'
                           : 'text-slate-600 hover:bg-slate-100'
@@ -571,7 +577,7 @@ export default function TarifsTelephonesPage() {
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                   aria-label="Page suivante"
-                  className="btn-secondary btn-icon"
+                  className="btn-secondary btn-icon w-11 h-11 min-w-[44px]"
                 >
                   <ChevronRight aria-hidden="true" />
                 </button>

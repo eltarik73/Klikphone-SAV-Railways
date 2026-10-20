@@ -3,29 +3,54 @@ API CRUD Clients — compatible schéma PostgreSQL existant.
 """
 
 import csv
+import hashlib
 import io
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import Field
 from app.database import get_cursor
 from app.models import ClientCreate, ClientUpdate, ClientOut
-from app.api.auth import get_current_user, get_optional_user, require_admin
+from app.api.auth import _IP_CONNUES, client_ip, get_current_user, get_optional_user, require_admin
+from app.api.public_documents import LimiteurDebit
 from app.services import mentions
 from app.services import search as search_engine
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
 
+# Bornes des champs saisis (borne publique comprise) : un texte démesuré ou une carte
+# Camby hors de l'INTEGER donnaient une fiche géante ou une erreur 500 → 422 lisible.
+# (À remonter dans models.ClientCreate / ClientUpdate, lot modèles.)
+NOM_MAX = 100
+
+
 # ─── RGPD : information et consentement (dates posées par le serveur) ──
 class ClientCreateRgpd(ClientCreate):
+    nom: str = Field(..., max_length=NOM_MAX)
+    prenom: Optional[str] = Field("", max_length=NOM_MAX)
+    societe: Optional[str] = Field("", max_length=NOM_MAX)
+    email: Optional[str] = Field("", max_length=254)
+    carte_camby: Optional[int] = Field(0, ge=0, le=1)
     rgpd_informe: Optional[bool] = None
     consentement_marketing: Optional[bool] = None
 
 
 class ClientUpdateRgpd(ClientUpdate):
+    nom: Optional[str] = Field(None, max_length=NOM_MAX)
+    prenom: Optional[str] = Field(None, max_length=NOM_MAX)
+    societe: Optional[str] = Field(None, max_length=NOM_MAX)
+    email: Optional[str] = Field(None, max_length=254)
+    carte_camby: Optional[int] = Field(None, ge=0, le=1)
     consentement_marketing: Optional[bool] = None
+
+
+# Création sans session (borne, dépôt en ligne) : 10 fiches / 10 min par IP inconnue.
+# Les postes de la boutique (IP où un jeton valide a déjà été vu) n'y sont pas soumis :
+# la borne du comptoir partage leur connexion.
+_LIMITEUR_CREATION = LimiteurDebit(limite=10, fenetre=600)
 
 
 class ClientOutRgpd(ClientOut):
@@ -145,9 +170,22 @@ def list_clients(
 
 
 # ─── EXPORT routes (MUST be before /{client_id}) ──────────────
-@router.get("/export/csv")
-def export_clients_csv(user: dict = Depends(get_current_user)):
-    """Exporte tous les clients au format CSV avec nb de tickets."""
+# Toute la base clients en un fichier : élévation admin (comme l'export RGPD unitaire)
+# et trace dans admin_audit_log. Les valeurs viennent en partie de la borne publique :
+# une cellule qui commence par = + - @ (ou tabulation / retour chariot) serait lue
+# comme une formule par Excel → préfixée d'une apostrophe (_cellule_sure).
+EXPORT_ENTETES = ["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création", "Nb tickets"]
+_DEBUTS_FORMULE = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _cellule_sure(v):
+    """Valeur d'export inoffensive pour un tableur (injection de formules CSV / Excel)."""
+    if isinstance(v, str) and v.startswith(_DEBUTS_FORMULE):
+        return "'" + v
+    return v
+
+
+def _lignes_export():
     with get_cursor() as cur:
         cur.execute("""
             SELECT c.id, c.nom, c.prenom, c.telephone, c.email, c.societe,
@@ -158,45 +196,59 @@ def export_clients_csv(user: dict = Depends(get_current_user)):
             GROUP BY c.id
             ORDER BY c.nom
         """)
-        rows = cur.fetchall()
+        rows = cur.fetchall() or []
+    return [[_cellule_sure(v) for v in (
+        r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"],
+        r["carte_camby"], str(r["date_creation"] or ""), r["nb_tickets"],
+    )] for r in rows]
+
+
+def _journaliser_export(request: Request, user: dict, action: str, nb: int):
+    """Trace admin (compte et nombre de lignes, aucune donnée personnelle). Un échec n'empêche pas l'export."""
+    ip_hash = hashlib.sha256(("kp:" + client_ip(request)).encode("utf-8")).hexdigest()[:16]
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """INSERT INTO admin_audit_log (user_login, user_target, action, target_type, target_id, details, ip_hash)
+                   VALUES (%s, %s, %s, 'clients', NULL, %s, %s)""",
+                (str(user.get("sub") or "")[:60], str(user.get("target") or "")[:30], action,
+                 f"{nb} client(s)", ip_hash),
+            )
+    except Exception as e:
+        print(f"[clients] trace d'export non enregistrée : {type(e).__name__}")
+
+
+@router.get("/export/csv")
+def export_clients_csv(request: Request, user: dict = Depends(require_admin)):
+    """Exporte tous les clients en CSV pour Excel français (UTF-8 avec BOM, séparateur « ; »)."""
+    lignes = _lignes_export()
+    _journaliser_export(request, user, "export_clients_csv", len(lignes))
 
     output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création", "Nb tickets"])
-    for r in rows:
-        writer.writerow([r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], r["date_creation"], r["nb_tickets"]])
-
-    output.seek(0)
+    output.write("\ufeff")
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow(EXPORT_ENTETES)
+    writer.writerows(lignes)
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
+        iter([output.getvalue().encode("utf-8")]),
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=clients_klikphone.csv"},
     )
 
 
 @router.get("/export/excel")
-def export_clients_excel(user: dict = Depends(get_current_user)):
-    """Exporte tous les clients au format Excel (.xlsx) avec nb de tickets."""
+def export_clients_excel(request: Request, user: dict = Depends(require_admin)):
+    """Exporte tous les clients au format Excel (.xlsx) avec nb de tickets (cellules texte, jamais de formule)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT c.id, c.nom, c.prenom, c.telephone, c.email, c.societe,
-                   c.carte_camby, c.date_creation,
-                   COUNT(t.id) AS nb_tickets
-            FROM clients c
-            LEFT JOIN tickets t ON t.client_id = c.id
-            GROUP BY c.id
-            ORDER BY c.nom
-        """)
-        rows = cur.fetchall()
+    lignes = _lignes_export()
+    _journaliser_export(request, user, "export_clients_excel", len(lignes))
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Clients"
 
-    headers = ["ID", "Nom", "Prénom", "Téléphone", "Email", "Société", "Carte Camby", "Date création", "Nb tickets"]
     header_font = Font(bold=True, color="FFFFFF", size=11)
     header_fill = PatternFill(start_color="7C3AED", end_color="7C3AED", fill_type="solid")
     thin_border = Border(
@@ -206,17 +258,19 @@ def export_clients_excel(user: dict = Depends(get_current_user)):
         bottom=Side(style="thin", color="E2E8F0"),
     )
 
-    for col, h in enumerate(headers, 1):
+    for col, h in enumerate(EXPORT_ENTETES, 1):
         cell = ws.cell(row=1, column=col, value=h)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
         cell.border = thin_border
 
-    for i, r in enumerate(rows, 2):
-        vals = [r["id"], r["nom"], r["prenom"], r["telephone"], r["email"], r["societe"], r["carte_camby"], str(r["date_creation"] or ""), r["nb_tickets"]]
+    for i, vals in enumerate(lignes, 2):
         for col, v in enumerate(vals, 1):
             cell = ws.cell(row=i, column=col, value=v)
+            if isinstance(v, str):
+                # openpyxl lit « =… » comme une formule : le texte reste du texte
+                cell.data_type = "s"
             cell.border = thin_border
 
     # Auto-fit column widths
@@ -258,7 +312,8 @@ def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
 
 
 @router.post("", response_model=ClientOutRgpd, response_model_exclude_unset=True)
-def create_or_get_client(data: ClientCreateRgpd, user: Optional[dict] = Depends(get_optional_user)):
+def create_or_get_client(data: ClientCreateRgpd, request: Request,
+                         user: Optional[dict] = Depends(get_optional_user)):
     """Crée un client ou retourne l'existant si le téléphone existe déjà.
 
     Sans jeton (borne, dépôt en ligne) : la fiche d'un client existant n'est
@@ -270,6 +325,10 @@ def create_or_get_client(data: ClientCreateRgpd, user: Optional[dict] = Depends(
     consentement_marketing posent leurs dates (_SET_CONSENTEMENTS) ; sans jeton,
     l'accord marketing d'une fiche existante exige la même identité (meme_personne).
     """
+    if not user:
+        ip = client_ip(request)
+        if not _IP_CONNUES.connue(ip):
+            _LIMITEUR_CREATION.verifier(ip)
     camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
     champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing"})
     with get_cursor() as cur:

@@ -1,7 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Eye, EyeOff, Lock } from 'lucide-react';
 import api from '../lib/api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+
+// Mode admin de l'interface (menu admin, AdminGuard) : drapeau du poste + événement, pour que les
+// écrans déjà affichés suivent sans rechargement. Même nom que ADMIN_MODE_EVENT de lib/api.js
+// (api.setAdminMode, api.lockAdmin), qui ne peut pas importer ce composant.
+export const ADMIN_MODE_EVENT = 'kp-admin-mode';
+export function annoncerModeAdmin(admin) {
+  try {
+    if (admin) localStorage.setItem('klikphone_admin', 'true');
+    else localStorage.removeItem('klikphone_admin');
+  } catch { /* stockage indisponible */ }
+  window.dispatchEvent(new CustomEvent(ADMIN_MODE_EVENT, { detail: { admin: Boolean(admin) } }));
+}
 
 // Mauvais identifiants : 401/403. Verrou anti-essais (429), réseau ou serveur : message du serveur.
 function messageRefus(err) {
@@ -41,7 +54,8 @@ export default function AdminLoginModal({ open, onClose, onSuccess }) {
     setError('');
     try {
       await api.verifyAdmin(login, password);
-      localStorage.setItem('klikphone_admin', 'true');
+      // Mode admin du poste + événement (AdminGuard, barre latérale suivent sans rechargement)
+      annoncerModeAdmin(true);
       onSuccess();
     } catch (err) {
       setError(messageRefus(err));
@@ -55,9 +69,11 @@ export default function AdminLoginModal({ open, onClose, onSuccess }) {
 
   if (!open) return null;
 
-  return (
+  // Portail en fin de <body>, au-dessus des autres fenêtres (z-60) : le code peut être demandé
+  // pendant une confirmation (anonymisation…) sans s'ouvrir dessous
+  return createPortal((
     <div
-      className="modal-overlay z-[60] items-center p-4"
+      className="modal-overlay z-[80] items-center p-4"
       onClick={onClose}
     >
       <form
@@ -171,5 +187,5 @@ export default function AdminLoginModal({ open, onClose, onSuccess }) {
         }
       `}</style>
     </div>
-  );
+  ), document.body);
 }

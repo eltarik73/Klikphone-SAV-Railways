@@ -13,7 +13,7 @@ from fastapi.responses import Response
 
 from app.api.print_tickets import (
     _get_ticket_full, _parse_repair_lines, _calc_reduction,
-    _get_config, _fp, _fd, _qr_url,
+    _get_config, _fp, _fd, _qr_url, _fmt_recup, _fmt_tel,
 )
 
 router = APIRouter(prefix="/api/tickets", tags=["pdf"])
@@ -301,7 +301,7 @@ def _devis_a4_html(t: dict) -> str:
 
     # Client
     client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
-    client_tel = t.get("client_tel", "")
+    client_tel = _fmt_tel(t.get("client_tel"))
     client_email = t.get("client_email", "")
     client_societe = t.get("client_societe", "")
 
@@ -317,7 +317,7 @@ def _devis_a4_html(t: dict) -> str:
 
     # Date
     date_depot = _fd(t.get("date_depot"))
-    date_recup = t.get("date_recuperation") or ""
+    date_recup = _fmt_recup(t.get("date_recuperation"))
     qr = _qr_url(code)
 
     # Lignes tableau
@@ -474,7 +474,7 @@ def _recu_a4_html(t: dict) -> str:
 
     # Client
     client_nom = f"{t.get('client_prenom', '')} {t.get('client_nom', '')}".strip()
-    client_tel = t.get("client_tel", "")
+    client_tel = _fmt_tel(t.get("client_tel"))
     client_email = t.get("client_email", "")
     client_societe = t.get("client_societe", "")
 

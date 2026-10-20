@@ -384,7 +384,9 @@ def test_creation_ticket_discord_et_apprentissage_apres_la_reponse(monkeypatch):
     import app.api.public_documents as pdoc
     monkeypatch.setattr(pdoc, "jeton_suivi", lambda tid: "j")
     bg = BackgroundTasks()
-    out = tickets.create_ticket(TicketCreate(client_id=1, categorie="Smartphone", marque="Apple", modele="iPhone 12", panne="Batterie HS"), bg)
+    # Personnel connecté : seul cas où les termes sont appris (la borne anonyme n'alimente rien)
+    out = tickets.create_ticket(TicketCreate(client_id=1, categorie="Smartphone", marque="Apple", modele="iPhone 12", panne="Batterie HS"), bg,
+                                user={"sub": "Sophie"})
     assert out == {"id": 5, "ticket_code": "KP-000005"}
     assert directs == []   # rien d'externe dans le chemin de la réponse
     assert [t.func for t in bg.tasks] == [tickets.learn_terms, tickets.notif_nouveau_ticket]

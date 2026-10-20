@@ -634,9 +634,13 @@ export default function DashboardPage() {
           cmp = (`${a.client_nom || ''} ${a.client_prenom || ''}`).localeCompare(`${b.client_nom || ''} ${b.client_prenom || ''}`);
           break;
         case 'date_recuperation': {
-          // Texte libre : seules les valeurs datables sont ordonnées, les autres (et les vides) en dernier
+          // Texte libre : seules les valeurs datables sont ordonnées, les autres (et les vides) en
+          // dernier dans les deux sens (renvoyé avant l'inversion du sens)
           const da = instantDelai(a.date_recuperation);
           const db = instantDelai(b.date_recuperation);
+          const finA = da === Number.POSITIVE_INFINITY;
+          const finB = db === Number.POSITIVE_INFINITY;
+          if (finA !== finB) return finA ? 1 : -1;
           cmp = da === db ? 0 : da < db ? -1 : 1;
           break;
         }
@@ -1101,7 +1105,8 @@ export default function DashboardPage() {
                 aria-pressed={sortField === value}
                 onClick={() => {
                   if (sortField === value) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-                  else { setSortField(value); setSortDir(value === 'nom' || value === 'priorite' ? 'asc' : 'desc'); }
+                  // Récupération : le délai le plus proche (ou dépassé) d'abord
+                  else { setSortField(value); setSortDir(value === 'nom' || value === 'priorite' || value === 'date_recuperation' ? 'asc' : 'desc'); }
                 }}
                 className={`segmented-item shrink-0 ${sortField === value ? 'segmented-item-active' : ''}`}
               >
@@ -1203,7 +1208,7 @@ export default function DashboardPage() {
       <div aria-busy={loading || isPending}
         className={`card overflow-x-auto motion-safe:transition-opacity duration-150 ${isPending || showingPrevious ? 'opacity-60' : ''}`}>
         <div className={`hidden lg:grid ${GRID_COLS} gap-x-1.5 items-center px-4 min-h-10 bg-slate-50 border-b border-slate-200`}>
-          <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center w-7 h-7 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center w-11 h-11 -m-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             aria-label="Sélectionner tous les tickets de la page"
             aria-pressed={selectedIds.size === displayedTickets.length && displayedTickets.length > 0}>
             {selectedIds.size === displayedTickets.length && displayedTickets.length > 0
@@ -1292,6 +1297,12 @@ export default function DashboardPage() {
                     <span className="badge badge-sm badge-warning mt-0.5">Non payé</span>
                   )}
                 </>
+              ) : t.est_retour_sav ? (
+                /* Retour SAV : prise en charge sous garantie, rien à payer */
+                <>
+                  <p className="text-sm font-semibold tabular-nums text-slate-900">{formatPrix(0)}</p>
+                  <span className="badge badge-sm badge-neutral mt-0.5">Garantie</span>
+                </>
               ) : (
                 <p className="text-sm text-slate-500">
                   <span aria-hidden="true">—</span>
@@ -1317,7 +1328,7 @@ export default function DashboardPage() {
                 {/* Checkbox (sur iPad : centrée sur les deux lignes de la grille) */}
                 <div className="hidden lg:flex items-center justify-center lg:row-span-2 xl:row-span-1">
                   <button type="button" onClick={() => toggleSelect(t.id)}
-                    className="w-7 h-7 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    className="w-11 h-11 -m-2 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     aria-label={`Sélectionner ${t.ticket_code}`} aria-pressed={selected}>
                     {selected
                       ? <SquareCheck className="w-4 h-4 text-brand-600" aria-hidden="true" />
@@ -1348,7 +1359,7 @@ export default function DashboardPage() {
                           else if (e.key === 'ArrowUp') document.getElementById('dashboard-search')?.focus();
                         }}
                         aria-label={`Ouvrir le ticket ${t.ticket_code}${clientName ? `, ${clientName}` : ''}, ${t.statut}`}
-                        className="inline-flex items-center min-h-8 t-mono font-bold text-brand-700 rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
+                        className="inline-flex items-center min-h-11 -my-1.5 t-mono font-bold text-brand-700 rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
                         {t.ticket_code}
                       </a>
                       {t.est_retour_sav && (

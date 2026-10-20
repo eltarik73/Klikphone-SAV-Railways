@@ -21,6 +21,7 @@ import httpx
 
 from app.database import get_cursor
 from app.api.auth import get_current_user
+from app.api.tickets import bornes_utc, jour_paris
 from app.services import params as params_cache
 from app.services import search as search_engine
 from app.services.poll_cache import PollCache, cached_json
@@ -326,6 +327,7 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
                     return json.dumps(results, ensure_ascii=False, default=str)
 
                 elif stat_type == "today":
+                    # Jour de Paris (date_depot : TIMESTAMP naïf en UTC)
                     cur.execute("""
                         SELECT COUNT(*) as tickets_jour,
                                COALESCE(SUM(
@@ -334,8 +336,8 @@ def _execute_tool(tool_name: str, tool_input: dict) -> str:
                                    ELSE 0 END
                                ), 0) as ca_jour
                         FROM tickets
-                        WHERE DATE(date_depot) = CURRENT_DATE
-                    """)
+                        WHERE date_depot >= %s AND date_depot < %s
+                    """, bornes_utc(jour_paris()))
                     row = cur.fetchone()
                     return json.dumps({
                         "tickets_jour": row["tickets_jour"],

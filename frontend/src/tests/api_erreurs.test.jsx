@@ -1,11 +1,18 @@
 /**
  * Vague C2 : erreurs HTTP lisibles (detail objet {code, message}, texte, tableau 422) avec
  * status, code et detail exposés ; verrouillage admin de la Navbar (jeton d'élévation effacé).
+ * Check-up lot 3 : export clients avec X-Admin-Token, verrouillage côté serveur (POST /api/admin/lock),
+ * mode admin suivi par AdminGuard, un seul GET /api/config, méthodes mortes retirées, boutons nommés.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { api, formatErrorDetail, httpError } from '../lib/api';
+import { AdminGuard } from '../App';
+import AvisGoogle from '../pages/AvisGoogle';
+import AdminPage from '../pages/AdminPage';
+import { ToastProvider } from '../components/Toast';
+import { clearCache } from '../hooks/useApi';
 
 const { auth } = vi.hoisted(() => ({
   auth: { user: { target: 'accueil', utilisateur: 'Sophie', role: 'accueil' }, logout: () => {} },
@@ -135,6 +142,130 @@ describe('api : documents (fetch brut)', () => {
     const err = await echec(api.exportClientsCsv());
     expect(err).toMatchObject({ status: 500, message: 'Internal server error' });
   });
+
+  it('export clients : jeton d’élévation envoyé (X-Admin-Token), comme pour request()', async () => {
+    const jeton = fakeJwt(Math.floor(Date.now() / 1000) + 600);
+    api.setAdminToken(jeton);
+    const createUrl = vi.fn(() => 'blob:x');
+    Object.assign(URL, { createObjectURL: createUrl, revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), blob: () => Promise.resolve(new Blob(['x'])) });
+    await api.exportClientsCsv();
+    await api.exportClientsExcel();
+    const [[url1, opts1], [url2, opts2]] = global.fetch.mock.calls;
+    expect(url1).toBe('/api/clients/export/csv');
+    expect(url2).toBe('/api/clients/export/excel');
+    for (const o of [opts1, opts2]) {
+      expect(o.headers).toMatchObject({ Authorization: 'Bearer session', 'X-Admin-Token': jeton });
+    }
+    expect(createUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it('export clients refusé faute d’élévation : code admin_required (useAdminElevation peut redemander le code)', async () => {
+    global.fetch = vi.fn().mockResolvedValue(errRes(403, { code: 'admin_requis', message: 'Élévation administrateur requise pour cette action.' }));
+    const err = await echec(api.exportClientsCsv());
+    expect(err).toMatchObject({ status: 403, code: 'admin_required', adminCode: 'admin_requis' });
+    expect(global.fetch.mock.calls[0][1].headers['X-Admin-Token']).toBeUndefined();
+    expect(api.token).toBe('session');
+  });
+});
+
+describe('api : mode admin, lectures partagées, méthodes', () => {
+  it('lockAdmin : POST /api/admin/lock avec la session, jeton et mode oubliés même hors réseau', async () => {
+    localStorage.setItem('klikphone_admin', 'true');
+    localStorage.setItem('kp_admin_auth', JSON.stringify({ ts: 1 }));
+    api.setAdminToken(fakeJwt(Math.floor(Date.now() / 1000) + 600));
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const ecoute = vi.fn();
+    window.addEventListener('kp-admin-mode', ecoute);
+    await api.lockAdmin();
+    window.removeEventListener('kp-admin-mode', ecoute);
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/admin/lock');
+    expect(opts.method).toBe('POST');
+    expect(opts.headers.Authorization).toBe('Bearer session');
+    expect(global.fetch).toHaveBeenCalledTimes(1);   // jamais relancé
+    expect(api.hasAdminToken()).toBe(false);
+    expect(localStorage.getItem('klikphone_admin')).toBeNull();
+    expect(localStorage.getItem('kp_admin_auth')).toBeNull();
+    expect(ecoute).toHaveBeenCalledWith(expect.objectContaining({ detail: { admin: false } }));
+  });
+
+  it('GET /api/config : une seule requête quand getCached (page) et get (barre latérale) se croisent', async () => {
+    let resoudre;
+    global.fetch = vi.fn(() => new Promise((r) => { resoudre = () => r(jsonRes({ MODULE_DEVIS_VISIBLE: 'true' })); }));
+    const a = api.getCached('/api/config', 5 * 60_000);
+    const b = api.getConfig();
+    resoudre();
+    expect(await a).toEqual({ MODULE_DEVIS_VISIBLE: 'true' });
+    expect(await b).toEqual({ MODULE_DEVIS_VISIBLE: 'true' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    api._cache.clear();
+    global.fetch = vi.fn(() => new Promise((r) => { resoudre = () => r(jsonRes({ ordre: 'inverse' })); }));
+    const c = api.getConfig();
+    const d = api.getCached('/api/config', 5 * 60_000);
+    resoudre();
+    expect(await c).toEqual({ ordre: 'inverse' });
+    expect(await d).toEqual({ ordre: 'inverse' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // La réponse partagée sert ensuite le cache mémoire
+    expect(await api.getCached('/api/config', 5 * 60_000)).toEqual({ ordre: 'inverse' });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('méthode de calcul lue sur la route du personnel ; adminLogin et getSuiviPublic retirés (routes mortes)', async () => {
+    global.fetch = vi.fn().mockResolvedValue(jsonRes({ admin: false, texte: 'x', regles: null, exemple: null }));
+    await api.getMethodeCalcul();
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/tarifs/methode-calcul');
+    expect(api.adminLogin).toBeUndefined();
+    expect(api.getSuiviPublic).toBeUndefined();
+  });
+});
+
+describe('AdminGuard : suit le mode admin sans rechargement', () => {
+  it('code saisi depuis « Accès restreint » : la page s’ouvre ; verrouillage : elle se referme', async () => {
+    global.fetch = vi.fn().mockResolvedValue(jsonRes({ success: true }));
+    render(
+      <MemoryRouter initialEntries={['/accueil/config']}>
+        <AdminGuard><p>Page protégée</p></AdminGuard>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Accès restreint')).toBeInTheDocument();
+    act(() => { api.setAdminMode(true); });
+    expect(await screen.findByText('Page protégée')).toBeInTheDocument();
+    await act(async () => { await api.lockAdmin(); });
+    expect(await screen.findByText('Accès restreint')).toBeInTheDocument();
+  });
+});
+
+describe('Boutons icône nommés sur mobile', () => {
+  it('Avis Google : « Synchroniser les avis », type button, icône masquée', async () => {
+    clearCache();
+    global.fetch = vi.fn().mockResolvedValue(jsonRes([]));
+    render(<MemoryRouter><ToastProvider><AvisGoogle /></ToastProvider></MemoryRouter>);
+    const bouton = await screen.findByRole('button', { name: 'Synchroniser les avis' });
+    expect(bouton).toHaveAttribute('type', 'button');
+    expect(bouton.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('Reporting : « Déconnexion » nommé, squelettes pendant la lecture, déconnexion = verrouillage serveur', async () => {
+    clearCache();
+    localStorage.setItem('klikphone_admin', 'true');
+    let finir;
+    global.fetch = vi.fn((url) => (String(url).startsWith('/api/admin/lock')
+      ? Promise.resolve(jsonRes({ success: true }))
+      : new Promise((r) => { finir = () => r(jsonRes({ kpis: [] })); })));
+    const { container } = render(<MemoryRouter initialEntries={['/accueil/admin']}><AdminPage /></MemoryRouter>);
+    const bouton = screen.getByRole('button', { name: 'Déconnexion' });
+    expect(bouton).toHaveAttribute('type', 'button');
+    // 8 cartes KPI + 3 cartes « vitrine » réservées : rien ne saute à l'arrivée des données
+    expect(container.querySelectorAll('.skeleton-card')).toHaveLength(11);
+    fireEvent.click(bouton);
+    await waitFor(() => expect(global.fetch.mock.calls.some(([u, o]) => u === '/api/admin/lock' && o?.method === 'POST')).toBe(true));
+    expect(localStorage.getItem('klikphone_admin')).toBeNull();
+    finir?.();
+  });
 });
 
 describe('formatErrorDetail / httpError : formes inattendues', () => {
@@ -173,6 +304,9 @@ describe('Navbar : verrouiller le mode admin', () => {
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Verrouiller' }));
+    // La preuve du code est aussi retirée côté serveur (sinon le poste garde les droits 30 jours)
+    expect(global.fetch.mock.calls.some(([u, o]) => u === '/api/admin/lock' && o?.method === 'POST'
+      && o.headers?.Authorization === 'Bearer session')).toBe(true);
     expect(api.hasAdminToken()).toBe(false);
     expect(sessionStorage.getItem('kp_admin_token')).toBeNull();
     expect(localStorage.getItem('klikphone_admin')).toBeNull();

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { annoncerModeAdmin } from '../components/AdminLoginModal';
 import { useApi } from '../hooks/useApi';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -108,10 +109,11 @@ function DarkTooltip({ active, payload, label }) {
   );
 }
 
+// Squelettes aux dimensions finales des sections (pas de décalage à l'arrivée des données, CLS)
 function Spinner() {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" role="status" aria-label="Chargement du reporting">
-      {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton-card" />)}
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3" role="status" aria-label="Chargement du reporting">
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <div key={i} className="skeleton-card h-[127px]" aria-hidden="true" />)}
     </div>
   );
 }
@@ -201,7 +203,8 @@ function AdminLogin({ onLogin }) {
       if (res.success) {
         const authData = { ts: Date.now() };
         localStorage.setItem(AUTH_KEY, JSON.stringify(authData));
-        localStorage.setItem('klikphone_admin', 'true');
+        // Mode admin du poste + événement : la barre latérale passe en « Mode Admin » sans rechargement
+        annoncerModeAdmin(true);
         onLogin(authData);
       } else {
         setError('Identifiants incorrects');
@@ -245,7 +248,7 @@ function AdminLogin({ onLogin }) {
               className="btn-primary btn-lg btn-block">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" /> Connexion...
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full motion-safe:animate-spin" aria-hidden="true" /> Connexion...
                 </span>
               ) : 'Se connecter'}
             </button>
@@ -276,7 +279,7 @@ function AdminDashboard({ onLogout }) {
 
   // Tracking clics sur le lien public "Voir nos tarifs telephones"
   const trackingKey = `tracking:tarifs_click:30`;
-  const { data: tracking } = useApi(
+  const { data: tracking, loading: trackingLoading } = useApi(
     trackingKey,
     () => api.getTrackingStats('tarifs_click', 30),
     { tags: ['tracking'], ttl: 120_000 }
@@ -299,10 +302,11 @@ function AdminDashboard({ onLogout }) {
           <p className="page-header-subtitle">Vue d'ensemble de la boutique</p>
         </div>
         <div className="page-header-actions max-w-full">
-          <button onClick={onLogout}
+          {/* Libellé masqué sur mobile : le nom accessible vient de l'aria-label */}
+          <button type="button" onClick={onLogout} aria-label="Déconnexion"
             className="btn-secondary">
-            <LogOut />
-            <span className="hidden sm:inline">Déconnexion</span>
+            <LogOut aria-hidden="true" />
+            <span className="hidden sm:inline" aria-hidden="true">Déconnexion</span>
           </button>
         </div>
       </div>
@@ -341,7 +345,15 @@ function AdminDashboard({ onLogout }) {
           )}
         </section>
 
-        {/* ═══ Section 1b: Tracking clics vitrine tarifs ═══ */}
+        {/* ═══ Section 1b: Tracking clics vitrine tarifs (squelette réservé pendant la lecture) ═══ */}
+        {!tracking && trackingLoading && (
+          <section aria-hidden="true">
+            <div className="skeleton h-[22px] w-72 max-w-full mb-4" />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[0, 1, 2].map((i) => <div key={i} className="skeleton-card h-[99px] sm:h-[107px]" />)}
+            </div>
+          </section>
+        )}
         {tracking && (
           <section>
             <h2 className="t-h2 mb-4 flex items-center gap-2">
@@ -551,6 +563,8 @@ function AdminDashboard({ onLogout }) {
 
 // ─── Main Export ──────────────────────────────────────────
 export default function AdminPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [auth, setAuth] = useState(() => {
     if (localStorage.getItem('klikphone_admin') === 'true') return { ts: Date.now() };
     try {
@@ -563,5 +577,12 @@ export default function AdminPage() {
     return <AdminLogin onLogin={(data) => setAuth(data)} />;
   }
 
-  return <AdminDashboard onLogout={() => { localStorage.removeItem(AUTH_KEY); localStorage.removeItem('klikphone_admin'); api.clearAdminToken(); setAuth(null); }} />;
+  // Déconnexion du reporting = verrouillage du mode admin (preuve du code retirée côté serveur),
+  // retour au tableau de bord comme « Verrouiller » dans la barre latérale
+  const deconnecter = () => {
+    api.lockAdmin();
+    setAuth(null);
+    navigate(location.pathname.startsWith('/tech') ? '/tech' : '/accueil', { replace: true });
+  };
+  return <AdminDashboard onLogout={deconnecter} />;
 }

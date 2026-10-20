@@ -9,53 +9,102 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
 from app.services import mentions
 from app.services import params as params_cache
 from app.api.auth import get_current_user
 from app.api.notifications_center import push_notification
+from app.api import grille
+from app.services import prestations as P
 
 router = APIRouter(prefix="/api/devis", tags=["devis"])
 
 
 # ─── Models ────────────────────────────────────────────────
 
+# Bornes : montants et durées plausibles, et dans les colonnes (numeric(10,2), integer) —
+# 50 lignes × 100 × 10 000 € tiennent dans total_ht ; TVA de 0 % (franchise) à 30 %.
+_INT_MAX = 2_147_483_647
+_PRIX_MAX = 10_000
+_TXT, _TXT_LONG = 200, 10_000
+
+
 class DevisLigneIn(BaseModel):
-    description: str
-    quantite: int = 1
-    prix_unitaire: float = 0
-    ordre: int = 0
+    description: str = Field(..., max_length=1000)
+    quantite: int = Field(1, ge=1, le=100)
+    prix_unitaire: float = Field(0, ge=0, le=_PRIX_MAX, allow_inf_nan=False)
+    ordre: int = Field(0, ge=0, le=1000)
 
 class DevisCreate(BaseModel):
-    client_id: Optional[int] = None
-    client_nom: Optional[str] = None
-    client_prenom: Optional[str] = None
-    client_tel: Optional[str] = None
-    client_email: Optional[str] = None
-    appareil: Optional[str] = None
-    description: Optional[str] = None
-    tva: float = 20
-    remise: float = 0
-    notes: Optional[str] = None
-    validite_jours: int = 30
-    lignes: List[DevisLigneIn] = []
+    client_id: Optional[int] = Field(None, ge=1, le=_INT_MAX)
+    client_nom: Optional[str] = Field(None, max_length=_TXT)
+    client_prenom: Optional[str] = Field(None, max_length=_TXT)
+    client_tel: Optional[str] = Field(None, max_length=40)
+    client_email: Optional[str] = Field(None, max_length=254)
+    appareil: Optional[str] = Field(None, max_length=_TXT)
+    description: Optional[str] = Field(None, max_length=_TXT_LONG)
+    tva: float = Field(20, ge=0, le=30, allow_inf_nan=False)
+    remise: float = Field(0, ge=0, le=100_000, allow_inf_nan=False)
+    notes: Optional[str] = Field(None, max_length=_TXT_LONG)
+    validite_jours: int = Field(30, ge=1, le=365)
+    lignes: List[DevisLigneIn] = Field([], max_length=50)
 
 class DevisUpdate(BaseModel):
-    client_id: Optional[int] = None
-    client_nom: Optional[str] = None
-    client_prenom: Optional[str] = None
-    client_tel: Optional[str] = None
-    client_email: Optional[str] = None
-    appareil: Optional[str] = None
-    description: Optional[str] = None
-    statut: Optional[str] = None
-    tva: Optional[float] = None
-    remise: Optional[float] = None
-    notes: Optional[str] = None
-    validite_jours: Optional[int] = None
-    lignes: Optional[List[DevisLigneIn]] = None
+    client_id: Optional[int] = Field(None, ge=1, le=_INT_MAX)
+    client_nom: Optional[str] = Field(None, max_length=_TXT)
+    client_prenom: Optional[str] = Field(None, max_length=_TXT)
+    client_tel: Optional[str] = Field(None, max_length=40)
+    client_email: Optional[str] = Field(None, max_length=254)
+    appareil: Optional[str] = Field(None, max_length=_TXT)
+    description: Optional[str] = Field(None, max_length=_TXT_LONG)
+    statut: Optional[str] = Field(None, max_length=40)
+    tva: Optional[float] = Field(None, ge=0, le=30, allow_inf_nan=False)
+    remise: Optional[float] = Field(None, ge=0, le=100_000, allow_inf_nan=False)
+    notes: Optional[str] = Field(None, max_length=_TXT_LONG)
+    validite_jours: Optional[int] = Field(None, ge=1, le=365)
+    lignes: Optional[List[DevisLigneIn]] = Field(None, max_length=50)
+
+
+ETATS_TELEPHONE = ("Neuf", "Occasion", "Reconditionné")
+
+
+def _prix_saisi(v):
+    """« 299,90 », « 299.90 € », 299.9 → 299.9 ; vide → None (champ laissé blanc)."""
+    if v is None or isinstance(v, (int, float)):
+        return v
+    t = "".join(str(v).replace("€", "").split()).replace(",", ".")
+    return t or None
+
+
+class TelephoneVenteIn(BaseModel):
+    """Téléphone à la vente (onglet de Devis Flash). Création : marque et modèle requis ;
+    modification (PATCH) : seulement les champs envoyés."""
+    marque: Optional[str] = Field(None, max_length=100)
+    modele: Optional[str] = Field(None, max_length=_TXT)
+    capacite: Optional[str] = Field(None, max_length=50)
+    couleur: Optional[str] = Field(None, max_length=50)
+    etat: Optional[str] = None
+    prix_achat: Optional[float] = Field(None, ge=0, le=100_000, allow_inf_nan=False)
+    prix_vente: Optional[float] = Field(None, ge=0, le=100_000, allow_inf_nan=False)
+    imei: Optional[str] = Field(None, max_length=20)
+    en_stock: Optional[bool] = None
+    notes: Optional[str] = Field(None, max_length=_TXT_LONG)
+
+    _prix = field_validator("prix_achat", "prix_vente", mode="before")(_prix_saisi)
+
+    @field_validator("marque", "modele", "capacite", "couleur", "imei", mode="before")
+    @classmethod
+    def _texte(cls, v):
+        return " ".join(str(v).split()) if v is not None else None
+
+    @field_validator("etat")
+    @classmethod
+    def _etat(cls, v):
+        if v is not None and v not in ETATS_TELEPHONE:
+            raise ValueError(f"État inconnu : {', '.join(ETATS_TELEPHONE)}")
+        return v
 
 
 STATUTS = ["Brouillon", "Envoyé", "Accepté", "Refusé", "Converti"]
@@ -101,8 +150,8 @@ def _gen_numero(cur):
 def list_devis(
     statut: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: int = Query(50, ge=0, le=200),
+    offset: int = Query(0, ge=0, le=_INT_MAX),
     user: dict = Depends(get_current_user),
 ):
     conditions = []
@@ -219,43 +268,88 @@ def devis_flash_search(
     limit: int = Query(20, ge=1, le=50),
     user: dict = Depends(get_current_user),
 ):
-    """Recherche dans tarifs, résultats groupés par modèle."""
+    """Recherche dans les grilles, résultats groupés par modèle (prix client TTC).
+
+    Mêmes règles que les suggestions du ticket (api/grille) : jamais de pièce obsolète ni de
+    pièce « à renseigner » (prix ≤ 0) ; pour un iPhone, la grille boutique (tarifs_reparation)
+    passe devant les pièces fournisseur du même type, qui ne sont pas reprises. Chaque modèle
+    porte le taux de TVA de la boutique (tva, en %) : Devis Flash en tire le prix HT du devis.
+    """
     motif = f"%{q}%"
+    colonnes = ", ".join(c for c, *_ in grille._COLONNES_GRILLE_IPHONE)
     with get_cursor() as cur:
         # LIMIT sur les modèles (pas sur les lignes) : chaque modèle garde toutes ses réparations
         cur.execute("""
-            WITH m AS (
-                SELECT marque, modele
+            WITH valides AS (
+                SELECT marque, modele, type_piece, qualite, prix_client, en_stock
                 FROM tarifs
+                WHERE obsolete IS NOT TRUE AND COALESCE(prix_client, 0) > 0
+                  AND prix_source IS DISTINCT FROM %s
+            ), m AS (
+                SELECT marque, modele
+                FROM valides
                 WHERE modele ILIKE %s OR marque ILIKE %s
                 GROUP BY marque, modele
                 ORDER BY marque, modele
                 LIMIT %s
             )
-            SELECT t.marque, t.modele, t.type_piece, t.qualite, t.prix_client, t.en_stock
-            FROM tarifs t
-            JOIN m ON m.marque = t.marque AND m.modele = t.modele
-            ORDER BY t.marque, t.modele, t.type_piece, t.qualite
-        """, (motif, motif, limit))
-        rows = cur.fetchall()
+            SELECT v.marque, v.modele, v.type_piece, v.qualite, v.prix_client, v.en_stock
+            FROM valides v
+            JOIN m ON m.marque = v.marque AND m.modele = v.modele
+            ORDER BY v.marque, v.modele, v.type_piece, v.qualite
+        """, ("a_renseigner", motif, motif, limit))
+        rows = cur.fetchall() or []
+        cur.execute(f"""
+            SELECT modele, {colonnes} FROM tarifs_reparation
+            WHERE modele ILIKE %s OR %s ILIKE %s
+            ORDER BY ordre, id
+            LIMIT %s
+        """, (motif, "Apple", motif, limit))
+        boutique = cur.fetchall() or []
+        tva = _tva_boutique(cur)
 
     models = {}
+    couverts = {}
+    for r in boutique:
+        cle = "Apple||" + grille.cle_modele(r["modele"], "Apple")
+        if cle in models:
+            continue
+        reps = []
+        for col, type_piece, qualite, _label in grille._COLONNES_GRILLE_IPHONE:
+            prix = grille._prix(r.get(col))
+            if prix is not None:
+                reps.append({"composant": type_piece, "qualite": qualite, "prix_vente": prix, "en_stock": True})
+                couverts.setdefault(cle, set()).update(grille._REPLI_PAR_COLONNE.get(col, set()))
+        if reps:
+            models[cle] = {"marque": "Apple", "modele": r["modele"], "tva": tva, "reparations": reps}
+
     for r in rows:
-        key = f"{r['marque']}||{r['modele']}"
-        if key not in models:
-            models[key] = {
-                "marque": r["marque"],
-                "modele": r["modele"],
-                "reparations": [],
-            }
-        models[key]["reparations"].append({
+        apple = grille.marque_canonique(r["marque"]) == "apple"
+        cle = ("Apple||" + grille.cle_modele(r["modele"], "Apple")) if apple else f"{r['marque']}||{r['modele']}"
+        if apple and P.cle_panne(r["type_piece"]) in couverts.get(cle, ()):
+            continue   # type de pièce couvert par la grille boutique : son prix fait foi
+        if cle not in models:
+            models[cle] = {"marque": r["marque"], "modele": r["modele"], "tva": tva, "reparations": []}
+        models[cle]["reparations"].append({
             "composant": r["type_piece"],
             "qualite": r["qualite"] or None,
-            "prix_vente": float(r["prix_client"] or 0),
+            "prix_vente": float(r["prix_client"]),
             "en_stock": bool(r.get("en_stock", True)),
         })
 
-    return list(models.values())
+    resultat = sorted(models.values(), key=lambda m: (str(m["marque"]).lower(), grille.cle_modele(m["modele"], m["marque"])))
+    return resultat[:limit]
+
+
+def _tva_boutique(cur) -> float:
+    """Taux de TVA de la boutique (params.tva, en %), 20 si absent ou illisible."""
+    cur.execute("SELECT valeur FROM params WHERE cle = 'tva'")
+    row = cur.fetchone()
+    try:
+        taux = float(str(row["valeur"]).replace(",", ".")) if row and row.get("valeur") not in (None, "") else 20.0
+    except (TypeError, ValueError):
+        return 20.0
+    return taux if 0 <= taux <= 30 else 20.0
 
 
 # ─── TELEPHONES VENTE — CRUD ──────────────────────────────
@@ -266,8 +360,8 @@ def list_telephones_vente(
     marque: Optional[str] = None,
     etat: Optional[str] = None,
     en_stock: Optional[bool] = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: int = Query(50, ge=0, le=200),
+    offset: int = Query(0, ge=0, le=_INT_MAX),
     user: dict = Depends(get_current_user),
 ):
     conditions = []
@@ -328,11 +422,14 @@ def telephones_vente_marques(user: dict = Depends(get_current_user)):
 
 
 @router.post("/telephones-vente")
-def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
-    fields = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "notes"]
-    vals = {k: data.get(k) for k in fields if k in data}
+def create_telephone_vente(data: TelephoneVenteIn, user: dict = Depends(get_current_user)):
+    vals = {k: v for k, v in data.model_dump(exclude_unset=True).items() if k != "en_stock"}
     if not vals.get("marque") or not vals.get("modele"):
         raise HTTPException(400, "Marque et modèle requis")
+    # Prix laissé vide : 0, comme la valeur par défaut de la colonne
+    for k in ("prix_achat", "prix_vente"):
+        if k in vals and vals[k] is None:
+            vals[k] = 0
 
     cols = ", ".join(vals.keys())
     placeholders = ", ".join(["%s"] * len(vals))
@@ -345,9 +442,16 @@ def create_telephone_vente(data: dict, user: dict = Depends(get_current_user)):
 
 
 @router.patch("/telephones-vente/{tel_id}")
-def update_telephone_vente(tel_id: int, data: dict, user: dict = Depends(get_current_user)):
-    allowed = ["marque", "modele", "capacite", "couleur", "etat", "prix_achat", "prix_vente", "imei", "en_stock", "notes"]
-    updates = {k: v for k, v in data.items() if k in allowed}
+def update_telephone_vente(tel_id: int, data: TelephoneVenteIn, user: dict = Depends(get_current_user)):
+    updates = data.model_dump(exclude_unset=True)
+    for k in ("marque", "modele"):
+        if k in updates and not updates[k]:
+            raise HTTPException(400, "Marque et modèle requis")
+    for k in ("prix_achat", "prix_vente"):
+        if k in updates and updates[k] is None:
+            updates[k] = 0
+    if "en_stock" in updates and updates["en_stock"] is None:
+        del updates["en_stock"]
     if not updates:
         return {"ok": True}
     set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
@@ -462,10 +566,6 @@ def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(get_curr
     if notif_event == "accepte" and existing_data:
         numero = existing_data.get("numero", f"#{devis_id}")
         total_ttc = existing_data.get("total_ttc") or 0
-        client_nom = (
-            f"{existing_data.get('client_prenom', '')} {existing_data.get('client_nom', '')}".strip()
-            or existing_data.get("client_tel", "Client")
-        )
         related_ticket_id = existing_data.get("ticket_id")
         action_url = f"/accueil/ticket/{related_ticket_id}" if related_ticket_id else None
         # Nom du membre connecté qui a coché "Accepté" dans DevisPage.
@@ -494,8 +594,11 @@ def update_devis(devis_id: int, data: DevisUpdate, user: dict = Depends(get_curr
         try:
             push_notification(
                 type="devis_accepte",
-                title=f"✅ Devis {numero} accepté",
-                message=f"{auteur_action} a marqué le devis comme accepté par {client_nom} ({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
+                # Ni nom ni téléphone du client : la notification et son écho dans le chat
+                # survivent à l'anonymisation RGPD (seuls le devis et le ticket sont cités)
+                title=f"Devis {numero} accepté",
+                message=f"{auteur_action} a marqué le devis {numero} comme accepté par le client "
+                        f"({float(total_ttc):.2f} €). Vous pouvez démarrer la réparation.",
                 important=True,
                 icon="✅",
                 related_devis_id=devis_id,
@@ -548,23 +651,26 @@ def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
         if devis.get("statut") not in ("Accepté", "Envoyé"):
             raise HTTPException(409, "Seul un devis accepté peut être converti")
 
-        # Create client if needed
+        # Client : celui du devis, sinon retrouvé par son téléphone, sinon créé (un devis saisi
+        # avec un nom seul se convertit aussi ; le devis est rattaché au client, pour le RGPD)
         client_id = devis.get("client_id")
-        if not client_id and devis.get("client_tel"):
-            from app.api.clients import find_client_by_phone
-            row = find_client_by_phone(cur, devis["client_tel"])
+        if not client_id:
+            row = None
+            if (devis.get("client_tel") or "").strip():
+                from app.api.clients import find_client_by_phone
+                row = find_client_by_phone(cur, devis["client_tel"])
             if row:
                 client_id = row["id"]
-            else:
+            elif any((devis.get(k) or "").strip() for k in ("client_nom", "client_prenom", "client_tel")):
                 cur.execute("""
                     INSERT INTO clients (nom, prenom, telephone, email)
                     VALUES (%s, %s, %s, %s) RETURNING id
-                """, (devis.get("client_nom", ""), devis.get("client_prenom", ""),
-                      devis.get("client_tel", ""), devis.get("client_email")))
+                """, ((devis.get("client_nom") or "").strip(), (devis.get("client_prenom") or "").strip(),
+                      (devis.get("client_tel") or "").strip(), devis.get("client_email") or None))
                 client_id = cur.fetchone()["id"]
 
         if not client_id:
-            raise HTTPException(400, "Impossible de créer le ticket sans client")
+            raise HTTPException(400, "Impossible de créer le ticket sans client : indiquez au moins son nom")
 
         cur.execute(
             "SELECT description, quantite, prix_unitaire, total FROM devis_lignes WHERE devis_id = %s ORDER BY ordre, id",
@@ -590,8 +696,8 @@ def convert_to_ticket(devis_id: int, user: dict = Depends(get_current_user)):
 
         # Mark devis as converted
         cur.execute(
-            "UPDATE devis SET statut = 'Converti', ticket_id = %s, date_maj = NOW() WHERE id = %s",
-            (ticket_id, devis_id),
+            "UPDATE devis SET statut = 'Converti', ticket_id = %s, client_id = %s, date_maj = NOW() WHERE id = %s",
+            (ticket_id, client_id, devis_id),
         )
 
     # Transaction séparée, comme à la création : le lien de suivi se rattrape à la demande
@@ -779,7 +885,12 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
         client_contact += " — " + e(devis["client_email"])
     appareil_html = f"<div style='margin-top:6px;font-size:12px'><b>Appareil :</b> {e(devis['appareil'])}</div>" if devis.get("appareil") else ""
     description_html = f"<div style='margin-top:4px;font-size:12px;color:#64748b;white-space:pre-wrap'>{e(devis['description'])}</div>" if devis.get("description") else ""
-    remise_html = f"<div class='total-row'><span>Remise</span><span>-{fp(devis['remise'])} €</span></div>" if float(devis.get("remise") or 0) > 0 else ""
+    # total_ht est net de la remise : le sous-total affiché avant elle est la somme des lignes
+    sous_total_ht = sum(float(l.get("total") or 0) for l in lignes)
+    remise_html = (
+        f"<div class='total-row'><span>Remise</span><span>-{fp(devis['remise'])} €</span></div>"
+        f"<div class='total-row'><span>Total HT</span><span>{fp(devis['total_ht'])} €</span></div>"
+    ) if float(devis.get("remise") or 0) > 0 else ""
     notes_html = f"<div style='margin-top:24px;padding:12px;background:#fffbeb;border-radius:8px;font-size:12px;color:#92400e;white-space:pre-wrap'><b>Notes :</b> {e(devis['notes'])}</div>" if devis.get("notes") else ""
 
     html = f"""<!DOCTYPE html>
@@ -834,13 +945,13 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
 
 <table>
     <thead><tr>
-        <th>Description</th><th>Qté</th><th>Prix unit.</th><th>Total</th>
+        <th>Description</th><th>Qté</th><th>Prix unit. HT</th><th>Total HT</th>
     </tr></thead>
     <tbody>{lignes_html}</tbody>
 </table>
 
 <div class="totals">
-    <div class="total-row"><span>Sous-total HT</span><span>{fp(devis['total_ht'])} €</span></div>
+    <div class="total-row"><span>{"Sous-total HT" if remise_html else "Total HT"}</span><span>{fp(sous_total_ht if remise_html else devis['total_ht'])} €</span></div>
     {remise_html}
     <div class="total-row"><span>TVA ({fp(devis['tva'])}%)</span><span>{fp(float(devis['total_ttc'] or 0) - float(devis['total_ht'] or 0))} €</span></div>
     <div class="total-row total-final"><span>Total TTC</span><span>{fp(devis['total_ttc'])} €</span></div>

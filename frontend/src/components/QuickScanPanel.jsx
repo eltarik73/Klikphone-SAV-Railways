@@ -134,12 +134,22 @@ export function mentionAChiffrer(cat = cataloguePrestations()) {
   return cat?.mentionAChiffrer || MENTION_A_CHIFFRER;
 }
 
-/** date_rendu / date_cloture sont du TEXTE (« 2026-10-15 14:32:00 ») : reformatées sans conversion. */
+/**
+ * date_rendu / date_cloture sont du TEXTE (« 2026-10-15 14:32:00 »). Avec une heure, c'est l'horodatage
+ * naïf du serveur (UTC) : lu en UTC et affiché en heure locale, comme la fiche (formatDate). Date seule
+ * reformatée sans conversion ; texte non datable rendu tel quel.
+ */
 export function formatDateTexte(s) {
   const v = String(s ?? '').trim();
   const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
   if (!m) return v;
-  return `${m[3]}/${m[2]}/${m[1]}${m[4] ? ` ${m[4]}:${m[5]}` : ''}`;
+  if (m[4]) {
+    const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00Z`);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+  }
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 export function estRendu(t) {

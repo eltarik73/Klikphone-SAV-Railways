@@ -443,14 +443,18 @@ export default function SuiviPage() {
               {/* Tarification (visible sauf en attente d'accord — là c'est le bloc devis qui prend le relais) */}
               {!isAccordClient && (() => {
                 const lines = getRepairLines();
-                const subtotal = lines.reduce((s, l) => s + l.prix, 0);
-                if (subtotal <= 0) return null;
-                const acompte = Number(ticket.acompte || 0);
+                // Montants calculés par le serveur (même règle que la fiche et la restitution) ;
+                // repli local pour une réponse sans `montants` : jamais de reste négatif
+                const m = ticket.montants;
                 const redPct = Number(ticket.reduction_pourcentage || 0);
-                const redMnt = Number(ticket.reduction_montant || 0);
-                const reduction = redPct > 0 ? subtotal * (redPct / 100) : redMnt;
-                const total = Math.max(0, subtotal - reduction);
-                const reste = total - acompte;
+                const subtotal = m ? Number(m.sous_total) : lines.reduce((s, l) => s + l.prix, 0);
+                if (subtotal <= 0) return null;
+                const acompte = m ? Number(m.acompte) : Number(ticket.acompte || 0);
+                const reduction = m ? Number(m.reduction)
+                  : (redPct > 0 ? subtotal * (redPct / 100) : Number(ticket.reduction_montant || 0));
+                const total = m ? Number(m.total) : Math.max(0, subtotal - reduction);
+                const paye = Boolean(m ? m.paye : Number(ticket.paye) === 1 || ticket.paye === true);
+                const reste = paye ? 0 : (m ? Number(m.reste) : Math.max(0, total - acompte));
                 return (
                   <div className="mt-4 card-section">
                     <TitreBloc icone={CreditCard}>Tarification</TitreBloc>
@@ -469,10 +473,15 @@ export default function SuiviPage() {
                         <span>Total</span><span className="tabular-nums">{formatPrix(total)}</span>
                       </div>
                       {acompte > 0 && (
-                        <>
-                          <div className="flex justify-between gap-3 text-sm text-slate-500"><span>Acompte versé</span><span className="tabular-nums">- {formatPrix(acompte)}</span></div>
-                          <div className="flex justify-between gap-3 text-base font-bold text-slate-900"><span>Reste à payer</span><span className={`tabular-nums ${reste > 0 ? 'text-red-700' : ''}`}>{formatPrix(reste)}</span></div>
-                        </>
+                        <div className="flex justify-between gap-3 text-sm text-slate-500"><span>Acompte versé</span><span className="tabular-nums">- {formatPrix(acompte)}</span></div>
+                      )}
+                      {paye ? (
+                        <div className="flex justify-between gap-3 text-base font-bold text-emerald-700">
+                          <span>Règlement</span>
+                          <span className="inline-flex items-center gap-1"><CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Payé</span>
+                        </div>
+                      ) : acompte > 0 && (
+                        <div className="flex justify-between gap-3 text-base font-bold text-slate-900"><span>Reste à payer</span><span className={`tabular-nums ${reste > 0 ? 'text-red-700' : ''}`}>{formatPrix(reste)}</span></div>
                       )}
                     </div>
                   </div>
@@ -729,7 +738,7 @@ export default function SuiviPage() {
             <span className="font-extrabold">
               <span className="text-brand-600">Tk</span>
               <span className="text-slate-900">S</span>
-              <span className="text-pink-600">∞</span>
+              <span className="text-pink-700">∞</span>
               <span className="text-slate-900">26</span>
             </span>
             {' '}— une solution{' '}

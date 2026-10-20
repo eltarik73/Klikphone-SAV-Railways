@@ -9,13 +9,16 @@ avec prix, storage, condition et image auto-generée (par IA) ou uploadée.
 import hashlib
 import io
 import logging
+import threading
+import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from app.api.auth import exiger_role_admin, get_current_user
 from fpdf import FPDF
 from PIL import Image
@@ -82,6 +85,55 @@ def _fetch_image_for_pdf(url: str) -> Optional[Path]:
 
 router = APIRouter(prefix="/api/smartphones-tarifs", tags=["smartphones-tarifs"])
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Cache des PDF / ZIP de grilles (smartphones et iPhones)
+# Un rendu fpdf coûte de 0,5 à 11 s de CPU : il est gardé tant que l'empreinte des lignes
+# (md5 du contenu de la table) ne change pas. Toute écriture (prix, stock, photo, ajustement
+# global, annulation de lot, import) change l'empreinte : pas d'invalidation à brancher.
+# TTL d'une heure : une photo distante absente au premier rendu est retentée.
+# Les rendus sont faits un par un : six demandes simultanées n'en calculent qu'un.
+# ---------------------------------------------------------------------------
+_PDF_CACHE: "OrderedDict" = OrderedDict()  # clé -> (empreinte, instant, octets)
+_PDF_CACHE_MAX = 32
+_PDF_CACHE_TTL = 3600.0
+_PDF_CACHE_LOCK = threading.Lock()
+_PDF_RENDU_LOCK = threading.Lock()
+
+
+def _pdf_lire(cle, empreinte):
+    with _PDF_CACHE_LOCK:
+        entree = _PDF_CACHE.get(cle)
+        if entree and entree[0] == empreinte and time.monotonic() - entree[1] < _PDF_CACHE_TTL:
+            _PDF_CACHE.move_to_end(cle)
+            return entree[2]
+    return None
+
+
+def pdf_en_cache(cle, empreinte: str, fabriquer) -> bytes:
+    """Octets du PDF (ou ZIP) de `cle` pour cette empreinte de grille ; `fabriquer()` sinon."""
+    contenu = _pdf_lire(cle, empreinte)
+    if contenu is not None:
+        return contenu
+    with _PDF_RENDU_LOCK:
+        contenu = _pdf_lire(cle, empreinte)  # rendu par une demande arrivée juste avant
+        if contenu is not None:
+            return contenu
+        contenu = fabriquer()
+        with _PDF_CACHE_LOCK:
+            _PDF_CACHE[cle] = (empreinte, time.monotonic(), contenu)
+            _PDF_CACHE.move_to_end(cle)
+            while len(_PDF_CACHE) > _PDF_CACHE_MAX:
+                _PDF_CACHE.popitem(last=False)
+        return contenu
+
+
+def _empreinte_smartphones() -> str:
+    with get_cursor() as cur:
+        cur.execute("SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) AS e "
+                    "FROM smartphones_tarifs t")
+        return cur.fetchone()["e"]
 
 
 def _ensure_table():
@@ -682,17 +734,42 @@ def _render_smartphones_pdf(phones: list) -> bytes:
     return bytes(pdf.output())
 
 
+def _phones_pour_pdf(marque: Optional[str], id_list: Optional[List[int]]) -> list:
+    """Smartphones de l'affiche : les IDs demandés (dans cet ordre), sinon la marque, sinon tous les actifs."""
+    if id_list:
+        with get_cursor() as cur:
+            cur.execute("SELECT * FROM smartphones_tarifs WHERE id = ANY(%s)", (id_list,))
+            rows = {r["id"]: dict(r) for r in cur.fetchall()}
+        # Preserve l'ordre fourni
+        return [rows[i] for i in id_list if i in rows]
+    where = ["actif = TRUE"]
+    params: list = []
+    if marque:
+        where.append("marque = %s")
+        params.append(marque)
+    sql = (
+        "SELECT * FROM smartphones_tarifs "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY marque ASC, ordre ASC, modele ASC"
+    )
+    with get_cursor() as cur:
+        cur.execute(sql, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
 @router.get("/pdf")
 def generate_pdf(
     marque: Optional[str] = Query(None),
     ids: Optional[str] = Query(None, description="CSV d'IDs a inclure (prioritaire)"),
+    user: dict = Depends(get_current_user),
 ):
-    """Génère un PDF A4 UNE PAGE avec les smartphones selectionnes.
+    """Génère un PDF A4 UNE PAGE avec les smartphones selectionnes (en cache tant que la grille ne change pas).
 
     Priorite :
     1. `ids=1,2,3` → uniquement ces IDs, dans cet ordre
     2. `marque=Samsung` → tous les smartphones de cette marque
     3. Sinon → tous les smartphones actifs"""
+    id_list = None
     if ids:
         try:
             id_list = [int(x) for x in ids.split(",") if x.strip()]
@@ -700,34 +777,18 @@ def generate_pdf(
             raise HTTPException(400, "Format d'IDs invalide (attendu : 1,2,3)")
         if not id_list:
             raise HTTPException(400, "Aucun ID fourni")
-        sql = "SELECT * FROM smartphones_tarifs WHERE id = ANY(%s)"
-        with get_cursor() as cur:
-            cur.execute(sql, (id_list,))
-            rows = {r["id"]: dict(r) for r in cur.fetchall()}
-        # Preserve l'ordre fourni
-        phones = [rows[i] for i in id_list if i in rows]
-    else:
-        where = ["actif = TRUE"]
-        params: list = []
-        if marque:
-            where.append("marque = %s")
-            params.append(marque)
-        sql = (
-            "SELECT * FROM smartphones_tarifs "
-            f"WHERE {' AND '.join(where)} "
-            "ORDER BY marque ASC, ordre ASC, modele ASC"
-        )
-        with get_cursor() as cur:
-            cur.execute(sql, params)
-            phones = [dict(r) for r in cur.fetchall()]
 
-    if not phones:
-        raise HTTPException(404, "Aucun smartphone à afficher")
+    def fabriquer() -> bytes:
+        phones = _phones_pour_pdf(marque, id_list)
+        if not phones:
+            raise HTTPException(404, "Aucun smartphone à afficher")
+        return _render_smartphones_pdf(phones)
 
-    pdf_bytes = _render_smartphones_pdf(phones)
+    cle = ("smartphones", tuple(id_list) if id_list else None, None if id_list else marque)
+    pdf_bytes = pdf_en_cache(cle, _empreinte_smartphones(), fabriquer)
     filename = "smartphones_tarifs.pdf" if not marque else f"smartphones_{marque.lower()}.pdf"
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
+    return Response(
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )

@@ -13,7 +13,7 @@ from datetime import datetime, date
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.database import get_cursor
@@ -193,85 +193,91 @@ def _seed_templates():
 
 # ─── PYDANTIC MODELS ────────────────────────────────────
 
+# Longueurs = tailles des colonnes VARCHAR (un texte plus long donnait une erreur 500),
+# dates typées (une date impossible donnait une erreur 500) : refus 422 lisible.
 class AvisReponsePublier(BaseModel):
     reponse_texte: str
 
 
 class PostCreate(BaseModel):
-    titre: str
+    titre: str = Field(..., max_length=500)
     contenu: str
-    plateforme: str
-    type_contenu: Optional[str] = None
+    plateforme: str = Field(..., max_length=50)
+    type_contenu: Optional[str] = Field(None, max_length=50)
     hashtags: Optional[List[str]] = None
     image_url: Optional[str] = None
-    statut: Optional[str] = "brouillon"
+    statut: Optional[str] = Field("brouillon", max_length=30)
 
 
 class PostUpdate(BaseModel):
-    titre: Optional[str] = None
+    titre: Optional[str] = Field(None, max_length=500)
     contenu: Optional[str] = None
-    plateforme: Optional[str] = None
-    type_contenu: Optional[str] = None
+    plateforme: Optional[str] = Field(None, max_length=50)
+    type_contenu: Optional[str] = Field(None, max_length=50)
     hashtags: Optional[List[str]] = None
     image_url: Optional[str] = None
-    statut: Optional[str] = None
+    statut: Optional[str] = Field(None, max_length=30)
 
 
 class PostProgrammer(BaseModel):
-    date_programmee: str
+    date_programmee: datetime
 
 
 class PostGenerer(BaseModel):
-    plateforme: str
-    type_contenu: str
+    plateforme: str = Field(..., max_length=50)
+    type_contenu: str = Field(..., max_length=50)
     contexte: Optional[str] = None
 
 
+# L'écran Community Manager envoie la date de l'événement sous le nom « date »
+_DATE_EVENEMENT = AliasChoices("date_evenement", "date")
+
+
 class CalendrierCreate(BaseModel):
-    titre: str
+    titre: str = Field(..., max_length=255)
     description: Optional[str] = None
-    type: str
-    date_evenement: str
-    heure: Optional[str] = None
-    couleur: Optional[str] = "#7C3AED"
-    post_id: Optional[int] = None
+    type: str = Field(..., max_length=50)
+    date_evenement: date = Field(..., validation_alias=_DATE_EVENEMENT)
+    heure: Optional[str] = Field(None, max_length=10)
+    couleur: Optional[str] = Field("#7C3AED", max_length=7)
+    post_id: Optional[int] = Field(None, ge=1, le=2_147_483_647)
     recurrent: Optional[bool] = False
-    recurrence_pattern: Optional[str] = None
+    recurrence_pattern: Optional[str] = Field(None, max_length=50)
 
 
 class CalendrierUpdate(BaseModel):
-    titre: Optional[str] = None
+    titre: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
-    type: Optional[str] = None
-    date_evenement: Optional[str] = None
-    heure: Optional[str] = None
-    couleur: Optional[str] = None
-    post_id: Optional[int] = None
+    type: Optional[str] = Field(None, max_length=50)
+    date_evenement: Optional[date] = Field(None, validation_alias=_DATE_EVENEMENT)
+    heure: Optional[str] = Field(None, max_length=10)
+    couleur: Optional[str] = Field(None, max_length=7)
+    post_id: Optional[int] = Field(None, ge=1, le=2_147_483_647)
     recurrent: Optional[bool] = None
-    recurrence_pattern: Optional[str] = None
+    recurrence_pattern: Optional[str] = Field(None, max_length=50)
     completed: Optional[bool] = None
 
 
 class TemplateCreate(BaseModel):
-    nom: str
+    nom: str = Field(..., max_length=255)
     description: Optional[str] = None
-    plateforme: Optional[str] = None
-    type_contenu: Optional[str] = None
+    plateforme: Optional[str] = Field(None, max_length=50)
+    type_contenu: Optional[str] = Field(None, max_length=50)
     contenu_template: str
     hashtags_defaut: Optional[List[str]] = None
-    couleur: Optional[str] = "#7C3AED"
-    icone: Optional[str] = "📝"
+    couleur: Optional[str] = Field("#7C3AED", max_length=7)
+    icone: Optional[str] = Field("📝", max_length=10)
 
 
 class TemplateUpdate(BaseModel):
-    nom: Optional[str] = None
+    nom: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = None
-    plateforme: Optional[str] = None
-    type_contenu: Optional[str] = None
+    plateforme: Optional[str] = Field(None, max_length=50)
+    type_contenu: Optional[str] = Field(None, max_length=50)
     contenu_template: Optional[str] = None
     hashtags_defaut: Optional[List[str]] = None
-    couleur: Optional[str] = None
-    icone: Optional[str] = None
+    couleur: Optional[str] = Field(None, max_length=7)
+    icone: Optional[str] = Field(None, max_length=10)
     actif: Optional[bool] = None
 
 
@@ -1353,9 +1359,9 @@ def _fallback_post_genere(plateforme: str, type_contenu: str) -> dict:
 
 @router.get("/calendrier")
 def list_calendrier(
-    date_debut: Optional[str] = Query(None),
-    date_fin: Optional[str] = Query(None),
-    type: Optional[str] = Query(None),
+    date_debut: Optional[date] = Query(None),
+    date_fin: Optional[date] = Query(None),
+    type: Optional[str] = Query(None, max_length=50),
     user: dict = Depends(_require_admin_marketing),
 ):
     """Liste les événements du calendrier marketing."""

@@ -207,6 +207,46 @@ def _date_recu(t: dict) -> str:
     return _maintenant_paris().strftime("%d/%m/%Y")
 
 
+_RECUP_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$")
+_JOURS_COURTS = ("lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim.")
+
+
+def _fmt_recup(v) -> str:
+    """Délai promis (tickets.date_recuperation, TEXTE) lisible à l'impression.
+
+    « 2026-10-20T17:30 » (puces de délai, format datetime-local) ou « 2026-10-20 17:30:00 » →
+    « mar. 20/10/2026 à 17h30 » ; « 2026-10-20 » → « mar. 20/10/2026 ». Tout autre texte
+    (« Jeudi 17h », « 15/10/2026 ») est rendu tel quel : rien n'est converti en base."""
+    texte = " ".join(str(v or "").split())
+    m = _RECUP_ISO.match(texte)
+    if not m:
+        return texte
+    try:
+        jour = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    except ValueError:
+        return texte
+    libelle = f"{_JOURS_COURTS[jour.weekday()]} {jour.strftime('%d/%m/%Y')}"
+    if m.group(4) is None:
+        return libelle
+    h, mi = int(m.group(4)), int(m.group(5))
+    if h > 23 or mi > 59:
+        return texte
+    return f"{libelle} à {h:02d}h{mi:02d}"
+
+
+def _fmt_tel(v) -> str:
+    """Téléphone lisible : « 0600000101 » → « 06 00 00 01 01 », « +33600000101 » →
+    « +33 6 00 00 01 01 » ; tout autre numéro (étranger, déjà espacé…) reste tel quel."""
+    brut = " ".join(str(v or "").split())
+    compact = re.sub(r"[\s.\-]", "", brut)
+    if re.fullmatch(r"0\d{9}", compact):
+        return " ".join(compact[i:i + 2] for i in range(0, 10, 2))
+    if re.fullmatch(r"\+33\d{9}", compact):
+        reste = compact[3:]
+        return "+33 " + reste[0] + " " + " ".join(reste[i:i + 2] for i in range(1, 9, 2))
+    return brut
+
+
 def _fd_court(d) -> str:
     if isinstance(d, datetime):
         return _heure_paris(d).strftime("%d/%m %H:%M")
@@ -643,7 +683,7 @@ def _client_body(t: dict, cfg: dict) -> str:
     if t.get("date_recuperation"):
         recup_html = (
             '<div class="info-box center" style="margin-top:6px"><div class="bold small">Date de récupération prévue</div>'
-            f'<div style="font-size:15px;font-weight:900">{_e(t["date_recuperation"])}</div></div>'
+            f'<div style="font-size:15px;font-weight:900">{_e(_fmt_recup(t["date_recuperation"]))}</div></div>'
         )
 
     tarif_html = ""
@@ -695,7 +735,7 @@ def _client_body(t: dict, cfg: dict) -> str:
   <div class="small" style="margin-top:2px">{_e(_fd(t.get("date_depot")))}</div>
 </div>
 {recup_html}
-{_box("Client", _row("Nom :", _e(_nom_client(t))) + _row("Tél :", _e(t.get("client_tel"))))}
+{_box("Client", _row("Nom :", _e(_nom_client(t))) + _row("Tél :", _e(_fmt_tel(t.get("client_tel")))))}
 {_box("Appareil",
       _row("Modèle :", _e(_appareil(t) or "—"))
       + _row("Catégorie :", _e(t.get("categorie") or "—"))
@@ -732,7 +772,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
     base = _frontend_url_from(cfg.get("URL_SUIVI"))
     code = t.get("ticket_code") or ""
     tech = t.get("technicien_assigne") or "Non assigné"
-    date_recup = t.get("date_recuperation") or "Non définie"
+    date_recup = _fmt_recup(t.get("date_recuperation")) or "Non définie"
     type_ecran = str(t.get("type_ecran") or "").strip()
 
     lignes, tot = _totaux(t)
@@ -823,7 +863,7 @@ def _staff_body(t: dict, cfg: dict) -> str:
 {_emplacement_staff(t)}
 {_box("Client",
       f'<div style="font-size:16px;font-weight:900">{_e(_nom_client(t))}</div>'
-      f'<div style="font-size:14px;margin-top:2px">Tél : {_e(t.get("client_tel"))}</div>'
+      f'<div style="font-size:14px;margin-top:2px">Tél : {_e(_fmt_tel(t.get("client_tel")))}</div>'
       + _joignable_staff(t))}
 {_box("Appareil",
       f'<div style="font-size:16px;font-weight:900">{_e(_appareil(t) or "Appareil non renseigné")}</div>'
@@ -921,7 +961,7 @@ def _document_thermique(t: dict, cfg: dict, doc_type: str) -> str:
 <div class="banner" style="letter-spacing:4px">{"D E V I S" if is_devis else "R E Ç U"}</div>
 {_box("Informations",
       _row("N° :", _e(code)) + _row("Date :", _e(date_doc)) + _row("Appareil :", _e(_appareil(t) or "—")))}
-{_box("Client", _row("Nom :", _e(_nom_client(t))) + _row("Tél :", _e(t.get("client_tel"))))}
+{_box("Client", _row("Nom :", _e(_nom_client(t))) + _row("Tél :", _e(_fmt_tel(t.get("client_tel")))))}
 {_box("Détail des réparations",
       _lignes_ht(t, lignes, tot, tva_rate)
       + '<div style="border-top:2px solid #000;margin-top:6px;padding-top:6px">'
@@ -1080,7 +1120,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
     pied_legal = " &middot; ".join(_e(x) for x in mentions.lignes_legales(cfg))
     tva_rate = _num(cfg.get("tva"), 20.0)
     client_nom = _e(_nom_client(t))
-    client_tel = _e(t.get("client_tel"))
+    client_tel = _e(_fmt_tel(t.get("client_tel")))
     client_email = t.get("client_email")
     client_societe = t.get("client_societe")
     technicien = _e(t.get("technicien_assigne") or "Non assigné")
@@ -1094,7 +1134,7 @@ def _a4_document(t: dict, doc_type: str) -> str:
     reste = tot["reste"]
 
     date_depot = _e(_fd(t.get("date_depot")))
-    date_recup = _e(t.get("date_recuperation") or "—")
+    date_recup = _e(_fmt_recup(t.get("date_recuperation")) or "—")
     date_doc = date_depot if is_devis else _date_recu(t)
     doc_title = "DEVIS" if is_devis else "REÇU"
 
@@ -1279,7 +1319,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     nom_boutique = _pdf_safe(cfg["BOUTIQUE_NOM"])
     tva_rate = _num(cfg.get("tva"), 20.0)
     client_nom = _pdf_safe(_nom_client(t))
-    client_tel = _pdf_safe(t.get("client_tel"))
+    client_tel = _pdf_safe(_fmt_tel(t.get("client_tel")))
     client_email = _pdf_safe(t.get("client_email"))
     client_societe = _pdf_safe(t.get("client_societe"))
     technicien = _pdf_safe(t.get("technicien_assigne") or "Non assigné")
@@ -1296,7 +1336,7 @@ def _build_pdf(t: dict, doc_type: str) -> bytes:
     idx_ecran = index_ligne_ecran(repair_lines) if type_ecran else None
 
     date_depot = _pdf_safe(_fd(t.get("date_depot")))
-    date_recup = _pdf_safe(t.get("date_recuperation") or "-")
+    date_recup = _pdf_safe(_fmt_recup(t.get("date_recuperation")) or "-")
     date_doc = date_depot if is_devis else _date_recu(t)
 
     pdf = FPDF()

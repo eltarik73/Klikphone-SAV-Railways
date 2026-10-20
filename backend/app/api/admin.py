@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from ..database import get_cursor
 from ..services import params as params_cache
+from .tickets import bornes_utc, jour_paris
 from .auth import (
     ADMIN_TOKEN_MINUTES, controler_admin_password, create_admin_token, ecrire_admin_password,
     exiger_role_admin, get_current_user, noter_echec, noter_preuve_admin, revoquer_preuve_admin,
@@ -102,8 +103,8 @@ def _safe_int(val):
 def _resolve_dates(date_start, date_end):
     if date_start and date_end:
         return date_start, date_end
-    end = datetime.now().strftime('%Y-%m-%d')
-    start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+    end = jour_paris()
+    start = (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=30)).strftime('%Y-%m-%d')
     return date_start or start, date_end or end
 
 
@@ -111,6 +112,9 @@ def _resolve_dates(date_start, date_end):
 # jamais de ::date (une valeur mal formée ferait échouer toute la requête).
 _JOUR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CLOTURE_OK = "date_cloture ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}'"
+# CA et réparations : seuls les tickets toujours rendus / clôturés (un ticket revenu à
+# l'atelier garde paye = 1 ; sa date_cloture est effacée, ce filtre couvre les anciens)
+_RENDU_OK = "statut IN ('Rendu au client', 'Clôturé')"
 # Durées : seul cas où un horodatage est nécessaire. kp_try_ts (main.py) renvoie NULL
 # pour une date impossible (« 2026-02-30 ») au lieu de faire échouer la requête.
 _CLOTURE_TS = f"(CASE WHEN {_CLOTURE_OK} THEN public.kp_try_ts(date_cloture) END)"
@@ -140,8 +144,9 @@ def _il_y_a_mois(n: int) -> str:
 
 
 def _demain() -> str:
-    """Borne haute des périodes « jusqu'à aujourd'hui » : écarte aussi un texte non daté."""
-    return _lendemain(datetime.now().strftime("%Y-%m-%d"))
+    """Borne haute des périodes « jusqu'à aujourd'hui » (minuit de Paris, en UTC comme
+    date_cloture) : écarte aussi un texte non daté."""
+    return bornes_utc(jour_paris())[1]
 
 
 def _jour_court(valeur):
@@ -163,22 +168,24 @@ def get_stats_overview(
     """
     Vue d'ensemble : CA jour/mois, CA potentiel, réparations jour/mois, ticket moyen.
     """
-    today = datetime.now().strftime("%Y-%m-%d")
-    first_of_month = datetime.now().strftime("%Y-%m-01")
-    ds = _jour(date_start) if date_start else first_of_month
+    today = jour_paris()
+    ds = _jour(date_start) if date_start else today[:8] + "01"
     de = _jour(date_end) if date_end else today
+    jour_debut, jour_fin = bornes_utc(today)
+    periode_debut, periode_fin = bornes_utc(ds, de)
 
     # reparations_jour : tickets clôturés aujourd'hui (date_cloture n'est posée
     # qu'à la clôture, l'ancien filtre statut = 'Réparation terminée' donnait 0).
+    # Jours de Paris ; date_cloture est un texte en UTC : bornes UTC en texte.
     with get_cursor() as cur:
         cur.execute("""
             SELECT
                 COALESCE(SUM(tarif_final) FILTER (
-                    WHERE date_cloture LIKE %(today_like)s AND paye = 1
+                    WHERE date_cloture >= %(jd)s AND date_cloture < %(jf)s AND paye = 1 AND """ + _RENDU_OK + """
                 ), 0) AS ca_jour,
 
                 COALESCE(SUM(tarif_final) FILTER (
-                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s AND paye = 1
+                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s AND paye = 1 AND """ + _RENDU_OK + """
                 ), 0) AS ca_mois,
 
                 COALESCE(SUM(devis_estime) FILTER (
@@ -187,15 +194,15 @@ def get_stats_overview(
                 ), 0) AS ca_potentiel,
 
                 COUNT(*) FILTER (
-                    WHERE date_cloture LIKE %(today_like)s
+                    WHERE date_cloture >= %(jd)s AND date_cloture < %(jf)s AND """ + _RENDU_OK + """
                 ) AS reparations_jour,
 
                 COUNT(*) FILTER (
-                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s
+                    WHERE date_cloture >= %(ds)s AND date_cloture < %(de_next)s AND """ + _RENDU_OK + """
                 ) AS reparations_mois
 
             FROM tickets
-        """, {"today_like": today + "%", "ds": ds, "de_next": _lendemain(de)})
+        """, {"jd": jour_debut, "jf": jour_fin, "ds": periode_debut, "de_next": periode_fin})
         row = cur.fetchone()
 
     ca_mois = _safe_float(row["ca_mois"])
@@ -508,7 +515,7 @@ def get_evolution_ca(
                 LEFT(date_cloture, 7) AS mois,
                 COALESCE(SUM(tarif_final), 0) AS ca_encaisse
             FROM tickets
-            WHERE paye = 1
+            WHERE paye = 1 AND """ + _RENDU_OK + """
               AND date_cloture >= %s AND date_cloture < %s
             GROUP BY LEFT(date_cloture, 7)
             ORDER BY LEFT(date_cloture, 7)
@@ -654,27 +661,31 @@ def get_top_clients(
     date_end: Optional[str] = Query(None),
     user: dict = Depends(_require_admin),
 ):
-    """Top 10 clients par nombre de réparations + CA total."""
+    """Top 10 clients par nombre de réparations + CA total.
+
+    Un client = une fiche (homonymes distincts) ; les fiches anonymisées (RGPD) sont exclues.
+    """
     with get_cursor() as cur:
         df = ""
         p = {}
         if date_start:
-            df += " AND t.date_depot::date >= %(ds)s::date"
-            p["ds"] = _jour(date_start)
+            df += " AND t.date_depot >= %(ds)s"
+            p["ds"] = bornes_utc(_jour(date_start))[0]
         if date_end:
-            df += " AND t.date_depot::date <= %(de)s::date"
-            p["de"] = _jour(date_end)
+            df += " AND t.date_depot < %(de)s"
+            p["de"] = bornes_utc(_jour(date_end))[1]
         cur.execute(f"""
             SELECT
+                c.id AS client_id,
                 COALESCE(c.nom, 'Inconnu') AS nom,
+                COALESCE(c.prenom, '') AS prenom,
                 COALESCE(c.telephone, '') AS tel,
                 COUNT(*) AS nb_reparations,
                 COALESCE(SUM(t.tarif_final) FILTER (WHERE t.paye = 1), 0) AS ca_total
             FROM tickets t
-            LEFT JOIN clients c ON t.client_id = c.id
-            WHERE 1=1 {df}
-            GROUP BY COALESCE(c.nom, 'Inconnu'),
-                     COALESCE(c.telephone, '')
+            JOIN clients c ON t.client_id = c.id
+            WHERE c.anonymise_le IS NULL {df}
+            GROUP BY c.id
             HAVING COUNT(*) >= 2
             ORDER BY nb_reparations DESC, ca_total DESC
             LIMIT 10
@@ -683,7 +694,9 @@ def get_top_clients(
 
     return [
         {
+            "client_id": r["client_id"],
             "nom": r["nom"],
+            "prenom": r["prenom"],
             "tel": r["tel"],
             "nb_reparations": r["nb_reparations"],
             "ca_total": _safe_float(r["ca_total"]),
@@ -846,7 +859,7 @@ def get_evolution_legacy(
             cur.execute("""
                 SELECT LEFT(date_cloture, 7) AS date,
                        COALESCE(SUM(tarif_final), 0) AS value
-                FROM tickets WHERE paye = 1
+                FROM tickets WHERE paye = 1 AND """ + _RENDU_OK + """
                   AND date_cloture >= %(depuis)s AND date_cloture < %(fin)s
                 GROUP BY LEFT(date_cloture, 7)
                 ORDER BY LEFT(date_cloture, 7)

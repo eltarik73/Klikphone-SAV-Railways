@@ -22,7 +22,7 @@ function PiedDePage() {
       <span className="font-extrabold">
         <span className="text-brand-600">Tk</span>
         <span className="text-slate-900">S</span>
-        <span className="text-pink-600">∞</span>
+        <span className="text-pink-700">∞</span>
         <span className="text-slate-900">26</span>
       </span>
       {' '}— une solution{' '}

@@ -474,7 +474,8 @@ def test_fiche_atelier_imprimee_joignable(reel):
     avec = _borne(reel, tel_contact=CONTACT).json()["id"]
     sans = _borne(reel).json()["id"]
     staff = c.get(f"/api/tickets/{avec}/print/staff", headers=H).text
-    assert "Joignable : 0699887766" in staff and f"Tél : {TEL}" in staff
+    # Téléphone du client imprimé par paires (print_tickets._fmt_tel)
+    assert "Joignable : 0699887766" in staff and "Tél : 06 00 00 07 71" in staff
     assert "Joignable" not in c.get(f"/api/tickets/{avec}/print/client", headers=H).text
     assert c.get(f"/api/tickets/{avec}/print/combined", headers=H).text.count("Joignable") == 1
     assert "Joignable" not in c.get(f"/api/tickets/{sans}/print/staff", headers=H).text
@@ -493,8 +494,9 @@ def test_depot_distance_accepte_le_second_numero(reel):
     assert row["statut"] == "Pré-enregistré" and row["source"] == "distance" and row["client_id"] == reel["cid"]
     pending = c.get("/api/depot-distance/pending", headers=H).json()
     assert next(p for p in pending if p["id"] == tid)["tel_contact"] == "0699887766"
-    # Sans second numéro : NULL ; numéro faux : 422
-    r = c.post("/api/depot-distance", json={**corps, "tel_contact": ""})
+    # Sans second numéro : NULL ; numéro faux : 422 (autre appareil : le même renvoyé dans
+    # l'heure réutiliserait le pré-enregistrement ci-dessus)
+    r = c.post("/api/depot-distance", json={**corps, "modele": "iPhone 13", "tel_contact": ""})
     assert r.status_code == 200 and _colonne(reel, r.json()["id"]) is None
     assert c.post("/api/depot-distance", json={**corps, "tel_contact": "abc"}).status_code == 422
 

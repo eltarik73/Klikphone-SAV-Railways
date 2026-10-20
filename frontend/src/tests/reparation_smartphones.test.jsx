@@ -105,6 +105,11 @@ const IPAD = {
 const SANTE = { total: 1200, estimes: 0, a_revoir: 12, perimes: 3, propositions_en_attente: 0, marges_faibles: 0, seuils: { jours_a_revoir: 90, jours_perime: 180, seuil_marge_alerte: 40 } };
 
 const etat = { modeles: {} };
+// GET /api/tarifs/methode-calcul pour le personnel (prix.methode_calcul(admin=False))
+const METHODE_PERSONNEL = {
+  admin: false, regles: null, exemple: null,
+  texte: 'Prix client = arrondi au 9 supérieur de (prix fournisseur HT × 1,2 + marge selon la pièce) · le montant des marges est réservé au gérant (code admin)',
+};
 
 function resetApi() {
   for (const [k, fn] of Object.entries(apiMock)) {
@@ -138,6 +143,7 @@ beforeEach(() => {
   apiMock.getSantePrix.mockResolvedValue(SANTE);
   apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT });
   apiMock.getConfig.mockResolvedValue({});
+  apiMock.hasAdminToken.mockReturnValue(false);
 });
 
 afterEach(() => cleanup());
@@ -242,15 +248,19 @@ describe('Navbar : rubrique Tarifs', () => {
 
 // ─── Page ────────────────────────────────────────
 describe('Réparation smartphones : lecture', () => {
-  it('en-tête, aide « Où sont les prix ? », méthode de calcul lue des règles, marques → modèles → pièces (sans HT hors admin)', async () => {
+  it('en-tête, aide « Où sont les prix ? », méthode de calcul du serveur, marques → modèles → pièces (sans HT hors admin)', async () => {
     apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT, ecran: { standard: 65, haut_de_gamme: 75, pliant: 100 } });
+    apiMock.getMethodeCalcul.mockResolvedValue({ ...METHODE_PERSONNEL });
     etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: modele().pieces.map((p) => ({ ...p, prix_fournisseur_ht: null, calcul: null })) });
     page();
     expect(await screen.findByRole('heading', { level: 1, name: 'Réparation smartphones' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Réparation iPhone/ })).toHaveAttribute('href', '/accueil/tarifs-reparation');
-    // Marge « autres pièces » différente de l'écran standard : elle est citée à part
-    expect(await screen.findByText(/marge 65 € \(écran standard\), 75 € \(écran haut de gamme\), 100 € \(pliant\), 60 € \(autres pièces\) · iPad \+110 €, MacBook \+120 €/)).toBeInTheDocument();
-    expect(screen.getByText(/Exemple, écran standard acheté 42,00 € HT : 42,00 × 1,2 \+ 65 = 115,40 → 119 €/)).toBeInTheDocument();
+    // Hors admin : phrase du serveur, sans montant de marge (le coût HT masqué s'en déduirait), ni règles lues
+    expect(await screen.findByText(METHODE_PERSONNEL.texte)).toBeInTheDocument();
+    expect(screen.queryByText(/marge \d+ €/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/valeurs par défaut/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Exemple, écran standard/)).not.toBeInTheDocument();
+    expect(apiMock.getReglesPrix).not.toHaveBeenCalled();
     // Lecture seule : pas de « Modifier les règles », mais l'identification est proposée
     expect(screen.queryByRole('button', { name: 'Modifier les règles' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mettre à jour les prix \(admin\)/ })).toBeInTheDocument();
@@ -334,6 +344,64 @@ describe('Réparation smartphones : lecture', () => {
     const fenetre = await screen.findByRole('dialog', { name: 'Ajouter une pièce' });
     expect(within(fenetre).getByLabelText('Marque')).toHaveValue('Samsung');
     expect(within(fenetre).getByLabelText('Modèle')).toHaveValue('Galaxy Z99');
+  });
+});
+
+// ─── Check-up lot 3 : règles et méthode selon l'élévation ───
+describe('Réparation smartphones : méthode, règles et code admin (check-up)', () => {
+  it('hors admin : aucune lecture des règles (pas de 403), pas de « marge X € » dans l’en-tête du modèle', async () => {
+    apiMock.getMethodeCalcul.mockResolvedValue({ ...METHODE_PERSONNEL });
+    etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: modele().pieces.map((p) => ({ ...p, prix_fournisseur_ht: null, calcul: null })) });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const titre = await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy A54' });
+    await screen.findByText(METHODE_PERSONNEL.texte);
+    expect(titre.parentElement).toHaveTextContent('Écran standard');
+    expect(titre.parentElement.textContent).not.toMatch(/marge/);
+    expect(apiMock.getReglesPrix).not.toHaveBeenCalled();
+    expect(apiMock.getMethodeCalcul).toHaveBeenCalled();
+  });
+
+  it('élévation en cours sur le poste : règles lues, marge de la catégorie et phrase complète', async () => {
+    apiMock.hasAdminToken.mockReturnValue(true);
+    apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT, ecran: { standard: 65, haut_de_gamme: 75, pliant: 100 } });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const titre = await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy A54' });
+    expect(await screen.findByText(/marge 65 € \(écran standard\), 75 € \(écran haut de gamme\), 100 € \(pliant\), 60 € \(autres pièces\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Exemple, écran standard acheté 42,00 € HT : 42,00 × 1,2 \+ 65 = 115,40 → 119 €/)).toBeInTheDocument();
+    await waitFor(() => expect(titre.parentElement).toHaveTextContent('Écran standard : marge 65 €'));
+  });
+
+  it('code saisi depuis « Mettre à jour les prix (admin) » : le modèle ouvert est relu, HT affichés', async () => {
+    etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: modele().pieces.map((p) => ({ ...p, prix_fournisseur_ht: null, calcul: null })) });
+    apiMock.verifyAdmin.mockImplementation(async () => {
+      // Le serveur reconnaît désormais le code : prix d'achat HT servis
+      etat.modeles['Samsung::Galaxy A54'] = modele();
+      apiMock.hasAdminToken.mockReturnValue(true);
+      return { success: true, admin_token: 'jeton' };
+    });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy A54' });
+    await waitFor(() => expect(apiMock.getReparationSmartphonesModele).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: /Mettre à jour les prix \(admin\)/ }));
+    fireEvent.change(await screen.findByLabelText('Identifiant'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('Mot de passe'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Se connecter' }));
+    await waitFor(() => expect(apiMock.getReparationSmartphonesModele).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('42,00 × 1,2 + 60 = 110,40 → 119 €')).toBeInTheDocument();
+    expect(screen.queryByText(/Prix d’achat HT masqués/)).not.toBeInTheDocument();
+    expect(apiMock.getReglesPrix).toHaveBeenCalled();
+    expect(localStorage.getItem('klikphone_admin')).toBe('true');
+  });
+
+  it('puces de marque : compteurs contrastés (AA), en-tête réservé pour les compteurs (pas de décalage)', async () => {
+    page();
+    const marques = await screen.findByRole('group', { name: 'Marques' });
+    const [active, inactive] = within(marques).getAllByRole('button');
+    expect(active.querySelector('span:last-child')).toHaveClass('text-white');
+    expect(active.querySelector('span:last-child').className).not.toMatch(/white\/80/);
+    expect(inactive.querySelector('span:last-child')).toHaveClass('text-slate-500');
+    const sousTitre = screen.getByText('Prix fournisseur Mobilax / Utopya et méthode de calcul', { exact: false });
+    expect(sousTitre.querySelector('span')).toHaveClass('block', 'min-h-5');
   });
 });
 

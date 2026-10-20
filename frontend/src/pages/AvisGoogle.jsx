@@ -185,13 +185,17 @@ export default function AvisGoogle() {
           </p>
         </div>
         <div className="page-header-actions max-w-full">
+          {/* Libellé masqué sur mobile : le nom accessible vient de l'aria-label */}
           <button
+            type="button"
             onClick={handleSync}
             disabled={syncing}
+            aria-label={syncing ? 'Synchronisation en cours' : 'Synchroniser les avis'}
+            aria-busy={syncing}
             className="btn-primary"
           >
-            <RefreshCw className={syncing ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">{syncing ? 'Synchronisation...' : 'Synchroniser'}</span>
+            <RefreshCw className={syncing ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
+            <span className="hidden sm:inline" aria-hidden="true">{syncing ? 'Synchronisation...' : 'Synchroniser'}</span>
           </button>
         </div>
       </div>
@@ -371,7 +375,7 @@ export default function AvisGoogle() {
                             className="btn-secondary"
                           >
                             <Sparkles
-                              className={`text-brand-600 ${generatingId === item.id ? 'animate-pulse' : ''}`}
+                              className={`text-brand-600 ${generatingId === item.id ? 'motion-safe:animate-pulse' : ''}`}
                             />
                             {generatingId === item.id
                               ? 'Génération en cours...'
@@ -421,7 +425,7 @@ export default function AvisGoogle() {
                                 className="btn-secondary btn-sm"
                               >
                                 <RotateCcw
-                                  className={generatingId === item.id ? 'animate-spin' : ''}
+                                  className={generatingId === item.id ? 'motion-safe:animate-spin' : ''}
                                 />
                                 Régénérer
                               </button>

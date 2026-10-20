@@ -53,6 +53,25 @@ def _params_cache_vide():
     params_cache.invalidate()
 
 
+@pytest.fixture(autouse=True)
+def _limiteur_creation_ticket_vide():
+    """Débit des créations de ticket sans session (borne) remis à zéro entre deux tests :
+    tous les tests anonymes partagent l'IP « testclient »."""
+    from app.api import tickets
+    tickets._LIMITEUR_CREATION._buckets.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _limiteurs_publics_vides():
+    """Limites par IP des formulaires publics (dépôt à distance, commande auto de la borne)
+    remises à zéro : toutes les requêtes de test partagent l'IP « testclient »."""
+    from app.api import depot_distance, parts
+    depot_distance._LIMITEUR_DEPOT._buckets.clear()
+    parts._LIMITEUR_AUTO._buckets.clear()
+    yield
+
+
 @pytest.fixture
 def client():
     """TestClient for the FastAPI app."""

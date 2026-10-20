@@ -19,6 +19,21 @@ function normalize(str) {
   return (str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+/**
+ * Message WhatsApp de l'attestation : identité de la boutique tirée de la configuration
+ * (BOUTIQUE_NOM, BOUTIQUE_TEL de /api/config/public). WhatsApp n'envoie pas le document :
+ * le message annonce qu'il est prêt, jamais une pièce jointe.
+ */
+export function messageWhatsApp(form, boutique = {}) {
+  const prenom = (form.prenom || '').trim();
+  const appareil = [form.marque, form.modele].map((x) => (x || '').trim()).filter(Boolean).join(' ');
+  const signature = [boutique.BOUTIQUE_NOM, boutique.BOUTIQUE_TEL].map((x) => (x || '').trim()).filter(Boolean).join(' - ');
+  return `Bonjour${prenom ? ` ${prenom}` : ''},\n\n`
+    + `L'attestation de non-réparabilité de votre appareil${appareil ? ` ${appareil}` : ''} est prête. `
+    + 'Nous pouvons vous l\'envoyer par e-mail ou vous la remettre en boutique.'
+    + `\n\nCordialement,${signature ? `\n${signature}` : ''}`;
+}
+
 export default function AttestationPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -71,6 +86,17 @@ export default function AttestationPage() {
   const etats = ['Bon état', 'Écran cassé', 'Traces d\'oxydation', 'Très endommagé', 'Autre'];
 
   const updateForm = (field, value) => setForm(f => ({ ...f, [field]: value }));
+
+  // Identité de la boutique (message WhatsApp), lue une fois
+  const [boutique, setBoutique] = useState({});
+  useEffect(() => {
+    let actif = true;
+    Promise.resolve()
+      .then(() => api.getPublicConfig())
+      .then((cfg) => { if (actif && cfg) setBoutique(cfg); })
+      .catch(() => {});
+    return () => { actif = false; };
+  }, []);
 
   // Les attestations ne stockent pas de catégorie : rapprochement sur la catégorie affichée.
   // Marque connue (casse ignorée) → liste, avec le libellé du catalogue ; sinon saisie libre.
@@ -214,8 +240,7 @@ export default function AttestationPage() {
   const handleWhatsApp = () => {
     const tel = telephone || '';
     if (!tel) { toast.error('Pas de numéro de téléphone'); return; }
-    const msg = `Bonjour ${form.prenom},\n\nVeuillez trouver ci-joint l'attestation de non-réparabilité de votre appareil ${form.marque} ${form.modele}.\n\nCordialement,\nKLIKPHONE - 04 79 60 89 22`;
-    window.open(waLink(tel, msg), '_blank');
+    window.open(waLink(tel, messageWhatsApp(form, boutique)), '_blank');
   };
 
   // Filter client results with accent-insensitive matching
@@ -398,30 +423,30 @@ export default function AttestationPage() {
             <div className="grid grid-cols-2 gap-x-4 gap-y-4">
               <div>
                 <label htmlFor="attestation-nom" className="input-label">Nom *</label>
-                <input id="attestation-nom" value={form.nom} onChange={e => updateForm('nom', e.target.value)}
+                <input id="attestation-nom" maxLength={100} value={form.nom} onChange={e => updateForm('nom', e.target.value)}
                   className="input" readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
               <div>
                 <label htmlFor="attestation-prenom" className="input-label">Prénom *</label>
-                <input id="attestation-prenom" value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
+                <input id="attestation-prenom" maxLength={100} value={form.prenom} onChange={e => updateForm('prenom', e.target.value)}
                   className="input" readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
             </div>
             <div className="mt-4">
               <label htmlFor="attestation-adresse" className="input-label">Adresse</label>
-              <input id="attestation-adresse" value={form.adresse} onChange={e => updateForm('adresse', e.target.value)}
+              <input id="attestation-adresse" maxLength={500} value={form.adresse} onChange={e => updateForm('adresse', e.target.value)}
                 className="input" placeholder="Rue, code postal, ville" />
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-4 mt-4">
               <div>
                 <label htmlFor="attestation-telephone" className="input-label">Téléphone</label>
-                <input id="attestation-telephone" type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+                <input id="attestation-telephone" maxLength={20} type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
                   className="input tabular-nums" placeholder="06 ..."
                   readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
               <div>
                 <label htmlFor="attestation-email" className="input-label">Email</label>
-                <input id="attestation-email" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                <input id="attestation-email" maxLength={255} type="email" value={email} onChange={e => setEmail(e.target.value)}
                   className="input" placeholder="client@email.com"
                   readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
@@ -517,7 +542,7 @@ export default function AttestationPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 mt-4">
               <div>
                 <label htmlFor="attestation-imei" className="input-label">IMEI / N° série</label>
-                <input id="attestation-imei" value={form.imei} onChange={e => updateForm('imei', e.target.value)}
+                <input id="attestation-imei" maxLength={50} value={form.imei} onChange={e => updateForm('imei', e.target.value)}
                   className="input t-mono" />
               </div>
               <div>
@@ -547,6 +572,7 @@ export default function AttestationPage() {
               <label htmlFor="attestation-motif" className="input-label">Motif de non-réparabilité *</label>
               <textarea
                 id="attestation-motif"
+                maxLength={5000}
                 value={form.motif}
                 onChange={e => updateForm('motif', e.target.value)}
                 className="textarea min-h-[96px] resize-none"
@@ -557,6 +583,7 @@ export default function AttestationPage() {
               <label htmlFor="attestation-compte-rendu" className="input-label">Compte-rendu technique</label>
               <textarea
                 id="attestation-compte-rendu"
+                maxLength={10000}
                 value={form.compte_rendu}
                 onChange={e => updateForm('compte_rendu', e.target.value)}
                 className="textarea min-h-[120px] resize-none"
@@ -651,7 +678,7 @@ export default function AttestationPage() {
                 </div>
                 <div className="flex gap-2">
                   <label htmlFor="attestation-email-envoi" className="sr-only">Email du client</label>
-                  <input id="attestation-email-envoi" type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  <input id="attestation-email-envoi" maxLength={255} type="email" value={email} onChange={e => setEmail(e.target.value)}
                     className="input flex-1 min-w-0" placeholder="Email du client" />
                   <button type="button" onClick={handleSendEmail} disabled={!email || emailSent}
                     className={`shrink-0 ${emailSent ? 'btn-success' : 'btn-secondary'}`}>
@@ -664,7 +691,7 @@ export default function AttestationPage() {
               {/* WhatsApp */}
               <div className="flex gap-2">
                 <label htmlFor="attestation-tel-envoi" className="sr-only">Tél du client</label>
-                <input id="attestation-tel-envoi" type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+                <input id="attestation-tel-envoi" maxLength={20} type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
                   className="input flex-1 min-w-0 tabular-nums" placeholder="Tél du client" />
                 <button type="button" onClick={handleWhatsApp} disabled={!telephone}
                   className="btn-whatsapp shrink-0">

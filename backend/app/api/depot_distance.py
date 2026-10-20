@@ -1,16 +1,22 @@
 """
 API Dépôt à Distance — pré-enregistrement public + validation/refus par accueil.
+
+Formulaire public : 5 dépôts par IP sur 10 minutes ; le même appareil renvoyé dans l'heure
+pour le même numéro réutilise le pré-enregistrement ; au plus 3 pré-enregistrements
+ouverts par client ; l'e-mail de confirmation ne part qu'à l'adresse du client (nouveau
+client, ou adresse déjà connue de sa fiche), jamais à une adresse tierce saisie ici.
 """
 
 from datetime import datetime
 from html import escape
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_cursor
-from app.api.auth import get_current_user
+from app.api.auth import client_ip, get_current_user
+from app.api.public_documents import LimiteurDebit
 from app.api.clients import enregistrer_consentements, find_client_by_phone, meme_personne
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
@@ -20,7 +26,21 @@ from app.services import contact
 from app.services.prestations import PRESTATIONS, cle_panne, normaliser
 from app.services.search import phone_canonical
 
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:  # image sans base tz : heure du serveur
+    _PARIS = None
+
 router = APIRouter(prefix="/api/depot-distance", tags=["depot-distance"])
+
+_LIMITEUR_DEPOT = LimiteurDebit(limite=5, fenetre=600)
+MAX_PRE_ENREGISTREMENTS_OUVERTS = 3
+
+
+def _heure_paris() -> str:
+    """« JJ/MM HH:MM » à l'heure de Chambéry pour les lignes du journal texte (serveur en UTC)."""
+    return datetime.now(_PARIS).strftime("%d/%m %H:%M") if _PARIS else datetime.now().strftime("%d/%m %H:%M")
 
 
 # ─── MODELS ──────────────────────────────────────────────────
@@ -92,8 +112,9 @@ class RefusMotif(BaseModel):
 # ─── PUBLIC: Créer un pré-enregistrement ─────────────────────
 
 @router.post("")
-def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
+def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, request: Request):
     """Pré-enregistre un appareil à distance (public, pas d'auth)."""
+    _LIMITEUR_DEPOT.verifier(client_ip(request))
     # Validation basique
     if not data.nom or not data.nom.strip():
         raise HTTPException(400, "Le nom est requis")
@@ -112,8 +133,33 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
     with get_cursor() as cur:
         # Client existant quel que soit le format du numéro (06 12…, +33 6…)
         existing = find_client_by_phone(cur, data.telephone)
+        email_client = None
         if existing:
             client_id = existing["id"]
+            # Verrou du client : deux envois simultanés ne passent pas tous deux les contrôles
+            cur.execute("SELECT id FROM clients WHERE id = %s FOR UPDATE", (client_id,))
+            # Même appareil renvoyé dans l'heure (double envoi) : le pré-enregistrement existant
+            cur.execute("""
+                SELECT id, ticket_code FROM tickets
+                WHERE client_id = %s AND statut = 'Pré-enregistré' AND source = 'distance'
+                  AND date_depot >= LOCALTIMESTAMP - INTERVAL '1 hour'
+                  AND COALESCE(marque, '') = %s AND COALESCE(modele, '') = %s
+                  AND COALESCE(modele_autre, '') = %s
+                ORDER BY id DESC LIMIT 1
+            """, (client_id, data.marque or "", data.modele or "", data.modele_autre or ""))
+            deja = cur.fetchone()
+            if deja:
+                return {"id": deja["id"], "ticket_code": deja["ticket_code"], "statut": "Pré-enregistré"}
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM tickets WHERE client_id = %s AND statut = 'Pré-enregistré'",
+                (client_id,),
+            )
+            if int((cur.fetchone() or {}).get("n") or 0) >= MAX_PRE_ENREGISTREMENTS_OUVERTS:
+                raise HTTPException(
+                    409,
+                    "Vous avez déjà des appareils pré-enregistrés en attente : présentez-vous en boutique "
+                    "ou appelez-nous pour en ajouter.",
+                )
             # Formulaire public (règle de /api/clients sans jeton) : nom et prénom
             # seulement complétés, jamais l'email ; la carte se déclare, ne se retire pas
             cur.execute("""
@@ -125,6 +171,10 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             """, (data.nom, data.prenom, camby, client_id))
             # Numéro connu : l'accord marketing exige la même identité (règle de /api/clients)
             accord = data.consentement_marketing and meme_personne(existing, data.nom, data.prenom)
+            # Confirmation seulement à l'adresse déjà connue de la fiche
+            connu = (existing.get("email") or "").strip()
+            if data.email and connu and connu.lower() == data.email.lower():
+                email_client = connu
         else:
             cur.execute("""
                 INSERT INTO clients (nom, prenom, telephone, email, carte_camby)
@@ -132,6 +182,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
             """, (data.nom, data.prenom, data.telephone, data.email, camby))
             client_id = cur.fetchone()["id"]
             accord = data.consentement_marketing
+            email_client = data.email or None
         enregistrer_consentements(cur, client_id, data.rgpd_informe, accord, canal="depot_distance")
 
         # Créer le ticket en statut "Pré-enregistré"
@@ -175,10 +226,10 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
         ],
         notif_type="depot_distance",
     )
-    if data.email:
+    if email_client:
         bg.add_task(
             _envoyer_email_confirmation,
-            data.email, data.prenom or data.nom, code, appareil, panne,
+            email_client, data.prenom or data.nom, code, appareil, panne,
         )
 
     return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré"}
@@ -190,7 +241,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks):
 def valider_depot(ticket_id: int, bg: BackgroundTasks, user: dict = Depends(get_current_user)):
     """Valide un pré-enregistrement → passe en 'En attente de diagnostic'."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ts = datetime.now().strftime("%d/%m %H:%M")
+    ts = _heure_paris()
 
     with get_cursor() as cur:
         cur.execute(
@@ -244,7 +295,7 @@ def refuser_depot(
 ):
     """Refuse un pré-enregistrement → passe en 'Clôturé'."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ts = datetime.now().strftime("%d/%m %H:%M")
+    ts = _heure_paris()
     motif = (data.motif or "").strip() or "Non précisé"
     auteur = (user or {}).get("sub") or "Staff"
 
@@ -310,28 +361,8 @@ def get_pending_depots(user: dict = Depends(get_current_user)):
     return [dict(r) for r in rows]
 
 
-# ─── PUBLIC: Suivi enrichi ───────────────────────────────────
-
-@router.get("/suivi/{ticket_code}")
-def suivi_public(ticket_code: str):
-    """Retourne les infos publiques d'un ticket pour le suivi client."""
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
-                   t.panne, t.panne_detail, t.date_depot, t.date_maj,
-                   t.date_recuperation, t.commande_piece, t.commentaire_client,
-                   t.devis_estime, t.tarif_final, t.acompte,
-                   t.reduction_montant, t.reduction_pourcentage,
-                   t.reparation_supp, t.prix_supp, t.source,
-                   c.prenom AS client_prenom
-            FROM tickets t
-            JOIN clients c ON t.client_id = c.id
-            WHERE t.ticket_code = %s
-        """, (ticket_code,))
-        row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Ticket non trouvé")
-    return dict(row)
+# Ancien GET /suivi/{code} (public, sans limite, renvoyait le prénom) retiré : le suivi
+# client passe par GET /api/tickets/code/{code} (champs restreints, limite de débit).
 
 
 # ─── HELPERS EMAIL ────────────────────────────────────────────

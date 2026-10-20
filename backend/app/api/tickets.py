@@ -5,7 +5,7 @@ CRUD et gestion des statuts.
 
 import math
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from time import time
 from typing import Literal, Optional
 
@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from app.database import get_cursor
 from app.api.autocomplete import learn_terms
 from app.api.auth import client_ip, get_current_user, get_optional_user, require_admin
+from app.api.public_documents import LimiteurDebit
 from app.api.fidelite import crediter_ticket
 from app.services.montants import calculer_montants, format_euros, statut_paiement
 from app.models import (
@@ -33,6 +34,69 @@ from app.services import params as params_cache
 from app.services import search as search_engine
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
+
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:  # image sans base tz : repli sur la règle d'heure d'été de l'UE
+    _PARIS = None
+
+_FMT_TS = "%Y-%m-%d %H:%M:%S"
+
+
+# ─── Heure de la boutique ─────────────────────────────────────────
+# Les TIMESTAMP naïfs (date_depot…) et le texte date_cloture sont en UTC (serveur et base
+# en UTC) ; « aujourd'hui » et les horodatages lus par l'équipe sont ceux de Paris.
+def _maintenant_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _dernier_dimanche(annee: int, mois: int) -> date:
+    d = date(annee + mois // 12, mois % 12 + 1, 1) - timedelta(days=1)
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+
+def _decalage_paris(u: datetime) -> timedelta:
+    """Écart Paris − UTC à l'instant u (UTC)."""
+    if _PARIS is not None:
+        return u.astimezone(_PARIS).utcoffset()
+    n = u.astimezone(timezone.utc).replace(tzinfo=None)
+    debut = datetime.combine(_dernier_dimanche(n.year, 3), datetime.min.time()).replace(hour=1)
+    fin = datetime.combine(_dernier_dimanche(n.year, 10), datetime.min.time()).replace(hour=1)
+    return timedelta(hours=2 if debut <= n < fin else 1)
+
+
+def heure_paris(u: Optional[datetime] = None) -> datetime:
+    """Heure de Paris (naïve) de l'instant u, maintenant par défaut ; un u naïf est en UTC."""
+    u = u or _maintenant_utc()
+    if u.tzinfo is None:
+        u = u.replace(tzinfo=timezone.utc)
+    return (u + _decalage_paris(u)).replace(tzinfo=None)
+
+
+def jour_paris(u: Optional[datetime] = None) -> str:
+    """« Aujourd'hui » à la boutique (AAAA-MM-JJ), pas le jour UTC du serveur."""
+    return heure_paris(u).strftime("%Y-%m-%d")
+
+
+def _minuit_utc(jour: date) -> datetime:
+    """Minuit à Paris le jour donné, en UTC naïf (22 h ou 23 h UTC la veille)."""
+    minuit = datetime.combine(jour, datetime.min.time())
+    for h in (2, 1):
+        u = (minuit - timedelta(hours=h)).replace(tzinfo=timezone.utc)
+        if _decalage_paris(u) == timedelta(hours=h):
+            return u.replace(tzinfo=None)
+    return minuit - timedelta(hours=1)
+
+
+def bornes_utc(debut: str, fin: Optional[str] = None) -> tuple:
+    """Jours de Paris debut..fin (AAAA-MM-JJ, inclus) → bornes UTC [début, fin[ en texte
+    « AAAA-MM-JJ HH:MM:SS », comparables aux TIMESTAMP naïfs comme au texte date_cloture.
+    ValueError si une date est impossible."""
+    d1 = datetime.strptime(debut, "%Y-%m-%d").date()
+    d2 = datetime.strptime(fin or debut, "%Y-%m-%d").date() + timedelta(days=1)
+    return _minuit_utc(d1).strftime(_FMT_TS), _minuit_utc(d2).strftime(_FMT_TS)
+
 
 
 # ─── Rate limiter in-memory (protection enumeration tickets publics) ─
@@ -87,8 +151,9 @@ _STATUTS_RENDUS = ("Rendu au client", "Clôturé")
 
 # ─── Helpers fiche : historique signé, garde-fous, lecture complète ──
 def _horodatage():
-    n = datetime.now()
-    return n.strftime("%Y-%m-%d %H:%M:%S"), n.strftime("%d/%m %H:%M")
+    """(UTC « AAAA-MM-JJ HH:MM:SS » pour les colonnes, « JJ/MM HH:MM » de Paris pour le journal)."""
+    n = _maintenant_utc()
+    return n.strftime(_FMT_TS), heure_paris(n).strftime("%d/%m %H:%M")
 
 
 def _auteur(user) -> str:
@@ -134,6 +199,12 @@ def _maj_ticket(cur, ticket_id: int, sets: dict):
 
 def _conflit(code: str, message: str, reste=None):
     raise HTTPException(409, detail={"code": code, "message": message, "reste": reste})
+
+
+def _exiger_ticket(cur, ticket_id: int):
+    cur.execute("SELECT 1 FROM tickets WHERE id = %s", (ticket_id,))
+    if not cur.fetchone():
+        raise HTTPException(404, "Ticket non trouvé")
 
 
 def _pret_en_cours(t) -> bool:
@@ -197,7 +268,7 @@ def _maj_chrono(cur, ticket_id, t, ancien, nouveau, now):
         debut = t["reparation_debut"]
         if isinstance(debut, str):
             debut = datetime.strptime(debut, "%Y-%m-%d %H:%M:%S")
-        elapsed = max(0, int((datetime.now() - debut).total_seconds()))
+        elapsed = max(0, int((_maintenant_utc().replace(tzinfo=None) - debut).total_seconds()))
         cur.execute(
             "UPDATE tickets SET reparation_fin = %s, reparation_duree = %s WHERE id = %s",
             (now, (t.get("reparation_duree") or 0) + elapsed, ticket_id),
@@ -264,7 +335,7 @@ def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
 
 
 # ─── KPI (dashboard combiné et /stats/kpi : une seule requête) ────
-# Fragments SQL fixes (aucune saisie) ; paramètres : date du jour + '%', date du jour
+# Fragments SQL fixes (aucune saisie) ; paramètres : _params_kpi() (bornes UTC du jour de Paris)
 _KPI_SQL = f"""
     SELECT
         COUNT(*) FILTER (WHERE statut = 'En attente de diagnostic') as en_attente_diagnostic,
@@ -273,12 +344,18 @@ _KPI_SQL = f"""
         COUNT(*) FILTER (WHERE statut = 'En attente d''accord client') as en_attente_accord,
         COUNT(*) FILTER (WHERE statut = 'Réparation terminée') as reparation_terminee,
         COUNT(*) FILTER (WHERE statut NOT IN ('Clôturé', 'Rendu au client')) as total_actifs,
-        COUNT(*) FILTER (WHERE date_cloture LIKE %s) as clotures_aujourdhui,
-        COUNT(*) FILTER (WHERE date_depot::date = %s::date) as nouveaux_aujourdhui,
+        COUNT(*) FILTER (WHERE date_cloture >= %s AND date_cloture < %s
+                         AND statut IN ('Rendu au client', 'Clôturé')) as clotures_aujourdhui,
+        COUNT(*) FILTER (WHERE date_depot >= %s AND date_depot < %s) as nouveaux_aujourdhui,
         COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres,
         COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer
     FROM tickets
 """
+
+
+def _params_kpi() -> tuple:
+    debut, fin = bornes_utc(jour_paris())
+    return (debut, fin, debut, fin)
 
 
 def _kpi(row) -> dict:
@@ -317,10 +394,10 @@ _HEURE_PROMISE_SQL = (r"CASE WHEN t.date_recuperation ~ '^\d{4}-\d{2}-\d{2}' "
 
 
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
-def _lire_dashboard(today, colonne_reception, colonnes_etagere, where, order, params_tickets, limit, offset):
+def _lire_dashboard(colonne_reception, colonnes_etagere, where, order, params_tickets, limit, offset):
     with get_cursor() as cur:
         # KPI in one query
-        cur.execute(_KPI_SQL, (today + "%", today))
+        cur.execute(_KPI_SQL, _params_kpi())
         kpi_row = cur.fetchone()
 
         # Tickets list
@@ -382,7 +459,6 @@ def get_dashboard(
     FALSE pendant 5 min si la table manque) et contact (services/contact : derniers
     SMS / e-mail / WhatsApp / appel depuis le dernier changement de statut).
     """
-    today = datetime.now().strftime("%Y-%m-%d")
     for value in (date_from, date_to):
         if value:
             try:
@@ -402,10 +478,11 @@ def get_dashboard(
         conditions.append(etagere.a_recuperer_sql("t"))
     if tech:
         conditions.append(f"t.technicien_assigne = {sp.add(tech)}")
+    # Jours de Paris : bornes UTC (date_depot est un TIMESTAMP naïf en UTC)
     if date_from:
-        conditions.append(f"t.date_depot >= {sp.add(date_from)}::date")
+        conditions.append(f"t.date_depot >= {sp.add(bornes_utc(date_from)[0])}")
     if date_to:
-        conditions.append(f"t.date_depot < {sp.add(date_to)}::date + 1")
+        conditions.append(f"t.date_depot < {sp.add(bornes_utc(date_to)[1])}")
     # Même sens que idx_tickets_date_depot (DESC, nulls en tête) : sans recherche,
     # PostgreSQL lit les `limit` premiers tickets par l'index au lieu de tout trier.
     order = "t.date_depot DESC, t.id DESC"
@@ -425,13 +502,13 @@ def get_dashboard(
     global _reception_absente_le
     colonne_reception = _colonne_reception()
     try:
-        kpi_row, tickets, total = _lire_dashboard(today, colonne_reception, colonnes_etagere,
+        kpi_row, tickets, total = _lire_dashboard(colonne_reception, colonnes_etagere,
                                                   where, order, params_tickets, limit, offset)
     except pg_errors.UndefinedTable:
         if colonne_reception != _RECEPTION_SQL:
             raise
         _reception_absente_le = time()
-        kpi_row, tickets, total = _lire_dashboard(today, _colonne_reception(), colonnes_etagere,
+        kpi_row, tickets, total = _lire_dashboard(_colonne_reception(), colonnes_etagere,
                                                   where, order, params_tickets, limit, offset)
 
     if vue == "a_recuperer":
@@ -443,11 +520,9 @@ def get_dashboard(
 # ─── KPI DASHBOARD ───────────────────────────────────────────────
 @router.get("/stats/kpi")
 def get_kpi(user: dict = Depends(get_current_user)):
-    """Récupère les KPI du dashboard."""
-    today = datetime.now().strftime("%Y-%m-%d")
-
+    """Récupère les KPI du dashboard (jour de Paris)."""
     with get_cursor() as cur:
-        cur.execute(_KPI_SQL, (today + "%", today))
+        cur.execute(_KPI_SQL, _params_kpi())
         row = cur.fetchone()
 
     return _kpi(row)
@@ -642,29 +717,45 @@ def get_ticket_by_code(ticket_code: str, request: Request):
                    t.panne, t.panne_detail, t.date_depot, t.date_maj, t.date_recuperation,
                    t.source, t.devis_estime, t.acompte, t.reduction_montant,
                    t.reduction_pourcentage, t.reparation_supp, t.commande_piece,
-                   t.commentaire_client
+                   t.commentaire_client, t.prix_supp, t.tarif_final, t.paye, t.issue
             FROM tickets t
             WHERE t.ticket_code = %s
         """, (ticket_code,))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Ticket non trouvé")
-    return dict(row)
+    result = dict(row)
+    # Mêmes montants que la fiche et la restitution (payé → reste 0, acompte excédentaire → 0)
+    m = calculer_montants(result)
+    result["montants"] = {k: m[k] for k in ("sous_total", "reduction", "total", "acompte", "reste", "paye")}
+    return result
 
 
 # ─── CRÉATION ───────────────────────────────────────────────────
+# Sans session (borne du magasin, formulaire public) : 15 tickets par IP et par 10 minutes
+_LIMITEUR_CREATION = LimiteurDebit(limite=15, fenetre=600)
+
+
 @router.post("", response_model=dict)
 def create_ticket(
     data: TicketCreate,
     background_tasks: BackgroundTasks,
     user: Optional[dict] = Depends(get_optional_user),
+    request: Request = None,
 ):
     """Crée un nouveau ticket (accessible sans auth — formulaire client).
 
     Sans session staff, la borne du magasin (/client, /depot) peut seulement déclarer
     que le client attend sur place ; express et pro restent réservés au personnel,
-    et un dépôt à distance ne passe jamais devant la file.
+    et un dépôt à distance ne passe jamais devant la file. Sans session : débit limité
+    par IP (429) et aucun terme appris pour l'autocomplétion du personnel.
+    cree_par = membre connecté, sinon 'distance' ou 'borne'. Client inconnu : 404.
     """
+    if not user:
+        try:
+            _LIMITEUR_CREATION.verifier(client_ip(request))
+        except HTTPException:
+            raise HTTPException(429, "Trop de tickets créés depuis ce poste : réessayez dans quelques minutes.")
     if user:
         priorite = data.priorite
     elif data.priorite == "attente" and (data.source or "boutique") == "boutique":
@@ -685,23 +776,29 @@ def create_ticket(
                 raise HTTPException(400, "Le ticket original n'appartient pas à ce client")
 
     statut_initial = "Pré-enregistré" if data.source == "distance" else "En attente de diagnostic"
+    # Reporting « Performance accueil » : qui a enregistré le ticket
+    cree_par = _auteur(user) if user else ("distance" if data.source == "distance" else "borne")
 
     with get_cursor() as cur:
-        cur.execute("""
-            INSERT INTO tickets
-            (client_id, categorie, marque, modele, modele_autre, imei,
-             panne, panne_detail, pin, pattern, notes_client,
-             commande_piece, statut, est_retour_sav, ticket_original_id, source,
-             tel_contact, priorite)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-        """, (
-            data.client_id, data.categorie, data.marque, data.modele,
-            data.modele_autre, data.imei, data.panne, data.panne_detail,
-            data.pin, data.pattern, data.notes_client, data.commande_piece,
-            statut_initial, data.est_retour_sav or False, data.ticket_original_id,
-            data.source or "boutique", data.tel_contact, priorite,
-        ))
+        try:
+            cur.execute("""
+                INSERT INTO tickets
+                (client_id, categorie, marque, modele, modele_autre, imei,
+                 panne, panne_detail, pin, pattern, notes_client,
+                 commande_piece, statut, est_retour_sav, ticket_original_id, source,
+                 tel_contact, cree_par, priorite)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING id
+            """, (
+                data.client_id, data.categorie, data.marque, data.modele,
+                data.modele_autre, data.imei, data.panne, data.panne_detail,
+                data.pin, data.pattern or "", data.notes_client, data.commande_piece,
+                statut_initial, data.est_retour_sav or False, data.ticket_original_id,
+                data.source or "boutique", data.tel_contact, cree_par, priorite,
+            ))
+        except pg_errors.ForeignKeyViolation:
+            # clients(id) : la transaction est annulée par get_cursor
+            raise HTTPException(404, "Client non trouvé")
         row = cur.fetchone()
         tid = row["id"]
 
@@ -716,10 +813,12 @@ def create_ticket(
     except Exception as e:
         print(f"[tickets] jeton de suivi non créé pour le ticket {tid} : {e}")
 
-    # Après la réponse : apprentissage (silencieux) et Discord (jusqu'à 5 s)
-    background_tasks.add_task(
-        learn_terms, {"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre},
-    )
+    # Après la réponse : apprentissage (silencieux, personnel connecté seulement, comme
+    # POST /api/autocomplete/learn) et Discord (jusqu'à 5 s)
+    if user:
+        background_tasks.add_task(
+            learn_terms, {"panne": data.panne, "panne_detail": data.panne_detail, "modele_autre": data.modele_autre},
+        )
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
     background_tasks.add_task(notif_nouveau_ticket, code, appareil, data.panne or data.panne_detail or "Réparation")
 
@@ -925,6 +1024,11 @@ def change_status(
 
         refus_devis = ancien == "En attente d'accord client" and nouveau == "Réparation terminée"
         textes = [f"Statut: {ancien} → {nouveau}" + (" (devis refusé par le client)" if refus_devis else "")]
+        # Revenu à l'atelier : plus clôturé ni rendu (KPI, CA et purge RGPD des codes) ;
+        # paye reste tel quel (l'argent a été encaissé), le CA suit date_cloture
+        reouverture = ancien in _STATUTS_RENDUS and nouveau not in _STATUTS_RENDUS
+        if reouverture:
+            textes.append("Réouverture : dates de clôture et de rendu effacées")
         # Rendu / clôturé : l'appareil quitte l'étagère (« Emplacement B3 libéré »)
         liberation = etagere.liberer_emplacement(t, nouveau, textes)
         sets = {
@@ -932,13 +1036,18 @@ def change_status(
             "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes)),
             **liberation,
         }
+        if reouverture:
+            sets["date_cloture"] = None
         if nouveau == "Clôturé":
-            # Re-clôturer ne déplace pas le CA vers un autre jour
+            # Re-clôturer (Rendu → Clôturé) ne déplace pas le CA vers un autre jour
             sets["date_cloture"] = t.get("date_cloture") or now
         # Colonnes de _migrations_fiche : absentes si la migration a échoué au démarrage
-        if nouveau in _STATUTS_RENDUS and ancien not in _STATUTS_RENDUS and "date_rendu" in t:
-            sets["date_rendu"] = t.get("date_rendu") or now
-            sets["rendu_par"] = t.get("rendu_par") or auteur
+        if "date_rendu" in t:
+            if reouverture:
+                sets.update(date_rendu=None, rendu_par=None)
+            elif nouveau in _STATUTS_RENDUS and ancien not in _STATUTS_RENDUS:
+                sets["date_rendu"] = t.get("date_rendu") or now
+                sets["rendu_par"] = t.get("rendu_par") or auteur
         if "issue" in t:
             if refus_devis:
                 sets["issue"] = "refus_devis"
@@ -1141,8 +1250,8 @@ def add_history(
     texte: str = Query(...),
     user: dict = Depends(get_current_user),
 ):
-    """Ajoute une entrée dans l'historique du ticket."""
-    ts = datetime.now().strftime("%d/%m %H:%M")
+    """Ajoute une entrée dans l'historique du ticket (horodatage de Paris)."""
+    ts = heure_paris().strftime("%d/%m %H:%M")
     entry = f"[{ts}] {texte}"
 
     with get_cursor() as cur:
@@ -1166,8 +1275,9 @@ def add_note(
     note: str = Query(...),
     user: dict = Depends(get_current_user),
 ):
-    """Ajoute une note interne au ticket."""
-    ts = datetime.now().strftime("%d/%m/%Y %H:%M")
+    """Ajoute une note interne au ticket (horodatage de Paris)."""
+    now, _ = _horodatage()
+    ts = heure_paris().strftime("%d/%m/%Y %H:%M")
 
     with get_cursor() as cur:
         cur.execute("SELECT notes_internes FROM tickets WHERE id = %s", (ticket_id,))
@@ -1179,7 +1289,7 @@ def add_note(
         new_notes = f"{existing}\n[{ts}] {note}" if existing.strip() else f"[{ts}] {note}"
         cur.execute(
             "UPDATE tickets SET notes_internes = %s, date_maj = %s WHERE id = %s",
-            (new_notes, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
+            (new_notes, now, ticket_id),
         )
         note_type = 'note_publique' if '[CLIENT]' in note else 'alerte' if '[ATTENTION]' in note else 'note_privee'
         _ajouter_historique(cur, ticket_id, note_type, note)
@@ -1214,8 +1324,9 @@ def add_private_note(
     important: bool = Query(False),
     user: dict = Depends(get_current_user),
 ):
-    """Ajoute une note privée à un ticket."""
+    """Ajoute une note privée à un ticket (404 si le ticket n'existe pas)."""
     with get_cursor() as cur:
+        _exiger_ticket(cur, ticket_id)
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, important)
             VALUES (%s, %s, %s, %s) RETURNING id, date_creation
@@ -1304,8 +1415,9 @@ def log_message(
     canal: str = Query("whatsapp"),
     user: dict = Depends(get_current_user),
 ):
-    """Enregistre un message envoyé (whatsapp/sms/email) dans les notes."""
+    """Enregistre un message envoyé (whatsapp/sms/email) dans les notes (404 si le ticket n'existe pas)."""
     with get_cursor() as cur:
+        _exiger_ticket(cur, ticket_id)
         cur.execute("""
             INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
             VALUES (%s, %s, %s, FALSE, %s) RETURNING id, date_creation

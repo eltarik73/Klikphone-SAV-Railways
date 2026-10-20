@@ -7,7 +7,7 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from typing import Any
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 
 from app.services.search import luhn_ok, phone_canonical
@@ -111,48 +111,90 @@ def _priorite_valide(v):
     return p
 
 
+# Schéma de déverrouillage : points 1 à 9 séparés par des tirets (format de PatternGrid)
+_PATTERN_RE = re.compile(r"[1-9](-[1-9])*")
+# Saisies tolérées puis ramenées au format : « 15963 », « 1 5 9 6 3 », « 1-5-9- »…
+_PATTERN_SAISIE_RE = re.compile(r"[1-9\s\-–,.;/>]+")
+PATTERN_INVALIDE = "Schéma attendu : 1-5-9-6-3 ; un code chiffré va dans Code PIN"
+
+
+def normaliser_pattern(v: str):
+    """Forme canonique d'un schéma (« 1-5-9-6-3 »), None si vide, ValueError sinon.
+
+    Une suite de chiffres 1 à 9 sans répétition (séparée ou non) devient « 1-5-9-6-3 » ;
+    un chiffre répété ou un autre caractère : ce n'est pas un schéma (un code va dans pin).
+    """
+    s = str(v).strip()
+    if not s:
+        return None
+    if _PATTERN_RE.fullmatch(s):
+        return s
+    if _PATTERN_SAISIE_RE.fullmatch(s):
+        points = re.findall(r"[1-9]", s)
+        if points and len(set(points)) == len(points):
+            return "-".join(points)
+    raise ValueError(PATTERN_INVALIDE)
+
+
+def _pattern_valide(v):
+    """Ramène un schéma saisi au format « 1-5-9-6-3 » quand c'est possible ; sinon garde le texte
+    tel quel (« Z inversé », code tapé au mauvais endroit, ancien ticket) : un 422 ici bloquerait
+    tout l'enregistrement de l'appareil sur la fiche et la création d'un retour SAV."""
+    if v is None:
+        return None
+    try:
+        return normaliser_pattern(v)
+    except ValueError:
+        return str(v).strip()
+
+
+# Montants d'un ticket (TTC, en euros) : jamais négatifs, plafond large contre les fautes de frappe
+_MONTANT = dict(ge=0, le=100000)
+
+
 class TicketCreate(BaseModel):
     client_id: int
-    categorie: str
-    marque: str
-    modele: Optional[str] = ""
-    modele_autre: Optional[str] = ""
-    imei: Optional[str] = ""
-    panne: str
-    panne_detail: Optional[str] = ""
-    pin: Optional[str] = ""
-    pattern: Optional[str] = ""
-    notes_client: Optional[str] = ""
-    commande_piece: Optional[int] = 0
+    categorie: str = Field(..., max_length=50)
+    marque: str = Field(..., max_length=100)
+    modele: Optional[str] = Field("", max_length=100)
+    modele_autre: Optional[str] = Field("", max_length=200)
+    imei: Optional[str] = Field("", max_length=50)
+    panne: str = Field(..., max_length=200)
+    panne_detail: Optional[str] = Field("", max_length=2000)
+    pin: Optional[str] = Field("", max_length=50)
+    pattern: Optional[str] = Field("", max_length=50)
+    notes_client: Optional[str] = Field("", max_length=2000)
+    commande_piece: Optional[int] = Field(0, ge=0, le=1)
     est_retour_sav: Optional[bool] = False
     ticket_original_id: Optional[int] = None
-    source: Optional[str] = "boutique"
+    source: Optional[Literal["boutique", "distance"]] = "boutique"
     priorite: Optional[str] = "normal"
     # Numéro pour joindre le client pendant la réparation, s'il diffère de l'appareil déposé
     tel_contact: Optional[str] = None
 
     _priorite = field_validator("priorite")(_priorite_valide)
     _tel_contact = field_validator("tel_contact")(telephone_contact_canonique)
+    _pattern = field_validator("pattern")(_pattern_valide)
 
 
 class TicketUpdate(BaseModel):
     # Device / repair fields (now editable)
-    categorie: Optional[str] = None
-    marque: Optional[str] = None
-    modele: Optional[str] = None
-    modele_autre: Optional[str] = None
-    imei: Optional[str] = None
-    panne: Optional[str] = None
-    panne_detail: Optional[str] = None
-    pin: Optional[str] = None
-    pattern: Optional[str] = None
-    notes_client: Optional[str] = None
+    categorie: Optional[str] = Field(None, max_length=50)
+    marque: Optional[str] = Field(None, max_length=100)
+    modele: Optional[str] = Field(None, max_length=100)
+    modele_autre: Optional[str] = Field(None, max_length=200)
+    imei: Optional[str] = Field(None, max_length=50)
+    panne: Optional[str] = Field(None, max_length=200)
+    panne_detail: Optional[str] = Field(None, max_length=2000)
+    pin: Optional[str] = Field(None, max_length=50)
+    pattern: Optional[str] = Field(None, max_length=50)
+    notes_client: Optional[str] = Field(None, max_length=2000)
     # Pricing / assignment
     notes_internes: Optional[str] = None
     commentaire_client: Optional[str] = None
-    devis_estime: Optional[float] = None
-    acompte: Optional[float] = None
-    tarif_final: Optional[float] = None
+    devis_estime: Optional[float] = Field(None, **_MONTANT)
+    acompte: Optional[float] = Field(None, **_MONTANT)
+    tarif_final: Optional[float] = Field(None, **_MONTANT)
     personne_charge: Optional[str] = None
     technicien_assigne: Optional[str] = None
     commande_piece: Optional[int] = None
@@ -163,12 +205,12 @@ class TicketUpdate(BaseModel):
     msg_sms: Optional[int] = None
     msg_email: Optional[int] = None
     reparation_supp: Optional[str] = None
-    prix_supp: Optional[float] = None
+    prix_supp: Optional[float] = Field(None, **_MONTANT)
     type_ecran: Optional[str] = None
     date_recuperation: Optional[Any] = None
     attention: Optional[str] = None
-    reduction_montant: Optional[float] = None
-    reduction_pourcentage: Optional[float] = None
+    reduction_montant: Optional[float] = Field(None, **_MONTANT)
+    reduction_pourcentage: Optional[float] = Field(None, ge=0, le=100)
     reste_a_payer: Optional[float] = None
     statut_paiement: Optional[str] = None
     telephone_pret: Optional[str] = None
@@ -181,6 +223,7 @@ class TicketUpdate(BaseModel):
 
     _priorite = field_validator("priorite")(_priorite_valide)
     _tel_contact = field_validator("tel_contact")(telephone_contact_canonique)
+    _pattern = field_validator("pattern")(_pattern_valide)
 
     @field_validator("telephone_pret_imei")
     @classmethod
@@ -345,7 +388,8 @@ class MembreEquipeUpdate(BaseModel):
     nom: Optional[str] = None
     role: Optional[str] = None
     couleur: Optional[str] = None
-    actif: Optional[int] = None
+    # 1 = actif, 0 = désactivé (la fiche équipe envoie true / false)
+    actif: Optional[int] = Field(None, ge=0, le=1)
 
 
 class MembreEquipeOut(BaseModel):

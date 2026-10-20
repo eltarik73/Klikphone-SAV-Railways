@@ -274,7 +274,25 @@ def _anonymiser(cur, ids: list) -> tuple:
         UPDATE attestations SET nom = %s, prenom = '', adresse = '', telephone = '', email = '', imei = ''
         WHERE client_id = ANY(%s)
     """, (NOM_ANONYME, faits))
+    _anonymiser_notifications(cur, faits)
     return faits, codes
+
+
+def _anonymiser_notifications(cur, faits: list) -> None:
+    """Centre de notifications et son écho dans le chat équipe (tables de module, créées à part) :
+    les notifications liées aux tickets ou devis de ces clients peuvent citer leur nom ou leur
+    message ; absentes, rien n'est bloqué."""
+    from app.api.notifications_center import anonymiser_notifications
+    cur.execute("SELECT id FROM tickets WHERE client_id = ANY(%s)", (faits,))
+    tickets = [r["id"] for r in cur.fetchall() or []]
+    cur.execute("SELECT id FROM devis WHERE client_id = ANY(%s) OR ticket_id = ANY(%s)", (faits, tickets))
+    devis = [r["id"] for r in cur.fetchall() or []]
+    cur.execute("SAVEPOINT kp_module")
+    try:
+        anonymiser_notifications(cur, tickets, devis, MESSAGE_ANONYME)
+        cur.execute("RELEASE SAVEPOINT kp_module")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT kp_module")
 
 
 # ─── Export et anonymisation d'un client ─────────────────────────

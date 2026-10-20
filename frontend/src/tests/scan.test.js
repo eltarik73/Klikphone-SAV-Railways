@@ -31,6 +31,7 @@ vi.mock('../hooks/useAuth', () => ({ useAuth: () => auth }));
 vi.mock('../lib/api', () => ({ default: apiMock }));
 
 import { ToastProvider } from '../components/Toast';
+import { formatDate } from '../lib/utils';
 import ScanListener, { isScanField, takePendingScan } from '../components/ScanListener';
 import QuickScanPanel, {
   montantsTicket, lignesTicket, actionsTicket, alertesTicket, verifierRestitution, corpsRestitution,
@@ -634,10 +635,17 @@ describe('montants et garde-fous du panneau', () => {
     expect(pretEnCours(ticketFixture())).toBe(false);
   });
 
-  it('formate sans conversion les dates texte', () => {
-    expect(formatDateTexte('2026-10-15 14:32:00')).toBe('15/10/2026 14:32');
+  it('dates texte : horodatage du serveur (UTC) à la même heure locale que la fiche, le reste sans conversion', () => {
+    // date_rendu écrite en UTC par le serveur : la fiche (formatDate) et le scan affichent la même heure
+    expect(formatDateTexte('2026-10-20 14:53:17')).toBe(formatDate('2026-10-20 14:53:17'));
+    expect(formatDateTexte('2026-10-15T14:32:00')).toBe(formatDate('2026-10-15T14:32:00'));
+    const local = new Date(Date.UTC(2026, 9, 15, 14, 32));
+    expect(formatDateTexte('2026-10-15 14:32:00')).toBe(
+      `15/10/2026 ${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}`,
+    );
     expect(formatDateTexte('2026-10-15')).toBe('15/10/2026');
     expect(formatDateTexte('demain matin')).toBe('demain matin');
+    expect(formatDateTexte('')).toBe('');
   });
 
   it('masque l’IMEI et compose le modèle', () => {
@@ -670,7 +678,7 @@ describe('montants et garde-fous du panneau', () => {
     const ids = alertesTicket(t, montantsTicket(t)).map((a) => a.id);
     expect(ids).toEqual(['attention', 'pret', 'reste']);
     const rendu = ticketFixture({ statut: 'Clôturé', paye: 1, montants: { ...SERVER_MONTANTS, reste: 0, paye: true }, date_rendu: '2026-10-15 14:32:00', rendu_par: 'Sophie' });
-    expect(alertesTicket(rendu, montantsTicket(rendu))[0].text).toBe('Appareil déjà rendu le 15/10/2026 14:32 par Sophie.');
+    expect(alertesTicket(rendu, montantsTicket(rendu))[0].text).toBe(`Appareil déjà rendu le ${formatDate('2026-10-15 14:32:00')} par Sophie.`);
   });
 
   it('applique les garde-fous de la remise', () => {

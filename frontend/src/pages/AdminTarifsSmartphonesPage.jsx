@@ -1,13 +1,13 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Smartphone, Save, Plus, ArrowLeft, Loader2, Check, X, Trash2,
   Sparkles, Image as ImageIcon, Search, Filter, AlertCircle,
-  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown, SlidersHorizontal, History,
+  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown, SlidersHorizontal, History, AlertTriangle,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAdminElevation } from '../hooks/useAdminElevation';
-import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
+import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FenetrePrix, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
 const TABLE = 'smartphones_tarifs';
@@ -29,6 +29,82 @@ async function openPdf({ ids = null, marque = null } = {}) {
   const url = URL.createObjectURL(blob);
   window.open(url, '_blank');
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+// ─── Modifications non enregistrées : avertir avant de quitter la page ───
+// Fermeture ou rechargement de l'onglet : beforeunload. Navigation interne (barre latérale :
+// navigate()) : l'app est sous <BrowserRouter>, sans data router, donc sans useBlocker ; tant
+// qu'il reste des modifications, la page intercepte history.pushState vers une autre page et
+// propose « Enregistrer et quitter » / « Quitter sans enregistrer » / « Rester sur la page ».
+function useGardeModifications(actif) {
+  const navigate = useNavigate();
+  const [cible, setCible] = useState(null);
+  const laisserPasser = useRef(false);
+  useEffect(() => {
+    if (!actif || typeof window === 'undefined') return undefined;
+    const avantDepart = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', avantDepart);
+    const historique = window.history;
+    const pushOrigine = historique.pushState;
+    const pushGarde = function pushState(state, titre, url) {
+      let dest = null;
+      try { dest = url != null ? new URL(String(url), window.location.href) : null; } catch { dest = null; }
+      if (!laisserPasser.current && dest && dest.origin === window.location.origin
+          && dest.pathname !== window.location.pathname) {
+        setCible(`${dest.pathname}${dest.search}${dest.hash}`);
+        return undefined;
+      }
+      return pushOrigine.call(this, state, titre, url);
+    };
+    historique.pushState = pushGarde;
+    return () => {
+      window.removeEventListener('beforeunload', avantDepart);
+      if (historique.pushState === pushGarde) historique.pushState = pushOrigine;
+    };
+  }, [actif]);
+  const partir = useCallback((dest) => {
+    setCible(null);
+    laisserPasser.current = true;
+    try { navigate(dest); } finally { laisserPasser.current = false; }
+  }, [navigate]);
+  const rester = useCallback(() => setCible(null), []);
+  return { cible, partir, rester };
+}
+
+function FenetreQuitter({ garde, nombre, enregistrer }) {
+  const [enCours, setEnCours] = useState(false);
+  const { cible, partir, rester } = garde;
+  async function enregistrerPuisPartir() {
+    setEnCours(true);
+    try {
+      if (await enregistrer()) partir(cible);
+    } finally {
+      setEnCours(false);
+    }
+  }
+  return (
+    <FenetrePrix
+      open={!!cible}
+      onClose={rester}
+      bloquer={enCours}
+      largeur="max-w-xl"
+      icone={AlertTriangle}
+      titre="Modifications non enregistrées"
+      sousTitre={`${nombre} ligne${nombre > 1 ? 's' : ''} modifiée${nombre > 1 ? 's' : ''} pas encore enregistrée${nombre > 1 ? 's' : ''}.`}
+      pied={(
+        <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2">
+          <button type="button" onClick={rester} disabled={enCours} className="btn-ghost">Rester sur la page</button>
+          <button type="button" onClick={() => partir(cible)} disabled={enCours} className="btn-secondary">Quitter sans enregistrer</button>
+          <button type="button" onClick={enregistrerPuisPartir} disabled={enCours} className="btn-primary">
+            {enCours ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Save aria-hidden="true" />}
+            Enregistrer et quitter
+          </button>
+        </div>
+      )}
+    >
+      <p className="t-body">Sans enregistrement, ces changements de prix ou de stock seront perdus.</p>
+    </FenetrePrix>
+  );
 }
 
 function useBasePath() {
@@ -221,6 +297,7 @@ export default function AdminTarifsSmartphonesPage() {
   }
 
   const dirtyCount = Object.keys(dirty).length;
+  const garde = useGardeModifications(dirtyCount > 0);
 
   // Group counts by brand
   const brandCounts = useMemo(() => {
@@ -868,6 +945,7 @@ export default function AdminTarifsSmartphonesPage() {
         aEnregistrer={{ nombre: dirtyCount, enregistrer: saveAll }}
         onApplique={() => load()}
       />
+      <FenetreQuitter garde={garde} nombre={dirtyCount} enregistrer={saveAll} />
       <HistoriquePrix
         open={fenetre === 'historique'}
         onClose={() => setFenetre(null)}

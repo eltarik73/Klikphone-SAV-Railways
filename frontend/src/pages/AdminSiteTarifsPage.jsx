@@ -406,7 +406,7 @@ function DevisModal({ open, onClose, defaultModele }) {
                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 {sending ? 'Envoi...' : 'Envoyer ma demande'}
               </button>
-              <p className="text-[10px] text-slate-500 text-center">
+              <p className="text-xs text-slate-400 text-center">
                 Vos infos sont envoyées directement à Klikphone. Pas de spam.
               </p>
             </form>
@@ -560,13 +560,13 @@ function CommandeModal({ open, onClose, phones }) {
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block">
                     <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Nom *</span>
-                    <input type="text" required value={nom} onChange={e => setNom(e.target.value)}
+                    <input type="text" required maxLength={100} value={nom} onChange={e => setNom(e.target.value)}
                       placeholder="Votre nom"
                       className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
                   </label>
                   <label className="block">
                     <span className="text-[10px] uppercase tracking-[0.2em] text-violet-300 font-bold">Téléphone *</span>
-                    <input type="tel" required value={telephone} onChange={e => setTelephone(e.target.value)}
+                    <input type="tel" required maxLength={30} value={telephone} onChange={e => setTelephone(e.target.value)}
                       placeholder="06 12 34 56 78"
                       className="mt-1 w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 focus:border-amber-400 text-white text-sm outline-none transition" />
                   </label>
@@ -612,7 +612,7 @@ function CommandeModal({ open, onClose, phones }) {
                     Sélectionnez d'abord un modèle
                   </button>
                 )}
-                <p className="text-[9px] text-slate-500 text-center">
+                <p className="text-xs text-slate-400 text-center">
                   Non engageant — Klikphone vous recontacte pour confirmer.
                 </p>
               </div>
@@ -783,16 +783,16 @@ function MiniCard({ phone, highlight }) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.25em] md:tracking-[0.3em] text-violet-300 mb-0.5 md:mb-1">
+          <p className="text-xs font-bold uppercase tracking-[0.25em] md:tracking-[0.3em] text-violet-300 mb-0.5 md:mb-1">
             {phone.marque}
           </p>
           <h3 className="font-display font-extrabold text-base md:text-xl text-white leading-tight">
             {phone.modele}
           </h3>
-          <p className="text-[10px] text-slate-400 mt-1 md:mt-2">{phone.grade}</p>
+          <p className="text-xs text-slate-400 mt-1 md:mt-2">{phone.grade}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[9px] uppercase tracking-widest text-slate-500">dès</p>
+          <p className="text-xs uppercase tracking-widest text-slate-400">dès</p>
           <p className="font-display font-extrabold text-2xl md:text-3xl bg-gradient-to-br from-amber-300 to-orange-400 bg-clip-text text-transparent">
             {min}€
           </p>

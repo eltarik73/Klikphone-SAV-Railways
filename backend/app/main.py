@@ -24,6 +24,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from psycopg2 import errors as pg_errors
 
 from app.database import APPLICATION_NAME, close_pool, prechauffer_pool
 from app.api import auth, tickets, clients, config, team, parts, catalog, notifications, print_tickets, caisse_api, attestation, admin, chat, fidelite, email_api, tarifs, marketing, telephones, autocomplete, devis, reporting, depot_distance, suivi, iphone_tarifs, iphones_stock, smartphones_tarifs, tracking, notifications_center
@@ -1039,6 +1043,10 @@ def _migrations_recherche():
 
 
 MIGRATION_FORFAITS_LIGNES = "MIGRATION_FICHE_FORFAITS_LIGNES"
+# Schémas faits de points 1 à 9 et de séparateurs, hors format « 1-5-9-6-3 » (fragment fixe)
+_PATTERN_A_NORMALISER = (
+    "pattern ~ '^[1-9 ,./;>–-]+$' AND pattern !~ '^[1-9](-[1-9])*$' AND length(pattern) <= 50"
+)
 
 
 def _migrations_fiche():
@@ -1148,18 +1156,42 @@ def _migrations_fiche():
         if maj:
             print(f"Forfaits : {len(maj)} ticket(s) en cours mis à niveau")
 
+    def patterns(cur):
+        """Schémas saisis sans tirets (« 15963 », « 1 5 9 6 3 ») → « 1-5-9-6-3 » (PatternGrid).
+        Idempotent : seules les valeurs que models.normaliser_pattern sait ramener au format
+        changent ; les autres (texte libre, chiffre répété) restent telles quelles."""
+        from app.models import normaliser_pattern
+        cur.execute(f"SELECT id, pattern FROM tickets WHERE {_PATTERN_A_NORMALISER} FOR UPDATE")
+        maj = []
+        for r in cur.fetchall():
+            try:
+                canon = normaliser_pattern(r["pattern"])
+            except ValueError:
+                continue
+            if canon and canon != r["pattern"]:
+                maj.append((r["id"], canon))
+        if maj:
+            execute_values(
+                cur,
+                "UPDATE tickets t SET pattern = v.p FROM (VALUES %s) AS v(id, p) WHERE t.id = v.id",
+                maj,
+            )
+            print(f"Schémas : {len(maj)} ticket(s) remis au format 1-5-9-6-3")
+
     anciennes = [anc for _nouv, anc in renommees]
     try:
         with get_cursor() as cur:
-            cur.execute("""
+            cur.execute(f"""
                 SELECT EXISTS (SELECT 1 FROM tickets WHERE panne = ANY(%(anc)s))
                        OR EXISTS (SELECT 1 FROM autocompletion WHERE categorie = 'panne' AND terme = ANY(%(anc)s))
                        AS pannes,
-                       NOT EXISTS (SELECT 1 FROM params WHERE cle = %(flag)s) AS forfaits
+                       NOT EXISTS (SELECT 1 FROM params WHERE cle = %(flag)s) AS forfaits,
+                       EXISTS (SELECT 1 FROM tickets WHERE {_PATTERN_A_NORMALISER}) AS patterns
             """, {"anc": anciennes, "flag": MIGRATION_FORFAITS_LIGNES})
             a_faire = cur.fetchone()
             blocs = [(label, fn) for label, fn, cle in (("pannes accentuées", pannes, "pannes"),
-                                                       ("lignes en forfaits", lignes_forfaits, "forfaits"))
+                                                       ("lignes en forfaits", lignes_forfaits, "forfaits"),
+                                                       ("schémas sans tirets", patterns, "patterns"))
                      if a_faire[cle]]
             if blocs:
                 cur.execute("SET LOCAL lock_timeout = '3s'")
@@ -1346,6 +1378,37 @@ async def global_exception_handler(request: Request, exc: Exception):
         headers={"Access-Control-Allow-Origin": "*"},
     )
 
+# 422 dont l'entrée renvoyée est NaN / Infinity (montant borné par Field(ge, le)) : le JSON
+# de la réponse ne sait pas les encoder (500) ; même 422, sans l'entrée.
+@app.exception_handler(RequestValidationError)
+async def validation_handler(request: Request, exc: RequestValidationError):
+    try:
+        return await request_validation_exception_handler(request, exc)
+    except ValueError:
+        erreurs = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(erreurs)})
+
+
+# Valeur refusée par PostgreSQL (entier hors bornes, texte trop long, date impossible…) :
+# erreur de saisie, pas une panne du serveur. Une 500 ferme aussi la connexion keep-alive.
+@app.exception_handler(pg_errors.DataError)
+async def donnees_invalides_handler(request: Request, exc: pg_errors.DataError):
+    print(f"[400] {request.method} {request.url.path} : {type(exc).__name__}")
+    return JSONResponse(status_code=400, content={"detail": "Valeur invalide (format ou longueur)"},
+                        headers={"Access-Control-Allow-Origin": "*"})
+
+
+@app.exception_handler(pg_errors.ForeignKeyViolation)
+async def reference_invalide_handler(request: Request, exc: pg_errors.ForeignKeyViolation):
+    print(f"[FK] {request.method} {request.url.path} : {type(exc).__name__}")
+    detail = (getattr(exc.diag, "message_detail", None) or "") if getattr(exc, "diag", None) else ""
+    if "is not present" in detail:
+        return JSONResponse(status_code=404, content={"detail": "Élément lié introuvable"},
+                            headers={"Access-Control-Allow-Origin": "*"})
+    return JSONResponse(status_code=409, content={"detail": "Élément encore utilisé ailleurs"},
+                        headers={"Access-Control-Allow-Origin": "*"})
+
+
 # --- ROUTERS ---
 app.include_router(auth.router)
 app.include_router(tickets.router)
@@ -1423,10 +1486,11 @@ if STATIC_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="static-assets")
 
     # Serve known static files at root (logo, manifest, sw.js, etc.)
-    @app.get("/logo_k.png")
-    @app.get("/tampon_klikphone.png")
-    @app.get("/manifest.json")
-    @app.get("/sw.js")
+    # HEAD aussi (sondes de disponibilité, curl -I, navigateurs) : 405 sinon
+    @app.api_route("/logo_k.png", methods=["GET", "HEAD"])
+    @app.api_route("/tampon_klikphone.png", methods=["GET", "HEAD"])
+    @app.api_route("/manifest.json", methods=["GET", "HEAD"])
+    @app.api_route("/sw.js", methods=["GET", "HEAD"])
     async def static_root_files(request: Request):
         fname = request.url.path.lstrip("/")
         fpath = STATIC_DIR / fname
@@ -1434,14 +1498,14 @@ if STATIC_DIR.exists():
             return FileResponse(str(fpath))
         return JSONResponse({"detail": "Not found"}, 404)
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def serve_index():
         return FileResponse(str(STATIC_DIR / "index.html"))
 
     _STATIC_ROOT = STATIC_DIR.resolve()
 
     # SPA catch-all: any path not matched by API routers → serve index.html
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def spa_fallback(full_path: str):
         # Don't serve index.html for API paths or docs
         if full_path.startswith("api/") or full_path.startswith("generated-videos/") or full_path in ("docs", "redoc", "openapi.json", "health", "health/db"):
@@ -1452,7 +1516,7 @@ if STATIC_DIR.exists():
             return FileResponse(str(file_path))
         return FileResponse(str(STATIC_DIR / "index.html"))
 else:
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def root():
         return {
             "service": "Klikphone SAV API",

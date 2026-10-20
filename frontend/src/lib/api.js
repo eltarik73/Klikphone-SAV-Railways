@@ -17,7 +17,7 @@ const DEFAULT_GET_RETRIES = 2;
 // Un 401 sur ces routes signifie « code ou PIN incorrect », pas « session expirée » :
 // il ne doit jamais déconnecter l'employé.
 const CREDENTIAL_PATHS = [
-  '/api/auth/login', '/api/auth/switch-user', '/api/admin/verify', '/api/admin/login',
+  '/api/auth/login', '/api/auth/switch-user', '/api/admin/verify',
   '/api/admin/change-password', '/api/config/change-pin',
 ];
 // Refus d'élévation (auth._refus_admin) : detail = { code, message }. « Admin requis » en simple
@@ -27,6 +27,11 @@ const ADMIN_REFUSAL_CODES = new Set(['admin_requis', 'admin_expire', 'admin_inva
 const ADMIN_REFUSAL_RE = /élévation|elevation|(jeton|token)\s+(d['’]\s*)?(admin|élévation)|x-admin-token/i;
 const ADMIN_TOKEN_KEY = 'kp_admin_token';
 const ADMIN_TOKEN_TTL = 10 * 60_000;
+// Mode admin de l'interface (menu admin, AdminGuard) : drapeau du poste + événement à chaque changement,
+// pour que les écrans déjà affichés (garde « Accès restreint », barre latérale) suivent sans rechargement.
+// Même nom que dans components/AdminLoginModal.jsx (annoncerModeAdmin, utilisé par les composants).
+const ADMIN_MODE_KEY = 'klikphone_admin';
+export const ADMIN_MODE_EVENT = 'kp-admin-mode';
 // Routes publiques (suivi, code ticket, connexion) : le jeton d'élévation n'y part jamais
 const NO_ADMIN_TOKEN_PATHS = ['/api/suivi/', '/api/tickets/code/', '/api/auth/', '/api/config/public'];
 
@@ -234,6 +239,29 @@ class ApiClient {
     return null;
   }
   hasAdminToken() { return Boolean(this.getAdminToken()); }
+
+  // ─── Mode admin de l'interface ─────────────
+  setAdminMode(on) {
+    try {
+      if (on) localStorage.setItem(ADMIN_MODE_KEY, 'true');
+      else localStorage.removeItem(ADMIN_MODE_KEY);
+    } catch { /* stockage indisponible */ }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(ADMIN_MODE_EVENT, { detail: { admin: Boolean(on) } }));
+    }
+  }
+  // « Verrouiller » : le serveur oublie la preuve du code de ce poste (rôle admin : stats, marketing,
+  // prix d'achat HT), puis le navigateur oublie le jeton d'élévation et le mode admin.
+  // Une erreur réseau n'empêche jamais le verrouillage local.
+  lockAdmin() {
+    const envoi = this.token
+      ? this.request('/api/admin/lock', { method: 'POST', retries: 0 }).catch(() => null)
+      : Promise.resolve(null);
+    try { localStorage.removeItem('kp_admin_auth'); } catch { /* stockage indisponible */ }
+    this.clearAdminToken();
+    this.setAdminMode(false);
+    return envoi;
+  }
   clearAdminToken() {
     this._adminToken = null;
     this._adminExp = 0;
@@ -292,6 +320,14 @@ class ApiClient {
     const pending = this._inflight.get(path);
     if (pending && (pending.fresh || !fresh)) return pending.promise;
     if (pending) pending.stale = true;
+    // Même adresse déjà demandée par get() (barre latérale…) et toujours valable : réponse partagée
+    const shared = !fresh && !pending ? this._sharedGets.get(path) : null;
+    if (shared && shared.seq === this._mutationSeq && shared.token === this.token) {
+      return shared.promise.then((data) => {
+        if (shared.seq === this._mutationSeq && shared.token === this.token) this._cache.set(path, { ts: Date.now(), data });
+        return data;
+      });
+    }
     const entry = { stale: false, fresh, promise: null };
     entry.promise = this.request(path, fresh ? { cache: 'no-cache' } : {})
       .then((data) => {
@@ -395,6 +431,9 @@ class ApiClient {
     if (options?.signal) return this.request(path, options);
     const pending = this._sharedGets.get(path);
     if (pending && pending.seq === this._mutationSeq && pending.token === this.token) return pending.promise;
+    // Lecture getCached() en vol pour la même adresse (oubliée à chaque écriture) : partagée aussi
+    const cached = this._inflight.get(path);
+    if (cached && !cached.stale) return cached.promise;
     const entry = { seq: this._mutationSeq, token: this.token, promise: null };
     entry.promise = (options ? this.request(path, options) : this.request(path)).finally(() => {
       if (this._sharedGets.get(path) === entry) this._sharedGets.delete(path);
@@ -441,10 +480,10 @@ class ApiClient {
   // admin (auth.exiger_role_admin) ; switch-user la conserve et ne passe pas par ici.
   forgetAdminMode() {
     try {
-      localStorage.removeItem('klikphone_admin');
       localStorage.removeItem('kp_admin_auth');
     } catch { /* stockage indisponible */ }
     this.clearAdminToken();
+    this.setAdminMode(false);
   }
 
   // ─── TICKETS ───────────────────────────────
@@ -655,14 +694,25 @@ class ApiClient {
     this._invalidate('/api/');
     return this.request('/api/config/backup/import', { method: 'POST', body: JSON.stringify(data) }, 180_000);
   }
+  // Fichier téléchargé (export clients : élévation admin exigée par le serveur, jeton envoyé comme
+  // request()). Refus d'élévation : err.code = 'admin_required', comme request() (useAdminElevation).
   async exportFile(path, filename) {
     const url = `${API_URL}${path}`;
     const headers = {};
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
-    const res = await fetch(url, { headers });
+    const adminToken = sendsAdminToken(path) ? this.getAdminToken() : null;
+    if (adminToken) headers['X-Admin-Token'] = adminToken;
+    const res = await fetch(url, { headers, cache: 'no-store' });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw httpError(res.status, body?.detail, res.headers);
+      const err = httpError(res.status, body?.detail, res.headers);
+      const refusal = res.status === 401 || res.status === 403 ? adminRefusalCode(body?.detail) : null;
+      if (refusal) {
+        if (adminToken && typeof body?.detail === 'object' && refusal !== 'admin_invalide') this.clearAdminToken();
+        err.code = 'admin_required';
+        err.adminCode = refusal;
+      }
+      throw err;
     }
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
@@ -836,9 +886,6 @@ class ApiClient {
   }
 
   // ─── ADMIN ──────────────────────────────────
-  adminLogin(identifiant, password) {
-    return this.post('/api/admin/login', { identifiant, password });
-  }
   // → { success, admin_token, expires_in } : le jeton (10 min) part ensuite en X-Admin-Token
   // (sauf vers les routes publiques)
   async verifyAdmin(login, password) {
@@ -1064,6 +1111,9 @@ class ApiClient {
   recalculerTarifs() { return this._ecriturePrix('/api/tarifs/recalculate', {}, 60_000); }
   // → règles de marge (TARIFS_REGLES) : { tva, ecran: {standard, haut_de_gamme, pliant}, autre, ipad, macbook, arrondi, seuil_marge_alerte, … }
   getReglesPrix() { return this.request('/api/tarifs/regles', { cache: 'no-store' }); }
+  // Encadré « Méthode de calcul » (tout le personnel) : { admin, texte, regles, exemple } ;
+  // montants des marges, regles et exemple servis au seul rôle admin prouvé
+  getMethodeCalcul() { return this.request('/api/tarifs/methode-calcul', { cache: 'no-store' }); }
   // payload : { regles } ou { cible, filtre: { marque, modele, type_piece, ids, colonne }, ajustement: { type: 'pct'|'eur', valeur } }
   // → { modifies, inchanges, verrouilles, ignores, variation_moy|min|max (€), variation_moy_pct (%), alertes,
   //     ecarts: [{ cle, label, ancien, nouveau, alerte, alertes, ancien_ht?, nouveau_ht? }], verrouilles_liste } (rien n'est écrit)
@@ -1243,7 +1293,6 @@ class ApiClient {
   validerDepot(ticketId) { return this.put(`/api/depot-distance/${ticketId}/valider`, {}); }
   refuserDepot(ticketId, motif) { return this.put(`/api/depot-distance/${ticketId}/refuser`, { motif }); }
   getPendingDepots() { return this.get('/api/depot-distance/pending'); }
-  getSuiviPublic(code) { return this.get(`/api/depot-distance/suivi/${encodeURIComponent(code)}`); }
 
   // ─── SUIVI CLIENT (PUBLIC) ─────────────────────
   // preuve : { t } (jeton du lien de suivi) ou { tel4 } (4 derniers chiffres du téléphone)

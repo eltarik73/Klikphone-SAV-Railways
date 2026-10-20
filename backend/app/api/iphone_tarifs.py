@@ -17,7 +17,7 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, UploadFile, File
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from fpdf import FPDF
 from psycopg2.extras import execute_values
 from pydantic import BaseModel, Field
@@ -30,8 +30,9 @@ from app.api.auth import (
     client_ip, exiger_elevation, exiger_role_admin, get_current_user, noter_echec, noter_succes, verifier_essais,
     verifier_secret,
 )
-# Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque
-from app.api.smartphones_tarifs import _fetch_image_for_pdf
+# Reutilise le fetch/validate d'image cote serveur deja teste et cache sur disque,
+# et le cache des PDF de grilles (empreinte des lignes)
+from app.api.smartphones_tarifs import _fetch_image_for_pdf, pdf_en_cache
 # Reutilise le rate limiter public (protection anti-spam)
 from app.api.tickets import _rate_limit_public_lookup
 # Pour l'envoi d'email sur le formulaire demande de tarif
@@ -85,8 +86,13 @@ def get_iphone_upload(filename: str):
     )
 
 
+def _admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    """Écriture de la vitrine (prix, photo) : rôle admin du membre ET code admin saisi sur ce poste."""
+    return exiger_role_admin(request, user)
+
+
 @router.post("/{tarif_id}/upload-image")
-async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+async def upload_iphone_image(tarif_id: int, file: UploadFile = File(...), user: dict = Depends(_admin)):
     """Upload une photo personnalisee depuis le navigateur de l'admin.
 
     - Accepte JPEG, PNG, WebP (max 5 MB)
@@ -453,13 +459,14 @@ def init_iphone_tarifs():
 # Enregistree en DB + envoi email, visible dans le dashboard admin
 # ---------------------------------------------------------------------------
 class PasserCommandeRequest(BaseModel):
-    nom: str
-    telephone: str
+    # Formulaire public : bornes contre le stockage de textes géants et le 500 « int out of range »
+    nom: str = Field(..., max_length=100)
+    telephone: str = Field(..., max_length=30)
     email: Optional[str] = None
     marque: Optional[str] = None
-    modele: str
+    modele: str = Field(..., max_length=100)
     stockage: Optional[str] = None
-    prix: Optional[int] = 0
+    prix: Optional[int] = Field(0, ge=0, le=100000)
     message: Optional[str] = None
 
 
@@ -909,11 +916,6 @@ def list_tarifs():
         return [dict(r) for r in cur.fetchall()]
 
 
-def _admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
-    """Écriture de prix : rôle admin du membre ET code admin saisi sur ce poste."""
-    return exiger_role_admin(request, user)
-
-
 _COLONNES_PRIX = ("prix_1", "prix_2", "prix_3")
 
 
@@ -1111,18 +1113,31 @@ def _get_models(slugs: Optional[List[str]] = None, group: Optional[str] = None) 
         return [dict(r) for r in cur.fetchall()]
 
 
+def _empreinte_iphones() -> str:
+    """Empreinte du contenu de la grille : change à toute écriture (prix, stock, photo, groupe…)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT md5(COALESCE(string_agg(t::text, '|' ORDER BY t.id), '')) AS e "
+                    "FROM iphone_tarifs t")
+        return cur.fetchone()["e"]
+
+
 @router.get("/pdf")
 def generate_pdf(
     slugs: Optional[str] = Query(None, description="Liste de slugs séparés par virgule"),
     group: Optional[str] = Query(None, description="Grouper par page_group (ex: '13')"),
+    user: dict = Depends(get_current_user),
 ):
-    """Génère un PDF pour les modèles sélectionnés (par défaut tous)."""
+    """Génère un PDF pour les modèles sélectionnés (par défaut tous), en cache tant que la grille ne change pas."""
     slug_list = [s.strip() for s in slugs.split(",") if s.strip()] if slugs else None
-    models = _get_models(slugs=slug_list, group=group)
-    if not models:
-        raise HTTPException(404, "Aucun modèle trouvé")
 
-    pdf_bytes = _render_pdf(models)
+    def fabriquer() -> bytes:
+        models = _get_models(slugs=slug_list, group=group)
+        if not models:
+            raise HTTPException(404, "Aucun modèle trouvé")
+        return _render_pdf(models)
+
+    cle = ("iphones", tuple(slug_list) if slug_list else None, None if slug_list else group)
+    pdf_bytes = pdf_en_cache(cle, _empreinte_iphones(), fabriquer)
     filename = "klikphone_tarifs_iphones.pdf"
     if slug_list and len(slug_list) <= 3:
         filename = f"klikphone_tarifs_{'_'.join(slug_list)}.pdf"
@@ -1136,9 +1151,7 @@ def generate_pdf(
     )
 
 
-@router.get("/pdf/all-zip")
-def generate_all_pdfs_zip():
-    """Génère un ZIP contenant un PDF par page_group (un pack d'affiches)."""
+def _zip_tous_les_groupes() -> bytes:
     with get_cursor() as cur:
         cur.execute(
             "SELECT DISTINCT page_group FROM iphone_tarifs WHERE actif = TRUE AND page_group IS NOT NULL ORDER BY page_group"
@@ -1154,10 +1167,15 @@ def generate_all_pdfs_zip():
             pdf_bytes = _render_pdf(models)
             safe = re.sub(r"[^a-zA-Z0-9_-]", "", g)
             zf.writestr(f"klikphone_tarifs_{safe}.pdf", pdf_bytes)
+    return buf.getvalue()
 
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
+
+@router.get("/pdf/all-zip")
+def generate_all_pdfs_zip(user: dict = Depends(get_current_user)):
+    """Génère un ZIP contenant un PDF par page_group (un pack d'affiches), en cache tant que la grille ne change pas."""
+    contenu = pdf_en_cache(("iphones-zip",), _empreinte_iphones(), _zip_tous_les_groupes)
+    return Response(
+        content=contenu,
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="klikphone_tarifs_iphones.zip"'},
     )

@@ -551,8 +551,8 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
       </MemoryRouter>,
     );
     await screen.findByText('KP-000001');
+    // Un clic : délai le plus proche d'abord (sens croissant par défaut pour ce tri)
     fireEvent.click(screen.getByRole('button', { name: 'Récupération' }));
-    fireEvent.click(screen.getByRole('button', { name: /Récupération/ }));
     const codes = [...document.querySelectorAll('[data-ticket-link]')].map((a) => a.textContent);
     expect(codes.slice(0, 4)).toEqual(['KP-000002', 'KP-000007', 'KP-000001', 'KP-000006']);
     fireEvent.click(screen.getAllByRole('button', { name: /Nouveau ticket/ })[0]);

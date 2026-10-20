@@ -99,6 +99,42 @@ def _ensure_table():
 
 # ─── Helper exporté (utilisable depuis devis.py, suivi.py, etc.) ──
 
+def texte_chat(title: str, message: str, icon: Optional[str] = None, action_url: Optional[str] = None) -> str:
+    """Écho d'une notification dans chat_messages. Une seule icône en tête, même quand le titre
+    commence déjà par elle (« ✅ Devis … accepté »). Sert aussi à retrouver cet écho (RGPD)."""
+    icone = icon or "🔔"
+    titre = str(title or "")
+    chat_msg = titre if titre.startswith(icone) else f"{icone} {titre}"
+    chat_msg += f"\n{message}"
+    if action_url:
+        chat_msg += f"\n→ {action_url}"
+    return chat_msg
+
+
+def anonymiser_notifications(cur, ticket_ids: list, devis_ids: list, texte: str) -> int:
+    """RGPD : réécrit avec `texte` les notifications liées à ces tickets ou devis (titre et
+    message peuvent citer le client : « Client Jean D. — KP-… », extrait de son message), et leur
+    écho dans le chat équipe (même texte que push_notification). Nombre de notifications réécrites."""
+    if not ticket_ids and not devis_ids:
+        return 0
+    cur.execute("""
+        SELECT id, title, message, icon, action_url FROM notifications_center
+        WHERE (related_ticket_id = ANY(%s) OR related_devis_id = ANY(%s))
+          AND NOT (title = %s AND message = %s)
+    """, (list(ticket_ids), list(devis_ids), texte, texte))
+    rows = cur.fetchall() or []
+    if not rows:
+        return 0
+    echos = sorted({texte_chat(r["title"], r["message"], r["icon"], r["action_url"]) for r in rows}
+                   | {f"{r['icon'] or '🔔'} {r['title']}\n{r['message']}" + (f"\n→ {r['action_url']}" if r["action_url"] else "")
+                      for r in rows})
+    cur.execute("UPDATE chat_messages SET message = %s WHERE sender = 'Système' AND message = ANY(%s)",
+                (texte, echos))
+    cur.execute("UPDATE notifications_center SET title = %s, message = %s WHERE id = ANY(%s)",
+                (texte, texte, [r["id"] for r in rows]))
+    _invalider_tout()
+    return len(rows)
+
 def push_notification(
     type: str,
     title: str,
@@ -148,9 +184,7 @@ def push_notification(
 
             # Mirror dans chat_messages → s'affichera dans le ChatWidget existant
             if also_chat:
-                chat_msg = f"{icon or '🔔'} {title}\n{message}"
-                if action_url:
-                    chat_msg += f"\n→ {action_url}"
+                chat_msg = texte_chat(title, message, icon, action_url)
                 recipient = target_user or "all"
                 is_private = target_user is not None
                 try:

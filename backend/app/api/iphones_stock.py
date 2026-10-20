@@ -9,10 +9,10 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from app.api.auth import get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from app.api.auth import exiger_role_admin, get_current_user
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from psycopg2.extras import execute_values
 
 from app.database import get_cursor
@@ -422,31 +422,40 @@ def init_iphones_stock():
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+# Bornes = colonnes de iphones_stock (VARCHAR, INTEGER) : 422 au lieu d'un 500 PostgreSQL.
+# protected_namespaces=() : model_key n'entre pas en conflit avec l'espace « model_ » (Pydantic 2.9).
+_PRIX = dict(ge=0, le=100000)
+
+
 class IphoneCreate(BaseModel):
-    model: str
-    model_key: str
-    storage: str
-    color_name: str
-    color_hex: Optional[str] = None
-    color_key: Optional[str] = None
-    condition: str
-    price: int
-    old_price: Optional[int] = None
-    stock: int = 0
+    model_config = ConfigDict(protected_namespaces=())
+
+    model: str = Field(..., max_length=100)
+    model_key: str = Field(..., max_length=50)
+    storage: str = Field(..., max_length=20)
+    color_name: str = Field(..., max_length=50)
+    color_hex: Optional[str] = Field(None, max_length=10)
+    color_key: Optional[str] = Field(None, max_length=30)
+    condition: str = Field(..., max_length=30)
+    price: int = Field(..., **_PRIX)
+    old_price: Optional[int] = Field(None, **_PRIX)
+    stock: int = Field(0, ge=0, le=100000)
     image_url: Optional[str] = None
 
 
 class IphoneUpdate(BaseModel):
-    model: Optional[str] = None
-    model_key: Optional[str] = None
-    storage: Optional[str] = None
-    color_name: Optional[str] = None
-    color_hex: Optional[str] = None
-    color_key: Optional[str] = None
-    condition: Optional[str] = None
-    price: Optional[int] = None
-    old_price: Optional[int] = None
-    stock: Optional[int] = None
+    model_config = ConfigDict(protected_namespaces=())
+
+    model: Optional[str] = Field(None, max_length=100)
+    model_key: Optional[str] = Field(None, max_length=50)
+    storage: Optional[str] = Field(None, max_length=20)
+    color_name: Optional[str] = Field(None, max_length=50)
+    color_hex: Optional[str] = Field(None, max_length=10)
+    color_key: Optional[str] = Field(None, max_length=30)
+    condition: Optional[str] = Field(None, max_length=30)
+    price: Optional[int] = Field(None, **_PRIX)
+    old_price: Optional[int] = Field(None, **_PRIX)
+    stock: Optional[int] = Field(None, ge=0, le=100000)
     image_url: Optional[str] = None
     active: Optional[bool] = None
 
@@ -649,8 +658,14 @@ def list_iphones(
     return phones
 
 
+def _admin(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    """Écriture du stock et vidéo : rôle admin du membre ET code admin saisi sur ce poste
+    (même garde que smartphones_tarifs / iphone_tarifs)."""
+    return exiger_role_admin(request, user)
+
+
 @router.post("")
-def create_iphone(payload: IphoneCreate, user: dict = Depends(get_current_user)):
+def create_iphone(payload: IphoneCreate, user: dict = Depends(_admin)):
     """Crée une entrée stock iPhone (mode admin)."""
     with get_cursor() as cur:
         cur.execute(
@@ -674,9 +689,9 @@ def create_iphone(payload: IphoneCreate, user: dict = Depends(get_current_user))
 
 
 @router.put("/{iphone_id}")
-def update_iphone(iphone_id: int, payload: IphoneUpdate, user: dict = Depends(get_current_user)):
+def update_iphone(iphone_id: int, payload: IphoneUpdate, user: dict = Depends(_admin)):
     """Met à jour une entrée stock (mode admin)."""
-    updates = payload.dict(exclude_unset=True)
+    updates = payload.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="Aucun champ à mettre à jour")
     set_clauses = [f"{k} = %s" for k in updates.keys()]
@@ -693,7 +708,7 @@ def update_iphone(iphone_id: int, payload: IphoneUpdate, user: dict = Depends(ge
 
 
 @router.delete("/{iphone_id}")
-def delete_iphone(iphone_id: int, user: dict = Depends(get_current_user)):
+def delete_iphone(iphone_id: int, user: dict = Depends(_admin)):
     """Soft delete (active = false), mode admin."""
     with get_cursor() as cur:
         cur.execute(
@@ -711,7 +726,7 @@ def delete_iphone(iphone_id: int, user: dict = Depends(get_current_user)):
 # Video generation
 # ---------------------------------------------------------------------------
 @router.post("/generate-video")
-def generate_video(payload: GenerateVideoRequest, user: dict = Depends(get_current_user)):
+def generate_video(payload: GenerateVideoRequest, user: dict = Depends(_admin)):
     """Génère une vidéo Story 9:16 à partir des telephones selectionnes.
     Source : iphone_tarifs + smartphones_tarifs (IDs prefixes it_ / st_)."""
     if not payload.ids:

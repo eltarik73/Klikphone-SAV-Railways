@@ -620,7 +620,8 @@ def test_admin_stats_sans_cast_date_cloture(client):
             client.get(path, headers=_headers())
     joined = " ".join(cur.sql())
     assert "date_cloture::date" not in joined and "date_cloture::timestamp >=" not in joined
-    assert "date_cloture LIKE %(today_like)s" in joined
+    # Jour de Paris : bornes UTC en texte (date_cloture est un texte en UTC)
+    assert "date_cloture >= %(jd)s AND date_cloture < %(jf)s" in joined
 
 
 def test_admin_dates_helpers():
@@ -664,11 +665,17 @@ def test_chat_ia_recherche_client_par_cle_telephone():
 
 def test_upload_image_iphone(client, tmp_path, monkeypatch):
     from app.api import iphone_tarifs
+    from app.main import app
     monkeypatch.setattr(iphone_tarifs, "UPLOADS_DIR", tmp_path)
     cur, gc = fake_db(lambda sql, params: {"id": 3, "slug": "iphone-12"} if sql.startswith("SELECT id, slug") else None)
-    with patch("app.api.iphone_tarifs.get_cursor", gc):
-        r = client.post("/api/iphone-tarifs/3/upload-image", headers=_headers(),
-                        files={"file": ("photo.png", b"\x89PNG" + b"0" * 300, "image/png")})
+    # Lot 4 : l'envoi d'une photo de la vitrine exige le rôle admin + code (test_lot4_grilles : 403 sans)
+    app.dependency_overrides[iphone_tarifs._admin] = lambda: {"sub": "TestUser", "role": "admin"}
+    try:
+        with patch("app.api.iphone_tarifs.get_cursor", gc):
+            r = client.post("/api/iphone-tarifs/3/upload-image", headers=_headers(),
+                            files={"file": ("photo.png", b"\x89PNG" + b"0" * 300, "image/png")})
+    finally:
+        app.dependency_overrides.pop(iphone_tarifs._admin, None)
     assert r.status_code == 200, r.text
     assert any(s.startswith("UPDATE iphone_tarifs SET image_url") for s in cur.sql())
     assert len(list(tmp_path.iterdir())) == 1

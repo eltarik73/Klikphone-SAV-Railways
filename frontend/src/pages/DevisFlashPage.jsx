@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
+import { useToast } from '../components/Toast';
 import {
   Zap, Search, Wrench, Smartphone, Package, Plus, Edit3, Trash2,
   X, Loader2, Filter, ChevronDown, Eye, EyeOff, Maximize2, Minimize2,
@@ -39,6 +40,34 @@ const QUALITE_BADGE = {
   'Hard OLED': 'badge-brand',
 };
 
+const arrondi = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+
+/**
+ * Réparations choisies (prix client TTC de la grille) → lignes du devis, dont le prix unitaire est
+ * HORS TAXE (le devis ajoute la TVA). La dernière ligne absorbe l'arrondi : le total TTC du devis
+ * (total HT × (1 + TVA), arrondi au centime comme le serveur) retombe exactement sur le TTC affiché
+ * (au centime près dans le rare cas où aucun HT à deux décimales n'y mène, ex. 200,79 € à 20 %).
+ */
+export function lignesDevisHT(reparations, tva = 20) {
+  const t = Number(tva);
+  const taux = 1 + (Number.isFinite(t) && t >= 0 ? t : 20) / 100;
+  const lignes = reparations.map((r) => ({
+    description: r.qualite ? `${r.composant} (${r.qualite})` : r.composant,
+    quantite: 1,
+    prix_unitaire: arrondi((Number(r.prix_vente) || 0) / taux),
+  }));
+  if (!lignes.length) return lignes;
+  const ttc = arrondi(reparations.reduce((s, r) => s + (Number(r.prix_vente) || 0), 0));
+  let totalHT = arrondi(ttc / taux);
+  for (const ecart of [0, 0.01, -0.01, 0.02, -0.02]) {
+    const essai = arrondi(totalHT + ecart);
+    if (arrondi(essai * taux) === ttc) { totalHT = essai; break; }
+  }
+  const autres = arrondi(lignes.slice(0, -1).reduce((s, l) => s + l.prix_unitaire, 0));
+  lignes[lignes.length - 1].prix_unitaire = Math.max(0, arrondi(totalHT - autres));
+  return lignes;
+}
+
 function getComposantColor(composant) {
   for (const [key, color] of Object.entries(COMPOSANT_COLORS)) {
     if (composant?.toLowerCase().includes(key.toLowerCase())) return color;
@@ -48,6 +77,7 @@ function getComposantColor(composant) {
 
 export default function DevisFlashPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
@@ -135,14 +165,13 @@ export default function DevisFlashPage() {
 
   const handleCreateDevis = () => {
     if (!selectedRepairs.length) return;
-    const lignes = selectedRepairs.map(r => ({
-      description: r.qualite ? `${r.composant} (${r.qualite})` : r.composant,
-      quantite: 1,
-      prix_unitaire: r.prix_vente,
-    }));
+    // Prix de la grille = TTC ; le devis attend des prix unitaires HT (taux de la boutique)
+    const tva = selectedModel.tva ?? 20;
+    const lignes = lignesDevisHT(selectedRepairs, tva);
     // Store in sessionStorage and navigate to devis page
     sessionStorage.setItem('kp_devis_prefill', JSON.stringify({
       appareil: `${selectedModel.marque} ${selectedModel.modele}`,
+      tva,
       lignes,
     }));
     navigate(`${basePath}/devis?create=1`);
@@ -205,17 +234,23 @@ export default function DevisFlashPage() {
       setShowTelForm(false);
       setEditTelId(null);
       loadTelephones();
-    } catch { /* ignore */ }
+    } catch (e) {
+      toast.error(`Téléphone non enregistré : ${e?.message || 'erreur inconnue'}`);
+    }
     setTelSaving(false);
   };
 
   const handleDeleteTel = async (id) => {
     if (!confirm('Supprimer ce téléphone ?')) return;
-    try { await api.deleteTelephoneVente(id); invalidateCache('telephones'); loadTelephones(); } catch { /* ignore */ }
+    try { await api.deleteTelephoneVente(id); invalidateCache('telephones'); loadTelephones(); } catch (e) {
+      toast.error(`Suppression impossible : ${e?.message || 'erreur inconnue'}`);
+    }
   };
 
   const handleToggleStock = async (id, currentStock) => {
-    try { await api.updateTelephoneVente(id, { en_stock: !currentStock }); invalidateCache('telephones'); loadTelephones(); } catch { /* ignore */ }
+    try { await api.updateTelephoneVente(id, { en_stock: !currentStock }); invalidateCache('telephones'); loadTelephones(); } catch (e) {
+      toast.error(`Stock non modifié : ${e?.message || 'erreur inconnue'}`);
+    }
   };
 
   const openEditTel = (t) => {
@@ -616,17 +651,17 @@ export default function DevisFlashPage() {
                     <div>
                       <label htmlFor="tel-form-imei" className="input-label">IMEI</label>
                       <input id="tel-form-imei" value={telForm.imei} onChange={e => setTelForm(f => ({ ...f, imei: e.target.value }))}
-                        className="input t-mono" placeholder="IMEI" />
+                        className="input t-mono" placeholder="IMEI" maxLength={20} inputMode="numeric" />
                     </div>
                     <div>
                       <label htmlFor="tel-form-prix-achat" className="input-label">Prix achat (€)</label>
                       <input id="tel-form-prix-achat" type="number" value={telForm.prix_achat} onChange={e => setTelForm(f => ({ ...f, prix_achat: parseFloat(e.target.value) || 0 }))}
-                        className="input tabular-nums" step="0.01" />
+                        className="input tabular-nums" step="0.01" min="0" />
                     </div>
                     <div>
                       <label htmlFor="tel-form-prix-vente" className="input-label">Prix vente (€)</label>
                       <input id="tel-form-prix-vente" type="number" value={telForm.prix_vente} onChange={e => setTelForm(f => ({ ...f, prix_vente: parseFloat(e.target.value) || 0 }))}
-                        className="input tabular-nums" step="0.01" />
+                        className="input tabular-nums" step="0.01" min="0" />
                     </div>
                   </div>
                   <div>

@@ -229,9 +229,28 @@ function ProtectedRoute({ children, allowedTargets }) {
 
 const P = ({ children, targets }) => <ProtectedRoute allowedTargets={targets}>{children}</ProtectedRoute>;
 
-function AdminGuard({ children }) {
-  const { user } = useAuth();
-  if (localStorage.getItem('klikphone_admin') !== 'true') {
+// Événement ADMIN_MODE_EVENT (components/AdminLoginModal, api.setAdminMode) : le code saisi depuis l'écran
+// « Accès restreint » (barre latérale) débloque la page sans rechargement, le verrouillage la referme.
+// Nom recopié ici : la fenêtre de code reste hors du paquet initial
+const ADMIN_MODE_EVENT = 'kp-admin-mode';
+const lireModeAdmin = () => {
+  try { return localStorage.getItem('klikphone_admin') === 'true'; } catch { return false; }
+};
+
+export function AdminGuard({ children }) {
+  const [admin, setAdmin] = useState(lireModeAdmin);
+  useEffect(() => {
+    const relire = () => setAdmin(lireModeAdmin());
+    window.addEventListener(ADMIN_MODE_EVENT, relire);
+    // Autre onglet : le stockage partagé fait foi
+    window.addEventListener('storage', relire);
+    relire();
+    return () => {
+      window.removeEventListener(ADMIN_MODE_EVENT, relire);
+      window.removeEventListener('storage', relire);
+    };
+  }, []);
+  if (!admin) {
     return <AccessDenied />;
   }
   return children;

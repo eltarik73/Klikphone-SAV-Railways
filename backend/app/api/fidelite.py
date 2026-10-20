@@ -2,19 +2,25 @@
 API Programme Fidélité + Jeu de Grattage.
 - 10 points par euro dépensé
 - Paliers : 1000 pts = film verre trempé, 5000 pts = réduction 10€
-- Jeu de grattage : 1 gagnant tous les N tickets (configurable)
+- Jeu de grattage : 1 chance sur N (configurable), tirée au hasard à chaque grattage
+
+Routes publiques par code ticket (codes KP-000123 séquentiels, donc énumérables) : même
+limite de débit que GET /api/tickets/code. Le grattage exige en plus la preuve du suivi
+(jeton `t` du lien ou 4 derniers chiffres `tel4`, cf. api/suivi._ticket_autorise) et un
+ticket rendu, clôturé ou payé.
 """
 
 import random
-from datetime import datetime
+import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.database import get_cursor
 from app.services import params as params_cache
 from app.api.auth import get_current_user
+from app.api.suivi import AccesSuivi, _ticket_autorise
 
 router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
 
@@ -286,9 +292,24 @@ def get_fidelite(client_id: int, user: dict = Depends(get_current_user)):
 
 # ─── GET FIDELITE BY TICKET CODE (public) ──────────────
 
+# Carte « Fidélité » compacte du suivi public : points et paliers seulement (ni total
+# dépensé, ni historique d'achats, ni bon de grattage)
+_CHAMPS_PUBLICS = (
+    "active", "points", "pts_par_euro", "palier_film", "palier_reduction", "montant_reduction",
+    "prochaine_recompense", "recompenses_disponibles",
+)
+
+
+def _limite_publique(request: Request):
+    # Import tardif : tickets importe ce module (crediter_ticket)
+    from app.api.tickets import _rate_limit_public_lookup
+    _rate_limit_public_lookup(request)
+
+
 @router.get("/ticket/{ticket_code}")
-def get_fidelite_by_ticket(ticket_code: str):
+def get_fidelite_by_ticket(ticket_code: str, request: Request):
     """Récupère les infos fidélité à partir d'un code ticket (pour suivi public)."""
+    _limite_publique(request)
 
     with get_cursor() as cur:
         cur.execute("SELECT client_id FROM tickets WHERE ticket_code = %s", (ticket_code,))
@@ -297,79 +318,125 @@ def get_fidelite_by_ticket(ticket_code: str):
             raise HTTPException(404, "Ticket non trouvé")
         client_id = row["client_id"]
 
-    return get_fidelite(client_id, None)
+    complet = get_fidelite(client_id, None)
+    return {k: complet[k] for k in _CHAMPS_PUBLICS}
 
 
 # ═════════════════════════════════════════════════════════
 # JEU DE GRATTAGE
 # ═════════════════════════════════════════════════════════
 
-@router.get("/grattage/{ticket_code}")
-def get_grattage(ticket_code: str):
-    """Vérifie l'état du grattage pour un ticket."""
+# Le jeu récompense un passage en boutique : appareil rendu, ticket clôturé ou payé
+STATUTS_GRATTAGE = ("Rendu au client", "Clôturé")
 
-    with get_cursor() as cur:
-        grattage_actif = _get_param(cur, "grattage_actif", "1")
-        if grattage_actif == "0":
-            return {"actif": False}
 
-        cur.execute(
-            "SELECT id, client_id, grattage_fait, grattage_gain FROM tickets WHERE ticket_code = %s",
-            (ticket_code,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Ticket non trouvé")
+def _eligible(row) -> bool:
+    return (row.get("statut") or "") in STATUTS_GRATTAGE or bool(row.get("paye"))
 
-        frequence = int(_get_param(cur, "grattage_frequence", "10"))
 
+def _frequence(cur) -> int:
+    return max(1, _entier(_get_param(cur, "grattage_frequence", "10"), 10))
+
+
+def _etat_grattage(row, frequence: int) -> dict:
     if row["grattage_fait"]:
         return {
             "actif": True,
+            "eligible": True,
             "deja_gratte": True,
             "gain": row["grattage_gain"],
             "gain_label": _gain_label(row["grattage_gain"]),
             "frequence": frequence,
         }
+    return {"actif": True, "eligible": _eligible(row), "deja_gratte": False,
+            "ticket_code": row["ticket_code"], "frequence": frequence}
 
-    return {"actif": True, "deja_gratte": False, "ticket_code": ticket_code, "frequence": frequence}
+
+def _ticket_grattage(cur, request: Request, ticket_code: str, acces: AccesSuivi, t, tel4) -> dict:
+    """Ticket du visiteur (preuve du suivi exigée, 403 sinon), verrouillé pour le grattage."""
+    tk = _ticket_autorise(cur, request, ticket_code, acces, t, tel4)
+    cur.execute(
+        "SELECT id, client_id, ticket_code, statut, paye, grattage_fait, grattage_gain"
+        " FROM tickets WHERE id = %s FOR UPDATE",
+        (tk["id"],),
+    )
+    return cur.fetchone()
+
+
+@router.get("/grattage/{ticket_code}")
+def get_grattage(
+    ticket_code: str,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel4: Optional[str] = Query(None),
+):
+    """État du grattage. Sans preuve : seulement actif / éligible (preuve_requise) ; le
+    résultat d'un ticket déjà gratté n'est lu qu'avec le jeton du lien (ou tel4)."""
+    _limite_publique(request)
+
+    with get_cursor() as cur:
+        if _get_param(cur, "grattage_actif", "1") == "0":
+            return {"actif": False}
+        frequence = _frequence(cur)
+        if t or tel4:
+            return _etat_grattage(_ticket_grattage(cur, request, ticket_code, AccesSuivi(), t, tel4), frequence)
+        cur.execute(
+            "SELECT statut, paye FROM tickets WHERE ticket_code = %s",
+            ((ticket_code or "").strip().upper(),),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Ticket non trouvé")
+
+    return {"actif": True, "eligible": _eligible(row), "preuve_requise": True, "frequence": frequence}
+
+
+@router.post("/grattage/{ticket_code}/etat")
+def etat_grattage(
+    ticket_code: str,
+    request: Request,
+    acces: Optional[AccesSuivi] = Body(None),
+):
+    """Même état que GET, preuve dans le corps (les 4 chiffres ne passent pas dans l'URL)."""
+    _limite_publique(request)
+    with get_cursor() as cur:
+        if _get_param(cur, "grattage_actif", "1") == "0":
+            return {"actif": False}
+        frequence = _frequence(cur)
+        row = _ticket_grattage(cur, request, ticket_code, acces or AccesSuivi(), None, None)
+        return _etat_grattage(row, frequence)
 
 
 @router.post("/grattage/{ticket_code}")
-def gratter(ticket_code: str):
-    """Effectue le grattage d'un ticket."""
+def gratter(
+    ticket_code: str,
+    request: Request,
+    acces: Optional[AccesSuivi] = Body(None),
+    t: Optional[str] = Query(None),
+    tel4: Optional[str] = Query(None),
+):
+    """Effectue le grattage d'un ticket (preuve du suivi, ticket rendu / clôturé / payé)."""
+    _limite_publique(request)
 
     with get_cursor() as cur:
         grattage_actif = _get_param(cur, "grattage_actif", "1")
         if grattage_actif == "0":
             raise HTTPException(400, "Jeu de grattage désactivé")
 
-        cur.execute(
-            "SELECT id, client_id, grattage_fait FROM tickets WHERE ticket_code = %s",
-            (ticket_code,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Ticket non trouvé")
+        # Ligne verrouillée : deux grattages simultanés du même ticket ne tirent qu'une fois
+        row = _ticket_grattage(cur, request, ticket_code, acces or AccesSuivi(), t, tel4)
         if row["grattage_fait"]:
             raise HTTPException(400, "Déjà gratté")
+        if not _eligible(row):
+            raise HTTPException(409, "Le grattage s'ouvre quand vous récupérez votre appareil")
 
         ticket_id = row["id"]
         client_id = row["client_id"]
-        frequence = int(_get_param(cur, "grattage_frequence", "10"))
+        frequence = _frequence(cur)
 
-        # Compter les tickets grattés perdants depuis le dernier gagnant
-        cur.execute("""
-            SELECT COUNT(*) as c FROM tickets
-            WHERE grattage_fait = TRUE AND grattage_gain IS NULL
-            AND id > COALESCE(
-                (SELECT MAX(id) FROM tickets WHERE grattage_gain IS NOT NULL), 0
-            )
-        """)
-        tickets_depuis = cur.fetchone()["c"]
-
+        # Tirage indépendant et imprévisible : 1 chance sur `frequence`
         gain = None
-        if tickets_depuis >= frequence - 1:
+        if secrets.randbelow(frequence) == 0:
             gain = random.choice(["film", "reduction"])
             description = f"Jeu de grattage — {_gain_label(gain)}"
             cur.execute("""

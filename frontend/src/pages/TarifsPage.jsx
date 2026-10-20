@@ -192,11 +192,12 @@ function resumeFraicheur(lignes, seuils, sante) {
   return { total, estimes, aRevoir, perimes, dateEstimation, plusRecent };
 }
 
-function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalculer, onHistorique, onAjouter, onDevenirAdmin, basePath }) {
+function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, onRegles, onRecalculer, onHistorique, onAjouter, onDevenirAdmin, basePath }) {
   const { total, estimes, aRevoir, perimes, dateEstimation, plusRecent } = resume;
   const tousEstimes = total > 0 && estimes >= total;
   let titre;
-  if (!total) titre = 'Prix du fournisseur : aucun prix enregistré';
+  if (!total && chargement) titre = 'Prix du fournisseur : lecture de l’état des prix…';
+  else if (!total) titre = 'Prix du fournisseur : aucun prix enregistré';
   else if (tousEstimes) titre = `Prix du fournisseur : estimés le ${dateEstimation ? dateFr(dateEstimation) : '15/02/2026'}`;
   else if (estimes > 0) titre = `Prix du fournisseur : ${total - estimes} mis à jour, ${estimes} encore estimés${dateEstimation ? ` (${dateFr(dateEstimation)})` : ''}`;
   else titre = `Prix du fournisseur : mis à jour${plusRecent ? ` le ${dateFr(plusRecent)}` : ''}`;
@@ -222,10 +223,12 @@ function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalcule
       <Icone aria-hidden="true" />
       <div className="min-w-[240px] flex-1">
         <p className="font-semibold">{titre}</p>
-        {details.length > 0 && <p className="text-xs sm:text-sm">{details.join(' · ')}</p>}
+        {/* Ligne réservée pendant la lecture : l'arrivée des détails ne décale pas la page (CLS) */}
+        {(details.length > 0 || chargement) && <p className="text-xs sm:text-sm min-h-4 sm:min-h-5">{details.join(' · ')}</p>}
       </div>
       {isAdmin ? (
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto">
+        // Actions sur leur propre ligne : la longueur du texte (arrivé après coup) ne les déplace pas
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
           <button type="button" onClick={onRegles} className={action}>
             <SlidersHorizontal aria-hidden="true" /> Règles de prix
           </button>
@@ -238,11 +241,12 @@ function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalcule
           <button type="button" onClick={onAjouter} className={action}>
             <PackagePlus aria-hidden="true" /> Ajouter une pièce
           </button>
-          {sante?.propositions_en_attente > 0 && (
-            <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
-              <Inbox aria-hidden="true" /> Propositions des commandes ({sante.propositions_en_attente})
-            </Link>
-          )}
+          {/* Toujours présent (le nombre arrive avec la santé des prix) : aucun bouton ne saute de ligne */}
+          <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
+            <Inbox aria-hidden="true" /> Propositions des commandes{sante?.propositions_en_attente > 0 ? ` (${sante.propositions_en_attente})` : ''}
+          </Link>
+          {/* Action principale toujours sur la ligne suivante : stable quel que soit le nombre de propositions */}
+          <span className="hidden sm:block basis-full h-0" aria-hidden="true" />
           <button type="button" onClick={onImporter} className={`${actionPrincipale} col-span-2`}>
             <FileSpreadsheet aria-hidden="true" /> Importer une liste de prix
           </button>
@@ -257,17 +261,25 @@ function BandeauPrix({ resume, sante, isAdmin, onImporter, onRegles, onRecalcule
 }
 
 // ─── Encadré « Méthode de calcul » ───────────────
-function MethodeCalcul({ regles, isAdmin, onModifier }) {
+// Règles lues (code admin) : phrase et exemple calculés ici, à jour dès une modification. Sinon phrase
+// du serveur (GET /api/tarifs/methode-calcul) : sans montants pour le personnel, qui pourrait en déduire
+// le coût HT masqué ; jamais de « valeurs par défaut » supposées, fausses dès qu'une marge change.
+function MethodeCalcul({ regles, methode, isAdmin, onModifier }) {
+  const texte = regles ? phraseMethode(regles) : methode?.texte || '';
+  const exemple = regles ? detailCalcul(42, 'Ecran', 'standard', regles) : methode?.exemple || null;
   return (
     <section aria-labelledby="methode-calcul-titre" className="card card-body flex flex-wrap items-start gap-3">
       <Calculator className="w-5 h-5 shrink-0 text-brand-600 mt-0.5" aria-hidden="true" />
       <div className="flex-1 min-w-[240px]">
         <h2 id="methode-calcul-titre" className="t-h3">Méthode de calcul</h2>
-        <p className="t-body mt-1 text-slate-800">{phraseMethode(regles)}</p>
-        <p className="t-caption mt-1 tabular-nums">
-          Exemple, écran standard acheté 42,00 € HT : {texteCalcul(detailCalcul(42, 'Ecran', 'standard', regles))}
-          {!regles && ' · valeurs par défaut'}
-        </p>
+        {texte
+          ? <p className="t-body mt-1 text-slate-800">{texte}</p>
+          : <p className="t-body mt-1 text-slate-500 min-h-[3rem]">Prix client = prix fournisseur HT × TVA + marge selon la pièce, arrondi.</p>}
+        {exemple && (
+          <p className="t-caption mt-1 tabular-nums">
+            Exemple, écran standard acheté 42,00 € HT : {texteCalcul(exemple)}
+          </p>
+        )}
       </div>
       {isAdmin && (
         <button type="button" onClick={onModifier} className="btn-secondary btn-sm">
@@ -317,6 +329,17 @@ export default function TarifsPage() {
   const [enCours, setEnCours] = useState(null);
   const [sante, setSante] = useState(null);
   const [regles, setReglesEtat] = useState(null);
+  const [methode, setMethode] = useState(null);
+  const [santeLue, setSanteLue] = useState(false);
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
+  const methodeAdminRef = useRef(false);
+  methodeAdminRef.current = methode?.admin === true;
+  const chargerMethode = useCallback(() => {
+    if (typeof api.getMethodeCalcul !== 'function') return;
+    Promise.resolve().then(() => api.getMethodeCalcul())
+      .then((m) => setMethode(m && typeof m === 'object' && !Array.isArray(m) ? m : null)).catch(() => {});
+  }, []);
   const reglesRef = useRef(null);
   const setRegles = useCallback((r) => { reglesRef.current = r; setReglesEtat(r); }, []);
 
@@ -388,23 +411,27 @@ export default function TarifsPage() {
   const sensible = useCallback(async (fn) => {
     const res = await sensibleBrut(fn);
     if (!reglesRef.current) api.getReglesPrix().then(setRegles).catch(() => {});
+    if (!methodeAdminRef.current) chargerMethode();
     if (htMasqueRef.current) {
       if (modeFiltreRef.current) relirePrixAchat();
       mutateModeleRef.current();
     }
     return res;
-  }, [sensibleBrut, relirePrixAchat, setRegles]);
+  }, [sensibleBrut, relirePrixAchat, setRegles, chargerMethode]);
 
-  // Santé des prix (personnel) et règles : lues sans rien demander, un refus est sans effet
+  // Santé des prix et méthode de calcul (personnel) : lues sans rien demander, un refus est sans effet.
+  // Règles (montants des marges) : seulement en mode admin ou avec l'élévation, sinon 403 assuré à
+  // chaque ouverture ; relues après la saisie du code.
   const chargerSante = useCallback(() => {
-    if (typeof api.getSantePrix !== 'function') return;
-    Promise.resolve().then(() => api.getSantePrix()).then(setSante).catch(() => {});
+    if (typeof api.getSantePrix !== 'function') { setSanteLue(true); return; }
+    Promise.resolve().then(() => api.getSantePrix()).then(setSante).catch(() => {}).finally(() => setSanteLue(true));
   }, []);
   const chargerRegles = useCallback(() => {
     if (typeof api.getReglesPrix !== 'function') return;
+    if (!isAdminRef.current && api.hasAdminToken?.() !== true) return;
     Promise.resolve().then(() => api.getReglesPrix()).then(setRegles).catch(() => {});
   }, [setRegles]);
-  useEffect(() => { chargerSante(); chargerRegles(); }, [chargerSante, chargerRegles]);
+  useEffect(() => { chargerSante(); chargerMethode(); chargerRegles(); }, [chargerSante, chargerMethode, chargerRegles]);
   useEffect(() => { if (rechercheLien) setSearch(rechercheLien); }, [rechercheLien]);
 
   // Recherche différée (300 ms)
@@ -429,8 +456,9 @@ export default function TarifsPage() {
   const relire = useCallback(() => {
     invalidateCache('tarifs');
     chargerSante();
+    chargerMethode();
     chargerRegles();
-  }, [chargerSante, chargerRegles]);
+  }, [chargerSante, chargerMethode, chargerRegles]);
 
   // ─── Navigation marque → modèle (dans l'URL : retour arrière, lien partageable) ───
   const resultatsRecherche = useMemo(() => (mots(debouncedSearch).length ? chercherModeles(marques, debouncedSearch) : null), [marques, debouncedSearch]);
@@ -767,8 +795,9 @@ export default function TarifsPage() {
     }
     const categoriePrix = pieces.find((p) => p.categorie && LIBELLE_CATEGORIE[p.categorie])?.categorie || null;
     const categorieCatalogue = modeleData?.categorie || modeleActif?.categorie || null;
-    const r = fusionnerRegles(regles);
-    const margeCategorie = categoriePrix === 'ipad' ? r.ipad : categoriePrix === 'macbook' ? r.macbook : categoriePrix ? (r.ecran[categoriePrix] ?? null) : null;
+    // Marge de la catégorie : seulement avec les règles du gérant (code admin), jamais une valeur supposée
+    const r = regles ? fusionnerRegles(regles) : null;
+    const margeCategorie = !r ? null : categoriePrix === 'ipad' ? r.ipad : categoriePrix === 'macbook' ? r.macbook : categoriePrix ? (r.ecran[categoriePrix] ?? null) : null;
     const autresNoms = Array.isArray(modeleData?.noms) ? modeleData.noms.filter(Boolean) : [];
     return (
       <section aria-labelledby="modele-titre" className="card overflow-hidden min-w-0">
@@ -967,7 +996,10 @@ export default function TarifsPage() {
           <h1 className="page-header-title">Réparation smartphones</h1>
           <p className="page-header-subtitle">
             Prix fournisseur Mobilax / Utopya et méthode de calcul
-            {nbModeles > 0 && ` · ${marques.length} marque${marques.length > 1 ? 's' : ''} · ${nbModeles} modèle${nbModeles > 1 ? 's' : ''} · ${nbPieces} pièce${nbPieces > 1 ? 's' : ''}`}
+            {/* Compteurs sur leur propre ligne, hauteur réservée : leur arrivée ne décale rien (CLS) */}
+            <span className="block min-h-5 tabular-nums">
+              {nbModeles > 0 && `${marques.length} marque${marques.length > 1 ? 's' : ''} · ${nbModeles} modèle${nbModeles > 1 ? 's' : ''} · ${nbPieces} pièce${nbPieces > 1 ? 's' : ''}`}
+            </span>
           </p>
         </div>
         <div className="page-header-actions max-w-full">
@@ -996,6 +1028,7 @@ export default function TarifsPage() {
         <BandeauPrix
           resume={resume}
           sante={sante}
+          chargement={!santeLue && !modeFiltre}
           isAdmin={isAdmin}
           basePath={basePath}
           onImporter={() => setFenetre('import')}
@@ -1006,7 +1039,7 @@ export default function TarifsPage() {
           onDevenirAdmin={() => setShowAdminLogin(true)}
         />
 
-        <MethodeCalcul regles={regles} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
+        <MethodeCalcul regles={regles} methode={methode} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
 
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 sm:min-w-[220px]">
@@ -1084,7 +1117,8 @@ export default function TarifsPage() {
                         className={`btn-sm rounded-full border transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${actif ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}>
                         {m.marque === 'Apple' && <Tablet className="w-4 h-4" aria-hidden="true" />}
                         {libelleMarque(m.marque)}
-                        <span className={`text-xs ${actif ? 'text-white/80' : 'text-slate-400'}`}>{m.modeles.length}</span>
+                        {/* Contraste AA : blanc sur brand-600, slate-500 sur blanc */}
+                        <span className={`text-xs ${actif ? 'text-white' : 'text-slate-500'}`}>{m.modeles.length}</span>
                       </button>
                     );
                   })}
@@ -1127,7 +1161,16 @@ export default function TarifsPage() {
       <AdminLoginModal
         open={showAdminLogin}
         onClose={() => setShowAdminLogin(false)}
-        onSuccess={() => { setShowAdminLogin(false); setIsAdmin(true); chargerRegles(); }}
+        onSuccess={() => {
+          setShowAdminLogin(false);
+          setIsAdmin(true);
+          isAdminRef.current = true;
+          chargerRegles();
+          chargerMethode();
+          // Modèle ouvert (et liste filtrée) relus : les prix d'achat HT ne sont plus masqués
+          if (modeFiltreRef.current) relirePrixAchat();
+          if (cleModele) mutateModeleRef.current();
+        }}
       />
       {adminPrompt}
     </div>

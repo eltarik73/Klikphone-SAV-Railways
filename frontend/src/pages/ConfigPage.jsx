@@ -2195,13 +2195,13 @@ export default function ConfigPage() {
             <h2 className="t-h2 mb-4">Chat & Assistant IA</h2>
             <div className="space-y-4">
               <div>
-                <label className="input-label" htmlFor="cfg-anthropic">Cle API Anthropic</label>
+                <label className="input-label" htmlFor="cfg-anthropic">Clé API Anthropic</label>
                 <SecretInput id="cfg-anthropic" value={config.ANTHROPIC_API_KEY} onChange={v => updateSecret('ANTHROPIC_API_KEY', v)}
                   className="input font-mono" placeholder="sk-ant-..." />
-                <p className="input-help">Necessaire pour l'assistant IA. Obtenir sur console.anthropic.com</p>
+                <p className="input-help">Nécessaire pour l'assistant IA. Clé à créer sur console.anthropic.com</p>
               </div>
               <div>
-                <label className="input-label" htmlFor="cfg-anthropic-model">Modele Claude (optionnel)</label>
+                <label className="input-label" htmlFor="cfg-anthropic-model">Modèle Claude (facultatif)</label>
                 <input id="cfg-anthropic-model" value={config.ANTHROPIC_MODEL || ''} onChange={e => updateConfig('ANTHROPIC_MODEL', e.target.value)}
                   className="input font-mono" placeholder="claude-sonnet-4-5-20250929" />
               </div>

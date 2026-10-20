@@ -402,7 +402,9 @@ def test_dashboard_filters(client, auth_headers):
     list_sql, list_params = cur.execute.call_args_list[1].args
     _assert_sql_safe(list_sql, list_params)
     assert list_params["limit"] == 25 and list_params["offset"] == 25
-    assert "Marina" in list_params.values() and "2026-10-01" in list_params.values()
+    # Jours de Paris → bornes UTC (date_depot naïf en UTC) : du 01/10 00:00 au 16/10 00:00 à Paris
+    assert "Marina" in list_params.values() and "2026-09-30 22:00:00" in list_params.values()
+    assert "2026-10-15 22:00:00" in list_params.values()
 
 
 def test_dashboard_total_without_extra_count(client, auth_headers):
@@ -433,8 +435,9 @@ def test_kpi_compares_date_cloture_as_text(client, auth_headers):
         r = client.get("/api/tickets/stats/kpi", headers=auth_headers)
     assert r.status_code == 200
     sql, params = cur.execute.call_args.args
-    assert "date_cloture::" not in sql and "date_cloture LIKE %s" in sql
-    assert params[0].endswith("%")
+    # Texte comparé au texte : bornes UTC du jour de Paris, jamais de cast
+    assert "date_cloture::" not in sql and "date_cloture >= %s AND date_cloture < %s" in sql
+    assert len(params) == 4 and all(len(p) == 19 for p in params)
 
 
 def test_ticket_list_tolerates_text_date_cloture():

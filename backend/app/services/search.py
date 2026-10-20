@@ -43,6 +43,8 @@ T_WORK_COLS = (
 )
 T_PANNE_COLS = ("panne",)
 C_COLS = ("nom", "prenom", "societe", "email")
+# Forme compacte (sans espaces) : « dartagnan » trouve « D'Artagnan », « oneil » « O’Neil »
+C_NOM_COLS = ("nom", "prenom")
 NOTE_COLS = ("contenu",)
 DEVIS_COLS = ("numero", "client_nom", "client_prenom", "appareil", "description")
 CMD_COLS = ("description", "fournisseur", "reference", "ticket_code", "notes")
@@ -132,8 +134,16 @@ def like_match(pattern: str, text: str) -> bool:
 
 
 # ─── TÉLÉPHONE ───────────────────────────────────────────────────
+# « +41 (0)79 … », « 0041 (0)79 … » : le (0) national ne fait pas partie du numéro international
+_ZERO_NATIONAL_RE = re.compile(r"\(\s*0\s*\)")
+_INTL_START_RE = re.compile(r"\s*(\+|00)")
+
+
 def phone_digits(value) -> str:
-    return re.sub(r"\D", "", str(value or ""))
+    s = str(value or "")
+    if _INTL_START_RE.match(s):
+        s = _ZERO_NATIONAL_RE.sub("", s)
+    return re.sub(r"\D", "", s)
 
 
 def phone_key(value) -> Optional[str]:
@@ -623,14 +633,17 @@ def _ticket_word_sql(w: Word, P: SqlParams, t: str, c: str) -> str:
     p = P.add(w.patterns)
     dev, work = doc_sql("x", T_DEVICE_COLS), doc_sql("x", T_WORK_COLS)
     in_tickets = [_any(dev, p), _any(work, p)]
-    if w.compact:
-        in_tickets.append(_any(compact_sql(dev), P.add(w.compact)))
+    compact = P.add(w.compact) if w.compact else None
+    if compact:
+        in_tickets.append(_any(compact_sql(dev), compact))
     if w.imei:
         i = P.add(w.imei)
         in_tickets.append(_any("public.kp_alnum(x.imei)", i))
         in_tickets.append(_any("public.kp_alnum(x.telephone_pret_imei)", i))
     cdoc = doc_sql("y", C_COLS)
     in_clients = [_any(cdoc, p)]
+    if compact:
+        in_clients.append(_any(compact_sql(doc_sql("y", C_NOM_COLS)), compact))
     if w.phone:
         ph = P.add(w.phone)
         in_clients.append(_any("public.kp_phone_digits(y.telephone)", ph))
@@ -852,6 +865,8 @@ def ticket_order_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") 
 def _client_word_sql(w: Word, P: SqlParams, c: str) -> str:
     cdoc = doc_sql(c, C_COLS)
     ors = [_any(cdoc, P.add(w.patterns))]
+    if w.compact:
+        ors.append(_any(compact_sql(doc_sql(c, C_NOM_COLS)), P.add(w.compact)))
     if w.phone:
         ors.append(_any(f"public.kp_phone_digits({c}.telephone)", P.add(w.phone)))
     if w.trgm:
@@ -964,6 +979,10 @@ def _word_label(w: Word, row: dict, fallback: bool = True) -> Optional[str]:
     for key, label in _CLIENT_FIELDS:
         if hit(row.get(key), w.patterns):
             return label
+    if w.compact:
+        for key, label in _CLIENT_FIELDS[:2]:
+            if any(like_match(p, doc_text(row.get(key)).replace(" ", "")) for p in w.compact):
+                return label
     if w.phone and any(like_match(p, phone_digits(row.get("client_tel"))) for p in w.phone):
         return "téléphone"
     if w.phone and row.get("tel_contact") and any(like_match(p, phone_digits(row.get("tel_contact"))) for p in w.phone):

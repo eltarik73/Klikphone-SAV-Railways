@@ -58,7 +58,9 @@ function AnonymiserDialog({ client, busy, onCancel, onConfirm }) {
   const boxRef = useRef(null);
   const [saisie, setSaisie] = useState('');
   const ok = saisie.trim().toUpperCase() === MOT_CONFIRMATION_ANONYMISER;
-  useFocusTrap(boxRef, Boolean(client), { initialFocus: '#anonymiser-saisie', onEscape: () => { if (!busy) onCancel(); } });
+  // Piège suspendu pendant l'envoi : la demande de code admin (élévation expirée) s'ouvre par-dessus
+  // et doit garder le focus ; il revient dans la confirmation si l'anonymisation échoue ou est annulée
+  useFocusTrap(boxRef, Boolean(client) && !busy, { initialFocus: '#anonymiser-saisie', onEscape: () => { if (!busy) onCancel(); } });
   if (!client) return null;
   const nom = `${client.prenom || ''} ${client.nom || ''}`.trim() || `client n° ${client.id}`;
   return (
@@ -476,8 +478,10 @@ export default function ClientsPage() {
         {/* Client list */}
         <div ref={listColRef} className="lg:col-span-2 min-w-0">
           <div className="card overflow-hidden">
-            {/* En-têtes : iPad (lg) = client seul, téléphone sous le nom ; ≥ xl = 3 colonnes triables */}
-            <div className="hidden lg:grid lg:grid-cols-[1fr_40px] xl:grid-cols-[1fr_150px_200px_40px] gap-3 items-center px-5 bg-slate-50 border-b border-slate-100">
+            {/* En-têtes : iPad (lg) = client seul, téléphone sous le nom ; ≥ xl = 3 colonnes triables.
+                minmax(0,1fr) : la colonne Client ne s'élargit jamais selon son contenu (pastille Camby),
+                téléphone et e-mail restent alignés d'une ligne à l'autre */}
+            <div className="hidden lg:grid lg:grid-cols-[minmax(0,1fr)_40px] xl:grid-cols-[minmax(0,1fr)_150px_200px_40px] gap-3 items-center px-5 bg-slate-50 border-b border-slate-100">
               <button type="button" onClick={() => toggleSort('nom')} aria-label={sortLabel('nom')}
                 className="table-header table-header-sortable">
                 Client <SortIcon field="nom" />
@@ -524,7 +528,7 @@ export default function ClientsPage() {
                     aria-label={`Ouvrir la fiche de ${c.prenom || ''} ${c.nom || ''}`.replace(/\s+/g, ' ').trim()}
                     onClick={() => handleSelectClient(c)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelectClient(c); } }}
-                    className={`lg:grid lg:grid-cols-[1fr_40px] xl:grid-cols-[1fr_150px_200px_40px] gap-3 items-center px-4 sm:px-5 py-2.5 min-h-14 cursor-pointer transition-colors duration-150 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset
+                    className={`lg:grid lg:grid-cols-[minmax(0,1fr)_40px] xl:grid-cols-[minmax(0,1fr)_150px_200px_40px] gap-3 items-center px-4 sm:px-5 py-2.5 min-h-14 cursor-pointer transition-colors duration-150 group focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset
                       ${selectedId === c.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center gap-3 min-h-9">
@@ -536,9 +540,14 @@ export default function ClientsPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 truncate">
                           {c.prenom || ''} {c.nom || ''}
-                          {c.carte_camby ? <BadgeCamby className="ml-1.5 align-middle" /> : null}
                         </p>
-                        {c.societe && <p className="t-caption truncate">{c.societe}</p>}
+                        {/* Pastille Camby sous le nom (avec la société) : le nom reste entier */}
+                        {(c.carte_camby || c.societe) ? (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {c.carte_camby ? <BadgeCamby className="shrink-0" /> : null}
+                            {c.societe && <p className="t-caption truncate">{c.societe}</p>}
+                          </div>
+                        ) : null}
                         {c.telephone && <p className="xl:hidden t-small tabular-nums">{formatPhone(c.telephone)}</p>}
                       </div>
                       <ChevronRight className="lg:hidden w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
@@ -787,15 +796,16 @@ export default function ClientsPage() {
                 <p className="text-xs text-slate-500 mb-3">
                   Demande du client : export de ses données (fichier JSON) ou anonymisation. Code administrateur requis.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+                {/* Retour à la ligne quand le panneau est étroit : libellés jamais rognés */}
+                <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={() => handleExportRgpd(selectedClient)} disabled={exportBusy}
-                    aria-busy={exportBusy} className="btn-secondary">
+                    aria-busy={exportBusy} className="btn-secondary flex-auto">
                     {exportBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
                     Exporter ses données
                   </button>
                   <button type="button" onClick={() => setAnonymiserCible(selectedClient)}
                     disabled={Boolean(selectedClient.anonymise_le)}
-                    className="btn-secondary text-red-700 hover:bg-red-50 hover:border-red-200">
+                    className="btn-secondary flex-auto text-red-700 hover:bg-red-50 hover:border-red-200">
                     <UserX aria-hidden="true" />
                     {selectedClient.anonymise_le ? 'Déjà anonymisé' : 'Anonymiser'}
                   </button>

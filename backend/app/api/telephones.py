@@ -11,6 +11,7 @@ import json
 import time
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, BackgroundTasks, Request
@@ -84,9 +85,16 @@ def _ensure_table():
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """)
-            # Base créée avant : les prochaines fiches valent 'occasion' (les existantes ne sont pas
-            # réécrites ici : la synchro suivante remet type_produit à jour)
+            # Base créée avant : les prochaines fiches valent 'occasion'
             cur.execute("ALTER TABLE telephones_catalogue ALTER COLUMN type_produit SET DEFAULT 'occasion'")
+            # Anciennes fiches « reconditionné » (ou toute autre valeur) : 'occasion', seule autre valeur
+            # admise avec 'neuf' (même règle que scraper_lcdphone.type_produit_valide). Sans cela elles
+            # sortent des filtres Neufs / Occasion tant qu'aucune synchro manuelle ne les réécrit.
+            # Idempotent : ne touche plus aucune ligne au démarrage suivant.
+            cur.execute("""
+                UPDATE telephones_catalogue SET type_produit = 'occasion', updated_at = NOW()
+                WHERE type_produit IS DISTINCT FROM 'neuf' AND type_produit IS DISTINCT FROM 'occasion'
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_marque ON telephones_catalogue(marque)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_type ON telephones_catalogue(type_produit)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_telephones_actif ON telephones_catalogue(actif)")
@@ -105,7 +113,7 @@ def _row_to_dict(row):
     for k, v in d.items():
         if isinstance(v, datetime):
             d[k] = v.isoformat()
-        elif hasattr(v, '__float__'):
+        elif isinstance(v, Decimal):  # prix (DECIMAL) ; les entiers (id, stock) restent entiers
             d[k] = float(v)
     return d
 

@@ -62,7 +62,9 @@ def _historiser(cur, ticket_id: int, journal: Optional[str], texte: str, auteur:
     contenu = f"{texte} — par {auteur}"
     cur.execute("INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'etagere', %s)",
                 (ticket_id, contenu))
-    ligne = f"[{datetime.now().strftime('%d/%m %H:%M')}] {contenu}"
+    # Heure de Chambéry (serveur en UTC) pour la ligne affichée du journal texte
+    heure = datetime.now(etagere._PARIS) if etagere._PARIS else datetime.now()
+    ligne = f"[{heure.strftime('%d/%m %H:%M')}] {contenu}"
     h = (journal or "").rstrip()
     cur.execute("UPDATE tickets SET historique = %s WHERE id = %s",
                 (f"{h}\n{ligne}" if h else ligne, ticket_id))

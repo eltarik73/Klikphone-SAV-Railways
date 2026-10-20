@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from fpdf import FPDF
 import httpx
@@ -64,18 +64,19 @@ MOIS_FR = [
 
 
 class AttestationRequest(BaseModel):
-    nom: str
-    prenom: Optional[str] = ""
-    adresse: Optional[str] = ""
-    telephone: Optional[str] = ""
-    email: Optional[str] = ""
-    marque: str
-    modele: str
-    imei: Optional[str] = ""
-    etat: Optional[str] = ""
-    motif: str
-    compte_rendu: Optional[str] = ""
-    client_id: Optional[int] = None
+    # Longueurs des colonnes de la table attestations (VARCHAR) ; textes libres bornés
+    nom: str = Field(..., max_length=100)
+    prenom: Optional[str] = Field("", max_length=100)
+    adresse: Optional[str] = Field("", max_length=500)
+    telephone: Optional[str] = Field("", max_length=20)
+    email: Optional[str] = Field("", max_length=255)
+    marque: str = Field(..., max_length=100)
+    modele: str = Field(..., max_length=100)
+    imei: Optional[str] = Field("", max_length=50)
+    etat: Optional[str] = Field("", max_length=100)
+    motif: str = Field(..., max_length=5000)
+    compte_rendu: Optional[str] = Field("", max_length=10000)
+    client_id: Optional[int] = Field(None, ge=1, le=2_147_483_647)
 
 
 def _get_param(key: str) -> str:
@@ -552,7 +553,7 @@ def _save_attestation(data: AttestationRequest, user: dict, email_envoye: bool =
             data.telephone or '', data.email or '',
             data.marque, data.modele, data.imei or '', data.etat or '',
             data.motif, data.compte_rendu or '',
-            email_envoye, user.get("utilisateur", ""),
+            email_envoye, str((user or {}).get("sub") or "")[:100],
         ))
         row = cur.fetchone()
     return row["id"] if row else None
@@ -583,7 +584,7 @@ def _safe_filename(data: AttestationRequest, ext: str) -> str:
 @router.post("/email")
 def email_attestation(
     data: AttestationRequest,
-    destinataire: str,
+    destinataire: str = Query(..., min_length=3, max_length=255),
     format: str = Query("pdf", description="pdf ou word"),
     user: dict = Depends(get_current_user),
 ):
@@ -653,8 +654,8 @@ def download_attestation_docx(
 
 @router.get("/history")
 def list_attestations(
-    client_id: Optional[int] = Query(None),
-    limit: int = Query(50, le=200),
+    client_id: Optional[int] = Query(None, ge=1, le=2_147_483_647),
+    limit: int = Query(50, ge=0, le=200),
     user: dict = Depends(get_current_user),
 ):
     """Liste l'historique des attestations, optionnellement filtré par client."""
@@ -691,6 +692,7 @@ def get_attestation(
     if not row:
         raise HTTPException(404, "Attestation non trouvée")
     att = dict(row)
-    data = AttestationRequest(**{k: att[k] for k in AttestationRequest.model_fields if k in att})
+    # Ligne déjà en base : relue sans revalider les bornes (rien de neuf n'est écrit)
+    data = AttestationRequest.model_construct(**{k: att[k] for k in AttestationRequest.model_fields if k in att})
     att["html"] = _generate_attestation_html(data)
     return att

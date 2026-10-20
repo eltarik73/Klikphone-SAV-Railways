@@ -511,8 +511,9 @@ def test_les_changements_de_statut_automatiques_bornent_le_contact(reel, propre)
     c = reel["c"]
 
     # 1) Commande de pièce automatique (dépôt, sans jeton) → En attente de pièce
-    tid = _ticket(reel)
-    _note(reel, tid, "sms", "1 hour", "✅ SMS envoyé (reçu du dépôt)")
+    # (sans session : seulement le ticket que la borne vient de créer)
+    tid = _ticket(reel, depot_il_y_a="2 minutes")
+    _note(reel, tid, "sms", "1 minute", "✅ SMS envoyé (reçu du dépôt)")
     assert _lectures(reel, tid)["dernier"]["canal"] == "sms"
     r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "Écran", "fournisseur": "LCD"})
     assert r.status_code == 200, r.text
@@ -533,10 +534,11 @@ def test_les_changements_de_statut_automatiques_bornent_le_contact(reel, propre)
     assert _sql(reel, "SELECT statut FROM tickets WHERE id = %s", tid)[0]["statut"] == "Pièce reçue"
     assert _lignes_statut(reel, tid)[-1] == "Statut: En attente de pièce → Pièce reçue (pièce reçue) — par Sophie"
     assert _lectures(reel, tid) == VIDE
-    # Une seconde réception sur le même ticket (déjà « Pièce reçue ») ne réécrit pas de ligne
-    r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "Batterie"})
+    # Une seconde réception sur le même ticket (déjà « Pièce reçue ») ne réécrit pas de ligne.
+    # Seconde commande : par le personnel (sans session, /auto n'accepte que le ticket neuf)
+    r = c.post("/api/parts/auto", headers=H, json={"ticket_id": tid, "description": "Batterie"})
     piece2 = r.json()["id"]
-    assert _lignes_statut(reel, tid)[-1] == "Statut: Pièce reçue → En attente de pièce (pièce commandée) — par Auto"
+    assert _lignes_statut(reel, tid)[-1] == "Statut: Pièce reçue → En attente de pièce (pièce commandée) — par Sophie"
     assert c.patch(f"/api/tickets/{tid}/statut", headers=H, json={"statut": "En cours de réparation"}).status_code == 200
     n = len(_lignes_statut(reel, tid))
     assert c.patch(f"/api/parts/{piece2}", headers=H, json={"statut": "Reçu"}).status_code == 200

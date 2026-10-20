@@ -191,6 +191,13 @@ describe('LoginPage / HomePage : logotype et mise en avant', () => {
     expect(login).toMatch(/text-pink-700">∞</);
     expect(login).not.toMatch(/text-pink-600/);
   });
+  it('même « ∞ » pink-700 sur les pieds de page publics /suivi et /deposer', () => {
+    for (const page of ['SuiviPage.jsx', 'DeposerPage.jsx']) {
+      const src = readFileSync(resolve(ici, `../pages/${page}`), 'utf-8');
+      expect(src).toMatch(/text-pink-700">∞</);
+      expect(src).not.toMatch(/text-pink-600/);
+    }
+  });
   it('accueil public : la carte « tarifs téléphones » garde un liseré brand, sans dégradé ni seconde action pleine', () => {
     expect(home).toMatch(/const ctaHighlight = [^\n]*border-brand-400\/50/);
     expect(home).not.toMatch(/ctaHighlight = [^\n]*(gradient|bg-brand-600)/);

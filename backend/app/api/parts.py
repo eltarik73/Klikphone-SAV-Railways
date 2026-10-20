@@ -11,13 +11,20 @@ mise à jour du prix est créée (services/prix.creer_proposition, écart de plu
 import logging
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 from app.database import get_cursor
-from app.api.auth import get_current_user
+from app.api.auth import client_ip, get_current_user, get_optional_user
+from app.api.public_documents import LimiteurDebit
 from app.models import CommandePieceCreate, CommandePieceUpdate
 from app.services import contact
 from app.services import prix as prix_srv
+
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:  # image sans base tz : heure du serveur
+    _PARIS = None
 
 router = APIRouter(prefix="/api/parts", tags=["parts"])
 logger = logging.getLogger(__name__)
@@ -25,6 +32,19 @@ logger = logging.getLogger(__name__)
 
 STATUTS_TERMINAUX = ["Donné au client", "Clôturé"]
 STATUTS_RECUS = ("Reçu", "Donné au client", "Clôturé")
+# Commande pas encore arrivée : le ticket attend toujours sa pièce
+STATUTS_EN_COURS = ("Panier", "En attente", "Commandée")
+
+# /auto sans session (borne) : juste après POST /api/tickets, une seule fois, ticket neuf
+AUTO_DELAI_MINUTES = 10
+_LIMITEUR_AUTO = LimiteurDebit(limite=10, fenetre=60)
+# Statuts que la commande automatique ne fait jamais reculer
+STATUTS_SANS_RECUL = ("Réparation terminée", "Rendu au client", "Clôturé")
+
+
+def _heure_paris() -> str:
+    """« JJ/MM HH:MM » à l'heure de Chambéry pour les lignes du journal texte (serveur en UTC)."""
+    return datetime.now(_PARIS).strftime("%d/%m %H:%M") if _PARIS else datetime.now().strftime("%d/%m %H:%M")
 
 
 def _valider_tarif_cle(v):
@@ -170,41 +190,67 @@ def create_part(data: CommandePieceCreatePrix, user: dict = Depends(get_current_
     return {"id": row["id"], "proposition_id": proposition}
 
 
+class CommandeAutoIn(BaseModel):
+    ticket_id: int
+    description: str = Field("", max_length=200)
+    fournisseur: Optional[str] = Field("", max_length=100)
+    prix: Optional[float] = Field(None, ge=0, le=10000)
+    notes: Optional[str] = Field("", max_length=2000)
+
+
 @router.post("/auto", response_model=dict)
-def create_part_auto(data: dict):
-    """Crée une commande de pièce automatiquement lors du dépôt (sans auth)."""
-    ticket_id = data.get("ticket_id")
-    if not ticket_id:
-        raise HTTPException(400, "ticket_id requis")
+def create_part_auto(data: CommandeAutoIn, request: Request, user: Optional[dict] = Depends(get_optional_user)):
+    """Commande de pièce créée avec le ticket (borne /client, « Nouveau ticket » du personnel).
+
+    Sans session, la borne ne peut viser que le ticket qu'elle vient de créer : moins de
+    10 minutes, encore « En attente de diagnostic » et sans commande (sinon 409). Un ticket
+    terminé, rendu ou clôturé ne recule jamais en « En attente de pièce ».
+    """
+    if not user:
+        _LIMITEUR_AUTO.verifier(client_ip(request))
 
     with get_cursor() as cur:
-        # Get ticket_code (et le statut courant, pour tracer son changement)
-        cur.execute("SELECT ticket_code, statut FROM tickets WHERE id = %s", (ticket_id,))
+        cur.execute(
+            """SELECT ticket_code, statut,
+                      (date_depot >= LOCALTIMESTAMP - make_interval(mins => %s)) AS recent,
+                      EXISTS (SELECT 1 FROM commandes_pieces cp WHERE cp.ticket_id = t.id) AS a_commande
+               FROM tickets t WHERE id = %s FOR UPDATE""",
+            (AUTO_DELAI_MINUTES, data.ticket_id),
+        )
         t = cur.fetchone()
-        ticket_code = t["ticket_code"] if t else ""
+        if not t:
+            raise HTTPException(404, "Ticket non trouvé")
+        ancien = t["statut"] or ""
+        if not user and (ancien != "En attente de diagnostic" or not t["recent"] or t["a_commande"]):
+            raise HTTPException(409, "Ce ticket n'accepte plus de commande automatique")
 
         cur.execute("""
             INSERT INTO commandes_pieces (ticket_id, description, fournisseur, prix, notes, ticket_code, statut)
             VALUES (%s, %s, %s, %s, %s, %s, 'En attente') RETURNING id
         """, (
-            ticket_id,
-            data.get("description", ""),
-            data.get("fournisseur", ""),
-            data.get("prix") or None,
-            data.get("notes", ""),
-            ticket_code,
+            data.ticket_id,
+            data.description or "",
+            data.fournisseur or "",
+            data.prix or None,
+            data.notes or "",
+            t["ticket_code"] or "",
         ))
         row = cur.fetchone()
 
-        # Set ticket status to "En attente de pièce"
-        cur.execute(
-            "UPDATE tickets SET statut = 'En attente de pièce', commande_piece = 1, date_maj = %s WHERE id = %s",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
-        )
-        # Ligne « Statut: … » : c'est elle qui remet « client contacté » à zéro (services/contact)
-        ancien = (t or {}).get("statut") or ""
-        if t and ancien != "En attente de pièce":
-            contact.historiser_statut(cur, ticket_id, ancien, "En attente de pièce", "Auto", " (pièce commandée)")
+        maintenant = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if ancien in STATUTS_SANS_RECUL:
+            cur.execute("UPDATE tickets SET commande_piece = 1, date_maj = %s WHERE id = %s",
+                        (maintenant, data.ticket_id))
+        else:
+            cur.execute(
+                "UPDATE tickets SET statut = 'En attente de pièce', commande_piece = 1, date_maj = %s WHERE id = %s",
+                (maintenant, data.ticket_id),
+            )
+            # Ligne « Statut: … » : c'est elle qui remet « client contacté » à zéro (services/contact)
+            if ancien != "En attente de pièce":
+                auteur = (user or {}).get("sub") or "Auto"
+                contact.historiser_statut(cur, data.ticket_id, ancien, "En attente de pièce", auteur,
+                                          " (pièce commandée)")
 
     return {"id": row["id"]}
 
@@ -259,22 +305,32 @@ def update_part(
             if change or (recue and not _deja_proposee(cur, commande_id)):
                 proposition = _proposer(cur, commande_id, prix_ht, tarif_cle, user.get("sub") or "")
 
-        # Auto-sync: if commande becomes "Reçu", update ticket status to "Pièce reçue"
+        # Auto-sync : commande « Reçu » → ticket « Pièce reçue », seulement quand plus
+        # aucune autre commande du ticket n'est attendue (sinon une ligne « (1/2) »)
         if updates.get("statut") == "Reçu":
             cur.execute("SELECT ticket_id, description FROM commandes_pieces WHERE id = %s", (commande_id,))
             row = cur.fetchone()
             if row and row["ticket_id"]:
-                now = datetime.now()
                 cur.execute(
-                    "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
-                    (now.strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
+                    """SELECT COUNT(*) AS total,
+                              COUNT(*) FILTER (WHERE statut IN %s) AS attendues
+                       FROM commandes_pieces WHERE ticket_id = %s""",
+                    (STATUTS_EN_COURS, row["ticket_id"]),
                 )
-                # Statut réellement changé (rowcount) : ligne « Statut: … » qui remet le contact à zéro
-                if cur.rowcount == 1:
-                    contact.historiser_statut(cur, row["ticket_id"], "En attente de pièce", "Pièce reçue",
-                                              user.get("sub") or "Staff", " (pièce reçue)")
-                # Append history entry on ticket
-                history_entry = f"[{now.strftime('%d/%m %H:%M')}] Pièce \"{row['description']}\" reçue"
+                compte = cur.fetchone() or {}
+                total = int(compte.get("total") or 0)
+                attendues = int(compte.get("attendues") or 0)
+                if attendues == 0:
+                    cur.execute(
+                        "UPDATE tickets SET statut = 'Pièce reçue', date_maj = %s WHERE id = %s AND statut IN ('En attente de pièce')",
+                        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), row["ticket_id"]),
+                    )
+                    # Statut réellement changé (rowcount) : ligne « Statut: … » qui remet le contact à zéro
+                    if cur.rowcount == 1:
+                        contact.historiser_statut(cur, row["ticket_id"], "En attente de pièce", "Pièce reçue",
+                                                  user.get("sub") or "Staff", " (pièce reçue)")
+                rang = f" ({total - attendues}/{total})" if total > 1 else ""
+                history_entry = f"[{_heure_paris()}] Pièce \"{row['description']}\" reçue{rang}"
                 cur.execute(
                     "UPDATE tickets SET historique = COALESCE(historique, '') || %s || E'\\n' WHERE id = %s",
                     (history_entry, row["ticket_id"]),
@@ -313,8 +369,11 @@ def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
 
 # ─── PUBLIC ENDPOINT (for suivi page) ──────────────────────────
 @router.get("/public/{ticket_code}")
-def get_commandes_public(ticket_code: str):
+def get_commandes_public(ticket_code: str, request: Request):
     """Retourne les commandes liées à un ticket (public, infos limitées)."""
+    # Même limite que GET /api/tickets/code (codes séquentiels : énumérables)
+    from app.api.tickets import _rate_limit_public_lookup
+    _rate_limit_public_lookup(request)
     with get_cursor() as cur:
         cur.execute("""
             SELECT c.id, c.description as piece, c.statut,
