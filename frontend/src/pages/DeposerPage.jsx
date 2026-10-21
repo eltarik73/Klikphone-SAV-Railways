@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import ModelCombobox from '../components/ModelCombobox';
 import ChoixCodeAcces, { erreurAcces } from '../components/ChoixCodeAcces';
-import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail } from '../components/DepotEtapes';
+import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail, estTelephoneFictif, MESSAGE_TEL_FICTIF,
+} from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
@@ -82,7 +83,9 @@ export default function DeposerPage() {
       if (!form.nom.trim()) errs.nom = 'Le nom est requis';
       if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      else if (estTelephoneFictif(form.telephone)) errs.telephone = MESSAGE_TEL_FICTIF;
       if (form.tel_contact.trim() && !isValidPhone(form.tel_contact)) errs.tel_contact = 'Numéro invalide (10 chiffres min.)';
+      else if (form.tel_contact.trim() && estTelephoneFictif(form.tel_contact)) errs.tel_contact = MESSAGE_TEL_FICTIF;
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
     if (step === 1) {

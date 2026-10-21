@@ -84,38 +84,38 @@ const suivant = () => fireEvent.click(screen.getByRole('button', { name: /Suivan
 // ─── Numéro joignable ────────────────────────────────────────────
 describe('contact.js : où joindre le client', () => {
   it('second numéro du ticket avant celui de la fiche, libellé « (autre numéro) »', () => {
-    const t = { client_tel: '0612345678', tel_contact: '0698765432' };
-    expect(telJoignable(t)).toBe('0698765432');
-    expect(telFiche(t)).toBe('0612345678');
+    const t = { client_tel: '0612345679', tel_contact: '0698765431' };
+    expect(telJoignable(t)).toBe('0698765431');
+    expect(telFiche(t)).toBe('0612345679');
     expect(estAutreNumero(t)).toBe(true);
-    expect(libelleJoignable(t)).toBe('06 98 76 54 32 (autre numéro)');
-    expect(avecTelJoignable(t)).toEqual({ ...t, client_tel: '0698765432' });
+    expect(libelleJoignable(t)).toBe('06 98 76 54 31 (autre numéro)');
+    expect(avecTelJoignable(t)).toEqual({ ...t, client_tel: '0698765431' });
   });
 
   it('sans second numéro : la fiche telle quelle ; même numéro écrit autrement : pas « autre »', () => {
-    const t = { client_tel: '06 12 34 56 78', tel_contact: null };
-    expect(telJoignable(t)).toBe('06 12 34 56 78');
-    expect(libelleJoignable(t)).toBe('06 12 34 56 78');
+    const t = { client_tel: '06 12 34 56 79', tel_contact: null };
+    expect(telJoignable(t)).toBe('06 12 34 56 79');
+    expect(libelleJoignable(t)).toBe('06 12 34 56 79');
     expect(avecTelJoignable(t)).toBe(t);
-    expect(estAutreNumero({ client_tel: '06 12 34 56 78', tel_contact: '0612345678' })).toBe(false);
+    expect(estAutreNumero({ client_tel: '06 12 34 56 79', tel_contact: '0612345679' })).toBe(false);
     expect(telJoignable({ client: { telephone: '0611111111' } })).toBe('0611111111');
     expect(telJoignable({})).toBe('');
     expect(libelleJoignable({})).toBe('');
     expect(formatTel('+41791234567')).toBe('+41791234567');
-    expect(formatTel(' 0612345678 ')).toBe('06 12 34 56 78');
+    expect(formatTel(' 0612345679 ')).toBe('06 12 34 56 79');
   });
 });
 
 // ─── Validation partagée (/client, /depot, /deposer) ─────────────
 describe('DepotEtapes : validation partagée des trois pages', () => {
   it('numéro : mêmes caractères plausibles que le serveur, 10 à 15 chiffres', () => {
-    expect(isValidPhone('06 12 34 56 78')).toBe(true);
-    expect(isValidPhone('+33 6 12 34 56 78')).toBe(true);
+    expect(isValidPhone('06 12 34 56 79')).toBe(true);
+    expect(isValidPhone('+33 6 12 34 56 79')).toBe(true);
     expect(isValidPhone('+41 79 123 45 67')).toBe(true);
     expect(isValidPhone('(04) 79 12 34 56')).toBe(true);
     expect(isValidPhone('12')).toBe(false);
     expect(isValidPhone('06 12 34 56 7a')).toBe(false);
-    expect(isValidPhone('0612345678901234')).toBe(false);
+    expect(isValidPhone('0612345679901234')).toBe(false);
     expect(isValidEmail('')).toBe(true);
     expect(isValidEmail('claude@exemple.fr')).toBe(true);
     expect(isValidEmail('claude@exemple')).toBe(false);
@@ -255,13 +255,13 @@ describe('ChoixCodeAcces', () => {
 
 // ─── Borne /client ───────────────────────────────────────────────
 describe('Borne /client en 4 étapes', () => {
-  function etape1({ telContact = '06 98 76 54 32' } = {}) {
+  function etape1({ telContact = '06 98 76 54 31' } = {}) {
     render(wrap(<ClientFormPage />, ['/client']));
     expect(screen.getByText('Étape 1 sur 4 — Vous')).toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: 'Étapes du dépôt' })).getAllByRole('listitem')).toHaveLength(4);
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
     fireEvent.change(screen.getByLabelText('Prénom'), { target: { value: 'Claude' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 78' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 79' } });
     if (telContact !== null) {
       fireEvent.change(screen.getByLabelText('Numéro pour vous joindre si différent (facultatif)'), { target: { value: telContact } });
     }
@@ -301,8 +301,8 @@ describe('Borne /client en 4 étapes', () => {
     expect(await screen.findByRole('heading', { name: 'Vérification' })).toBeInTheDocument();
     const vous = screen.getByRole('region', { name: 'Vous' });
     expect(vous).toHaveTextContent('Claude Martin');
-    expect(vous).toHaveTextContent(/Téléphone\s*06 12 34 56 78/);
-    expect(vous).toHaveTextContent(/Pour vous joindre\s*06 98 76 54 32/);
+    expect(vous).toHaveTextContent(/Téléphone\s*06 12 34 56 79/);
+    expect(vous).toHaveTextContent(/Pour vous joindre\s*06 98 76 54 31/);
     expect(screen.getByRole('region', { name: 'Votre appareil' })).toHaveTextContent(/Smartphone.*Fairphone 5/);
     const probleme = screen.getByRole('region', { name: "Le problème et l'accès" });
     expect(probleme).toHaveTextContent('Écran cassé');
@@ -318,7 +318,7 @@ describe('Borne /client en 4 étapes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Modifier : Vous' }));
     expect(screen.getByText('Étape 1 sur 4 — Vous')).toBeInTheDocument();
     expect(screen.getByLabelText('Nom *')).toHaveValue('Martin');
-    expect(screen.getByLabelText('Numéro pour vous joindre si différent (facultatif)')).toHaveValue('06 98 76 54 32');
+    expect(screen.getByLabelText('Numéro pour vous joindre si différent (facultatif)')).toHaveValue('06 98 76 54 31');
     fireEvent.change(screen.getByLabelText('Société'), { target: { value: 'ACME' } });
     suivant();
     expect(await screen.findByLabelText(/Préciser marque/)).toHaveValue('Fairphone 5');
@@ -331,14 +331,14 @@ describe('Borne /client en 4 étapes', () => {
     fireEvent.click(screen.getByRole('button', { name: "Déposer l'appareil" }));
     await screen.findByText('KP-000070');
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith({
-      nom: 'Martin', prenom: 'Claude', telephone: '06 12 34 56 78', email: 'claude@exemple.fr', societe: 'ACME',
+      nom: 'Martin', prenom: 'Claude', telephone: '06 12 34 56 79', email: 'claude@exemple.fr', societe: 'ACME',
       carte_camby: 0, rgpd_informe: true, consentement_marketing: false,
     });
     expect(apiMock.createTicket).toHaveBeenCalledTimes(1);
     expect(apiMock.createTicket).toHaveBeenCalledWith({
       client_id: 7, categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
       panne: 'Écran cassé', panne_detail: 'Vitre fissurée', pin: '2580', pattern: '', notes_client: '',
-      commande_piece: 0, tel_contact: '06 98 76 54 32',
+      commande_piece: 0, tel_contact: '06 98 76 54 31',
     });
     expect(apiMock.createPartAuto).not.toHaveBeenCalled();
   });
@@ -395,7 +395,7 @@ describe('Dépôt comptoir /depot : mêmes 4 étapes, schéma tracé', () => {
     render(wrap(<DepotPage />, ['/depot']));
     expect(screen.getByText('Étape 1 / 4')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Durand' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345678' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /carte Camby/ }));
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
@@ -427,8 +427,8 @@ describe('Dépôt à distance /deposer', () => {
     render(wrap(<DeposerPage />, ['/deposer']));
     expect(screen.getByRole('region', { name: 'Vos données personnelles' })).toHaveTextContent(/codes de déverrouillage/);
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 78' } });
-    fireEvent.change(screen.getByLabelText('Numéro pour vous joindre si différent (facultatif)'), { target: { value: '06 98 76 54 32' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 79' } });
+    fireEvent.change(screen.getByLabelText('Numéro pour vous joindre si différent (facultatif)'), { target: { value: '06 98 76 54 31' } });
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
     fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
@@ -443,7 +443,7 @@ describe('Dépôt à distance /deposer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Envoyer ma demande/ }));
     await screen.findByText('KP-000071');
     expect(apiMock.createDepotDistance).toHaveBeenCalledWith(expect.objectContaining({
-      telephone: '06 12 34 56 78', tel_contact: '06 98 76 54 32', pin: '1234', pattern: '', modele_autre: 'Fairphone 5',
+      telephone: '06 12 34 56 79', tel_contact: '06 98 76 54 31', pin: '1234', pattern: '', modele_autre: 'Fairphone 5',
     }));
   });
 });
@@ -454,21 +454,21 @@ describe('Écrans staff : le second numéro est celui qu’on appelle', () => {
   const ticket = (extra = {}) => ({
     id: 42, ticket_code: 'KP-000042', statut: 'En cours de réparation', client_id: 5, categorie: 'Smartphone',
     client_nom: 'Martin', client_prenom: 'Léa', client_tel: '04 79 60 89 22', client_email: '',
-    tel_contact: '06 98 76 54 32', marque: 'Apple', modele: 'iPhone 13', panne: 'Écran cassé',
+    tel_contact: '06 98 76 54 31', marque: 'Apple', modele: 'iPhone 13', panne: 'Écran cassé',
     date_depot: '2026-10-10T09:00:00', paye: 0, acompte: 10, devis_estime: 89, montants: MONTANTS,
     jours_attente: 12, ...extra,
   });
 
   it('scan comptoir : « SMS au 06 … (autre numéro) » alors que la fiche n’a qu’un fixe', () => {
-    expect(indicationPrevenir(ticket(), true)).toBe('SMS au 06 98 76 54 32 (autre numéro)');
+    expect(indicationPrevenir(ticket(), true)).toBe('SMS au 06 98 76 54 31 (autre numéro)');
     expect(indicationPrevenir(ticket({ tel_contact: null }))).toMatch(/^Client non joignable/);
-    expect(indicationPrevenir(ticket({ client_tel: '06 12 34 56 78', tel_contact: '0612345678' }), true)).toBe('SMS au 06 12 34 56 78');
+    expect(indicationPrevenir(ticket({ client_tel: '06 12 34 56 79', tel_contact: '0612345679' }), true)).toBe('SMS au 06 12 34 56 79');
   });
 
   it('relance depuis l’étagère : lien d’appel vers le second numéro', async () => {
     render(wrap(<RelanceClient id="r1" ticket={ticket()} onDone={() => {}} onCancel={() => {}} />));
-    const lien = await screen.findByRole('link', { name: /06 98 76 54 32 \(autre numéro\)/ });
-    expect(lien).toHaveAttribute('href', 'tel:0698765432');
+    const lien = await screen.findByRole('link', { name: /06 98 76 54 31 \(autre numéro\)/ });
+    expect(lien).toHaveAttribute('href', 'tel:0698765431');
   });
 
   it('dashboard : icônes SMS et WhatsApp vers le second numéro', async () => {
@@ -476,7 +476,7 @@ describe('Écrans staff : le second numéro est celui qu’on appelle', () => {
       kpi: {}, total: 1,
       tickets: [{
         id: 1, ticket_code: 'KP-000001', statut: 'En attente de diagnostic', categorie: 'Smartphone',
-        client_nom: 'Client1', client_prenom: '', client_tel: '0612345678', tel_contact: '0698765432',
+        client_nom: 'Client1', client_prenom: '', client_tel: '0612345679', tel_contact: '0698765431',
         marque: 'Apple', modele: 'iPhone 13', panne: 'Écran', date_depot: '2026-10-11 09:00:00',
         priorite: 'normal', reception_complete: true,
       }],
@@ -488,8 +488,8 @@ describe('Écrans staff : le second numéro est celui qu’on appelle', () => {
     render(wrap(<DashboardPage />, ['/accueil']));
     await screen.findByText('KP-000001');
     // La ligne dit qu'un autre numéro existe (c'est lui que visent les icônes)
-    expect(screen.getByText(/joignable 06 98 76 54 32/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^SMS à/ })).toHaveAttribute('href', expect.stringMatching(/^sms:0698765432\?/));
-    expect(screen.getByRole('link', { name: /^WhatsApp à/ })).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/33698765432\?/));
+    expect(screen.getByText(/joignable 06 98 76 54 31/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^SMS à/ })).toHaveAttribute('href', expect.stringMatching(/^sms:0698765431\?/));
+    expect(screen.getByRole('link', { name: /^WhatsApp à/ })).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/33698765431\?/));
   });
 });

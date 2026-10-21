@@ -17,7 +17,10 @@ from pydantic import BaseModel, Field, field_validator
 from app.database import get_cursor
 from app.api.auth import client_ip, get_current_user
 from app.api.public_documents import LimiteurDebit
-from app.api.clients import enregistrer_consentements, find_client_by_phone, meme_personne
+from app.api.clients import (
+    TELEPHONE_FICTIF, enregistrer_consentements, fiche_d_un_autre, find_client_by_phone, meme_personne,
+    telephone_fictif,
+)
 from app.services.notifications import (
     envoyer_discord_embed, DISCORD_COLORS, envoyer_email, _get_param,
 )
@@ -120,6 +123,8 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
         raise HTTPException(400, "Le nom est requis")
     if not data.telephone or not data.telephone.strip():
         raise HTTPException(400, "Le téléphone est requis")
+    if telephone_fictif(data.telephone):
+        raise HTTPException(422, {"code": "telephone_fictif", "message": TELEPHONE_FICTIF})
     panne, panne_detail = panne_catalogue(data.panne, data.panne_detail)
 
     # Vérifier si le module est actif
@@ -133,6 +138,9 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
     with get_cursor() as cur:
         # Client existant quel que soit le format du numéro (06 12…, +33 6…)
         existing = find_client_by_phone(cur, data.telephone)
+        # Numéro connu mais au nom de quelqu'un d'autre : nouvelle fiche (règle de /api/clients)
+        if fiche_d_un_autre(existing, data.nom, data.prenom):
+            existing = None
         email_client = None
         if existing:
             client_id = existing["id"]

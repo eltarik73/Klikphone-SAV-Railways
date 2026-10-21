@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast';
 import ChoixCodeAcces, { resumeAcces, erreurAcces } from '../components/ChoixCodeAcces';
 import {
   isValidPhone, isValidEmail, EnTete, BarreEtapes, ChampsVous, ChampsAppareil, ChampsPanne,
-  CaseAttente, Recapitulatif, libelleAppareil, lignesVous,
+  CaseAttente, Recapitulatif, libelleAppareil, lignesVous, estTelephoneFictif, MESSAGE_TEL_FICTIF,
 } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
@@ -154,7 +154,9 @@ export default function DepotPage() {
       if (!form.nom.trim()) errs.nom = 'Le nom est requis';
       if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      else if (estTelephoneFictif(form.telephone)) errs.telephone = MESSAGE_TEL_FICTIF;
       if (form.tel_contact.trim() && !isValidPhone(form.tel_contact)) errs.tel_contact = 'Numéro invalide (10 chiffres min.)';
+      else if (form.tel_contact.trim() && estTelephoneFictif(form.tel_contact)) errs.tel_contact = MESSAGE_TEL_FICTIF;
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
     if (step === 1) {

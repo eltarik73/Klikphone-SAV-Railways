@@ -210,7 +210,7 @@ const suivant = () => fireEvent.click(screen.getByRole('button', { name: /Suivan
 async function deposer() {
   render(wrap(<DepotPage />));
   fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Durand' } });
-  fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345678' } });
+  fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
   suivant();
   fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
   fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
@@ -322,7 +322,7 @@ describe('Borne /depot au repos : rechargement toutes les 10 min, jamais pendant
     const f = serveurAnnonce('NOUVEAU2');
     render(wrap(<DepotPage />));
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Durand' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345678' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
     suivant();
     await screen.findByRole('button', { name: 'Smartphone' });
     await act(async () => { await vi.advanceTimersByTimeAsync(40 * MINUTE); });

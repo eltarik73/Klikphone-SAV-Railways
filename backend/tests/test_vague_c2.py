@@ -398,19 +398,20 @@ def test_creation_ticket_discord_et_apprentissage_apres_la_reponse(monkeypatch):
 def test_depot_distance_retrouve_le_client_tout_format(client):
     def handler(sql, p):
         if "kp_phone_key(telephone) = %s" in sql:
-            return [{"id": 3, "telephone": "0612345678", "nom": "Fictif"}]
+            return [{"id": 3, "telephone": "0612345679", "nom": "Fictif"}]
         if "RETURNING id" in sql:
             return {"id": 77}
         return None
 
     cur, gc = fake_db(handler)
     with patch("app.api.depot_distance.get_cursor", gc), patch("app.api.clients.get_cursor", gc):
-        r = client.post("/api/depot-distance", json={"nom": "Autre", "telephone": "+33 6 12 34 56 78",
+        # Même nom que la fiche : rattaché (un autre nom crée une nouvelle fiche, cf. fiche_d_un_autre)
+        r = client.post("/api/depot-distance", json={"nom": "Fictif", "telephone": "+33 6 12 34 56 79",
                                                      "email": "pirate@exemple.test", "panne": "Batterie HS"})
     assert r.status_code == 200, r.text
     s = cur.sql()
     cle = next(p for q, p in cur.executed if "kp_phone_key(telephone)" in q)
-    assert cle == ("612345678",)
+    assert cle == ("612345679",)
     assert not any(q.startswith("INSERT INTO clients") for q in s)
     maj = next(q for q in s if q.startswith("UPDATE clients"))
     # Public : nom/prénom complétés seulement, jamais l'email
@@ -429,10 +430,10 @@ def test_depot_distance_nouveau_client_numero_canonique(client):
 
     cur, gc = fake_db(handler)
     with patch("app.api.depot_distance.get_cursor", gc), patch("app.api.clients.get_cursor", gc):
-        r = client.post("/api/depot-distance", json={"nom": "Fictif", "telephone": "06 12 34 56 78"})
+        r = client.post("/api/depot-distance", json={"nom": "Fictif", "telephone": "06 12 34 56 79"})
     assert r.status_code == 200
     ins = next(p for q, p in cur.executed if q.startswith("INSERT INTO clients"))
-    assert ins[2] == "0612345678"
+    assert ins[2] == "0612345679"
 
 
 @pytest.mark.parametrize("q,attendu", [
@@ -806,3 +807,27 @@ def test_prechauffage_respecte_le_semaphore(monkeypatch):
     # Toutes les places sont rendues
     assert all(slots.acquire(blocking=False) for _ in range(db._MAXCONN))
     monkeypatch.setattr(db, "_pool", None)
+
+
+def test_depot_distance_numero_fictif_refuse(client):
+    cur, gc = fake_db(lambda sql, p: None)
+    with patch("app.api.depot_distance.get_cursor", gc), patch("app.api.clients.get_cursor", gc):
+        r = client.post("/api/depot-distance", json={"nom": "Dupont", "telephone": "06 00 00 00 00"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "telephone_fictif"
+    assert not cur.executed
+
+
+def test_depot_distance_numero_connu_autre_nom_nouvelle_fiche(client):
+    def handler(sql, p):
+        if "kp_phone_key(telephone) = %s" in sql:
+            return [{"id": 3, "telephone": "0612345679", "nom": "Test", "prenom": "Test"}]
+        if "RETURNING id" in sql:
+            return {"id": 88}
+        return None
+
+    cur, gc = fake_db(handler)
+    with patch("app.api.depot_distance.get_cursor", gc), patch("app.api.clients.get_cursor", gc):
+        r = client.post("/api/depot-distance", json={"nom": "Dupont", "prenom": "Jean", "telephone": "0612345679"})
+    assert r.status_code == 200, r.text
+    assert any(q.startswith("INSERT INTO clients") for q in cur.sql())
+    assert not any(q.startswith("UPDATE clients") for q in cur.sql())

@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from app.api import auth
+from app.api import clients as clients_mod
 from app.api.auth import create_admin_token, create_token, decode_token
 
 
@@ -576,9 +577,10 @@ EXISTANT = {"id": 5, "nom": "Fictif", "prenom": "Jean", "telephone": "0611223344
 
 
 def test_client_public_existant_complete_sans_reecrire(client):
+    # Même personne (nom et prénom de la fiche, casse/accents ignorés) : rattachée, fiche complétée seulement
     cur, gc = fake_db(_client_handler(EXISTANT))
     with patch("app.api.clients.get_cursor", gc):
-        r = client.post("/api/clients", json={"nom": "Pirate", "telephone": "06 11 22 33 44",
+        r = client.post("/api/clients", json={"nom": "FICTIF", "prenom": "jean", "telephone": "06 11 22 33 44",
                                               "email": "pirate@example.test", "carte_camby": 0})
     assert r.status_code == 200
     assert r.json() == {"id": 5}
@@ -587,6 +589,40 @@ def test_client_public_existant_complete_sans_reecrire(client):
     assert "CASE WHEN %(camby)s = 1 THEN 1 ELSE carte_camby END" in sql and params["camby"] == 0
     # Jamais l'email : connaître un numéro suffirait à recevoir les documents du client
     assert "email" not in sql
+
+
+def test_client_public_numero_connu_autre_nom_nouvelle_fiche(client):
+    # Numéro d'une fiche au nom de quelqu'un d'autre : nouvelle fiche, la fiche existante n'est pas touchée
+    cur, gc = fake_db(_client_handler(EXISTANT))
+    with patch("app.api.clients.get_cursor", gc):
+        r = client.post("/api/clients", json={"nom": "Pirate", "telephone": "06 11 22 33 44", "carte_camby": 0})
+    assert r.status_code == 200 and r.json() == {"id": 9}
+    assert not [s for s, _ in cur.executed if s.startswith("UPDATE clients")]
+    assert [s for s, _ in cur.executed if s.startswith("INSERT INTO clients")]
+
+
+@pytest.mark.parametrize("tel", ["06 00 00 00 00", "0611111111", "+33 6 00 00 00 00", "06 12 34 56 78", "0798765432"])
+def test_client_public_numero_fictif_refuse(client, tel):
+    cur, gc = fake_db(_client_handler(EXISTANT))
+    with patch("app.api.clients.get_cursor", gc):
+        r = client.post("/api/clients", json={"nom": "Dupont", "prenom": "Jean", "telephone": tel})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "telephone_fictif"
+    assert not cur.executed  # rien n'est lu ni écrit
+
+
+@pytest.mark.parametrize("tel", ["0611223344", "06 00 00 01 23", "0600009950", "+41 79 123 45 67"])
+def test_numero_reel_pas_fictif(tel):
+    assert not clients_mod.telephone_fictif(tel)
+
+
+def test_client_staff_numero_fictif_jamais_rattache(client):
+    # Comptoir : numéro de remplissage accepté mais jamais rattaché à une fiche existante
+    cur, gc = fake_db(_client_handler(EXISTANT))
+    with patch("app.api.clients.get_cursor", gc):
+        r = client.post("/api/clients", headers=_headers(), json={"nom": "Dupont", "telephone": "0600000000"})
+    assert r.status_code == 200
+    assert not [s for s, _ in cur.executed if "kp_phone_key(telephone) = %s" in s]
+    assert [s for s, _ in cur.executed if s.startswith("INSERT INTO clients")]
 
 
 def test_client_staff_mise_a_jour_sans_toucher_carte_non_fournie(client):

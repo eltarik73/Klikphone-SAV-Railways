@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast';
 import ChoixCodeAcces, { resumeAcces, erreurAcces } from '../components/ChoixCodeAcces';
 import {
   isValidPhone, isValidEmail, tuile, EnTete, BarreEtapes, ChampsVous, ChampsAppareil, ChampsPanne,
-  CaseAttente, Recapitulatif, libelleAppareil, lignesVous, ErreurChamp,
+  CaseAttente, Recapitulatif, libelleAppareil, lignesVous, ErreurChamp, estTelephoneFictif, MESSAGE_TEL_FICTIF,
 } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
@@ -248,7 +248,10 @@ export default function ClientFormPage() {
       if (!form.nom.trim()) errs.nom = 'Le nom est requis';
       if (!form.telephone.trim()) errs.telephone = 'Le téléphone est requis';
       else if (!isValidPhone(form.telephone)) errs.telephone = 'Numéro invalide (10 chiffres min.)';
+      // Numéro de remplissage (06 00 00 00 00…) : il rattachait le dépôt à une ancienne fiche d'essai
+      else if (estTelephoneFictif(form.telephone)) errs.telephone = MESSAGE_TEL_FICTIF;
       if (form.tel_contact.trim() && !isValidPhone(form.tel_contact)) errs.tel_contact = 'Numéro invalide (10 chiffres min.)';
+      else if (form.tel_contact.trim() && estTelephoneFictif(form.tel_contact)) errs.tel_contact = MESSAGE_TEL_FICTIF;
       if (form.email && !isValidEmail(form.email)) errs.email = 'Email invalide';
     }
     if (currentId === 'appareil') {

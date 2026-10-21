@@ -49,6 +49,15 @@ export const isValidPhone = (tel) => {
   const chiffres = s.replace(/\D/g, '');
   return /^\+?[\d\s.\-()/]+$/.test(s) && chiffres.length >= 10 && chiffres.length <= 15;
 };
+// Numéro de remplissage (« 06 00 00 00 00 », « 06 12 34 56 78 ») : même règle que le serveur
+// (clients.telephone_fictif) ; il rattachait le dépôt à une ancienne fiche d'essai « Test Test »
+const SUITES_FICTIVES = ['12345678', '23456789', '87654321', '98765432'];
+export const MESSAGE_TEL_FICTIF = 'Ce numéro ne semble pas valide : indiquez votre vrai numéro, il sert uniquement à vous prévenir.';
+export const estTelephoneFictif = (tel) => {
+  const national = String(tel ?? '').replace(/\D/g, '').slice(-9);
+  if (national.length < 9) return false;
+  return /(\d)\1{5}/.test(national) || SUITES_FICTIVES.includes(national.slice(-8));
+};
 export const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 // Tuile de choix (catégorie, panne, type d'achat) : 56 px, bordure 2 px, sélection = marque

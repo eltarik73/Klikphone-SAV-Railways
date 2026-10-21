@@ -278,7 +278,7 @@ describe('/client?staff=1 : délai obligatoire pour une réparation créée par 
   async function jusquAuProbleme(entree = '/client?staff=1') {
     render(wrap(<ClientFormPage />, [entree]));
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 78' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 79' } });
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
     fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
@@ -331,7 +331,7 @@ describe('/client?staff=1 : délai obligatoire pour une réparation créée par 
     localStorage.setItem('kp_target', 'tech');
     render(wrap(<ClientFormPage />, ['/client?staff=1']));
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345678' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Commande' }));
     suivant();
@@ -426,7 +426,7 @@ describe('Borne /client : rechargement après un dépôt si une nouvelle version
   async function deposer() {
     render(wrap(<ClientFormPage />, ['/client']));
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
-    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345678' } });
+    fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
     fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
@@ -495,7 +495,7 @@ describe('Borne /client : rechargement après un dépôt si une nouvelle version
 describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech)', () => {
   const ligne = (id, extra) => ({
     id, ticket_code: `KP-00000${id}`, statut: 'En attente de diagnostic', categorie: 'Smartphone',
-    client_nom: `Client${id}`, client_prenom: '', client_tel: '0612345678', marque: 'Apple', modele: 'iPhone 13',
+    client_nom: `Client${id}`, client_prenom: '', client_tel: '0612345679', marque: 'Apple', modele: 'iPhone 13',
     panne: 'Écran', date_depot: `2026-10-1${id} 09:00:00`, priorite: 'normal', reception_complete: true, ...extra,
   });
   beforeEach(() => {
@@ -602,7 +602,7 @@ describe('Panneau de scan : délai près du statut, fixé en un tap s’il manqu
     takePendingScan();
     const ticket = {
       id: 42, ticket_code: 'KP-000042', statut: 'En attente de diagnostic', categorie: 'Smartphone',
-      client_id: 5, client_nom: 'Martin', client_prenom: 'Léa', client_tel: '0612345678',
+      client_id: 5, client_nom: 'Martin', client_prenom: 'Léa', client_tel: '0612345679',
       marque: 'Apple', modele: 'iPhone 13', panne: 'Écran cassé', date_depot: '2026-10-19T09:00:00',
       paye: 0, acompte: 0, montants: { total: 89, acompte: 0, reste: 89, paye: false, lignes: [] },
     };

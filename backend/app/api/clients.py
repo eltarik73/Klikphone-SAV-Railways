@@ -5,6 +5,7 @@ API CRUD Clients — compatible schéma PostgreSQL existant.
 import csv
 import hashlib
 import io
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -85,6 +86,26 @@ def _consentements(data, canal: str, accord_autorise: bool = True) -> dict:
     return {"informe": bool(getattr(data, "rgpd_informe", None)),
             "accord": accord_autorise and bool(getattr(data, "consentement_marketing", None)),
             "source": source_consentement(canal)}
+
+
+# Numéros de remplissage (« 06 00 00 00 00 », « 06 11 11 11 11 », « 06 12 34 56 78 ») : saisis par un
+# client qui ne veut pas donner son numéro, ils retombaient sur une ancienne fiche d'essai « Test Test »
+_SUITES_FICTIVES = ("12345678", "23456789", "87654321", "98765432")
+TELEPHONE_FICTIF = ("Ce numéro ne semble pas valide. Merci d'indiquer votre vrai numéro : "
+                    "il sert uniquement à vous prévenir quand votre appareil est prêt.")
+
+
+def telephone_fictif(telephone) -> bool:
+    """Numéro de remplissage : 6 chiffres identiques d'affilée ou une suite 12345678 dans les 9 derniers."""
+    national = re.sub(r"\D", "", str(telephone or ""))[-9:]
+    if len(national) < 9:
+        return False
+    return bool(re.search(r"(\d)\1{5}", national)) or national[-8:] in _SUITES_FICTIVES
+
+
+def fiche_d_un_autre(fiche: Optional[dict], nom, prenom) -> bool:
+    """Fiche trouvée par le numéro mais au nom de quelqu'un d'autre (nom renseigné et différent)."""
+    return bool(fiche) and bool((fiche.get("nom") or "").strip()) and not meme_personne(fiche, nom, prenom)
 
 
 def meme_personne(fiche: dict, nom, prenom) -> bool:
@@ -325,15 +346,23 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
     consentement_marketing posent leurs dates (_SET_CONSENTEMENTS) ; sans jeton,
     l'accord marketing d'une fiche existante exige la même identité (meme_personne).
     """
+    fictif = telephone_fictif(data.telephone)
     if not user:
+        if fictif:
+            raise HTTPException(422, {"code": "telephone_fictif", "message": TELEPHONE_FICTIF})
         ip = client_ip(request)
         if not _IP_CONNUES.connue(ip):
             _LIMITEUR_CREATION.verifier(ip)
     camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
     champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing"})
     with get_cursor() as cur:
-        # Vérifier si le client existe (numéro normalisé : évite les doublons 06 12… / 0612…)
-        existing = find_client_by_phone(cur, data.telephone)
+        # Vérifier si le client existe (numéro normalisé : évite les doublons 06 12… / 0612…).
+        # Un numéro de remplissage (comptoir) ne désigne personne : jamais rattaché à une fiche.
+        existing = None if fictif else find_client_by_phone(cur, data.telephone)
+        # Borne : numéro connu mais au nom de quelqu'un d'autre → nouvelle fiche, jamais le dossier
+        # (ni le téléphone, destinataire des SMS) d'une autre personne
+        if not user and fiche_d_un_autre(existing, data.nom, data.prenom):
+            existing = None
 
         if existing and user:
             # Staff : les valeurs saisies remplacent les anciennes

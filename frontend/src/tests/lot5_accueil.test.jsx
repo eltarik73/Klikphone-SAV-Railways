@@ -284,7 +284,7 @@ describe('Page /confidentialite', () => {
 async function allerALaVerification() {
   render(wrap(<ClientFormPage />, ['/client']));
   fireEvent.change(screen.getByPlaceholderText('Dupont'), { target: { value: 'Martin' } });
-  fireEvent.change(screen.getByPlaceholderText('06 XX XX XX XX'), { target: { value: '0612345678' } });
+  fireEvent.change(screen.getByPlaceholderText('06 XX XX XX XX'), { target: { value: '0612345679' } });
   fireEvent.click(screen.getByRole('button', { name: /Suivant/ }));
   fireEvent.click(await screen.findByRole('button', { name: 'Smartphone' }));
   fireEvent.change(screen.getByLabelText('Marque *'), { target: { value: 'Autre' } });
@@ -524,7 +524,7 @@ describe('File atelier : badges de priorité', () => {
 describe('Dashboard : priorité et réception', () => {
   const ligne = (id, extra) => ({
     id, ticket_code: `KP-00000${id}`, statut: 'En attente de diagnostic', categorie: 'Smartphone',
-    client_nom: `Client${id}`, client_prenom: '', client_tel: '0612345678', marque: 'Apple', modele: 'iPhone 13',
+    client_nom: `Client${id}`, client_prenom: '', client_tel: '0612345679', marque: 'Apple', modele: 'iPhone 13',
     panne: 'Écran', date_depot: `2026-10-1${id} 09:00:00`, priorite: 'normal', reception_complete: true, ...extra,
   });
   beforeEach(() => {

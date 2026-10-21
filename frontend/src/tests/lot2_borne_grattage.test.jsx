@@ -76,7 +76,7 @@ const suivant = () => fireEvent.click(screen.getByRole('button', { name: /Suivan
 async function etapeAppareil(entree) {
   render(wrap(entree));
   fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Martin' } });
-  fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 78' } });
+  fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '06 12 34 56 79' } });
   suivant();
   await screen.findByRole('button', { name: 'Smartphone' });
 }
