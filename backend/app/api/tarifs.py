@@ -1073,7 +1073,8 @@ def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin))
     fournisseur = FOURNISSEURS_SAISIE.get(body.source, (None,))[0]
     with get_cursor() as cur:
         r = prix.regles(cur)
-        cur.execute("SELECT id, type_piece, categorie, verrou_manuel FROM tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
+        # La ligne entière, sous verrou : le moteur de prix s'en sert (pas de seconde lecture)
+        cur.execute("SELECT * FROM tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
         row = cur.fetchone()
         if row is None:
             raise HTTPException(404, "Tarif non trouve")
@@ -1085,18 +1086,21 @@ def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin))
         elif not row["verrou_manuel"]:
             changements.append((tarif_id, "prix_client",
                                 prix.prix_client(body.prix_fournisseur_ht, row["type_piece"], row["categorie"], r)))
-        prix.ecrire_prix_lot(cur, "tarifs", changements, body.source, _par(user), prix.nouveau_lot())
+        # Un seul envoi : verrou, référence fournisseur, prix, historique et relecture de la ligne
+        joint = []
         if body.prix_client is not None and not row["verrou_manuel"]:
-            cur.execute("UPDATE tarifs SET verrou_manuel = TRUE WHERE id = %s", (tarif_id,))
+            joint.append(("UPDATE tarifs SET verrou_manuel = TRUE WHERE id = %s", (tarif_id,)))
         if ref or url or fournisseur:
-            cur.execute("""
+            joint.append(("""
                 UPDATE tarifs SET ref_fournisseur = COALESCE(%s, ref_fournisseur),
                                   url_fournisseur = COALESCE(%s, url_fournisseur),
                                   fournisseur = COALESCE(%s, fournisseur)
                 WHERE id = %s
-            """, (ref, url, fournisseur, tarif_id))
-        cur.execute(f"SELECT *, {_FRAICHEUR_SQL} FROM tarifs WHERE id = %s", (tarif_id,))
-        out = _fraicheur(dict(cur.fetchone()), r)
+            """, (ref, url, fournisseur, tarif_id)))
+        res = prix.ecrire_prix_lot(cur, "tarifs", changements, body.source, _par(user), prix.nouveau_lot(),
+                                   lignes={row["id"]: row}, sql_joint=joint,
+                                   relire=(f"SELECT *, {_FRAICHEUR_SQL} FROM tarifs WHERE id = %s", (tarif_id,)))
+        out = _fraicheur(res["relu"][0], r)
     out["calcul"] = _calcul_tarif(out, r)
     _cache.clear()
     return out
@@ -1830,25 +1834,28 @@ def update_tarif_reparation(tarif_id: int, body: Dict[str, Any], user: dict = De
     modele = body.get("modele")
     if not changements and modele is None:
         raise HTTPException(400, "Aucun champ a mettre a jour")
+    if modele is not None:
+        modele = str(modele).strip()
+        if not modele or len(modele) > 100:
+            raise HTTPException(400, "Nom du modele invalide")
     with get_cursor() as cur:
-        cur.execute("SELECT id, modele FROM tarifs_reparation WHERE id = %s FOR UPDATE", (tarif_id,))
+        # La ligne entière, sous verrou : le moteur de prix s'en sert (pas de seconde lecture)
+        cur.execute("SELECT * FROM tarifs_reparation WHERE id = %s FOR UPDATE", (tarif_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Tarif non trouve")
-        if modele is not None:
-            modele = str(modele).strip()
-            if not modele or len(modele) > 100:
-                raise HTTPException(400, "Nom du modele invalide")
-            if modele != row["modele"]:
-                cur.execute("SELECT 1 AS x FROM tarifs_reparation WHERE modele = %s AND id <> %s", (modele, tarif_id))
-                if cur.fetchone():
-                    raise HTTPException(409, "Ce modele existe deja dans la grille")
-                cur.execute("UPDATE tarifs_reparation SET modele = %s, updated_at = NOW() WHERE id = %s",
-                            (modele, tarif_id))
-        prix.ecrire_prix_lot(cur, "tarifs_reparation", changements, "manuel", _par(user), prix.nouveau_lot())
-        cur.execute("SELECT * FROM tarifs_reparation WHERE id = %s", (tarif_id,))
-        row = cur.fetchone()
-    return dict(row)
+        joint = []
+        if modele is not None and modele != row["modele"]:
+            cur.execute("SELECT 1 AS x FROM tarifs_reparation WHERE modele = %s AND id <> %s", (modele, tarif_id))
+            if cur.fetchone():
+                raise HTTPException(409, "Ce modele existe deja dans la grille")
+            joint.append(("UPDATE tarifs_reparation SET modele = %s, updated_at = NOW() WHERE id = %s",
+                          (modele, tarif_id)))
+        # Un seul envoi : nom du modèle, prix, historique et relecture de la ligne
+        res = prix.ecrire_prix_lot(cur, "tarifs_reparation", changements, "manuel", _par(user), prix.nouveau_lot(),
+                                   lignes={row["id"]: row}, sql_joint=joint,
+                                   relire=("SELECT * FROM tarifs_reparation WHERE id = %s", (tarif_id,)))
+    return res["relu"][0]
 
 
 @router.post("/reparation/bulk")

@@ -5,7 +5,7 @@ import api from '../lib/api';
 import { envoyerSms, versionCourteSms } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { invalidateCache } from '../hooks/useApi';
-import { useAutoSave } from '../hooks/useAutoSave';
+import { useAutoSave, DELAI_FRAPPE } from '../hooks/useAutoSave';
 import StatusBadge from '../components/StatusBadge';
 import ProgressTracker from '../components/ProgressTracker';
 import FideliteCard from '../components/FideliteCard';
@@ -255,10 +255,8 @@ function AutoSaveIndicator({ etat }) {
   const status = etat?.status;
   return (
     <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs font-medium">
-      {status === 'dirty' && (
-        <><span className="w-2 h-2 rounded-full bg-slate-400" aria-hidden="true" /><span className="text-slate-500">Modifié…</span></>
-      )}
-      {status === 'saving' && (
+      {/* Retour immédiat : dès la frappe, la saisie est « en cours d'enregistrement » (l'envoi suit sous 250 ms) */}
+      {(status === 'dirty' || status === 'saving') && (
         <><span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /><span className="text-slate-500">Enregistrement…</span></>
       )}
       {status === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
@@ -284,7 +282,7 @@ function afficherIndicateur(editing, etat) {
 }
 
 // ─── Editable Section Component ────────────────────────────────
-function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children, viewContent, autoSave }) {
+function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children, viewContent, autoSave, onEntree }) {
   const titreId = useId();
   return (
     <section className="card p-4 sm:p-5" aria-labelledby={titreId}>
@@ -304,7 +302,8 @@ function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children
           </button>
         )}
       </div>
-      {editing ? children : viewContent}
+      {/* `contents` : l'enveloppe (Entrée = enregistrer) ne change rien à la mise en page */}
+      {editing ? <div className="contents" onKeyDown={onEntree}>{children}</div> : viewContent}
     </section>
   );
 }
@@ -950,7 +949,7 @@ function TicketDetail({ id }) {
     }
     return res;
   }, [id, toast, fusionnerTicket, clesEnAttente]), {
-    delay: 800,
+    delay: DELAI_FRAPPE,
     onUnload: (patch) => {
       const { propre } = sansTexteScanne(patch, enregistreRef.current.device);
       const learn = Object.keys(propre).some(k => k in CHAMPS_APPRIS);
@@ -976,7 +975,7 @@ function TicketDetail({ id }) {
     invalidateCache('clients');
     return res;
   }, [toast, fusionnerTicket, clesEnAttente]), {
-    delay: 800,
+    delay: DELAI_FRAPPE,
     onUnload: (patch) => {
       const clientId = clientIdRef.current;
       const { propre } = sansTexteScanne(patch, enregistreRef.current.client);
@@ -993,7 +992,7 @@ function TicketDetail({ id }) {
     fusionnerTicket(res.ticket, clesEnAttente('pricing'));
     return res;
   }, [id, toast, fusionnerTicket, clesEnAttente]), {
-    delay: 500,
+    delay: DELAI_FRAPPE,
     onUnload: (patch) => {
       const { propre } = sansTexteScanne(patch, null);
       if (Object.keys(propre).length) api.updateTicket(id, propre, { keepalive: true }).then(invaliderListes);
@@ -1130,6 +1129,19 @@ function TicketDetail({ id }) {
     window.addEventListener(EVENT_TICKET_MAJ, onMaj);
     return () => window.removeEventListener(EVENT_TICKET_MAJ, onMaj);
   }, [id, loadTicket]);
+
+  // Commandes de pièces et notes (après un changement de statut dont la réponse porte déjà le ticket).
+  // Même numéro de séquence que loadTicket : la relecture rend caduque une relecture plus ancienne encore
+  // en route, et sa réponse est ignorée si une relecture (complète ou non) a été demandée après elle.
+  const relireAnnexes = useCallback(() => {
+    const seq = ++loadSeqRef.current;
+    Promise.all([api.getPartsByTicket(id).catch(() => null), api.getNotes(id).catch(() => null)])
+      .then(([cmds, notes]) => {
+        if (seq !== loadSeqRef.current || !mountedRef.current) return;
+        if (Array.isArray(cmds)) setCommandes(cmds);
+        if (Array.isArray(notes)) setPrivateNotes(notes);
+      });
+  }, [id]);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -1389,9 +1401,9 @@ function TicketDetail({ id }) {
 
   const addRepairLine = () => updateRepairLines([...repairLinesRef.current, { label: '', prix: 0 }], { wait: 0 });
   const removeRepairLine = (idx) => updateRepairLines(repairLinesRef.current.filter((_, i) => i !== idx), { wait: 0 });
+  // Libellé et prix : délai de frappe (DELAI_FRAPPE) ; Entrée ou la sortie du champ envoient tout de suite
   const updateRepairLine = (idx, field, value) => updateRepairLines(
     repairLinesRef.current.map((l, i) => (i === idx ? { ...l, [field]: value } : l)),
-    { wait: field === 'label' ? 800 : 500 },
   );
 
   const ajouterDepuisGrille = (ligne, suggestion) => {
@@ -1407,12 +1419,13 @@ function TicketDetail({ id }) {
       : ancien === ligne.label ? `Ligne mise à jour : ${ligne.label}` : `Ligne remplacée : ${ancien} → ${ligne.label}`);
   };
 
-  // Court délai : les flèches du clavier dans le groupe radio ne font qu'un envoi (et une ligne d'historique)
+  // Très court délai (100 ms) : un clic part presque aussitôt, une rafale de flèches du clavier dans le
+  // groupe radio ne fait qu'un envoi (et une ligne d'historique)
   const changerPriorite = (valeur) => {
     const v = normaliserPriorite(valeur);
     if (!ticketRef.current || v === normaliserPriorite(ticketRef.current.priorite)) return;
     fusionnerTicket({ priorite: v }, null);
-    prioriteSave.schedule({ priorite: v }, { wait: 400 });
+    prioriteSave.schedule({ priorite: v }, { wait: 100 });
   };
 
   const allerReception = () => {
@@ -1424,6 +1437,13 @@ function TicketDetail({ id }) {
   };
 
   const flushSilencieux = (save) => () => { save.flush().catch(() => {}); };
+  // Entrée dans un champ d'une ligne (pas une zone de texte) : enregistre tout de suite, comme la sortie du champ
+  const entreeEnregistre = (save) => (e) => {
+    if (e.key !== 'Enter' || e.defaultPrevented || e.nativeEvent?.isComposing) return;
+    const cible = e.target;
+    if (cible?.tagName !== 'INPUT' || ['checkbox', 'radio', 'button', 'submit'].includes(cible.type)) return;
+    save.flush().catch(() => {});
+  };
   // Schéma tapé sans tirets (« 15963 ») : enregistré « 1-5-9-6-3 », le format que lit la grille
   const finSaisiePattern = () => {
     const saisi = deviceFormRef.current.pattern ?? '';
@@ -1591,7 +1611,15 @@ function TicketDetail({ id }) {
         const res = await api.changeStatus(id, statut);
         invaliderListes();
         fusionnerTicket({ statut }, null);
-        await loadTicket(false);
+        // Ticket complet renvoyé par le serveur : appliqué tout de suite, seuls commandes et notes sont
+        // relues en arrière-plan ; sinon relecture complète de la fiche
+        if (res?.ticket && typeof res.ticket === 'object' && res.ticket.id != null && 'client_id' in res.ticket) {
+          // relireAnnexes() avance la séquence : une relecture complète encore en route est ignorée
+          relireAnnexes();
+          appliquerTicket(res.ticket, prestationsRef.current);
+        } else {
+          await loadTicket(false);
+        }
         if (!silencieux) toast.success(`Statut changé : ${statut}`);
         // Proposé, jamais envoyé : le message part seulement sur un clic (WhatsApp, SMS, email)
         if (res?.proposer_message && !silencieux && mountedRef.current) {
@@ -2238,6 +2266,7 @@ function TicketDetail({ id }) {
             title="Client" icon={User}
             editing={editingClient}
             autoSave={clientSave}
+            onEntree={entreeEnregistre(clientSave)}
             onEdit={() => setEditingClient(true)}
             onClose={() => { flushSilencieux(clientSave)(); setEditingClient(false); }}
             viewContent={
@@ -2369,6 +2398,7 @@ function TicketDetail({ id }) {
             title="Appareil" icon={Smartphone}
             editing={editingDevice}
             autoSave={deviceSave}
+            onEntree={entreeEnregistre(deviceSave)}
             onEdit={() => setEditingDevice(true)}
             onClose={() => { finSaisieAppareil(); setEditingDevice(false); }}
             viewContent={
@@ -2736,7 +2766,7 @@ function TicketDetail({ id }) {
 
       case 'reparation':
         return (
-          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-reparation`}>
+          <section className="card p-4 sm:p-5" aria-labelledby={`${uid}-reparation`} onKeyDown={editingPricing ? entreeEnregistre(pricingSave) : undefined}>
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <Wrench className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />

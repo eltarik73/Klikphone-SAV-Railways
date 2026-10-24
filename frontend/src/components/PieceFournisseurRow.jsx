@@ -7,6 +7,7 @@ import {
   BadgeDatePrix, BoutonVerrou, SEUILS_FRAICHEUR, alertesPrix, estEcran, euros, fusionnerRegles, libelleSource,
   messageErreurPrix, prixClientApple, prixClientPiece,
 } from './HistoriquePrix';
+import { useToast } from './Toast';
 
 /**
  * Ligne d'une pièce fournisseur (écran « Réparation smartphones ») : prix d'achat HT (admin), détail du
@@ -170,15 +171,16 @@ export function LiensFournisseur({ liens, compact = false, className = '' }) {
 }
 
 // ─── Volet « Mettre à jour le HT » ────────────────
-function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer }) {
+// `brouillon` : saisie d'un envoi qui a échoué ({ ht, source, ref, url, erreur }), reprise telle quelle.
+function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer, brouillon = null }) {
   const idBase = useId();
   const champRef = useRef(null);
-  const [ht, setHt] = useState(() => (Number(piece.prix_fournisseur_ht) > 0 ? deuxDecimales(piece.prix_fournisseur_ht) : ''));
-  const [source, setSource] = useState('manuel');
-  const [ref, setRef] = useState(piece.ref_fournisseur || '');
-  const [url, setUrl] = useState(piece.url_fournisseur || '');
+  const [ht, setHt] = useState(() => brouillon?.ht ?? (Number(piece.prix_fournisseur_ht) > 0 ? deuxDecimales(piece.prix_fournisseur_ht) : ''));
+  const [source, setSource] = useState(brouillon?.source ?? 'manuel');
+  const [ref, setRef] = useState(brouillon?.ref ?? (piece.ref_fournisseur || ''));
+  const [url, setUrl] = useState(brouillon?.url ?? (piece.url_fournisseur || ''));
   const [envoi, setEnvoi] = useState(false);
-  const [erreur, setErreur] = useState('');
+  const [erreur, setErreur] = useState(brouillon?.erreur || '');
 
   useEffect(() => { champRef.current?.focus(); }, []);
 
@@ -203,14 +205,10 @@ function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer }) {
     const corps = { prix_fournisseur_ht: Math.round(montant * 100) / 100, source };
     if (ref.trim()) corps.ref_fournisseur = ref.trim();
     if (avecUrl && url.trim()) corps.url_fournisseur = url.trim();
-    try {
-      await onEnregistrer(corps);
-      onFermer();
-    } catch (err) {
-      const msg = messageErreurPrix(err, 'Prix non enregistré');
-      if (msg) setErreur(msg);
-      setEnvoi(false);
-    }
+    // Optimiste : la ligne affiche le nouveau prix et le volet se ferme sans attendre le serveur ;
+    // un échec rouvre le volet avec la saisie et le message (la ligne garde ses anciennes valeurs)
+    onEnregistrer(corps, { prixClientPrevu: apercu && !verrou ? apercu.arrondi : null, saisie: { ht, source, ref, url } });
+    onFermer();
   }
 
   const fournisseurChoisi = source !== 'manuel';
@@ -299,14 +297,20 @@ function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer }) {
 // ─── Ligne ────────────────────────────────────────
 /**
  * Props : piece, marque, modele, regles, seuils, isAdmin (édition), htVisible (prix d'achat reçus),
- * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), enCours (id en cours d'écriture),
+ * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), enCours (id en cours d'écriture :
+ * verrou… la ligne attend), envoiEnCours(id) (prix HT parti en arrière-plan : « Enregistrement… », la saisie
+ * suivante reste possible, elle part après dans la file de la ligne),
  * marge (texte sous le prix, filtre « marges faibles »), nbColonnes (colSpan du volet).
  */
 export default function PieceFournisseurRow({
   piece, marque, modele, regles = null, seuils = SEUILS_FRAICHEUR, isAdmin = false, htVisible = false,
-  onEnregistrer, onVerrou, onStock, enCours = null, marge = null, nbColonnes = 6,
+  onEnregistrer, onVerrou, onStock, enCours = null, envoiEnCours = null, marge = null, nbColonnes = 6,
 }) {
+  const toast = useToast();
   const [edition, setEdition] = useState(false);
+  const [brouillon, setBrouillon] = useState(null); // saisie d'un envoi échoué, reprise à la réouverture
+  const montes = useRef(true);
+  useEffect(() => { montes.current = true; return () => { montes.current = false; }; }, []);
   const Icone = getPieceIcon(piece.type_piece);
   const nom = nomPiece(piece, marque, modele);
   const aRenseigner = prixARenseigner(piece);
@@ -316,15 +320,31 @@ export default function PieceFournisseurRow({
   const enStock = piece.en_stock !== false;
   const ident = idPiece(piece);
   const occupe = enCours !== null && enCours !== undefined && ident !== null && enCours === ident;
+  const envoi = ident !== null && typeof envoiEnCours === 'function' && !!envoiEnCours(ident);
   // Pièce fournisseur (tarifs) ou écran / batterie d'un iPad / MacBook (tarifs_apple_devices, device_id)
   const editable = isAdmin && (!piece.table || piece.table === 'tarifs' || (estPieceApple(piece) && piece.device_id !== null && piece.device_id !== undefined));
   const liens = piece.liens?.utopya || piece.liens?.mobilax ? piece.liens : liensFournisseur({ marque, modele, typePiece: piece.type_piece });
   const htConnu = piece.prix_fournisseur_ht !== null && piece.prix_fournisseur_ht !== undefined;
   const classeLigne = `table-row ${!enStock ? 'opacity-80' : ''}`;
 
+  // Envoi en arrière-plan (volet déjà fermé) : un échec rouvre le volet avec la saisie et l'erreur
+  function enregistrer(corps, { prixClientPrevu = null, saisie = null } = {}) {
+    Promise.resolve()
+      .then(() => onEnregistrer(piece, corps, { prixClientPrevu }))
+      .catch((err) => {
+        const msg = messageErreurPrix(err, 'Prix non enregistré');
+        // Identification admin annulée (pas de message) : rien n'est rouvert, la ligne est rétablie
+        if (!msg) return;
+        // Ligne plus affichée (page quittée, filtre changé) : notification globale, rien à rouvrir
+        if (!montes.current) { toast.error(msg); return; }
+        setBrouillon({ ...(saisie || {}), erreur: msg });
+        setEdition(true);
+      });
+  }
+
   return (
     <>
-      <tr className={classeLigne} data-piece-id={ident || undefined}>
+      <tr className={classeLigne} data-piece-id={ident || undefined} aria-busy={occupe || envoi || undefined}>
         <td className="table-sticky-col">
           <div className="flex items-center gap-2 min-w-0">
             <Icone className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
@@ -347,7 +367,7 @@ export default function PieceFournisseurRow({
                   <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
                 )}
                 {isAdmin && onVerrou
-                  ? <BoutonVerrou verrouille={verrou} onClick={() => onVerrou(piece)} disabled={occupe} nom={`le prix de ${nom}`} />
+                  ? <BoutonVerrou verrouille={verrou} onClick={() => onVerrou(piece)} disabled={occupe || envoi} nom={`le prix de ${nom}`} />
                   : <BoutonVerrou verrouille={verrou} lectureSeule nom={nom} />}
               </div>
             </div>
@@ -371,7 +391,7 @@ export default function PieceFournisseurRow({
               <>
                 {htConnu && editable ? (
                   // Éditable au clic : le montant ouvre le volet « Mettre à jour le HT »
-                  <button type="button" onClick={() => setEdition((v) => !v)} aria-expanded={edition}
+                  <button type="button" onClick={() => setEdition((v) => !v)} aria-expanded={edition} disabled={occupe}
                     aria-label={`Modifier le prix d’achat HT de ${nom}`}
                     className="font-medium text-slate-900 underline decoration-dotted decoration-slate-400 underline-offset-4 hover:text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 min-h-[44px] -my-2">
                     {deuxDecimales(piece.prix_fournisseur_ht)} € HT
@@ -382,6 +402,11 @@ export default function PieceFournisseurRow({
                   <span className="text-slate-400" title="Masqué sans le code administrateur"><Lock className="w-4 h-4 inline" aria-hidden="true" /><span className="sr-only">Prix d’achat masqué</span></span>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+                  {(occupe || envoi) && (
+                    <span role="status" className="inline-flex items-center gap-1 font-medium text-slate-600">
+                      <Loader2 className="w-3 h-3 motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…
+                    </span>
+                  )}
                   <BadgeDatePrix row={piece} seuils={seuils} court />
                   <span>{libelleSourcePiece(piece.prix_source)}</span>
                   {piece.ref_fournisseur && <span>· réf. {piece.ref_fournisseur}</span>}
@@ -422,7 +447,7 @@ export default function PieceFournisseurRow({
               <button type="button" onClick={() => setEdition((v) => !v)} aria-expanded={edition} disabled={occupe}
                 aria-label={`Mettre à jour le HT — ${piece.type_piece}${piece.qualite ? ` ${piece.qualite}` : ''}`}
                 title="Mettre à jour le prix d’achat HT" className="btn-secondary btn-sm whitespace-nowrap">
-                {occupe ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Pencil aria-hidden="true" />}
+                {occupe || envoi ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Pencil aria-hidden="true" />}
                 <span className="hidden 2xl:inline">Mettre à jour le HT</span><span className="2xl:hidden">HT</span>
               </button>
             ) : (
@@ -438,8 +463,8 @@ export default function PieceFournisseurRow({
               et reste collé à gauche quand le tableau défile sur téléphone ; sans cqw, il prend la ligne entière */}
           <td colSpan={nbColonnes} className="bg-slate-50/60 !px-0">
             <div className="sticky left-4 w-[calc(100cqw-2rem)] max-w-full mx-4">
-              <EditeurHt piece={piece} nom={nom} regles={regles} liens={liens}
-                onEnregistrer={(corps) => onEnregistrer(piece, corps)} onFermer={() => setEdition(false)} />
+              <EditeurHt piece={piece} nom={nom} regles={regles} liens={liens} brouillon={brouillon}
+                onEnregistrer={enregistrer} onFermer={() => { setEdition(false); setBrouillon(null); }} />
             </div>
           </td>
         </tr>
@@ -454,7 +479,7 @@ export default function PieceFournisseurRow({
  * quand les prix d'achat sont reçus (admin avec le code saisi) ; actions pour l'admin.
  */
 export function TableauPieces({
-  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock, enCours, margeDe, dense = false,
+  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock, enCours, envoiEnCours, margeDe, dense = false,
 }) {
   const colonnes = 2 + (htVisible ? 2 : 1) + (isAdmin ? 1 : 0);
   // `relative` : les textes « sr-only » (en-tête « Actions », liens) sont en position absolue ; sans ancêtre
@@ -477,7 +502,7 @@ export function TableauPieces({
           {pieces.map((p) => (
             <PieceFournisseurRow key={idPiece(p) ?? `${p.type_piece}-${p.qualite || ''}`} piece={p} marque={marque} modele={modele}
               regles={regles} seuils={seuils} isAdmin={isAdmin} htVisible={htVisible} onEnregistrer={onEnregistrer}
-              onVerrou={onVerrou} onStock={onStock} enCours={enCours} marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} />
+              onVerrou={onVerrou} onStock={onStock} enCours={enCours} envoiEnCours={envoiEnCours} marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} />
           ))}
         </tbody>
       </table>

@@ -5,6 +5,7 @@ import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintPreview';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useAvertirAvantDepart, useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
 import { useToast } from '../components/Toast';
 import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, alertesPrix, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
@@ -60,7 +61,6 @@ export default function TarifsReparationPage() {
   const [erreurChargement, setErreurChargement] = useState('');
   const [editCell, setEditCell] = useState(null);
   const [editValue, setEditValue] = useState('');
-  const [saving, setSaving] = useState(false);
   const [printMode, setPrintMode] = useState(false);
   const [printPages, setPrintPages] = useState(2);
   const [printZoom, setPrintZoom] = useState('fit');
@@ -73,7 +73,11 @@ export default function TarifsReparationPage() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [fenetre, setFenetre] = useState(null); // 'ajuster' | 'historique'
   const inputRef = useRef(null);
+  // Vrai dès que la cellule ouverte est validée ou abandonnée : Entrée puis blur n'enregistrent qu'une fois
   const enregistrementRef = useRef(false);
+  const envois = useEnvoisOptimistes();
+  // Prix encore en route vers le serveur : fermer ou recharger l'onglet demande confirmation
+  useAvertirAvantDepart(envois.nombre > 0);
   const addRef = useRef(null);
   const { verrouilles, basculer: basculerVerrou, enCours: verrouEnCours } = useVerrousBoutique(TABLE, sensible);
 
@@ -117,15 +121,20 @@ export default function TarifsReparationPage() {
       toast.info(`${t.modele} est verrouillé : ouvrez le cadenas de la ligne pour modifier ses prix.`);
       return;
     }
+    enregistrementRef.current = false;
     setEditCell({ id: t.id, key });
     setEditValue(val !== null && val !== undefined ? String(val) : '');
   };
 
   const cancelEdit = () => { setEditCell(null); setEditValue(''); };
 
+  // Optimiste : le nouveau prix s'affiche et la cellule se ferme tout de suite ; l'envoi part derrière
+  // (un à la fois par ligne). Échec : toast et retour à la dernière valeur enregistrée.
   const saveEdit = async () => {
     // Garde synchrone : Entrée puis blur (ou le blur de la boîte de confirmation) n'enregistrent qu'une fois
-    if (!editCell || saving || enregistrementRef.current) return;
+    if (!editCell || enregistrementRef.current) return;
+    enregistrementRef.current = true;
+    const cell = editCell;
     // Entier en euros uniquement : « 79,90 » est refusé au lieu d'être tronqué en 79
     const saisie = editValue.replace(/\s|€/g, '');
     if (saisie !== '' && !/^\d+$/.test(saisie)) {
@@ -134,36 +143,35 @@ export default function TarifsReparationPage() {
       return;
     }
     const val = saisie === '' ? null : Number(saisie);
-    const courant = tarifs.find((t) => t.id === editCell.id);
-    const ancien = courant ? (courant[editCell.key] ?? null) : null;
+    const courant = tarifs.find((t) => t.id === cell.id);
+    const ancien = courant ? (courant[cell.key] ?? null) : null;
     if (courant && ancien === val) { cancelEdit(); return; }
-    enregistrementRef.current = true;
     // Grosse variation (règles de prix : plus de 25 % ou de 30 €) : le prix part aussitôt sur la vitrine
     const variation = ancien != null && val != null && alertesPrix({ ancienHt: ancien, nouveauHt: val }).includes('variation');
     if (variation && !window.confirm(`${courant.modele} : passer de ${ancien} € à ${val} € ? Le prix est publié aussitôt.`)) {
-      enregistrementRef.current = false;
       cancelEdit();
       return;
     }
-    setSaving(true);
-    try {
-      const cell = editCell;
-      const updated = await sensible(() => api.updateTarifReparation(cell.id, { [cell.key]: val }));
+    setTarifs(prev => prev.map((t) => (t.id === cell.id ? { ...t, [cell.key]: val } : t)));
+    cancelEdit();
+    const res = await envois.envoyer(cell.id, () => sensible(() => api.updateTarifReparation(cell.id, { [cell.key]: val })),
+      { avant: { [cell.key]: ancien }, apres: { [cell.key]: val } });
+    if (res.ok) {
       // La réponse (SELECT *) n'a pas d'âge calculé : l'ancien age_jours ferait passer un prix du jour
-      // pour « périmé ». Sans lui, la fraîcheur se recalcule depuis prix_maj_le.
+      // pour « périmé ». Sans lui, la fraîcheur se recalcule depuis prix_maj_le. Les prix encore en
+      // file pour cette ligne gardent leur valeur affichée.
+      const updated = res.reponse && typeof res.reponse === 'object' ? res.reponse : {};
       setTarifs(prev => prev.map((t) => {
         if (t.id !== cell.id) return t;
         const { age_jours: _age, fraicheur: _fraicheur, ...reste } = t;
-        return { ...reste, ...updated };
+        const next = { ...reste };
+        for (const [k, v] of Object.entries(updated)) if (!res.proteges.has(k)) next[k] = v;
+        return next;
       }));
-      cancelEdit();
-    } catch (e) {
-      const msg = messageErreurPrix(e, 'Prix non enregistré');
+    } else {
+      setTarifs(prev => prev.map((t) => (t.id === cell.id ? { ...t, ...res.retablir } : t)));
+      const msg = messageErreurPrix(res.erreur, 'Prix non enregistré');
       if (msg) toast.error(msg);
-      cancelEdit();
-    } finally {
-      enregistrementRef.current = false;
-      setSaving(false);
     }
   };
 
@@ -579,6 +587,7 @@ export default function TarifsReparationPage() {
                     {/* Price cells */}
                     {COLUMNS.map(c => {
                       const isEditing = editCell?.id === t.id && editCell?.key === c.key;
+                      const envoiCellule = envois.enCours(t.id, c.key);
                       const val = t[c.key];
                       const barre = getBarrePrice(val, t[c.key + '_barre']);
                       const contenu = val != null ? (
@@ -591,6 +600,14 @@ export default function TarifsReparationPage() {
                       ) : (
                         <span className="text-slate-400 text-sm" aria-hidden="true">—</span>
                       );
+                      // Prix affiché aussitôt, petit indicateur tant que le serveur n'a pas confirmé
+                      const contenuCellule = envoiCellule ? (
+                        <span className="relative block">
+                          {contenu}
+                          <Loader2 className="absolute -top-1 -right-1 w-3 h-3 text-slate-500 motion-safe:animate-spin" aria-hidden="true" />
+                          <span className="sr-only">Enregistrement…</span>
+                        </span>
+                      ) : contenu;
                       return (
                         <td key={c.key} className="px-1 py-1 text-center">
                           {isEditing ? (
@@ -610,9 +627,10 @@ export default function TarifsReparationPage() {
                               type="button"
                               onClick={() => startEdit(t, c.key, val)}
                               aria-label={`${c.label} de ${t.modele} : ${val != null ? `${val} euros` : 'pas de prix'}. ${verrou ? 'Verrouillé' : 'Modifier'}`}
+                              aria-busy={envoiCellule || undefined}
                               className={`w-full min-h-[44px] rounded-lg px-1 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-brand-50 hover:ring-1 hover:ring-brand-200'}`}
                             >
-                              {contenu}
+                              {contenuCellule}
                             </button>
                           ) : (
                             <span className="block py-1.5">{contenu}{val == null && <span className="sr-only">pas de prix</span>}</span>

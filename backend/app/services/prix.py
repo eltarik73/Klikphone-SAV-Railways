@@ -466,9 +466,18 @@ def _fraiche(table: str, colonne: str, source: str) -> bool:
     return not (source == "formule" and colonne in TABLES[table]["derivees"])
 
 
+def _valeurs(cur, template: str, lignes) -> bytes:
+    """Liste VALUES composée par le pilote (mêmes échappements que execute_values)."""
+    return b",".join(cur.mogrify(template, ligne) for ligne in lignes)
+
+
+def _composer(cur, sql: str, params=None) -> bytes:
+    return cur.mogrify(sql, params) if params is not None else sql.encode()
+
+
 def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id: str = None,
-                    saisie: bool = None) -> dict:
-    """Écrit un lot de prix d'une table en quelques requêtes (une par colonne modifiée).
+                    saisie: bool = None, *, lignes: dict = None, sql_joint=(), relire=None) -> dict:
+    """Écrit un lot de prix d'une table en UN aller-retour (plus la lecture sous verrou).
 
     changements : [(ligne_id, colonne, nouveau)] — la dernière valeur d'un couple l'emporte.
     N'écrit que les valeurs qui changent ; date le prix (prix_maj_le, et prix_source pour
@@ -482,7 +491,18 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
     passer ; une écriture en masse de source 'manuel' (ajustement global d'une grille boutique,
     /bulk) passe saisie=False et laisse les lignes verrouillées, listées dans « verrouilles ».
 
+    Allers-retours (chacun coûte ~20 ms en prod) : la lecture des lignes sous verrou, puis UN
+    envoi qui porte les UPDATE (un par colonne modifiée), l'historique, et :
+    - lignes : {id: ligne} déjà lues par l'appelant sous verrou (SELECT * … FOR UPDATE) —
+      le moteur ne les relit pas (une route qui doit lire la ligne avant d'écrire) ;
+    - sql_joint : [(sql, params)] instructions de la route envoyées avec les écritures de prix
+      (nom du modèle, verrou, référence fournisseur…), avant elles ;
+    - relire : (sql, params) lecture envoyée en dernier, qui voit les écritures ; ses lignes
+      vont dans res["relu"] (la réponse de la route sans requête de plus).
+    Fragments SQL fixes du code (noms de la liste blanche TABLES), jamais une saisie.
+
     → {ecrits: [(id, colonne, ancien, nouveau)], verrouilles: [id], inchanges: n, absents: [id]}
+      (+ relu: [lignes] si `relire`)
     """
     if source not in SOURCES:
         raise ValueError(f"Source de prix inconnue : {source}")
@@ -496,19 +516,21 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
         t = _type_colonne(table, colonne)
         voulu[(int(ligne_id), colonne)] = normaliser_valeur(t, nouveau)
     res = {"ecrits": [], "verrouilles": [], "inchanges": 0, "absents": []}
-    if not voulu:
+    if not voulu and not sql_joint and relire is None:
         return res
-    ids = sorted({i for i, _ in voulu})
-    colonnes = sorted({c for _, c in voulu})
-    extra = ", prix_maj_le" + (", prix_source" if meta["source"] else "") + (", verrou_manuel" if meta["verrou"] else "")
-    # Noms issus de la liste blanche TABLES uniquement
-    cur.execute(
-        f"SELECT id, {', '.join(colonnes)}{extra} FROM {table} WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
-        (ids,),
-    )
-    lignes = {r["id"]: r for r in cur.fetchall() or []}
+    if voulu and lignes is None:
+        ids = sorted({i for i, _ in voulu})
+        colonnes = sorted({c for _, c in voulu})
+        extra = ", prix_maj_le" + (", prix_source" if meta["source"] else "") + (", verrou_manuel" if meta["verrou"] else "")
+        # Noms issus de la liste blanche TABLES uniquement
+        cur.execute(
+            f"SELECT id, {', '.join(colonnes)}{extra} FROM {table} WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
+            (ids,),
+        )
+        lignes = {r["id"]: r for r in cur.fetchall() or []}
+    lignes = lignes or {}
     cadenas = set()
-    if table in TABLES_BOUTIQUE and not passe_verrou:
+    if voulu and table in TABLES_BOUTIQUE and not passe_verrou:
         cadenas = lignes_verrouillees(cur).get(table, set())
     par_colonne, historique, verrouilles, absents = {}, [], set(), set()
     for (ligne_id, colonne), nouveau in sorted(voulu.items()):
@@ -529,24 +551,30 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
         historique.append((table, ligne_id, colonne, ancien, nouveau, source, lot_id, par,
                            row.get("prix_maj_le"), row.get("prix_source") if meta["source"] else None))
         res["ecrits"].append((ligne_id, colonne, ancien, nouveau))
+    # Un seul envoi : instructions de la route, UPDATE par colonne, historique, relecture
+    envoi = [_composer(cur, sql, params) for sql, params in sql_joint]
     for colonne, valeurs in par_colonne.items():
         t = _type_colonne(table, colonne)
         maj_source = ", prix_source = CASE WHEN v.fraiche THEN v.src ELSE t.prix_source END" if meta["source"] else ""
-        execute_values(
-            cur,
+        envoi.append(
             f"""UPDATE {table} AS t SET {colonne} = v.val::{t}, updated_at = NOW(),
                     prix_maj_le = CASE WHEN v.fraiche THEN NOW() ELSE t.prix_maj_le END{maj_source}
-                FROM (VALUES %s) AS v(id, val, fraiche, src) WHERE t.id = v.id""",
-            valeurs, template="(%s::integer, %s, %s::boolean, %s::text)", page_size=max(len(valeurs), 1),
-        )
+                FROM (VALUES """.encode()
+            + _valeurs(cur, "(%s::integer, %s, %s::boolean, %s::text)", valeurs)
+            + b") AS v(id, val, fraiche, src) WHERE t.id = v.id")
     if historique:
-        execute_values(
-            cur,
-            """INSERT INTO tarifs_historique
+        envoi.append(
+            b"""INSERT INTO tarifs_historique
                    (table_nom, ligne_id, colonne, ancien, nouveau, source, lot_id, par, ancien_maj_le, ancien_source)
-               VALUES %s""",
-            historique, page_size=max(len(historique), 1),
-        )
+               VALUES """
+            + _valeurs(cur, "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", historique))
+    if relire is not None:
+        envoi.append(_composer(cur, *relire))
+    if envoi:
+        # Texte déjà composé (mogrify) : aucun paramètre, donc aucune interprétation des %
+        cur.execute(b";\n".join(envoi))
+    if relire is not None:
+        res["relu"] = [dict(r) for r in (cur.fetchall() or [])]
     res["verrouilles"] = sorted(verrouilles)
     res["absents"] = sorted(absents)
     return res

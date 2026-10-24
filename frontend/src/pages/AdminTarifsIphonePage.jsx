@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
+import { useToast } from '../components/Toast';
 import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FenetrePrix, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
@@ -54,6 +56,14 @@ async function openPdfInNewTab(path) {
 // navigate()) : l'app est sous <BrowserRouter>, sans data router, donc sans useBlocker ; tant
 // qu'il reste des modifications, la page intercepte history.pushState vers une autre page et
 // propose « Enregistrer et quitter » / « Quitter sans enregistrer » / « Rester sur la page ».
+// Entrée dans un champ de la ligne : enregistre la ligne (comme le bouton « Enregistrer »)
+function entreeLigne(e, dirty, enregistrer) {
+  if (e.key !== 'Enter' || !dirty || e.defaultPrevented || e.nativeEvent?.isComposing) return;
+  if (e.target?.tagName !== 'INPUT' || ['checkbox', 'radio', 'button'].includes(e.target.type)) return;
+  e.preventDefault();
+  enregistrer();
+}
+
 function useGardeModifications(actif) {
   const navigate = useNavigate();
   const [cible, setCible] = useState(null);
@@ -89,9 +99,11 @@ function useGardeModifications(actif) {
   return { cible, partir, rester };
 }
 
-function FenetreQuitter({ garde, nombre, enregistrer }) {
+// `envois` : lignes déjà validées dont l'envoi n'est pas terminé (rien à saisir, seulement à attendre)
+function FenetreQuitter({ garde, nombre, envois = 0, enregistrer }) {
   const [enCours, setEnCours] = useState(false);
   const { cible, partir, rester } = garde;
+  const seulementEnvois = nombre === 0 && envois > 0;
   async function enregistrerPuisPartir() {
     setEnCours(true);
     try {
@@ -107,20 +119,28 @@ function FenetreQuitter({ garde, nombre, enregistrer }) {
       bloquer={enCours}
       largeur="max-w-xl"
       icone={AlertTriangle}
-      titre="Modifications non enregistrées"
-      sousTitre={`${nombre} ligne${nombre > 1 ? 's' : ''} modifiée${nombre > 1 ? 's' : ''} pas encore enregistrée${nombre > 1 ? 's' : ''}.`}
+      titre={seulementEnvois ? 'Enregistrement en cours' : 'Modifications non enregistrées'}
+      sousTitre={seulementEnvois
+        ? `${envois} ligne${envois > 1 ? 's' : ''} en cours d’envoi au serveur.`
+        : `${nombre} ligne${nombre > 1 ? 's' : ''} modifiée${nombre > 1 ? 's' : ''} pas encore enregistrée${nombre > 1 ? 's' : ''}.`}
       pied={(
         <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2">
           <button type="button" onClick={rester} disabled={enCours} className="btn-ghost">Rester sur la page</button>
-          <button type="button" onClick={() => partir(cible)} disabled={enCours} className="btn-secondary">Quitter sans enregistrer</button>
+          <button type="button" onClick={() => partir(cible)} disabled={enCours} className="btn-secondary">
+            {seulementEnvois ? 'Quitter sans attendre' : 'Quitter sans enregistrer'}
+          </button>
           <button type="button" onClick={enregistrerPuisPartir} disabled={enCours} className="btn-primary">
             {enCours ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Save aria-hidden="true" />}
-            Enregistrer et quitter
+            {seulementEnvois ? 'Attendre et quitter' : 'Enregistrer et quitter'}
           </button>
         </div>
       )}
     >
-      <p className="t-body">Sans enregistrement, ces changements de prix ou de stock seront perdus.</p>
+      <p className="t-body">
+        {seulementEnvois
+          ? 'Les nouveaux prix partent vers le serveur. En quittant sans attendre, un échec éventuel sera signalé par une notification.'
+          : 'Sans enregistrement, ces changements de prix ou de stock seront perdus.'}
+      </p>
     </FenetrePrix>
   );
 }
@@ -187,6 +207,9 @@ export default function AdminTarifsIphonePage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
+  // Lignes envoyées : la ligne quitte l'état « modifiée » tout de suite, l'envoi part derrière (un à la fois par ligne)
+  const envois = useEnvoisOptimistes();
+  const toastGlobal = useToast(); // notifications de l'application : restent visibles après un changement de page
   const [dirty, setDirty] = useState({}); // { id: true }
   const [toast, setToast] = useState(null);
   const [selected, setSelected] = useState(new Set()); // Set<slug>
@@ -277,27 +300,38 @@ export default function AdminTarifsIphonePage() {
     };
   }
 
+  // Optimiste : la ligne n'est plus « modifiée » dès le clic (ou Entrée) ; un échec la remet modifiée,
+  // la saisie reste à l'écran et le bouton « Enregistrer » permet de réessayer.
+  // La ligne part entière : un envoi plus récent de la même ligne (en file) reprend aussi cette saisie,
+  // l'échec d'un envoi dépassé ne remet donc rien en « modifiée ».
+  // Page quittée pendant l'envoi : l'échec est signalé par une notification globale.
   async function saveRow(row) {
-    setSavingId(row.id);
-    try {
-      await sensible(() => api.patch(`/api/iphone-tarifs/${row.id}`, buildPayload(row)));
-      setDirty(d => { const n = { ...d }; delete n[row.id]; return n; });
-      showToast('success', `${row.modele} sauvegardé`);
+    const payload = buildPayload(row);
+    setDirty(d => { const n = { ...d }; delete n[row.id]; return n; });
+    const res = await envois.envoyer(row.id, () => sensible(() => api.patch(`/api/iphone-tarifs/${row.id}`, payload)),
+      { apres: { ligne: payload } });
+    if (res.ok) {
+      if (envois.monte()) showToast('success', `${row.modele} sauvegardé`);
       return true;
-    } catch (e) {
-      toastErreur(e, `${row.modele} non enregistré`);
-      return false;
-    } finally {
-      setSavingId(null);
     }
+    if (res.proteges.has('ligne')) return false;
+    const msg = messageErreurPrix(res.erreur, `${row.modele} non enregistré`);
+    if (!envois.monte()) {
+      if (msg) toastGlobal.error(msg);
+      return false;
+    }
+    setDirty(d => ({ ...d, [row.id]: true }));
+    if (msg) showToast('error', msg, 5000);
+    return false;
   }
 
-  // Toutes les lignes modifiées (avant un ajustement en %) ; un échec arrête la série
+  // Toutes les lignes modifiées (avant un ajustement en %) ; un échec arrête la série.
+  // Les envois déjà partis (Entrée) sont attendus aussi.
   async function saveAllDirty() {
     for (const r of rows.filter((x) => dirty[x.id])) {
       if (!(await saveRow(r))) return false;
     }
-    return true;
+    return envois.attendre();
   }
 
   // ─── Recherche d'image via DuckDuckGo (meme pattern que smartphones) ─
@@ -512,7 +546,9 @@ export default function AdminTarifsIphonePage() {
 
   const dirtyCount = Object.keys(dirty).length;
   const rowPadY = compact ? 'py-1' : 'py-2';
-  const garde = useGardeModifications(dirtyCount > 0);
+  // Lignes modifiées OU envois encore en cours : la navigation interne et la fermeture de l'onglet
+  // sont gardées (un envoi coupé ou un échec après le départ passerait inaperçu)
+  const garde = useGardeModifications(dirtyCount > 0 || envois.nombre > 0);
 
   return (
     <div className="page max-w-[1280px]">
@@ -818,7 +854,7 @@ export default function AdminTarifsIphonePage() {
                   )}
                   {filteredRows.map((r) => {
                     const isDirty = !!dirty[r.id];
-                    const isSaving = savingId === r.id;
+                    const isSaving = envois.enCours(r.id);
                     const isSelected = selected.has(r.slug);
                     const isInactive = r.actif === false;
                     const verrou = verrouilles.has(r.id);
@@ -826,6 +862,8 @@ export default function AdminTarifsIphonePage() {
                     return (
                       <tr
                         key={r.id}
+                        onKeyDown={(e) => entreeLigne(e, isDirty, () => saveRow(r))}
+                        aria-busy={isSaving || undefined}
                         className={`table-row group ${
                           isDirty
                             ? 'bg-amber-50/70 hover:bg-amber-50'
@@ -960,17 +998,20 @@ export default function AdminTarifsIphonePage() {
                               nom={`les prix de ${r.modele}`}
                               aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
                             />
-                            {isDirty && (
+                            {isDirty ? (
                               <button
                                 onClick={() => saveRow(r)}
-                                disabled={isSaving}
                                 aria-label={`Enregistrer ${r.modele}`}
                                 className="btn-primary btn-sm"
                               >
-                                {isSaving ? <Loader2 className="motion-safe:animate-spin" /> : <Save />}
+                                <Save />
                                 Enregistrer
                               </button>
-                            )}
+                            ) : isSaving ? (
+                              <span role="status" className="inline-flex items-center gap-1 min-h-9 px-1 text-xs font-medium text-slate-600 whitespace-nowrap">
+                                <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…
+                              </span>
+                            ) : null}
                             <button
                               onClick={() => generateImage(r)}
                               disabled={generatingId === r.id}
@@ -990,7 +1031,7 @@ export default function AdminTarifsIphonePage() {
                             </button>
                             <button
                               onClick={() => handlePdfOne(r)}
-                              disabled={isDirty}
+                              disabled={isDirty || isSaving}
                               title={isDirty ? 'Enregistrez d\'abord' : 'Voir le PDF'}
                               aria-label={`PDF de ${r.modele}`}
                               className="btn-secondary btn-sm"
@@ -1160,7 +1201,7 @@ export default function AdminTarifsIphonePage() {
         aEnregistrer={{ nombre: dirtyCount, enregistrer: saveAllDirty }}
         onApplique={() => load()}
       />
-      <FenetreQuitter garde={garde} nombre={dirtyCount} enregistrer={saveAllDirty} />
+      <FenetreQuitter garde={garde} nombre={dirtyCount} envois={envois.nombre} enregistrer={saveAllDirty} />
       <HistoriquePrix
         open={fenetre === 'historique'}
         onClose={() => setFenetre(null)}

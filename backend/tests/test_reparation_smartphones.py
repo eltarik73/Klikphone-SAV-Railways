@@ -100,19 +100,27 @@ def test_sources_de_saisie_passent_le_verrou_pas_les_autres():
         def execute(self, sql, params=None):
             self.sql.append(sql)
 
+        def mogrify(self, sql, params=None):
+            return b"(...)"
+
         def fetchall(self):
             return [{"id": 1, "prix_fournisseur_ht": Decimal("10.00"), "prix_maj_le": None,
                      "prix_source": "manuel", "verrou_manuel": True}]
 
+        def ecrit(self):
+            # Lecture sous verrou (texte), puis UN envoi composé (octets) : UPDATE + historique
+            return any(isinstance(s, bytes) and b"UPDATE tarifs" in s for s in self.sql)
+
     for source, attendu in (("manuel", []), ("utopya", []), ("mobilax", []), ("import", [1]), ("commande", [1])):
-        with patch("app.services.prix.execute_values") as ev:
-            res = prix.ecrire_prix_lot(Cur(), "tarifs", [(1, "prix_fournisseur_ht", 12)], source, "x")
+        cur = Cur()
+        res = prix.ecrire_prix_lot(cur, "tarifs", [(1, "prix_fournisseur_ht", 12)], source, "x")
         assert res["verrouilles"] == attendu, source
-        assert (ev.call_count > 0) == (attendu == [])
+        assert cur.ecrit() == (attendu == [])
     # Écriture en masse de source de saisie : le verrou tient
-    with patch("app.services.prix.execute_values"):
-        assert prix.ecrire_prix_lot(Cur(), "tarifs", [(1, "prix_fournisseur_ht", 12)], "utopya", "x",
-                                    saisie=False)["verrouilles"] == [1]
+    cur = Cur()
+    assert prix.ecrire_prix_lot(cur, "tarifs", [(1, "prix_fournisseur_ht", 12)], "utopya", "x",
+                                saisie=False)["verrouilles"] == [1]
+    assert not cur.ecrit()
 
 
 # ═══ Liens profonds (jamais ouverts par le serveur) ════════════

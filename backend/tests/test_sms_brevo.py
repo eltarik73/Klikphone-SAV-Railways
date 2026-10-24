@@ -440,7 +440,8 @@ def test_reglages_sms_exigent_elevation(client):
     r = _config_put(client, gc, [{"cle": "SMS_BREVO_ACTIF", "valeur": "1"},
                                  {"cle": "SMS_SENDER", "valeur": " Klik73 "}], admin=True)
     assert r.status_code == 200
-    assert [p for _, p in cur.ecrits("INSERT INTO params")] == [("SMS_BREVO_ACTIF", "1"), ("SMS_SENDER", "Klik73")]
+    # Un seul INSERT à plusieurs lignes : (clé, valeur, clé, valeur…)
+    assert [p for _, p in cur.ecrits("INSERT INTO params")] == [("SMS_BREVO_ACTIF", "1", "SMS_SENDER", "Klik73")]
 
 
 @pytest.mark.parametrize("cle,valeur", [

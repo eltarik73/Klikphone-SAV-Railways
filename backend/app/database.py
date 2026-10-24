@@ -6,7 +6,10 @@ Compatible avec la base existante Klikphone SAV.
 
 import os
 import threading
+from time import monotonic
+
 import psycopg2
+import psycopg2.extensions
 import psycopg2.pool
 import psycopg2.extras
 from contextlib import contextmanager
@@ -22,6 +25,46 @@ _SLOT_TIMEOUT = 30
 # Visible dans pg_stat_activity : le démarrage ne coupe que les sessions bloquées
 # de cette application, jamais celles d'un autre client de la base.
 APPLICATION_NAME = os.getenv("DB_APPLICATION_NAME", "klikphone-sav-api")
+
+
+def _entier_env(nom: str, defaut: int) -> int:
+    try:
+        return max(0, int(os.getenv(nom, "")))
+    except ValueError:
+        return defaut
+
+
+# Durée maximale d'une instruction (ms). Posée une fois à l'ouverture de la connexion
+# (options libpq), et non plus à chaque emprunt du pool. KP_STATEMENT_TIMEOUT_MS : tests.
+STATEMENT_TIMEOUT_MS = _entier_env("KP_STATEMENT_TIMEOUT_MS", 30000)
+# Une connexion rendue depuis plus longtemps que ça (s) est sondée avant d'être prêtée :
+# Supabase coupe les connexions inactives, souvent toutes ensemble.
+SONDE_APRES_S = float(_entier_env("KP_DB_SONDE_APRES_S", 20))
+# None : pas encore vérifié ; True : options appliquées par le serveur ;
+# False : options ignorées (pooler) → SET statement_timeout à chaque emprunt, comme avant.
+_timeout_par_options = None
+# Une connexion morte trouvée : toutes celles rendues avant ce moment sont sondées.
+_suspicion_depuis = 0.0
+
+
+class _Connexion(psycopg2.extensions.connection):
+    """Connexion du pool horodatée : dernier rendu au pool, erreur pendant l'emprunt."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kp_rendue = monotonic()
+        self.kp_suspecte = False
+
+
+def _options_timeout(dsn: str) -> dict:
+    if "options=" in dsn:
+        return {}   # options déjà fixées par l'URL : vérifiées au premier emprunt
+    return {"options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}"}
+
+
+def _options_refusees(e: Exception) -> bool:
+    texte = str(e).lower()
+    return "options" in texte or "startup parameter" in texte
 
 
 def get_pool():
@@ -44,7 +87,7 @@ def get_pool():
         # 10 ouvertures TLS) : les autres à la demande ou par prechauffer_pool(),
         # puis gardées jusqu'à _MINCONN inactives.
         extra = {} if "application_name=" in database_url else {"application_name": APPLICATION_NAME}
-        _pool = psycopg2.pool.ThreadedConnectionPool(
+        reglages = dict(
             minconn=1,
             maxconn=_MAXCONN,
             dsn=database_url,
@@ -54,8 +97,21 @@ def get_pool():
             keepalives_idle=30,
             keepalives_interval=10,
             keepalives_count=5,
+            connection_factory=_Connexion,
         )
-        _pool.minconn = _MINCONN
+        options = _options_timeout(database_url)
+        try:
+            pool = psycopg2.pool.ThreadedConnectionPool(**reglages, **options)
+        except psycopg2.OperationalError as e:
+            # Pooler qui refuse le paramètre de démarrage « options » : SET à chaque emprunt
+            if not options or not _options_refusees(e):
+                raise
+            global _timeout_par_options
+            print(f"[db] options de connexion refusées ({e}) : statement_timeout posé à chaque emprunt")
+            _timeout_par_options = False
+            pool = psycopg2.pool.ThreadedConnectionPool(**reglages)
+        pool.minconn = _MINCONN
+        _pool = pool
     return _pool
 
 
@@ -88,23 +144,66 @@ def prechauffer_pool():
                 _slots.release()
 
 
-def _checked_conn(pool):
-    """Connexion du pool, validée par le SET statement_timeout (1 seul aller-retour).
+def _a_sonder(conn) -> bool:
+    """Sonde utile : connexion restée inactive, en erreur au dernier emprunt, ou rendue
+    avant qu'une connexion morte soit trouvée. Horodatage absent : toujours sondée."""
+    rendue = getattr(conn, "kp_rendue", None)
+    if rendue is None or getattr(conn, "kp_suspecte", True):
+        return True
+    return rendue <= _suspicion_depuis or monotonic() - rendue > SONDE_APRES_S
 
+
+def _noter(conn, **valeurs):
+    for nom, valeur in valeurs.items():
+        try:
+            setattr(conn, nom, valeur)
+        except (AttributeError, TypeError):
+            pass   # connexion sans attributs (test) : simplement sondée à chaque emprunt
+
+
+def _sonder(conn):
+    """Un aller-retour, dans la transaction que la requête poursuit ensuite."""
+    global _timeout_par_options
+    with conn.cursor() as cur:
+        if _timeout_par_options is None:
+            # Premier emprunt du processus : le serveur applique-t-il les options ?
+            cur.execute("SELECT setting FROM pg_settings WHERE name = 'statement_timeout'")
+            row = cur.fetchone()
+            valeur = row[0] if row else None
+            _timeout_par_options = str(valeur) == str(STATEMENT_TIMEOUT_MS)
+            if _timeout_par_options:
+                return
+            print(f"[db] statement_timeout du serveur = {valeur} ms : posé à chaque emprunt")
+        if _timeout_par_options:
+            cur.execute("SELECT 1")
+        else:
+            cur.execute("SET statement_timeout = %s", (STATEMENT_TIMEOUT_MS,))
+
+
+def _checked_conn(pool):
+    """Connexion du pool, sondée seulement quand c'est utile (cf. _a_sonder).
+
+    statement_timeout est fixé à l'ouverture (options) : une connexion rendue il y a
+    moins de SONDE_APRES_S sans erreur est prêtée sans aller-retour. Sinon une sonde
+    (SELECT 1, ou le SET statement_timeout si le serveur ignore les options).
     Une connexion coupée côté Supabase (idle timeout) est rendue au pool avec
     close=True : sans ce putconn elle resterait comptée comme utilisée et le
     pool finirait en « connection pool exhausted ». Les connexions inactives
     meurent souvent ensemble : on peut en jeter jusqu'à minconn avant d'en
-    ouvrir une neuve.
+    ouvrir une neuve, et toutes celles rendues avant sont sondées ensuite.
     """
+    global _suspicion_depuis
     attempts = pool.minconn + 1
     for attempt in range(attempts):
         conn = pool.getconn()
+        if _timeout_par_options is True and not _a_sonder(conn):
+            return conn
         try:
-            with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = '30s'")
+            _sonder(conn)
+            _noter(conn, kp_suspecte=False)
             return conn
         except Exception:
+            _suspicion_depuis = monotonic()
             pool.putconn(conn, close=True)
             if attempt == attempts - 1:
                 raise
@@ -119,6 +218,7 @@ def get_db():
             with conn.cursor() as cur:
                 cur.execute("SELECT ...")
     """
+    global _suspicion_depuis
     pool = get_pool()
     if not _slots.acquire(timeout=_SLOT_TIMEOUT):
         raise RuntimeError("Base de données saturée : aucune connexion libre depuis 30 s")
@@ -127,11 +227,21 @@ def get_db():
         try:
             yield conn
             conn.commit()
-        except Exception:
+        except Exception as e:
+            # Erreur de la base : sondée au prochain emprunt (peut-être cassée sans être fermée)
+            if isinstance(e, psycopg2.Error):
+                _noter(conn, kp_suspecte=True)
             if not conn.closed:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except Exception:
+                    _noter(conn, kp_suspecte=True)
+                    raise
             raise
         finally:
+            if conn.closed:
+                _suspicion_depuis = monotonic()
+            _noter(conn, kp_rendue=monotonic())
             pool.putconn(conn, close=bool(conn.closed))
     finally:
         _slots.release()

@@ -422,23 +422,23 @@ def update_client(
     if not updates and accord is None:
         return {"ok": True}
 
+    # Un seul UPDATE : champs saisis et consentement (sans changement d'état, le consentement
+    # ne bouge pas ; l'accord passé reste daté après un retrait). Noms : champs du modèle.
+    sets = [f"{k} = %({k})s" for k in updates]
+    params = {**updates, "_id": client_id}
+    if accord is not None:
+        chg = "COALESCE(consentement_marketing, FALSE) IS DISTINCT FROM %(_accord)s"
+        sets += [
+            f"consentement_marketing_le = CASE WHEN {chg} AND %(_accord)s THEN NOW() ELSE consentement_marketing_le END",
+            f"consentement_marketing_source = CASE WHEN {chg} AND %(_accord)s THEN %(_source)s"
+            " ELSE consentement_marketing_source END",
+            f"consentement_marketing_retire_le = CASE WHEN {chg} AND NOT %(_accord)s THEN NOW()"
+            " ELSE consentement_marketing_retire_le END",
+            f"consentement_marketing = CASE WHEN {chg} THEN %(_accord)s ELSE consentement_marketing END",
+        ]
+        params.update(_accord=accord, _source=source_consentement("comptoir"))
     with get_cursor() as cur:
-        if updates:
-            set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
-            values = list(updates.values()) + [client_id]
-            cur.execute(f"UPDATE clients SET {set_clause} WHERE id = %s", values)
-        if accord is not None:
-            # Sans changement d'état, rien ne bouge ; l'accord passé reste daté après un retrait
-            cur.execute("""
-                UPDATE clients SET
-                    consentement_marketing_le = CASE WHEN %(accord)s THEN NOW() ELSE consentement_marketing_le END,
-                    consentement_marketing_source = CASE WHEN %(accord)s THEN %(source)s
-                                                         ELSE consentement_marketing_source END,
-                    consentement_marketing_retire_le = CASE WHEN %(accord)s THEN consentement_marketing_retire_le
-                                                            ELSE NOW() END,
-                    consentement_marketing = %(accord)s
-                WHERE id = %(id)s AND COALESCE(consentement_marketing, FALSE) IS DISTINCT FROM %(accord)s
-            """, {"accord": accord, "source": source_consentement("comptoir"), "id": client_id})
+        cur.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id = %(_id)s", params)
 
     return {"ok": True}
 

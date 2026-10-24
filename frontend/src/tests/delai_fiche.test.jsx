@@ -55,7 +55,7 @@ function renderFiche() {
 
 const carteDates = () => screen.getByRole('heading', { name: 'Dates' }).closest('section');
 const appelsDelai = () => apiMock.updateTicket.mock.calls.filter(([, patch]) => 'date_recuperation' in (patch || {}));
-// Au-delà du délai de l'enregistrement automatique des prix (500 ms)
+// Au-delà du délai de l'enregistrement automatique des prix (DELAI_FRAPPE, 250 ms depuis l'accélération ; 500 ms avant)
 const attendreAutoSave = () => new Promise((r) => { setTimeout(r, 700); });
 
 let courant;

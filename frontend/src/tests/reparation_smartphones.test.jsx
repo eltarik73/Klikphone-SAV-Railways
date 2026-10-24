@@ -10,7 +10,7 @@
  * - bandeau d'aide de « Réparation iPhone ».
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { configure } from '@testing-library/react';
 
@@ -457,8 +457,11 @@ describe('Réparation smartphones : administrateur', () => {
     expect(within(table).getByText(/réf\. UT-123/)).toBeInTheDocument();
     expect(screen.queryByRole('form', { name: /Mettre à jour le prix/ })).not.toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith(`Samsung Galaxy A54 · Ecran Soft OLED : achat ${E(50)} HT → prix client ${E(129)}.`);
-    // La grille est relue (comptages des modèles)
-    await waitFor(() => expect(apiMock.getReparationSmartphonesMarques).toHaveBeenCalledTimes(2));
+    // Enregistrement rapide : la réponse du PATCH suffit, l'écran ouvert n'est pas relu (marques, modèle)
+    // — avant, 3 GET suivaient chaque HT (marques, modèle, santé des prix)
+    await new Promise((r) => setTimeout(r, 50));
+    expect(apiMock.getReparationSmartphonesMarques).toHaveBeenCalledTimes(1);
+    expect(apiMock.getReparationSmartphonesModele).toHaveBeenCalledTimes(1);
   });
 
   it('ligne « prix à renseigner » : ni date ni source dans la cellule HT, un bouton « Saisir le HT » qui ouvre le volet', async () => {
@@ -497,15 +500,78 @@ describe('Réparation smartphones : administrateur', () => {
     expect(screen.queryByRole('form', { name: /Mettre à jour le prix/ })).not.toBeInTheDocument();
   });
 
-  it('erreur du serveur à la validation : message dans le volet, prix inchangé', async () => {
-    apiMock.patchPrixPiece.mockRejectedValue(Object.assign(new Error('Base indisponible'), { status: 500 }));
+  it('erreur du serveur à la validation : volet rouvert avec la saisie et le message, prix rétabli', async () => {
+    let echouer;
+    apiMock.patchPrixPiece.mockImplementation(() => new Promise((_, rej) => { echouer = rej; }));
     page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
     const table = await screen.findByRole('table');
     fireEvent.click(within(table).getByRole('button', { name: /Mettre à jour le HT.*Ecran Soft OLED/ }));
     const form = screen.getByRole('form', { name: /Ecran Soft OLED$/ });
     fireEvent.change(within(form).getByLabelText('Nouveau prix d’achat HT (€)'), { target: { value: '50' } });
     fireEvent.click(within(form).getByRole('button', { name: `Valider : ${E(129)}` }));
-    expect(await within(form).findByRole('alert')).toHaveTextContent('Prix non enregistré : Base indisponible');
+    // Optimiste : le volet se ferme et la ligne affiche aussitôt le nouveau HT, « Enregistrement… » en attendant
+    expect(await within(table).findByText('50,00 € HT')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: /Ecran Soft OLED$/ })).not.toBeInTheDocument();
+    expect(within(table).getByText('Enregistrement…')).toBeInTheDocument();
+    await waitFor(() => expect(echouer).toBeTypeOf('function'));
+    await act(async () => { echouer(Object.assign(new Error('Base indisponible'), { status: 500 })); });
+    // … puis l'échec rouvre le volet avec la saisie (« Valider » pour réessayer) et rétablit l'ancien prix
+    const rouvert = await screen.findByRole('form', { name: /Ecran Soft OLED$/ });
+    expect(await within(rouvert).findByRole('alert')).toHaveTextContent('Prix non enregistré : Base indisponible');
+    expect(within(rouvert).getByLabelText('Nouveau prix d’achat HT (€)')).toHaveValue('50');
+    expect(within(rouvert).getByRole('button', { name: `Valider : ${E(129)}` })).toBeEnabled();
+    expect(within(table).getByText('42,00 € HT')).toBeInTheDocument();
+  });
+
+  // Deux HT coup sur coup sur la même pièce : une file par pièce (useEnvoisOptimistes)
+  const deuxSaisies = async () => {
+    const envois = [];
+    apiMock.patchPrixPiece.mockImplementation((id, corps) => new Promise((resolve, reject) => { envois.push({ corps, resolve, reject }); }));
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const table = await screen.findByRole('table');
+    const saisir = (ht) => {
+      fireEvent.click(within(table).getByRole('button', { name: /Mettre à jour le HT.*Ecran Soft OLED/ }));
+      const form = screen.getByRole('form', { name: /Ecran Soft OLED$/ });
+      fireEvent.change(within(form).getByLabelText('Nouveau prix d’achat HT (€)'), { target: { value: ht } });
+      fireEvent.click(within(form).getByRole('button', { name: `Valider : ${E(129)}` }));
+    };
+    saisir('50');
+    expect(await within(table).findByText('50,00 € HT')).toBeInTheDocument();
+    await waitFor(() => expect(envois).toHaveLength(1));
+    // Pendant l'envoi, la pièce reste modifiable : la 2e saisie attend son tour
+    expect(within(table).getByRole('button', { name: /Mettre à jour le HT.*Ecran Soft OLED/ })).toBeEnabled();
+    saisir('55');
+    expect(await within(table).findByText('55,00 € HT')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(envois).toHaveLength(1);
+    const ligne = (ht) => ({ id: 1, prix_fournisseur_ht: ht, prix_client: 129, prix_source: 'manuel', prix_maj_le: '2026-10-24T09:00:00',
+      age_jours: 0, fraicheur: 'ok', estime: false, verrou_manuel: false, calcul: { ht, tva: 1.2, marge: 60, brut: ht * 1.2 + 60, arrondi: 129 } });
+    return { table, envois, ligne };
+  };
+
+  it('deux HT coup sur coup : envoyés dans l’ordre, la réponse du 1er n’écrase pas le 2e à l’écran', async () => {
+    const { table, envois, ligne } = await deuxSaisies();
+    await act(async () => { envois[0].resolve(ligne(50)); });
+    await waitFor(() => expect(envois).toHaveLength(2));
+    expect(envois.map((e) => e.corps.prix_fournisseur_ht)).toEqual([50, 55]);
+    expect(within(table).getByText('55,00 € HT')).toBeInTheDocument();
+    expect(within(table).queryByText('50,00 € HT')).not.toBeInTheDocument();
+    await act(async () => { envois[1].resolve(ligne(55)); });
+    await waitFor(() => expect(within(table).queryByText('Enregistrement…')).not.toBeInTheDocument());
+    expect(within(table).getByText('55,00 € HT')).toBeInTheDocument();
+  });
+
+  it('deux HT coup sur coup, le 1er échoue : la 2e saisie reste affichée (pas de retour à 42, volet non rouvert)', async () => {
+    const { table, envois } = await deuxSaisies();
+    await act(async () => { envois[0].reject(Object.assign(new Error('Base indisponible'), { status: 500 })); });
+    await waitFor(() => expect(envois).toHaveLength(2));
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('prix précédent non enregistré'));
+    expect(within(table).getByText('55,00 € HT')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: /Ecran Soft OLED$/ })).not.toBeInTheDocument();
+    // … et si le 2e échoue aussi : retour à la dernière valeur confirmée (42) et volet rouvert avec la saisie
+    await act(async () => { envois[1].reject(Object.assign(new Error('Base indisponible'), { status: 500 })); });
+    const rouvert = await screen.findByRole('form', { name: /Ecran Soft OLED$/ });
+    expect(within(rouvert).getByLabelText('Nouveau prix d’achat HT (€)')).toHaveValue('55');
     expect(within(table).getByText('42,00 € HT')).toBeInTheDocument();
   });
 

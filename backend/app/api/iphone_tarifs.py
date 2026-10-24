@@ -931,21 +931,23 @@ def update_tarif(tarif_id: int, payload: IphoneTarifUpdate, user: dict = Depends
         raise HTTPException(400, "Aucun champ à mettre à jour")
     prix_envoyes = {k: data.pop(k) for k in _COLONNES_PRIX if k in data}
 
+    # Noms de colonnes : champs du modèle IphoneTarifUpdate uniquement
+    maj = (f"UPDATE iphone_tarifs SET {', '.join(f'{k} = %s' for k in data)}, updated_at = NOW() "
+           f"WHERE id = %s") if data else None
     with get_cursor() as cur:
-        if data:
-            # Noms de colonnes : champs du modèle IphoneTarifUpdate uniquement
-            set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
-            cur.execute(
-                f"UPDATE iphone_tarifs SET {set_clauses}, updated_at = NOW() WHERE id = %s RETURNING id",
-                list(data.values()) + [tarif_id],
-            )
-        else:
-            cur.execute("SELECT id FROM iphone_tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
-        if not cur.fetchone():
-            raise HTTPException(404, "Tarif non trouvé")
         if prix_envoyes:
-            prix_srv.ecrire_prix_lot(cur, "iphone_tarifs", [(tarif_id, k, v) for k, v in prix_envoyes.items()],
-                                     "manuel", (user.get("sub") or None), prix_srv.nouveau_lot())
+            # Prix : lecture sous verrou par le moteur, puis UN envoi (autres champs, prix,
+            # historique). Ligne absente : rien n'est écrit (404).
+            res = prix_srv.ecrire_prix_lot(
+                cur, "iphone_tarifs", [(tarif_id, k, v) for k, v in prix_envoyes.items()],
+                "manuel", (user.get("sub") or None), prix_srv.nouveau_lot(),
+                sql_joint=[(maj, list(data.values()) + [tarif_id])] if maj else ())
+            trouve = not res["absents"]
+        else:
+            cur.execute(maj + " RETURNING id", list(data.values()) + [tarif_id])
+            trouve = cur.fetchone() is not None
+        if not trouve:
+            raise HTTPException(404, "Tarif non trouvé")
     # Invalide cache in-memory pour que list_iphones reflete immediatement
     try:
         from app.api.iphones_stock import _invalidate_tarifs_cache

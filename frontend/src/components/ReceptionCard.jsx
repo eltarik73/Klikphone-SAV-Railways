@@ -4,7 +4,7 @@ import {
   Check, X, Circle,
 } from 'lucide-react';
 import api from '../lib/api';
-import { useAutoSave } from '../hooks/useAutoSave';
+import { useAutoSave, DELAI_FRAPPE } from '../hooks/useAutoSave';
 import { luhnOk } from '../lib/scan';
 import { formatDate } from '../lib/utils';
 
@@ -135,8 +135,8 @@ function Indicateur({ etat }) {
   if (!s) return null;
   return (
     <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs font-medium shrink-0">
-      {s === 'dirty' && <span className="text-slate-500">Modifié…</span>}
-      {s === 'saving' && <span className="text-amber-800">Enregistrement…</span>}
+      {/* Retour immédiat : dès la modification, « Enregistrement… » (l'envoi suit aussitôt ou sous 250 ms) */}
+      {(s === 'dirty' || s === 'saving') && <span className="text-amber-800">Enregistrement…</span>}
       {s === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
       {s === 'error' && (
         <>
@@ -296,7 +296,7 @@ export default function ReceptionCard({
     }
     return res;
   }, [ticketId]), {
-    delay: 600,
+    delay: DELAI_FRAPPE,
     onUnload: (patch) => { api.saveReception(ticketId, { items: patch.items, complete: !!patch.complete }, { keepalive: true }); },
   });
 
@@ -358,11 +358,12 @@ export default function ReceptionCard({
   const basculerAccessoire = (cle) => {
     const actuels = itemsRef.current.accessoires;
     const accessoires = actuels.includes(cle) ? actuels.filter(a => a !== cle) : [...actuels, cle];
-    modifier({ accessoires }, { wait: 300 });
+    modifier({ accessoires }, { wait: 0 });
   };
-  const changerEtat = (cle, valeur, opts = { wait: 300 }) => modifier({ etat: { ...itemsRef.current.etat, [cle]: valeur } }, opts);
+  // Puces, bascules, tests : envoi immédiat (les clics rapprochés sont regroupés pendant l'envoi en cours)
+  const changerEtat = (cle, valeur, opts = { wait: 0 }) => modifier({ etat: { ...itemsRef.current.etat, [cle]: valeur } }, opts);
   const etatToutOk = () => modifier({ etat: { ...itemsRef.current.etat, ...Object.fromEntries(ETATS.map(([k]) => [k, 'ok'])) } }, { wait: 0 });
-  const cyclerTest = (cle) => modifier({ tests: { ...itemsRef.current.tests, [cle]: suivantTest(itemsRef.current.tests[cle]) } }, { wait: 300 });
+  const cyclerTest = (cle) => modifier({ tests: { ...itemsRef.current.tests, [cle]: suivantTest(itemsRef.current.tests[cle]) } }, { wait: 0 });
   // « Tout OK » : les tests encore neutres passent OK, les KO constatés restent KO
   const testsToutOk = () => {
     const tests = { ...itemsRef.current.tests };
@@ -493,8 +494,9 @@ export default function ReceptionCard({
               {items.accessoires.includes('autre') && (
                 <span className="flex-1 min-w-[10rem] basis-40">
                   <label htmlFor={`${uid}-acc-autre`} className="sr-only">Autre accessoire</label>
-                  <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value }, { wait: 800 })}
-                    onBlur={flushSilencieux} className={`input ${CHAMP} !py-1 text-sm`} placeholder="Précisez l’accessoire" autoComplete="off" />
+                  <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value })}
+                    onBlur={flushSilencieux} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent?.isComposing) flushSilencieux(); }}
+                    className={`input ${CHAMP} !py-1 text-sm`} placeholder="Précisez l’accessoire" autoComplete="off" />
                 </span>
               )}
             </div>
@@ -577,13 +579,13 @@ export default function ReceptionCard({
           {/* Notes + deux cases (puces à bascule) sur une ligne */}
           <div className={LIGNE}>
             <label htmlFor={`${uid}-notes`} className={ETIQUETTE}>Notes</label>
-            <textarea id={`${uid}-notes`} ref={notesRef} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, { wait: 800 })}
+            <textarea id={`${uid}-notes`} ref={notesRef} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, {})}
               onBlur={flushSilencieux} rows={1} placeholder="Oxydation…"
               className={`input flex-1 min-w-[8rem] resize-none ${CHAMP_TEXTAREA} !py-1.5 text-sm leading-snug [field-sizing:content] max-h-24`} />
-            <Bascule actif={items.appareil_eteint} onClick={() => modifier({ appareil_eteint: !itemsRef.current.appareil_eteint }, { wait: 300 })}>
+            <Bascule actif={items.appareil_eteint} onClick={() => modifier({ appareil_eteint: !itemsRef.current.appareil_eteint }, { wait: 0 })}>
               <PowerOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Reçu éteint
             </Bascule>
-            <Bascule actif={items.sauvegarde_conseillee} onClick={() => modifier({ sauvegarde_conseillee: !itemsRef.current.sauvegarde_conseillee }, { wait: 300 })}>
+            <Bascule actif={items.sauvegarde_conseillee} onClick={() => modifier({ sauvegarde_conseillee: !itemsRef.current.sauvegarde_conseillee }, { wait: 0 })}>
               <HardDriveDownload className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Sauvegarde conseillée
             </Bascule>
           </div>

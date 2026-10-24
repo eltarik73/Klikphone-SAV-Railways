@@ -6,7 +6,9 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.database import get_cursor
 from app.models import MembreEquipeCreate, MembreEquipeUpdate, MembreEquipeOut
-from app.api.auth import exiger_elevation, get_current_user, noter_echec, noter_succes, verifier_essais
+from app.api.auth import (
+    exiger_elevation, get_current_user, noter_echec, noter_succes, oublier_roles_admin, verifier_essais,
+)
 
 router = APIRouter(prefix="/api/team", tags=["team"])
 
@@ -99,6 +101,8 @@ def update_member(
 
     with get_cursor() as cur:
         cur.execute(f"UPDATE membres_equipe SET {set_clause} WHERE id = %s", values)
+    # Rôle, nom ou activité changés : le contrôle du rôle admin en cache (auth) ne vaut plus
+    oublier_roles_admin()
 
     return {"ok": True}
 
@@ -108,4 +112,5 @@ def delete_member(membre_id: int, user: dict = Depends(get_current_user)):
     """Supprime un membre de l'équipe."""
     with get_cursor() as cur:
         cur.execute("DELETE FROM membres_equipe WHERE id = %s", (membre_id,))
+    oublier_roles_admin()
     return {"ok": True}

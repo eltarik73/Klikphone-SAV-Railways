@@ -54,6 +54,16 @@ def _params_cache_vide():
 
 
 @pytest.fixture(autouse=True)
+def _roles_admin_vides():
+    """Contrôle du rôle admin en cache (auth, 30 s) vidé entre deux tests : chaque test
+    simule sa propre base (rôle, preuve du code)."""
+    from app.api import auth
+    auth.oublier_roles_admin()
+    yield
+    auth.oublier_roles_admin()
+
+
+@pytest.fixture(autouse=True)
 def _limiteur_creation_ticket_vide():
     """Débit des créations de ticket sans session (borne) remis à zéro entre deux tests :
     tous les tests anonymes partagent l'IP « testclient »."""

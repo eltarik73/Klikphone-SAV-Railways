@@ -344,22 +344,24 @@ def update_smartphone(tarif_id: int, payload: SmartphoneUpdate, user: dict = Dep
     if not data:
         raise HTTPException(400, "Aucun champ à mettre à jour")
     prix_envoyes = {k: data.pop(k) for k in _COLONNES_PRIX if k in data}
+    # Noms de colonnes : champs du modèle SmartphoneUpdate uniquement
+    maj = (f"UPDATE smartphones_tarifs SET {', '.join(f'{k} = %s' for k in data)}, updated_at = NOW() "
+           f"WHERE id = %s") if data else None
     with get_cursor() as cur:
-        if data:
-            # Noms de colonnes : champs du modèle SmartphoneUpdate uniquement
-            set_clauses = ", ".join(f"{k} = %s" for k in data.keys())
-            cur.execute(
-                f"UPDATE smartphones_tarifs SET {set_clauses}, updated_at = NOW() "
-                f"WHERE id = %s RETURNING id",
-                list(data.values()) + [tarif_id],
-            )
+        if prix_envoyes:
+            # Prix : lecture sous verrou par le moteur, puis UN envoi (autres champs, prix,
+            # historique, relecture de la ligne). Ligne absente : rien n'est écrit (404).
+            res = prix_srv.ecrire_prix_lot(
+                cur, "smartphones_tarifs", [(tarif_id, k, v) for k, v in prix_envoyes.items()],
+                "manuel", (user.get("sub") or None), prix_srv.nouveau_lot(),
+                sql_joint=[(maj, list(data.values()) + [tarif_id])] if maj else (),
+                relire=("SELECT * FROM smartphones_tarifs WHERE id = %s", (tarif_id,)))
+            row = None if res["absents"] else (res["relu"] or [None])[0]
         else:
-            cur.execute("SELECT id FROM smartphones_tarifs WHERE id = %s FOR UPDATE", (tarif_id,))
-        if not cur.fetchone():
+            cur.execute(maj + " RETURNING *", list(data.values()) + [tarif_id])
+            row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Smartphone non trouvé")
-        _ecrire_prix(cur, tarif_id, prix_envoyes, user)
-        cur.execute("SELECT * FROM smartphones_tarifs WHERE id = %s", (tarif_id,))
-        row = cur.fetchone()
     _invalidate_phones_cache()
     return dict(row)
 

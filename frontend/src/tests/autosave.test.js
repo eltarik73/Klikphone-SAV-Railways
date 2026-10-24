@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useAutoSave } from '../hooks/useAutoSave';
+import { useAutoSave, DELAI_FRAPPE } from '../hooks/useAutoSave';
 
 function differe() {
   let resolve;
@@ -190,5 +190,23 @@ describe('useAutoSave', () => {
     await act(async () => { vi.advanceTimersByTime(500); await vider(); });
     expect(v1).not.toHaveBeenCalled();
     expect(v2).toHaveBeenCalledWith({ mode: 'eur' });
+  });
+
+  it('délai par défaut court (DELAI_FRAPPE = 250 ms, 500 ms avant) ; wait: 0 envoie aussitôt', async () => {
+    expect(DELAI_FRAPPE).toBe(250);
+    const save = vi.fn().mockResolvedValue({ ok: true });
+    const { result } = renderHook(() => useAutoSave(save));
+    act(() => { result.current.schedule({ prix: 10 }); });
+    expect(result.current.status).toBe('dirty');
+    await act(async () => { vi.advanceTimersByTime(DELAI_FRAPPE - 1); await vider(); });
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); await vider(); });
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe('saved');
+
+    act(() => { result.current.schedule({ priorite: 'urgente' }, { wait: 0 }); });
+    await act(async () => { vi.advanceTimersByTime(0); await vider(); });
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenLastCalledWith({ priorite: 'urgente' });
   });
 });

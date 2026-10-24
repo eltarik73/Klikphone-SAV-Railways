@@ -391,7 +391,7 @@ def test_clause_abandon_obsolete_non_signalee(texte):
 
 def test_api_config_signale_une_ancienne_clause_sans_la_reecrire(client, monkeypatch):
     ecrits = []
-    monkeypatch.setattr(config_api, "_ecrire_param", lambda cur, cle, v: ecrits.append((cle, v)))
+    monkeypatch.setattr(config_api, "_ecrire_params", lambda cur, lot: ecrits.extend(lot))
     texte = "Conditions maison. " + mentions.ANCIENNES_CLAUSES_ABANDON[0]
     attendu = {"ok": True, "avertissements": [mentions.AVERTISSEMENT_CGV_ABANDON]}
     r = client.put("/api/config", headers=_h(admin=True), json={"cle": "CGV_DEPOT", "valeur": texte})

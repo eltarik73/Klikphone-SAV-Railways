@@ -33,6 +33,18 @@ export function invalidateCache(...tags) {
 }
 
 /**
+ * Mark cache entries matching the tags as stale WITHOUT re-fetching the mounted hooks:
+ * the screen keeps the data it already updated itself (mutate), the next mount or key
+ * change revalidates in the background. Use after a write whose response was applied.
+ */
+export function marquerPerime(...tags) {
+  if (!tags.length) return;
+  for (const [, e] of _cache) {
+    if (e.tags?.some(t => tags.includes(t))) e.stale = true;
+  }
+}
+
+/**
  * Clear all cache entries (call on logout).
  */
 export function clearCache() {

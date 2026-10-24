@@ -255,64 +255,76 @@ def _booleen(v):
     return None if v is None else ("1" if v else "0")
 
 
-def _maj_chrono(cur, ticket_id, t, ancien, nouveau, now):
-    """Chronomètre de réparation : démarre en entrant « En cours », s'arrête en sortant."""
+def _chrono_sets(t, ancien, nouveau, now) -> dict:
+    """Colonnes du chronomètre de réparation : démarre en entrant « En cours », s'arrête en sortant."""
     if nouveau == ancien:
-        return
+        return {}
     if nouveau == "En cours de réparation":
-        cur.execute(
-            "UPDATE tickets SET reparation_debut = %s, reparation_fin = NULL WHERE id = %s",
-            (now, ticket_id),
-        )
-    elif ancien == "En cours de réparation" and t.get("reparation_debut"):
+        return {"reparation_debut": now, "reparation_fin": None}
+    if ancien == "En cours de réparation" and t.get("reparation_debut"):
         debut = t["reparation_debut"]
         if isinstance(debut, str):
             debut = datetime.strptime(debut, "%Y-%m-%d %H:%M:%S")
         elapsed = max(0, int((_maintenant_utc().replace(tzinfo=None) - debut).total_seconds()))
-        cur.execute(
-            "UPDATE tickets SET reparation_fin = %s, reparation_duree = %s WHERE id = %s",
-            (now, (t.get("reparation_duree") or 0) + elapsed, ticket_id),
-        )
+        return {"reparation_fin": now, "reparation_duree": (t.get("reparation_duree") or 0) + elapsed}
+    return {}
+
+
+def _maj_chrono(cur, ticket_id, t, ancien, nouveau, now):
+    """Chronomètre de réparation : démarre en entrant « En cours », s'arrête en sortant."""
+    sets = _chrono_sets(t, ancien, nouveau, now)
+    if sets:
+        _maj_ticket(cur, ticket_id, sets)
+
+
+def _sql_sync_pieces(ticket_id, nouveau, now) -> Optional[tuple]:
+    """(SQL, paramètres) qui synchronise les commandes de pièces avec le statut, None sinon."""
+    if nouveau in ("Réparation terminée", "Rendu au client", "Clôturé"):
+        return ("UPDATE commandes_pieces SET statut = 'Reçu', date_reception = %s"
+                " WHERE ticket_id = %s AND statut IN ('En attente', 'Commandée')", (now, ticket_id))
+    if nouveau == "En cours de réparation":
+        return ("UPDATE commandes_pieces SET statut = 'En réparation'"
+                " WHERE ticket_id = %s AND statut = 'Reçu'", (ticket_id,))
+    if nouveau == "En attente de pièce":
+        return ("UPDATE commandes_pieces SET statut = 'Commandée', date_commande = %s"
+                " WHERE ticket_id = %s AND statut = 'En attente'", (now, ticket_id))
+    return None
 
 
 def _sync_pieces(cur, ticket_id, nouveau, now):
     """Synchronise les commandes de pièces avec le statut du ticket."""
-    if nouveau in ("Réparation terminée", "Rendu au client", "Clôturé"):
-        cur.execute(
-            "UPDATE commandes_pieces SET statut = 'Reçu', date_reception = %s WHERE ticket_id = %s AND statut IN ('En attente', 'Commandée')",
-            (now, ticket_id),
-        )
-    elif nouveau == "En cours de réparation":
-        cur.execute(
-            "UPDATE commandes_pieces SET statut = 'En réparation' WHERE ticket_id = %s AND statut = 'Reçu'",
-            (ticket_id,),
-        )
-    elif nouveau == "En attente de pièce":
-        cur.execute(
-            "UPDATE commandes_pieces SET statut = 'Commandée', date_commande = %s WHERE ticket_id = %s AND statut = 'En attente'",
-            (now, ticket_id),
-        )
+    requete = _sql_sync_pieces(ticket_id, nouveau, now)
+    if requete:
+        cur.execute(*requete)
 
 
-def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
-    """Ticket + client + retours SAV + montants calculés + contact (réponse de GET /{id})."""
-    cur.execute(f"""
+def _select_complet(source: str = "tickets", jointure: str = "", extra: str = "") -> str:
+    """SELECT de la réponse complète d'un ticket (GET /{id}, PATCH, statut) sur `source`
+    (la table, ou la CTE d'un UPDATE … RETURNING * : écriture et relecture en un aller-retour).
+
+    _a_retours_sav dit s'il existe des retours SAV : leur lecture (rare) n'est faite qu'alors.
+    Fragments fixes du code, jamais une saisie.
+    """
+    return f"""
         SELECT t.*,
                c.nom as client_nom, c.prenom as client_prenom,
                c.telephone as client_tel, c.email as client_email,
                c.societe as client_societe, c.carte_camby as client_carte_camby,
                (SELECT MAX(n.date_creation) FROM notes_tickets n
-                 WHERE n.ticket_id = t.id AND n.type_note = 'caisse') AS caisse_envoyee_le
-               {contact.colonne_sql('t')}
-        FROM tickets t
-        JOIN clients c ON t.client_id = c.id
-        WHERE t.id = %s
-    """, (ticket_id,))
-    row = cur.fetchone()
-    if not row:
-        return None
+                 WHERE n.ticket_id = t.id AND n.type_note = 'caisse') AS caisse_envoyee_le,
+               EXISTS (SELECT 1 FROM tickets r
+                        WHERE r.ticket_original_id = t.id AND r.est_retour_sav = true) AS _a_retours_sav
+               {contact.colonne_sql('t')}{extra}
+        FROM {source} t
+        JOIN clients c ON t.client_id = c.id{jointure}
+    """
 
+
+def _completer(cur, row) -> dict:
+    """Ligne de _select_complet → réponse de GET /{id} : contact, ticket d'origine, retours SAV, montants."""
     result = contact.poser(row)
+    # Indicateur absent (ligne d'une autre requête) : les retours sont lus comme avant
+    a_retours = result.pop("_a_retours_sav", True)
     result["ticket_original"] = None
     if result.get("est_retour_sav") and result.get("ticket_original_id"):
         cur.execute("""
@@ -323,15 +335,77 @@ def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
         orig = cur.fetchone()
         result["ticket_original"] = dict(orig) if orig else None
 
-    cur.execute("""
-        SELECT id, ticket_code, statut, panne, date_depot
-        FROM tickets
-        WHERE ticket_original_id = %s AND est_retour_sav = true
-        ORDER BY date_depot DESC
-    """, (ticket_id,))
-    result["retours_sav"] = [dict(r) for r in (cur.fetchall() or [])]
+    result["retours_sav"] = []
+    if a_retours:
+        cur.execute("""
+            SELECT id, ticket_code, statut, panne, date_depot
+            FROM tickets
+            WHERE ticket_original_id = %s AND est_retour_sav = true
+            ORDER BY date_depot DESC
+        """, (result["id"],))
+        result["retours_sav"] = [dict(r) for r in (cur.fetchall() or [])]
     result["montants"] = calculer_montants(result)
     return result
+
+
+def _ticket_complet(cur, ticket_id: int) -> Optional[dict]:
+    """Ticket + client + retours SAV + montants calculés + contact (réponse de GET /{id})."""
+    cur.execute(_select_complet() + " WHERE t.id = %s", (ticket_id,))
+    row = cur.fetchone()
+    if not row:
+        return None
+    return _completer(cur, row)
+
+
+# Colonnes reprises par une saisie de prix sur un ticket payé : elles ne bougent pas (garde-fou en SQL)
+_CHAMPS_PAIEMENT = ("statut_paiement", "reste_a_payer")
+# PATCH de ces champs : l'écriture dépend de l'état d'avant (historique, garde-fous), lu sous verrou
+_CHAMPS_ETAT_AVANT = ("paye", "priorite", "tel_contact", "telephone_pret")
+_SQL_HISTORIQUE = psql.SQL("INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, 'statut', %s);\n")
+
+
+def _ecrire_et_relire(cur, ticket_id: int, sets: dict, historique=(), garde_paye: bool = False,
+                      avant: tuple = ()) -> Optional[dict]:
+    """Lignes d'historique, UPDATE des colonnes `sets` et relecture complète en UN aller-retour.
+
+    - historique : contenus insérés dans la table historique (instructions précédentes du même
+      envoi : la relecture du contact les voit) ;
+    - garde_paye : statut_paiement et reste_a_payer ne bougent pas si le ticket est payé
+      (la règle de update_ticket, écrite en SQL faute d'avoir lu le ticket avant) ;
+    - avant : colonnes renvoyées avec leur valeur d'AVANT l'écriture (_avant_<colonne>),
+      lues dans le même instantané que l'UPDATE.
+    Renvoie la réponse complète (_completer), None si le ticket n'existe pas.
+    """
+    params = []
+    lot = []
+    for contenu in historique:
+        lot.append(_SQL_HISTORIQUE)
+        params += [ticket_id, contenu]
+    assignations = []
+    for k, v in sets.items():
+        if garde_paye and k in _CHAMPS_PAIEMENT:
+            assignations.append(psql.SQL("{c} = CASE WHEN COALESCE(paye::int, 0) <> 0 THEN {c} ELSE %s END")
+                                .format(c=psql.Identifier(k)))
+        else:
+            assignations.append(psql.SQL("{} = %s").format(psql.Identifier(k)))
+        params.append(v)
+    ctes = []
+    extra = jointure = ""
+    if avant:
+        ctes.append(psql.SQL("avant AS (SELECT {} FROM tickets WHERE id = %s)").format(
+            psql.SQL(", ").join(psql.SQL("{} AS {}").format(psql.Identifier(c), psql.Identifier(f"_avant_{c}"))
+                                for c in avant)))
+        params.insert(len(historique) * 2, ticket_id)
+        extra = ", a.*"
+        jointure = " CROSS JOIN avant a"
+    ctes.append(psql.SQL("u AS (UPDATE tickets SET {} WHERE id = %s RETURNING *)").format(
+        psql.SQL(", ").join(assignations)))
+    params.append(ticket_id)
+    lot.append(psql.SQL("WITH {} ").format(psql.SQL(", ").join(ctes)))
+    lot.append(psql.SQL(_select_complet("u", jointure, extra)))
+    cur.execute(psql.Composed(lot), params)
+    row = cur.fetchone()
+    return _completer(cur, row) if row else None
 
 
 # ─── KPI (dashboard combiné et /stats/kpi : une seule requête) ────
@@ -845,24 +919,47 @@ def update_ticket(
     learn: bool = Query(False, description="Apprendre panne/détail/modèle : fin de saisie, jamais l'auto-save"),
     user: dict = Depends(get_current_user),
 ):
-    """Mise à jour PARTIELLE : seuls les champs envoyés sont écrits. Renvoie le ticket complet."""
+    """Mise à jour PARTIELLE : seuls les champs envoyés sont écrits. Renvoie le ticket complet.
+
+    Cas courant (prix, lignes, appareil, délai, notes…) : l'écriture et la relecture complète
+    partent en une seule instruction (UPDATE … RETURNING), sans lecture préalable. Seuls les
+    champs dont l'écriture dépend de l'état d'avant (_CHAMPS_ETAT_AVANT : paiement, priorité
+    et numéro historisés, prêt) lisent d'abord le ticket sous verrou.
+    """
     updates = data.model_dump(exclude_unset=True)
     now, ts = _horodatage()
+    auteur = _auteur(user)
+    avant = None
+    appris_avant = ("panne", "panne_detail", "modele_autre")
 
     with get_cursor() as cur:
-        cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
-        avant = cur.fetchone()
-        if not avant:
-            raise HTTPException(404, "Ticket non trouvé")
-        avant = dict(avant)
+        if not updates:
+            ticket = _ticket_complet(cur, ticket_id)
+            if not ticket:
+                raise HTTPException(404, "Ticket non trouvé")
+            return {"ok": True, "ticket": ticket}
 
-        if updates:
+        if "telephone_pret_rendu" in updates:
+            updates["telephone_pret_rendu"] = _booleen(updates["telephone_pret_rendu"])
+        hist = []
+
+        def historiser(textes) -> str:
+            # Même journal que _historiser ; les lignes partent avec l'UPDATE (un seul envoi)
+            contenus = [f"{texte} — par {auteur}" for texte in textes]
+            hist.extend(contenus)
+            return "\n".join(f"[{ts}] {c}" for c in contenus)
+
+        if any(k in updates for k in _CHAMPS_ETAT_AVANT):
+            cur.execute("SELECT * FROM tickets WHERE id = %s FOR UPDATE", (ticket_id,))
+            avant = cur.fetchone()
+            if not avant:
+                raise HTTPException(404, "Ticket non trouvé")
+            avant = dict(avant)
+
             # Prêt confié sur un ticket qui n'en avait pas : il est dehors (garde-fou de la restitution)
             if ("telephone_pret" in updates and not _pret_vide(updates["telephone_pret"])
                     and _pret_vide(avant.get("telephone_pret"))):
-                updates.setdefault("telephone_pret_rendu", 0)
-            if "telephone_pret_rendu" in updates:
-                updates["telephone_pret_rendu"] = _booleen(updates["telephone_pret_rendu"])
+                updates.setdefault("telephone_pret_rendu", _booleen(0))
             if "paye" in updates:
                 paye = 1 if updates["paye"] else 0
                 updates["paye"] = paye
@@ -879,8 +976,7 @@ def update_ticket(
                     textes = ["Marqué payé" if paye else "Marqué non payé"]
                     if not paye:
                         _rouvrir_si_cloture(avant, updates, textes)
-                    lignes = _historiser(cur, ticket_id, ts, _auteur(user), textes)
-                    updates["historique"] = _journal(avant.get("historique"), lignes)
+                    updates["historique"] = _journal(avant.get("historique"), historiser(textes))
             elif avant.get("paye"):
                 # Ticket payé : un enregistrement des prix ne le fait pas repasser « à payer »
                 updates.pop("statut_paiement", None)
@@ -890,23 +986,30 @@ def update_ticket(
             if "priorite" in updates and updates["priorite"] != ancienne_priorite:
                 texte = (f"Priorité : {PRIORITES.get(ancienne_priorite, ancienne_priorite)}"
                          f" → {PRIORITES[updates['priorite']]}")
-                lignes = _historiser(cur, ticket_id, ts, _auteur(user), [texte])
-                updates["historique"] = _journal(updates.get("historique", avant.get("historique")), lignes)
+                updates["historique"] = _journal(updates.get("historique", avant.get("historique")),
+                                                 historiser([texte]))
 
             if "tel_contact" in updates:
                 texte = _texte_tel_contact(avant.get("tel_contact"), updates["tel_contact"])
                 if texte:
-                    lignes = _historiser(cur, ticket_id, ts, _auteur(user), [texte])
-                    updates["historique"] = _journal(updates.get("historique", avant.get("historique")), lignes)
+                    updates["historique"] = _journal(updates.get("historique", avant.get("historique")),
+                                                     historiser([texte]))
 
-            updates["date_maj"] = now
-            _maj_ticket(cur, ticket_id, updates)
-        ticket = _ticket_complet(cur, ticket_id)
+        updates["date_maj"] = now
+        # Sans lecture préalable : un ticket payé garde statut_paiement / reste_a_payer (CASE en SQL)
+        ticket = _ecrire_et_relire(cur, ticket_id, updates, hist, garde_paye=avant is None,
+                                   avant=appris_avant if (learn and avant is None) else ())
+        if ticket is None:
+            raise HTTPException(404, "Ticket non trouvé")
 
     if learn:
-        appris = {k: updates[k] for k in ("panne", "panne_detail", "modele_autre") if k in updates}
+        appris = {k: updates[k] for k in appris_avant if k in updates}
         if appris:
+            if avant is None:
+                avant = {k: ticket.get(f"_avant_{k}") for k in appris_avant}
             background_tasks.add_task(learn_terms, appris, avant)
+    for k in appris_avant:
+        ticket.pop(f"_avant_{k}", None)
 
     return {"ok": True, "ticket": ticket}
 
@@ -1031,9 +1134,10 @@ def change_status(
             textes.append("Réouverture : dates de clôture et de rendu effacées")
         # Rendu / clôturé : l'appareil quitte l'étagère (« Emplacement B3 libéré »)
         liberation = etagere.liberer_emplacement(t, nouveau, textes)
+        contenus = [f"{texte} — par {auteur}" for texte in textes]
         sets = {
             "statut": nouveau, "date_maj": now,
-            "historique": _journal(t.get("historique"), _historiser(cur, ticket_id, ts, auteur, textes)),
+            "historique": _journal(t.get("historique"), "\n".join(f"[{ts}] {c}" for c in contenus)),
             **liberation,
         }
         if reouverture:
@@ -1053,23 +1157,36 @@ def change_status(
                 sets["issue"] = "refus_devis"
             elif nouveau == "En cours de réparation" and t.get("issue"):
                 sets["issue"] = None
-        _maj_ticket(cur, ticket_id, sets)
+        sets.update(_chrono_sets(t, ancien, nouveau, now))
 
-        _maj_chrono(cur, ticket_id, t, ancien, nouveau, now)
-        if not refus_devis:
-            _sync_pieces(cur, ticket_id, nouveau, now)
+        # Un seul envoi : historique, UPDATE du ticket (chronomètre compris), commandes de pièces,
+        # note de validation au comptoir, puis relecture complète (renvoyée : la fiche n'a pas à
+        # relire le ticket). Chaque instruction voit les précédentes.
+        lot, params = [], []
+        for contenu in contenus:
+            lot.append(_SQL_HISTORIQUE)
+            params += [ticket_id, contenu]
+        lot.append(psql.SQL("UPDATE tickets SET {} WHERE id = %s;\n").format(psql.SQL(", ").join(
+            psql.SQL("{} = %s").format(psql.Identifier(k)) for k in sets)))
+        params += [*sets.values(), ticket_id]
+        pieces = None if refus_devis else _sql_sync_pieces(ticket_id, nouveau, now)
+        if pieces:
+            lot.append(psql.SQL(pieces[0] + ";\n"))
+            params += list(pieces[1])
 
         # Devis validé au comptoir (accord → en cours) : note 'validation_devis'
         # (bannière verte + point vert dashboard), dans la même transaction.
         validation_comptoir = ancien == "En attente d'accord client" and nouveau == "En cours de réparation"
         if validation_comptoir:
-            cur.execute(
-                """
-                INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)
-                VALUES (%s, %s, %s, 'validation_devis', FALSE)
-                """,
-                (ticket_id, auteur, f"✅ Devis accepté par le client — validé au comptoir par {auteur}"),
-            )
+            lot.append(psql.SQL(
+                "INSERT INTO notes_tickets (ticket_id, auteur, contenu, type_note, is_read)"
+                " VALUES (%s, %s, %s, 'validation_devis', FALSE);\n"))
+            params += [ticket_id, auteur, f"✅ Devis accepté par le client — validé au comptoir par {auteur}"]
+        lot.append(psql.SQL(_select_complet() + " WHERE t.id = %s"))
+        params.append(ticket_id)
+        cur.execute(psql.Composed(lot), params)
+        row = cur.fetchone()
+        ticket = _completer(cur, row) if row else None
         proposer = _proposer_message(cur, nouveau, refus_devis)
 
     # Notifications hors du chemin de la réponse (Discord : jusqu'à 5 s)
@@ -1096,7 +1213,8 @@ def change_status(
             action_url=f"/accueil/ticket/{ticket_id}",
         )
 
-    return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau, "proposer_message": proposer}
+    return {"ok": True, "ancien_statut": ancien, "nouveau_statut": nouveau, "proposer_message": proposer,
+            "ticket": ticket}
 
 
 # ─── RESTITUTION (remise au client en un appel, atomique et idempotente) ──
@@ -1397,13 +1515,21 @@ def noter_contact(ticket_id: int, data: ContactRequest, user: dict = Depends(get
         })
     note = " ".join((data.note or "").split())
     contenu = contact.CONTENU_APPEL + (f" : {note}" if note else "")
+    # Un seul envoi : la note (seulement si le ticket existe) puis l'objet contact relu par
+    # une seconde instruction, qui voit la note. Ticket absent : aucune ligne, rien n'est écrit.
+    # currval n'est évalué que pour la ligne du ticket, donc après l'INSERT de la note.
     with get_cursor() as cur:
-        cur.execute("SELECT id FROM tickets WHERE id = %s", (ticket_id,))
-        if not cur.fetchone():
+        cur.execute(f"""
+            INSERT INTO notes_tickets (ticket_id, auteur, contenu, important, type_note)
+            SELECT id, %s, %s, FALSE, 'appel' FROM tickets WHERE id = %s;
+            SELECT currval(pg_get_serial_sequence('notes_tickets', 'id')) AS note_id
+                   {contact.colonne_sql('t')}
+            FROM tickets t WHERE t.id = %s
+        """, (_auteur(user), contenu, ticket_id, ticket_id))
+        row = cur.fetchone()
+        if not row:
             raise HTTPException(404, "Ticket non trouvé")
-        note_id = contact.inserer_appel(cur, ticket_id, _auteur(user), contenu)
-        etat = contact.lire_ticket(cur, ticket_id)
-    return {"contact": etat, "note_id": note_id}
+    return {"contact": contact.lire(row["contact_brut"]), "note_id": row["note_id"]}
 
 
 # ─── LOG MESSAGE ENVOYÉ ──────────────────────────────────────────

@@ -12,7 +12,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *
  * status : null | 'dirty' | 'saving' | 'saved' | 'error'
  */
-export function useAutoSave(saveFn, { delay = 500, savedMs = 2000, onUnload, onError } = {}) {
+/** Délai après la dernière frappe (ms) : court pour une confirmation rapide, assez long pour regrouper un mot. */
+export const DELAI_FRAPPE = 250;
+
+export function useAutoSave(saveFn, { delay = DELAI_FRAPPE, savedMs = 2000, onUnload, onError } = {}) {
   const saveRef = useRef(saveFn);
   saveRef.current = saveFn;
   const unloadRef = useRef(onUnload);

@@ -493,16 +493,74 @@ def noter_preuve_admin(sid: Optional[str], origine: str = "code"):
         print(f"[auth] preuve admin non enregistrée : {e}")
 
 
+# Contrôle du rôle admin mis en cache 30 s par (sid, membre, jeton d'élévation) : une
+# grille de prix envoie une écriture par cellule, chacune relisait rôle et preuve (une
+# transaction de plus). Seul un succès est gardé. Toute révocation (verrouillage du mode
+# admin, changement de membre, modification de l'équipe) vide le cache ; la génération
+# empêche une lecture commencée avant la révocation de le remplir après.
+ROLE_ADMIN_CACHE_S = 30.0
+_ROLE_ADMIN_CACHE_MAX = 512
+_roles_admin: dict = {}
+_roles_admin_generation = 0
+_roles_admin_verrou = threading.Lock()
+
+
+def _cle_role_admin(request: Request, user: dict) -> tuple:
+    jeton = (request.headers.get("x-admin-token") or "").strip()
+    return (user.get("sid") or "", user.get("sub") or "", jeton)
+
+
+def _role_admin_en_cache(cle: tuple) -> bool:
+    with _roles_admin_verrou:
+        expire = _roles_admin.get(cle)
+        if expire is None:
+            return False
+        if expire <= monotonic():
+            _roles_admin.pop(cle, None)
+            return False
+        return True
+
+
+def _garder_role_admin(cle: tuple, generation: int, duree: float):
+    if duree <= 0:
+        return
+    with _roles_admin_verrou:
+        if generation != _roles_admin_generation:
+            return   # révocation pendant le contrôle : rien n'est gardé
+        if len(_roles_admin) >= _ROLE_ADMIN_CACHE_MAX:
+            maintenant = monotonic()
+            for k in [k for k, e in _roles_admin.items() if e <= maintenant]:
+                del _roles_admin[k]
+            if len(_roles_admin) >= _ROLE_ADMIN_CACHE_MAX:
+                _roles_admin.clear()
+        _roles_admin[cle] = monotonic() + duree
+
+
+def oublier_roles_admin():
+    """Vide le cache du contrôle de rôle admin (révocation, équipe modifiée)."""
+    global _roles_admin_generation
+    with _roles_admin_verrou:
+        _roles_admin_generation += 1
+        _roles_admin.clear()
+
+
 def revoquer_preuve_admin(sid: Optional[str]):
-    """Le code admin n'est plus prouvé sur cette lignée. Table absente : rien à retirer."""
+    """Le code admin n'est plus prouvé sur cette lignée. Table absente : rien à retirer.
+
+    Cache du rôle vidé avant ET après la suppression : un contrôle qui a lu la preuve
+    avant qu'elle soit supprimée ne la garde pas (cf. _garder_role_admin).
+    """
     if not sid:
         return
+    oublier_roles_admin()
     try:
         with get_cursor() as cur:
             cur.execute("DELETE FROM sessions_admin WHERE sid = %s", (sid,))
     except psycopg2.Error as e:
         if getattr(e, "pgcode", None) != "42P01":
             raise
+    finally:
+        oublier_roles_admin()
 
 
 def _role_et_preuve(nom: str, sid: str) -> Optional[dict]:
@@ -510,7 +568,8 @@ def _role_et_preuve(nom: str, sid: str) -> Optional[dict]:
         with get_cursor() as cur:
             cur.execute("""
                 SELECT m.role, s.sid IS NOT NULL AS prouve,
-                       COALESCE(s.origine = 'code' AND s.expire < NOW() + INTERVAL '29 days', FALSE) AS a_prolonger
+                       COALESCE(s.origine = 'code' AND s.expire < NOW() + INTERVAL '29 days', FALSE) AS a_prolonger,
+                       EXTRACT(EPOCH FROM s.expire - NOW()) AS reste_s
                 FROM membres_equipe m
                 LEFT JOIN sessions_admin s ON s.sid = %s AND s.expire > NOW()
                 WHERE m.nom = %s
@@ -521,7 +580,8 @@ def _role_et_preuve(nom: str, sid: str) -> Optional[dict]:
         # Table des preuves absente (migration en échec) : rôle seul, jamais prouvé
         print(f"[auth] lecture des preuves admin impossible : {e}")
         with get_cursor() as cur:
-            cur.execute("SELECT role, FALSE AS prouve, FALSE AS a_prolonger FROM membres_equipe WHERE nom = %s LIMIT 1", (nom,))
+            cur.execute("SELECT role, FALSE AS prouve, FALSE AS a_prolonger, NULL AS reste_s "
+                        "FROM membres_equipe WHERE nom = %s LIMIT 1", (nom,))
             return cur.fetchone()
 
 
@@ -534,11 +594,20 @@ def exiger_role_admin(request: Request, user: dict) -> dict:
     - jeton de session antérieur aux sid (avant cette version) : repris une fois,
       30 jours non prolongés, pour ne pas couper les gérants au déploiement ;
     - preuve retirée par POST /api/admin/lock et par un changement de membre.
+
+    Un succès est gardé ROLE_ADMIN_CACHE_S (jamais au-delà de l'expiration de la
+    preuve) ; toute révocation vide ce cache (oublier_roles_admin).
     """
     sid = user.get("sid") or ""
+    cle = _cle_role_admin(request, user)
+    if _role_admin_en_cache(cle):
+        user["role"] = "admin"
+        return user
+    generation = _roles_admin_generation
     row = _role_et_preuve(user.get("sub") or "", sid)
     if not row or row.get("role") != "admin":
         raise HTTPException(403, "Admin requis")
+    duree = ROLE_ADMIN_CACHE_S
     if not row.get("prouve"):
         if _jeton_elevation_valide(request, user):
             noter_preuve_admin(sid)
@@ -547,8 +616,13 @@ def exiger_role_admin(request: Request, user: dict) -> dict:
         else:
             _refus_admin("admin_requis", "Code admin requis sur ce poste : verrouillez le mode admin "
                                          "puis saisissez de nouveau le code admin.")
-    elif row.get("a_prolonger"):
-        noter_preuve_admin(sid)
+    else:
+        if row.get("reste_s") is not None:
+            duree = min(duree, float(row["reste_s"]))
+        if row.get("a_prolonger"):
+            noter_preuve_admin(sid)
+            duree = ROLE_ADMIN_CACHE_S
+    _garder_role_admin(cle, generation, duree)
     user["role"] = "admin"
     return user
 

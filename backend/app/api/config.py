@@ -60,14 +60,22 @@ def _valeur_masquee(valeur) -> bool:
     return not v or set(v) <= {"•", "*"}
 
 
-def _ecrire_param(cur, cle: str, valeur: str):
-    if cle == "ADMIN_PASSWORD":
-        ecrire_admin_password(cur, valeur)
-        return
-    cur.execute("""
-        INSERT INTO params (cle, valeur) VALUES (%s, %s)
-        ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur
-    """, (cle, valeur))
+def _ecrire_params(cur, ecritures: list):
+    """Toutes les clés en UN INSERT à plusieurs lignes (une mention boutique écrit aussi ses
+    clés alias) ; la dernière valeur d'une clé répétée l'emporte. ADMIN_PASSWORD garde son chemin."""
+    lot = {}
+    for cle, valeur in ecritures:
+        if cle == "ADMIN_PASSWORD":
+            ecrire_admin_password(cur, valeur)
+        else:
+            lot[cle] = valeur
+    if lot:
+        # Placeholders seulement (un couple %s par clé) : les valeurs restent des paramètres
+        cur.execute(
+            "INSERT INTO params (cle, valeur) VALUES " + ", ".join(["(%s, %s)"] * len(lot))
+            + " ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur",
+            tuple(x for couple in lot.items() for x in couple),
+        )
 
 
 def _controler_secret(cle: str, valeur: str):
@@ -310,8 +318,7 @@ def set_param(data: ParamUpdate, request: Request, user: dict = Depends(get_curr
         with get_cursor() as cur:
             _controler_coherence(cur, ecritures)
             _noter_activation_retention(cur, ecritures)
-            for cle, valeur in ecritures:
-                _ecrire_param(cur, cle, valeur)
+            _ecrire_params(cur, ecritures)
         params_cache.invalidate()
     return _reponse(ecritures)
 
@@ -328,8 +335,7 @@ def set_params_batch(
         with get_cursor() as cur:
             _controler_coherence(cur, ecritures)
             _noter_activation_retention(cur, ecritures)
-            for cle, valeur in ecritures:
-                _ecrire_param(cur, cle, valeur)
+            _ecrire_params(cur, ecritures)
         params_cache.invalidate()
     return _reponse(ecritures)
 

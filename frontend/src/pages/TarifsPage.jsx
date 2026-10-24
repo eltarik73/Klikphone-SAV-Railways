@@ -6,15 +6,16 @@ import {
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
-import { useApi, invalidateCache } from '../hooks/useApi';
+import { useApi, invalidateCache, marquerPerime } from '../hooks/useApi';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useAvertirAvantDepart, useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
 import { useToast } from '../components/Toast';
 import AdminLoginModal from '../components/AdminLoginModal';
 import HistoriquePrix, {
   BadgeDatePrix, FiltreAnciens, SEUILS_FRAICHEUR, dateFr, estEcran, euros, fraicheurPrix, fusionnerRegles, lireDate,
   messageErreurPrix, plusDeTroisMois,
 } from '../components/HistoriquePrix';
-import { TableauPieces, detailCalcul, estPieceApple, idPiece, liensFournisseur, nomPiece, sansAccents, texteCalcul } from '../components/PieceFournisseurRow';
+import { TableauPieces, detailCalcul, estPieceApple, idPiece, liensFournisseur, nomPiece, prixARenseigner, sansAccents, texteCalcul } from '../components/PieceFournisseurRow';
 
 // Fenêtres admin chargées à la demande (le personnel de l'accueil ne les ouvre jamais)
 const ImportPrixModal = lazy(() => import('../components/ImportPrixModal'));
@@ -326,7 +327,10 @@ export default function TarifsPage() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [fenetre, setFenetre] = useState(null); // 'import' | 'regles' | 'historique' | 'recalcul' | 'ajout'
   const [ajoutInitial, setAjoutInitial] = useState(null);
-  const [enCours, setEnCours] = useState(null);
+  const [enCours, setEnCours] = useState(null); // verrou, pièces courantes : la ligne attend la réponse
+  // Prix d'achat HT : une file par pièce, le nouveau prix s'affiche sans attendre le serveur
+  const envoisHt = useEnvoisOptimistes();
+  useAvertirAvantDepart(envoisHt.nombre > 0);
   const [sante, setSante] = useState(null);
   const [regles, setReglesEtat] = useState(null);
   const [methode, setMethode] = useState(null);
@@ -535,39 +539,93 @@ export default function TarifsPage() {
     mutateListeRef.current((prev) => (prev?.tarifs ? { ...prev, tarifs: prev.tarifs.map(appliquer) } : prev));
   }, []);
 
-  async function enregistrerHt(piece, corps) {
+  // Santé des prix (compteurs « à revoir ») : relue une seule fois, 2 s après la dernière écriture d'une
+  // rafale, au lieu d'un GET après chaque prix (la confirmation n'attend pas cette relecture)
+  const santeTimerRef = useRef(null);
+  const chargerSanteDiffere = useCallback(() => {
+    clearTimeout(santeTimerRef.current);
+    santeTimerRef.current = setTimeout(chargerSante, 2000);
+  }, [chargerSante]);
+  useEffect(() => () => clearTimeout(santeTimerRef.current), []);
+
+  // Prix renseigné sur une pièce « à renseigner » : compteur de la liste des modèles mis à jour sur place
+  const decompterSansPrix = useCallback((marque, modele) => {
+    if (!marque || !modele) return;
+    mutateMarques((prev) => (Array.isArray(prev) ? prev.map((m) => (m?.marque !== marque || !Array.isArray(m.modeles) ? m : {
+      ...m,
+      modeles: m.modeles.map((x) => (x?.modele === modele && Number(x.nb_sans_prix) > 0 ? { ...x, nb_sans_prix: Number(x.nb_sans_prix) - 1 } : x)),
+    })) : prev));
+  }, [mutateMarques]);
+
+  // Optimiste : le nouveau HT et le prix client de l'aperçu s'affichent dès la validation (le volet se ferme),
+  // la réponse du serveur corrige ensuite la ligne. Une file par pièce (useEnvoisOptimistes) : deux saisies
+  // rapprochées partent dans l'ordre, la réponse de la première n'écrase pas la seconde à l'écran.
+  // Échec : la ligne reprend ses dernières valeurs confirmées (sauf celles d'une saisie plus récente encore
+  // en file) et l'erreur remonte au volet, rouvert avec la saisie (bouton « Valider » pour réessayer) ;
+  // si une saisie plus récente est en file, elle l'emporte : simple notification.
+  // Pas de relecture de l'écran ouvert : les autres vues en cache sont seulement marquées périmées.
+  async function enregistrerHt(piece, corps, { prixClientPrevu = null } = {}) {
     const ident = idPiece(piece);
-    setEnCours(ident);
-    try {
-      let client;
+    const marque = piece.marque || marqueUrl;
+    const modele = piece.modele || modeleUrl;
+    const etaitARenseigner = prixARenseigner(piece);
+    const verrouille = !!(piece.verrou ?? piece.verrou_manuel);
+    const optimiste = {
+      prix_fournisseur_ht: corps.prix_fournisseur_ht,
+      ...(!verrouille && Number(prixClientPrevu) > 0 ? { prix_client: prixClientPrevu } : {}),
+      prix_source: corps.source, prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok',
+      estime: false, a_renseigner: false, calcul: null,
+      ...(corps.ref_fournisseur ? { ref_fournisseur: corps.ref_fournisseur } : {}),
+      ...(corps.url_fournisseur ? { url_fournisseur: corps.url_fournisseur } : {}),
+    };
+    const avant = Object.fromEntries(Object.keys(optimiste).map((k) => [k, piece[k]]));
+    majPiece(ident, optimiste);
+    const res = await envoisHt.envoyer(ident, async () => {
       if (estPieceApple(piece)) {
         // Écran / batterie d'un iPad ou MacBook : route dédiée, prix de vente recalculé par le serveur
         const { url_fournisseur: _url, ...reste } = corps;
-        const res = await sensible(() => api.patchPrixAppleDevice(piece.device_id, { ...reste, piece: piece.piece }));
-        client = res?.nouveau_client ?? piece.prix_client;
-        majPiece(ident, {
-          prix_fournisseur_ht: res?.nouveau_ht ?? corps.prix_fournisseur_ht, prix_client: client, prix_source: corps.source,
-          prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok', estime: false, a_renseigner: false, calcul: null,
-          ref_fournisseur: corps.ref_fournisseur ?? piece.ref_fournisseur,
-        });
-      } else {
-        const res = await sensible(() => api.patchPrixPiece(piece.id, corps));
-        const ligne = res && typeof res === 'object' ? res : {};
-        client = ligne.prix_client ?? piece.prix_client;
-        majPiece(ident, (p) => ({
+        const r = await sensible(() => api.patchPrixAppleDevice(piece.device_id, { ...reste, piece: piece.piece }));
+        const client = r?.nouveau_client ?? piece.prix_client;
+        return {
+          client,
+          patch: () => ({
+            prix_fournisseur_ht: r?.nouveau_ht ?? corps.prix_fournisseur_ht, prix_client: client, prix_source: corps.source,
+            prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok', estime: false, a_renseigner: false, calcul: null,
+            ref_fournisseur: corps.ref_fournisseur ?? piece.ref_fournisseur,
+          }),
+        };
+      }
+      const r = await sensible(() => api.patchPrixPiece(piece.id, corps));
+      const ligne = r && typeof r === 'object' ? r : {};
+      return {
+        client: ligne.prix_client ?? piece.prix_client,
+        patch: (p) => ({
           ...ligne,
           prix_fournisseur_ht: ligne.prix_fournisseur_ht ?? corps.prix_fournisseur_ht,
           verrou: ligne.verrou ?? ligne.verrou_manuel ?? p.verrou ?? p.verrou_manuel,
           a_renseigner: false,
           calcul: ligne.calcul ?? null,
-        }));
-      }
+        }),
+      };
+    }, { avant, apres: optimiste });
+
+    if (res.ok) {
+      const { client, patch } = res.reponse;
+      // Champs d'une saisie plus récente encore en file : gardés tels qu'affichés
+      majPiece(ident, (p) => Object.fromEntries(Object.entries(patch(p)).filter(([k]) => !res.proteges.has(k))));
       toast.success(`${nomPiece(piece, marqueUrl, modeleUrl)} : achat ${euros(corps.prix_fournisseur_ht)} HT → prix client ${euros(client)}.`);
-      invalidateCache('tarifs');
-      chargerSante();
-    } finally {
-      setEnCours(null);
+      if (etaitARenseigner) decompterSansPrix(marque, modele);
+      marquerPerime('tarifs');
+      chargerSanteDiffere();
+      return;
     }
+    if (Object.keys(res.retablir).length) majPiece(ident, res.retablir);
+    if (res.proteges.has('prix_fournisseur_ht')) {
+      const msg = messageErreurPrix(res.erreur, `${nomPiece(piece, marqueUrl, modeleUrl)} : prix précédent non enregistré`);
+      if (msg) toast.error(msg);
+      return;
+    }
+    throw res.erreur;
   }
 
   async function basculerVerrou(piece, marque = marqueUrl, modele = modeleUrl) {
@@ -877,7 +935,7 @@ export default function TarifsPage() {
         ) : (
           <div className="border-t border-slate-100">
             <TableauPieces pieces={pieces} marque={marqueUrl} modele={modeleUrl} regles={regles} seuils={seuils} isAdmin={isAdmin}
-              htVisible={htVisibleModele} onEnregistrer={enregistrerHt} onVerrou={basculerVerrou} onStock={basculerStock} enCours={enCours} />
+              htVisible={htVisibleModele} onEnregistrer={enregistrerHt} onVerrou={basculerVerrou} onStock={basculerStock} enCours={enCours} envoiEnCours={envoisHt.enCours} />
           </div>
         )}
       </section>
@@ -938,8 +996,8 @@ export default function TarifsPage() {
                     </button>
                   </div>
                   <TableauPieces pieces={items} marque={marque} modele={modele} regles={regles} seuils={seuils} isAdmin={isAdmin}
-                    htVisible={htVisibleListe} onEnregistrer={(p, corps) => enregistrerHt({ ...p, marque, modele }, corps)}
-                    onVerrou={(p) => basculerVerrou(p, marque, modele)} onStock={basculerStock} enCours={enCours} margeDe={margeDe} dense />
+                    htVisible={htVisibleListe} onEnregistrer={(p, corps, opts) => enregistrerHt({ ...p, marque, modele }, corps, opts)}
+                    onVerrou={(p) => basculerVerrou(p, marque, modele)} onStock={basculerStock} enCours={enCours} envoiEnCours={envoisHt.enCours} margeDe={margeDe} dense />
                 </div>
               ))}
             </div>

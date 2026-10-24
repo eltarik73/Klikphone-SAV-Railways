@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAdminElevation } from '../hooks/useAdminElevation';
+import { useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
+import { useToast } from '../components/Toast';
 import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FenetrePrix, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
@@ -36,6 +38,14 @@ async function openPdf({ ids = null, marque = null } = {}) {
 // navigate()) : l'app est sous <BrowserRouter>, sans data router, donc sans useBlocker ; tant
 // qu'il reste des modifications, la page intercepte history.pushState vers une autre page et
 // propose « Enregistrer et quitter » / « Quitter sans enregistrer » / « Rester sur la page ».
+// Entrée dans un champ de la ligne : enregistre la ligne (comme le bouton « Enregistrer »)
+function entreeLigne(e, dirty, enregistrer) {
+  if (e.key !== 'Enter' || !dirty || e.defaultPrevented || e.nativeEvent?.isComposing) return;
+  if (e.target?.tagName !== 'INPUT' || ['checkbox', 'radio', 'button'].includes(e.target.type)) return;
+  e.preventDefault();
+  enregistrer();
+}
+
 function useGardeModifications(actif) {
   const navigate = useNavigate();
   const [cible, setCible] = useState(null);
@@ -71,9 +81,11 @@ function useGardeModifications(actif) {
   return { cible, partir, rester };
 }
 
-function FenetreQuitter({ garde, nombre, enregistrer }) {
+// `envois` : lignes déjà validées dont l'envoi n'est pas terminé (rien à saisir, seulement à attendre)
+function FenetreQuitter({ garde, nombre, envois = 0, enregistrer }) {
   const [enCours, setEnCours] = useState(false);
   const { cible, partir, rester } = garde;
+  const seulementEnvois = nombre === 0 && envois > 0;
   async function enregistrerPuisPartir() {
     setEnCours(true);
     try {
@@ -89,20 +101,28 @@ function FenetreQuitter({ garde, nombre, enregistrer }) {
       bloquer={enCours}
       largeur="max-w-xl"
       icone={AlertTriangle}
-      titre="Modifications non enregistrées"
-      sousTitre={`${nombre} ligne${nombre > 1 ? 's' : ''} modifiée${nombre > 1 ? 's' : ''} pas encore enregistrée${nombre > 1 ? 's' : ''}.`}
+      titre={seulementEnvois ? 'Enregistrement en cours' : 'Modifications non enregistrées'}
+      sousTitre={seulementEnvois
+        ? `${envois} ligne${envois > 1 ? 's' : ''} en cours d’envoi au serveur.`
+        : `${nombre} ligne${nombre > 1 ? 's' : ''} modifiée${nombre > 1 ? 's' : ''} pas encore enregistrée${nombre > 1 ? 's' : ''}.`}
       pied={(
         <div className="flex flex-col-reverse sm:flex-row sm:flex-wrap sm:justify-end gap-2">
           <button type="button" onClick={rester} disabled={enCours} className="btn-ghost">Rester sur la page</button>
-          <button type="button" onClick={() => partir(cible)} disabled={enCours} className="btn-secondary">Quitter sans enregistrer</button>
+          <button type="button" onClick={() => partir(cible)} disabled={enCours} className="btn-secondary">
+            {seulementEnvois ? 'Quitter sans attendre' : 'Quitter sans enregistrer'}
+          </button>
           <button type="button" onClick={enregistrerPuisPartir} disabled={enCours} className="btn-primary">
             {enCours ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Save aria-hidden="true" />}
-            Enregistrer et quitter
+            {seulementEnvois ? 'Attendre et quitter' : 'Enregistrer et quitter'}
           </button>
         </div>
       )}
     >
-      <p className="t-body">Sans enregistrement, ces changements de prix ou de stock seront perdus.</p>
+      <p className="t-body">
+        {seulementEnvois
+          ? 'Les nouveaux prix partent vers le serveur. En quittant sans attendre, un échec éventuel sera signalé par une notification.'
+          : 'Sans enregistrement, ces changements de prix ou de stock seront perdus.'}
+      </p>
     </FenetrePrix>
   );
 }
@@ -143,7 +163,9 @@ export default function AdminTarifsSmartphonesPage() {
   const basePath = useBasePath();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState(null);
+  // Lignes envoyées : la ligne quitte l'état « modifiée » tout de suite, l'envoi part derrière (un à la fois par ligne)
+  const envois = useEnvoisOptimistes();
+  const toastGlobal = useToast(); // notifications de l'application : restent visibles après un changement de page
   const [dirty, setDirty] = useState({});
   const [toast, setToast] = useState(null);
   const [generatingId, setGeneratingId] = useState(null);
@@ -203,33 +225,43 @@ export default function AdminTarifsSmartphonesPage() {
     setDirty(d => ({ ...d, [id]: true }));
   }
 
+  // Optimiste : la ligne n'est plus « modifiée » dès le clic (ou Entrée) ; un échec la remet modifiée,
+  // la saisie reste à l'écran et le bouton « Enregistrer » permet de réessayer.
+  // La ligne part entière : un envoi plus récent de la même ligne (en file) reprend aussi cette saisie,
+  // l'échec d'un envoi dépassé ne remet donc rien en « modifiée ».
+  // Page quittée pendant l'envoi : l'échec est signalé par une notification globale.
   async function saveRow(row) {
-    setSavingId(row.id);
-    try {
-      await sensible(() => api.updateSmartphoneTarif(row.id, {
-        marque: row.marque,
-        modele: row.modele,
-        stockage_1: row.stockage_1,
-        prix_1: row.prix_1 ? Number(row.prix_1) : null,
-        stock_1: row.stock_1 != null ? Number(row.stock_1) : 0,
-        stockage_2: row.stockage_2 || null,
-        prix_2: row.prix_2 ? Number(row.prix_2) : null,
-        stock_2: row.stock_2 != null ? Number(row.stock_2) : 0,
-        stockage_3: row.stockage_3 || null,
-        prix_3: row.prix_3 ? Number(row.prix_3) : null,
-        stock_3: row.stock_3 != null ? Number(row.stock_3) : 0,
-        condition: row.condition,
-        image_url: row.image_url || null,
-      }));
-      setDirty(d => { const c = { ...d }; delete c[row.id]; return c; });
-      showToast('success', `${row.marque} ${row.modele} enregistré`);
+    const payload = {
+      marque: row.marque,
+      modele: row.modele,
+      stockage_1: row.stockage_1,
+      prix_1: row.prix_1 ? Number(row.prix_1) : null,
+      stock_1: row.stock_1 != null ? Number(row.stock_1) : 0,
+      stockage_2: row.stockage_2 || null,
+      prix_2: row.prix_2 ? Number(row.prix_2) : null,
+      stock_2: row.stock_2 != null ? Number(row.stock_2) : 0,
+      stockage_3: row.stockage_3 || null,
+      prix_3: row.prix_3 ? Number(row.prix_3) : null,
+      stock_3: row.stock_3 != null ? Number(row.stock_3) : 0,
+      condition: row.condition,
+      image_url: row.image_url || null,
+    };
+    setDirty(d => { const c = { ...d }; delete c[row.id]; return c; });
+    const res = await envois.envoyer(row.id, () => sensible(() => api.updateSmartphoneTarif(row.id, payload)),
+      { apres: { ligne: payload } });
+    if (res.ok) {
+      if (envois.monte()) showToast('success', `${row.marque} ${row.modele} enregistré`);
       return true;
-    } catch (e) {
-      toastErreur(e, `${row.marque} ${row.modele} non enregistré`);
-      return false;
-    } finally {
-      setSavingId(null);
     }
+    if (res.proteges.has('ligne')) return false;
+    const msg = messageErreurPrix(res.erreur, `${row.marque} ${row.modele} non enregistré`);
+    if (!envois.monte()) {
+      if (msg) toastGlobal.error(msg);
+      return false;
+    }
+    setDirty(d => ({ ...d, [row.id]: true }));
+    if (msg) showToast('error', msg);
+    return false;
   }
 
   async function saveAll() {
@@ -238,7 +270,8 @@ export default function AdminTarifsSmartphonesPage() {
       // Un échec (ou l'identification annulée) arrête la série : le message reste lisible
       if (!(await saveRow(r))) return false;
     }
-    return true;
+    // Les envois déjà partis (Entrée) sont attendus aussi
+    return envois.attendre();
   }
 
   async function createNew() {
@@ -297,7 +330,9 @@ export default function AdminTarifsSmartphonesPage() {
   }
 
   const dirtyCount = Object.keys(dirty).length;
-  const garde = useGardeModifications(dirtyCount > 0);
+  // Lignes modifiées OU envois encore en cours : la navigation interne et la fermeture de l'onglet
+  // sont gardées (un envoi coupé ou un échec après le départ passerait inaperçu)
+  const garde = useGardeModifications(dirtyCount > 0 || envois.nombre > 0);
 
   // Group counts by brand
   const brandCounts = useMemo(() => {
@@ -665,6 +700,8 @@ export default function AdminTarifsSmartphonesPage() {
                     return (
                     <tr
                       key={r.id}
+                      onKeyDown={(e) => entreeLigne(e, !!dirty[r.id], () => saveRow(r))}
+                      aria-busy={envois.enCours(r.id) || undefined}
                       className={`table-row ${dirty[r.id] ? 'bg-amber-50/70 hover:bg-amber-50' : ''}`}
                     >
                       <td className="!px-1 !py-1 text-center">
@@ -802,21 +839,21 @@ export default function AdminTarifsSmartphonesPage() {
                               <Sparkles />
                             )}
                           </button>
-                          {dirty[r.id] && (
+                          {dirty[r.id] ? (
                             <button
                               onClick={() => saveRow(r)}
-                              disabled={savingId === r.id}
                               aria-label={`Enregistrer ${r.marque} ${r.modele}`}
                               title="Enregistrer"
                               className="btn-primary btn-icon"
                             >
-                              {savingId === r.id ? (
-                                <Loader2 className="motion-safe:animate-spin" />
-                              ) : (
-                                <Save />
-                              )}
+                              <Save />
                             </button>
-                          )}
+                          ) : envois.enCours(r.id) ? (
+                            <span role="status" className="inline-flex items-center justify-center w-11 h-11 text-slate-600" title="Enregistrement…">
+                              <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
+                              <span className="sr-only">Enregistrement de {r.marque} {r.modele}…</span>
+                            </span>
+                          ) : null}
                           <button
                             onClick={() => removeRow(r)}
                             aria-label={`Supprimer ${r.marque} ${r.modele}`}
@@ -945,7 +982,7 @@ export default function AdminTarifsSmartphonesPage() {
         aEnregistrer={{ nombre: dirtyCount, enregistrer: saveAll }}
         onApplique={() => load()}
       />
-      <FenetreQuitter garde={garde} nombre={dirtyCount} enregistrer={saveAll} />
+      <FenetreQuitter garde={garde} nombre={dirtyCount} envois={envois.nombre} enregistrer={saveAll} />
       <HistoriquePrix
         open={fenetre === 'historique'}
         onClose={() => setFenetre(null)}

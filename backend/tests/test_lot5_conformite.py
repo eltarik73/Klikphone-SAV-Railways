@@ -666,9 +666,9 @@ def test_reel_client_consentements(reel):
     cid = b["id"]
     premier = b["consentement_marketing_le"]
     ligne = lambda: _sql(reel, "SELECT * FROM clients WHERE id = %s", cid)[0]  # noqa: E731
-    # Borne : case décochée par défaut, l'accord donné avant reste
-    r = c.post("/api/clients", json={"nom": "X", "telephone": "0600000902", "rgpd_informe": True,
-                                     "consentement_marketing": False})
+    # Borne, même personne : case décochée par défaut, l'accord donné avant reste
+    r = c.post("/api/clients", json={"nom": "Fictif", "prenom": "Élodie", "telephone": "0600000902",
+                                     "rgpd_informe": True, "consentement_marketing": False})
     assert r.json() == {"id": cid}
     row = ligne()
     assert row["consentement_marketing"] is True and row["consentement_marketing_le"].isoformat() == premier
@@ -683,13 +683,31 @@ def test_reel_client_consentements(reel):
     assert retrait and retrait.isoformat() >= premier
     g = c.get(f"/api/clients/{cid}", headers=_h()).json()
     assert g["consentement_marketing"] is False and g["rgpd_informe_le"] and g["consentement_marketing_retire_le"]
-    # Borne, numéro connu, autre nom : l'accord n'engage pas la personne de la fiche
+    # Borne, numéro connu, autre nom : nouvelle fiche (99b8beb8). L'accord n'engage pas la
+    # personne de la fiche existante, laissée intacte ; il est posé sur la nouvelle fiche.
+    avant = ligne()
     r = c.post("/api/clients", json={"nom": "Autre", "prenom": "Élodie", "telephone": "0600000902",
                                      "rgpd_informe": True, "consentement_marketing": True})
-    assert r.json() == {"id": cid} and ligne()["consentement_marketing"] is False
-    # Même identité (casse et accents ignorés) : accord enregistré, avec son canal
+    assert r.status_code == 200, r.text
+    autre = r.json()["id"]
+    assert autre != cid and set(r.json()) == {"id"}   # rien de la fiche existante ne fuit
+    assert ligne() == avant
+    nouvelle = _sql(reel, "SELECT * FROM clients WHERE id = %s", autre)[0]
+    assert (nouvelle["nom"], nouvelle["prenom"]) == ("Autre", "Élodie") and nouvelle["rgpd_informe_le"]
+    assert nouvelle["consentement_marketing"] is True and nouvelle["consentement_marketing_le"]
+    assert nouvelle["consentement_marketing_source"] == src("borne")
+    _sql(reel, "DELETE FROM clients WHERE id = %s", autre)
+    # Numéro connu, fiche sans nom : rattachement, mais l'accord n'engage personne
+    sans_nom = _client(reel, tel="0600000907", nom="", prenom="")
+    r = c.post("/api/clients", json={"nom": "Quelconque", "telephone": "0600000907", "rgpd_informe": True,
+                                     "consentement_marketing": True})
+    assert r.json() == {"id": sans_nom}
+    row = _sql(reel, "SELECT * FROM clients WHERE id = %s", sans_nom)[0]
+    assert row["rgpd_informe_le"] and row["consentement_marketing"] is False and row["consentement_marketing_le"] is None
+    # Même identité (casse et accents ignorés) : rattachement comme avant, accord enregistré avec son canal
     r = c.post("/api/clients", json={"nom": "FICTIF", "prenom": "elodie", "telephone": "06 00 00 09 02",
                                      "consentement_marketing": True})
+    assert r.json() == {"id": cid}
     row = ligne()
     assert row["consentement_marketing"] is True and row["consentement_marketing_source"] == src("borne")
     assert row["consentement_marketing_le"] > retrait and row["consentement_marketing_retire_le"] == retrait
@@ -704,7 +722,7 @@ def test_reel_client_consentements(reel):
     row = _sql(reel, "SELECT * FROM clients WHERE id = %s", r.json()["id"])[0]
     assert row["consentement_marketing"] is True and row["consentement_marketing_source"] == src("borne")
     assert row["rgpd_informe_le"]
-    _sql(reel, "DELETE FROM clients WHERE telephone = ANY(%s)", ["0600000902", "0600000903", "0600000904"])
+    _sql(reel, "DELETE FROM clients WHERE telephone = ANY(%s)", ["0600000902", "0600000903", "0600000904", "0600000907"])
 
 
 def test_reel_depot_distance_garde_la_preuve_rgpd(reel, monkeypatch):
@@ -720,12 +738,38 @@ def test_reel_depot_distance_garde_la_preuve_rgpd(reel, monkeypatch):
     row = _sql(reel, "SELECT * FROM clients WHERE telephone = %s", tels[0])[0]
     assert row["rgpd_informe_le"] and row["consentement_marketing"] is True
     assert row["consentement_marketing_source"] == f"depot_distance:politique-{mentions.POLITIQUE_VERSION}"
-    # Numéro connu, autre nom : seule l'information est datée
+    # Numéro connu, autre nom : nouvelle fiche (99b8beb8) qui porte le dépôt et la preuve ;
+    # la fiche existante reste intacte (ni information, ni accord, ni ticket)
     cid = _client(reel, tel=tels[1], nom="Fiche", prenom="")
+    avant = _sql(reel, "SELECT * FROM clients WHERE id = %s", cid)[0]
     r = c.post("/api/depot-distance", json={"nom": "Autre", "telephone": tels[1], "panne": "Batterie",
                                              "rgpd_informe": True, "consentement_marketing": True})
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
+    assert _sql(reel, "SELECT * FROM clients WHERE id = %s", cid)[0] == avant
+    assert not _sql(reel, "SELECT id FROM tickets WHERE client_id = %s", cid)
+    nouvelle = _sql(reel, "SELECT * FROM clients WHERE telephone = %s AND id <> %s", tels[1], cid)
+    assert len(nouvelle) == 1 and nouvelle[0]["nom"] == "Autre"
+    nouvelle = nouvelle[0]
+    assert nouvelle["rgpd_informe_le"] and nouvelle["consentement_marketing"] is True
+    assert nouvelle["consentement_marketing_source"] == f"depot_distance:politique-{mentions.POLITIQUE_VERSION}"
+    assert _sql(reel, "SELECT client_id FROM tickets WHERE id = %s", r.json()["id"])[0]["client_id"] == nouvelle["id"]
+    # Même identité (casse ignorée) : rattaché à la fiche existante comme avant, accord posé
+    r = c.post("/api/depot-distance", json={"nom": "FICHE", "telephone": tels[1], "panne": "Écran",
+                                             "marque": "Apple", "modele": "iPhone 12",
+                                             "rgpd_informe": True, "consentement_marketing": True})
+    assert r.status_code == 200, r.text
+    assert _sql(reel, "SELECT client_id FROM tickets WHERE id = %s", r.json()["id"])[0]["client_id"] == cid
     row = _sql(reel, "SELECT * FROM clients WHERE id = %s", cid)[0]
+    assert row["rgpd_informe_le"] and row["consentement_marketing"] is True and row["consentement_marketing_le"]
+    # Fiche sans nom : rattachement, seule l'information est datée (l'accord n'engage personne)
+    tel3 = "0600000908"
+    tels.append(tel3)
+    sans_nom = _client(reel, tel=tel3, nom="", prenom="")
+    r = c.post("/api/depot-distance", json={"nom": "Quelconque", "telephone": tel3, "panne": "Batterie",
+                                             "rgpd_informe": True, "consentement_marketing": True})
+    assert r.status_code == 200, r.text
+    assert _sql(reel, "SELECT client_id FROM tickets WHERE id = %s", r.json()["id"])[0]["client_id"] == sans_nom
+    row = _sql(reel, "SELECT * FROM clients WHERE id = %s", sans_nom)[0]
     assert row["rgpd_informe_le"] and row["consentement_marketing"] is False and row["consentement_marketing_le"] is None
     _sql(reel, "DELETE FROM tickets WHERE client_id IN (SELECT id FROM clients WHERE telephone = ANY(%s))", tels)
     _sql(reel, "DELETE FROM clients WHERE telephone = ANY(%s)", tels)

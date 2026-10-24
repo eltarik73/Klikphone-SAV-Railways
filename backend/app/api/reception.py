@@ -210,28 +210,29 @@ def get_reception(ticket_id: int, user: dict = Depends(get_current_user)):
 def put_reception(ticket_id: int, data: ReceptionIn, user: dict = Depends(get_current_user)):
     """Enregistre la fiche de réception (remplace la précédente) ; sa validation est historisée."""
     auteur = (user or {}).get("sub") or "Staff"
+    # Une seule instruction : écriture (seulement si le ticket existe : aucune ligne sinon → 404),
+    # et trace de la première validation. « avant » lit l'état d'avant l'écriture (même instantané).
     with get_cursor() as cur:
-        cur.execute("SELECT id FROM tickets WHERE id = %s", (ticket_id,))
-        if not cur.fetchone():
-            raise HTTPException(404, "Ticket non trouvé")
-        # « avant » lit l'état d'avant l'écriture (même instantané que l'INSERT)
         cur.execute("""
             WITH avant AS (
                 SELECT complete FROM ticket_controles WHERE ticket_id = %(t)s AND phase = %(p)s
+            ), ecrit AS (
+                INSERT INTO ticket_controles (ticket_id, phase, items, complete, auteur)
+                SELECT id, %(p)s, %(items)s::jsonb, %(complete)s, %(auteur)s FROM tickets WHERE id = %(t)s
+                ON CONFLICT (ticket_id, phase) DO UPDATE
+                SET items = EXCLUDED.items, complete = EXCLUDED.complete,
+                    auteur = EXCLUDED.auteur, date_maj = NOW()
+                RETURNING items, complete, auteur, date_maj,
+                          COALESCE((SELECT complete FROM avant), FALSE) AS deja_complete
+            ), trace AS (
+                INSERT INTO historique (ticket_id, type, contenu)
+                SELECT %(t)s, 'reception', %(texte)s FROM ecrit WHERE ecrit.complete AND NOT ecrit.deja_complete
             )
-            INSERT INTO ticket_controles (ticket_id, phase, items, complete, auteur)
-            VALUES (%(t)s, %(p)s, %(items)s, %(complete)s, %(auteur)s)
-            ON CONFLICT (ticket_id, phase) DO UPDATE
-            SET items = EXCLUDED.items, complete = EXCLUDED.complete,
-                auteur = EXCLUDED.auteur, date_maj = NOW()
-            RETURNING items, complete, auteur, date_maj,
-                      COALESCE((SELECT complete FROM avant), FALSE) AS deja_complete
+            SELECT * FROM ecrit
         """, {"t": ticket_id, "p": PHASE_ENTREE, "items": Json(data.items.model_dump()),
-              "complete": data.complete, "auteur": auteur})
+              "complete": data.complete, "auteur": auteur,
+              "texte": f"Fiche de réception validée — par {auteur}"})
         row = cur.fetchone()
-        if data.complete and not row.get("deja_complete"):
-            cur.execute(
-                "INSERT INTO historique (ticket_id, type, contenu) VALUES (%s, %s, %s)",
-                (ticket_id, "reception", f"Fiche de réception validée — par {auteur}"),
-            )
+        if not row:
+            raise HTTPException(404, "Ticket non trouvé")
     return _sortie(row)
