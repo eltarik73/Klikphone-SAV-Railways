@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
+import { useAuth } from '../hooks/useAuth';
 import { lienSuivi } from '../lib/ticketCode';
 import { invalidateCache } from '../hooks/useApi';
 import { useToast } from '../components/Toast';
@@ -75,6 +76,7 @@ export default function ClientFormPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const { logout } = useAuth();
   const infosRgpd = useInfosRgpd();
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -322,12 +324,24 @@ export default function ClientFormPage() {
     try {
       // Personnel : session du poste, fiche complète ({ id }). Borne : aucun jeton, le serveur ne rend
       // qu'une référence client signée (client_ref, 20 min) — jamais l'id d'une fiche.
-      const client = await api.createOrGetClient({
+      const creerFiche = () => api.createOrGetClient({
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
       }, { asStaff: modePersonnel });
+      let client = await creerFiche();
+      // Personnel sans fiche complète : le serveur a traité l'appel comme anonyme, le jeton du poste
+      // a été révoqué (déconnexion ou changement d'utilisateur dans un autre onglet). Si cet autre
+      // onglet a rouvert une session, on la reprend et on réessaie une fois ; sinon on se reconnecte,
+      // sans créer de ticket (un client_id absent donnerait un 422 trompeur).
+      if (modePersonnel && !client?.id && api.adopterJetonDuPoste()) client = await creerFiche();
+      if (modePersonnel && !client?.id) {
+        toast.error('Session expirée : reconnectez-vous.');
+        logout();
+        navigate(`/login${tableauDeBord}`);
+        return;
+      }
       const refClient = modePersonnel ? { client_id: client.id } : { client_ref: client.client_ref };
       const session = { asStaff: modePersonnel };
       const telContact = form.tel_contact.trim() || null;

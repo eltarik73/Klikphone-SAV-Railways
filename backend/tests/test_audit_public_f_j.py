@@ -1,18 +1,22 @@
 """Audit adverse d'octobre 2026, sessions et jetons : un test par constat du périmètre BACKEND 2.
 
-  F. Révocation : un jeton de session dont la ligne connexions_equipe (claim cx) est close par
-     une déconnexion est refusé (401, lecture en cache 30 s ; un jeton sans cx reste accepté,
-     une ligne « expiree » n'est pas une révocation) ; le jeton d'élévation X-Admin-Token porte
-     sid et iat, n'est accepté que sur sa lignée et seulement s'il est postérieur à la dernière
-     révocation (verrouillage du mode admin, déconnexion, changement de membre).
+  F. Révocation : un jeton de session dont la ligne connexions_equipe (claim cx) — ou une ligne
+     postérieure de la même lignée (sid, utilisateur), après une reprise sur « expiree » — est
+     close par une déconnexion est refusé (401, lecture en cache 30 s ; un jeton sans cx reste
+     accepté, une ligne « expiree » seule n'est pas une révocation) ; le jeton d'élévation
+     X-Admin-Token porte sid et iat, n'est accepté que sur sa lignée et seulement s'il est
+     postérieur à la dernière révocation (verrouillage du mode admin, déconnexion, changement
+     de membre), révocation persistée (revocations_admin) : un redémarrage ne la perd pas.
   G. Jeton de suivi expirable : dossier rendu ou clôturé depuis plus de SUIVI_JETON_JOURS
      (défaut 180) → jeton refusé (lien_invalide / 404), le numéro complet reste accepté ;
      POST /api/tickets/{id}/suivi-token/regenerer (session) rend un nouveau jeton ; l'anonymisation
      RGPD efface le jeton et il n'est jamais recréé.
   H. Plafonds globaux de la vitrine (20/h toutes IP, 2/h par adresse e-mail) et plafond
      d'échecs de PIN toutes IP confondues (200/h) → 429 avec un message clair.
-  I. Une seule fonction client_ip (auth), KP_TRUST_PROXY=0 ignore X-Forwarded-For.
-  J. Liens de partage : X-Forwarded-Host / Proto acceptés seulement pour un hôte du projet.
+  I. Une seule fonction client_ip (auth), KP_TRUST_PROXY=0 ignore X-Forwarded-For ; garde au
+     démarrage sur un réglage incohérent avec l'environnement.
+  J. Liens de partage : X-Forwarded-Host / Proto acceptés seulement pour un hôte du projet, en
+     correspondance exacte (pas de déclinaison *.up.railway.app, hôtes locaux hors production).
 
 Base simulée (réponses choisies selon le texte SQL) : ces tests tournent toujours.
 """
@@ -63,20 +67,32 @@ def _curseur(handler):
 # ─── F : révocation du jeton de session (claim cx) ────────────────────────
 
 class _Journal:
-    """connexions_equipe simulé : une ligne par cx, {fin, fin_motif} ; compte les lectures."""
+    """connexions_equipe simulé : une ligne par id {sid, utilisateur, fin, fin_motif} ; compte les
+    lectures. Même décision que la requête réelle : ligne cx, ou ligne postérieure de la même
+    lignée (sid, utilisateur), close hors « expiree »."""
 
     def __init__(self):
         self.lignes = {}
         self.lectures = 0
 
     def handler(self, sql, params):
-        if sql.startswith("SELECT fin, fin_motif FROM connexions_equipe"):
+        if sql.startswith("SELECT 1 AS close FROM connexions_equipe"):
             self.lectures += 1
-            return self.lignes.get(params[0])
+            cx, sid, sub, _cx2, motifs = params
+            for i, l in self.lignes.items():
+                if l.get("fin") is None or (l.get("fin_motif") or "") in motifs:
+                    continue
+                if i == cx or (i > cx and l.get("sid") == sid and l.get("utilisateur") == sub):
+                    return {"close": 1}
+            return None
         return None
 
+    def ouvrir(self, cx, sid=None, utilisateur="Sophie"):
+        self.lignes[cx] = {"sid": sid, "utilisateur": utilisateur, "fin": None, "fin_motif": None}
+
     def clore(self, cx, motif="deconnexion"):
-        self.lignes[cx] = {"fin": _maintenant(), "fin_motif": motif}
+        l = self.lignes.setdefault(cx, {"sid": None, "utilisateur": None})
+        l.update({"fin": _maintenant(), "fin_motif": motif})
 
 
 @pytest.fixture
@@ -157,6 +173,56 @@ def test_f_switch_user_revoque_l_ancien_jeton(client, journal):
     assert _me(client, tok).status_code == 401 and _me(client, nouveau).status_code == 200
 
 
+@pytest.mark.parametrize("fin", ["logout", "switch"])
+def test_f_deconnexion_apres_une_nuit_d_inactivite_revoque_le_jeton(client, journal, fin):
+    """Ligne cx close « expiree » (12 h sans activité), activité reprise sur une NOUVELLE ligne de la
+    même lignée (presence._reprendre), puis déconnexion ou changement d'utilisateur : la ligne close
+    est la nouvelle, pas la ligne cx — le jeton doit être refusé quand même (décision sur la lignée)."""
+    tok = create_token("accueil", "Sophie", sid="poste-nuit", cx=100)
+    journal.ouvrir(100, "poste-nuit")
+    assert _me(client, tok).status_code == 200
+    journal.clore(100, "expiree")                       # nuit : rétention horaire ou _reprendre
+    journal.ouvrir(101, "poste-nuit")                   # reprise le lendemain (sans lien avec cx)
+    auth.oublier_sessions()
+    assert _me(client, tok).status_code == 200          # « expiree » seule : pas une révocation
+    if fin == "logout":
+        def fermer(user, motif="deconnexion"):
+            journal.clore(101, "deconnexion")           # fermer_session trouve la ligne ouverte par (sid, utilisateur)
+            return True
+        with patch("app.api.auth.presence.fermer_session", fermer):
+            assert client.post("/api/auth/logout", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    else:
+        def ouvrir(request, sid, utilisateur, cible, poste=None, appareil=None, precedent=None):
+            journal.clore(101, "changement")
+            journal.ouvrir(102, "poste-nuit", "Bruno")
+            return 102
+        with patch("app.api.auth.presence.ouvrir_session", ouvrir), \
+                patch("app.api.auth._membre_autorise", lambda nom, target: nom):
+            r = client.post("/api/auth/switch-user", json={"utilisateur": "Bruno"},
+                            headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code == 200 and _me(client, r.json()["access_token"]).status_code == 200
+    r = _me(client, tok)
+    assert r.status_code == 401 and "reconnectez" in r.json()["detail"].lower()
+    # Une autre lignée (autre poste) ou un autre membre de la même lignée n'est pas touché
+    journal.ouvrir(103, "autre-poste")
+    assert _me(client, create_token("accueil", "Sophie", sid="autre-poste", cx=103)).status_code == 200
+
+
+def test_f_lignee_a_b_a_seul_l_ancien_jeton_est_revoque(client, journal):
+    """Sophie → Bruno → Sophie sur le même poste : la ligne de Sophie close « changement » (id > cx)
+    révoque son ancien jeton ; le nouveau jeton (cx = ligne ouverte) reste valable."""
+    ancien = create_token("accueil", "Sophie", sid="poste-aba", cx=110)
+    journal.ouvrir(110, "poste-aba")
+    journal.clore(110, "changement")
+    journal.ouvrir(111, "poste-aba", "Bruno")
+    journal.clore(111, "changement")
+    journal.ouvrir(112, "poste-aba")
+    nouveau = create_token("accueil", "Sophie", sid="poste-aba", cx=112)
+    assert _me(client, ancien).status_code == 401
+    assert _me(client, nouveau).status_code == 200
+    assert _me(client, create_token("accueil", "Bruno", sid="poste-aba", cx=111)).status_code == 401
+
+
 # ─── F : jeton d'élévation lié à la lignée et daté ─────────────────────────
 
 def test_f_jeton_elevation_porte_sid_et_iat():
@@ -207,6 +273,91 @@ def test_f_elevation_apres_revocation_403(client, revocation, journal):
     # Une nouvelle élévation (postérieure à la révocation) vaut de nouveau
     neuf = create_admin_token(decode_token(suite))
     assert client.delete("/api/tickets/1", headers={"Authorization": f"Bearer {suite}", "X-Admin-Token": neuf}).status_code == 200
+
+
+class _Revocations:
+    """revocations_admin simulée (sid → epoch) + journal des connexions ; compte lectures et écritures."""
+
+    def __init__(self, journal, absente=False):
+        self.journal, self.absente = journal, absente
+        self.epochs, self.lectures, self.ecritures = {}, 0, 0
+
+    def handler(self, sql, params):
+        if "revocations_admin" in sql:
+            if self.absente:
+                import psycopg2
+
+                class _Absente(psycopg2.Error):
+                    pgcode = "42P01"
+                raise _Absente("relation revocations_admin does not exist")
+            if sql.startswith("SELECT revoque_epoch"):
+                self.lectures += 1
+                return {"revoque_epoch": self.epochs[params[0]]} if params[0] in self.epochs else None
+            if sql.startswith("INSERT INTO revocations_admin"):
+                self.ecritures += 1
+                self.epochs[params[0]] = max(self.epochs.get(params[0], 0.0), params[1])
+            return None
+        return self.journal.handler(sql, params)
+
+
+@pytest.fixture
+def revocations(request):
+    j = _Journal()
+    base = _Revocations(j, absente=getattr(request, "param", False))
+    with _curseur(base.handler) as (cur, gc), patch("app.api.auth.get_cursor", gc):
+        yield base
+
+
+def _delete(client, tok, eleve):
+    return client.delete("/api/tickets/1", headers={"Authorization": f"Bearer {tok}", "X-Admin-Token": eleve})
+
+
+def test_f_revocation_survit_a_un_redemarrage(client, revocations):
+    tok = create_token("accueil", "Sophie", sid="poste-redem", cx=120)
+    revocations.journal.ouvrir(120, "poste-redem")
+    eleve = create_admin_token(decode_token(tok))
+    assert _delete(client, tok, eleve).status_code == 200
+    assert client.post("/api/admin/lock", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    assert revocations.ecritures == 1 and revocations.epochs["poste-redem"] >= auth.derniere_revocation("poste-redem") > 0
+    r = _delete(client, tok, eleve)
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_expire"
+    # Redémarrage du processus : mémoire vide, la base garde la révocation
+    auth.oublier_revocations()
+    r = _delete(client, tok, eleve)
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_expire"
+    assert revocations.lectures >= 1
+    # Lue une fois puis gardée 30 s ; une nouvelle élévation vaut
+    lectures = revocations.lectures
+    assert _delete(client, tok, create_admin_token(decode_token(tok))).status_code == 200
+    for _ in range(3):
+        assert _delete(client, tok, eleve).status_code == 403
+    assert revocations.lectures == lectures
+
+
+def test_f_revocation_jamais_anterieure_au_dernier_jeton_emis(client, revocations, monkeypatch):
+    """Horloge murale ramenée en arrière (NTP) entre l'émission et le verrouillage : la révocation
+    est datée après le dernier jeton émis sur la lignée, et le jeton suivant après la révocation."""
+    tok = create_token("accueil", "Sophie", sid="poste-ntp", cx=130)
+    revocations.journal.ouvrir(130, "poste-ntp")
+    t0 = auth.horloge()
+    eleve = create_admin_token(decode_token(tok))
+    monkeypatch.setattr(auth, "horloge", lambda: t0 - 600)       # l'horloge recule de 10 min
+    assert client.post("/api/admin/lock", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    assert auth.derniere_revocation("poste-ntp") > jwt.decode(eleve, auth.JWT_SECRET, algorithms=[auth.JWT_ALGORITHM])["iat"]
+    assert _delete(client, tok, eleve).status_code == 403
+    neuf = create_admin_token(decode_token(tok))                # émis « dans le passé » mais après la révocation
+    assert _delete(client, tok, neuf).status_code == 200
+
+
+@pytest.mark.parametrize("revocations", [True], indirect=True)
+def test_f_table_des_revocations_absente_memoire_seule(client, revocations):
+    tok = create_token("accueil", "Sophie", sid="poste-sans-table", cx=140)
+    revocations.journal.ouvrir(140, "poste-sans-table")
+    eleve = create_admin_token(decode_token(tok))
+    assert _delete(client, tok, eleve).status_code == 200
+    assert client.post("/api/admin/lock", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    assert _delete(client, tok, eleve).status_code == 403
+    assert _delete(client, tok, create_admin_token(decode_token(tok))).status_code == 200
 
 
 # ─── G : jeton de suivi expirable ──────────────────────────────────────────
@@ -361,14 +512,16 @@ def _vitrine_handler(sql, params):
 def vitrine(monkeypatch):
     envois = []
     monkeypatch.setattr(iphone_tarifs, "_send_email", lambda dest, sujet, corps: (envois.append(dest), (True, "ok"))[1])
+    for lim in (iphone_tarifs._LIMITEUR_VITRINE_IP, iphone_tarifs._LIMITEUR_VITRINE_GLOBAL,
+                iphone_tarifs._LIMITEUR_VITRINE_EMAIL):
+        lim._buckets.clear()
     tickets_api._RATE_BUCKETS.clear()
-    iphone_tarifs._LIMITEUR_VITRINE_GLOBAL._buckets.clear()
-    iphone_tarifs._LIMITEUR_VITRINE_EMAIL._buckets.clear()
     with _curseur(_vitrine_handler) as (cur, gc), patch("app.api.iphone_tarifs.get_cursor", gc):
         yield envois
+    for lim in (iphone_tarifs._LIMITEUR_VITRINE_IP, iphone_tarifs._LIMITEUR_VITRINE_GLOBAL,
+                iphone_tarifs._LIMITEUR_VITRINE_EMAIL):
+        lim._buckets.clear()
     tickets_api._RATE_BUCKETS.clear()
-    iphone_tarifs._LIMITEUR_VITRINE_GLOBAL._buckets.clear()
-    iphone_tarifs._LIMITEUR_VITRINE_EMAIL._buckets.clear()
 
 
 DEVIS = {"nom": "Fictif", "telephone": "0600000000", "modele": "iPhone 12"}
@@ -378,7 +531,66 @@ COMMANDE = {**DEVIS, "prix": 500}
 def test_h_valeurs_des_plafonds_vitrine_et_pin():
     assert iphone_tarifs.VITRINE_PLAFOND_GLOBAL_H == 20 and iphone_tarifs.VITRINE_PLAFOND_EMAIL_H == 2
     assert iphone_tarifs._LIMITEUR_VITRINE_GLOBAL.fenetre == iphone_tarifs._LIMITEUR_VITRINE_EMAIL.fenetre == 3600
+    # Une IP seule n'atteint pas le plafond global : 6/h par IP (toute tentative)
+    assert iphone_tarifs.VITRINE_PLAFOND_IP_H == 6 and iphone_tarifs._LIMITEUR_VITRINE_IP.fenetre == 3600
+    assert iphone_tarifs.VITRINE_PLAFOND_IP_H < iphone_tarifs.VITRINE_PLAFOND_GLOBAL_H
     assert auth.PIN_ECHECS_GLOBAL_H == 200 and auth._ECHECS_PIN.limite == 200 and auth._ECHECS_PIN.fenetre == 3600
+
+
+def test_h_depot_distance_une_ip_seule_n_atteint_pas_le_plafond_global():
+    from app.api import depot_distance
+    lim = depot_distance._LIMITEUR_DEPOT
+    par_heure_et_par_ip = lim.limite * lim.fenetre_globale / lim.fenetre
+    assert (lim.limite, lim.fenetre, lim.limite_globale) == (4, 600, 30) and par_heure_et_par_ip < lim.limite_globale
+
+
+def test_h_vitrine_6_par_heure_par_ip_toute_tentative_comptee(client, vitrine):
+    # 4 demandes valides + 2 corps invalides (400) depuis la même IP : 6 tentatives, la 7e est refusée
+    codes = [client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(7)).status_code for _ in range(4)]
+    codes += [client.post("/api/iphone-tarifs/demande-devis", json={**DEVIS, "nom": "X"}, headers=_ip(7)).status_code
+              for _ in range(2)]
+    assert codes == [200] * 4 + [400] * 2, codes
+    r = client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(7))
+    assert r.status_code == 429 and "cet appareil" in r.json()["detail"] and r.headers.get("retry-after")
+    assert client.post("/api/iphone-tarifs/passer-commande", json=COMMANDE, headers=_ip(7)).status_code == 429
+    # Une autre IP passe : le plafond global n'a compté que les 4 demandes envoyées
+    assert client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(8)).status_code == 200
+    assert len(vitrine) == 5
+
+
+def test_h_vitrine_un_corps_invalide_ne_consomme_pas_le_plafond_global(client, vitrine):
+    for i in range(20):
+        route = "/api/iphone-tarifs/demande-devis" if i % 2 else "/api/iphone-tarifs/passer-commande"
+        assert client.post(route, json={**COMMANDE, "nom": "X"}, headers=_ip(300 + i)).status_code == 400
+    assert client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(330)).status_code == 200
+    assert vitrine == ["contact@klikphone.com"] or len(vitrine) == 1
+
+
+def test_h_vitrine_refus_par_adresse_ne_consomme_pas_le_plafond_global(client, vitrine):
+    corps = {**DEVIS, "email": "spam@example.test"}
+    assert [client.post("/api/iphone-tarifs/demande-devis", json=corps, headers=_ip(400 + i)).status_code
+            for i in range(2)] == [200, 200]
+    for i in range(18):   # 18 refus par adresse : 18 IP différentes, aucun créneau global consommé
+        assert client.post("/api/iphone-tarifs/demande-devis", json=corps, headers=_ip(410 + i)).status_code == 429
+    assert [client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(450 + i)).status_code
+            for i in range(18)] == [200] * 18
+    assert client.post("/api/iphone-tarifs/demande-devis", json=DEVIS, headers=_ip(480)).status_code == 429
+
+
+def test_h_vitrine_doublon_ne_consomme_pas_le_plafond_global(client):
+    def handler(sql, params):
+        if "FROM demandes_commandes" in sql:
+            return {"id": 7}                 # même tel + modèle + prix dans la minute
+        return None
+    for lim in (iphone_tarifs._LIMITEUR_VITRINE_IP, iphone_tarifs._LIMITEUR_VITRINE_GLOBAL):
+        lim._buckets.clear()
+    with _curseur(handler) as (cur, gc), patch("app.api.iphone_tarifs.get_cursor", gc), \
+            patch.object(iphone_tarifs, "_send_email", lambda *a: (True, "ok")):
+        r = client.post("/api/iphone-tarifs/passer-commande", json=COMMANDE, headers=_ip(44))
+        assert r.status_code == 200 and r.json()["deduped"] is True
+    assert len(iphone_tarifs._LIMITEUR_VITRINE_GLOBAL._buckets.get(iphone_tarifs._CLE_VITRINE, ())) == 0
+    assert len(iphone_tarifs._LIMITEUR_VITRINE_IP._buckets.get("10.42.0.44", ())) == 1   # la tentative compte pour l'IP
+    iphone_tarifs._LIMITEUR_VITRINE_IP._buckets.clear()
 
 
 def test_h_vitrine_20_par_heure_toutes_ip_confondues(client, vitrine):
@@ -470,6 +682,41 @@ def test_i_xff_ignore_avec_kp_trust_proxy_0(client, monkeypatch):
     auth.reset_essais()
 
 
+def test_i_garde_au_demarrage_reglage_proxy(monkeypatch, capsys):
+    for v in auth._VARIABLES_RAILWAY + ("KP_TRUST_PROXY", "BACKEND_URL", "FORWARDED_ALLOW_IPS"):
+        monkeypatch.delenv(v, raising=False)
+    # Railway (RAILWAY_*) avec KP_TRUST_PROXY=0 : erreur explicite
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.setenv("KP_TRUST_PROXY", "0")
+    assert auth.en_production() is True
+    m = auth.verifier_reglage_proxy()
+    assert any(x.startswith("ERREUR") and "KP_TRUST_PROXY=0" in x for x in m)
+    assert "ERREUR" in capsys.readouterr().out
+    # Railway avec le défaut : rien à signaler
+    monkeypatch.delenv("KP_TRUST_PROXY")
+    assert auth.verifier_reglage_proxy() == []
+    # Hors Railway, défaut (1) sans BACKEND_URL : avertissement ; BACKEND_URL posée : rien
+    monkeypatch.delenv("RAILWAY_ENVIRONMENT")
+    assert auth.en_production() is False
+    assert any(x.startswith("AVERTISSEMENT") for x in auth.verifier_reglage_proxy())
+    monkeypatch.setenv("BACKEND_URL", "https://sav.example.test")
+    assert auth.verifier_reglage_proxy() == []
+    # Hors Railway avec 0 : note sur proxy-headers d'uvicorn, levée par FORWARDED_ALLOW_IPS
+    monkeypatch.setenv("KP_TRUST_PROXY", "0")
+    assert any("--no-proxy-headers" in x for x in auth.verifier_reglage_proxy())
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "")
+    assert auth.verifier_reglage_proxy() == []
+
+
+def test_i_xff_absent_signale_une_seule_fois(monkeypatch, capsys):
+    monkeypatch.delenv("KP_TRUST_PROXY", raising=False)
+    monkeypatch.setattr(auth, "_XFF_ABSENT_SIGNALE", [False])
+    assert auth.client_ip(_requete()) == "3.3.3.3" and auth.client_ip(_requete()) == "3.3.3.3"
+    out = capsys.readouterr().out
+    assert out.count("X-Forwarded-For absent") == 1 and "KP_TRUST_PROXY=0" in out
+    assert auth.client_ip(_requete("1.1.1.1")) == "1.1.1.1" and capsys.readouterr().out == ""
+
+
 def test_i_une_seule_fonction_client_ip():
     assert not hasattr(public_documents, "ip_client") and not hasattr(tracking, "_client_ip")
     assert public_documents.client_ip is auth.client_ip and tracking.client_ip is auth.client_ip
@@ -494,21 +741,33 @@ def _req_hote(**headers):
 @pytest.fixture
 def projet(monkeypatch):
     monkeypatch.setattr(public_documents, "_get_frontend_url", lambda: "https://suivi.example.test")
-    monkeypatch.delenv("BACKEND_URL", raising=False)
-    monkeypatch.delenv("RAILWAY_STATIC_URL", raising=False)
+    for v in ("BACKEND_URL", "RAILWAY_STATIC_URL", "KP_HOTES_SUPPLEMENTAIRES") + auth._VARIABLES_RAILWAY:
+        monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("FRONTEND_URL", "https://sav.example.test")
-    monkeypatch.setenv("RAILWAY_PUBLIC_DOMAIN", "klikphone-sav-v2-production.up.railway.app")
+    monkeypatch.setenv("RAILWAY_PUBLIC_DOMAIN", "klikphone-sav-v2-production.up.railway.app")   # production
 
 
-def test_j_hotes_autorises(projet):
+def test_j_hotes_autorises(projet, monkeypatch):
     ok = public_documents.hote_autorise
     assert ok("suivi.example.test") and ok("sav.example.test") and ok("SAV.example.test:443")
     assert ok("klikphone-sav-v2-production.up.railway.app")
-    assert ok("klikphone-sav-v2-staging.up.railway.app")            # autre environnement du service
-    assert ok("localhost:5173") and ok("127.0.0.1:8000") and ok("[::1]:8000")
-    assert not ok("evil.example.test") and not ok("sav.example.test.evil.net")
+    # Correspondance exacte seulement : les sous-domaines Railway vont au premier demandeur
+    assert not ok("klikphone-sav-v2-staging.up.railway.app") and not ok("klikphone-sav-v2-evil.up.railway.app")
+    assert not ok("klikphone-sav-v2-production.up.railway.app.evil.net")
     assert not ok("autre-production.up.railway.app") and not ok("klikphone-sav-v3-production.up.railway.app")
+    assert not ok("evil.example.test") and not ok("sav.example.test.evil.net")
     assert not ok("sav.example.test/x?y=") and not ok("") and not ok("sav.example.test@evil.net")
+    # Hôtes locaux : refusés en production (RAILWAY_*), acceptés hors production
+    assert not ok("localhost:5173") and not ok("127.0.0.1:8000") and not ok("[::1]:8000")
+    monkeypatch.delenv("RAILWAY_PUBLIC_DOMAIN")
+    assert not public_documents.en_production()
+    assert ok("localhost:5173") and ok("127.0.0.1:8000") and ok("[::1]:8000")
+    assert not ok("klikphone-sav-v2-production.up.railway.app")      # plus dans la liste
+    # Environnement de recette déclaré explicitement
+    monkeypatch.setenv("KP_HOTES_SUPPLEMENTAIRES", " recette.example.test , https://klikphone-sav-v2-staging.up.railway.app ")
+    assert ok("recette.example.test") and ok("klikphone-sav-v2-staging.up.railway.app:443")
+    assert not ok("klikphone-sav-v2-staging2.up.railway.app")
+    assert not hasattr(public_documents, "_prefixes_railway") and not hasattr(public_documents, "_RAILWAY_SUFFIXE")
 
 
 def test_j_x_forwarded_host_forge_ignore(projet):
@@ -521,8 +780,10 @@ def test_j_x_forwarded_host_forge_ignore(projet):
     # Hôte du projet annoncé par le proxy : repris ; schéma exotique : refusé
     assert public_documents._origine_requete(_req_hote(**{"X-Forwarded-Host": "sav.example.test",
                                                          "X-Forwarded-Proto": "https"})) == "https://sav.example.test"
-    assert public_documents._origine_requete(_req_hote(**{"Host": "klikphone-sav-v2-pr-12.up.railway.app"})) \
-        == "http://klikphone-sav-v2-pr-12.up.railway.app"
+    assert public_documents._origine_requete(_req_hote(**{"Host": "klikphone-sav-v2-production.up.railway.app"})) \
+        == "http://klikphone-sav-v2-production.up.railway.app"
+    assert public_documents._origine_requete(_req_hote(**{"Host": "klikphone-sav-v2-pr-12.up.railway.app"})) is None
+    assert public_documents._origine_requete(_req_hote(**{"X-Forwarded-Host": "localhost:8000"})) is None   # production
     assert public_documents._origine_requete(_req_hote(**{"X-Forwarded-Host": "sav.example.test",
                                                          "X-Forwarded-Proto": "javascript"})) is None
 

@@ -186,6 +186,24 @@ JWT_SECRET=...                    # Secret pour signer les JWT
 FRONTEND_URL=...                  # URL du frontend (pour CORS)
 ```
 
+Optionnelles (sécurité, cf. `app/api/auth.py` et `app/api/public_documents.py`) :
+
+```
+BACKEND_URL=https://...           # Origine publique du backend : fixe les liens de partage des documents
+                                  # (sinon X-Forwarded-Host, accepté seulement pour un hôte du projet)
+KP_TRUST_PROXY=1                  # 1 (défaut, Railway) : IP client = DERNIÈRE valeur de X-Forwarded-For.
+                                  # 0 hors proxy : request.client.host seul — lancer alors uvicorn avec
+                                  # --no-proxy-headers (sinon uvicorn réécrit lui-même request.client depuis
+                                  # XFF pour les connexions locales). Une garde au démarrage signale un
+                                  # réglage incohérent avec l'environnement (RAILWAY_*).
+KP_HOTES_SUPPLEMENTAIRES=a,b      # Hôtes supplémentaires acceptés dans X-Forwarded-Host (recette…)
+KP_IP_MAGASIN=1.2.3.4,5.6.7.8     # IP du magasin (borne) : exemptée des seuls plafonds GLOBAUX, jamais du quota par IP
+```
+
+Paramètre en base (table `params`, modifiable sans redéploiement) : `SUIVI_JETON_JOURS`
+(défaut 180) — validité du jeton de suivi (QR, liens) après restitution ou clôture du dossier ;
+le numéro de téléphone complet reste accepté sans limite de temps.
+
 ## Workflow automatique après chaque modification UI
 
 Après chaque modification d'un fichier .tsx, .jsx ou .html dans src/components ou app/ :

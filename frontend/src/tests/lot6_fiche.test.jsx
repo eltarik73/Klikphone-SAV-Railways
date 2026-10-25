@@ -82,6 +82,29 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('Fiche ticket — liste « Technicien assigné » (audit E)', () => {
+  it('équipe lue par /api/team avec la session : rôle affiché, membres inactifs écartés, route publique inutilisée', async () => {
+    apiMock.getCached.mockImplementation(async (url) => {
+      if (url === '/api/team') {
+        return [
+          { id: 1, nom: 'Sophie', role: 'admin', couleur: '#7C3AED', actif: 1 },
+          { id: 2, nom: 'Léa', role: 'tech', couleur: '#0EA5E9', actif: 1 },
+          { id: 3, nom: 'Marc', role: 'tech', couleur: '#F59E0B', actif: 0 },
+        ];
+      }
+      return [];
+    });
+    renderFiche();
+    const liste = await screen.findByLabelText('Technicien assigné');
+    await waitFor(() => expect(within(liste).getByRole('option', { name: 'Sophie (admin)' })).toBeInTheDocument());
+    expect(within(liste).getByRole('option', { name: 'Léa (tech)' })).toBeInTheDocument();
+    expect(within(liste).queryByRole('option', { name: /Marc/ })).toBeNull();
+    expect(within(liste).getByRole('option', { name: '— Non assigné —' })).toBeInTheDocument();
+    expect(apiMock.getCached).toHaveBeenCalledWith('/api/team', expect.any(Number));
+    expect(apiMock.getCached).not.toHaveBeenCalledWith('/api/team/active', expect.anything());
+  });
+});
+
 describe('Fiche ticket — TVA du récapitulatif', () => {
   it('paramètre « tva » absent : 20 % comme les devis imprimés (HT = TTC / 1,2)', async () => {
     renderFiche();

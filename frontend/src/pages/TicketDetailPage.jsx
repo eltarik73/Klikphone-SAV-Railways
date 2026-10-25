@@ -1167,14 +1167,17 @@ function TicketDetail({ id }) {
 
   // Équipe + paramètres : cache partagé entre fiches (5 min). Les modèles de message
   // ne sont lus qu'à l'ouverture de la demande d'accord, la fidélité qu'au paiement.
+  // L'équipe est lue par /api/team (session : fiche complète, rôle compris) — la route publique
+  // /api/team/active ne rend plus que id, nom et couleur.
   useEffect(() => {
     let actif = true;
     Promise.all([
-      api.getCached('/api/team/active', 5 * 60_000).catch(() => []),
+      api.getCached('/api/team', 5 * 60_000).catch(() => []),
       api.getCached('/api/config', 5 * 60_000).catch(() => []),
     ]).then(([team, params]) => {
       if (!actif) return;
-      setTeamMembers(Array.isArray(team) ? team : []);
+      // Seuls les membres actifs sont proposés à l'assignation (/api/team rend aussi les inactifs)
+      setTeamMembers(Array.isArray(team) ? team.filter((m) => m && Number(m.actif ?? 1) !== 0) : []);
       const arr = Array.isArray(params) ? params : [];
       const valeur = (cle) => arr.find(p => p.cle === cle)?.valeur;
       // Paramètre présent et numérique (0 compris) : sa valeur ; absent ou illisible : 20 %

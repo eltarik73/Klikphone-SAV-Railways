@@ -449,7 +449,9 @@ def test_config_refuse_les_cles_du_moteur_de_prix_sans_aucune_requete(client, mo
         r = client.put(chemin, headers=h, json=corps)
         assert r.status_code == 403, r.text
         assert not isinstance(r.json()["detail"], dict)       # pas une demande de code admin : refus définitif
-    assert base.requetes == []
+    # Aucune requête du moteur de prix ni de la config ; seule lecture admise : la révocation du
+    # jeton d'élévation (revocations_admin, audit F), faite par l'authentification elle-même
+    assert [q for q in base.requetes if "revocations_admin" not in q] == []
 
 
 @pytest.mark.parametrize("role, code", [("Technicien", None), ("admin", "admin_requis")])

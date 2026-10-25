@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, HTTPException, Request
 
 from app.database import get_cursor
-from app.api.auth import client_ip
+from app.api.auth import client_ip, en_production
 from app.api.print_tickets import (
     _get_frontend_url, _get_ticket_by_token, html_document, pdf_response, pdf_ticket, render_html,
 )
@@ -83,6 +83,22 @@ MESSAGE_DEBIT = "Trop de requêtes — attendez 1 minute avant de réessayer."
 MESSAGE_PLAFOND = "Service momentanément saturé : réessayez dans quelques minutes."
 
 
+def ips_magasin() -> frozenset:
+    """Adresses IP des postes du magasin : variable KP_IP_MAGASIN (adresses séparées par des
+    virgules, posée sur Railway). Liste STATIQUE, distincte des « IP connues » dynamiques
+    (auth._IP_CONNUES) qui ne valent plus d'exemption sur la voie anonyme."""
+    brut = os.environ.get("KP_IP_MAGASIN", "") or ""
+    return frozenset(x.strip() for x in brut.split(",") if x.strip())
+
+
+def ip_magasin(ip) -> bool:
+    """Vrai pour une IP du magasin (KP_IP_MAGASIN) : exemptée du seul plafond GLOBAL des
+    limiteurs — jamais du quota par IP — pour qu'une saturation venue d'ailleurs (adresses
+    multiples qui épuisent le plafond) ne bloque pas la borne du magasin."""
+    ip = str(ip or "").strip()
+    return bool(ip) and ip in ips_magasin()
+
+
 class LimiteurDebit:
     """Fenêtre glissante par IP, mémoire bornée, sûre en threadpool (routes en def).
 
@@ -90,6 +106,15 @@ class LimiteurDebit:
     toutes IP confondues, en plus du quota par IP : une attaque répartie (ou un proxy qui
     masque les IP) ne multiplie pas le quota. Mono-worker uvicorn : la mémoire suffit.
     Messages des 429 : `message` (quota de l'IP) et `message_global` (plafond atteint).
+
+    Deux usages :
+      - `verifier(cle)` : quota de l'IP et plafond global comptés ensemble, à l'entrée (routes
+        de lecture : preuve du suivi, documents publics) ;
+      - `verifier_ip(cle)` à l'entrée (toute tentative), puis `compter_global(cle)` une fois la
+        requête VALIDÉE (référence client vérifiée, preuve du suivi passée, nom et numéro
+        valides) : seules les créations plausibles consomment le plafond global, des 422/403
+        en rafale ne peuvent pas l'épuiser pour bloquer la borne du magasin.
+    Une IP du magasin (KP_IP_MAGASIN) est exemptée du plafond global, jamais du quota par IP.
     """
 
     def __init__(self, limite: int, fenetre: float, max_ips: int = 5000,
@@ -110,9 +135,10 @@ class LimiteurDebit:
         while bucket and now - bucket[0] > fenetre:
             bucket.popleft()
 
-    def _verifier_global(self, now: float) -> bool:
-        """Compte l'appel dans le plafond global ; vrai s'il le dépasse (rien n'est compté alors)."""
-        if not self.limite_globale:
+    def _verifier_global(self, now: float, cle: str = None) -> bool:
+        """Compte l'appel dans le plafond global ; vrai s'il le dépasse (rien n'est compté alors).
+        Une IP du magasin (KP_IP_MAGASIN) n'est ni comptée ni refusée."""
+        if not self.limite_globale or ip_magasin(cle):
             return False
         bucket = self._buckets.pop(CLE_GLOBALE, None) or deque()
         self._purger(bucket, now, self.fenetre_globale)
@@ -123,7 +149,26 @@ class LimiteurDebit:
         self._buckets[CLE_GLOBALE] = bucket
         return refuse
 
+    def compter_global(self, cle: str = None):
+        """Plafond global pour une requête déjà validée (après `verifier_ip`) : 429 `message_global`
+        s'il est atteint, sinon la compte. Sans plafond, ou pour une IP du magasin : rien."""
+        if not self.limite_globale:
+            return
+        with self._verrou:
+            refuse = self._verifier_global(time(), cle)
+        if refuse:
+            raise HTTPException(429, self.message_global, headers={"Retry-After": "300"})
+
+    def verifier_ip(self, cle: str):
+        """Quota de l'IP seul (toute tentative, avant validation) ; le plafond global se compte
+        ensuite avec `compter_global`."""
+        self._verifier(cle, global_=False)
+
     def verifier(self, cle: str):
+        """Quota de l'IP et plafond global, comptés ensemble à l'entrée."""
+        self._verifier(cle, global_=True)
+
+    def _verifier(self, cle: str, global_: bool):
         now = time()
         with self._verrou:
             bucket = self._buckets.pop(cle, None) or deque()
@@ -131,12 +176,13 @@ class LimiteurDebit:
             refuse = len(bucket) >= self.limite
             refuse_global = False
             if not refuse:
-                refuse_global = self._verifier_global(now)
+                if global_:
+                    refuse_global = self._verifier_global(now, cle)
                 if not refuse_global:
                     bucket.append(now)
             # Réinsérée en fin : l'ordre du dict suit le dernier accès, la purge part du début
             self._buckets[cle] = bucket
-            if self.limite_globale:
+            if CLE_GLOBALE in self._buckets:
                 self._buckets.move_to_end(CLE_GLOBALE)
             while self._buckets:
                 plus_ancienne_cle, plus_ancienne = next(iter(self._buckets.items()))
@@ -210,10 +256,13 @@ def jeton_suivi(ticket_id: int):
 
 # ─── Origine des liens de partage ─────────────────────────────────
 # X-Forwarded-Host / X-Forwarded-Proto (et Host) viennent de la requête : un lien envoyé au
-# client ne doit jamais pointer vers un hôte forgé. Seuls les hôtes du projet sont acceptés :
-# BACKEND_URL, URL_SUIVI, FRONTEND_URL, le domaine Railway du service et ses déclinaisons
-# *.up.railway.app (même service, autre environnement) ; sinon _get_frontend_url().
-_RAILWAY_SUFFIXE = ".up.railway.app"
+# client ne doit jamais pointer vers un hôte forgé. Seuls les hôtes du projet, en
+# correspondance EXACTE, sont acceptés : BACKEND_URL, FRONTEND_URL, URL_SUIVI, le domaine
+# Railway du service (RAILWAY_PUBLIC_DOMAIN, RAILWAY_STATIC_URL) et KP_HOTES_SUPPLEMENTAIRES
+# (liste séparée par des virgules, ex. un environnement de recette). Aucune déclinaison par
+# préfixe *.up.railway.app : ces sous-domaines vont au premier demandeur. Les hôtes locaux ne
+# sont acceptés qu'hors production. Sinon _get_frontend_url(). BACKEND_URL posée
+# court-circuite tout (cf. _base_publique) : la poser sur Railway clôt le sujet.
 _HOTES_LOCAUX = ("localhost", "127.0.0.1", "[::1]")
 
 
@@ -236,41 +285,27 @@ def _sans_port(hote: str) -> str:
 
 
 def _hotes_autorises() -> set:
+    valeurs = [os.getenv("BACKEND_URL", ""), os.getenv("FRONTEND_URL", ""), _get_frontend_url(),
+               os.getenv("RAILWAY_PUBLIC_DOMAIN", ""), os.getenv("RAILWAY_STATIC_URL", "")]
+    valeurs += os.getenv("KP_HOTES_SUPPLEMENTAIRES", "").split(",")
     hotes = set()
-    for valeur in (os.getenv("BACKEND_URL", ""), os.getenv("FRONTEND_URL", ""), _get_frontend_url(),
-                   os.getenv("RAILWAY_PUBLIC_DOMAIN", ""), os.getenv("RAILWAY_STATIC_URL", "")):
+    for valeur in valeurs:
         h = _hote_de(valeur)
         if h:
             hotes.add(h)
     return hotes
 
 
-def _prefixes_railway(hotes: set) -> set:
-    """« klikphone-sav-v2-production.up.railway.app » → « klikphone-sav-v2 » : les autres
-    environnements du même service Railway (klikphone-sav-v2-xxx.up.railway.app)."""
-    prefixes = set()
-    for h in hotes:
-        h = _sans_port(h)
-        if h.endswith(_RAILWAY_SUFFIXE):
-            label = h[: -len(_RAILWAY_SUFFIXE)]
-            prefixes.add(label.rsplit("-", 1)[0] if "-" in label else label)
-    return prefixes
-
-
 def hote_autorise(hote: str) -> bool:
+    """Correspondance exacte (avec ou sans port) avec un hôte du projet ; hôte local hors production."""
     hote = (hote or "").strip().lower()
     if not hote or not _HOTE_RE.match(hote):
         return False
     nu = _sans_port(hote)
-    if nu in _HOTES_LOCAUX:
-        return True
     autorises = _hotes_autorises()
     if hote in autorises or nu in {_sans_port(h) for h in autorises}:
         return True
-    if nu.endswith(_RAILWAY_SUFFIXE):
-        label = nu[: -len(_RAILWAY_SUFFIXE)]
-        return any(label == p or label.startswith(p + "-") for p in _prefixes_railway(autorises))
-    return False
+    return nu in _HOTES_LOCAUX and not en_production()
 
 
 def _origine_requete(request: Request):

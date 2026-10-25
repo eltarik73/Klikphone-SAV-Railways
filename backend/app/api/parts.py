@@ -36,12 +36,16 @@ STATUTS_RECUS = ("Reçu", "Donné au client", "Clôturé")
 STATUTS_EN_COURS = ("Panier", "En attente", "Commandée")
 
 # /auto sans session (borne) : juste après POST /api/tickets, une seule fois, ticket neuf,
-# et avec la preuve du suivi du ticket visé (jeton rendu à la création, ou numéro complet)
+# et avec la preuve du suivi du ticket visé (jeton rendu à la création, ou numéro complet).
+# Débit : 5 par IP et par 10 min (une commande par dépôt de la borne), 200 par heure toutes IP
+# confondues — plafond global consommé seulement une fois la preuve passée (des 403 en rafale
+# ne l'épuisent pas) ; IP du magasin (KP_IP_MAGASIN) exemptée du plafond global.
 AUTO_DELAI_MINUTES = 10
 _LIMITEUR_AUTO = LimiteurDebit(
-    limite=10, fenetre=60, limite_globale=60, fenetre_globale=3600,
-    message="Trop de commandes depuis ce poste : réessayez dans une minute.",
-    message_global="Trop de commandes en ce moment : réessayez dans quelques minutes.",
+    limite=5, fenetre=600, limite_globale=200, fenetre_globale=3600,
+    message="Trop de commandes depuis ce poste : réessayez dans quelques minutes.",
+    message_global=("Trop de commandes en ligne en ce moment : adressez-vous au comptoir, "
+                    "nous commandons la pièce avec vous."),
 )
 # Statuts que la commande automatique ne fait jamais reculer
 STATUTS_SANS_RECUL = ("Réparation terminée", "Rendu au client", "Clôturé")
@@ -212,14 +216,18 @@ def create_part_auto(data: CommandeAutoIn, request: Request, user: Optional[dict
     """Commande de pièce créée avec le ticket (borne /client, « Nouveau ticket » du personnel).
 
     Sans session, la borne doit prouver qu'elle est le client du ticket visé (suivi.preuve_suivi :
-    jeton `t` rendu à la création du ticket, ou numéro complet `tel` ; 403 sinon — un ticket
-    inexistant reçoit le même 403 qu'un ticket sans preuve), et ne peut viser que le ticket
-    qu'elle vient de créer : moins de 10 minutes, encore « En attente de diagnostic » et sans
-    commande (sinon 409). Un ticket terminé, rendu ou clôturé ne recule jamais en « En attente
-    de pièce ». Avec session : inchangé.
+    jeton `t` rendu à la création du ticket, ou numéro complet `tel`, paramètres ou en-têtes
+    X-Suivi-Token / X-Suivi-Tel ; 403 sinon), et ne peut viser que le ticket qu'elle vient de
+    créer : moins de 10 minutes, encore « En attente de diagnostic » et sans commande (sinon 409).
+    Un ticket inexistant suit EXACTEMENT le même chemin qu'un ticket existant sans preuve valable
+    (preuve_requise / lien_invalide / verification_echouee comptée, verrou compris) : la réponse
+    n'apprend pas si l'identifiant séquentiel existe ; 404 réservé au personnel. Un ticket
+    terminé, rendu ou clôturé ne recule jamais en « En attente de pièce ». Avec session : inchangé.
     """
+    ip = client_ip(request)
     if not user:
-        _LIMITEUR_AUTO.verifier(client_ip(request))
+        # Quota de l'IP sur toute tentative ; plafond global compté après la preuve seulement
+        _LIMITEUR_AUTO.verifier_ip(ip)
 
     with get_cursor() as cur:
         cur.execute(
@@ -231,16 +239,20 @@ def create_part_auto(data: CommandeAutoIn, request: Request, user: Optional[dict
         )
         t = cur.fetchone()
         if not user:
-            from app.api.suivi import preuve_suivi, refus_suivi
-            if not t:
-                # Même réponse qu'un ticket existant sans preuve : l'identifiant séquentiel n'apprend rien
-                refus_suivi("lien_invalide" if data.t else "preuve_requise")
-            preuve_suivi(cur, request, t["ticket_code"] or "", data.t, data.tel)
+            from app.api.suivi import preuve_suivi
+            # Ticket inexistant (ou sans code) : un code sentinelle qu'aucun ticket ne porte —
+            # preuve_suivi traite la ligne absente comme un ticket sans preuve, même réponse,
+            # même comptage des échecs par (IP, identifiant)
+            code = (t or {}).get("ticket_code") or f"#{data.ticket_id}"
+            preuve_suivi(cur, request, code, data.t, data.tel)
         if not t:
             raise HTTPException(404, "Ticket non trouvé")
         ancien = t["statut"] or ""
         if not user and (ancien != "En attente de diagnostic" or not t["recent"] or t["a_commande"]):
             raise HTTPException(409, "Ce ticket n'accepte plus de commande automatique")
+        if not user:
+            # Preuve passée, ticket admissible : c'est cette commande plausible qui compte au plafond
+            _LIMITEUR_AUTO.compter_global(ip)
 
         cur.execute("""
             INSERT INTO commandes_pieces (ticket_id, description, fournisseur, prix, notes, ticket_code, statut)

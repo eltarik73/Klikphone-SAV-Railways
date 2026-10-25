@@ -747,7 +747,10 @@ def test_lock_admin_retire_la_preuve(client):
         r = client.post("/api/admin/lock", headers=_headers("Patron", sid="poste-3"))
         assert client.post("/api/admin/lock").status_code == 401
     assert r.status_code == 200 and r.json() == {"success": True}
-    assert cur.executed == [(_REVOQUE, ("poste-3",))]
+    # Preuve du code retirée pour cette seule lignée ; la révocation du jeton d'élévation est
+    # aussi écrite en base (revocations_admin, cf. audit F) : seule la lignée « poste-3 » est touchée
+    assert [q for q in cur.executed if "sessions_admin" in q[0]] == [(_REVOQUE, ("poste-3",))]
+    assert any(q.startswith("INSERT INTO revocations_admin") and p[0] == "poste-3" for q, p in cur.executed)
 
 
 def test_login_nouvelle_lignee():

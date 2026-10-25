@@ -138,6 +138,11 @@ function jwtExpiry(token) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Jeton de session du stockage partagé par les onglets du poste (null si absent ou stockage indisponible)
+function lireJetonStocke() {
+  try { return localStorage.getItem('kp_token') || null; } catch { return null; }
+}
+
 // Preuve d'accès au suivi public : jeton du lien (t) sinon numéro de téléphone complet (tel).
 // Exportée pour les tests ; les 4 derniers chiffres (tel4) ne sont plus acceptés par le serveur.
 export function suiviProof(preuve) {
@@ -206,7 +211,7 @@ export function commandePayload(data) {
 
 class ApiClient {
   constructor() {
-    this.token = localStorage.getItem('kp_token') || null;
+    this.token = lireJetonStocke();
     // In-memory GET cache: Map<url, { ts, data }>
     this._cache = new Map();
     // GET en cours : Map<url, { promise, stale, fresh }> (stale → la réponse ne sera pas mise en cache)
@@ -224,6 +229,15 @@ class ApiClient {
     this._adminToken = null;
     this._adminExp = 0;
     this._restoreAdminToken();
+    // Un autre onglet du poste change d'utilisateur ou se connecte : cet onglet adopte aussitôt la
+    // nouvelle session (kp_token est partagé). Une déconnexion ailleurs n'est pas reprise ici : c'est
+    // la prochaine réponse 401 qui ferme la session de cet onglet (_sessionRefusee).
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('storage', (e) => {
+        if (e && e.key !== null && e.key !== 'kp_token') return;
+        this.adopterJetonDuPoste();
+      });
+    }
   }
 
   setToken(token) {
@@ -238,6 +252,32 @@ class ApiClient {
     this._sharedGets.clear();
     // Autre session ou déconnexion : l'élévation admin ne suit pas
     if (changed || !token) this.clearAdminToken();
+  }
+
+  // Jeton du stockage partagé s'il diffère de `refuse` (un autre onglet a changé d'utilisateur ou
+  // s'est reconnecté) : ce client l'adopte et le rend. Null si la session courante est bien celle du
+  // poste, ou s'il n'y en a plus.
+  _jetonRemplacant(refuse) {
+    const stocke = lireJetonStocke();
+    if (!stocke || stocke === refuse) return null;
+    // Plusieurs réponses 401 en parallèle : la première adopte, les suivantes ne vident plus les caches
+    if (stocke !== this.token) this.setToken(stocke);
+    return stocke;
+  }
+  // Reprend la session ouverte par un autre onglet du poste s'il y en a une plus récente ; vrai si changée
+  adopterJetonDuPoste() { return Boolean(this._jetonRemplacant(this.token)); }
+
+  // Jeton refusé par le serveur (401, session close) : on l'oublie et on revient à l'accueil — sauf si
+  // un autre onglet a rouvert une session entre-temps : on la garde (un ancien jeton ne doit jamais
+  // effacer la session d'un collègue sur le même poste). Rend l'erreur à lever.
+  _sessionRefusee(refuse) {
+    if (!this._jetonRemplacant(refuse)) {
+      this.setToken(null);
+      window.location.href = '/';
+    }
+    const e = new Error('Non authentifié');
+    e.status = 401;
+    return e;
   }
 
   // ─── Élévation admin ───────────────────────
@@ -365,9 +405,9 @@ class ApiClient {
     // FormData (envoi de fichier) : le navigateur pose lui-même le multipart et sa frontière
     const multipart = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
     if (fetchOptions.body && !multipart) headers['Content-Type'] = 'application/json';
-    const bearer = auth ? this.token : null;
+    let bearer = auth ? this.token : null;
     if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
-    const adminToken = auth && sendsAdminToken(path) ? this.getAdminToken() : null;
+    let adminToken = auth && sendsAdminToken(path) ? this.getAdminToken() : null;
     if (adminToken && !headers['X-Admin-Token']) headers['X-Admin-Token'] = adminToken;
     // Appel de fond (rafraîchissement périodique) : le serveur ne le compte pas comme activité du
     // salarié (journal des connexions) ; un onglet resté ouvert ne prolonge pas la session.
@@ -380,31 +420,50 @@ class ApiClient {
     if (!isGet) this._mutationSeq += 1;
 
     try {
-      for (let attempt = 0; ; attempt++) {
-        if (attempt > 0) await sleep(300 * attempt);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        let res;
-        try {
-          res = await fetch(url, { ...fetchOptions, headers, signal: controller.signal });
-        } catch (err) {
-          if (err?.name === 'AbortError') {
-            const e = new Error('Connexion au serveur expirée (timeout)');
-            e.code = 'timeout';
-            throw e;
-          }
-          // Coupure réseau (TypeError) : seul cas d'échec sans réponse que l'on relance
-          if (attempt < maxRetries) continue;
-          throw err;
-        } finally {
-          clearTimeout(timer);
+      let res = await this._fetchAvecRelances(url, { ...fetchOptions, headers }, timeoutMs, maxRetries);
+      // Jeton refusé alors que le stockage du poste en porte un autre (changement d'utilisateur dans
+      // un autre onglet) : on adopte cette session et on rejoue une fois, au lieu de l'effacer pour
+      // tout le poste. L'élévation admin suivait l'ancienne session : elle ne part pas.
+      if (res.status === 401 && bearer) {
+        const remplacant = this._jetonRemplacant(bearer);
+        if (remplacant) {
+          bearer = remplacant;
+          const rejeu = { ...headers, Authorization: `Bearer ${bearer}` };
+          if (adminToken && rejeu['X-Admin-Token'] === adminToken) delete rejeu['X-Admin-Token'];
+          adminToken = null;
+          res = await this._fetchAvecRelances(url, { ...fetchOptions, headers: rejeu }, timeoutMs, 0);
         }
-        if (RETRY_STATUSES.has(res.status) && attempt < maxRetries) continue;
-        const data = await this._readResponse(res, { path, bearer, adminToken });
-        return withHeaders ? { data, headers: res.headers } : data;
       }
+      const data = await this._readResponse(res, { path, bearer, adminToken });
+      return withHeaders ? { data, headers: res.headers } : data;
     } finally {
       if (!isGet) this._mutationSeq += 1;
+    }
+  }
+
+  // Un fetch avec délai d'attente, relancé (GET) sur coupure réseau ou 502/503/504 ; rend la réponse
+  async _fetchAvecRelances(url, init, timeoutMs, maxRetries) {
+    for (let attempt = 0; ; attempt++) {
+      if (attempt > 0) await sleep(300 * attempt);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      let res;
+      try {
+        res = await fetch(url, { ...init, signal: controller.signal });
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          const e = new Error('Connexion au serveur expirée (timeout)');
+          e.code = 'timeout';
+          throw e;
+        }
+        // Coupure réseau (TypeError) : seul cas d'échec sans réponse que l'on relance
+        if (attempt < maxRetries) continue;
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
+      if (RETRY_STATUSES.has(res.status) && attempt < maxRetries) continue;
+      return res;
     }
   }
 
@@ -435,12 +494,8 @@ class ApiClient {
     const credential = isCredentialCheck(path) || isPublicSuiviAction(path);
     if (credential || res.status === 403 || !bearer) throw err;
 
-    // Session refusée par le serveur : seule cause de déconnexion
-    this.setToken(null);
-    window.location.href = '/';
-    const e = new Error('Non authentifié');
-    e.status = 401;
-    throw e;
+    // Session refusée par le serveur : seule cause de déconnexion (sauf session rouverte ailleurs)
+    throw this._sessionRefusee(bearer);
   }
 
   // Lecture du suivi public avec la preuve (fiche, commandes, has-avis, fidélité, grattage) :
@@ -852,8 +907,9 @@ class ApiClient {
   // Les documents d'impression exigent le jeton : on les récupère par fetch (texte ou blob)
   // puis l'aperçu les affiche en srcdoc / URL blob, jamais via une URL directe.
   async requestRaw(path, { as = 'text', signal, timeoutMs = 20000 } = {}) {
+    let bearer = this.token;
     const headers = {};
-    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
     const controller = new AbortController();
     const relayAbort = () => controller.abort();
     if (signal) {
@@ -862,12 +918,17 @@ class ApiClient {
     }
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${API_URL}${path}`, { headers, signal: controller.signal, cache: 'no-store' });
-      if (res.status === 401) {
-        this.setToken(null);
-        window.location.href = '/';
-        throw new Error('Non authentifié');
+      let res = await fetch(`${API_URL}${path}`, { headers, signal: controller.signal, cache: 'no-store' });
+      if (res.status === 401 && bearer) {
+        // Session remplacée par un autre onglet du poste : rejouer une fois avec son jeton
+        const remplacant = this._jetonRemplacant(bearer);
+        if (remplacant) {
+          bearer = remplacant;
+          const rejeu = { ...headers, Authorization: `Bearer ${bearer}` };
+          res = await fetch(`${API_URL}${path}`, { headers: rejeu, signal: controller.signal, cache: 'no-store' });
+        }
       }
+      if (res.status === 401) throw this._sessionRefusee(bearer);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw httpError(res.status, body?.detail, res.headers);

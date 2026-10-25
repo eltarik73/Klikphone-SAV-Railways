@@ -345,6 +345,14 @@ _DDL_TABLES = [
         prouve_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         expire TIMESTAMP NOT NULL
     )""",
+    # Dernière révocation du mode admin par lignée (auth._noter_revocation : verrouillage,
+    # déconnexion, changement de membre) : un jeton d'élévation X-Admin-Token émis avant est
+    # refusé, même après un redémarrage du processus
+    """CREATE TABLE IF NOT EXISTS revocations_admin (
+        sid TEXT PRIMARY KEY,
+        revoque_epoch DOUBLE PRECISION NOT NULL,
+        revoque_le TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC')
+    )""",
     # Moteur de prix (BE-A, app/services/prix.py) : historique de chaque prix écrit (annulation
     # d'un lot), aperçus d'import de fichier fournisseur, propositions venues des commandes
     """CREATE TABLE IF NOT EXISTS tarifs_historique (

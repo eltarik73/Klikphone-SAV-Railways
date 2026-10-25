@@ -670,7 +670,11 @@ def test_client_public_nouveau_reference_seule(client):
         r = client.post("/api/clients", json={"nom": "N", "telephone": "0611223344"})
     assert r.status_code == 200 and _cid(r) == 9
     ref = r.json()["client_ref"]
-    assert ref != "9" and '"cid"' not in ref      # jamais l'identifiant nu ni la charge JSON en clair
+    assert ref != "9"
+    # Ce qu'un tiers lit sans le secret (charge décodée) : ni l'identifiant de la fiche, ni une clé
+    # qui le porte en clair — l'identifiant est masqué par un flux dérivé du secret et d'un nonce
+    charge = client_ref.charge_decodee(ref)
+    assert "cid" not in charge and 9 not in charge.values(), charge
     assert client_ref.verifier(ref + "x", "testclient") is None   # signée : une altération l'invalide
 
 

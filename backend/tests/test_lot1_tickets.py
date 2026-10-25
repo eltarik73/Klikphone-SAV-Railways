@@ -151,8 +151,8 @@ def test_creation_anonyme_limitee_par_ip(client):
     ip = {"X-Forwarded-For": "203.0.113.77"}
     with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi"), \
             patch.object(tickets, "notif_nouveau_ticket", lambda *_: None):
-        codes = [client.post("/api/tickets", json=BORNE("203.0.113.77"), headers=ip).status_code for _ in range(16)]
-        assert codes[:15] == [200] * 15 and codes[15] == 429
+        codes = [client.post("/api/tickets", json=BORNE("203.0.113.77"), headers=ip).status_code for _ in range(6)]
+        assert codes[:5] == [200] * 5 and codes[5] == 429
         # Une autre IP, ou le personnel connecté depuis la même : pas concernés
         assert client.post("/api/tickets", json=BORNE("203.0.113.78"), headers={"X-Forwarded-For": "203.0.113.78"}).status_code == 200
         assert client.post("/api/tickets", json=CORPS, headers={**ip, **H}).status_code == 200

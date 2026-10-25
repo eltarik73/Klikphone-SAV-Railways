@@ -76,10 +76,12 @@ def _limiteur_creation_ticket_vide():
 def _limiteurs_publics_vides():
     """Limites par IP des formulaires publics (dépôt à distance, commande auto de la borne)
     remises à zéro : toutes les requêtes de test partagent l'IP « testclient »."""
-    from app.api import depot_distance, iphone_tarifs, parts
+    from app.api import clients, depot_distance, iphone_tarifs, parts
+    clients._LIMITEUR_CREATION._buckets.clear()     # 5 fiches / 10 min par IP : « testclient » partagée
     depot_distance._LIMITEUR_DEPOT._buckets.clear()
     parts._LIMITEUR_AUTO._buckets.clear()
     # Plafonds globaux de la vitrine (20/h toutes IP, 2/h par e-mail) : remis à zéro aussi
+    iphone_tarifs._LIMITEUR_VITRINE_IP._buckets.clear()
     iphone_tarifs._LIMITEUR_VITRINE_GLOBAL._buckets.clear()
     iphone_tarifs._LIMITEUR_VITRINE_EMAIL._buckets.clear()
     yield

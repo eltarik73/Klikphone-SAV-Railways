@@ -18,7 +18,7 @@ from app.database import get_cursor
 from app.api.auth import client_ip, get_current_user
 from app.api.public_documents import LimiteurDebit
 from app.api.clients import (
-    TELEPHONE_FICTIF, enregistrer_consentements, fiche_d_un_autre, find_client_by_phone, meme_personne,
+    TELEPHONE_FICTIF, enregistrer_consentements, fiche_de_la_personne, fiches_du_numero, meme_personne,
     telephone_fictif,
 )
 from app.services.notifications import (
@@ -37,8 +37,10 @@ except Exception:  # image sans base tz : heure du serveur
 
 router = APIRouter(prefix="/api/depot-distance", tags=["depot-distance"])
 
+# 4 par 10 min et par IP (24/h : une IP seule n'atteint pas le plafond global de 30/h, qui
+# protège le point d'entrée contre une attaque répartie)
 _LIMITEUR_DEPOT = LimiteurDebit(
-    limite=5, fenetre=600, limite_globale=30, fenetre_globale=3600,
+    limite=4, fenetre=600, limite_globale=30, fenetre_globale=3600,
     message="Trop de demandes depuis cet appareil : réessayez dans quelques minutes.",
     message_global="Trop de demandes de dépôt en ce moment : réessayez dans quelques minutes ou appelez la boutique.",
 )
@@ -120,8 +122,13 @@ class RefusMotif(BaseModel):
 
 @router.post("")
 def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, request: Request):
-    """Pré-enregistre un appareil à distance (public, pas d'auth)."""
-    _LIMITEUR_DEPOT.verifier(client_ip(request))
+    """Pré-enregistre un appareil à distance (public, pas d'auth).
+
+    Débit : quota par IP sur toute tentative ; plafond global (30/h toutes IP) compté seulement
+    pour une demande validée (nom, numéro, module actif, pas de double envoi), jamais pour un
+    400/422 ; IP du magasin (KP_IP_MAGASIN) exemptée du plafond global."""
+    ip = client_ip(request)
+    _LIMITEUR_DEPOT.verifier_ip(ip)
     # Validation basique
     if not data.nom or not data.nom.strip():
         raise HTTPException(400, "Le nom est requis")
@@ -140,11 +147,10 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
     camby = "1" if data.carte_camby else "0"
 
     with get_cursor() as cur:
-        # Client existant quel que soit le format du numéro (06 12…, +33 6…)
-        existing = find_client_by_phone(cur, data.telephone)
-        # Numéro connu mais au nom de quelqu'un d'autre : nouvelle fiche (règle de /api/clients)
-        if fiche_d_un_autre(existing, data.nom, data.prenom):
-            existing = None
+        # Client existant quel que soit le format du numéro (06 12…, +33 6…) : la fiche de CETTE
+        # personne parmi celles du numéro ; numéro connu seulement au nom de quelqu'un d'autre :
+        # nouvelle fiche (règle de /api/clients)
+        existing = fiche_de_la_personne(fiches_du_numero(cur, data.telephone), data.nom, data.prenom)
         email_client = None
         if existing:
             client_id = existing["id"]
@@ -174,6 +180,8 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
                     "Vous avez déjà des appareils pré-enregistrés en attente : présentez-vous en boutique "
                     "ou appelez-nous pour en ajouter.",
                 )
+            # Demande validée : c'est elle qui consomme le plafond global
+            _LIMITEUR_DEPOT.compter_global(ip)
             # Formulaire public (règle de /api/clients sans jeton) : nom et prénom
             # seulement complétés, jamais l'email ; la carte se déclare, ne se retire pas
             cur.execute("""
@@ -190,6 +198,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
             if data.email and connu and connu.lower() == data.email.lower():
                 email_client = connu
         else:
+            _LIMITEUR_DEPOT.compter_global(ip)
             cur.execute("""
                 INSERT INTO clients (nom, prenom, telephone, email, carte_camby)
                 VALUES (%s, %s, %s, %s, %s) RETURNING id

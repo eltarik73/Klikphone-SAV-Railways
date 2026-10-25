@@ -519,6 +519,76 @@ def test_reel_reprise_jeton_ancien_et_session_expiree(propre):
     assert len(_lignes(propre)) == 2
 
 
+def test_reel_deconnexion_apres_une_nuit_d_inactivite_revoque_le_jeton(propre):
+    """Audit F(1) : la ligne du jeton (cx) est close « expiree » par la rétention horaire après 12 h
+    sans activité, l'activité reprend sur une nouvelle ligne de la même lignée ; la déconnexion (ou
+    le changement d'utilisateur) clôt cette nouvelle ligne et le jeton de 30 jours doit être refusé."""
+    c = propre["c"]
+    tok, p = _login(c, ALICE)
+    h = {"Authorization": f"Bearer {tok}"}
+    assert c.get("/api/team", headers=h).status_code == 200
+    presence.vider_activite()                     # activité écrite avant de vieillir la ligne
+    _sql(propre, "UPDATE connexions_equipe SET debut = debut - INTERVAL '14 hours', "
+                 "derniere_activite = derniere_activite - INTERVAL '13 hours' WHERE id = %s", p["cx"])
+    assert presence.retention_connexions()["sessions_expirees"] == 1
+    auth.oublier_sessions()
+    # « expiree » seule : le jeton reste valable, l'activité reprend sur une nouvelle ligne
+    assert c.get("/api/team", headers=h).status_code == 200
+    presence.vider_activite()
+    a, b = _lignes(propre)
+    assert a["id"] == p["cx"] and a["fin_motif"] == "expiree" and b["fin"] is None and b["sid"] == p["sid"]
+    # Déconnexion : c'est la nouvelle ligne qui est close ; le jeton (cx = ancienne ligne) est refusé
+    r = c.post("/api/auth/logout", headers=h)
+    assert r.status_code == 200 and r.json()["session_close"] is True
+    assert _lignes(propre)[1]["fin_motif"] == "deconnexion"
+    r = c.get("/api/auth/me", headers=h)
+    assert r.status_code == 401 and "reconnectez" in r.json()["detail"].lower()
+    # Même chose avec un changement d'utilisateur
+    tok2, p2 = _login(c, ALICE)
+    h2 = {"Authorization": f"Bearer {tok2}"}
+    c.get("/api/team", headers=h2)
+    presence.vider_activite()
+    _sql(propre, "UPDATE connexions_equipe SET debut = debut - INTERVAL '14 hours', "
+                 "derniere_activite = derniere_activite - INTERVAL '13 hours' WHERE id = %s", p2["cx"])
+    presence.retention_connexions()
+    auth.oublier_sessions()
+    assert c.get("/api/team", headers=h2).status_code == 200
+    presence.vider_activite()
+    r = c.post("/api/auth/switch-user", json={"utilisateur": BRUNO}, headers=h2)
+    assert r.status_code == 200
+    assert c.get("/api/auth/me", headers=h2).status_code == 401
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"}).status_code == 200
+
+
+def test_reel_verrouillage_admin_survit_a_un_redemarrage(propre):
+    """Audit F(2) : la révocation du jeton d'élévation est écrite dans revocations_admin ; mémoire
+    vidée (redémarrage), le jeton émis avant le verrouillage reste refusé."""
+    c = propre["c"]
+    sid = "sid-essai-revocation"
+    _sql(propre, "DELETE FROM revocations_admin WHERE sid = %s", sid)
+    auth.oublier_revocations()
+    h = {**_h(ADMIN, sid=sid), "X-Admin-Token": create_admin_token({"sub": ADMIN, "target": "accueil", "sid": sid})}
+    try:
+        assert c.delete("/api/tickets/999999", headers=h).status_code == 200
+        assert c.post("/api/admin/lock", headers=h).status_code == 200
+        (l,) = _sql(propre, "SELECT revoque_epoch, revoque_le FROM revocations_admin WHERE sid = %s", sid)
+        assert abs(l["revoque_epoch"] - time.time()) < 60 and l["revoque_le"] is not None
+        r = c.delete("/api/tickets/999999", headers=h)
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_expire"
+        auth.oublier_revocations()                    # redémarrage : la base garde la révocation
+        r = c.delete("/api/tickets/999999", headers=h)
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_expire"
+        # Nouvelle élévation : acceptée ; un second verrouillage ne recule jamais l'horodatage
+        neuf = {**h, "X-Admin-Token": create_admin_token({"sub": ADMIN, "target": "accueil", "sid": sid})}
+        assert c.delete("/api/tickets/999999", headers=neuf).status_code == 200
+        assert c.post("/api/admin/lock", headers=neuf).status_code == 200
+        (l2,) = _sql(propre, "SELECT revoque_epoch FROM revocations_admin WHERE sid = %s", sid)
+        assert l2["revoque_epoch"] > l["revoque_epoch"]
+    finally:
+        _sql(propre, "DELETE FROM revocations_admin WHERE sid = %s", sid)
+        auth.oublier_revocations()
+
+
 def _activer(reel, monkeypatch, horaires=True):
     c = reel["c"]
     r = c.post("/api/equipe/reglages/position-boutique", json={"lat": 45.5656, "lng": 5.9215, "precision_m": 20},

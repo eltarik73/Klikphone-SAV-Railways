@@ -33,6 +33,14 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
 
 _JWT_SECRET_DEV = "klikphone-secret-change-me-in-prod"
+_VARIABLES_RAILWAY = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID",
+                      "RAILWAY_PUBLIC_DOMAIN", "RAILWAY_STATIC_URL")
+
+
+def en_production() -> bool:
+    """Vrai sur Railway (une variable RAILWAY_* est posée) : secret obligatoire, proxy devant
+    l'application (cf. verifier_reglage_proxy), hôtes locaux refusés dans les liens de partage."""
+    return any(os.getenv(v) for v in _VARIABLES_RAILWAY)
 
 
 def _jwt_secret() -> str:
@@ -45,10 +53,7 @@ def _jwt_secret() -> str:
     valeur = os.getenv("JWT_SECRET", "")
     if valeur and valeur != _JWT_SECRET_DEV:
         return valeur
-    en_prod = any(os.getenv(v) for v in (
-        "RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID", "RAILWAY_PUBLIC_DOMAIN",
-    ))
-    if en_prod:
+    if en_production():
         print("[auth] ERREUR : JWT_SECRET absent ou par défaut en production. Secret aléatoire "
               "utilisé (sessions perdues au redémarrage) : définir JWT_SECRET sur Railway.")
         return secrets.token_urlsafe(48)
@@ -148,10 +153,12 @@ async def get_optional_user(
 # ─── RÉVOCATION DES JETONS DE SESSION (journal des connexions) ───
 # Le jeton dure 30 jours (tablettes du magasin) mais la déconnexion et le changement
 # d'utilisateur ferment sa ligne connexions_equipe (claim « cx ») : un jeton dont la ligne
-# est close est refusé. La lecture (indexée par cx) est gardée 30 s, comme le contrôle du
-# rôle admin ; une ligne close ne se rouvre jamais, l'état « close » est gardé tel quel.
+# est close est refusé. La lecture (indexée par cx et par sid) est gardée 30 s, comme le
+# contrôle du rôle admin ; une ligne close ne se rouvre jamais, l'état « close » est gardé.
 # Une ligne close « expiree » (12 h d'inactivité, cf. services/presence) n'est PAS une
-# révocation : la session reprend sur une nouvelle ligne, le jeton reste valable 30 jours.
+# révocation : la session reprend sur une NOUVELLE ligne de la même lignée (sid, utilisateur),
+# que le jeton ne connaît pas ; la déconnexion clôt alors cette ligne postérieure, d'où la
+# décision sur la lignée (ligne cx OU ligne postérieure close hors « expiree »).
 # Un jeton sans cx (émis avant le journal) reste accepté.
 SESSION_CLOSE_CACHE_S = 30.0
 _SESSIONS_CACHE_MAX = 1024
@@ -167,23 +174,33 @@ def _cx(payload: dict) -> Optional[int]:
     return None
 
 
-def _session_close_en_base(cx: int) -> bool:
+def _session_close_en_base(payload: dict, cx: int) -> bool:
+    """Vrai si la session du jeton est finie : sa ligne (cx) OU une ligne postérieure de la même
+    lignée (sid, utilisateur) est close par une déconnexion ou un changement d'utilisateur.
+
+    Après 12 h sans activité la ligne cx est close « expiree » et l'activité reprend sur une
+    nouvelle ligne (services/presence._reprendre, retention_connexions) ; la déconnexion ou le
+    changement d'utilisateur clôt cette nouvelle ligne, jamais la ligne cx : décider sur la
+    seule ligne cx laisserait un jeton de 30 jours survivre à toute déconnexion dès le
+    lendemain d'une nuit d'inactivité."""
+    sid, sub = str(payload.get("sid") or ""), str(payload.get("sub") or "")
     try:
         with get_cursor() as cur:
-            cur.execute("SELECT fin, fin_motif FROM connexions_equipe WHERE id = %s", (cx,))
+            cur.execute("""SELECT 1 AS close FROM connexions_equipe
+                           WHERE (id = %s OR (sid = %s AND utilisateur = %s AND id > %s))
+                             AND fin IS NOT NULL AND COALESCE(fin_motif, '') <> ALL(%s)
+                           LIMIT 1""", (cx, sid, sub, cx, list(_MOTIFS_SANS_REVOCATION)))
             row = cur.fetchone()
     except Exception as e:
         # Journal indisponible : ne déconnecte pas toute la boutique
         print(f"[auth] journal des connexions illisible : {e}")
         return False
-    if not row or row.get("fin") is None:
-        return False
-    return (row.get("fin_motif") or "") not in _MOTIFS_SANS_REVOCATION
+    return bool(row)
 
 
 def jeton_revoque(payload: dict) -> bool:
-    """Vrai si la ligne connexions_equipe du jeton (claim cx) est close par une déconnexion
-    ou un changement d'utilisateur. Lecture mise en cache 30 s par cx."""
+    """Vrai si la session du jeton (claim cx, lignée sid + utilisateur) est close par une
+    déconnexion ou un changement d'utilisateur. Lecture mise en cache 30 s par cx."""
     cx = _cx(payload)
     if cx is None:
         return False
@@ -196,7 +213,7 @@ def jeton_revoque(payload: dict) -> bool:
                 _sessions_closes.move_to_end(cx)
                 return close
             _sessions_closes.pop(cx, None)
-    close = _session_close_en_base(cx)
+    close = _session_close_en_base(payload, cx)
     with _sessions_verrou:
         if len(_sessions_closes) >= _SESSIONS_CACHE_MAX:
             for k in [k for k, (c, e) in _sessions_closes.items() if not c and e <= maintenant]:
@@ -230,12 +247,18 @@ def proxy_de_confiance() -> bool:
     return os.getenv("KP_TRUST_PROXY", "1").strip().lower() not in ("0", "false", "non", "off", "no")
 
 
+_XFF_ABSENT_SIGNALE = [False]
+
+
 def client_ip(request: Request) -> str:
     """IP du client : seule fonction à lire X-Forwarded-For (limites de débit, verrous, journaux).
 
     Le proxy Railway ajoute l'IP de connexion en DERNIER dans X-Forwarded-For : les valeurs
     précédentes viennent du client et sont falsifiables. Sans proxy (KP_TRUST_PROXY=0),
-    l'en-tête est ignoré."""
+    l'en-tête est ignoré ici ; mais uvicorn lui-même (proxy-headers, actif par défaut pour les
+    connexions venant de 127.0.0.1, cf. --forwarded-allow-ips) réécrit request.client depuis
+    X-Forwarded-For AVANT cette fonction : pour ignorer totalement l'en-tête, lancer uvicorn
+    avec --no-proxy-headers (ou FORWARDED_ALLOW_IPS vide), cf. verifier_reglage_proxy."""
     if request is None:
         return "inconnu"
     if proxy_de_confiance():
@@ -243,7 +266,40 @@ def client_ip(request: Request) -> str:
         dernier = xff.split(",")[-1].strip() if xff else ""
         if dernier:
             return dernier
+        if not _XFF_ABSENT_SIGNALE[0]:
+            # Une fois par processus : proxy mal configuré, ou application servie sans proxy
+            _XFF_ABSENT_SIGNALE[0] = True
+            print("[auth] X-Forwarded-For absent alors que KP_TRUST_PROXY=1 (défaut) : application servie "
+                  "sans proxy ? Hors Railway, poser KP_TRUST_PROXY=0 (quotas et verrous par IP de connexion).")
     return request.client.host if request.client else "inconnu"
+
+
+def verifier_reglage_proxy() -> list:
+    """Garde au démarrage : KP_TRUST_PROXY incohérent avec l'environnement (messages imprimés et
+    renvoyés). '0' sur Railway : toutes les requêtes porteraient l'IP du proxy (quotas, verrous
+    de PIN, empreinte des références client communs à tous) ; '1' sans proxy : X-Forwarded-For
+    forgeable par le client (quotas et verrous contournés par rotation d'en-tête)."""
+    messages = []
+    confiance = proxy_de_confiance()
+    if en_production() and not confiance:
+        messages.append("ERREUR : KP_TRUST_PROXY=0 derrière le proxy Railway : toutes les requêtes partagent "
+                        "l'IP du proxy (quotas, verrous de PIN et références client communs à tous les "
+                        "visiteurs). Retirer la variable (défaut 1).")
+    if confiance and not en_production() and not os.getenv("BACKEND_URL"):
+        messages.append("AVERTISSEMENT : KP_TRUST_PROXY=1 (défaut) sans proxy connu (aucune variable RAILWAY_*, "
+                        "BACKEND_URL absent) : X-Forwarded-For serait forgeable par le client. Hors Railway, "
+                        "poser KP_TRUST_PROXY=0 et lancer uvicorn avec --no-proxy-headers.")
+    if not confiance and os.getenv("FORWARDED_ALLOW_IPS") is None:
+        # L'option de ligne de commande --no-proxy-headers n'est pas visible d'ici : simple rappel
+        messages.append("NOTE : KP_TRUST_PROXY=0 — vérifier qu'uvicorn est lancé avec --no-proxy-headers (ou "
+                        "FORWARDED_ALLOW_IPS vide) : sinon il réécrit lui-même request.client depuis "
+                        "X-Forwarded-For pour les connexions locales (forwarded-allow-ips=127.0.0.1).")
+    for m in messages:
+        print(f"[auth] {m}")
+    return messages
+
+
+verifier_reglage_proxy()
 
 
 # ─── ANTI BRUTE-FORCE ────────────────────────────────────────────
@@ -586,17 +642,38 @@ def controler_admin_password(request: Request, password: str) -> bool:
 
 # ─── ÉLÉVATION ADMIN ─────────────────────────────────────────────
 
+# Dernier jeton d'élévation émis par lignée (iat) : une révocation n'est jamais datée avant
+# lui et un nouveau jeton jamais avant la dernière révocation (horloge murale ramenée en
+# arrière par NTP), cf. _noter_revocation
+_DERNIERS_IAT_MAX = 4096
+_derniers_iat: "OrderedDict[str, float]" = OrderedDict()
+
+
+def _tailler(d: "OrderedDict", maxi: int) -> None:
+    while len(d) > maxi:
+        d.popitem(last=False)
+
+
 def create_admin_token(user: dict) -> str:
     """Jeton d'élévation (10 min) lié au membre ET à la lignée de session du poste (sid) ;
     `iat` (horloge du processus, fraction de seconde) le date : une révocation du sid
     postérieure (verrouillage, déconnexion, changement de membre) l'invalide."""
+    sid = user.get("sid") or ""
+    iat = horloge()
+    if sid:
+        iat = max(iat, derniere_revocation(sid) + 1e-3)
+        with _revocations_verrou:
+            iat = max(iat, _derniers_iat.get(sid, 0.0) + 1e-3)
+            _derniers_iat[sid] = iat
+            _derniers_iat.move_to_end(sid)
+            _tailler(_derniers_iat, _DERNIERS_IAT_MAX)
     payload = {
         "sub": user.get("sub"),
         "target": user.get("target"),
-        "sid": user.get("sid") or "",
+        "sid": sid,
         "typ": _ADMIN_TYP,
         "admin": True,
-        "iat": horloge(),
+        "iat": iat,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=ADMIN_TOKEN_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -609,32 +686,94 @@ def _refus_admin(code: str, message: str):
 
 # Dernière révocation par lignée de session (verrouillage du mode admin, déconnexion,
 # changement de membre) : un jeton d'élévation émis avant est refusé. Mémoire du processus
-# (mono-worker) ; sessions_admin n'a pas de colonne pour cet horodatage et la preuve y est
-# simplement supprimée (cf. revoquer_preuve_admin). Un jeton d'élévation ne vit que 10 min.
+# (accélérateur) ET table revocations_admin (sid → horodatage epoch) : un redéploiement dans
+# les 10 minutes suivant un verrouillage ne ressuscite pas un jeton d'élévation. La base est
+# relue au plus toutes les 30 s par sid (même motif que _roles_admin) ; une révocation faite
+# ici est écrite aussitôt (mémoire d'abord, puis UPSERT).
 _REVOCATIONS_MAX = 4096
-_revocations: "OrderedDict[str, float]" = OrderedDict()
+REVOCATION_CACHE_S = 30.0
+_revocations: "OrderedDict[str, float]" = OrderedDict()         # sid → horodatage (time.time)
+_revocations_lues: "OrderedDict[str, float]" = OrderedDict()    # sid → validité (monotonic) de la lecture
 _revocations_verrou = threading.Lock()
 
 
+def _lire_revocation(sid: str) -> float:
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT revoque_epoch FROM revocations_admin WHERE sid = %s", (sid,))
+            row = cur.fetchone()
+    except psycopg2.Error as e:
+        if getattr(e, "pgcode", None) != "42P01":
+            print(f"[auth] révocations illisibles : {e}")
+        return 0.0
+    except Exception as e:
+        print(f"[auth] révocations illisibles : {e}")
+        return 0.0
+    v = row.get("revoque_epoch") if isinstance(row, dict) else None
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+
+
+def _ecrire_revocation(sid: str, t: float) -> None:
+    """UPSERT (jamais en arrière) ; table absente ou base en panne : la mémoire suffit."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""INSERT INTO revocations_admin (sid, revoque_epoch) VALUES (%s, %s)
+                           ON CONFLICT (sid) DO UPDATE
+                           SET revoque_epoch = GREATEST(revocations_admin.revoque_epoch, EXCLUDED.revoque_epoch),
+                               revoque_le = timezone('UTC', NOW())""", (sid, t))
+            # Un jeton d'élévation vit 10 min : une révocation d'hier n'invalide plus rien
+            cur.execute("DELETE FROM revocations_admin WHERE revoque_le < timezone('UTC', NOW()) - INTERVAL '1 day'")
+    except psycopg2.Error as e:
+        if getattr(e, "pgcode", None) != "42P01":
+            print(f"[auth] révocation non enregistrée en base : {e}")
+    except Exception as e:
+        print(f"[auth] révocation non enregistrée en base : {e}")
+
+
 def _noter_revocation(sid: str) -> None:
+    # Jamais antérieure à la révocation précédente ni au dernier jeton d'élévation émis sur la
+    # lignée (saut d'horloge arrière) : un jeton émis avant cet instant est toujours refusé
+    precedente = derniere_revocation(sid)
     with _revocations_verrou:
-        _revocations[sid] = horloge()
+        t = max(horloge(), precedente + 1e-3, _derniers_iat.get(sid, 0.0) + 1e-3)
+        _revocations[sid] = t
         _revocations.move_to_end(sid)
-        while len(_revocations) > _REVOCATIONS_MAX:
-            _revocations.popitem(last=False)
+        _revocations_lues[sid] = monotonic() + REVOCATION_CACHE_S
+        _revocations_lues.move_to_end(sid)
+        _tailler(_revocations, _REVOCATIONS_MAX)
+        _tailler(_revocations_lues, _REVOCATIONS_MAX)
+    _ecrire_revocation(sid, t)
 
 
 def derniere_revocation(sid: Optional[str]) -> float:
-    """Horodatage (time.time) de la dernière révocation de cette lignée, 0 si aucune."""
+    """Horodatage (time.time) de la dernière révocation de cette lignée, 0 si aucune : mémoire du
+    processus, complétée par la base (revocations_admin) au plus toutes les 30 s par sid."""
     if not sid:
         return 0.0
+    maintenant = monotonic()
     with _revocations_verrou:
-        return _revocations.get(sid, 0.0)
+        if _revocations_lues.get(sid, 0.0) > maintenant:
+            return _revocations.get(sid, 0.0)
+    en_base = _lire_revocation(sid)
+    with _revocations_verrou:
+        valeur = max(_revocations.get(sid, 0.0), en_base)
+        if valeur:
+            _revocations[sid] = valeur
+            _revocations.move_to_end(sid)
+        _revocations_lues[sid] = maintenant + REVOCATION_CACHE_S
+        _revocations_lues.move_to_end(sid)
+        _tailler(_revocations, _REVOCATIONS_MAX)
+        _tailler(_revocations_lues, _REVOCATIONS_MAX)
+        return valeur
 
 
 def oublier_revocations() -> None:
+    """Mémoire des révocations et des jetons émis vidée (tests : simule un redémarrage, la base
+    reste la référence)."""
     with _revocations_verrou:
         _revocations.clear()
+        _revocations_lues.clear()
+        _derniers_iat.clear()
 
 
 def _jeton_elevation_valide(request: Request, user: dict) -> bool:
@@ -772,6 +911,7 @@ def revoquer_preuve_admin(sid: Optional[str]):
     if not sid:
         return
     # Les jetons d'élévation (X-Admin-Token) émis avant cet instant sur cette lignée sont refusés
+    # (mémoire + table revocations_admin : survit à un redémarrage)
     _noter_revocation(sid)
     oublier_roles_admin()
     try:

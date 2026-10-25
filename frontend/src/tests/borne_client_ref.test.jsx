@@ -13,15 +13,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, authMock } = vi.hoisted(() => ({
   apiMock: {
     getPublicConfig: vi.fn(), getConfidentialite: vi.fn(), getCategories: vi.fn(), getPannes: vi.fn(),
     createOrGetClient: vi.fn(), createTicket: vi.fn(), createPartAuto: vi.fn(), learnTerm: vi.fn(),
-    updateTicket: vi.fn(), changeStatus: vi.fn(), getClient: vi.fn(),
+    updateTicket: vi.fn(), changeStatus: vi.fn(), getClient: vi.fn(), adopterJetonDuPoste: vi.fn(),
   },
+  authMock: { user: null, logout: vi.fn() },
 }));
 
-vi.mock('../hooks/useAuth', () => ({ useAuth: () => ({ user: null }) }));
+vi.mock('../hooks/useAuth', () => ({ useAuth: () => authMock }));
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal(); // en-têtes exportés réels, client HTTP simulé pour les pages
   return { ...actual, default: apiMock, api: apiMock };
@@ -48,6 +49,8 @@ beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
   Object.values(apiMock).forEach((fn) => fn.mockReset?.());
+  authMock.logout.mockReset();
+  apiMock.adopterJetonDuPoste.mockReturnValue(false);
   apiMock.getPublicConfig.mockResolvedValue({ BOUTIQUE_NOM: 'Klikphone Chambéry', PURGE_CODES_JOURS: '15' });
   apiMock.getConfidentialite.mockResolvedValue({ titre: 'Politique de confidentialité', sections: [] });
   apiMock.getCategories.mockResolvedValue(['Smartphone', 'Commande']);
@@ -173,6 +176,41 @@ describe('« Nouveau ticket » du personnel (/client?staff=1 + session) : flux i
     expect(piece).not.toHaveProperty('t');
     expect(piece).not.toHaveProperty('tel');
     expect(optionsPiece).toEqual({ asStaff: true });
+  });
+
+  // Jeton du poste révoqué (déconnexion ou changement d'utilisateur dans un autre onglet, audit F) :
+  // le serveur traite l'appel comme anonyme et ne rend qu'une référence signée, pas de fiche.
+  it('fiche sans id (jeton révoqué) : « Session expirée », déconnexion et retour à la connexion, aucun ticket', async () => {
+    localStorage.setItem('kp_token', 'jeton-revoque');
+    localStorage.setItem('kp_target', 'accueil');
+    apiMock.createOrGetClient.mockResolvedValue({ client_ref: REF });
+    await commandeDepuisLaBorne('/client?staff=1');
+
+    expect(await screen.findByText('Session expirée : reconnectez-vous.')).toBeInTheDocument();
+    expect(authMock.logout).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId('ou')).toHaveTextContent('/login/accueil');
+    expect(apiMock.createTicket).not.toHaveBeenCalled();
+    expect(apiMock.createPartAuto).not.toHaveBeenCalled();
+    // Un seul essai : aucune session plus récente à reprendre sur le poste
+    expect(apiMock.adopterJetonDuPoste).toHaveBeenCalledTimes(1);
+    expect(apiMock.createOrGetClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('un autre onglet a rouvert une session : le jeton du poste est repris et la fiche redemandée une fois', async () => {
+    localStorage.setItem('kp_token', 'jeton-ancien');
+    localStorage.setItem('kp_target', 'accueil');
+    apiMock.adopterJetonDuPoste.mockReturnValue(true);
+    apiMock.createOrGetClient
+      .mockResolvedValueOnce({ client_ref: REF })
+      .mockResolvedValueOnce({ id: 7, nom: 'Martin' });
+    await commandeDepuisLaBorne('/client?staff=1');
+
+    expect(await screen.findByTestId('ou')).toHaveTextContent('/accueil');
+    expect(apiMock.createOrGetClient).toHaveBeenCalledTimes(2);
+    expect(apiMock.createTicket).toHaveBeenCalledTimes(1);
+    expect(apiMock.createTicket.mock.calls[0][0].client_id).toBe(7);
+    expect(authMock.logout).not.toHaveBeenCalled();
+    expect(screen.queryByText('Session expirée : reconnectez-vous.')).toBeNull();
   });
 });
 

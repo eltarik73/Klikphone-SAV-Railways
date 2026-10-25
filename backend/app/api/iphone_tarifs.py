@@ -44,12 +44,19 @@ router = APIRouter(prefix="/api/iphone-tarifs", tags=["iphone-tarifs"])
 logger = logging.getLogger(__name__)
 
 # Formulaires publics de la vitrine (passer-commande, demande-devis) : chacun envoie des
-# e-mails (boutique + confirmation au client). En plus des 30/min/IP : plafond GLOBAL de
-# 20 par heure toutes IP confondues (une attaque répartie ne fait pas de la boutique un
-# relais de spam) et 2 par heure par adresse e-mail de confirmation. Mémoire du processus.
+# e-mails (boutique + confirmation au client). Toute tentative compte pour l'IP (30/min et
+# 6/h : une IP seule n'atteint pas le plafond global) ; seules les demandes réellement envoyées
+# (corps valide, pas un doublon) comptent dans les plafonds d'envoi : 2 par heure par adresse
+# e-mail de confirmation, puis 20 par heure toutes IP confondues (une attaque répartie ne fait
+# pas de la boutique un relais de spam). Mémoire du processus.
 VITRINE_PLAFOND_GLOBAL_H = 20
 VITRINE_PLAFOND_EMAIL_H = 2
+VITRINE_PLAFOND_IP_H = 6
 _CLE_VITRINE = "vitrine"
+_LIMITEUR_VITRINE_IP = LimiteurDebit(
+    limite=VITRINE_PLAFOND_IP_H, fenetre=3600,
+    message="Trop de demandes depuis cet appareil dans l'heure : réessayez plus tard ou appelez la boutique.",
+)
 _LIMITEUR_VITRINE_GLOBAL = LimiteurDebit(
     limite=VITRINE_PLAFOND_GLOBAL_H, fenetre=3600, max_ips=8,
     message="Trop de demandes reçues depuis la vitrine en ce moment : réessayez dans une heure "
@@ -62,13 +69,19 @@ _LIMITEUR_VITRINE_EMAIL = LimiteurDebit(
 )
 
 
-def _plafonds_vitrine(request: Request, email: Optional[str]):
-    """429 au-delà de 30/min/IP, de 20/h toutes IP confondues ou de 2/h par adresse e-mail."""
+def _quota_vitrine(request: Request):
+    """Toute tentative compte pour l'IP : 30/min et 6/h (429)."""
     _rate_limit_public_lookup(request)
-    _LIMITEUR_VITRINE_GLOBAL.verifier(_CLE_VITRINE)
+    _LIMITEUR_VITRINE_IP.verifier(client_ip(request))
+
+
+def _compter_envoi_vitrine(email: Optional[str]):
+    """Juste avant l'envoi (corps validé, pas un doublon) : 2/h par adresse e-mail, puis 20/h
+    toutes IP confondues (429). Un 400 ou un refus par adresse ne consomme pas le plafond global."""
     adresse = (email or "").strip().lower()
     if "@" in adresse:
         _LIMITEUR_VITRINE_EMAIL.verifier(adresse)
+    _LIMITEUR_VITRINE_GLOBAL.verifier(_CLE_VITRINE)
 
 
 # ---------------------------------------------------------------------------
@@ -514,8 +527,9 @@ def passer_commande(payload: PasserCommandeRequest, request: Request):
     3. Enregistre dans demandes_commandes (statut='nouvelle')
     4. Envoie un email a contact@klikphone.com avec sujet [COMMANDE]
     L'admin voit ensuite la demande dans son dashboard et peut la gerer.
-    Plafonds : 30/min/IP, 20/h toutes IP confondues, 2/h par adresse e-mail (429)."""
-    _plafonds_vitrine(request, payload.email)
+    Plafonds : 30/min et 6/h par IP (toute tentative) ; puis, pour une demande valide et non
+    dédoublonnée, 2/h par adresse e-mail et 20/h toutes IP confondues (429)."""
+    _quota_vitrine(request)
 
     # Strip + sanitize chars de controle (anti email injection)
     nom = _clean_for_email(payload.nom or "")
@@ -568,6 +582,10 @@ def passer_commande(payload: PasserCommandeRequest, request: Request):
                 "message": "Commande déjà enregistrée. Nous vous recontactons rapidement.",
                 "deduped": True,
             }
+
+        # Plafonds d'envoi (adresse e-mail, puis global) : seules les demandes réellement
+        # enregistrées et envoyées comptent
+        _compter_envoi_vitrine(email)
 
         # Insert en DB
         cur.execute(
@@ -822,8 +840,9 @@ def demande_devis(payload: DemandeDevisRequest, request: Request):
     souhaite commander un modele. Envoie un email a la boutique et
     enregistre aussi dans params pour trace.
 
-    Plafonds : 30/min/IP, 20/h toutes IP confondues, 2/h par adresse e-mail (429)."""
-    _plafonds_vitrine(request, payload.email)
+    Plafonds : 30/min et 6/h par IP (toute tentative) ; puis, pour une demande valide,
+    2/h par adresse e-mail et 20/h toutes IP confondues (429)."""
+    _quota_vitrine(request)
 
     # Validation stricte + sanitize chars de controle (anti email injection)
     nom = _clean_for_email(payload.nom or "")
@@ -832,6 +851,8 @@ def demande_devis(payload: DemandeDevisRequest, request: Request):
         raise HTTPException(400, "Nom requis (2 caractères min)")
     if not tel or len(tel) < 6:
         raise HTTPException(400, "Téléphone requis")
+    # Plafonds d'envoi (adresse e-mail, puis global) : corps validé seulement
+    _compter_envoi_vitrine(payload.email)
 
     email = _clean_for_email(payload.email or "") or "(non renseigné)"
     modele = _clean_for_email(payload.modele or "") or "(non précisé)"

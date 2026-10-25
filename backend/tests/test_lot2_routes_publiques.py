@@ -245,9 +245,14 @@ def test_auto_sans_session_refuse_un_ticket_cloture(reel, propre):
     assert r.status_code == 409, r.text
     assert _statut(reel, tid) == "Clôturé"
     assert _commandes(reel, tid) == []
-    # Ticket inexistant : même 403 qu'un ticket sans preuve (audit D), jamais 404 sans session
+    # Ticket inexistant : même 403 qu'un ticket sans preuve (audit D), jamais 404 sans session —
+    # avec un numéro ou un jeton aussi (verification_echouee / lien_invalide, comme un ticket existant)
     r = c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"})
     assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
+    r = c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x", "tel": "06 00 00 07 72"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
+    r = c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"}, headers={"X-Suivi-Token": _jeton(tid)})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "lien_invalide"
 
 
 def test_auto_sans_session_seulement_le_ticket_neuf_et_une_fois(reel, propre):
@@ -270,7 +275,9 @@ def test_auto_sans_session_seulement_le_ticket_neuf_et_une_fois(reel, propre):
     # Rejoué : la commande existe déjà
     assert c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Autre", "t": _jeton(neuf)}).status_code == 409
     assert len(_commandes(reel, neuf)) == 1
-    # Le numéro complet du client vaut aussi comme preuve (en-tête X-Suivi-Tel)
+    # Le numéro complet du client vaut aussi comme preuve (en-tête X-Suivi-Tel) ; quota par IP
+    # (5 / 10 min, déjà consommé par les essais ci-dessus) remis à zéro
+    parts_api._LIMITEUR_AUTO._buckets.clear()
     autre = _ticket(reel, propre)
     r = c.post("/api/parts/auto", json={"ticket_id": autre, "description": "Nappe"}, headers={"X-Suivi-Tel": "06 00 00 07 72"})
     assert r.status_code == 200, r.text
@@ -293,8 +300,8 @@ def test_auto_avec_session_ne_fait_jamais_reculer_un_ticket_termine(reel, propre
 
 def test_auto_sans_session_limite_par_ip(reel, propre):
     c = reel["c"]
-    codes = [c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"}).status_code for _ in range(11)]
-    assert codes[:10] == [403] * 10 and codes[10] == 429
+    codes = [c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"}).status_code for _ in range(6)]
+    assert codes[:5] == [403] * 5 and codes[5] == 429
 
 
 # ─── Réception d'une pièce parmi plusieurs ───────────────────────────
@@ -422,8 +429,9 @@ def _depot(c, **kw):
 def test_depot_distance_limite_par_ip(reel, propre):
     c = reel["c"]
     codes = [_depot(c, telephone=TEL_TIERS, modele=f"M{i}").status_code for i in range(6)]
-    # 3 pré-enregistrements ouverts au plus pour ce client, puis la limite par IP (5 / 10 min)
-    assert codes == [200, 200, 200, 409, 409, 429], codes
+    # 3 pré-enregistrements ouverts au plus pour ce client, puis la limite par IP (4 / 10 min :
+    # une IP seule n'atteint pas le plafond global de 30/h)
+    assert codes == [200, 200, 200, 409, 429, 429], codes
 
 
 def test_depot_distance_meme_appareil_dans_l_heure_reutilise(reel, propre):

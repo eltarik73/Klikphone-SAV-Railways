@@ -49,13 +49,18 @@ class ClientUpdateRgpd(ClientUpdate):
     consentement_marketing: Optional[bool] = None
 
 
-# Création sans session (borne, dépôt en ligne) : 10 fiches / 10 min par IP, quelle que soit
-# l'IP (les postes « connus » de la boutique ne sont plus exemptés : la borne y est soumise
-# comme les autres), et 120 / h toutes IP confondues.
+# Création sans session (borne, dépôt en ligne) : 5 fiches / 10 min par IP (une borne réelle
+# fait 2 à 3 dépôts par 10 min), quelle que soit l'IP (les postes « connus » de la boutique ne
+# sont plus exemptés : la borne y est soumise comme les autres), et 300 / h toutes IP
+# confondues. Le plafond global n'est consommé qu'après validation (nom et numéro valides,
+# verrou du numéro passé) : des 422 en rafale ne l'épuisent pas ; une IP du magasin
+# (KP_IP_MAGASIN) en est exemptée, pour que la borne ne soit jamais bloquée par une saturation
+# venue d'ailleurs.
 _LIMITEUR_CREATION = LimiteurDebit(
-    limite=10, fenetre=600, limite_globale=120, fenetre_globale=3600,
+    limite=5, fenetre=600, limite_globale=300, fenetre_globale=3600,
     message="Trop de fiches créées depuis ce poste : réessayez dans quelques minutes.",
-    message_global="Trop de dépôts en ce moment : réessayez dans quelques minutes.",
+    message_global=("Trop de dépôts en ligne en ce moment : adressez-vous au comptoir, "
+                    "nous enregistrons votre appareil directement."),
 )
 NOM_REQUIS = "Le nom est requis."
 
@@ -120,6 +125,20 @@ def fiche_d_un_autre(fiche: Optional[dict], nom, prenom) -> bool:
     return bool(fiche) and bool((fiche.get("nom") or "").strip()) and not meme_personne(fiche, nom, prenom)
 
 
+def fiche_de_la_personne(fiches: list, nom, prenom) -> Optional[dict]:
+    """Voie anonyme : parmi TOUTES les fiches d'un numéro (parent/enfant, couple partageant une
+    ligne), celle de la personne saisie — même nom (meme_personne) —, sinon une fiche sans nom à
+    compléter ; None si chacune porte le nom de quelqu'un d'autre (nouvelle fiche, échec compté).
+    Une seconde personne sur un numéro ne crée donc plus une fiche en double à chaque passage."""
+    for fiche in fiches or []:
+        if meme_personne(fiche, nom, prenom):
+            return fiche
+    for fiche in fiches or []:
+        if not fiche_d_un_autre(fiche, nom, prenom):
+            return fiche
+    return None
+
+
 def meme_personne(fiche: dict, nom, prenom) -> bool:
     """Nom (et prénom s'il est connu) saisis identiques à la fiche, accents et casse ignorés.
 
@@ -143,8 +162,9 @@ def enregistrer_consentements(cur, client_id: int, rgpd_informe=None, consenteme
                  "source": source_consentement(canal), "id": client_id})
 
 
-def find_client_by_phone(cur, telephone):
-    """Client existant pour ce numéro, quel que soit le format (06 12…, 0612…, +33 6…).
+def fiches_du_numero(cur, telephone) -> list:
+    """Toutes les fiches de ce numéro complet, par id croissant, quel que soit le format
+    (06 12…, 0612…, +33 6…).
 
     Clé indexée sur les 9 derniers chiffres, puis égalité du numéro complet
     (un numéro étranger peut partager ses 9 derniers chiffres). En dessous de
@@ -153,18 +173,22 @@ def find_client_by_phone(cur, telephone):
     key = search_engine.phone_key(telephone)
     if not key and not str(telephone or "").strip():
         # Numéro vide (client anonymisé, fiche incomplète) : n'identifie personne
-        return None
+        return []
     if not key:
         cur.execute("SELECT * FROM clients WHERE telephone = %s ORDER BY id LIMIT 1", (telephone,))
-        return cur.fetchone()
+        row = cur.fetchone()
+        return [row] if row else []
     cur.execute(
         "SELECT * FROM clients WHERE public.kp_phone_key(telephone) = %s ORDER BY id",
         (key,),
     )
-    for row in cur.fetchall() or []:
-        if search_engine.same_phone(row["telephone"], telephone):
-            return row
-    return None
+    return [row for row in (cur.fetchall() or []) if search_engine.same_phone(row["telephone"], telephone)]
+
+
+def find_client_by_phone(cur, telephone):
+    """Première fiche (id le plus ancien) de ce numéro, quel que soit le format ; None sinon."""
+    fiches = fiches_du_numero(cur, telephone)
+    return fiches[0] if fiches else None
 
 
 @router.get("", response_model=list[ClientOutRgpd])
@@ -372,26 +396,38 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
     consentement_marketing posent leurs dates (_SET_CONSENTEMENTS) ; sans jeton,
     l'accord marketing d'une fiche existante exige la même identité (meme_personne).
     Avec session du personnel : la fiche complète (id compris), inchangé.
+    Débit sans session : quota par IP à l'entrée (toute tentative), plafond global toutes IP
+    confondues compté seulement ici, une fois la demande validée (jamais pour un 422 ou un
+    numéro verrouillé) ; IP du magasin (KP_IP_MAGASIN) exemptée du plafond global.
     """
     fictif = telephone_fictif(data.telephone)
+    ip = client_ip(request)
     if not user:
         if fictif:
             raise HTTPException(422, {"code": "telephone_fictif", "message": TELEPHONE_FICTIF})
         if not (data.nom or "").strip():
             raise HTTPException(422, {"code": "nom_requis", "message": NOM_REQUIS})
-        _LIMITEUR_CREATION.verifier(client_ip(request))
+        _LIMITEUR_CREATION.verifier_ip(ip)
         verifier_essais(request, _cible_numero(data.telephone))
     camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
     champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing"})
     with get_cursor() as cur:
         # Vérifier si le client existe (numéro normalisé : évite les doublons 06 12… / 0612…).
         # Un numéro de remplissage (comptoir) ne désigne personne : jamais rattaché à une fiche.
-        existing = None if fictif else find_client_by_phone(cur, data.telephone)
-        # Borne : numéro connu mais au nom de quelqu'un d'autre → nouvelle fiche, jamais le dossier
-        # (ni le téléphone, destinataire des SMS) d'une autre personne ; compté comme un échec
-        if not user and fiche_d_un_autre(existing, data.nom, data.prenom):
-            existing = None
-            noter_echec(request, _cible_numero(data.telephone))
+        fiches = [] if fictif else fiches_du_numero(cur, data.telephone)
+        if user:
+            existing = fiches[0] if fiches else None
+        else:
+            # Borne : la fiche de CETTE personne parmi celles du numéro (une ligne partagée par
+            # un couple ou un parent et son enfant ne crée pas de doublon à chaque passage) ;
+            # numéro connu seulement au nom de quelqu'un d'autre → nouvelle fiche, jamais le
+            # dossier (ni le téléphone, destinataire des SMS) d'une autre personne ; compté
+            # comme un échec (IP, numéro)
+            existing = fiche_de_la_personne(fiches, data.nom, data.prenom)
+            if fiches and existing is None:
+                noter_echec(request, _cible_numero(data.telephone))
+            # Demande validée : c'est elle seule qui consomme le plafond global
+            _LIMITEUR_CREATION.compter_global(ip)
 
         if existing and user:
             # Staff : les valeurs saisies remplacent les anciennes

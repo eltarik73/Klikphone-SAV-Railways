@@ -783,12 +783,16 @@ def get_ticket_by_code(
 
 
 # ─── CRÉATION ───────────────────────────────────────────────────
-# Sans session (borne du magasin, formulaire public) : 15 tickets par IP et par 10 minutes,
-# 120 par heure toutes IP confondues
+# Sans session (borne du magasin, formulaire public) : 5 tickets par IP et par 10 minutes (une
+# borne réelle fait 2 à 3 dépôts par 10 min), 300 par heure toutes IP confondues. Le plafond
+# global n'est consommé qu'une fois la référence client vérifiée (un 422 n'y compte pas) ; une
+# IP du magasin (KP_IP_MAGASIN) en est exemptée : la borne n'est pas bloquée par une saturation
+# venue d'ailleurs.
 _LIMITEUR_CREATION = LimiteurDebit(
-    limite=15, fenetre=600, limite_globale=120, fenetre_globale=3600,
+    limite=5, fenetre=600, limite_globale=300, fenetre_globale=3600,
     message="Trop de tickets créés depuis ce poste : réessayez dans quelques minutes.",
-    message_global="Trop de dépôts en ce moment : réessayez dans quelques minutes.",
+    message_global=("Trop de dépôts en ligne en ce moment : adressez-vous au comptoir, "
+                    "nous enregistrons votre appareil directement."),
 )
 REFERENCE_CLIENT_REQUISE = ("Référence client requise ou expirée : recommencez l'enregistrement "
                             "de vos coordonnées.")
@@ -834,11 +838,15 @@ def create_ticket(
     pour que la borne ouvre « Suivre ma réparation » sans redemander le téléphone.
     """
     if not user:
-        _LIMITEUR_CREATION.verifier(client_ip(request))
+        # Quota de l'IP sur toute tentative ; le plafond global, lui, n'est compté qu'après la
+        # référence client vérifiée (des 422 en rafale ne l'épuisent pas pour bloquer la borne)
+        _LIMITEUR_CREATION.verifier_ip(client_ip(request))
         # Retour SAV : rattache un dossier à un autre, réservé au personnel
         if data.est_retour_sav or data.ticket_original_id is not None:
             raise HTTPException(422, {"code": "reserve_au_personnel", "message": RESERVE_AU_PERSONNEL})
     client_id = _client_de_la_creation(data, user, request)
+    if not user:
+        _LIMITEUR_CREATION.compter_global(client_ip(request))
     if user:
         priorite = data.priorite
     elif data.priorite == "attente" and (data.source or "boutique") == "boutique":
