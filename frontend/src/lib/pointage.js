@@ -262,10 +262,10 @@ function jetonDuClient(client) {
  * qui n'en garde que le statut. Inactif : aucun appel à l'API de géolocalisation.
  * Les deux appels portent le jeton de CETTE session ; si un autre salarié a pris le poste (ou si
  * la session a été fermée) pendant la lecture, rien n'est envoyé : la lecture est oubliée.
- * Renvoie le résultat ('inactif' | 'deja' | 'envoye' | 'hors_horaires' | 'change' | 'erreur'),
+ * Renvoie le résultat ('inactif' | 'deja' | 'envoye' | 'change' | 'erreur'),
  * jamais d'exception.
  */
-export async function lancerPointage(client, token, { geolocation, maintenant } = {}) {
+export async function lancerPointage(client, token, { geolocation } = {}) {
   const cle = clePointage(token);
   if (!cle || !client || marque(cle) || enVol.has(cle)) return 'deja';
   const courante = () => {
@@ -283,11 +283,7 @@ export async function lancerPointage(client, token, { geolocation, maintenant } 
     if (!cfg || cfg.actif !== true) return 'inactif';
     if (!courante()) return 'change';
     marquer(cle);
-    // Hors des heures d'ouverture : la position n'est pas lue, le serveur note « hors horaires »
-    if (!dansHorairesParis(maintenant || new Date())) {
-      await client.envoyerPosition({ indisponible: true }, token).catch(() => null);
-      return 'hors_horaires';
-    }
+    // À chaque connexion, quelle que soit l'heure (le serveur décide via cfg.actif)
     const geo = geolocation !== undefined
       ? geolocation
       : (typeof navigator !== 'undefined' ? navigator.geolocation : null);

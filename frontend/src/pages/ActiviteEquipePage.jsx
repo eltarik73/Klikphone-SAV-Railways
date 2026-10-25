@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Download, Settings, RefreshCw, AlertTriangle, Loader2,
+  ChevronLeft, ChevronRight, Download, Settings, RefreshCw, AlertTriangle, Loader2, MapPin,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAdminElevation } from '../hooks/useAdminElevation';
@@ -9,7 +9,8 @@ import DetailJour from '../components/activite/DetailJour';
 import ReglagesEquipe from '../components/activite/ReglagesEquipe';
 import { IconesAppareils, PointPresence } from '../components/activite/Pastilles';
 import {
-  ajouterJours, heureParis, jourParis, libelleAppareil, libellePresence, libelleSemaine, lundiDe, STATUTS_PRESENCE,
+  ajouterJours, heureParis, jourParis, libelleAppareil, libellePresence, libelleSemaine, lienCarte, lundiDe,
+  STATUTS_PRESENCE,
 } from '../lib/activiteEquipe';
 
 /**
@@ -112,6 +113,7 @@ export function regrouperConnectes(connectes) {
       postes,
       geo_statut: parlant?.geo_statut || null,
       geo_distance_m: parlant?.geo_distance_m ?? null,
+      carte: lienCarte(parlant?.geo_lat, parlant?.geo_lng),
     };
   });
 }
@@ -142,6 +144,14 @@ function EnLigne({ connectes }) {
                 <PointPresence statut={g.geo_statut} distance={g.geo_distance_m} className="w-2.5 h-2.5" />
                 {g.depuis && <span aria-hidden="true" className="text-slate-500 tabular-nums">depuis {g.depuis}</span>}
                 <span className="sr-only">{complet}</span>
+                {g.carte && (
+                  <a href={g.carte} target="_blank" rel="noopener noreferrer"
+                    className="-mr-1.5 grid place-items-center w-11 h-11 -my-1.5 rounded-full text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    aria-label={`Voir sur la carte où ${g.utilisateur} s’est connecté (s’ouvre dans un nouvel onglet)`}
+                    title="Voir sur la carte">
+                    <MapPin className="w-4 h-4" aria-hidden="true" />
+                  </a>
+                )}
               </li>
             );
           })}

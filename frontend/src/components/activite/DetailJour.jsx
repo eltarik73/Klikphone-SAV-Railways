@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, MapPin } from 'lucide-react';
 import {
-  enteteJour, formatMinutes, heureParis, libelleAppareil, libellePresence, MOTIFS_FIN,
+  enteteJour, formatDistance, formatMinutes, heureParis, libelleAppareil, libellePresence, lienCarte, MOTIFS_FIN,
 } from '../../lib/activiteEquipe';
 import { IconeAppareil, PointPresence } from './Pastilles';
 
@@ -100,6 +100,16 @@ export default function DetailJour({ selection, etat, onFermer, onReessayer }) {
                     <PointPresence statut={s.geo_statut} distance={s.geo_distance_m} className="w-2.5 h-2.5" />
                     {libellePresence(s.geo_statut, s.geo_distance_m)}
                   </span>
+                  {lienCarte(s.geo_lat, s.geo_lng) && (
+                    <a href={lienCarte(s.geo_lat, s.geo_lng)} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 min-h-11 text-brand-700 font-medium underline underline-offset-2 hover:text-brand-800 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      aria-label={`Voir sur la carte la position approximative de ${s.debut} (s’ouvre dans un nouvel onglet)`}>
+                      <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> Voir sur la carte
+                    </a>
+                  )}
+                  {lienCarte(s.geo_lat, s.geo_lng) && s.geo_precision_m > 200 && (
+                    <span className="text-xs text-slate-500">± {formatDistance(s.geo_precision_m)}</span>
+                  )}
                   {s.fin && s.fin_motif && (
                     <span className="sm:ml-auto text-xs text-slate-500">{MOTIFS_FIN[s.fin_motif] || s.fin_motif}</span>
                   )}

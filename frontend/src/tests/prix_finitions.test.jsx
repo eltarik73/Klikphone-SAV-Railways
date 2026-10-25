@@ -241,11 +241,11 @@ describe('Navbar : « Prix à revoir » et propositions en attente', () => {
     expect(apiMock.getSantePrix).toHaveBeenCalledTimes(1);
   });
 
-  it('rôle non admin : entrée sans badge, la santé des prix n’est jamais lue', async () => {
+  it('rôle non admin : pas de partie admin (ni « Prix à revoir »), la santé des prix n’est jamais lue', async () => {
     auth.user = { target: 'tech', utilisateur: 'Sophie', role: 'tech' };
     naviguer('/tech');
-    expect(await screen.findByRole('button', { name: 'Prix à revoir' })).toBeInTheDocument();
     await waitFor(() => expect(apiMock.getKPI).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /^Prix à revoir/ })).toBeNull();
     expect(apiMock.getSantePrix).not.toHaveBeenCalled();
   });
 

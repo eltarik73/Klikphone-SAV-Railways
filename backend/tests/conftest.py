@@ -1,10 +1,15 @@
 """Shared fixtures for backend tests."""
 
+import os
+
 import pytest
 from unittest.mock import MagicMock, patch
 from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
+
+# Pas de déconnexion générale au démarrage des tests (jetons de module créés avant le lifespan)
+os.environ.setdefault("KP_DECONNEXION_DEMARRAGE", "0")
 
 from app.api.auth import create_token, JWT_SECRET, JWT_ALGORITHM
 
@@ -61,6 +66,19 @@ def _roles_admin_vides():
     auth.oublier_roles_admin()
     yield
     auth.oublier_roles_admin()
+
+
+@pytest.fixture(autouse=True)
+def _membre_admin_par_defaut(monkeypatch):
+    """Partie admin réservée aux membres de ADMIN_MEMBRES (auth.membre_admin) : les tests qui
+    simulent un admin fictif (Sophie…) passent ce contrôle ; test_admin_reserve.py teste la vraie
+    fonction (importée avant ce remplacement)."""
+    from app.api import admin, auth
+    # Rôle seul, comme avant ADMIN_MEMBRES (semé à « Tarik » sur les bases de test réelles)
+    monkeypatch.setattr(auth, "admin_autorise", lambda nom, role=None: role == "admin")
+    monkeypatch.setattr(auth, "membre_admin", lambda nom: True)
+    monkeypatch.setattr(admin, "membre_admin", lambda nom: True)
+    yield
 
 
 @pytest.fixture(autouse=True)

@@ -112,7 +112,20 @@ export const MOTIFS_FIN = {
   deconnexion: 'Déconnexion',
   changement: 'Changement d’utilisateur',
   expiree: 'Expirée (inactivité)',
+  forcee: 'Déconnexion générale',
 };
+
+// Position approximative (≈ 100 m) d'une connexion hors de la boutique ou imprécise : lien vers la
+// carte OpenStreetMap (ouverte par l'administrateur seulement ; rien n'est envoyé ailleurs)
+export function lienCarte(lat, lng) {
+  if (lat == null || lng == null || lat === '' || lng === '') return null;
+  const la = Number(lat);
+  const lo = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) return null;
+  const a = la.toFixed(3);
+  const o = lo.toFixed(3);
+  return `https://www.openstreetmap.org/?mlat=${a}&mlon=${o}#map=16/${a}/${o}`;
+}
 
 // ─── Heures, jours, durées (heure de Paris) ─────────────────────────────
 const TZ = 'Europe/Paris';

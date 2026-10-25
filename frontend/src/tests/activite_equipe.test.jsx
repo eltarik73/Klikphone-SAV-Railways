@@ -236,13 +236,12 @@ describe('Pointage de présence côté salarié', () => {
     expect(apiMock.envoyerPosition).toHaveBeenLastCalledWith({ indisponible: true }, expect.any(String));
   });
 
-  it('hors des heures d’ouverture (dimanche) : la position n’est pas lue', async () => {
+  it('à toute heure (dimanche compris) : la position est lue à la connexion', async () => {
     const geo = geoMock();
     apiMock.getPositionConfig.mockResolvedValue({ actif: true });
     expect(await lancerPointage(apiMock, jeton({ sub: 'Nour', sid: 's5' }), { geolocation: geo, maintenant: DIMANCHE_PARIS }))
-      .toBe('hors_horaires');
-    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
-    expect(apiMock.envoyerPosition).toHaveBeenCalledWith({ indisponible: true }, expect.any(String));
+      .toBe('envoye');
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
   });
 
   it('connexion : appareil + poste envoyés, aucune fenêtre ni texte ajouté, une seule lecture en arrière-plan', async () => {
@@ -890,10 +889,12 @@ describe('Menu : « Activité de l’équipe » réservé au rôle admin', () =>
     );
   }
 
-  it('salarié (accueil, technicien) : aucune entrée, ni rien qui mentionne le dispositif', async () => {
+  it('salarié (accueil, technicien) : pas de partie admin, ni rien qui mentionne le dispositif', async () => {
     for (const role of ['accueil', 'tech', '']) {
       const { unmount } = renderNavbar(role);
-      await screen.findByRole('button', { name: /^Reporting/ });
+      await screen.findByRole('button', { name: /^Commandes/ });
+      expect(screen.queryByRole('button', { name: /^Reporting/ })).toBeNull();
+      expect(screen.queryByText('Administration')).toBeNull();
       expect(screen.queryByRole('button', { name: /Activité de l’équipe/ })).toBeNull();
       expect(document.body.textContent).not.toMatch(/Activité de l’équipe|pointage|connexions de l’équipe/i);
       unmount();

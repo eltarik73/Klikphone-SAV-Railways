@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Printer, CheckCircle2, MapPin, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Printer, CheckCircle2, MapPin, Loader2, AlertTriangle, LogOut } from 'lucide-react';
 import api from '../../lib/api';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import NoteInformation from '../NoteInformation';
@@ -49,6 +49,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
   const [rayon, setRayon] = useState('');
   const [poste, setPoste] = useState(lirePoste);
   const [occupe, setOccupe] = useState('');
+  const [confirmerDeconnexion, setConfirmerDeconnexion] = useState(false);
   const [retour, setRetour] = useState({ type: '', texte: '' });
   // Remises en vol (noms) : chaque ligne garde son état optimiste jusqu'à SA réponse, même si une
   // autre réponse arrive entre-temps ; la case n'est jamais `disabled` (le focus clavier resterait
@@ -189,6 +190,15 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
     action('rayon', () => api.updateReglagesEquipe({ rayon_m: rayonNum }), {
       patch: { rayon_m: rayonNum }, texte: `Rayon enregistré : ${rayonNum} m.`,
     });
+  };
+
+  // Tous les jetons sont refusés après coup, celui de ce poste compris : retour à la connexion
+  const deconnecterTout = async () => {
+    const ok = await action('deconnexion', () => api.deconnecterToutLeMonde(), {});
+    if (!ok) return;
+    api.logout();
+    try { localStorage.removeItem('kp_role'); } catch { /* stockage indisponible */ }
+    window.location.assign('/');
   };
 
   const enregistrerBoutique = () => {
@@ -403,9 +413,37 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                 <p className="text-xs text-slate-500">Propre à ce navigateur ; repris dans le journal à chaque connexion.</p>
               </section>
 
+              <section aria-labelledby="reg-sessions" className="space-y-2 border-t border-slate-100 pt-4">
+                <h3 id="reg-sessions" className="t-label">4. Sessions</h3>
+                {confirmerDeconnexion ? (
+                  <div className="callout callout-warning space-y-2" role="group" aria-labelledby="reg-sessions-confirmer">
+                    <p id="reg-sessions-confirmer" className="text-sm">
+                      Tous les postes, le vôtre compris, devront ressaisir leur PIN. Continuer ?
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className="btn-danger min-h-[44px]" disabled={occupe === 'deconnexion'}
+                        aria-busy={occupe === 'deconnexion' || undefined} onClick={deconnecterTout}>
+                        {occupe === 'deconnexion'
+                          ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                          : <LogOut aria-hidden="true" />}
+                        Oui, déconnecter tout le monde
+                      </button>
+                      <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setConfirmerDeconnexion(false)}>
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setConfirmerDeconnexion(true)}>
+                    <LogOut aria-hidden="true" /> Déconnecter tout le monde
+                  </button>
+                )}
+              </section>
+
               <p className="text-xs text-slate-500 border-t border-slate-100 pt-3">
-                Conservation : statut de présence {CONSERVATION_POSITION_JOURS} jours (2 mois), journal des connexions
-                {' '}{CONSERVATION_JOURNAL_JOURS} jours (6 mois). La position exacte d’un salarié n’est jamais enregistrée.
+                Conservation : statut de présence et position approximative (hors de la boutique, à environ 100 m
+                près) {CONSERVATION_POSITION_JOURS} jours (2 mois), journal des connexions
+                {' '}{CONSERVATION_JOURNAL_JOURS} jours (6 mois).
                 Demande d’accès d’un salarié : « Exporter » › son nom.
               </p>
             </>

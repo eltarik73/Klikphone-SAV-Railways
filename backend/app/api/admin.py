@@ -17,8 +17,8 @@ from ..services import params as params_cache
 from .tickets import bornes_utc, jour_paris
 from .auth import (
     ADMIN_TOKEN_MINUTES, controler_admin_password, create_admin_token, ecrire_admin_password,
-    exiger_role_admin, get_current_user, noter_echec, noter_preuve_admin, revoquer_preuve_admin,
-    verifier_essais,
+    exiger_role_admin, get_current_user, membre_admin, noter_echec, noter_preuve_admin,
+    revoquer_preuve_admin, verifier_essais,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -40,6 +40,9 @@ def verify_admin(data: dict, request: Request, user: dict = Depends(get_current_
     login = str(data.get("login", ""))
     password = str(data.get("password", ""))
 
+    # Partie admin réservée aux membres autorisés (ADMIN_MEMBRES) : le code seul ne suffit pas
+    if not membre_admin(user.get("sub")):
+        raise HTTPException(403, {"code": "admin_reserve", "message": "Réservé à l'administrateur."})
     if login != "admin":
         verifier_essais(request, "admin")
         noter_echec(request, "admin")

@@ -663,17 +663,26 @@ def session_courante(user: dict) -> Optional[dict]:
         return _session_ouverte(cur, user)
 
 
+# Position gardée arrondie à 3 décimales (≈ 100 m) : où se trouve le salarié, pas son adresse exacte
+DECIMALES_POSITION = 3
+
+
+def arrondi_position(v) -> Optional[float]:
+    return None if v is None else round(float(v), DECIMALES_POSITION)
+
+
 def enregistrer_position(session_id: int, statut: str, distance_m: Optional[int],
-                         precision_m: Optional[int]) -> bool:
+                         precision_m: Optional[int], lat=None, lng=None) -> bool:
     """Une seule fois par session (geo_le encore vide) : False si déjà fait."""
     if statut not in STATUTS_GEO:
         raise ValueError("statut inconnu")
     with get_cursor() as cur:
         cur.execute("""UPDATE connexions_equipe
                        SET geo_statut = %s, geo_distance_m = %s, geo_precision_m = %s,
-                           geo_le = timezone('UTC', NOW())
+                           geo_lat = %s, geo_lng = %s, geo_le = timezone('UTC', NOW())
                        WHERE id = %s AND geo_le IS NULL AND fin IS NULL""",
-                    (statut, distance_m, precision_m, session_id))
+                    (statut, distance_m, precision_m, arrondi_position(lat), arrondi_position(lng),
+                     session_id))
         return (cur.rowcount or 0) > 0
 
 
@@ -909,10 +918,12 @@ def retention_connexions(maintenant: Optional[datetime] = None) -> dict:
     t = maintenant or maintenant_utc()
     with get_cursor() as cur:
         cur.execute("""UPDATE connexions_equipe
-                       SET geo_statut = NULL, geo_distance_m = NULL, geo_precision_m = NULL, geo_le = NULL
+                       SET geo_statut = NULL, geo_distance_m = NULL, geo_precision_m = NULL, geo_le = NULL,
+                           geo_lat = NULL, geo_lng = NULL
                        WHERE COALESCE(geo_le, debut) < %s
                          AND (geo_statut IS NOT NULL OR geo_distance_m IS NOT NULL
-                              OR geo_precision_m IS NOT NULL OR geo_le IS NOT NULL)""",
+                              OR geo_precision_m IS NOT NULL OR geo_le IS NOT NULL
+                              OR geo_lat IS NOT NULL OR geo_lng IS NOT NULL)""",
                     (t - timedelta(days=CONSERVATION_POSITION_JOURS),))
         positions = cur.rowcount or 0
         cur.execute("DELETE FROM connexions_equipe WHERE debut < %s",

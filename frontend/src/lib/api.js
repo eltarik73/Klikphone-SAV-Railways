@@ -829,6 +829,8 @@ class ApiClient {
   // Remise de la note (version en vigueur) : sans corps → tous les salariés actifs ;
   // { membres: [noms] } → ces salariés ; { retirer: [noms] } → confirmation retirée
   confirmerInformationRemise(corps = {}) { return this.post('/api/equipe/reglages/information-remise', corps); }
+  // Tous les postes (celui de l'admin compris) devront ressaisir leur PIN
+  deconnecterToutLeMonde() { return this.post('/api/equipe/deconnecter-tout', {}); }
   // Coordonnées de la BOUTIQUE lues sur un poste de la boutique (refusées si trop imprécises)
   enregistrerPositionBoutique(lat, lng, precision_m) {
     return this.post('/api/equipe/reglages/position-boutique', { lat, lng, precision_m });

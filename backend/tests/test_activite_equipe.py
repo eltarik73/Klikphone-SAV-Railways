@@ -20,6 +20,8 @@ from fastapi.testclient import TestClient
 
 from app.api import auth
 from app.api.auth import create_admin_token, create_token, decode_token
+# Vraies fonctions, gardées avant que conftest ne les remplace pour les admins fictifs
+from app.api.auth import admin_autorise as ADMIN_AUTORISE_REEL, membre_admin as MEMBRE_ADMIN_REEL
 from app.services import presence
 from app.services.presence import detecter_appareil, libelle_appareil, marque_depuis_modele
 
@@ -654,15 +656,17 @@ def test_reel_note_information_exacte(propre):
     """La note annonce tout ce que la page admin montre (heures, durées, totaux, actions) et rien de faux."""
     g = propre["c"].get("/api/equipe/reglages", headers=_admin()).json()
     t = g["texte_note"]
-    for mot in ("modèle", "jamais enregistrée", "refuser", "CNIL", "CSE", "intérêt légitime", "gérant",
+    for mot in ("modèle", "position approximative (à environ 100 m près)", "quels que soient le lieu et l'heure",
+                "en boutique, seule la mention", "refuser", "CNIL", "CSE", "intérêt légitime", "gérant",
                 "suivi indicatif des jours et heures de connexion", "durée de connexion par jour et par semaine",
                 "décompte légal du temps de travail", "aucune sanction", "changement d'utilisateur",
-                "immédiatement oubliée", "jour de repos", "code administrateur", "Railway", "Supabase",
+                "jour de repos", "code administrateur", "Railway", "Supabase",
                 "hors de l'Union européenne", "12 mois", "jamais « hors boutique »",
                 "ne concerne que les salariés à qui cette note a été remise"):
         assert mot.lower() in t.lower(), mot
     for faux in ("productivité", "gérant uniquement", "moins de 11 salariés", "aucune autre fin",
-                 "une seule vérification, au moment de la connexion"):
+                 "une seule vérification, au moment de la connexion", "jamais enregistrée",
+                 "immédiatement oubliée", "heures d'ouverture"):
         assert faux.lower() not in t.lower(), faux
     assert g["note"]["sections"] and g["note"]["titre"].startswith("Note d'information")
     assert len(g["note_version"]) == 12
@@ -764,19 +768,23 @@ def test_reel_position_statuts(propre, monkeypatch):
         assert c.post("/api/equipe/position", json=corps, headers={"Authorization": f"Bearer {tok}"}).status_code == 200
         l = _sql(propre, "SELECT * FROM connexions_equipe WHERE id = %s", p["cx"])[0]
         assert (l["geo_statut"], l["geo_distance_m"], l["geo_precision_m"]) == (attendu, distance, precision), corps
-    # Hors des heures d'ouverture : statut seul, aucune distance
+        # Position approximative (3 décimales ≈ 100 m) seulement hors de la boutique ou imprécise
+        if attendu in ("hors_boutique", "imprecise"):
+            assert (l["geo_lat"], l["geo_lng"]) == (round(corps["lat"], 3), round(corps["lng"], 3)), corps
+        else:
+            assert (l["geo_lat"], l["geo_lng"]) == (None, None), corps
+    # Hors des heures d'ouverture : la position est lue quand même (à chaque connexion)
     monkeypatch.setattr(presence, "dans_horaires", lambda u=None: False)
     tok, p = _login(c, BRUNO)
     h = {"Authorization": f"Bearer {tok}"}
-    assert c.get("/api/equipe/position/config", headers=h).json() == {"actif": False}
-    # Entrée invalide hors horaires : refusée aussi (422), rien d'enregistré
+    assert c.get("/api/equipe/position/config", headers=h).json() == {"actif": True}
     assert c.post("/api/equipe/position", json={"lat": LAT_TEST, "lng": 999, "precision_m": 10},
                   headers=h).status_code == 422
     assert _sql(propre, "SELECT geo_le FROM connexions_equipe WHERE id = %s", p["cx"])[0]["geo_le"] is None
-    assert c.post("/api/equipe/position", json={"lat": LAT_TEST, "lng": LNG_TEST, "precision_m": 10},
+    assert c.post("/api/equipe/position", json={"lat": 45.5856, "lng": 5.9215, "precision_m": 30},
                   headers=h).status_code == 200
     l = _sql(propre, "SELECT * FROM connexions_equipe WHERE id = %s", p["cx"])[0]
-    assert (l["geo_statut"], l["geo_distance_m"], l["geo_precision_m"]) == ("hors_horaires", None, None)
+    assert (l["geo_statut"], l["geo_lat"], l["geo_lng"]) == ("hors_boutique", round(45.5856, 3), round(5.9215, 3))
 
 
 ROUTES_ADMIN = [
@@ -1085,3 +1093,74 @@ def test_reel_semaine_rapide_sur_20000_lignes(propre):
     r = propre["c"].get(f"/api/equipe/activite?semaine={deb.isoformat()}", headers=_admin())
     assert r.status_code == 200 and (time.perf_counter() - debut) < 1.5
     assert sum(s["total"]["jours"] for s in r.json()["salaries"]) > 0
+
+
+# ─── Partie admin réservée (ADMIN_MEMBRES) et déconnexion générale ───────────
+
+def _vrai_controle_admin(monkeypatch, membres):
+    from app.api import admin as admin_api
+    from app.services import params as params_cache
+    monkeypatch.setattr(auth, "admin_autorise", ADMIN_AUTORISE_REEL)
+    monkeypatch.setattr(auth, "membre_admin", MEMBRE_ADMIN_REEL)
+    monkeypatch.setattr(admin_api, "membre_admin", MEMBRE_ADMIN_REEL)
+    return params_cache
+
+
+def test_reel_admin_reserve_aux_membres_nommes(propre, monkeypatch):
+    c = propre["c"]
+    params_cache = _vrai_controle_admin(monkeypatch, None)
+    try:
+        # Liste « Tarik » : le gérant fictif (rôle admin) n'a plus accès, même avec le code
+        _sql(propre, "INSERT INTO params (cle, valeur) VALUES ('ADMIN_MEMBRES', 'Tarik') "
+                     "ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur")
+        params_cache.invalidate(); auth.oublier_roles_admin()
+        assert c.get("/api/equipe/activite", headers=_admin()).status_code == 403
+        r = c.post("/api/admin/verify", json={"login": "admin", "password": "x"}, headers=_admin_sans_code())
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_reserve"
+        assert c.get("/api/auth/me", headers=_admin_sans_code()).json()["role"] == ""
+        # Le membre nommé (insensible à la casse et aux espaces) retrouve l'accès
+        _sql(propre, "UPDATE params SET valeur = %s WHERE cle = 'ADMIN_MEMBRES'", f"  {ADMIN.upper()} , Tarik")
+        params_cache.invalidate(); auth.oublier_roles_admin()
+        assert c.get("/api/equipe/activite", headers=_admin()).status_code == 200
+        assert c.get("/api/auth/me", headers=_admin_sans_code()).json()["role"] == "admin"
+        # Un salarié nommé dans la liste mais sans code : toujours refusé (le code reste exigé)
+        _sql(propre, "UPDATE params SET valeur = %s WHERE cle = 'ADMIN_MEMBRES'", ALICE)
+        params_cache.invalidate(); auth.oublier_roles_admin()
+        assert c.get("/api/equipe/activite", headers=_h(ALICE)).status_code == 403
+        assert c.get("/api/auth/me", headers=_h(ALICE)).json()["role"] == "admin"
+    finally:
+        _sql(propre, "UPDATE params SET valeur = 'Tarik' WHERE cle = 'ADMIN_MEMBRES'")
+        params_cache.invalidate(); auth.oublier_roles_admin()
+
+
+def test_reel_deconnecter_tout_le_monde(propre):
+    c = propre["c"]
+    tok_a, p_a = _login(c, ALICE)
+    tok_b, p_b = _login(c, BRUNO, ua="windows_chrome")
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok_a}"}).status_code == 200
+    admin = _admin()
+    assert c.post("/api/equipe/deconnecter-tout", headers=admin).status_code == 200
+    # Tous les jetons d'avant sont refusés, celui de l'admin compris
+    for tok in (tok_a, tok_b, admin["Authorization"].split()[1]):
+        assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 401
+    lignes = {r["id"]: r for r in _sql(propre, "SELECT id, fin, fin_motif FROM connexions_equipe")}
+    assert lignes[p_a["cx"]]["fin_motif"] == lignes[p_b["cx"]]["fin_motif"] == "forcee"
+    assert all(r["fin"] is not None for r in lignes.values())
+    # On repart à zéro : une nouvelle connexion fonctionne
+    tok, _ = _login(c, ALICE)
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    traces = _sql(propre, "SELECT action FROM admin_audit_log WHERE target_type = 'equipe'")
+    assert {"action": "equipe_deconnexion_generale"} in traces
+
+
+def test_reel_deconnexion_generale_unique(propre):
+    c = propre["c"]
+    _sql(propre, "DELETE FROM params WHERE cle = 'DECONNEXION_GENERALE_test_unique'")
+    tok, _ = _login(c, ALICE)
+    assert auth.deconnexion_generale_unique("test_unique") is True
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 401
+    tok, _ = _login(c, ALICE)
+    # Une seule fois : le redémarrage suivant ne déconnecte plus personne
+    assert auth.deconnexion_generale_unique("test_unique") is False
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    _sql(propre, "DELETE FROM params WHERE cle = 'DECONNEXION_GENERALE_test_unique'")

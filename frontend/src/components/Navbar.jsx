@@ -533,7 +533,8 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* ─── Administration section ─── */}
+          {/* ─── Administration section : réservée aux membres autorisés (ADMIN_MEMBRES, côté serveur) ─── */}
+          {isRoleAdmin && (
           <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
             <SectionHeader
                 collapsed={collapsed}
@@ -612,6 +613,7 @@ export default function Navbar() {
               </div>
             )}
           </div>
+          )}
         </nav>
         </div>
 

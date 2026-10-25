@@ -67,12 +67,40 @@ ADMIN_TOKEN_MINUTES = 10
 _ADMIN_TYP = "admin_elevation"
 
 
+# ─── Partie admin réservée à des membres nommés ──────────────────
+# ADMIN_MEMBRES (params, noms séparés par des virgules) : seuls ces membres voient la partie admin et
+# peuvent saisir le code admin. Vide : tout membre au rôle « admin » (comportement d'origine).
+PARAM_ADMIN_MEMBRES = "ADMIN_MEMBRES"
+
+
+def _cle_nom(nom) -> str:
+    return " ".join(str(nom or "").split()).casefold()
+
+
+def admin_autorise(nom, role=None) -> bool:
+    liste = [_cle_nom(n) for n in params_cache.get_param(PARAM_ADMIN_MEMBRES, "").split(",") if n.strip()]
+    if liste:
+        return _cle_nom(nom) in liste
+    return role == "admin"
+
+
+# ─── Génération des sessions : « déconnecter tout le monde » ─────
+# SESSIONS_GENERATION (params) : chaque jeton porte la génération en vigueur à sa création (claim
+# gen) ; la changer refuse tous les jetons émis avant. Absente : aucun contrôle (jetons d'origine).
+PARAM_GENERATION = "SESSIONS_GENERATION"
+
+
+def generation_sessions() -> Optional[str]:
+    return params_cache.get_param(PARAM_GENERATION, "").strip() or None
+
+
 def create_token(target: str, utilisateur: str, sid: Optional[str] = None, cx: Optional[int] = None) -> str:
     """Crée un JWT token.
 
     `sid` : lignée de session du poste, nouvelle à chaque connexion par PIN et
     transmise par switch-user (preuve du code admin, cf. exiger_role_admin).
     `cx` : ligne du journal des connexions (connexions_equipe.id) de cette session.
+    `gen` : génération des sessions en vigueur (cf. deconnecter_tout_le_monde).
     """
     expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
@@ -83,6 +111,9 @@ def create_token(target: str, utilisateur: str, sid: Optional[str] = None, cx: O
     }
     if isinstance(cx, int) and not isinstance(cx, bool):
         payload["cx"] = cx
+    gen = generation_sessions()
+    if gen:
+        payload["gen"] = gen
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -200,7 +231,11 @@ def _session_close_en_base(payload: dict, cx: int) -> bool:
 
 def jeton_revoque(payload: dict) -> bool:
     """Vrai si la session du jeton (claim cx, lignée sid + utilisateur) est close par une
-    déconnexion ou un changement d'utilisateur. Lecture mise en cache 30 s par cx."""
+    déconnexion ou un changement d'utilisateur, ou s'il date d'avant la dernière déconnexion
+    générale (génération des sessions). Lecture mise en cache 30 s par cx."""
+    gen = generation_sessions()
+    if gen and payload.get("gen") != gen:
+        return True
     cx = _cx(payload)
     if cx is None:
         return False
@@ -237,6 +272,53 @@ def oublier_session(cx) -> None:
 def oublier_sessions() -> None:
     with _sessions_verrou:
         _sessions_closes.clear()
+
+
+def _deconnecter(cur) -> str:
+    gen = secrets.token_urlsafe(8)
+    cur.execute("""INSERT INTO params (cle, valeur) VALUES (%s, %s)
+                   ON CONFLICT (cle) DO UPDATE SET valeur = EXCLUDED.valeur""", (PARAM_GENERATION, gen))
+    cur.execute("""UPDATE connexions_equipe SET fin = GREATEST(derniere_activite, timezone('UTC', NOW())),
+                          fin_motif = 'forcee'
+                   WHERE fin IS NULL""")
+    cur.execute("DELETE FROM sessions_admin")
+    return gen
+
+
+def _apres_deconnexion():
+    params_cache.invalidate()
+    oublier_sessions()
+    oublier_roles_admin()
+
+
+def deconnecter_tout_le_monde() -> str:
+    """Nouvelle génération des sessions : tout jeton émis avant est refusé (401 → écran de
+    connexion, sur chaque poste), sessions du journal closes « forcee », preuves du code admin
+    retirées. L'activité en mémoire est écrite avant, pour ne rien rouvrir ensuite."""
+    presence.vider_activite()
+    with get_cursor() as cur:
+        gen = _deconnecter(cur)
+    _apres_deconnexion()
+    return gen
+
+
+def deconnexion_generale_unique(etiquette: str) -> bool:
+    """Au démarrage : déconnexion générale demandée par le gérant, une seule fois par étiquette
+    (params DECONNEXION_GENERALE_<étiquette>, posée dans la même transaction)."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("""INSERT INTO params (cle, valeur) VALUES (%s, %s)
+                           ON CONFLICT (cle) DO NOTHING RETURNING cle""",
+                        (f"DECONNEXION_GENERALE_{etiquette}", datetime.now(timezone.utc).isoformat()))
+            if not cur.fetchone():
+                return False
+            _deconnecter(cur)
+    except Exception as e:
+        print(f"[auth] déconnexion générale {etiquette} impossible : {e}")
+        return False
+    _apres_deconnexion()
+    print(f"[auth] déconnexion générale {etiquette} : toutes les sessions sont closes")
+    return True
 
 
 # ─── IP RÉELLE ───────────────────────────────────────────────────
@@ -797,11 +879,27 @@ def _jeton_elevation_valide(request: Request, user: dict) -> bool:
     return float(iat) > derniere_revocation(sid)
 
 
+def membre_admin(nom) -> bool:
+    """admin_autorise, avec le rôle lu en base quand ADMIN_MEMBRES est vide."""
+    if params_cache.get_param(PARAM_ADMIN_MEMBRES, "").strip():
+        return admin_autorise(nom)
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT role FROM membres_equipe WHERE nom = %s LIMIT 1", (nom or "",))
+            row = cur.fetchone()
+    except psycopg2.Error:
+        return False
+    return bool(row) and row.get("role") == "admin"
+
+
 def exiger_elevation(request: Request, user: dict) -> dict:
-    """403 sauf jeton d'élévation valide (X-Admin-Token) ou code admin (X-Admin-Password).
+    """403 sauf jeton d'élévation valide (X-Admin-Token) ou code admin (X-Admin-Password), pour un
+    membre autorisé à la partie admin (membre_admin) : le code seul ne suffit pas.
 
     403 et non 401 : le front déconnecte l'employé sur tout 401.
     """
+    if not membre_admin(user.get("sub")):
+        _refus_admin("admin_reserve", "Réservé à l'administrateur.")
     jeton = (request.headers.get("x-admin-token") or "").strip()
     if _jeton_elevation_valide(request, user):
         return {**user, "admin": True}
@@ -966,7 +1064,7 @@ def exiger_role_admin(request: Request, user: dict) -> dict:
         return user
     generation = _roles_admin_generation
     row = _role_et_preuve(user.get("sub") or "", sid)
-    if not row or row.get("role") != "admin":
+    if not row or not admin_autorise(user.get("sub"), row.get("role")):
         raise HTTPException(403, "Admin requis")
     duree = ROLE_ADMIN_CACHE_S
     if not row.get("prouve"):
@@ -1082,7 +1180,7 @@ def _reprendre_preuve_ancienne(user: dict):
             row = cur.fetchone()
     except Exception:
         return
-    if row and row.get("role") == "admin":
+    if row and admin_autorise(user.get("sub"), row.get("role")):
         noter_preuve_admin(user.get("sid"), "reprise")
 
 
@@ -1137,6 +1235,13 @@ def get_me(user: dict = Depends(get_current_user)):
                 role = row["role"] or ""
     except Exception:
         pass
+    # « admin » seulement pour les membres autorisés (ADMIN_MEMBRES) : les autres ne voient pas la
+    # partie admin, même si leur fiche porte encore ce rôle
+    autorise = admin_autorise(user["sub"], role)
+    if autorise:
+        role = "admin"
+    elif role == "admin":
+        role = ""
     return {
         "utilisateur": user["sub"],
         "target": user["target"],

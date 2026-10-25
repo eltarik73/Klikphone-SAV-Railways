@@ -3,11 +3,12 @@ Activité de l'équipe : journal des connexions et pointage de présence (servic
 
 Personnel (jeton de session) :
 - GET  /api/equipe/position/config → {actif} seulement : pointage activé, position de la boutique
-  confirmée, note d'information (version en vigueur) remise à CE membre, heures d'ouverture ;
+  confirmée, note d'information (version en vigueur) remise à CE membre ; à toute heure ;
 - POST /api/equipe/position        → une fois par session : {lat, lng, precision_m} | {refus} |
-  {indisponible}. Les coordonnées ne sont ni stockées, ni journalisées, ni renvoyées : seuls le
-  statut, la distance arrondie à 50 m et la précision sont gardés. Corps lu à la main : aucune
-  erreur de validation ne peut renvoyer l'entrée.
+  {indisponible}. Gardés : statut, distance arrondie à 50 m, précision et, hors de la boutique ou
+  position imprécise, la position arrondie à ≈ 100 m (geo_lat, geo_lng : carte de l'admin, 60 jours).
+  Jamais journalisées ni renvoyées au salarié. Corps lu à la main : aucune erreur de validation ne
+  peut renvoyer l'entrée.
 
 Admin (rôle admin ET code admin saisi depuis moins de 10 min : exiger_elevation puis
 exiger_role_admin ; 403 sinon) — un poste partagé resté au nom du gérant ne suffit pas :
@@ -35,7 +36,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.database import get_cursor
-from app.api.auth import exiger_elevation, exiger_role_admin, get_current_user
+from app.api.auth import deconnecter_tout_le_monde, exiger_elevation, exiger_role_admin, get_current_user
 from app.services import mentions
 from app.services import params as params_cache
 from app.services import presence
@@ -173,9 +174,8 @@ def _pointage_pour(cur, user: dict) -> bool:
 
 @router.get("/position/config")
 def position_config(user: dict = Depends(get_current_user)):
-    """Le poste doit-il lire la position une fois maintenant ? Aucun autre réglage n'est exposé."""
-    if not presence.dans_horaires():
-        return {"actif": False}
+    """Le poste doit-il lire la position une fois maintenant ? Aucun autre réglage n'est exposé.
+    À chaque connexion, quelle que soit l'heure (le gérant l'a demandé, la note l'annonce)."""
     try:
         with get_cursor() as cur:
             return {"actif": _pointage_pour(cur, user)}
@@ -201,10 +201,8 @@ def _enregistrer_position(corps, user: dict) -> dict:
         raise HTTPException(409, "Aucune session ouverte pour ce poste")
     if session.get("geo_le") is not None:
         raise HTTPException(409, "Présence déjà vérifiée pour cette session")
-    distance = None
-    if not presence.dans_horaires():
-        statut, precision = "hors_horaires", None     # rien d'autre n'est gardé
-    elif refus:
+    distance = lat = lng = None
+    if refus:
         statut, precision = "refusee", None
     elif indisponible:
         statut, precision = "indisponible", None
@@ -216,8 +214,11 @@ def _enregistrer_position(corps, user: dict) -> dict:
         # (± plusieurs centaines de mètres) serait une donnée inexacte sur le salarié
         if statut != "imprecise":
             distance = min(presence.arrondi_distance(brute), 20_000_000)
+        # Hors de la boutique ou position imprécise : position approximative (≈ 100 m) pour la carte
+        if statut != "en_boutique":
+            lat, lng = float(corps["lat"]), float(corps["lng"])
         precision = min(precision, 1_000_000)
-    if not presence.enregistrer_position(session["id"], statut, distance, precision):
+    if not presence.enregistrer_position(session["id"], statut, distance, precision, lat, lng):
         raise HTTPException(409, "Présence déjà vérifiée pour cette session")
     return {"ok": True}
 
@@ -339,6 +340,9 @@ def _connectes(cur, en_ligne: datetime, couleurs: dict) -> list:
         "actions": r["actions"] or 0,
         "geo_statut": r["geo_statut"],
         "geo_distance_m": r["geo_distance_m"],
+        "geo_precision_m": r.get("geo_precision_m"),
+        "geo_lat": r.get("geo_lat"),
+        "geo_lng": r.get("geo_lng"),
     } for r in cur.fetchall() or []]
 
 
@@ -439,6 +443,8 @@ def _session_api(r: dict, jour: Optional[date] = None, en_ligne: Optional[dateti
         "geo_statut": r["geo_statut"],
         "geo_distance_m": r["geo_distance_m"],
         "geo_precision_m": r["geo_precision_m"],
+        "geo_lat": r.get("geo_lat"),
+        "geo_lng": r.get("geo_lng"),
         "en_cours": bool(r["fin"] is None and en_ligne is not None and r["derniere_activite"] >= en_ligne),
     }
     return out
@@ -479,7 +485,6 @@ def _note(reglages: dict) -> dict:
     forme = ident.get("BOUTIQUE_FORME") or ""
     adresse = ident.get("BOUTIQUE_ADRESSE") or ""
     contact = " · ".join(x for x in (ident.get("BOUTIQUE_TEL"), ident.get("BOUTIQUE_EMAIL")) if x)
-    h = f"{presence.HORAIRE_DEBUT_H} h – {presence.HORAIRE_FIN_H} h, du lundi au samedi"
     sections = [
         {"titre": "Responsable du traitement",
          "texte": f"{nom}{f' ({forme})' if forme else ''}{f', {adresse}' if adresse else ''}, "
@@ -491,8 +496,8 @@ def _note(reglages: dict) -> dict:
              "la sécurité des accès : savoir qui s'est connecté, quand et depuis quel appareil ;",
              "le suivi indicatif des jours et heures de connexion à l'application (arrivée, départ, "
              "durée) et du volume d'enregistrements effectués (actions, fiches créées) ;",
-             "la vérification ponctuelle de la présence en boutique au moment de la connexion, si le "
-             "gérant l'active.",
+             "la vérification ponctuelle, à chaque connexion, de la présence en boutique ou du lieu "
+             "approximatif de connexion, si le gérant l'active.",
          ]},
         {"titre": "Portée de ces relevés",
          "texte": "Ces relevés sont indicatifs : ils ne constituent pas le décompte légal du temps de travail "
@@ -508,20 +513,21 @@ def _note(reglages: dict) -> dict:
              "Le type d'appareil (ordinateur, iPhone, iPad, smartphone, tablette), sa marque et son modèle "
              "lorsque le navigateur les indique, le système et le navigateur utilisés.",
              "Une empreinte non réversible de l'adresse réseau (jamais l'adresse elle-même).",
-             "Si la vérification de présence est activée : uniquement son résultat (en boutique, hors "
-             "boutique, position imprécise, refusée, indisponible), la distance à la boutique arrondie à "
-             "50 m et la précision annoncée par l'appareil. Votre position exacte (coordonnées) n'est "
-             "jamais enregistrée ni conservée.",
+             "Si la vérification de présence est activée : son résultat (en boutique, hors boutique, "
+             "position imprécise, refusée, indisponible), la distance à la boutique arrondie à 50 m, la "
+             "précision annoncée par l'appareil et, lorsque vous n'êtes pas en boutique ou que la position "
+             "est imprécise, votre position approximative (à environ 100 m près), que le gérant peut "
+             "afficher sur une carte. En boutique, seule la mention « en boutique » est gardée.",
          ]},
         {"titre": "Fonctionnement de la vérification de présence",
          "liste": [
              "Elle ne concerne que les salariés à qui cette note a été remise.",
-             f"Une seule vérification par session, à chaque connexion à l'application ou changement "
-             f"d'utilisateur, et uniquement pendant les heures d'ouverture ({h}). Aucun suivi en continu, "
-             f"rien en dehors de l'application ni en dehors de ces heures.",
+             "Une seule vérification par session, à chaque connexion à l'application ou changement "
+             "d'utilisateur, quels que soient le lieu et l'heure de la connexion. Aucun suivi en continu : "
+             "rien entre deux connexions ni en dehors de l'application.",
              "Votre position est transmise une seule fois au serveur pour calculer la distance à la "
-             "boutique, puis immédiatement oubliée : seuls le résultat, la distance arrondie et la "
-             "précision sont gardés.",
+             "boutique : seuls le résultat, la distance arrondie, la précision et, hors de la boutique, la "
+             "position approximative (à environ 100 m près) sont gardés.",
              "Votre navigateur vous demande l'autorisation : vous pouvez refuser, par exemple un jour de "
              "repos ou hors de la boutique. L'application fonctionne normalement, seul le refus est noté, "
              "et un refus n'entraîne aucune conséquence.",
@@ -545,8 +551,8 @@ def _note(reglages: dict) -> dict:
                   "contractuelles types)."},
         {"titre": "Durées de conservation",
          "liste": [
-             f"Résultat de la vérification de présence : {presence.CONSERVATION_POSITION_JOURS} jours "
-             f"(2 mois), puis effacé.",
+             f"Résultat de la vérification de présence et position approximative : "
+             f"{presence.CONSERVATION_POSITION_JOURS} jours (2 mois), puis effacés.",
              f"Journal des connexions : {presence.CONSERVATION_JOURNAL_JOURS} jours (6 mois), puis supprimé.",
              f"Traces des consultations et des exports par l'administrateur : "
              f"{presence.CONSERVATION_TRACES_JOURS} jours (12 mois).",
@@ -680,6 +686,16 @@ def _noms(liste) -> list:
     return out
 
 
+@router.post("/deconnecter-tout")
+def deconnecter_tout(request: Request, user: dict = Depends(admin_equipe)):
+    """Déconnecte tous les postes, celui de l'admin compris : chacun devra ressaisir son PIN
+    (sessions du journal closes « Déconnexion générale »)."""
+    with get_cursor() as cur:
+        presence.journaliser(cur, request, user, "equipe_deconnexion_generale", "")
+    deconnecter_tout_le_monde()
+    return {"ok": True}
+
+
 @router.post("/reglages/information-remise")
 def information_remise(request: Request, data: Optional[RemiseNote] = Body(None),
                        user: dict = Depends(admin_equipe)):
@@ -741,7 +757,8 @@ async def position_boutique(request: Request, user: dict = Depends(admin_equipe)
 
 # ─── Admin : export CSV (sert aussi à répondre à une demande d'accès) ─
 
-_MOTIFS = {"deconnexion": "Déconnexion", "changement": "Changement d'utilisateur", "expiree": "Expirée"}
+_MOTIFS = {"deconnexion": "Déconnexion", "changement": "Changement d'utilisateur", "expiree": "Expirée",
+           "forcee": "Déconnexion générale"}
 _PRESENCES = {"en_boutique": "En boutique", "hors_boutique": "Hors boutique", "imprecise": "Position imprécise",
               "refusee": "Refusée", "indisponible": "Indisponible", "hors_horaires": "Hors horaires"}
 
@@ -778,7 +795,8 @@ def export_csv(request: Request, utilisateur: Optional[str] = None, depuis: Opti
     w = csv.writer(sortie, delimiter=";", lineterminator="\r\n")
     w.writerow(["Salarié", "Espace", "Poste", "Date", "Connexion", "Dernière activité", "Fin", "Durée (min)",
                 "Motif de fin", "Type d'appareil", "Marque", "Modèle", "Système", "Navigateur", "Actions",
-                "Présence", "Distance boutique (m)", "Précision (m)", "Empreinte réseau"])
+                "Présence", "Distance boutique (m)", "Précision (m)", "Position approximative",
+                "Empreinte réseau"])
     for r in rows:
         s = _session_api(r)
         a = s["appareil"]
@@ -787,6 +805,7 @@ def export_csv(request: Request, utilisateur: Optional[str] = None, depuis: Opti
             s["fin"] or "En cours", s["duree_min"], _MOTIFS.get(r["fin_motif"] or "", ""), a["type"],
             a["marque"], a["modele"], a["systeme"], a["navigateur"], s["actions"],
             _PRESENCES.get(r["geo_statut"] or "", ""), r["geo_distance_m"], r["geo_precision_m"],
+            f"{r['geo_lat']:.3f}, {r['geo_lng']:.3f}" if r.get("geo_lat") is not None and r.get("geo_lng") is not None else "",
             r["ip_empreinte"],
         )])
     filtre = f"utilisateur={nom or '*'} depuis={deb.isoformat()} jusqua={fin.isoformat()}"

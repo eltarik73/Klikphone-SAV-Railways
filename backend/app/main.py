@@ -408,6 +408,10 @@ _DDL_TABLES = [
 # ADD COLUMN déjà présente : écartée avant exécution (l'ALTER prendrait quand
 # même l'AccessExclusiveLock sur la table)
 _DDL_ALTERS = [
+    # Position approximative (≈ 100 m) d'une connexion hors de la boutique ou imprécise
+    # (activité de l'équipe, carte de l'administrateur) ; effacée à 60 jours comme le reste
+    "ALTER TABLE connexions_equipe ADD COLUMN IF NOT EXISTS geo_lat DOUBLE PRECISION",
+    "ALTER TABLE connexions_equipe ADD COLUMN IF NOT EXISTS geo_lng DOUBLE PRECISION",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",
@@ -821,7 +825,9 @@ _DONNEES_FIXES = [
         ('DEPOT_DISTANCE_ACTIF', 'true'),
         ('NOTIFICATIONS_EMAIL_ACTIF', 'true'),
         ('NOTIFICATIONS_STATUTS', 'Réparation terminée'),
-        ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review')
+        ('GOOGLE_REVIEW_LINK', 'https://g.page/r/Cf6adrBONrj3EAE/review'),
+        -- Partie admin réservée au gérant (auth.admin_autorise) ; modifiable dans params
+        ('ADMIN_MEMBRES', 'Tarik')
     ON CONFLICT (cle) DO NOTHING""",
     # L'ancienne valeur semée n'était lue par rien jusqu'au message « prêt » proposé :
     # ramenée une seule fois au défaut, un choix fait ensuite dans la config est conservé.
@@ -1338,6 +1344,10 @@ async def lifespan(app: FastAPI):
 
     # Données : après le schéma (colonnes et tables présentes)
     _donnees_de_demarrage()
+    # Déconnexion générale demandée par le gérant (une seule fois : on repart à zéro) ;
+    # KP_DECONNEXION_DEMARRAGE=0 l'empêche (tests : jetons préparés avant le démarrage)
+    if os.getenv("KP_DECONNEXION_DEMARRAGE", "1") != "0":
+        auth.deconnexion_generale_unique("2026_10_25")
     # Recherche staff : après les ALTER, pour que toutes les colonnes indexées existent
     _migrations_recherche()
     # Fiche ticket : après le seed, pour fusionner « Écran casse » dans « Écran cassé »
