@@ -673,6 +673,68 @@ def arrondi_position(v) -> Optional[float]:
     return None if v is None else round(float(v), DECIMALES_POSITION)
 
 
+# ─── Lieu approximatif : rue et commune (Base Adresse Nationale, service public de l'État) ───
+URL_BAN_REVERSE = "https://api-adresse.data.gouv.fr/reverse/"
+LIEU_MAX = 120
+_LIEU_PROPRE = re.compile(r"[^\w '’,.()/-]", re.UNICODE)
+
+
+def _propre_lieu(valeur) -> Optional[str]:
+    """Lettres (accents compris), chiffres, espaces et ponctuation d'adresse ; LIEU_MAX caractères."""
+    if not isinstance(valeur, str):
+        return None
+    s = " ".join(_LIEU_PROPRE.sub("", valeur[:300]).split())[:LIEU_MAX].strip(" ,")
+    return s or None
+
+
+def _lieu_ban(lat: float, lng: float, type_: str, timeout: float) -> Optional[str]:
+    import httpx
+    r = httpx.get(URL_BAN_REVERSE, params={"lat": f"{lat:.3f}", "lon": f"{lng:.3f}", "type": type_, "limit": 1},
+                  timeout=timeout)
+    if r.status_code != 200:
+        return None
+    features = (r.json() or {}).get("features") or []
+    if not features:
+        return None
+    p = features[0].get("properties") or {}
+    commune = " ".join(x for x in (p.get("postcode"), p.get("city")) if x)
+    if type_ == "street" and p.get("name"):
+        return _propre_lieu(f"{p['name']}, {commune}" if commune else p["name"])
+    return _propre_lieu(commune or p.get("name"))
+
+
+def lieu_approximatif(lat, lng, timeout: float = 3.0) -> Optional[str]:
+    """« Rue Croix d'Or, 73000 Chambéry » pour une position déjà arrondie (≈ 100 m) ; la commune
+    seule hors des rues connues ; None hors de France ou en cas d'échec. Seules les coordonnées
+    arrondies sont envoyées, rien n'est journalisé."""
+    try:
+        lat, lng = round(float(lat), DECIMALES_POSITION), round(float(lng), DECIMALES_POSITION)
+        return _lieu_ban(lat, lng, "street", timeout) or _lieu_ban(lat, lng, "municipality", timeout)
+    except Exception as e:
+        logger.warning("Lieu de connexion introuvable (%s)", type(e).__name__)
+        return None
+
+
+def completer_lieu(session_id: int, lat, lng):
+    """En tâche de fond (jamais dans le chemin de la requête) : le lieu de la connexion est écrit
+    quand le service répond. KP_GEO_LIEU=0 l'empêche (tests, hors ligne)."""
+    if os.getenv("KP_GEO_LIEU", "1") == "0" or lat is None or lng is None:
+        return
+
+    def tache():
+        lieu = lieu_approximatif(lat, lng)
+        if not lieu:
+            return
+        try:
+            with get_cursor() as cur:
+                cur.execute("UPDATE connexions_equipe SET geo_lieu = %s WHERE id = %s AND geo_lat IS NOT NULL",
+                            (lieu, session_id))
+        except Exception as e:
+            logger.warning("Lieu de connexion non enregistré (%s)", type(e).__name__)
+
+    threading.Thread(target=tache, daemon=True, name="geo_lieu").start()
+
+
 def enregistrer_position(session_id: int, statut: str, distance_m: Optional[int],
                          precision_m: Optional[int], lat=None, lng=None) -> bool:
     """Une seule fois par session (geo_le encore vide) : False si déjà fait."""
@@ -921,11 +983,11 @@ def retention_connexions(maintenant: Optional[datetime] = None) -> dict:
     with get_cursor() as cur:
         cur.execute("""UPDATE connexions_equipe
                        SET geo_statut = NULL, geo_distance_m = NULL, geo_precision_m = NULL, geo_le = NULL,
-                           geo_lat = NULL, geo_lng = NULL
+                           geo_lat = NULL, geo_lng = NULL, geo_lieu = NULL
                        WHERE COALESCE(geo_le, debut) < %s
                          AND (geo_statut IS NOT NULL OR geo_distance_m IS NOT NULL
                               OR geo_precision_m IS NOT NULL OR geo_le IS NOT NULL
-                              OR geo_lat IS NOT NULL OR geo_lng IS NOT NULL)""",
+                              OR geo_lat IS NOT NULL OR geo_lng IS NOT NULL OR geo_lieu IS NOT NULL)""",
                     (t - timedelta(days=CONSERVATION_POSITION_JOURS),))
         positions = cur.rowcount or 0
         cur.execute("DELETE FROM connexions_equipe WHERE debut < %s",

@@ -118,6 +118,7 @@ export function regrouperConnectes(connectes) {
       geo_statut: parlant?.geo_statut || null,
       geo_distance_m: parlant?.geo_distance_m ?? null,
       carte: lienCarte(parlant?.geo_lat, parlant?.geo_lng),
+      lieu: parlant?.geo_lieu || '',
     };
   });
 }
@@ -135,6 +136,7 @@ function EnLigne({ connectes }) {
               g.appareils.map(libelleAppareil).join(' / '),
               g.postes.length ? `poste ${g.postes.join(', ')}` : '',
               libellePresence(g.geo_statut, g.geo_distance_m),
+              g.lieu ? `près de ${g.lieu}` : '',
               g.depuis ? `connecté depuis ${g.depuis}` : '',
             ].filter(Boolean).join(' · ');
             return (
@@ -150,10 +152,11 @@ function EnLigne({ connectes }) {
                 <span className="sr-only">{complet}</span>
                 {g.carte && (
                   <a href={g.carte} target="_blank" rel="noopener noreferrer"
-                    className="-mr-1.5 grid place-items-center w-11 h-11 -my-1.5 rounded-full text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                    aria-label={`Voir sur la carte où ${g.utilisateur} s’est connecté (s’ouvre dans un nouvel onglet)`}
-                    title="Voir sur la carte">
-                    <MapPin className="w-4 h-4" aria-hidden="true" />
+                    className="-mr-1.5 inline-flex items-center gap-1 h-11 -my-1.5 px-1.5 rounded-full text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    aria-label={`${g.lieu ? `${g.utilisateur} connecté près de ${g.lieu}` : `Lieu de connexion de ${g.utilisateur}`} : voir sur la carte (s’ouvre dans un nouvel onglet)`}
+                    title={g.lieu ? `Près de ${g.lieu}` : 'Voir sur la carte'}>
+                    <MapPin className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    {g.lieu && <span className="max-w-[14rem] truncate text-slate-700">{g.lieu}</span>}
                   </a>
                 )}
               </li>

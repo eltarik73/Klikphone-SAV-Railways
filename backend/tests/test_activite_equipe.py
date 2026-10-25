@@ -1164,3 +1164,73 @@ def test_reel_deconnexion_generale_unique(propre):
     assert auth.deconnexion_generale_unique("test_unique") is False
     assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
     _sql(propre, "DELETE FROM params WHERE cle = 'DECONNEXION_GENERALE_test_unique'")
+
+
+# ─── Lieu approximatif (Base Adresse Nationale) ──────────────────────────────
+
+class _Rep:
+    def __init__(self, data, status=200):
+        self._d, self.status_code = data, status
+
+    def json(self):
+        return self._d
+
+
+def test_lieu_approximatif_rue_puis_commune(monkeypatch):
+    import httpx
+    appels = []
+
+    def faux_get(url, params=None, timeout=None):
+        appels.append(params)
+        if params["type"] == "street":
+            return _Rep({"features": [{"properties": {"name": "Rue Croix d'Or", "postcode": "73000", "city": "Chambéry"}}]})
+        return _Rep({"features": []})
+    monkeypatch.setattr(httpx, "get", faux_get)
+    assert presence.lieu_approximatif(45.56443, 5.92109) == "Rue Croix d'Or, 73000 Chambéry"
+    # Seule la position arrondie (3 décimales) part, sans aucune autre donnée
+    assert appels[0] == {"lat": "45.564", "lon": "5.921", "type": "street", "limit": 1}
+
+    def sans_rue(url, params=None, timeout=None):
+        if params["type"] == "street":
+            return _Rep({"features": []})
+        return _Rep({"features": [{"properties": {"name": "Aix-les-Bains", "postcode": "73100", "city": "Aix-les-Bains"}}]})
+    monkeypatch.setattr(httpx, "get", sans_rue)
+    assert presence.lieu_approximatif(45.69, 5.9) == "73100 Aix-les-Bains"
+
+    def panne(url, params=None, timeout=None):
+        raise httpx.ConnectTimeout("délai")
+    monkeypatch.setattr(httpx, "get", panne)
+    assert presence.lieu_approximatif(45.69, 5.9) is None
+    monkeypatch.setattr(httpx, "get", lambda url, params=None, timeout=None: _Rep({}, 503))
+    assert presence.lieu_approximatif(45.69, 5.9) is None
+
+
+def test_reel_lieu_ecrit_en_fond_hors_boutique(propre, monkeypatch):
+    c = propre["c"]
+    _activer(propre, monkeypatch)
+    vus = []
+    monkeypatch.setenv("KP_GEO_LIEU", "1")
+    monkeypatch.setattr(presence, "lieu_approximatif", lambda lat, lng: vus.append((lat, lng)) or "Rue Alexandre Dumas, 73100 Aix-les-Bains")
+
+    class Immediat:
+        def __init__(self, target=None, daemon=None, name=None):
+            self.t = target
+
+        def start(self):
+            self.t()
+    monkeypatch.setattr(presence.threading, "Thread", Immediat)
+    tok, p = _login(c, ALICE)
+    h = {"Authorization": f"Bearer {tok}"}
+    assert c.post("/api/equipe/position", json={"lat": 45.69212, "lng": 5.90934, "precision_m": 20}, headers=h).status_code == 200
+    l = _sql(propre, "SELECT geo_statut, geo_lieu FROM connexions_equipe WHERE id = %s", p["cx"])[0]
+    assert l == {"geo_statut": "hors_boutique", "geo_lieu": "Rue Alexandre Dumas, 73100 Aix-les-Bains"}
+    assert vus == [(45.692, 5.909)]
+    detail = c.get(f"/api/equipe/sessions?utilisateur={ALICE}&jour={presence.aujourdhui_paris().isoformat()}",
+                   headers=_admin()).json()
+    assert any(s.get("geo_lieu") == "Rue Alexandre Dumas, 73100 Aix-les-Bains" for s in detail)
+    # En boutique : aucun lieu demandé
+    vus.clear()
+    tok, p = _login(c, BRUNO)
+    assert c.post("/api/equipe/position", json={"lat": 45.56443, "lng": 5.92109, "precision_m": 20},
+                  headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+    assert vus == []

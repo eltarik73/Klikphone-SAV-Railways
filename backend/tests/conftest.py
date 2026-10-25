@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 
 # Pas de déconnexion générale au démarrage des tests (jetons de module créés avant le lifespan)
 os.environ.setdefault("KP_DECONNEXION_DEMARRAGE", "0")
+# Lieu des connexions (Base Adresse Nationale) : jamais d'appel réseau dans les tests
+os.environ.setdefault("KP_GEO_LIEU", "0")
 
 from app.api.auth import create_token, JWT_SECRET, JWT_ALGORITHM
 

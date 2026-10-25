@@ -100,11 +100,13 @@ export default function DetailJour({ selection, etat, onFermer, onReessayer }) {
                     <PointPresence statut={s.geo_statut} distance={s.geo_distance_m} className="w-2.5 h-2.5" />
                     {libellePresence(s.geo_statut, s.geo_distance_m)}
                   </span>
+                  {/* Lieu de la connexion hors de la boutique : l'adresse d'abord, la carte au clic */}
                   {lienCarte(s.geo_lat, s.geo_lng) && (
                     <a href={lienCarte(s.geo_lat, s.geo_lng)} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 min-h-11 text-brand-700 font-medium underline underline-offset-2 hover:text-brand-800 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                      aria-label={`Voir sur la carte la position approximative de ${s.debut} (s’ouvre dans un nouvel onglet)`}>
-                      <MapPin className="w-3.5 h-3.5" aria-hidden="true" /> Voir sur la carte
+                      className="inline-flex items-center gap-1 min-h-11 text-slate-800 font-medium underline decoration-slate-300 underline-offset-2 hover:text-brand-800 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      aria-label={`${s.geo_lieu ? `Près de ${s.geo_lieu}` : 'Position approximative'} à ${s.debut} : voir sur la carte (s’ouvre dans un nouvel onglet)`}>
+                      <MapPin className="w-3.5 h-3.5 text-brand-700 shrink-0" aria-hidden="true" />
+                      {s.geo_lieu ? `Près de ${s.geo_lieu}` : 'Voir sur la carte'}
                     </a>
                   )}
                   {lienCarte(s.geo_lat, s.geo_lng) && s.geo_precision_m > 200 && (

@@ -412,6 +412,8 @@ _DDL_ALTERS = [
     # (activité de l'équipe, carte de l'administrateur) ; effacée à 60 jours comme le reste
     "ALTER TABLE connexions_equipe ADD COLUMN IF NOT EXISTS geo_lat DOUBLE PRECISION",
     "ALTER TABLE connexions_equipe ADD COLUMN IF NOT EXISTS geo_lng DOUBLE PRECISION",
+    # Lieu approximatif de cette position (rue et commune, Base Adresse Nationale)
+    "ALTER TABLE connexions_equipe ADD COLUMN IF NOT EXISTS geo_lieu TEXT",
     "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS attention TEXT",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS points_fidelite INTEGER DEFAULT 0",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS total_depense DECIMAL(10,2) DEFAULT 0",

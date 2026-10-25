@@ -458,6 +458,25 @@ describe('Page « Activité de l’équipe »', () => {
     expect(within(table).getAllByRole('columnheader')).toHaveLength(9);
   });
 
+  it('détail d’un jour : connexion hors de la boutique → adresse approximative, carte au clic', async () => {
+    apiMock.getActiviteEquipe.mockResolvedValue(activite());
+    apiMock.getSessionsEquipe.mockResolvedValue([
+      { ...SESSIONS_NOUR_LUNDI[0], geo_statut: 'hors_boutique', geo_distance_m: 14500, geo_precision_m: 20,
+        geo_lat: 45.692, geo_lng: 5.909, geo_lieu: 'Rue Alexandre Dumas, 73100 Aix-les-Bains' },
+      { ...SESSIONS_NOUR_LUNDI[1], geo_statut: 'imprecise', geo_precision_m: 900, geo_lat: 51.507, geo_lng: -0.128, geo_lieu: null },
+    ]);
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /^Nour, lundi 19 octobre/ }));
+    const panneau = await screen.findByRole('region', { name: /Nour · lundi 19 octobre/ });
+    const lignes = await within(panneau).findAllByRole('listitem');
+    const adresse = within(lignes[0]).getByRole('link', { name: /Près de Rue Alexandre Dumas, 73100 Aix-les-Bains/ });
+    expect(adresse).toHaveTextContent('Près de Rue Alexandre Dumas, 73100 Aix-les-Bains');
+    expect(adresse).toHaveAttribute('href', 'https://www.openstreetmap.org/?mlat=45.692&mlon=5.909#map=16/45.692/5.909');
+    expect(adresse).toHaveAttribute('target', '_blank');
+    // Adresse introuvable (étranger, service indisponible) : la carte seule
+    expect(within(lignes[1]).getByRole('link', { name: /voir sur la carte/i })).toHaveTextContent('Voir sur la carte');
+  });
+
   it('détail d’un jour au clic : sessions, poste, appareil, motif ; Échap ferme et rend le focus', async () => {
     apiMock.getActiviteEquipe.mockResolvedValue(activite());
     apiMock.getSessionsEquipe.mockResolvedValue(SESSIONS_NOUR_LUNDI);

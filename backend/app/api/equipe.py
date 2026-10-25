@@ -220,6 +220,8 @@ def _enregistrer_position(corps, user: dict) -> dict:
         precision = min(precision, 1_000_000)
     if not presence.enregistrer_position(session["id"], statut, distance, precision, lat, lng):
         raise HTTPException(409, "Présence déjà vérifiée pour cette session")
+    if lat is not None:
+        presence.completer_lieu(session["id"], presence.arrondi_position(lat), presence.arrondi_position(lng))
     return {"ok": True}
 
 
@@ -343,6 +345,7 @@ def _connectes(cur, en_ligne: datetime, couleurs: dict) -> list:
         "geo_precision_m": r.get("geo_precision_m"),
         "geo_lat": r.get("geo_lat"),
         "geo_lng": r.get("geo_lng"),
+        "geo_lieu": r.get("geo_lieu"),
     } for r in cur.fetchall() or []]
 
 
@@ -448,6 +451,7 @@ def _session_api(r: dict, jour: Optional[date] = None, en_ligne: Optional[dateti
         "geo_precision_m": r["geo_precision_m"],
         "geo_lat": r.get("geo_lat"),
         "geo_lng": r.get("geo_lng"),
+        "geo_lieu": r.get("geo_lieu"),
         "en_cours": bool(r["fin"] is None and en_ligne is not None and r["derniere_activite"] >= en_ligne),
     }
     return out
@@ -519,8 +523,9 @@ def _note(reglages: dict) -> dict:
              "Si la vérification de présence est activée : son résultat (en boutique, hors boutique, "
              "position imprécise, refusée, indisponible), la distance à la boutique arrondie à 50 m, la "
              "précision annoncée par l'appareil et, lorsque vous n'êtes pas en boutique ou que la position "
-             "est imprécise, votre position approximative (à environ 100 m près), que le gérant peut "
-             "afficher sur une carte. En boutique, seule la mention « en boutique » est gardée.",
+             "est imprécise, votre position approximative (à environ 100 m près) et le lieu correspondant "
+             "(nom de la rue et de la commune), que le gérant peut afficher sur une carte. En boutique, "
+             "seule la mention « en boutique » est gardée.",
          ]},
         {"titre": "Fonctionnement de la vérification de présence",
          "liste": [
@@ -530,7 +535,9 @@ def _note(reglages: dict) -> dict:
              "rien entre deux connexions ni en dehors de l'application.",
              "Votre position est transmise une seule fois au serveur pour calculer la distance à la "
              "boutique : seuls le résultat, la distance arrondie, la précision et, hors de la boutique, la "
-             "position approximative (à environ 100 m près) sont gardés.",
+             "position approximative (à environ 100 m près) sont gardés. Le nom de la rue et de la commune "
+             "est obtenu à partir de cette position arrondie auprès de la Base Adresse Nationale, service "
+             "public de l'État.",
              "Votre navigateur vous demande l'autorisation : vous pouvez refuser, par exemple un jour de "
              "repos ou hors de la boutique. L'application fonctionne normalement, seul le refus est noté, "
              "et un refus n'entraîne aucune conséquence.",
@@ -551,10 +558,12 @@ def _note(reglages: dict) -> dict:
                   "l'application) et Supabase (hébergement de la base de données), sociétés établies hors de "
                   "l'Union européenne. Lorsque des données sont traitées hors de l'Union européenne, le "
                   "transfert repose sur les garanties prévues par le RGPD (décision d'adéquation ou clauses "
-                  "contractuelles types)."},
+                  "contractuelles types). Pour retrouver la rue et la commune, seule la position arrondie (sans "
+                  "votre nom ni aucune autre donnée) est transmise à la Base Adresse Nationale (service public "
+                  "de l'État, en France)."},
         {"titre": "Durées de conservation",
          "liste": [
-             f"Résultat de la vérification de présence et position approximative : "
+             f"Résultat de la vérification de présence, position et lieu approximatifs : "
              f"{presence.CONSERVATION_POSITION_JOURS} jours (2 mois), puis effacés.",
              f"Journal des connexions : {presence.CONSERVATION_JOURNAL_JOURS} jours (6 mois), puis supprimé.",
              f"Traces des consultations et des exports par l'administrateur : "
@@ -799,8 +808,8 @@ def export_csv(request: Request, utilisateur: Optional[str] = None, depuis: Opti
     w = csv.writer(sortie, delimiter=";", lineterminator="\r\n")
     w.writerow(["Salarié", "Espace", "Poste", "Date", "Connexion", "Dernière activité", "Fin", "Durée (min)",
                 "Motif de fin", "Type d'appareil", "Marque", "Modèle", "Système", "Navigateur", "Actions",
-                "Présence", "Distance boutique (m)", "Précision (m)", "Position approximative",
-                "Empreinte réseau"])
+                "Présence", "Distance boutique (m)", "Précision (m)", "Lieu approximatif",
+                "Position approximative", "Empreinte réseau"])
     for r in rows:
         s = _session_api(r)
         a = s["appareil"]
@@ -809,6 +818,7 @@ def export_csv(request: Request, utilisateur: Optional[str] = None, depuis: Opti
             s["fin"] or "En cours", s["duree_min"], _MOTIFS.get(r["fin_motif"] or "", ""), a["type"],
             a["marque"], a["modele"], a["systeme"], a["navigateur"], s["actions"],
             _PRESENCES.get(r["geo_statut"] or "", ""), r["geo_distance_m"], r["geo_precision_m"],
+            r.get("geo_lieu") or "",
             f"{r['geo_lat']:.3f}, {r['geo_lng']:.3f}" if r.get("geo_lat") is not None and r.get("geo_lng") is not None else "",
             r["ip_empreinte"],
         )])

@@ -1,0 +1,1 @@
+import{r as a}from"./vendor-react-D1nby2Wa.js";import{a as n}from"./index-DGsenYBG.js";function i(){const[e,r]=a.useState(null);return a.useEffect(()=>{let t=!0;return Promise.resolve().then(()=>n.getSmsEtat()).then(s=>{t&&r(s||null)}).catch(()=>{t&&r(null)}),()=>{t=!1}},[]),{actif:!!e?.disponible,etat:e}}export{i as u};
