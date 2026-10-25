@@ -54,10 +54,10 @@ PARAM_LAT = "BOUTIQUE_LAT"
 PARAM_LNG = "BOUTIQUE_LNG"
 PARAMS = (PARAM_ACTIF, PARAM_RAYON, PARAM_LAT, PARAM_LNG)
 
-# Coordonnées APPROXIMATIVES du 79 Place Saint-Léger, 73000 Chambéry (à confirmer depuis le
-# poste de la boutique : « Enregistrer la position de la boutique »)
-BOUTIQUE_LAT_DEFAUT = 45.5656
-BOUTIQUE_LNG_DEFAUT = 5.9215
+# 79 Place Saint-Léger, 73000 Chambéry, d'après la Base Adresse Nationale (point du numéro) :
+# référence validée d'office ; « Enregistrer la position de la boutique » peut l'affiner
+BOUTIQUE_LAT_DEFAUT = 45.564435
+BOUTIQUE_LNG_DEFAUT = 5.921091
 RAYON_DEFAUT_M = 150
 RAYON_MIN_M, RAYON_MAX_M = 50, 1000
 # Au-delà de PRECISION_MAX_M, aucune conclusion (« imprecise ») : un ordinateur localisé par son
@@ -522,15 +522,17 @@ def lire_reglages(cur=None) -> dict:
     except (TypeError, ValueError):
         rayon = RAYON_DEFAUT_M
     rayon = min(RAYON_MAX_M, max(RAYON_MIN_M, rayon))
-    lat, lng, confirmee = BOUTIQUE_LAT_DEFAUT, BOUTIQUE_LNG_DEFAUT, False
+    lat, lng, par_defaut = BOUTIQUE_LAT_DEFAUT, BOUTIQUE_LNG_DEFAUT, True
     if coordonnees_valides(v.get(PARAM_LAT), v.get(PARAM_LNG)):
-        lat, lng, confirmee = float(v[PARAM_LAT]), float(v[PARAM_LNG]), True
+        lat, lng, par_defaut = float(v[PARAM_LAT]), float(v[PARAM_LNG]), False
     return {
         "interrupteur": (v.get(PARAM_ACTIF) or "").strip() == "1",
         "rayon_m": rayon,
         "boutique_lat": lat,
         "boutique_lng": lng,
-        "boutique_position_confirmee": confirmee,
+        # L'adresse officielle de la boutique vaut confirmation (plus d'étape à faire)
+        "boutique_position_confirmee": True,
+        "boutique_position_par_defaut": par_defaut,
     }
 
 

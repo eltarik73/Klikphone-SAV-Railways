@@ -389,12 +389,14 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                 </form>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {r.boutique_position_confirmee
-                    ? <span className="badge badge-success">Position de la boutique enregistrée</span>
-                    : <span className="badge badge-warning">Position par défaut, à confirmer</span>}
+                  {r.boutique_position_confirmee === false
+                    ? <span className="badge badge-warning">Position par défaut, à confirmer</span>
+                    : r.boutique_position_par_defaut
+                      ? <span className="badge badge-success">Adresse de la boutique (79 Place Saint-Léger)</span>
+                      : <span className="badge badge-success">Position relevée dans la boutique</span>}
                   <button type="button" className="btn-secondary min-h-[44px] h-auto whitespace-normal text-left" onClick={enregistrerBoutique} disabled={occupe === 'boutique'}>
                     {occupe === 'boutique' ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MapPin aria-hidden="true" />}
-                    Enregistrer la position de la boutique (depuis ce poste)
+                    Affiner depuis ce poste (facultatif)
                   </button>
                 </div>
               </section>

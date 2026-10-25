@@ -606,6 +606,7 @@ def _reglages_api(etat: dict) -> dict:
         "boutique_lat": reglages["boutique_lat"],
         "boutique_lng": reglages["boutique_lng"],
         "boutique_position_confirmee": reglages["boutique_position_confirmee"],
+        "boutique_position_par_defaut": reglages.get("boutique_position_par_defaut", False),
         # Dernière remise de la version en vigueur (null : remise à personne)
         "information_remise_le": derniere["remise_le"] if derniere else None,
         "information_remise_par": derniere["remise_par"] if derniere else None,

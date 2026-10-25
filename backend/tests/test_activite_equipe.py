@@ -619,7 +619,8 @@ def test_reel_pointage_inactif_par_defaut_et_activation_conditionnee(propre, mon
     g = c.get("/api/equipe/reglages", headers=_admin()).json()
     assert g["pointage_actif"] is False and g["information_remise_le"] is None and g["information_remise"] is False
     assert "L1222-4" in g["pointage_blocage"]
-    assert g["boutique_position_confirmee"] is False and g["rayon_m"] == 150
+    # Adresse de la boutique (Base Adresse Nationale) validée d'office
+    assert g["boutique_position_confirmee"] is True and g["boutique_position_par_defaut"] is True and g["rayon_m"] == 150
     assert g["conservation"] == {"position_jours": 60, "journal_jours": 183, "traces_jours": 365}
     noms = [x["utilisateur"] for x in g["remises"]]
     assert {ADMIN, ALICE, BRUNO} <= set(noms) and ROBOT not in noms
@@ -633,13 +634,12 @@ def test_reel_pointage_inactif_par_defaut_et_activation_conditionnee(propre, mon
     g = r.json()
     assert all(x["a_jour"] for x in g["remises"]) and g["membres_sans_note"] == [] and g["information_remise"] is True
     assert g["information_remise_par"] == ADMIN and g["information_remise_le"].endswith("Z")
-    # Activation refusée tant que la position de la boutique n'est pas confirmée (position par défaut)
-    r = c.put("/api/equipe/reglages", json={"pointage_actif": True}, headers=_admin())
-    assert r.status_code == 409 and "position de la boutique" in r.json()["detail"]
+    # Position de la boutique : rien à confirmer, on peut l'affiner (facultatif)
     assert c.get("/api/equipe/position/config", headers=h).json() == {"actif": False}
-    r = c.post("/api/equipe/reglages/position-boutique", json={"lat": 45.5656, "lng": 5.9215, "precision_m": 15},
+    r = c.post("/api/equipe/reglages/position-boutique", json={"lat": 45.5645, "lng": 5.9211, "precision_m": 15},
                headers=_admin())
     assert r.status_code == 200 and r.json()["pointage_blocage"] is None and r.json()["pointage_actif"] is False
+    assert r.json()["boutique_position_par_defaut"] is False
     r = c.put("/api/equipe/reglages", json={"pointage_actif": True}, headers=_admin())
     assert r.status_code == 200 and r.json()["pointage_actif"] is True
     assert c.get("/api/equipe/position/config", headers=h).json() == {"actif": True}
