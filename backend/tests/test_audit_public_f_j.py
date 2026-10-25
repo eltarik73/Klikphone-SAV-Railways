@@ -305,7 +305,9 @@ def test_g_regenerer_le_jeton(client, auth_headers):
     def h(sql, params):
         if "SELECT t.id, c.anonymise_le FROM tickets t" in sql:
             return {"id": 42, "anonymise_le": etat["anonymise_le"]} if params[0] == 42 else None
-        if sql.startswith("UPDATE tickets SET suivi_token = %s WHERE id = %s RETURNING"):
+        if sql.startswith("UPDATE tickets SET suivi_token = %s, date_maj = %s WHERE id = %s RETURNING"):
+            # Le dossier est daté : le nouveau jeton vaut de nouveau SUIVI_JETON_JOURS jours
+            assert params[2] == 42 and re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", params[1])
             etat["jeton"] = params[0]
             return {"suivi_token": params[0]}
         return None
