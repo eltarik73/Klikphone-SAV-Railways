@@ -2,8 +2,9 @@
  * Borne /client et carte à gratter du suivi :
  * - « Achat » réservé au personnel (sur la borne publique, aucun ticket orphelin) ;
  * - « Nouveau ticket » du personnel : retour au tableau de bord en haut de page ;
- * - carte à gratter : preuve du suivi (jeton du lien ou 4 derniers chiffres) et
- *   « Révéler sans gratter » au clavier, résultat annoncé (role=status).
+ * - carte à gratter : preuve du suivi fournie par la page ({ t } jeton du lien ou { tel } numéro
+ *   complet, plus de « 4 derniers chiffres ») et « Révéler sans gratter » au clavier, résultat
+ *   annoncé (role=status).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
@@ -14,7 +15,7 @@ const { apiMock } = vi.hoisted(() => ({
     getPublicConfig: vi.fn(), getConfidentialite: vi.fn(), getCategories: vi.fn(), getPannes: vi.fn(),
     createOrGetClient: vi.fn(), createTicket: vi.fn(), createPartAuto: vi.fn(), learnTerm: vi.fn(),
     updateTicket: vi.fn(), changeStatus: vi.fn(), getClient: vi.fn(),
-    get: vi.fn(), post: vi.fn(),
+    get: vi.fn(), post: vi.fn(), getGrattage: vi.fn(), gratter: vi.fn(),
   },
 }));
 
@@ -126,42 +127,57 @@ describe('« Nouveau ticket » du personnel : tableau de bord rouvert en haut', 
 });
 
 describe('ScratchCard : preuve du suivi et accès clavier', () => {
-  it('sans jeton : 4 derniers chiffres demandés, puis « Révéler sans gratter » et résultat annoncé', async () => {
-    apiMock.get.mockResolvedValue({ actif: true, eligible: true, preuve_requise: true, frequence: 10 });
-    apiMock.post.mockImplementation((path) => Promise.resolve(path.endsWith('/etat')
-      ? { actif: true, eligible: true, deja_gratte: false, frequence: 10 }
-      : { gagnant: false, gain: null, gain_label: null }));
-    render(<ScratchCard ticketCode="KP-000021" />);
-    const champ = await screen.findByLabelText('4 derniers chiffres de votre téléphone');
-    expect(apiMock.get).toHaveBeenCalledWith('/api/fidelite/grattage/KP-000021');
-    fireEvent.change(champ, { target: { value: '4567' } });
-    fireEvent.click(screen.getByRole('button', { name: /Valider/ }));
+  it('preuve { tel } de la page : état lu avec la preuve, « Révéler sans gratter » et résultat annoncé', async () => {
+    apiMock.getGrattage.mockResolvedValue({ actif: true, eligible: true, deja_gratte: false, frequence: 10 });
+    apiMock.gratter.mockResolvedValue({ gagnant: false, gain: null, gain_label: null });
+    render(<ScratchCard ticketCode="KP-000021" preuve={{ tel: '0612345679' }} />);
     const bouton = await screen.findByRole('button', { name: /Révéler sans gratter/ });
-    expect(apiMock.post).toHaveBeenCalledWith('/api/fidelite/grattage/KP-000021/etat', { tel4: '4567' });
+    expect(apiMock.getGrattage).toHaveBeenCalledWith('KP-000021', { tel: '0612345679' });
+    expect(screen.queryByLabelText(/4 derniers chiffres/)).toBeNull();
     expect(bouton).toHaveClass('min-h-11');
     bouton.focus();
     expect(document.activeElement).toBe(bouton);
     fireEvent.click(bouton);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Pas cette fois'));
-    expect(apiMock.post).toHaveBeenLastCalledWith('/api/fidelite/grattage/KP-000021', { tel4: '4567' });
+    expect(apiMock.gratter).toHaveBeenCalledWith('KP-000021', { tel: '0612345679' });
     expect(screen.queryByRole('button', { name: /Révéler sans gratter/ })).not.toBeInTheDocument();
   });
 
-  it('jeton du lien : état lu avec ?t=, grattage avec { t }', async () => {
+  it('jeton du lien (sans preuve de la page) : état lu avec { t }, grattage avec { t }', async () => {
     window.location.search = '?ticket=KP-000021&t=JetonDuLien_0123456789'; // setup.js : location simulée
-    apiMock.get.mockResolvedValue({ actif: true, eligible: true, deja_gratte: false, frequence: 10 });
-    apiMock.post.mockResolvedValue({ gagnant: true, gain: 'film', gain_label: 'Film verre trempé OFFERT' });
+    apiMock.getGrattage.mockResolvedValue({ actif: true, eligible: true, deja_gratte: false, frequence: 10 });
+    apiMock.gratter.mockResolvedValue({ gagnant: true, gain: 'film', gain_label: 'Film verre trempé OFFERT' });
     render(<ScratchCard ticketCode="KP-000021" />);
     fireEvent.click(await screen.findByRole('button', { name: /Révéler sans gratter/ }));
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('GAGNÉ'));
-    expect(apiMock.get).toHaveBeenCalledWith('/api/fidelite/grattage/KP-000021?t=JetonDuLien_0123456789');
-    expect(apiMock.post).toHaveBeenCalledWith('/api/fidelite/grattage/KP-000021', { t: 'JetonDuLien_0123456789' });
+    expect(apiMock.getGrattage).toHaveBeenCalledWith('KP-000021', { t: 'JetonDuLien_0123456789' });
+    expect(apiMock.gratter).toHaveBeenCalledWith('KP-000021', { t: 'JetonDuLien_0123456789' });
+  });
+
+  it('preuve refusée par le serveur (403) ou ancien serveur sans preuve : pas de carte', async () => {
+    apiMock.getGrattage.mockRejectedValue(Object.assign(new Error('refus'), { status: 403 }));
+    const { container, unmount } = render(<ScratchCard ticketCode="KP-000021" preuve={{ tel: '0612345679' }} />);
+    await waitFor(() => expect(apiMock.getGrattage).toHaveBeenCalled());
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+    unmount();
+    apiMock.getGrattage.mockResolvedValue({ actif: true, eligible: true, preuve_requise: true, frequence: 10 });
+    const r2 = render(<ScratchCard ticketCode="KP-000021" />);
+    await waitFor(() => expect(r2.container).toBeEmptyDOMElement());
+  });
+
+  it('grattage refusé (lien expiré) : rien n\'est gratté, message et nouvel essai possible', async () => {
+    apiMock.getGrattage.mockResolvedValue({ actif: true, eligible: true, deja_gratte: false, frequence: 10 });
+    apiMock.gratter.mockRejectedValue(Object.assign(new Error('refus'), { status: 403 }));
+    render(<ScratchCard ticketCode="KP-000021" preuve={{ t: 'JetonPerime_0123456789' }} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Révéler sans gratter/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/rouvrez votre suivi/);
+    expect(screen.getByRole('button', { name: /Révéler sans gratter/ })).toBeInTheDocument();
   });
 
   it('ticket pas encore rendu ni payé : pas de carte', async () => {
-    apiMock.get.mockResolvedValue({ actif: true, eligible: false, preuve_requise: true, frequence: 10 });
-    const { container } = render(<ScratchCard ticketCode="KP-000022" />);
-    await waitFor(() => expect(apiMock.get).toHaveBeenCalled());
+    apiMock.getGrattage.mockResolvedValue({ actif: true, eligible: false, deja_gratte: false, frequence: 10 });
+    const { container } = render(<ScratchCard ticketCode="KP-000022" preuve={{ tel: '0612345679' }} />);
+    await waitFor(() => expect(apiMock.getGrattage).toHaveBeenCalled());
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 });

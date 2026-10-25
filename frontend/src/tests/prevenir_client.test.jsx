@@ -131,6 +131,9 @@ describe('rendu du modèle : variables partagées avec MessageComposer', () => {
       + '79 Place Saint Leger, 73000 Chambery | Lundi-Samedi 10h-19h | https://avis.test/klik | '
       + 'https://sav.test/suivi?ticket=KP-000042 | {inconnu}');
     expect(ctx.totalTicket).toBe(89);
+    // Fiche avec son jeton de suivi : le lien ouvre le suivi sans redemander le téléphone (jeton d'abord, code en fin)
+    const avecJeton = contexteMessage(ticket({ suivi_token: 'Jeton_Fiche-0123456789' }), { origin: 'https://sav.test' });
+    expect(avecJeton.vars.lien_suivi).toBe('https://sav.test/suivi?t=Jeton_Fiche-0123456789&ticket=KP-000042');
   });
 
   it('sans montants du serveur : lignes − réduction − acompte ; « $ » d’un prénom laissé tel quel', () => {

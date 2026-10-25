@@ -387,7 +387,7 @@ def test_creation_ticket_discord_et_apprentissage_apres_la_reponse(monkeypatch):
     # Personnel connecté : seul cas où les termes sont appris (la borne anonyme n'alimente rien)
     out = tickets.create_ticket(TicketCreate(client_id=1, categorie="Smartphone", marque="Apple", modele="iPhone 12", panne="Batterie HS"), bg,
                                 user={"sub": "Sophie"})
-    assert out == {"id": 5, "ticket_code": "KP-000005"}
+    assert out == {"id": 5, "ticket_code": "KP-000005", "suivi_token": "j"}   # jeton rendu au créateur
     assert directs == []   # rien d'externe dans le chemin de la réponse
     assert [t.func for t in bg.tasks] == [tickets.learn_terms, tickets.notif_nouveau_ticket]
     assert bg.tasks[1].args == ("KP-000005", "Apple iPhone 12", "Batterie HS")

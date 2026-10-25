@@ -11,7 +11,7 @@ mise à jour du prix est créée (services/prix.creer_proposition, écart de plu
 import logging
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 from app.database import get_cursor
 from app.api.auth import client_ip, get_current_user, get_optional_user
@@ -35,9 +35,14 @@ STATUTS_RECUS = ("Reçu", "Donné au client", "Clôturé")
 # Commande pas encore arrivée : le ticket attend toujours sa pièce
 STATUTS_EN_COURS = ("Panier", "En attente", "Commandée")
 
-# /auto sans session (borne) : juste après POST /api/tickets, une seule fois, ticket neuf
+# /auto sans session (borne) : juste après POST /api/tickets, une seule fois, ticket neuf,
+# et avec la preuve du suivi du ticket visé (jeton rendu à la création, ou numéro complet)
 AUTO_DELAI_MINUTES = 10
-_LIMITEUR_AUTO = LimiteurDebit(limite=10, fenetre=60)
+_LIMITEUR_AUTO = LimiteurDebit(
+    limite=10, fenetre=60, limite_globale=60, fenetre_globale=3600,
+    message="Trop de commandes depuis ce poste : réessayez dans une minute.",
+    message_global="Trop de commandes en ce moment : réessayez dans quelques minutes.",
+)
 # Statuts que la commande automatique ne fait jamais reculer
 STATUTS_SANS_RECUL = ("Réparation terminée", "Rendu au client", "Clôturé")
 
@@ -196,15 +201,22 @@ class CommandeAutoIn(BaseModel):
     fournisseur: Optional[str] = Field("", max_length=100)
     prix: Optional[float] = Field(None, ge=0, le=10000)
     notes: Optional[str] = Field("", max_length=2000)
+    # Sans session : preuve du suivi du ticket visé — jeton `t` (suivi_token rendu par
+    # POST /api/tickets) ou numéro complet `tel` (ou en-têtes X-Suivi-Token / X-Suivi-Tel)
+    t: Optional[str] = Field(None, max_length=64)
+    tel: Optional[str] = Field(None, max_length=40)
 
 
 @router.post("/auto", response_model=dict)
 def create_part_auto(data: CommandeAutoIn, request: Request, user: Optional[dict] = Depends(get_optional_user)):
     """Commande de pièce créée avec le ticket (borne /client, « Nouveau ticket » du personnel).
 
-    Sans session, la borne ne peut viser que le ticket qu'elle vient de créer : moins de
-    10 minutes, encore « En attente de diagnostic » et sans commande (sinon 409). Un ticket
-    terminé, rendu ou clôturé ne recule jamais en « En attente de pièce ».
+    Sans session, la borne doit prouver qu'elle est le client du ticket visé (suivi.preuve_suivi :
+    jeton `t` rendu à la création du ticket, ou numéro complet `tel` ; 403 sinon — un ticket
+    inexistant reçoit le même 403 qu'un ticket sans preuve), et ne peut viser que le ticket
+    qu'elle vient de créer : moins de 10 minutes, encore « En attente de diagnostic » et sans
+    commande (sinon 409). Un ticket terminé, rendu ou clôturé ne recule jamais en « En attente
+    de pièce ». Avec session : inchangé.
     """
     if not user:
         _LIMITEUR_AUTO.verifier(client_ip(request))
@@ -218,6 +230,12 @@ def create_part_auto(data: CommandeAutoIn, request: Request, user: Optional[dict
             (AUTO_DELAI_MINUTES, data.ticket_id),
         )
         t = cur.fetchone()
+        if not user:
+            from app.api.suivi import preuve_suivi, refus_suivi
+            if not t:
+                # Même réponse qu'un ticket existant sans preuve : l'identifiant séquentiel n'apprend rien
+                refus_suivi("lien_invalide" if data.t else "preuve_requise")
+            preuve_suivi(cur, request, t["ticket_code"] or "", data.t, data.tel)
         if not t:
             raise HTTPException(404, "Ticket non trouvé")
         ancien = t["statut"] or ""
@@ -369,20 +387,24 @@ def delete_part(commande_id: int, user: dict = Depends(get_current_user)):
 
 # ─── PUBLIC ENDPOINT (for suivi page) ──────────────────────────
 @router.get("/public/{ticket_code}")
-def get_commandes_public(ticket_code: str, request: Request):
-    """Retourne les commandes liées à un ticket (public, infos limitées)."""
-    # Même limite que GET /api/tickets/code (codes séquentiels : énumérables)
-    from app.api.tickets import _rate_limit_public_lookup
-    _rate_limit_public_lookup(request)
+def get_commandes_public(
+    ticket_code: str,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
+):
+    """Commandes liées à un ticket (suivi client, infos limitées). Preuve du suivi exigée :
+    jeton `t`, numéro de téléphone complet `tel` ou session du personnel (403 sinon)."""
+    from app.api.suivi import preuve_suivi
     with get_cursor() as cur:
+        tk = preuve_suivi(cur, request, ticket_code, t, tel)
         cur.execute("""
             SELECT c.id, c.description as piece, c.statut,
                    c.date_commande, c.date_reception
             FROM commandes_pieces c
-            JOIN tickets t ON t.id = c.ticket_id
-            WHERE t.ticket_code = %s
+            WHERE c.ticket_id = %s
             ORDER BY c.date_creation DESC
-        """, (ticket_code,))
+        """, (tk["id"],))
         rows = cur.fetchall()
         results = []
         for r in rows:

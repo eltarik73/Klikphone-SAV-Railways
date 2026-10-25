@@ -20,10 +20,16 @@ from pydantic import ValidationError
 
 from app.api import tickets
 from app.api.auth import create_token
+from tests.conftest import corps_borne
 from app.models import MembreEquipeUpdate, TicketCreate, TicketUpdate, normaliser_pattern
 
 H = {"Authorization": f"Bearer {create_token('accueil', 'Sophie')}"}
 CORPS = {"client_id": 1, "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie"}
+
+
+def BORNE(ip="testclient", cid=1):
+    """Même corps, voie anonyme : la référence client signée remplace client_id (audit A)."""
+    return corps_borne(CORPS, cid, ip)
 
 
 def _cursor(fetchone=None):
@@ -145,10 +151,10 @@ def test_creation_anonyme_limitee_par_ip(client):
     ip = {"X-Forwarded-For": "203.0.113.77"}
     with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi"), \
             patch.object(tickets, "notif_nouveau_ticket", lambda *_: None):
-        codes = [client.post("/api/tickets", json=CORPS, headers=ip).status_code for _ in range(16)]
+        codes = [client.post("/api/tickets", json=BORNE("203.0.113.77"), headers=ip).status_code for _ in range(16)]
         assert codes[:15] == [200] * 15 and codes[15] == 429
         # Une autre IP, ou le personnel connecté depuis la même : pas concernés
-        assert client.post("/api/tickets", json=CORPS, headers={"X-Forwarded-For": "203.0.113.78"}).status_code == 200
+        assert client.post("/api/tickets", json=BORNE("203.0.113.78"), headers={"X-Forwarded-For": "203.0.113.78"}).status_code == 200
         assert client.post("/api/tickets", json=CORPS, headers={**ip, **H}).status_code == 200
 
 
@@ -158,7 +164,7 @@ def test_creation_anonyme_n_alimente_pas_l_autocompletion(client, monkeypatch):
     monkeypatch.setattr(tickets, "notif_nouveau_ticket", lambda *_: None)
     cur, cm = _cursor(fetchone={"id": 41})
     with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi"):
-        assert client.post("/api/tickets", json={**CORPS, "panne": "Arnaque visitez"}).status_code == 200
+        assert client.post("/api/tickets", json={**BORNE(), "panne": "Arnaque visitez"}).status_code == 200
         assert appris == []
         assert client.post("/api/tickets", json=CORPS, headers=H).status_code == 200
     assert appris and appris[0]["panne"] == "Batterie"
@@ -169,7 +175,7 @@ def test_creation_anonyme_n_alimente_pas_l_autocompletion(client, monkeypatch):
 ])
 def test_creation_renseigne_cree_par(client, staff, source, attendu):
     cur, cm = _cursor(fetchone={"id": 41})
-    corps = {**CORPS, **({"source": source} if source else {})}
+    corps = {**(CORPS if staff else BORNE()), **({"source": source} if source else {})}
     with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi"):
         r = client.post("/api/tickets", json=corps, headers=H if staff else {})
     assert r.status_code == 200
@@ -177,11 +183,36 @@ def test_creation_renseigne_cree_par(client, staff, source, attendu):
     assert "cree_par, priorite)" in sql and params[-2] == attendu
 
 
+def test_creation_renvoie_le_jeton_de_suivi_au_createur(client):
+    """Le jeton (= QR imprimé) part dans la réponse de création, et seulement là : la borne ouvre
+    « Suivre ma réparation » sans redemander le téléphone. S'il n'a pas pu être posé, la création
+    aboutit quand même (suivi_token null : la page de suivi demandera le numéro)."""
+    cur, cm = _cursor(fetchone={"id": 41})
+    ip = {"X-Forwarded-For": "203.0.113.90"}
+    with patch("app.api.tickets.get_cursor", cm), \
+            patch("app.api.public_documents.jeton_suivi", lambda tid: f"JetonFictif_{tid:016d}"), \
+            patch.object(tickets, "notif_nouveau_ticket", lambda *_: None):
+        r = client.post("/api/tickets", json=BORNE("203.0.113.90"), headers=ip)
+    assert r.status_code == 200
+    assert r.json() == {"id": 41, "ticket_code": "KP-000041", "suivi_token": "JetonFictif_0000000000000041"}
+
+    def indisponible(tid):
+        raise RuntimeError("colonne suivi_token absente")
+    with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi", indisponible), \
+            patch.object(tickets, "notif_nouveau_ticket", lambda *_: None):
+        r = client.post("/api/tickets", json=CORPS, headers=H)
+    assert r.status_code == 200 and r.json()["suivi_token"] is None and r.json()["ticket_code"] == "KP-000041"
+
+
 def test_creation_client_inconnu_404(client):
     cur, cm = _cursor()
     cur.execute.side_effect = pg_errors.ForeignKeyViolation("clients")
     with patch("app.api.tickets.get_cursor", cm):
-        r = client.post("/api/tickets", json={**CORPS, "client_id": 999999})
+        r = client.post("/api/tickets", json={**CORPS, "client_id": 999999}, headers=H)
+    assert r.status_code == 404 and "Client" in r.json()["detail"]
+    # Voie anonyme : référence signée d'une fiche disparue → même 404 (clé étrangère)
+    with patch("app.api.tickets.get_cursor", cm):
+        r = client.post("/api/tickets", json=BORNE(cid=999999))
     assert r.status_code == 404 and "Client" in r.json()["detail"]
 
 
@@ -419,10 +450,12 @@ def test_suivi_public_montants_du_serveur(reel):
     solde = _ticket(reel, statut="Clôturé", reparation_supp=LIGNES_89, prix_supp=89, acompte=20, paye=1, tarif_final=89)
     trop = _ticket(reel, statut="Réparation terminée", reparation_supp=LIGNES_89, prix_supp=89, acompte=120)
     du = _ticket(reel, statut="Réparation terminée", reparation_supp=LIGNES_89, prix_supp=89, acompte=20)
-    m = c.get(f"/api/tickets/code/KP-{solde:06d}").json()["montants"]
+    preuve = {"tel": TEL}   # le code seul ne suffit plus (codes séquentiels)
+    assert c.get(f"/api/tickets/code/KP-{solde:06d}").status_code == 403
+    m = c.get(f"/api/tickets/code/KP-{solde:06d}", params=preuve).json()["montants"]
     assert m == {"sous_total": 89.0, "reduction": 0.0, "total": 89.0, "acompte": 20.0, "reste": 0.0, "paye": True}
-    assert c.get(f"/api/tickets/code/KP-{trop:06d}").json()["montants"]["reste"] == 0.0
-    corps = c.get(f"/api/tickets/code/KP-{du:06d}").json()
+    assert c.get(f"/api/tickets/code/KP-{trop:06d}", params=preuve).json()["montants"]["reste"] == 0.0
+    corps = c.get(f"/api/tickets/code/KP-{du:06d}", params=preuve).json()
     assert corps["montants"]["reste"] == 69.0 and corps["paye"] == 0
     # Toujours rien de confidentiel
     assert not {"pin", "pattern", "imei", "notes_internes", "client_id"} & set(corps)
@@ -452,7 +485,7 @@ def test_depot_de_nuit_compte_dans_le_jour_de_paris(reel, monkeypatch):
 
 def test_cree_par_en_base_et_dans_le_reporting(reel):
     c = reel["c"]
-    borne = c.post("/api/tickets", json={**CORPS, "client_id": reel["cid"]}).json()["id"]
+    borne = c.post("/api/tickets", json=BORNE(cid=reel["cid"])).json()["id"]
     staff = c.post("/api/tickets", json={**CORPS, "client_id": reel["cid"]}, headers=H).json()["id"]
     lignes = {r["id"]: r["cree_par"] for r in _sql(reel, "SELECT id, cree_par FROM tickets WHERE id IN (%s, %s)", borne, staff)}
     assert lignes == {borne: "borne", staff: "Sophie"}

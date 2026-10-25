@@ -138,11 +138,25 @@ function jwtExpiry(token) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Preuve d'accès d'une action publique du suivi : jeton du lien (t) sinon 4 derniers chiffres (tel4)
-function suiviProof(preuve) {
+// Preuve d'accès au suivi public : jeton du lien (t) sinon numéro de téléphone complet (tel).
+// Exportée pour les tests ; les 4 derniers chiffres (tel4) ne sont plus acceptés par le serveur.
+export function suiviProof(preuve) {
   if (preuve?.t) return { t: String(preuve.t) };
-  const tel4 = String(preuve?.tel4 || '').replace(/\D/g, '');
-  return tel4.length === 4 ? { tel4 } : {};
+  const tel = String(preuve?.tel || '').replace(/[^\d+]/g, '');
+  return tel.replace(/\D/g, '').length >= 9 ? { tel } : {};
+}
+// Transport de la preuve pour une LECTURE (GET) du suivi : le jeton reste dans l'adresse (c'est le
+// lien lui-même, déjà dans le QR / SMS) ; le numéro de téléphone — donnée personnelle — part dans
+// l'en-tête X-Suivi-Tel, JAMAIS dans l'URL (journaux d'accès du serveur, historique, Referer) :
+// il n'existe plus de repli « ?tel= », le serveur lit l'en-tête sur toutes les lectures du suivi.
+export const SUIVI_TEL_HEADER = 'X-Suivi-Tel';
+// Jeton de suivi en en-tête (POST /api/parts/auto de la borne) : lu par preuve_suivi comme `t`
+export const SUIVI_TOKEN_HEADER = 'X-Suivi-Token';
+export function suiviAcces(preuve) {
+  const p = suiviProof(preuve);
+  if (p.t) return { query: `?t=${encodeURIComponent(p.t)}`, headers: {} };
+  if (p.tel) return { query: '', headers: { [SUIVI_TEL_HEADER]: p.tel } };
+  return { query: '', headers: {} };
 }
 
 // Build stable querystrings — avoids re-allocating URLSearchParams for
@@ -277,8 +291,9 @@ class ApiClient {
     } catch { /* stockage indisponible */ }
   }
 
-  // Appels de fond (polling) : aucune relance, une erreur attend simplement le tour suivant.
-  // Les requêtes sont lancées de façon synchrone dans `fn`, le drapeau est donc bien lu.
+  // Appels de fond (polling) : aucune relance, une erreur attend simplement le tour suivant, et
+  // en-tête X-KP-Fond: 1 (pas d'activité du salarié). Les requêtes doivent être lancées de façon
+  // synchrone dans `fn` (aucun await ni .then avant l'appel) : le drapeau n'est lu qu'à ce moment.
   background(fn) {
     this._background += 1;
     try {
@@ -354,6 +369,9 @@ class ApiClient {
     if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
     const adminToken = auth && sendsAdminToken(path) ? this.getAdminToken() : null;
     if (adminToken && !headers['X-Admin-Token']) headers['X-Admin-Token'] = adminToken;
+    // Appel de fond (rafraîchissement périodique) : le serveur ne le compte pas comme activité du
+    // salarié (journal des connexions) ; un onglet resté ouvert ne prolonge pas la session.
+    if (this._background > 0) headers['X-KP-Fond'] = '1';
 
     const method = String(fetchOptions.method || 'GET').toUpperCase();
     const isGet = method === 'GET' || method === 'HEAD';
@@ -425,6 +443,16 @@ class ApiClient {
     throw e;
   }
 
+  // Lecture du suivi public avec la preuve (fiche, commandes, has-avis, fidélité, grattage) :
+  // jeton `t` en query, numéro de téléphone en en-tête X-Suivi-Tel — jamais dans l'URL, sans
+  // repli : un 403 (preuve_requise, verification_echouee, lien_invalide) remonte tel quel. Les
+  // écritures (message, devis, avis, grattage) mettent déjà la preuve dans le corps.
+  suiviGet(path, preuve) {
+    const { query, headers } = suiviAcces(preuve);
+    if (!headers[SUIVI_TEL_HEADER]) return this.get(`${path}${query}`);
+    return this.request(path, { headers });
+  }
+
   // GET partagé : deux appels identiques en vol ne font qu'une requête, sauf si une écriture
   // a eu lieu entre-temps (la seconde lecture doit voir son effet).
   get(path, options) {
@@ -459,13 +487,31 @@ class ApiClient {
   }
 
   // ─── AUTH ──────────────────────────────────
-  async login(pin, target, utilisateur) {
-    const data = await this.post('/api/auth/login', { pin, target, utilisateur });
+  // `poste` : nom donné à ce poste par l'admin (kp_poste) ; `appareil` : {type, marque, modele,
+  // systeme, navigateur} détecté par lib/pointage (indice seulement : le serveur le recoupe)
+  async login(pin, target, utilisateur, { poste, appareil } = {}) {
+    const data = await this.post('/api/auth/login', {
+      pin, target, utilisateur, poste: poste || undefined, appareil: appareil || undefined,
+    });
     this.setToken(data.access_token);
     this.forgetAdminMode();
     localStorage.setItem('kp_target', data.target);
     localStorage.setItem('kp_user', data.utilisateur);
     return data;
+  }
+
+  // Fin de la session courante dans le journal des connexions (motif « deconnexion »).
+  // Envoyée AVANT d'oublier le jeton, en keepalive (survit à la navigation) ; une erreur réseau
+  // ou un refus ne bloque jamais la déconnexion locale, et un 401 ne déclenche aucune redirection.
+  logoutSession() {
+    if (!this.token || typeof fetch !== 'function') return Promise.resolve(false);
+    try {
+      return fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST', keepalive: true, headers: { Authorization: `Bearer ${this.token}` },
+      }).then((r) => r.ok, () => false);
+    } catch {
+      return Promise.resolve(false);
+    }
   }
 
   logout() {
@@ -491,9 +537,15 @@ class ApiClient {
     return this.get(`/api/tickets${buildQuery(params)}`);
   }
   getTicket(id) { return this.get(`/api/tickets/${id}`); }
-  getTicketByCode(code) { return this.get(`/api/tickets/code/${code}`); }
-  getTicketsByPhone(tel) { return this.get(`/api/tickets/phone/${encodeURIComponent(tel)}`); }
-  createTicket(data) { return this.post('/api/tickets', data); }
+  // Suivi public : fiche d'un ticket avec la preuve ({ t } jeton du lien ou { tel } numéro complet) ;
+  // un membre du personnel connecté n'en a pas besoin (session). Plus de recherche par téléphone seul.
+  getTicketByCode(code, preuve) { return this.suiviGet(`/api/tickets/code/${encodeURIComponent(code)}`, preuve); }
+  // Borne (/client sans session, /depot) : asStaff false → ni session ni élévation, et le client est
+  // désigné par la référence signée `client_ref` rendue par createOrGetClient (jamais un client_id nu).
+  // Personnel (défaut) : session du poste et client_id.
+  createTicket(data, { asStaff = true } = {}) {
+    return this.post('/api/tickets', data, asStaff ? undefined : { auth: false });
+  }
   createRetourSAV(ticketOriginalId, clientId, data) {
     return this.post('/api/tickets', {
       ...data,
@@ -673,13 +725,60 @@ class ApiClient {
     return this.get(`/api/parts${qs ? '?' + qs : ''}`);
   }
   getPartsByTicket(ticketId) { return this.get(`/api/parts?ticket_id=${ticketId}`); }
-  getPublicCommandes(ticketCode) { return this.get(`/api/parts/public/${encodeURIComponent(ticketCode)}`); }
+  getPublicCommandes(ticketCode, preuve) { return this.suiviGet(`/api/parts/public/${encodeURIComponent(ticketCode)}`, preuve); }
   // prix_ht (HT réellement payé) et tarif_cle (« tarifs:123 ») : le serveur en tire une proposition
   // de mise à jour de la grille, jamais une écriture directe du prix
   createPart(data) { return this.post('/api/parts', commandePayload(data)); }
-  createPartAuto(data) { return this.post('/api/parts/auto', data); }
+  // Borne (asStaff false) : sans session, la preuve de suivi du ticket visé est exigée — `t` = le
+  // suivi_token rendu à la création du ticket, dans le corps et en en-tête X-Suivi-Token (preuve_suivi
+  // lit l'un ou l'autre). Personnel (défaut) : session du poste, inchangé.
+  createPartAuto(data, { asStaff = true } = {}) {
+    if (asStaff) return this.post('/api/parts/auto', data);
+    const headers = {};
+    if (data?.t) headers[SUIVI_TOKEN_HEADER] = String(data.t);
+    else if (data?.tel) headers[SUIVI_TEL_HEADER] = String(data.tel);
+    return this.post('/api/parts/auto', data, { auth: false, headers });
+  }
   updatePart(id, data) { return this.patch(`/api/parts/${id}`, commandePayload(data)); }
   deletePart(id) { return this.delete(`/api/parts/${id}`); }
+
+  // ─── ÉQUIPE : journal des connexions et pointage de présence ───
+  // `jeton` : celui de la session qui a lancé le pointage (lib/pointage) ; l'envoi ne peut jamais
+  // tomber sur la session d'un autre salarié qui aurait pris le poste entre-temps.
+  _jetonPointage(jeton) {
+    return jeton ? { auth: false, headers: { Authorization: `Bearer ${jeton}` } } : {};
+  }
+  // Poste du salarié : { actif } seulement (pointage désactivé par défaut) ; jamais relancé
+  getPositionConfig(jeton) {
+    return this.request('/api/equipe/position/config', { retries: 0, cache: 'no-store', ...this._jetonPointage(jeton) });
+  }
+  // Une seule fois par session : { lat, lng, precision_m } | { refus: true } | { indisponible: true }.
+  // Le serveur ne garde que le statut et la distance arrondie, jamais les coordonnées.
+  envoyerPosition(payload, jeton) {
+    return this.request('/api/equipe/position', {
+      method: 'POST', body: JSON.stringify(payload), ...this._jetonPointage(jeton),
+    });
+  }
+  // Admin (rôle + code) : chaque consultation est tracée côté serveur → jamais de relance automatique
+  getActiviteEquipe(semaine) {
+    return this.request(`/api/equipe/activite${buildQuery({ semaine })}`, { retries: 0, cache: 'no-store' });
+  }
+  getSessionsEquipe(utilisateur, jour) {
+    return this.request(`/api/equipe/sessions${buildQuery({ utilisateur, jour })}`, { retries: 0, cache: 'no-store' });
+  }
+  getReglagesEquipe() { return this.request('/api/equipe/reglages', { retries: 0, cache: 'no-store' }); }
+  updateReglagesEquipe(data) { return this.put('/api/equipe/reglages', data); }
+  // Remise de la note (version en vigueur) : sans corps → tous les salariés actifs ;
+  // { membres: [noms] } → ces salariés ; { retirer: [noms] } → confirmation retirée
+  confirmerInformationRemise(corps = {}) { return this.post('/api/equipe/reglages/information-remise', corps); }
+  // Coordonnées de la BOUTIQUE lues sur un poste de la boutique (refusées si trop imprécises)
+  enregistrerPositionBoutique(lat, lng, precision_m) {
+    return this.post('/api/equipe/reglages/position-boutique', { lat, lng, precision_m });
+  }
+  // CSV de la semaine (depuis/jusqua) ou d'un salarié (réponse à une demande d'accès)
+  exportActiviteEquipe({ utilisateur, depuis, jusqua } = {}, filename = 'activite_equipe.csv') {
+    return this.exportFile(`/api/equipe/export.csv${buildQuery({ utilisateur, depuis, jusqua })}`, filename);
+  }
 
   // ─── CONFIG ────────────────────────────────
   getConfig() { return this.get('/api/config'); }
@@ -864,11 +963,13 @@ class ApiClient {
 
   // ─── FIDELITE ─────────────────────────────────
   getFidelite(clientId) { return this.get(`/api/fidelite/${clientId}`); }
-  getFideliteByTicket(ticketCode) { return this.get(`/api/fidelite/ticket/${ticketCode}`); }
+  getFideliteByTicket(ticketCode, preuve) { return this.suiviGet(`/api/fidelite/ticket/${encodeURIComponent(ticketCode)}`, preuve); }
   crediterPoints(data) { return this.post('/api/fidelite/crediter', data); }
   utiliserPoints(data) { return this.post('/api/fidelite/utiliser', data); }
-  getGrattage(ticketCode) { return this.get(`/api/fidelite/grattage/${ticketCode}`); }
-  gratter(ticketCode) { return this.post(`/api/fidelite/grattage/${ticketCode}`); }
+  // Carte à gratter du suivi public : même preuve que la fiche (état : jeton en query / numéro en
+  // en-tête, cf. suiviGet ; grattage : preuve dans le corps)
+  getGrattage(ticketCode, preuve) { return this.suiviGet(`/api/fidelite/grattage/${encodeURIComponent(ticketCode)}`, preuve); }
+  gratter(ticketCode, preuve) { return this.post(`/api/fidelite/grattage/${encodeURIComponent(ticketCode)}`, suiviProof(preuve)); }
   consommerBonGrattage(clientId, ticketId = null) {
     return this.post('/api/fidelite/consommer-bon', { client_id: clientId, ticket_id: ticketId });
   }
@@ -1295,11 +1396,11 @@ class ApiClient {
   getPendingDepots() { return this.get('/api/depot-distance/pending'); }
 
   // ─── SUIVI CLIENT (PUBLIC) ─────────────────────
-  // preuve : { t } (jeton du lien de suivi) ou { tel4 } (4 derniers chiffres du téléphone)
+  // preuve : { t } (jeton du lien de suivi) ou { tel } (numéro complet), dans le corps (écritures)
   suiviSendMessage(ticketCode, message, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/message`, { message, ...suiviProof(preuve) }); }
   suiviValiderDevis(ticketCode, accepte, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/valider-devis`, { accepte, ...suiviProof(preuve) }); }
   suiviLaisserAvis(ticketCode, note, commentaire, preuve) { return this.post(`/api/suivi/${encodeURIComponent(ticketCode)}/avis`, { note, commentaire, ...suiviProof(preuve) }); }
-  suiviHasAvis(ticketCode) { return this.get(`/api/suivi/${encodeURIComponent(ticketCode)}/has-avis`); }
+  suiviHasAvis(ticketCode, preuve) { return this.suiviGet(`/api/suivi/${encodeURIComponent(ticketCode)}/has-avis`, preuve); }
   getInteractions() { return this.get('/api/suivi/dashboard/interactions'); }
   markTicketRead(ticketId) { return this.put(`/api/tickets/${ticketId}/mark-read`, {}); }
 

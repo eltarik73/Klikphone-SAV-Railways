@@ -9,7 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
-    getTicketByCode: vi.fn(), getTicketsByPhone: vi.fn(), getPublicCommandes: vi.fn(),
+    getTicketByCode: vi.fn(), getPublicCommandes: vi.fn(),
     suiviHasAvis: vi.fn(), trackEvent: vi.fn(),
   },
 }));
@@ -33,16 +33,19 @@ function ticket(extra) {
 
 async function ouvrir(data) {
   apiMock.getTicketByCode.mockResolvedValue(data);
+  // Lien avec jeton (QR, SMS) : ouverture directe, la preuve { t } est jointe à la fiche
   render(
-    <MemoryRouter initialEntries={['/suivi?ticket=KP-000005']}>
+    <MemoryRouter initialEntries={['/suivi?t=JetonFictif_0123456789&ticket=KP-000005']}>
       <SuiviPage />
     </MemoryRouter>,
   );
   const titre = await screen.findByText('Tarification');
+  expect(apiMock.getTicketByCode).toHaveBeenCalledWith('KP-000005', { t: 'JetonFictif_0123456789' });
   return titre.closest('.card-section');
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   Object.values(apiMock).forEach((fn) => fn.mockReset());
   apiMock.getPublicCommandes.mockResolvedValue([]);
   apiMock.suiviHasAvis.mockResolvedValue({ has_avis: false });

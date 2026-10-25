@@ -5,7 +5,7 @@ API Membres équipe.
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.database import get_cursor
-from app.models import MembreEquipeCreate, MembreEquipeUpdate, MembreEquipeOut
+from app.models import MembreEquipeCreate, MembreEquipeUpdate, MembreEquipeOut, MembreEquipePublic
 from app.api.auth import (
     exiger_elevation, get_current_user, noter_echec, noter_succes, oublier_roles_admin, verifier_essais,
 )
@@ -49,12 +49,17 @@ def list_members(user: dict = Depends(get_current_user)):
         return cur.fetchall()
 
 
-@router.get("/active", response_model=list[MembreEquipeOut])
+# Colonnes rendues sans session : celles que LoginPage (nom), TicketDetailPage et DashboardPage
+# (id, nom, couleur) utilisent. Jamais le rôle (un visiteur apprendrait qui est admin ou manager).
+COLONNES_PUBLIQUES = ("id", "nom", "couleur")
+
+
+@router.get("/active", response_model=list[MembreEquipePublic])
 def list_active_members():
-    """Liste les membres actifs uniquement (public — utilisé par la page login)."""
+    """Membres actifs (public — page de connexion, listes d'assignation) : id, nom, couleur seulement."""
     with get_cursor() as cur:
-        cur.execute("SELECT * FROM membres_equipe WHERE actif = 1 ORDER BY nom")
-        return cur.fetchall()
+        cur.execute("SELECT id, nom, couleur FROM membres_equipe WHERE actif = 1 ORDER BY nom")
+        return [{k: row.get(k) for k in COLONNES_PUBLIQUES} for row in (cur.fetchall() or [])]
 
 
 @router.post("", response_model=dict)

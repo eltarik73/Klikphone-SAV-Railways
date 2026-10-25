@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../lib/api';
-import { Loader2, Gift, PartyPopper, Smile, Coins, Sparkles, Eye, KeyRound } from 'lucide-react';
+import { Loader2, Gift, PartyPopper, Smile, Coins, Sparkles, Eye } from 'lucide-react';
 
 // Icône du gain : film verre trempé = cadeau, sinon réduction = pièces
 function IconeGain({ gain, className = 'w-5 h-5' }) {
@@ -18,8 +18,8 @@ function Validite() {
   );
 }
 
-// Le grattage exige la preuve du suivi : jeton `t` du lien (dans l'URL) ou 4 derniers chiffres
-const cheminGrattage = (code, suffixe = '') => `/api/fidelite/grattage/${encodeURIComponent(code)}${suffixe}`;
+// Le grattage exige la preuve du suivi, fournie par la page : { t } jeton du lien ou { tel } numéro
+// complet du client (plus de « 4 derniers chiffres »). Un membre du personnel connecté n'en a pas besoin.
 const preuveRefusee = (err) => err?.status === 401 || err?.status === 403;
 
 function jetonDuLien() {
@@ -32,11 +32,11 @@ function jetonDuLien() {
 
 function messageErreur(err) {
   if (err?.status === 429) return 'Trop de tentatives. Réessayez dans quelques minutes.';
-  if (preuveRefusee(err)) return 'Ces 4 chiffres ne correspondent pas au numéro de téléphone du dossier.';
+  if (preuveRefusee(err)) return 'Votre accès au suivi a expiré : rouvrez votre suivi avec votre numéro de téléphone pour gratter.';
   return err?.message || 'Une erreur est survenue, réessayez.';
 }
 
-export default function ScratchCard({ ticketCode }) {
+export default function ScratchCard({ ticketCode, preuve = null }) {
   const canvasRef = useRef(null);
   const [isRevealed, setIsRevealed] = useState(false);
   const [result, setResult] = useState(null);
@@ -45,15 +45,13 @@ export default function ScratchCard({ ticketCode }) {
   const [frequence, setFrequence] = useState(10);
   const [actif, setActif] = useState(true);
   const [eligible, setEligible] = useState(false);
-  // Preuve acceptée par le serveur ({ t } ou { tel4 }) ; null : les 4 chiffres sont demandés
-  const [preuve, setPreuve] = useState(null);
-  const [tel4, setTel4] = useState('');
   const [erreurPreuve, setErreurPreuve] = useState('');
-  const [verification, setVerification] = useState(false);
   const revealedRef = useRef(false);
-  // Lue au moment du grattage : scratch() est mémorisé avant que la preuve soit connue
+  // Preuve de la page (sinon le jeton de l'URL), lue au moment du grattage : scratch() est mémorisé
+  const jeton = jetonDuLien();
+  const preuveEffective = preuve || (jeton ? { t: jeton } : null);
   const preuveRef = useRef(null);
-  preuveRef.current = preuve;
+  preuveRef.current = preuveEffective;
 
   const appliquerEtat = useCallback((data) => {
     if (!data.actif) {
@@ -61,7 +59,8 @@ export default function ScratchCard({ ticketCode }) {
       return;
     }
     setFrequence(data.frequence || 10);
-    setEligible(Boolean(data.eligible));
+    // Ancien serveur : sans preuve il ne dit pas si le ticket est gratté → la carte ne s'affiche pas
+    setEligible(Boolean(data.eligible) && !data.preuve_requise);
     if (data.deja_gratte) {
       setResult({
         gagnant: !!data.gain,
@@ -74,52 +73,22 @@ export default function ScratchCard({ ticketCode }) {
     }
   }, []);
 
-  // État initial : avec le jeton du lien, l'état complet ; sinon actif / éligible seulement
+  // État initial avec la preuve ; refusée (403) : pas de carte, la page redemande le téléphone
+  const clePreuve = preuveEffective ? JSON.stringify(preuveEffective) : '';
   useEffect(() => {
     if (!ticketCode) return undefined;
     let annule = false;
-    const jeton = jetonDuLien();
-    const sansPreuve = () => api.get(cheminGrattage(ticketCode));
-    const charger = jeton
-      ? api.get(`${cheminGrattage(ticketCode)}?t=${encodeURIComponent(jeton)}`)
-        .then((data) => ({ data, preuve: { t: jeton } }))
-        .catch((err) => (preuveRefusee(err) ? sansPreuve().then((data) => ({ data, preuve: null })) : Promise.reject(err)))
-      : sansPreuve().then((data) => ({ data, preuve: null }));
-    charger
-      .then(({ data, preuve: p }) => {
-        if (annule) return;
-        appliquerEtat(data);
-        setPreuve(p);
-      })
+    setLoading(true);
+    api.getGrattage(ticketCode, preuveRef.current)
+      .then((data) => { if (!annule) appliquerEtat(data); })
       .catch(() => { if (!annule) setActif(false); })
       .finally(() => { if (!annule) setLoading(false); });
     return () => { annule = true; };
-  }, [ticketCode, appliquerEtat]);
-
-  const verifierTel4 = async (e) => {
-    e?.preventDefault();
-    if (verification) return;
-    const chiffres = tel4.replace(/\D/g, '');
-    if (chiffres.length !== 4) {
-      setErreurPreuve('Saisissez les 4 derniers chiffres de votre numéro.');
-      return;
-    }
-    setVerification(true);
-    setErreurPreuve('');
-    try {
-      const data = await api.post(cheminGrattage(ticketCode, '/etat'), { tel4: chiffres });
-      appliquerEtat(data);
-      setPreuve({ tel4: chiffres });
-    } catch (err) {
-      setErreurPreuve(messageErreur(err));
-    } finally {
-      setVerification(false);
-    }
-  };
+  }, [ticketCode, clePreuve, appliquerEtat]);
 
   // Initialize canvas
   useEffect(() => {
-    if (loading || isRevealed || !actif || !preuve) return;
+    if (loading || isRevealed || !actif || !eligible) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext?.('2d');
@@ -144,7 +113,7 @@ export default function ScratchCard({ ticketCode }) {
     ctx.fillText('GRATTEZ ICI', canvas.width / 2, canvas.height / 2 - 10);
     ctx.font = '13px system-ui, sans-serif';
     ctx.fillText('Tentez votre chance !', canvas.width / 2, canvas.height / 2 + 15);
-  }, [loading, isRevealed, actif, preuve]);
+  }, [loading, isRevealed, actif, eligible]);
 
   const scratch = useCallback((e) => {
     if (revealedRef.current) return;
@@ -183,18 +152,18 @@ export default function ScratchCard({ ticketCode }) {
   }, [ticketCode]);
 
   const revealResult = async () => {
-    const preuve = preuveRef.current;
+    const preuveGrattage = preuveRef.current;
     setIsRevealed(true);
+    setErreurPreuve('');
     try {
-      const data = await api.post(cheminGrattage(ticketCode), preuve || {});
+      const data = await api.gratter(ticketCode, preuveGrattage);
       setResult(data);
     } catch (err) {
-      if (preuveRefusee(err)) {
-        // Preuve plus valable (lien expiré) : les 4 chiffres sont redemandés, rien n'est gratté
+      if (preuveRefusee(err) || err?.status === 429) {
+        // Preuve plus valable (lien expiré) ou trop d'essais : rien n'est gratté, on peut réessayer
         revealedRef.current = false;
         setIsRevealed(false);
-        setPreuve(null);
-        setErreurPreuve(preuve?.t ? 'Ce lien de suivi n\'est plus valable : confirmez avec votre numéro de téléphone.' : messageErreur(err));
+        setErreurPreuve(messageErreur(err));
         return;
       }
       setResult({ gagnant: false, error: err.message });
@@ -234,44 +203,6 @@ export default function ScratchCard({ ticketCode }) {
         {!result.gain && (
           <p className="text-sm text-slate-500 mt-1">Retentez votre chance au prochain passage !</p>
         )}
-      </div>
-    );
-  }
-
-  if (!preuve) {
-    return (
-      <div className="card card-body text-center">
-        <h3 className="text-lg font-semibold leading-snug text-slate-900 mb-1 inline-flex items-center gap-2">
-          <Gift className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> Tentez votre chance !
-        </h3>
-        <p className="text-sm text-slate-600 mb-4">Confirmez que ce ticket est le vôtre pour gratter</p>
-        <form onSubmit={verifierTel4} className="mx-auto w-full max-w-xs text-left" noValidate>
-          <label htmlFor="grattage-tel4" className="input-label">4 derniers chiffres de votre téléphone</label>
-          <div className="flex gap-2">
-            <input
-              id="grattage-tel4"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={4}
-              value={tel4}
-              onChange={(e) => { setTel4(e.target.value.replace(/\D/g, '').slice(0, 4)); setErreurPreuve(''); }}
-              aria-invalid={erreurPreuve ? 'true' : undefined}
-              aria-describedby={erreurPreuve ? 'grattage-tel4-erreur' : undefined}
-              className="input flex-1 min-h-11 tabular-nums"
-            />
-            <button type="submit" disabled={verification} aria-busy={verification || undefined}
-              className="btn-primary min-h-11">
-              {verification
-                ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
-                : <KeyRound aria-hidden="true" />}
-              Valider
-            </button>
-          </div>
-          {erreurPreuve && (
-            <p id="grattage-tel4-erreur" role="alert" className="input-error text-sm mt-1">{erreurPreuve}</p>
-          )}
-        </form>
       </div>
     );
   }
@@ -343,6 +274,9 @@ export default function ScratchCard({ ticketCode }) {
 
       {isRevealed && result?.error && (
         <p role="alert" className="input-error text-sm mt-3">{result.error}</p>
+      )}
+      {!isRevealed && erreurPreuve && (
+        <p role="alert" className="input-error text-sm mt-3 justify-center">{erreurPreuve}</p>
       )}
 
       {isRevealed && result?.gagnant && (

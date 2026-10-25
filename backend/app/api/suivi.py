@@ -2,13 +2,19 @@
 API Suivi client — endpoints publics (sans auth), sauf les interactions du dashboard.
 Message client, validation devis, avis.
 
-La consultation reste possible avec le seul code (champs publics restreints, cf.
-GET /api/tickets/code/{code}). Agir sur le ticket (devis, message, avis) exige
-en plus le jeton du lien de suivi (`t`, QR et liens envoyés) ou, à défaut, les
-4 derniers chiffres du téléphone du client (`tel4`) : les codes KP-000123 sont
-séquentiels, donc devinables.
+Les codes KP-000123 sont séquentiels, donc devinables : AUCUNE donnée d'un ticket n'est
+rendue au seul code. Toute route publique par code (fiche, commandes, avis, fidélité,
+grattage, actions) passe par `preuve_suivi`, qui exige l'une de ces preuves :
+  - `t`   : le jeton du lien de suivi (QR imprimé, liens envoyés) ;
+  - `tel` : le numéro de téléphone COMPLET donné au dépôt (fiche client ou second
+            numéro de contact du ticket), quel que soit son format ;
+  - une session du personnel (le staff n'a pas besoin de preuve).
+Refus : 403 {"code": "preuve_requise" | "verification_echouee" | "lien_invalide"}.
+Un code inexistant reçoit, sans session du personnel, EXACTEMENT la même réponse qu'un code
+existant sans preuve (pas d'oracle 404/403 sur la suite séquentielle) ; 404 réservé au staff.
 """
 
+import logging
 import re
 import secrets
 from datetime import datetime
@@ -16,10 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_cursor
-from app.api.auth import client_ip, get_current_user, noter_echec, noter_succes, verifier_essais
+from app.api.auth import (
+    client_ip, decode_token, get_current_user, jeton_revoque, noter_echec, noter_succes, verifier_essais,
+)
 from app.api.notifications_center import push_notification
-from app.api.public_documents import LimiteurDebit
+from app.api.public_documents import LimiteurDebit, jeton_perime
 from app.services import contact
+from app.services import search as search_engine
 from app.services.poll_cache import PollCache, cached_json
 
 try:
@@ -31,15 +40,56 @@ except Exception:  # image sans base tz : heure du serveur
 router = APIRouter(prefix="/api/suivi", tags=["suivi"])
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
-_TEL4_RE = re.compile(r"^\d{4}$")
-_LIMITEUR = LimiteurDebit(limite=20, fenetre=60)
+# Une seule limite par IP pour toutes les routes publiques par code (fiche, commandes,
+# fidélité, grattage, actions) : une page de suivi en ouvre 5 puis polle toutes les 30 s.
+# Plafond global 600/min toutes IP confondues (énumération répartie des codes).
+_LIMITEUR = LimiteurDebit(
+    limite=60, fenetre=60, limite_globale=600, fenetre_globale=60,
+    message="Trop de requêtes sur le suivi depuis cet appareil — attendez 1 minute avant de réessayer.",
+    message_global="Le suivi en ligne est momentanément saturé : réessayez dans quelques minutes.",
+)
 # Interactions du dashboard (pollées toutes les 30 s par poste) : lecture partagée 5 s
 _CACHE_INTERACTIONS = PollCache(ttl=5, max_entries=4)
+
+TEL_MIN_CHIFFRES = 9
+
+# La preuve est aussi lue dans un en-tête : le numéro complet (ou le jeton) ne passe alors
+# ni dans l'URL ni dans les journaux d'accès (les GET du suivi sont pollés toutes les 30 s).
+EN_TETE_JETON = "x-suivi-token"
+EN_TETE_TEL = "x-suivi-tel"
+
+# Journal d'accès uvicorn : une preuve passée en query (?t=…, ?tel=…) y serait écrite en
+# clair à chaque rafraîchissement ; elle est masquée avant l'écriture de la ligne.
+_PREUVE_QUERY_RE = re.compile(r"(?<=[?&])(t|tel|tel4)=[^&#\s]*")
+
+
+def masquer_preuve(chemin: str) -> str:
+    """`/api/tickets/code/KP-1?tel=0612345679&x=1` → `/api/tickets/code/KP-1?tel=***&x=1`."""
+    return _PREUVE_QUERY_RE.sub(r"\1=***", chemin or "")
+
+
+class _JournalSansPreuve(logging.Filter):
+    """Filtre du journal d'accès uvicorn ('%s - "%s %s HTTP/%s" %d') : masque t= et tel=."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str) and "?" in args[2]:
+            record.args = args[:2] + (masquer_preuve(args[2]),) + args[3:]
+        return True
+
+
+def _installer_journal_sans_preuve():
+    journal = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _JournalSansPreuve) for f in journal.filters):
+        journal.addFilter(_JournalSansPreuve())
+
+
+_installer_journal_sans_preuve()
 
 
 class AccesSuivi(BaseModel):
     t: Optional[str] = None      # jeton du lien de suivi
-    tel4: Optional[str] = None   # 4 derniers chiffres du téléphone du client
+    tel: Optional[str] = None    # numéro de téléphone complet donné au dépôt
 
 
 class MessageBody(AccesSuivi):
@@ -55,55 +105,133 @@ class AvisBody(AccesSuivi):
     commentaire: Optional[str] = ""
 
 
-def _get_ticket_by_code(cur, code: str):
-    cur.execute("SELECT id, statut, ticket_code FROM tickets WHERE ticket_code = %s", (code.strip().upper(),))
-    row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Ticket non trouvé")
-    return row
+MESSAGES_REFUS = {
+    "preuve_requise": "Pour consulter ce ticket, scannez le QR code du ticket ou saisissez le numéro "
+                      "de téléphone donné au dépôt.",
+    "lien_invalide": "Ce lien de suivi n'est plus valide. Saisissez le numéro de téléphone donné au dépôt.",
+    "verification_echouee": "Ce numéro ne correspond pas à celui donné lors du dépôt.",
+    "numero_incomplet": "Saisissez votre numéro de téléphone complet.",
+}
 
 
-def _refus(code: str, message: str):
+def _refus(code: str, message: str = None):
     # 403 et non 401 : le front renvoie vers l'accueil sur tout 401
-    raise HTTPException(403, {"code": code, "message": message})
+    raise HTTPException(403, {"code": code, "message": message or MESSAGES_REFUS[code]})
 
 
-def _ticket_autorise(cur, request: Request, ticket_code: str, acces: AccesSuivi, t_query, tel4_query) -> dict:
-    """Ticket désigné par le code, si le visiteur prouve qu'il en est le client."""
+def refus_suivi(code: str = "preuve_requise"):
+    """Même refus 403 {code, message} que preuve_suivi, pour les routes qui désignent le ticket
+    autrement que par son code (POST /api/parts/auto sans session)."""
+    _refus(code)
+
+
+def _staff_connecte(request: Request) -> bool:
+    """Session du personnel présentée en en-tête (routes en `def` : pas de Depends ici)."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return False
+    try:
+        payload = decode_token(auth[7:].strip())
+    except HTTPException:
+        return False
+    # Jeton d'une session close (déconnexion, changement d'utilisateur) : visiteur anonyme
+    return bool(payload) and not jeton_revoque(payload)
+
+
+def _meme_numero(saisi: str, connu) -> bool:
+    """Même numéro complet (≥ 9 chiffres), tout format (06…, +33 6…, 0033 6…)."""
+    if not connu or len(search_engine.phone_digits(connu)) < TEL_MIN_CHIFFRES:
+        return False
+    return secrets.compare_digest(search_engine.phone_full(saisi), search_engine.phone_full(connu))
+
+
+def _essais(fn, request: Request, cible: str):
+    """verifier_essais / noter_echec avec le message du suivi : le verrou (IP, code) peut
+    toucher un client qui n'a rien tenté lui-même ; le QR du ticket reste la porte sans attente."""
+    try:
+        fn(request, cible)
+    except HTTPException as e:
+        if e.status_code != 429:
+            raise
+        secondes = int((e.headers or {}).get("Retry-After") or 0)
+        attente = f"{secondes} s" if secondes < 60 else f"{(secondes + 59) // 60} min"
+        raise HTTPException(
+            429,
+            f"Trop de tentatives pour ce ticket. Réessayez dans {attente}, ou scannez le QR code "
+            "de votre ticket de dépôt : il ouvre le suivi sans attendre.",
+            headers=e.headers,
+        )
+
+
+def preuve_suivi(cur, request: Request, code: str, t: Optional[str] = None, tel: Optional[str] = None) -> dict:
+    """Ticket désigné par le code, si le visiteur prouve qu'il en est le client.
+
+    Acceptée : jeton `t` valide, OU `tel` = numéro complet du client (téléphone de la fiche
+    ou tickets.tel_contact), OU session du personnel. `t` et `tel` viennent de la query ou
+    du corps (paramètres) ou, à défaut, des en-têtes X-Suivi-Token / X-Suivi-Tel (jamais
+    journalisés). Sans session du personnel, un code inexistant est refusé exactement comme un
+    code existant sans preuve valable (403 preuve_requise / lien_invalide / verification_echouee,
+    cette dernière comptée) : la réponse n'apprend pas si le numéro séquentiel existe. 404
+    réservé au staff. Les échecs de numéro sont comptés par (IP, code) avec verrouillage
+    progressif. Renvoie {id, statut, ticket_code} : jamais les coordonnées.
+    """
     _LIMITEUR.verifier(client_ip(request))
-    code = (ticket_code or "").strip().upper()
-    jeton = (acces.t or t_query or "").strip()
-    tel4 = re.sub(r"\D", "", acces.tel4 or tel4_query or "")
+    code = (code or "").strip().upper()
+    jeton = (t or "").strip() or request.headers.get(EN_TETE_JETON, "").strip()
+    tel = (tel or "").strip() or request.headers.get(EN_TETE_TEL, "").strip()
     cible = f"suivi:{code}"
 
     cur.execute("""
-        SELECT t.id, t.statut, t.ticket_code, t.suivi_token, c.telephone AS client_tel
+        SELECT t.id, t.statut, t.ticket_code, t.suivi_token, t.tel_contact,
+               c.telephone AS client_tel, t.date_maj, t.date_cloture, t.date_rendu
         FROM tickets t LEFT JOIN clients c ON c.id = t.client_id
         WHERE t.ticket_code = %s
     """, (code,))
     row = cur.fetchone()
-    if not row:
+    staff = _staff_connecte(request)
+    if not row and staff:
         raise HTTPException(404, "Ticket non trouvé")
+    # Code inexistant, visiteur anonyme : même chemin qu'un ticket sans preuve (aucun jeton ni
+    # numéro ne peut correspondre), même réponse, même comptage des échecs
+    row = row or {}
+    ticket = {"id": row.get("id"), "statut": row.get("statut"), "ticket_code": row.get("ticket_code") or code}
 
+    jeton_expire = False
     if jeton and _TOKEN_RE.match(jeton) and row.get("suivi_token") and secrets.compare_digest(
             jeton.encode(), str(row["suivi_token"]).encode()):
-        return row
+        # Dossier rendu/clôturé depuis plus de SUIVI_JETON_JOURS jours : le jeton du QR / des
+        # liens envoyés ne vaut plus ; le numéro complet reste accepté (ci-dessous)
+        jeton_expire = jeton_perime(row.get("statut"), row.get("date_maj"), row.get("date_cloture"),
+                                    row.get("date_rendu"))
+        if not jeton_expire:
+            return ticket
 
-    if tel4:
-        verifier_essais(request, cible)
-        chiffres = re.sub(r"\D", "", row.get("client_tel") or "")
-        if _TEL4_RE.match(tel4) and len(chiffres) >= 4 and secrets.compare_digest(tel4, chiffres[-4:]):
+    if staff:
+        return ticket
+
+    if tel:
+        _essais(verifier_essais, request, cible)
+        if len(search_engine.phone_digits(tel)) < TEL_MIN_CHIFFRES:
+            # Un fragment ne désigne personne : pas compté, mais refusé
+            _refus("verification_echouee", MESSAGES_REFUS["numero_incomplet"])
+        if _meme_numero(tel, row.get("client_tel")) or _meme_numero(tel, row.get("tel_contact")):
             noter_succes(request, cible)
-            return row
-        noter_echec(request, cible)
-        _refus("verification_echouee", "Les 4 derniers chiffres ne correspondent pas au téléphone de ce ticket.")
+            return ticket
+        _essais(noter_echec, request, cible)
+        _refus("verification_echouee")
 
     if jeton:
-        _refus("lien_invalide", "Ce lien de suivi n'est plus valide. Saisissez les 4 derniers chiffres de votre téléphone.")
-    _refus(
-        "verification_requise",
-        "Pour agir sur ce ticket, ouvrez le lien de suivi reçu ou saisissez les 4 derniers chiffres de votre téléphone.",
-    )
+        if jeton_expire:
+            _refus("lien_invalide", "Ce lien de suivi a expiré (dossier rendu ou clôturé). "
+                                    "Saisissez le numéro de téléphone donné au dépôt.")
+        _refus("lien_invalide")
+    _refus("preuve_requise")
+
+
+def _ticket_autorise(cur, request: Request, ticket_code: str, acces: AccesSuivi, t_query, tel_query) -> dict:
+    """Preuve lue dans le corps (t / tel) ou dans la query."""
+    acces = acces or AccesSuivi()
+    return preuve_suivi(cur, request, ticket_code, acces.t or t_query, acces.tel or tel_query)
 
 
 # ─── MESSAGE CLIENT ──────────────────────────────────────
@@ -113,7 +241,7 @@ def send_client_message(
     body: MessageBody,
     request: Request,
     t: Optional[str] = Query(None),
-    tel4: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
     """Le client envoie un message depuis la page de suivi.
 
@@ -132,7 +260,7 @@ def send_client_message(
     client_label = "Client"
 
     with get_cursor() as cur:
-        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel)
         ticket_id = tk["id"]
         ticket_code = tk["ticket_code"]
 
@@ -186,7 +314,7 @@ def valider_devis(
     body: DevisValidation,
     request: Request,
     t: Optional[str] = Query(None),
-    tel4: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
     """Le client accepte ou refuse le devis depuis la page de suivi."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -198,7 +326,7 @@ def valider_devis(
     panne = ""
 
     with get_cursor() as cur:
-        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel)
         ticket_id = tk["id"]
         ticket_code = tk["ticket_code"]
 
@@ -289,7 +417,7 @@ def laisser_avis(
     body: AvisBody,
     request: Request,
     t: Optional[str] = Query(None),
-    tel4: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
     """Le client laisse un avis (étoiles + commentaire)."""
     if body.note < 1 or body.note > 5:
@@ -298,7 +426,7 @@ def laisser_avis(
     if len(commentaire_saisi) > 2000:
         raise HTTPException(400, "Commentaire trop long (2000 caractères maximum)")
     with get_cursor() as cur:
-        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel4)
+        tk = _ticket_autorise(cur, request, ticket_code, body, t, tel)
         # Vérifier qu'il n'a pas déjà laissé un avis
         cur.execute(
             "SELECT id FROM notes_tickets WHERE ticket_id = %s AND type_note = 'avis_client' LIMIT 1",
@@ -373,13 +501,17 @@ def get_interactions(request: Request, user: dict = Depends(get_current_user)):
 
 # ─── CHECK AVIS EXISTS ──────────────────────────────────
 @router.get("/{ticket_code}/has-avis")
-def has_avis(ticket_code: str, request: Request):
-    """Vérifie si un avis a déjà été laissé."""
-    _LIMITEUR.verifier(client_ip(request))
+def has_avis(
+    ticket_code: str,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
+):
+    """Vérifie si un avis a déjà été laissé (preuve du suivi exigée)."""
     with get_cursor() as cur:
-        t = _get_ticket_by_code(cur, ticket_code)
+        tk = preuve_suivi(cur, request, ticket_code, t, tel)
         cur.execute(
             "SELECT id FROM notes_tickets WHERE ticket_id = %s AND type_note = 'avis_client' LIMIT 1",
-            (t["id"],),
+            (tk["id"],),
         )
         return {"has_avis": cur.fetchone() is not None}

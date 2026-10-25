@@ -1,7 +1,7 @@
 """
 API Dépôt à Distance — pré-enregistrement public + validation/refus par accueil.
 
-Formulaire public : 5 dépôts par IP sur 10 minutes ; le même appareil renvoyé dans l'heure
+Formulaire public : 5 dépôts par IP sur 10 minutes et 30 par heure toutes IP confondues ; le même appareil renvoyé dans l'heure
 pour le même numéro réutilise le pré-enregistrement ; au plus 3 pré-enregistrements
 ouverts par client ; l'e-mail de confirmation ne part qu'à l'adresse du client (nouveau
 client, ou adresse déjà connue de sa fiche), jamais à une adresse tierce saisie ici.
@@ -37,7 +37,11 @@ except Exception:  # image sans base tz : heure du serveur
 
 router = APIRouter(prefix="/api/depot-distance", tags=["depot-distance"])
 
-_LIMITEUR_DEPOT = LimiteurDebit(limite=5, fenetre=600)
+_LIMITEUR_DEPOT = LimiteurDebit(
+    limite=5, fenetre=600, limite_globale=30, fenetre_globale=3600,
+    message="Trop de demandes depuis cet appareil : réessayez dans quelques minutes.",
+    message_global="Trop de demandes de dépôt en ce moment : réessayez dans quelques minutes ou appelez la boutique.",
+)
 MAX_PRE_ENREGISTREMENTS_OUVERTS = 3
 
 
@@ -148,7 +152,7 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
             cur.execute("SELECT id FROM clients WHERE id = %s FOR UPDATE", (client_id,))
             # Même appareil renvoyé dans l'heure (double envoi) : le pré-enregistrement existant
             cur.execute("""
-                SELECT id, ticket_code FROM tickets
+                SELECT id, ticket_code, suivi_token FROM tickets
                 WHERE client_id = %s AND statut = 'Pré-enregistré' AND source = 'distance'
                   AND date_depot >= LOCALTIMESTAMP - INTERVAL '1 hour'
                   AND COALESCE(marque, '') = %s AND COALESCE(modele, '') = %s
@@ -157,7 +161,9 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
             """, (client_id, data.marque or "", data.modele or "", data.modele_autre or ""))
             deja = cur.fetchone()
             if deja:
-                return {"id": deja["id"], "ticket_code": deja["ticket_code"], "statut": "Pré-enregistré"}
+                # Le demandeur vient de donner le numéro de la fiche : le jeton vaut cette preuve
+                return {"id": deja["id"], "ticket_code": deja["ticket_code"], "statut": "Pré-enregistré",
+                        "suivi_token": deja.get("suivi_token") or None}
             cur.execute(
                 "SELECT COUNT(*) AS n FROM tickets WHERE client_id = %s AND statut = 'Pré-enregistré'",
                 (client_id,),
@@ -212,9 +218,10 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
 
         code = f"KP-{tid:06d}"
         from app.api.public_documents import nouveau_jeton
+        jeton = nouveau_jeton()
         cur.execute(
             "UPDATE tickets SET ticket_code = %s, suivi_token = %s WHERE id = %s",
-            (code, nouveau_jeton(), tid),
+            (code, jeton, tid),
         )
 
     # Notifications en arrière-plan (ne bloque pas la réponse)
@@ -237,10 +244,12 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
     if email_client:
         bg.add_task(
             _envoyer_email_confirmation,
-            email_client, data.prenom or data.nom, code, appareil, panne,
+            email_client, data.prenom or data.nom, code, appareil, panne, jeton,
         )
 
-    return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré"}
+    # Le jeton (= QR du ticket) n'est rendu qu'au demandeur : « Suivre ma réparation » s'ouvre
+    # sans lui redemander le numéro qu'il vient de saisir
+    return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré", "suivi_token": jeton}
 
 
 # ─── AUTH: Valider un pré-enregistrement ─────────────────────
@@ -282,11 +291,13 @@ def valider_depot(ticket_id: int, bg: BackgroundTasks, user: dict = Depends(get_
 
     # Notification email au client (SMTP hors du chemin de la réponse)
     if client and client.get("email"):
+        from app.api.public_documents import jeton_suivi
         bg.add_task(
             _envoyer_email_validation,
             client["email"],
             client.get("prenom") or client.get("nom", ""),
             row["ticket_code"],
+            jeton_suivi(ticket_id),
         )
 
     return {"ok": True, "nouveau_statut": "En attente de diagnostic"}
@@ -375,15 +386,23 @@ def get_pending_depots(user: dict = Depends(get_current_user)):
 
 # ─── HELPERS EMAIL ────────────────────────────────────────────
 
-def _envoyer_email_confirmation(email: str, prenom: str, code: str, appareil: str, panne: str):
+def lien_suivi(code: str, jeton) -> str:
+    """Lien de suivi envoyé au client : avec le jeton, la page s'ouvre sans rien demander
+    (sans lui, le client doit saisir le numéro de téléphone donné au dépôt)."""
+    from app.api.print_tickets import _suivi_url
+    return _suivi_url(code, None, jeton or None)
+
+
+def _envoyer_email_confirmation(email: str, prenom: str, code: str, appareil: str, panne: str, jeton=None):
     """Email de confirmation du pré-enregistrement avec HTML stylé."""
     try:
         nom_boutique = _get_param("nom_boutique") or "Klikphone"
         adresse = _get_param("adresse") or "79 Place Saint Léger, 73000 Chambéry"
         tel = _get_param("tel_boutique") or "04 79 60 89 22"
+        lien = lien_suivi(code, jeton)
 
         sujet = f"{nom_boutique} — Votre numéro de suivi {code}"
-        html = html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne)
+        html = html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne, lien)
         message = f"""Bonjour {prenom},
 
 Votre demande de réparation a bien été pré-enregistrée.
@@ -393,7 +412,8 @@ VOTRE NUMERO DE SUIVI : {code}
 Appareil : {appareil}
 Panne : {panne}
 
-Conservez ce numéro ! Il vous permettra de suivre votre réparation.
+Suivez votre réparation en ligne : {lien}
+Conservez ce numéro ! Avec votre numéro de téléphone, il vous permet aussi de retrouver votre suivi.
 
 Prochaine étape : Présentez-vous en boutique avec votre appareil.
 Votre dossier est déjà créé, l'accueil sera plus rapide.
@@ -407,11 +427,16 @@ Votre dossier est déjà créé, l'accueil sera plus rapide.
         pass
 
 
-def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne) -> str:
+def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne, lien=None) -> str:
     """Gabarit HTML de l'email : toutes les valeurs sont échappées (champs saisis par le public)."""
-    nom_boutique, adresse, tel, prenom, code, appareil, panne = (
-        escape(str(v or "")) for v in (nom_boutique, adresse, tel, prenom, code, appareil, panne)
+    nom_boutique, adresse, tel, prenom, code, appareil, panne, lien = (
+        escape(str(v or "")) for v in (nom_boutique, adresse, tel, prenom, code, appareil, panne, lien)
     )
+    bouton = (
+        f'<p style="text-align:center;margin:0 0 24px;"><a href="{lien}" style="display:inline-block;background:#7C3AED;'
+        f'color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px;">'
+        f'Suivre ma réparation</a></p>'
+    ) if lien else ""
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f1f5f9;">
@@ -428,6 +453,7 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne)
       <p style="color:#7C3AED;font-size:12px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Votre numéro de suivi</p>
       <p style="color:#7C3AED;font-size:32px;font-weight:800;font-family:monospace;margin:0;letter-spacing:3px;">{code}</p>
     </div>
+    {bouton}
 
     <div style="background:#F8FAFC;border-radius:10px;padding:16px;margin:0 0 24px;">
       <table style="width:100%;border-collapse:collapse;">
@@ -446,7 +472,7 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne)
     </div>
 
     <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:12px 16px;margin:0 0 20px;">
-      <p style="color:#92400E;font-size:12px;font-weight:600;margin:0;">Conservez bien ce numéro de suivi. Vous pouvez aussi retrouver votre ticket avec votre numéro de téléphone.</p>
+      <p style="color:#92400E;font-size:12px;font-weight:600;margin:0;">Conservez bien ce numéro de suivi : avec le numéro de téléphone donné au dépôt, il vous permet de retrouver votre suivi à tout moment.</p>
     </div>
   </div>
   <div style="background:#F8FAFC;padding:20px 24px;text-align:center;border-top:1px solid #E2E8F0;">
@@ -457,10 +483,11 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne)
 </body></html>"""
 
 
-def _envoyer_email_validation(email: str, prenom: str, code: str):
+def _envoyer_email_validation(email: str, prenom: str, code: str, jeton=None):
     """Email quand le pré-enregistrement est validé."""
     try:
         nom_boutique = _get_param("nom_boutique") or "Klikphone"
+        lien = lien_suivi(code, jeton)
 
         sujet = f"{nom_boutique} — Votre appareil est pris en charge ({code})"
         message = f"""Bonjour {prenom},
@@ -468,7 +495,7 @@ def _envoyer_email_validation(email: str, prenom: str, code: str):
 Votre appareil a été pris en charge par notre équipe.
 Ticket : {code}
 
-Vous pouvez suivre l'avancement de votre réparation en ligne.
+Suivez l'avancement de votre réparation en ligne : {lien}
 
 Cordialement,
 L'équipe {nom_boutique}"""

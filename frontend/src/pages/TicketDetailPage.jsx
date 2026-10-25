@@ -36,7 +36,7 @@ import {
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { formatDate, formatPrix, STATUTS, waLink, smsLink, getStatusConfig } from '../lib/utils';
 import { luhnOk } from '../lib/scan';
-import { digitsOnly } from '../lib/ticketCode';
+import { digitsOnly, lienSuivi } from '../lib/ticketCode';
 import { useToast } from '../components/Toast';
 import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Trash2,
@@ -1978,7 +1978,7 @@ function TicketDetail({ id }) {
     const tk = ticketRef.current;
     if (!tk) return '';
     const montant = getAccordMontant();
-    const suiviUrl = `${window.location.origin}/suivi?ticket=${tk.ticket_code || ''}`;
+    const suiviUrl = lienSuivi(window.location.origin, tk.ticket_code, tk.suivi_token);
     const template = modele || DEFAULT_ACCORD_TEMPLATE;
     const prestation = lignesComptees(repairLinesRef.current).map(l => String(l.label).trim()).join(' + ') || tk.panne || '';
     return template

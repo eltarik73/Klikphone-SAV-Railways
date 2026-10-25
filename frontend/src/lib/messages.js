@@ -6,6 +6,7 @@
  * Rien n'est jamais envoyé sans un clic (WhatsApp, SMS, Email, « Terminé + prévenir le client »).
  */
 import { versionCourteSms, smsSegments } from './sms';
+import { lienSuivi } from './ticketCode';
 
 // Même valeur par défaut que le serveur (api/tickets.py) quand le paramètre est absent
 export const NOTIFICATIONS_STATUTS_DEFAUT = 'Réparation terminée';
@@ -110,7 +111,8 @@ export function contexteMessage(t, { lienAvis = LIEN_AVIS_DEFAUT, origin } = {})
   const montant = serveur ? Number(serveur.reste) : (tk.paye ? 0 : Math.max(0, totalAvantAcompte - acompte));
   const totalTicket = serveur ? Number(serveur.total) || 0 : totalAvantAcompte;
   const base = origin ?? (typeof window !== 'undefined' ? window.location?.origin || '' : '');
-  const suiviUrl = `${base}/suivi?ticket=${tk.ticket_code || ''}`;
+  // Avec le jeton de la fiche (suivi_token), le lien ouvre le suivi sans redemander le téléphone
+  const suiviUrl = lienSuivi(base, tk.ticket_code, tk.suivi_token);
 
   return {
     montant,

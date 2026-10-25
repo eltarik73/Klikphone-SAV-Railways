@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { lienSuivi } from '../lib/ticketCode';
 import ModelCombobox from '../components/ModelCombobox';
 import ChoixCodeAcces, { erreurAcces } from '../components/ChoixCodeAcces';
 import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail, estTelephoneFictif, MESSAGE_TEL_FICTIF,
@@ -39,6 +40,8 @@ export default function DeposerPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [createdCode, setCreatedCode] = useState(null);
+  // Jeton du lien de suivi renvoyé à la création (sinon le client saisira son téléphone)
+  const [createdToken, setCreatedToken] = useState(null);
 
   const [categories, setCategories] = useState([]);
   const [pannes, setPannes] = useState([]);
@@ -135,6 +138,7 @@ export default function DeposerPage() {
         pin: form.pin,
         pattern: form.pattern,
       });
+      setCreatedToken(result.suivi_token || null);
       setCreatedCode(result.ticket_code);
     } catch (err) {
       setErrors({ submit: err.message || 'Erreur lors de l\'envoi' });
@@ -168,7 +172,7 @@ export default function DeposerPage() {
   };
 
   const handleShare = () => {
-    const url = `${window.location.origin}/suivi?ticket=${createdCode}`;
+    const url = lienSuivi(window.location.origin, createdCode, createdToken);
     const text = `Mon numéro de suivi Klikphone : ${createdCode}\nSuivre ma réparation : ${url}`;
     if (navigator.share) {
       navigator.share({ title: `Klikphone - ${createdCode}`, text }).catch(() => {});
@@ -183,7 +187,7 @@ export default function DeposerPage() {
   const handleWhatsAppSelf = () => {
     const tel = form.telephone.replace(/[\s.-]/g, '');
     const num = tel.startsWith('0') ? '33' + tel.slice(1) : tel;
-    const url = `${window.location.origin}/suivi?ticket=${createdCode}`;
+    const url = lienSuivi(window.location.origin, createdCode, createdToken);
     const msg = `Klikphone - Votre numéro de suivi : ${createdCode}\nSuivez votre réparation ici : ${url}`;
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -263,7 +267,7 @@ export default function DeposerPage() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
+                onClick={() => navigate(lienSuivi('', createdCode, createdToken))}
                 className="btn-primary btn-lg btn-block"
               >
                 <Send aria-hidden="true" /> Suivre ma réparation

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
+import { lienSuivi } from '../lib/ticketCode';
 import { invalidateCache } from '../hooks/useApi';
 import { useToast } from '../components/Toast';
 import ChoixCodeAcces, { resumeAcces, erreurAcces } from '../components/ChoixCodeAcces';
@@ -78,6 +79,7 @@ export default function ClientFormPage() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState(null);
+  const [createdToken, setCreatedToken] = useState(null); // jeton du lien de suivi (si renvoyé)
   const [errors, setErrors] = useState({});
   const [countdown, setCountdown] = useState(null);
   const [retourEnCours, setRetourEnCours] = useState(false);
@@ -132,6 +134,7 @@ export default function ClientFormPage() {
     setAchatDescription('');
     setAchatPrix('');
     setCreatedCode(null);
+    setCreatedToken(null);
     setStep(0);
     setErrors({});
     setCountdown(null);
@@ -295,6 +298,7 @@ export default function ClientFormPage() {
     // Le dashboard se rafraîchit aussitôt avec le nouveau ticket
     invalidateCache('tickets', 'dashboard', 'interactions', 'clients', 'commandes');
     if (!modePersonnel) {
+      setCreatedToken(result.suivi_token || null);
       setCreatedCode(result.ticket_code);
       return;
     }
@@ -316,24 +320,28 @@ export default function ClientFormPage() {
     }
     setLoading(true);
     try {
+      // Personnel : session du poste, fiche complète ({ id }). Borne : aucun jeton, le serveur ne rend
+      // qu'une référence client signée (client_ref, 20 min) — jamais l'id d'une fiche.
       const client = await api.createOrGetClient({
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
-      });
+      }, { asStaff: modePersonnel });
+      const refClient = modePersonnel ? { client_id: client.id } : { client_ref: client.client_ref };
+      const session = { asStaff: modePersonnel };
       const telContact = form.tel_contact.trim() || null;
 
       if (isAchat) {
         // Achat : ticket « Achat » clôturé aussitôt
         const result = await api.createTicket({
-          client_id: client.id, categorie: 'Achat',
+          ...refClient, categorie: 'Achat',
           marque: achatType, modele: '', modele_autre: achatDescription,
           panne: `Achat ${achatType}`,
           panne_detail: achatDescription,
           notes_client: form.notes_client,
           tel_contact: telContact,
-        });
+        }, session);
         if (achatPrix) {
           await api.updateTicket(result.id, {
             devis_estime: parseFloat(achatPrix) || 0,
@@ -351,7 +359,7 @@ export default function ClientFormPage() {
         // portée par la commande. Sans symptôme, la pièce sert de motif.
         const pieceSeule = !isCommande && !form.panne && pieceACommander && pieceNom;
         const result = await api.createTicket({
-          client_id: client.id, categorie: form.categorie,
+          ...refClient, categorie: form.categorie,
           marque: form.marque,
           ...appareil,
           panne: isCommande || pieceSeule ? 'Pièce à commander' : form.panne,
@@ -365,7 +373,10 @@ export default function ClientFormPage() {
           tel_contact: telContact,
           ...(!isCommande && form.attente_boutique ? { priorite: 'attente' } : {}),
           ...(delaiRequis ? { date_recuperation: delai.valeur } : {}),
-        });
+        }, session);
+        // Pièce commandée depuis la borne : preuve de suivi du ticket que l'on vient de créer
+        // (jeton rendu avec le ticket, sinon le numéro donné à l'instant)
+        const preuvePiece = modePersonnel ? {} : (result.suivi_token ? { t: result.suivi_token } : { tel: form.telephone });
 
         // Le schéma TicketCreate du serveur ignore encore date_recuperation : l'heure promise est
         // posée aussitôt par PATCH (texte « AAAA-MM-JJTHH:MM », comme le champ de la fiche).
@@ -379,20 +390,20 @@ export default function ClientFormPage() {
 
         if (isCommande) {
           await api.createPartAuto({
-            ticket_id: result.id,
+            ticket_id: result.id, ...preuvePiece,
             description: form.panne_detail.trim(),
             fournisseur: fournisseur || '',
             prix: prixEstime ? parseFloat(prixEstime) : null,
             notes: form.notes_client || '',
-          });
+          }, session);
         } else if (pieceACommander && pieceNom) {
           await api.createPartAuto({
-            ticket_id: result.id,
+            ticket_id: result.id, ...preuvePiece,
             description: pieceNom,
             fournisseur: fournisseur || '',
             prix: prixEstime ? parseFloat(prixEstime) : null,
             notes: pieceDetails || '',
-          });
+          }, session);
         }
 
         // create_ticket apprend déjà panne, panne_detail et modele_autre : seul un modèle
@@ -800,7 +811,7 @@ export default function ClientFormPage() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => navigate(`/suivi?ticket=${createdCode}`)}
+                onClick={() => navigate(lienSuivi('', createdCode, createdToken))}
                 className="btn-primary btn-lg btn-block"
               >
                 <Send aria-hidden="true" /> Suivre {isAchat ? 'mon achat' : isCommande ? 'ma commande' : 'ma réparation'}

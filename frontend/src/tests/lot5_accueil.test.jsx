@@ -80,7 +80,7 @@ function resetApi() {
   apiMock.getConfidentialite.mockResolvedValue(POLITIQUE);
   apiMock.getCategories.mockResolvedValue(['Smartphone']);
   apiMock.getPannes.mockResolvedValue(['Écran cassé']);
-  apiMock.createOrGetClient.mockResolvedValue({ id: 7 });
+  apiMock.createOrGetClient.mockResolvedValue({ client_ref: 'RefClientSignee' });
   apiMock.createTicket.mockResolvedValue({ id: 70, ticket_code: 'KP-000070' });
   apiMock.learnTerm.mockResolvedValue({});
 }
@@ -346,7 +346,7 @@ describe('Borne /client : RGPD et priorité', () => {
     await remplirJusquAuDepot();
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({
       nom: 'Martin', rgpd_informe: true, consentement_marketing: false,
-    }));
+    }), { asStaff: false });
     expect(apiMock.createTicket.mock.calls[0][0]).not.toHaveProperty('priorite');
   });
 
@@ -354,8 +354,11 @@ describe('Borne /client : RGPD et priorité', () => {
     await remplirJusquAuDepot({ consentir: true, attendre: true });
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({
       rgpd_informe: true, consentement_marketing: true,
-    }));
-    expect(apiMock.createTicket).toHaveBeenCalledWith(expect.objectContaining({ priorite: 'attente', modele_autre: 'Fairphone 5' }));
+    }), { asStaff: false });
+    expect(apiMock.createTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ client_ref: 'RefClientSignee', priorite: 'attente', modele_autre: 'Fairphone 5' }), { asStaff: false },
+    );
+    expect(apiMock.createTicket.mock.calls[0][0]).not.toHaveProperty('client_id');
   });
 });
 

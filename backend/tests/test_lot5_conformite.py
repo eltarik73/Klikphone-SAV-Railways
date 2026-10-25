@@ -24,6 +24,7 @@ from app.api import attestation, chat, clients as clients_api, devis as devis_ap
 from app.api import config as config_api
 from app.api import print_tickets, reception, rgpd
 from app.api.auth import create_admin_token, create_token, decode_token
+from app.services import client_ref
 from app.services import mentions
 from app.services import params as params_cache
 
@@ -653,6 +654,15 @@ def test_reel_confidentialite_publique(reel):
     assert "24 mois" in r.text and "15 jours" in r.text and "rgpd@exemple.test" in r.text and "CNIL" in r.text
 
 
+def _cid_ref(r):
+    """Voie anonyme : {"client_ref"} seul (audit A) ; la référence signée désigne la fiche."""
+    assert r.status_code == 200, r.text
+    assert set(r.json()) == {"client_ref"}, r.json()
+    cid = client_ref.verifier(r.json()["client_ref"], "testclient")
+    assert cid is not None
+    return cid
+
+
 def test_reel_client_consentements(reel):
     c = reel["c"]
     src = lambda canal: f"{canal}:politique-{mentions.POLITIQUE_VERSION}"  # noqa: E731
@@ -669,7 +679,7 @@ def test_reel_client_consentements(reel):
     # Borne, même personne : case décochée par défaut, l'accord donné avant reste
     r = c.post("/api/clients", json={"nom": "Fictif", "prenom": "Élodie", "telephone": "0600000902",
                                      "rgpd_informe": True, "consentement_marketing": False})
-    assert r.json() == {"id": cid}
+    assert _cid_ref(r) == cid
     row = ligne()
     assert row["consentement_marketing"] is True and row["consentement_marketing_le"].isoformat() == premier
     # Accord redonné au comptoir alors qu'il est acquis : la date d'origine reste
@@ -688,9 +698,8 @@ def test_reel_client_consentements(reel):
     avant = ligne()
     r = c.post("/api/clients", json={"nom": "Autre", "prenom": "Élodie", "telephone": "0600000902",
                                      "rgpd_informe": True, "consentement_marketing": True})
-    assert r.status_code == 200, r.text
-    autre = r.json()["id"]
-    assert autre != cid and set(r.json()) == {"id"}   # rien de la fiche existante ne fuit
+    autre = _cid_ref(r)
+    assert autre != cid   # rien de la fiche existante ne fuit (même forme de réponse qu'une fiche neuve)
     assert ligne() == avant
     nouvelle = _sql(reel, "SELECT * FROM clients WHERE id = %s", autre)[0]
     assert (nouvelle["nom"], nouvelle["prenom"]) == ("Autre", "Élodie") and nouvelle["rgpd_informe_le"]
@@ -701,13 +710,13 @@ def test_reel_client_consentements(reel):
     sans_nom = _client(reel, tel="0600000907", nom="", prenom="")
     r = c.post("/api/clients", json={"nom": "Quelconque", "telephone": "0600000907", "rgpd_informe": True,
                                      "consentement_marketing": True})
-    assert r.json() == {"id": sans_nom}
+    assert _cid_ref(r) == sans_nom
     row = _sql(reel, "SELECT * FROM clients WHERE id = %s", sans_nom)[0]
     assert row["rgpd_informe_le"] and row["consentement_marketing"] is False and row["consentement_marketing_le"] is None
     # Même identité (casse et accents ignorés) : rattachement comme avant, accord enregistré avec son canal
     r = c.post("/api/clients", json={"nom": "FICTIF", "prenom": "elodie", "telephone": "06 00 00 09 02",
                                      "consentement_marketing": True})
-    assert r.json() == {"id": cid}
+    assert _cid_ref(r) == cid
     row = ligne()
     assert row["consentement_marketing"] is True and row["consentement_marketing_source"] == src("borne")
     assert row["consentement_marketing_le"] > retrait and row["consentement_marketing_retire_le"] == retrait
@@ -719,7 +728,7 @@ def test_reel_client_consentements(reel):
     _sql(reel, "DELETE FROM clients WHERE telephone = %s", "0600000904")
     r = c.post("/api/clients", json={"nom": "Fictif", "telephone": "0600000904", "rgpd_informe": True,
                                      "consentement_marketing": True})
-    row = _sql(reel, "SELECT * FROM clients WHERE id = %s", r.json()["id"])[0]
+    row = _sql(reel, "SELECT * FROM clients WHERE id = %s", _cid_ref(r))[0]
     assert row["consentement_marketing"] is True and row["consentement_marketing_source"] == src("borne")
     assert row["rgpd_informe_le"]
     _sql(reel, "DELETE FROM clients WHERE telephone = ANY(%s)", ["0600000902", "0600000903", "0600000904", "0600000907"])

@@ -32,6 +32,7 @@ from app.models import TicketCreate, TicketUpdate, telephone_contact_canonique
 from app.services import params as params_cache
 from app.services import search as S
 from app.services import sms
+from tests.conftest import ref_anonyme
 
 H = {"Authorization": f"Bearer {create_token('accueil', 'Sophie')}"}
 DDL_TEL_CONTACT = "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS tel_contact TEXT"
@@ -103,7 +104,7 @@ def test_post_ticket_tel_contact_422(client):
 def test_post_ticket_insere_le_numero_canonique(client):
     cur, cm = _cursor(fetchone={"id": 41})
     with patch("app.api.tickets.get_cursor", cm), patch("app.api.public_documents.jeton_suivi"):
-        r = client.post("/api/tickets", json={"client_id": 1, "categorie": "Smartphone", "marque": "Apple",
+        r = client.post("/api/tickets", json={"client_ref": ref_anonyme(1), "categorie": "Smartphone", "marque": "Apple",
                                               "panne": "Batterie", "tel_contact": "+33 6 11 22 33 44",
                                               "priorite": "attente"})
     assert r.status_code == 200, r.text
@@ -315,8 +316,8 @@ def _colonne(reel, tid):
 
 
 def _borne(reel, **extra):
-    """Création depuis la borne : sans jeton, comme /client."""
-    corps = {"client_id": reel["cid"], "categorie": "Smartphone", "marque": "Apple", "modele": "iPhone 12",
+    """Création depuis la borne : sans jeton, comme /client (référence client signée, audit A)."""
+    corps = {"client_ref": ref_anonyme(reel["cid"]), "categorie": "Smartphone", "marque": "Apple", "modele": "iPhone 12",
              "panne": "Batterie", "pin": "1234", "source": "boutique"}
     corps.update(extra)
     return reel["c"].post("/api/tickets", json=corps)
@@ -503,7 +504,7 @@ def test_depot_distance_accepte_le_second_numero(reel):
 
 def test_anonymisation_efface_le_second_numero(reel):
     cid2 = _sql(reel, "INSERT INTO clients (nom, prenom, telephone) VALUES ('Fictif', 'Anonyme', %s) RETURNING id", TEL2)[0]["id"]
-    r = _borne(reel, client_id=cid2, tel_contact=CONTACT)
+    r = _borne(reel, client_ref=ref_anonyme(cid2), tel_contact=CONTACT)
     tid = r.json()["id"]
     assert _colonne(reel, tid) == "0699887766"
     with reel["cur"]() as cur:

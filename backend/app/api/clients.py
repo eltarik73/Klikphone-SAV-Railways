@@ -14,8 +14,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import Field
 from app.database import get_cursor
 from app.models import ClientCreate, ClientUpdate, ClientOut
-from app.api.auth import _IP_CONNUES, client_ip, get_current_user, get_optional_user, require_admin
+from app.api.auth import client_ip, get_current_user, get_optional_user, noter_echec, require_admin, verifier_essais
 from app.api.public_documents import LimiteurDebit
+from app.services import client_ref
 from app.services import mentions
 from app.services import search as search_engine
 
@@ -48,10 +49,15 @@ class ClientUpdateRgpd(ClientUpdate):
     consentement_marketing: Optional[bool] = None
 
 
-# Création sans session (borne, dépôt en ligne) : 10 fiches / 10 min par IP inconnue.
-# Les postes de la boutique (IP où un jeton valide a déjà été vu) n'y sont pas soumis :
-# la borne du comptoir partage leur connexion.
-_LIMITEUR_CREATION = LimiteurDebit(limite=10, fenetre=600)
+# Création sans session (borne, dépôt en ligne) : 10 fiches / 10 min par IP, quelle que soit
+# l'IP (les postes « connus » de la boutique ne sont plus exemptés : la borne y est soumise
+# comme les autres), et 120 / h toutes IP confondues.
+_LIMITEUR_CREATION = LimiteurDebit(
+    limite=10, fenetre=600, limite_globale=120, fenetre_globale=3600,
+    message="Trop de fiches créées depuis ce poste : réessayez dans quelques minutes.",
+    message_global="Trop de dépôts en ce moment : réessayez dans quelques minutes.",
+)
+NOM_REQUIS = "Le nom est requis."
 
 
 class ClientOutRgpd(ClientOut):
@@ -61,6 +67,12 @@ class ClientOutRgpd(ClientOut):
     consentement_marketing_retire_le: Optional[datetime] = None
     consentement_marketing_source: Optional[str] = None
     anonymise_le: Optional[datetime] = None
+
+
+class ClientCreeOut(ClientOutRgpd):
+    """Réponse de POST /api/clients : la fiche (personnel) ou la seule référence signée (anonyme)."""
+    id: Optional[int] = None
+    client_ref: Optional[str] = None
 
 
 def source_consentement(canal: str) -> str:
@@ -332,27 +344,43 @@ def get_client_by_tel(telephone: str, user: dict = Depends(get_current_user)):
     return row  # None si pas trouvé (pas d'erreur 404)
 
 
-@router.post("", response_model=ClientOutRgpd, response_model_exclude_unset=True)
+def reference_client(client_id: int, request: Request) -> dict:
+    """Réponse de la voie anonyme : la référence signée, jamais l'identifiant nu, et la même
+    forme que la fiche soit nouvelle ou existante (rien ne dit qu'un numéro est déjà client)."""
+    return {"client_ref": client_ref.signer(client_id, client_ip(request))}
+
+
+def _cible_numero(telephone) -> str:
+    return f"client:{search_engine.phone_key(telephone) or str(telephone or '').strip()}"
+
+
+@router.post("", response_model=ClientCreeOut, response_model_exclude_unset=True)
 def create_or_get_client(data: ClientCreateRgpd, request: Request,
                          user: Optional[dict] = Depends(get_optional_user)):
     """Crée un client ou retourne l'existant si le téléphone existe déjà.
 
-    Sans jeton (borne, dépôt en ligne) : la fiche d'un client existant n'est
-    jamais réécrite, seuls ses nom, prénom et société vides sont complétés, et
-    seul l'id est renvoyé (pas de fuite du nom ou de l'email d'un numéro connu).
+    Sans jeton (borne, dépôt en ligne) : nom non vide exigé (422) ; la fiche d'un client
+    existant n'est jamais réécrite, seuls ses nom, prénom et société vides sont complétés ;
+    la réponse est {"client_ref": <référence signée, 20 min, liée à l'IP>} — même forme que
+    la fiche soit nouvelle ou existante (aucun champ « existant », pas d'identifiant nu, pas
+    de fuite du nom ou de l'email d'un numéro connu). POST /api/tickets exige cette référence.
+    Un numéro connu saisi avec un autre nom (fiche_d_un_autre) crée une nouvelle fiche et
+    compte un échec par (IP, numéro) : l'énumération des numéros de la clientèle se verrouille.
     L'email n'est jamais posé ainsi : connaître un numéro suffirait à recevoir
     les devis, reçus et suivis de ce client. Il se renseigne au comptoir.
     carte_camby n'est modifiée que si elle est fournie. rgpd_informe et
     consentement_marketing posent leurs dates (_SET_CONSENTEMENTS) ; sans jeton,
     l'accord marketing d'une fiche existante exige la même identité (meme_personne).
+    Avec session du personnel : la fiche complète (id compris), inchangé.
     """
     fictif = telephone_fictif(data.telephone)
     if not user:
         if fictif:
             raise HTTPException(422, {"code": "telephone_fictif", "message": TELEPHONE_FICTIF})
-        ip = client_ip(request)
-        if not _IP_CONNUES.connue(ip):
-            _LIMITEUR_CREATION.verifier(ip)
+        if not (data.nom or "").strip():
+            raise HTTPException(422, {"code": "nom_requis", "message": NOM_REQUIS})
+        _LIMITEUR_CREATION.verifier(client_ip(request))
+        verifier_essais(request, _cible_numero(data.telephone))
     camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
     champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing"})
     with get_cursor() as cur:
@@ -360,9 +388,10 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
         # Un numéro de remplissage (comptoir) ne désigne personne : jamais rattaché à une fiche.
         existing = None if fictif else find_client_by_phone(cur, data.telephone)
         # Borne : numéro connu mais au nom de quelqu'un d'autre → nouvelle fiche, jamais le dossier
-        # (ni le téléphone, destinataire des SMS) d'une autre personne
+        # (ni le téléphone, destinataire des SMS) d'une autre personne ; compté comme un échec
         if not user and fiche_d_un_autre(existing, data.nom, data.prenom):
             existing = None
+            noter_echec(request, _cible_numero(data.telephone))
 
         if existing and user:
             # Staff : les valeurs saisies remplacent les anciennes
@@ -389,7 +418,7 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
                 WHERE id = %(id)s
             """, {**champs, **_consentements(data, "borne", meme_personne(existing, data.nom, data.prenom)),
                   "camby": 1 if camby else 0, "id": existing["id"]})
-            return {"id": existing["id"]}
+            return reference_client(existing["id"], request)
 
         # Créer le client
         accord = bool(data.consentement_marketing)
@@ -407,7 +436,7 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
             source_consentement("comptoir" if user else "borne") if accord else None,
         ))
         row = cur.fetchone()
-    return row if user else {"id": row["id"]}
+    return row if user else reference_client(row["id"], request)
 
 
 @router.patch("/{client_id}", response_model=dict)

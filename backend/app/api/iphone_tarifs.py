@@ -35,12 +35,40 @@ from app.api.auth import (
 from app.api.smartphones_tarifs import _fetch_image_for_pdf, pdf_en_cache
 # Reutilise le rate limiter public (protection anti-spam)
 from app.api.tickets import _rate_limit_public_lookup
+from app.api.public_documents import LimiteurDebit
 # Pour l'envoi d'email sur le formulaire demande de tarif
 from app.api.email_api import _send_email
 
 
 router = APIRouter(prefix="/api/iphone-tarifs", tags=["iphone-tarifs"])
 logger = logging.getLogger(__name__)
+
+# Formulaires publics de la vitrine (passer-commande, demande-devis) : chacun envoie des
+# e-mails (boutique + confirmation au client). En plus des 30/min/IP : plafond GLOBAL de
+# 20 par heure toutes IP confondues (une attaque répartie ne fait pas de la boutique un
+# relais de spam) et 2 par heure par adresse e-mail de confirmation. Mémoire du processus.
+VITRINE_PLAFOND_GLOBAL_H = 20
+VITRINE_PLAFOND_EMAIL_H = 2
+_CLE_VITRINE = "vitrine"
+_LIMITEUR_VITRINE_GLOBAL = LimiteurDebit(
+    limite=VITRINE_PLAFOND_GLOBAL_H, fenetre=3600, max_ips=8,
+    message="Trop de demandes reçues depuis la vitrine en ce moment : réessayez dans une heure "
+            "ou appelez la boutique.",
+)
+_LIMITEUR_VITRINE_EMAIL = LimiteurDebit(
+    limite=VITRINE_PLAFOND_EMAIL_H, fenetre=3600,
+    message="Deux demandes ont déjà été envoyées avec cette adresse e-mail dans l'heure : "
+            "nous vous recontactons rapidement.",
+)
+
+
+def _plafonds_vitrine(request: Request, email: Optional[str]):
+    """429 au-delà de 30/min/IP, de 20/h toutes IP confondues ou de 2/h par adresse e-mail."""
+    _rate_limit_public_lookup(request)
+    _LIMITEUR_VITRINE_GLOBAL.verifier(_CLE_VITRINE)
+    adresse = (email or "").strip().lower()
+    if "@" in adresse:
+        _LIMITEUR_VITRINE_EMAIL.verifier(adresse)
 
 
 # ---------------------------------------------------------------------------
@@ -485,8 +513,9 @@ def passer_commande(payload: PasserCommandeRequest, request: Request):
     2. Dedup anti-spam (meme tel+modele+prix dans les 60 dernieres secondes)
     3. Enregistre dans demandes_commandes (statut='nouvelle')
     4. Envoie un email a contact@klikphone.com avec sujet [COMMANDE]
-    L'admin voit ensuite la demande dans son dashboard et peut la gerer."""
-    _rate_limit_public_lookup(request)
+    L'admin voit ensuite la demande dans son dashboard et peut la gerer.
+    Plafonds : 30/min/IP, 20/h toutes IP confondues, 2/h par adresse e-mail (429)."""
+    _plafonds_vitrine(request, payload.email)
 
     # Strip + sanitize chars de controle (anti email injection)
     nom = _clean_for_email(payload.nom or "")
@@ -793,8 +822,8 @@ def demande_devis(payload: DemandeDevisRequest, request: Request):
     souhaite commander un modele. Envoie un email a la boutique et
     enregistre aussi dans params pour trace.
 
-    Rate-limite (30 req/min/IP) pour eviter le spam."""
-    _rate_limit_public_lookup(request)
+    Plafonds : 30/min/IP, 20/h toutes IP confondues, 2/h par adresse e-mail (429)."""
+    _plafonds_vitrine(request, payload.email)
 
     # Validation stricte + sanitize chars de controle (anti email injection)
     nom = _clean_for_email(payload.nom or "")

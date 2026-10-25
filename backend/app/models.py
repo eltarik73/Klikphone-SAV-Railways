@@ -20,6 +20,10 @@ class LoginRequest(BaseModel):
     pin: str
     target: str  # "accueil" ou "tech"
     utilisateur: Optional[str] = None
+    # Journal des connexions (services/presence) : nom du poste et indice d'appareil facultatifs,
+    # nettoyés par le serveur (jamais de refus de connexion à cause d'eux)
+    poste: Optional[Any] = None
+    appareil: Optional[Any] = None
 
 
 class TokenResponse(BaseModel):
@@ -153,7 +157,10 @@ _MONTANT = dict(ge=0, le=100000)
 
 
 class TicketCreate(BaseModel):
-    client_id: int
+    # Personnel connecté : client_id. Sans session (borne, formulaire public) : client_ref, la
+    # référence signée rendue par POST /api/clients (un identifiant nu est refusé, cf. tickets).
+    client_id: Optional[int] = None
+    client_ref: Optional[str] = Field(None, max_length=512)
     categorie: str = Field(..., max_length=50)
     marque: str = Field(..., max_length=100)
     modele: Optional[str] = Field("", max_length=100)
@@ -398,6 +405,14 @@ class MembreEquipeOut(BaseModel):
     role: Optional[str] = None
     couleur: Optional[str] = None
     actif: Optional[int] = 1
+
+
+class MembreEquipePublic(BaseModel):
+    """GET /api/team/active (sans session, page de connexion) : nom et couleur seulement,
+    jamais le rôle ni le reste de la fiche."""
+    id: int
+    nom: Optional[str] = None
+    couleur: Optional[str] = None
 
 
 # ============================================================

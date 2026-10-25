@@ -49,6 +49,7 @@ const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage')
 const ConfidentialitePage = lazy(() => import('./pages/ConfidentialitePage'));
 // Prix à revoir (admin) : propositions issues des commandes, modèles sans prix, alias
 const ModelesSansPrixPage = lazy(() => import('./pages/ModelesSansPrixPage'));
+const ActiviteEquipePage = lazy(() => import('./pages/ActiviteEquipePage'));
 
 // Shell et pages staff les plus fréquentes, préchargés au repos UNIQUEMENT pour un utilisateur
 // connecté : un client sur /, /suivi ou /deposer ne télécharge aucun chunk réservé au personnel.
@@ -382,6 +383,8 @@ function AppRoutes() {
         <Route path="/tech/demandes-commandes" element={<P targets={['tech']}><DemandesCommandesPage /></P>} />
         <Route path="/accueil/prix-a-revoir" element={<AG targets={['accueil']}><ModelesSansPrixPage /></AG>} />
         <Route path="/tech/prix-a-revoir" element={<AG targets={['tech']}><ModelesSansPrixPage /></AG>} />
+        <Route path="/accueil/activite" element={<AG targets={['accueil']}><ActiviteEquipePage /></AG>} />
+        <Route path="/tech/activite" element={<AG targets={['tech']}><ActiviteEquipePage /></AG>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

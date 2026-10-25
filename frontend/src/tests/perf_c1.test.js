@@ -388,16 +388,23 @@ describe('api : messages d’erreur lisibles', () => {
 });
 
 describe('api : preuve d’accès du suivi public', () => {
-  it('jeton du lien (t) prioritaire, sinon 4 derniers chiffres (tel4)', async () => {
+  it('jeton du lien (t) prioritaire, sinon numéro complet (tel) ; tel4 n’est plus envoyé', async () => {
     global.fetch = vi.fn().mockImplementation(() => Promise.resolve(jsonRes({ ok: true })));
-    await api.suiviValiderDevis('KP-000007', true, { t: 'jeton-aleatoire', tel4: '1234' });
-    await api.suiviSendMessage('KP-000007', 'Bonjour', { tel4: '12 34' });
-    await api.suiviLaisserAvis('KP-000007', 5, 'Top', null);
-    const bodies = global.fetch.mock.calls.map((c) => JSON.parse(c[1].body));
+    await api.suiviValiderDevis('KP-000007', true, { t: 'jeton-aleatoire', tel: '0612345679' });
+    await api.suiviSendMessage('KP-000007', 'Bonjour', { tel: '06 12 34 56 79' });
+    await api.suiviLaisserAvis('KP-000007', 5, 'Top', { tel4: '5679' });
+    await api.getTicketByCode('KP-000007', { tel: '+33 6 12 34 56 79' });
+    await api.suiviHasAvis('KP-000007', { t: 'jeton-aleatoire' });
+    const bodies = global.fetch.mock.calls.slice(0, 3).map((c) => JSON.parse(c[1].body));
     expect(bodies[0]).toEqual({ accepte: true, t: 'jeton-aleatoire' });
-    expect(bodies[1]).toEqual({ message: 'Bonjour', tel4: '1234' });
+    expect(bodies[1]).toEqual({ message: 'Bonjour', tel: '0612345679' });
     expect(bodies[2]).toEqual({ note: 5, commentaire: 'Top' });
     expect(global.fetch.mock.calls[0][0]).not.toContain('jeton');
+    // Lecture : le numéro (donnée personnelle) part en en-tête X-Suivi-Tel, jamais dans l'URL ; le jeton reste en query
+    expect(global.fetch.mock.calls[3][0]).toBe('/api/tickets/code/KP-000007');
+    expect(global.fetch.mock.calls[3][1].headers['X-Suivi-Tel']).toBe('+33612345679');
+    expect(global.fetch.mock.calls[4][0]).toBe('/api/suivi/KP-000007/has-avis?t=jeton-aleatoire');
+    expect(global.fetch.mock.calls[4][1].headers['X-Suivi-Tel']).toBeUndefined();
   });
 });
 

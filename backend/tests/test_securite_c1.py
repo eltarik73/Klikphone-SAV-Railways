@@ -11,6 +11,7 @@ import pytest
 from app.api import auth
 from app.api import clients as clients_mod
 from app.api.auth import create_admin_token, create_token, decode_token
+from app.services import client_ref
 
 
 # ── Base simulée : réponses choisies selon le texte SQL ─────────────
@@ -361,11 +362,12 @@ def test_client_ip_derniere_valeur_xff():
 # ── ING-04 : actions publiques du suivi ─────────────────────────────
 
 def _suivi_handler(sql, params):
-    if "t.suivi_token, c.telephone AS client_tel" in sql:
+    if "t.tel_contact, c.telephone AS client_tel" in sql:
         if params[0] != "KP-000042":
             return None
         return {"id": 42, "statut": "En attente d'accord client", "ticket_code": "KP-000042",
-                "suivi_token": "JetonFictif_0123456789", "client_tel": "06 12 34 56 78"}
+                "suivi_token": "JetonFictif_0123456789", "client_tel": "06 12 34 56 78",
+                "tel_contact": "+41 79 123 45 67"}
     if "FROM tickets t LEFT JOIN clients c" in sql:
         return {"statut": "En attente d'accord client", "technicien_assigne": None, "panne": "Écran",
                 "client_prenom": "Jean", "client_nom": "Fictif", "technicien_assigne_": None}
@@ -387,7 +389,7 @@ def _suivi(client, path, body, ip="10.1.1.1", params=None):
 def test_suivi_actions_refusees_sans_preuve(client, path, body):
     r, cur = _suivi(client, path, body)
     assert r.status_code == 403
-    assert r.json()["detail"]["code"] == "verification_requise"
+    assert r.json()["detail"]["code"] == "preuve_requise"
     assert not [s for s in cur.sql() if s.startswith(("UPDATE", "INSERT"))]
 
 
@@ -405,21 +407,40 @@ def test_suivi_jeton_valide_corps_ou_query(client):
     assert r.status_code == 200
 
 
-def test_suivi_quatre_derniers_chiffres(client):
-    r, _ = _suivi(client, "/api/suivi/KP-000042/message", {"message": "Bonjour", "tel4": "5678"})
-    assert r.status_code == 200
-    r, _ = _suivi(client, "/api/suivi/KP-000042/message", {"message": "Bonjour", "tel4": "1234"})
+@pytest.mark.parametrize("tel", ["06 12 34 56 78", "+33612345678", "0033 6 12 34 56 78", "+41 79 123 45 67"])
+def test_suivi_numero_complet(client, tel):
+    """Téléphone de la fiche client OU second numéro de contact du ticket, tout format."""
+    r, _ = _suivi(client, "/api/suivi/KP-000042/message", {"message": "Bonjour", "tel": tel})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("tel", ["06 12 34 56 79", "5678", "0612", "079 123 45 67"])
+def test_suivi_numero_faux_ou_partiel_refuse(client, tel):
+    r, _ = _suivi(client, "/api/suivi/KP-000042/message", {"message": "Bonjour", "tel": tel})
     assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
 
 
-def test_suivi_quatre_chiffres_brute_force(client):
-    codes = [_suivi(client, "/api/suivi/KP-000042/avis", {"note": 5, "tel4": f"{i:04d}"}, ip="10.1.1.7")[0].status_code
+def test_suivi_tel4_n_est_plus_accepte(client):
+    r, _ = _suivi(client, "/api/suivi/KP-000042/message", {"message": "Bonjour", "tel4": "5678"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
+
+
+def test_suivi_numero_brute_force(client):
+    codes = [_suivi(client, "/api/suivi/KP-000042/avis", {"note": 5, "tel": f"06 00 00 {i:02d} 00"}, ip="10.1.1.7")[0].status_code
              for i in range(6)]
     assert codes == [403, 403, 403, 403, 429, 429]
 
 
-def test_suivi_ticket_inconnu_404(client):
-    r, _ = _suivi(client, "/api/suivi/KP-999999/message", {"message": "x", "tel4": "5678"})
+def test_suivi_ticket_inconnu_meme_refus_qu_un_mauvais_numero(client):
+    """Audit B : sans session, un code inexistant ne se distingue pas d'un code existant (403, pas 404)."""
+    r, _ = _suivi(client, "/api/suivi/KP-999999/message", {"message": "x", "tel": "06 12 34 56 78"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
+    r, _ = _suivi(client, "/api/suivi/KP-999999/message", {"message": "x"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
+    # Le 404 reste réservé au personnel
+    cur, gc = fake_db(_suivi_handler)
+    with patch("app.api.suivi.get_cursor", gc):
+        r = client.post("/api/suivi/KP-999999/message", json={"message": "x"}, headers=_headers())
     assert r.status_code == 404
 
 
@@ -576,6 +597,14 @@ EXISTANT = {"id": 5, "nom": "Fictif", "prenom": "Jean", "telephone": "0611223344
             "email": "jean@example.test", "societe": "", "carte_camby": 1, "date_creation": None}
 
 
+def _cid(r, ip="testclient"):
+    """Voie anonyme : {"client_ref"} seul, référence signée dont on relit la fiche (même IP)."""
+    assert set(r.json()) == {"client_ref"}, r.json()
+    cid = client_ref.verifier(r.json()["client_ref"], ip)
+    assert cid is not None
+    return cid
+
+
 def test_client_public_existant_complete_sans_reecrire(client):
     # Même personne (nom et prénom de la fiche, casse/accents ignorés) : rattachée, fiche complétée seulement
     cur, gc = fake_db(_client_handler(EXISTANT))
@@ -583,7 +612,7 @@ def test_client_public_existant_complete_sans_reecrire(client):
         r = client.post("/api/clients", json={"nom": "FICTIF", "prenom": "jean", "telephone": "06 11 22 33 44",
                                               "email": "pirate@example.test", "carte_camby": 0})
     assert r.status_code == 200
-    assert r.json() == {"id": 5}
+    assert _cid(r) == 5
     sql, params = [(s, p) for s, p in cur.executed if s.startswith("UPDATE clients")][0]
     assert "CASE WHEN COALESCE(nom, '') = '' THEN" in sql and "RETURNING" not in sql
     assert "CASE WHEN %(camby)s = 1 THEN 1 ELSE carte_camby END" in sql and params["camby"] == 0
@@ -596,7 +625,7 @@ def test_client_public_numero_connu_autre_nom_nouvelle_fiche(client):
     cur, gc = fake_db(_client_handler(EXISTANT))
     with patch("app.api.clients.get_cursor", gc):
         r = client.post("/api/clients", json={"nom": "Pirate", "telephone": "06 11 22 33 44", "carte_camby": 0})
-    assert r.status_code == 200 and r.json() == {"id": 9}
+    assert r.status_code == 200 and _cid(r) == 9
     assert not [s for s, _ in cur.executed if s.startswith("UPDATE clients")]
     assert [s for s, _ in cur.executed if s.startswith("INSERT INTO clients")]
 
@@ -635,11 +664,14 @@ def test_client_staff_mise_a_jour_sans_toucher_carte_non_fournie(client):
     assert "carte_camby = COALESCE(%(camby)s, carte_camby)" in sql and params["camby"] is None
 
 
-def test_client_public_nouveau_id_seul(client):
+def test_client_public_nouveau_reference_seule(client):
     _, gc = fake_db(_client_handler(None))
     with patch("app.api.clients.get_cursor", gc):
         r = client.post("/api/clients", json={"nom": "N", "telephone": "0611223344"})
-    assert r.status_code == 200 and r.json() == {"id": 9}
+    assert r.status_code == 200 and _cid(r) == 9
+    ref = r.json()["client_ref"]
+    assert ref != "9" and '"cid"' not in ref      # jamais l'identifiant nu ni la charge JSON en clair
+    assert client_ref.verifier(ref + "x", "testclient") is None   # signée : une altération l'invalide
 
 
 # ── Admin : date_cloture comparée comme du texte ────────────────────
@@ -942,14 +974,16 @@ def test_jwt_secret_jamais_la_valeur_connue_en_prod(monkeypatch):
 
 
 def test_limite_publique_ip_reelle(client):
-    from app.api import tickets
-    tickets._RATE_BUCKETS.clear()
+    from app.api import suivi
+    limite = suivi._LIMITEUR.limite
+    suivi._LIMITEUR._buckets.clear()
     _, gc = fake_db(lambda sql, params: None)
     with patch("app.api.tickets.get_cursor", gc):
         codes = [client.get("/api/tickets/code/KP-000001",
-                            headers={"X-Forwarded-For": f"8.8.{i}.{i}, 10.6.6.6"}).status_code for i in range(31)]
-    tickets._RATE_BUCKETS.clear()
-    assert codes[-1] == 429 and 429 not in codes[:30]
+                            headers={"X-Forwarded-For": f"8.8.{i}.{i}, 10.6.6.6"}).status_code
+                 for i in range(limite + 1)]
+    suivi._LIMITEUR._buckets.clear()
+    assert codes[-1] == 429 and 429 not in codes[:limite]
 
 
 def test_compteur_survit_au_verrou_maximal(monkeypatch):

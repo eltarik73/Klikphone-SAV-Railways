@@ -317,9 +317,10 @@ describe('/client?staff=1 : délai obligatoire pour une réparation créée par 
 
     fireEvent.click(screen.getByRole('button', { name: "Déposer l'appareil" }));
     expect(await screen.findByRole('heading', { name: 'Tableau de bord accueil' })).toBeInTheDocument();
+    expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({ nom: 'Martin' }), { asStaff: true });
     expect(apiMock.createTicket).toHaveBeenCalledWith(expect.objectContaining({
-      panne: 'Écran cassé', modele_autre: 'Fairphone 5', date_recuperation: '2026-10-19T16:10',
-    }));
+      client_id: 7, panne: 'Écran cassé', modele_autre: 'Fairphone 5', date_recuperation: '2026-10-19T16:10',
+    }), { asStaff: true });
     expect(apiMock.updateTicket).toHaveBeenCalledWith(70, { date_recuperation: '2026-10-19T16:10' });
     expect(await screen.findByText("Ticket KP-000070 créé · Prêt vers 16:10 aujourd'hui")).toBeInTheDocument();
     // Pas d'écran de borne (ni code en grand, ni compte à rebours)

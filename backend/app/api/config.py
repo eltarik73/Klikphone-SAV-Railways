@@ -23,6 +23,7 @@ from app.api import rgpd
 from app.services import etagere
 from app.services import mentions
 from app.services import params as params_cache
+from app.services import presence
 from app.services import prix as prix_moteur
 from app.services import sms
 
@@ -176,6 +177,18 @@ def _refuser_cle_moteur_prix(cle: str):
     raise HTTPException(403, f"{cle} : réglage tenu par le serveur (moteur de prix), non modifiable ici.")
 
 
+# Activité de l'équipe (pointage, note d'information, position de la boutique) : réglages
+# admin tenus par /api/equipe/reglages (rôle admin et code, tracés), jamais écrits ni lus par la
+# configuration générique (un salarié ne doit pas voir ni changer ce dispositif)
+CLES_EQUIPE = frozenset(presence.PARAMS)
+PREFIXES_EQUIPE = ("GEO_",)
+
+
+def est_cle_equipe(cle: str) -> bool:
+    c = (cle or "").strip().upper()
+    return c in CLES_EQUIPE or c.startswith(PREFIXES_EQUIPE)
+
+
 def _controler_verrous_boutique(valeur: str) -> str:
     """{"tarifs_reparation": [9, 10], …} normalisé (ids entiers triés, sans doublon) ; vide → {}."""
     v = (valeur or "").strip()
@@ -258,6 +271,9 @@ def _ecritures(request: Request, user: dict, params: list) -> list:
     for p in params:
         if est_cle_moteur_prix(p.cle):
             _refuser_cle_moteur_prix(p.cle)
+        if est_cle_equipe(p.cle):
+            raise HTTPException(403, f"{p.cle} : réglage de l'activité de l'équipe, modifiable seulement "
+                                     f"depuis Activité de l'équipe (mode admin).")
         if p.cle == PARAM_VERROUS_BOUTIQUE:
             p = p.model_copy(update={"valeur": _controler_verrous_boutique(p.valeur)})
             role_admin = True
@@ -294,7 +310,8 @@ def list_params(user: dict = Depends(get_current_user)):
     with get_cursor() as cur:
         cur.execute("SELECT cle, valeur FROM params ORDER BY cle")
         rows = cur.fetchall() or []
-    return [{"cle": r["cle"], "valeur": _masquer(r["cle"], r["valeur"])} for r in rows]
+    return [{"cle": r["cle"], "valeur": _masquer(r["cle"], r["valeur"])} for r in rows
+            if not est_cle_equipe(r["cle"])]
 
 
 PUBLIC_KEYS = ("NOM_BOUTIQUE", "TEL_BOUTIQUE", "ADRESSE_BOUTIQUE", "HORAIRES_BOUTIQUE", "URL_SUIVI")
@@ -432,12 +449,24 @@ def import_backup(backup: dict, user: dict = Depends(require_admin)):
     counts = {}
 
     with get_cursor() as cur:
+        # Réglages de l'activité de l'équipe (pointage, position de la boutique) : jamais repris
+        # d'une sauvegarde (ils ne s'activent que par /api/equipe/reglages, tracé) ; valeurs
+        # actuelles conservées
+        equipe_gardes = []
+        if "params" in tables:
+            cur.execute("SELECT cle, valeur FROM params")
+            equipe_gardes = [r for r in cur.fetchall() or [] if est_cle_equipe(r["cle"])]
+            tables = {**tables, "params": [r for r in tables.get("params") or []
+                                           if not (isinstance(r, dict) and est_cle_equipe(str(r.get("cle") or "")))]}
         # Supprimer dans l'ordre inverse (FK)
         for table in reversed(import_order):
             if table not in ALLOWED_BACKUP_TABLES:
                 continue
             if table in tables:
                 cur.execute(f"DELETE FROM {_safe_ident(table)}")
+        for r in equipe_gardes:
+            cur.execute("INSERT INTO params (cle, valeur) VALUES (%s, %s) ON CONFLICT (cle) DO NOTHING",
+                        (r["cle"], r["valeur"]))
 
         for table in import_order:
             if table not in ALLOWED_BACKUP_TABLES:
@@ -606,6 +635,8 @@ def test_caisse_connexion(user: dict = Depends(get_current_user)):
 @router.get("/{cle}")
 def get_param(cle: str, user: dict = Depends(get_current_user)):
     """Récupère un paramètre par clé (secret : masqué)."""
+    if est_cle_equipe(cle):
+        return {"cle": cle, "valeur": None}
     with get_cursor() as cur:
         cur.execute("SELECT valeur FROM params WHERE cle = %s", (cle,))
         row = cur.fetchone()

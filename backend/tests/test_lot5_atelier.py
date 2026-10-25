@@ -14,9 +14,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.api import grille, tickets as tickets_api
-from app.api.auth import create_admin_token, create_token
+from app.api.auth import create_admin_token, create_token, decode_token
 from app.api.devis import _calc_totals, _lignes_ticket
 from app.models import TicketCreate, TicketUpdate
+from tests.conftest import corps_borne
 from tests.test_fiche import H, _sql, _ticket, reel  # noqa: F401 (fixture)
 
 TECH = "TechLot5"
@@ -75,6 +76,8 @@ def test_patch_priorite_invalide_422(client, auth_headers):
 ])
 def test_priorite_a_la_creation(client, auth_headers, staff, priorite, source, attendu):
     corps = {"client_id": 1, "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie", "priorite": priorite}
+    if not staff:   # voie anonyme : référence client signée à la place de client_id
+        corps = corps_borne(corps)
     if source:
         corps["source"] = source
     cur, cm = _cursor(fetchone={"id": 41})
@@ -427,9 +430,9 @@ def test_suggestions_iphone_13(reel, grille_fictive):
 def test_suggestions_cout_ht_admin(reel, grille_fictive):
     _sql(reel, "DELETE FROM membres_equipe WHERE nom = 'GrilleAdmin'")
     _sql(reel, "INSERT INTO membres_equipe (nom, role) VALUES ('GrilleAdmin', 'admin')")
-    user = {"sub": "GrilleAdmin", "target": "accueil"}
-    headers = {"Authorization": f"Bearer {create_token('accueil', 'GrilleAdmin')}",
-               "X-Admin-Token": create_admin_token(user)}
+    tok = create_token('accueil', 'GrilleAdmin')
+    # Le jeton d'élévation est lié à la lignée de session (sid) du jeton porteur
+    headers = {"Authorization": f"Bearer {tok}", "X-Admin-Token": create_admin_token(decode_token(tok))}
     s = _suggest(reel, headers=headers, marque="Apple", modele="iPhone 13")["suggestions"]
     original = next(x for x in s if x["id"] == grille_fictive[("iPhone 13", "Ecran", "Original")])
     assert original["cout_ht"] == 150.0

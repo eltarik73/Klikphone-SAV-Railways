@@ -57,8 +57,9 @@ function resetApi() {
   apiMock.getConfidentialite.mockResolvedValue({ titre: 'Politique de confidentialité', sections: [] });
   apiMock.getCategories.mockResolvedValue(['Smartphone', 'Commande']);
   apiMock.getPannes.mockResolvedValue(['Écran cassé', 'Batterie']);
-  apiMock.createOrGetClient.mockResolvedValue({ id: 7 });
-  apiMock.createTicket.mockResolvedValue({ id: 70, ticket_code: 'KP-000070' });
+  // Borne sans session : POST /api/clients ne rend qu'une référence signée, le ticket son jeton de suivi
+  apiMock.createOrGetClient.mockResolvedValue({ client_ref: 'RefClientSignee' });
+  apiMock.createTicket.mockResolvedValue({ id: 70, ticket_code: 'KP-000070', suivi_token: 'JetonSuivi70' });
   apiMock.createDepotDistance.mockResolvedValue({ ticket_code: 'KP-000071' });
   apiMock.learnTerm.mockResolvedValue({});
   apiMock.getMessageRelance.mockResolvedValue({ message: 'Bonjour, votre appareil vous attend.', jours: 12 });
@@ -333,13 +334,13 @@ describe('Borne /client en 4 étapes', () => {
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith({
       nom: 'Martin', prenom: 'Claude', telephone: '06 12 34 56 79', email: 'claude@exemple.fr', societe: 'ACME',
       carte_camby: 0, rgpd_informe: true, consentement_marketing: false,
-    });
+    }, { asStaff: false });
     expect(apiMock.createTicket).toHaveBeenCalledTimes(1);
     expect(apiMock.createTicket).toHaveBeenCalledWith({
-      client_id: 7, categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
+      client_ref: 'RefClientSignee', categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
       panne: 'Écran cassé', panne_detail: 'Vitre fissurée', pin: '2580', pattern: '', notes_client: '',
       commande_piece: 0, tel_contact: '06 98 76 54 31',
-    });
+    }, { asStaff: false });
     expect(apiMock.createPartAuto).not.toHaveBeenCalled();
   });
 
@@ -365,7 +366,7 @@ describe('Borne /client en 4 étapes', () => {
     await screen.findByText('KP-000070');
     expect(apiMock.createTicket).toHaveBeenCalledWith(expect.objectContaining({
       panne: 'Batterie', pin: '', pattern: '', tel_contact: null, priorite: 'attente',
-    }));
+    }), { asStaff: false });
   });
 
   it('commande de pièce : étape 3 « Votre commande », sans bloc d’accès, pièce créée', async () => {
@@ -384,8 +385,11 @@ describe('Borne /client en 4 étapes', () => {
     await screen.findByText('KP-000070');
     expect(apiMock.createTicket).toHaveBeenCalledWith(expect.objectContaining({
       categorie: 'Commande', panne: 'Pièce à commander', panne_detail: 'Écran OLED', commande_piece: 1, tel_contact: null,
-    }));
-    expect(apiMock.createPartAuto).toHaveBeenCalledWith(expect.objectContaining({ ticket_id: 70, description: 'Écran OLED' }));
+    }), { asStaff: false });
+    // Pièce commandée sans session : preuve de suivi du ticket tout juste créé (t = suivi_token)
+    expect(apiMock.createPartAuto).toHaveBeenCalledWith(
+      expect.objectContaining({ ticket_id: 70, description: 'Écran OLED', t: 'JetonSuivi70' }), { asStaff: false },
+    );
   });
 });
 
@@ -415,9 +419,9 @@ describe('Dépôt comptoir /depot : mêmes 4 étapes, schéma tracé', () => {
     expect(await screen.findByRole('heading', { name: 'Demande enregistrée !' })).toBeInTheDocument();
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({ nom: 'Durand', carte_camby: 1 }));
     expect(apiMock.createTicket).toHaveBeenCalledWith({
-      client_id: 7, categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
+      client_ref: 'RefClientSignee', categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
       panne: 'Écran cassé', panne_detail: '', pin: '', pattern: '1-5-9-6', notes_client: '', tel_contact: null,
-    });
+    }, { asStaff: false });
   });
 });
 

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { Loader2, Star, Sparkles } from 'lucide-react';
 
-export default function FideliteCard({ clientId, ticketCode, compact = false }) {
+// Suivi public (ticketCode) : `preuve` = { t } jeton du lien ou { tel } numéro complet, exigée par le serveur
+export default function FideliteCard({ clientId, ticketCode, preuve = null, compact = false }) {
   const [fidelite, setFidelite] = useState(null);
   const [loading, setLoading] = useState(true);
   const [using, setUsing] = useState(false);
@@ -12,12 +13,12 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
     setLoading(true);
     const promise = clientId
       ? api.getFidelite(clientId)
-      : api.getFideliteByTicket(ticketCode);
+      : api.getFideliteByTicket(ticketCode, preuve);
     promise
       .then(setFidelite)
       .catch(() => setFidelite(null))
       .finally(() => setLoading(false));
-  }, [clientId, ticketCode]);
+  }, [clientId, ticketCode, preuve]);
 
   if (loading) {
     return (
@@ -44,7 +45,7 @@ export default function FideliteCard({ clientId, ticketCode, compact = false }) 
       // Refresh
       const data = clientId
         ? await api.getFidelite(clientId)
-        : await api.getFideliteByTicket(ticketCode);
+        : await api.getFideliteByTicket(ticketCode, preuve);
       setFidelite(data);
     } catch (err) {
       alert(err.message || 'Erreur');

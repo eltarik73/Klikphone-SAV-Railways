@@ -10,7 +10,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
   RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv, Inbox,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv, Inbox, CalendarClock,
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
@@ -180,7 +180,8 @@ export default function Navbar() {
       avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch((err) => {
         if (err?.status === 403) { avisRefusRef.current = true; setAvisNonRepondus(0); }
       }),
-      santePrix && Promise.resolve().then(() => api.getSantePrix())
+      // Appel synchrone (en-tête « de fond » posé par api.background) ; une exception devient un rejet
+      santePrix && new Promise((resolve) => resolve(api.getSantePrix()))
         .then(s => setPropositionsPrix(Math.max(0, Math.round(Number(s?.propositions_en_attente)) || 0)))
         .catch(() => {}),
     ]));
@@ -246,6 +247,8 @@ export default function Navbar() {
   const nbPropositionsPrix = isRoleAdmin ? propositionsPrix : 0;
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
+    // Réservée au rôle admin : aucun autre membre ne voit l'entrée dans le menu
+    ...(isRoleAdmin ? [{ path: `${basePath}/activite`, label: 'Activité de l’équipe', icon: CalendarClock }] : []),
     {
       // Même page que les tuiles « Santé des prix » (PropositionsPrix.cheminPrixARevoir), onglet propositions
       path: `${basePath}/prix-a-revoir`, to: `${basePath}/prix-a-revoir?onglet=propositions`,
@@ -268,7 +271,7 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/prix-a-revoir'];
+  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/prix-a-revoir', '/activite'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
 
   const handleNav = (path) => {

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.api import attestation, print_tickets, public_documents, tickets
+from tests.conftest import ref_anonyme
 
 TOKEN = "AbCdEfGhIjKlMnOpQrStUv"
 TYPES = ("client", "staff", "combined", "devis", "recu")
@@ -297,7 +298,9 @@ def share(monkeypatch, fake_ticket):
     monkeypatch.delenv("BACKEND_URL", raising=False)
 
 
-def test_share_links_origine_de_la_requete(client, auth_headers, share):
+def test_share_links_origine_de_la_requete(client, auth_headers, share, monkeypatch):
+    # L'hôte annoncé n'est repris dans les liens que s'il appartient au projet (ici FRONTEND_URL)
+    monkeypatch.setenv("FRONTEND_URL", "https://sav.example.test")
     h = {**auth_headers, "Host": "sav.example.test", "X-Forwarded-Proto": "https"}
     r = client.get("/api/tickets/42/share-links", headers=h)
     assert r.status_code == 200
@@ -335,8 +338,9 @@ def test_creation_ticket_sans_colonne_jeton(client, monkeypatch):
     monkeypatch.setattr(tickets, "learn_terms", lambda *_: None)
     monkeypatch.setattr(tickets, "notif_nouveau_ticket", lambda *_: None)
     monkeypatch.setattr(public_documents, "jeton_suivi", jeton_ko)
-    r = client.post("/api/tickets", json={"client_id": 1, "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie"})
-    assert r.status_code == 200 and r.json() == {"id": 5, "ticket_code": "KP-000005"}
+    r = client.post("/api/tickets", json={"client_ref": ref_anonyme(1), "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie"})
+    # Création réussie quand même ; sans jeton, la page de suivi demandera le numéro
+    assert r.status_code == 200 and r.json() == {"id": 5, "ticket_code": "KP-000005", "suivi_token": None}
     assert not any("suivi_token" in q for q in executes)
 
 
@@ -353,7 +357,7 @@ def test_creation_ticket_attribue_un_jeton(client, monkeypatch):
     monkeypatch.setattr(tickets, "learn_terms", lambda *_: None)
     monkeypatch.setattr(tickets, "notif_nouveau_ticket", lambda *_: None)
     monkeypatch.setattr(public_documents, "jeton_suivi", lambda tid: vus.append(tid) or TOKEN)
-    r = client.post("/api/tickets", json={"client_id": 1, "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie"})
+    r = client.post("/api/tickets", json={"client_ref": ref_anonyme(1), "categorie": "Smartphone", "marque": "Apple", "panne": "Batterie"})
     assert r.status_code == 200 and vus == [6]
 
 

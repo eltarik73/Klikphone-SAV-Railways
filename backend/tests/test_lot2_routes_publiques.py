@@ -126,6 +126,12 @@ DB_URL = os.getenv("KP_LOT2_DATABASE_URL")
 TEL = "0600000772"
 TEL_TIERS = "0600000773"
 TECH = "Lot2-Pytest"
+JETON = "JetonLot2_0123456789abcdef"   # préfixe du suivi_token des tickets insérés (unique par ticket, cf. _jeton)
+
+
+def _jeton(tid):
+    """suivi_token du ticket inséré par _ticket : preuve de la borne pour /auto (index unique)."""
+    return f"{JETON[:10]}{tid:016d}"
 
 
 @pytest.fixture(scope="module")
@@ -204,17 +210,21 @@ def propre(reel):
     yield cid
     _effacer(reel)
     tickets_api._RATE_BUCKETS.clear()
+    suivi_api._LIMITEUR._buckets.clear()
     auth_api.reset_essais()
 
 
 def _ticket(reel, cid, statut="En attente de diagnostic", depot_il_y_a="0 minutes", **kw):
     t = {"client_id": cid, "categorie": "Smartphone", "marque": "Marque", "modele": "Lot2",
-         "panne": "Batterie", "statut": statut, "technicien_assigne": TECH, "paye": 0, "suivi_token": None}
+         "panne": "Batterie", "statut": statut, "technicien_assigne": TECH, "paye": 0}
     t.update(kw)
     cols = list(t)
     tid = _sql(reel, "INSERT INTO tickets ({}, date_depot) VALUES ({}, LOCALTIMESTAMP - %s::interval) RETURNING id".format(
         ", ".join(cols), ", ".join(["%s"] * len(cols))), *([t[k] for k in cols] + [depot_il_y_a]))[0]["id"]
-    _sql(reel, "UPDATE tickets SET ticket_code = %s WHERE id = %s", f"KP-{tid:06d}", tid)
+    # suivi_token unique par ticket (index unique idx_tickets_suivi_token), sauf s'il est fourni :
+    # la preuve de la borne pour /auto
+    _sql(reel, "UPDATE tickets SET ticket_code = %s, suivi_token = %s WHERE id = %s",
+         f"KP-{tid:06d}", t.get("suivi_token") or _jeton(tid), tid)
     return tid
 
 
@@ -231,27 +241,39 @@ def _commandes(reel, tid):
 def test_auto_sans_session_refuse_un_ticket_cloture(reel, propre):
     c = reel["c"]
     tid = _ticket(reel, propre, statut="Clôturé", depot_il_y_a="3 days")
-    r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "x", "prix": 5})
+    r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "x", "prix": 5, "t": _jeton(tid)})
     assert r.status_code == 409, r.text
     assert _statut(reel, tid) == "Clôturé"
     assert _commandes(reel, tid) == []
-    assert c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"}).status_code == 404
+    # Ticket inexistant : même 403 qu'un ticket sans preuve (audit D), jamais 404 sans session
+    r = c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
 
 
 def test_auto_sans_session_seulement_le_ticket_neuf_et_une_fois(reel, propre):
     c = reel["c"]
     vieux = _ticket(reel, propre, depot_il_y_a="1 hour")
-    assert c.post("/api/parts/auto", json={"ticket_id": vieux, "description": "x"}).status_code == 409
+    assert c.post("/api/parts/auto", json={"ticket_id": vieux, "description": "x", "t": _jeton(vieux)}).status_code == 409
     assert _statut(reel, vieux) == "En attente de diagnostic"
 
     neuf = _ticket(reel, propre)
-    r = c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Écran", "fournisseur": "LCD", "prix": 48.5})
+    # Sans preuve : refusé avant toute écriture (audit D) ; mauvais jeton : lien_invalide
+    r = c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Écran"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
+    r = c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Écran", "t": "MauvaisJeton_0123456789"})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "lien_invalide"
+    assert _commandes(reel, neuf) == [] and _statut(reel, neuf) == "En attente de diagnostic"
+    r = c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Écran", "fournisseur": "LCD", "prix": 48.5, "t": _jeton(neuf)})
     assert r.status_code == 200, r.text
     assert _statut(reel, neuf) == "En attente de pièce"
     assert [float(x["prix"]) for x in _commandes(reel, neuf)] == [48.5]
     # Rejoué : la commande existe déjà
-    assert c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Autre"}).status_code == 409
+    assert c.post("/api/parts/auto", json={"ticket_id": neuf, "description": "Autre", "t": _jeton(neuf)}).status_code == 409
     assert len(_commandes(reel, neuf)) == 1
+    # Le numéro complet du client vaut aussi comme preuve (en-tête X-Suivi-Tel)
+    autre = _ticket(reel, propre)
+    r = c.post("/api/parts/auto", json={"ticket_id": autre, "description": "Nappe"}, headers={"X-Suivi-Tel": "06 00 00 07 72"})
+    assert r.status_code == 200, r.text
 
 
 def test_auto_avec_session_ne_fait_jamais_reculer_un_ticket_termine(reel, propre):
@@ -272,7 +294,7 @@ def test_auto_avec_session_ne_fait_jamais_reculer_un_ticket_termine(reel, propre
 def test_auto_sans_session_limite_par_ip(reel, propre):
     c = reel["c"]
     codes = [c.post("/api/parts/auto", json={"ticket_id": 999999999, "description": "x"}).status_code for _ in range(11)]
-    assert codes[:10] == [404] * 10 and codes[10] == 429
+    assert codes[:10] == [403] * 10 and codes[10] == 429
 
 
 # ─── Réception d'une pièce parmi plusieurs ───────────────────────────
@@ -313,21 +335,23 @@ def test_grattage_exige_la_preuve_du_suivi(reel, propre):
     code = f"KP-{tid:06d}"
     r = c.post(f"/api/fidelite/grattage/{code}")
     assert r.status_code == 403, r.text
-    assert c.post(f"/api/fidelite/grattage/{code}", json={"tel4": "0000"}).status_code == 403
+    assert r.json()["detail"]["code"] == "preuve_requise"
+    assert c.post(f"/api/fidelite/grattage/{code}", json={"tel4": TEL[-4:]}).status_code == 403   # plus accepté
+    assert c.post(f"/api/fidelite/grattage/{code}", json={"tel": "06 00 00 00 00"}).status_code == 403
     assert c.post(f"/api/fidelite/grattage/{code}", json={"t": "mauvais-jeton-123456789"}).status_code == 403
     assert _sql(reel, "SELECT grattage_fait FROM tickets WHERE id = %s", tid)[0]["grattage_fait"] is False
 
-    # Sans preuve, GET ne dit que actif / éligible
-    etat = c.get(f"/api/fidelite/grattage/{code}").json()
-    assert etat == {"actif": True, "eligible": True, "preuve_requise": True, "frequence": 10}
-    # Preuve par les 4 chiffres (corps) : état complet, puis grattage
-    etat = c.post(f"/api/fidelite/grattage/{code}/etat", json={"tel4": TEL[-4:]}).json()
+    # Sans preuve, GET ne dit plus rien du ticket
+    r = c.get(f"/api/fidelite/grattage/{code}")
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "preuve_requise"
+    # Preuve par le numéro complet (corps) : état complet, puis grattage
+    etat = c.post(f"/api/fidelite/grattage/{code}/etat", json={"tel": TEL}).json()
     assert etat["deja_gratte"] is False and etat["eligible"] is True
     with patch.object(fidelite_api.secrets, "randbelow", return_value=1):
-        r = c.post(f"/api/fidelite/grattage/{code}", json={"tel4": TEL[-4:]})
+        r = c.post(f"/api/fidelite/grattage/{code}", json={"tel": TEL})
     assert r.status_code == 200, r.text
     assert r.json()["gagnant"] is False
-    assert c.post(f"/api/fidelite/grattage/{code}", json={"tel4": TEL[-4:]}).status_code == 400
+    assert c.post(f"/api/fidelite/grattage/{code}", json={"tel": TEL}).status_code == 400
     # Résultat relu avec le jeton du lien
     etat = c.get(f"/api/fidelite/grattage/{code}", params={"t": "jeton-du-suivi-1234567"}).json()
     assert etat["deja_gratte"] is True and etat["gain"] is None
@@ -335,12 +359,12 @@ def test_grattage_exige_la_preuve_du_suivi(reel, propre):
 
 def test_grattage_reserve_aux_tickets_rendus_clotures_ou_payes(reel, propre):
     c = reel["c"]
-    preuve = {"tel4": TEL[-4:]}
+    preuve = {"tel": TEL}
     for statut in ("Pré-enregistré", "En attente de diagnostic", "Réparation terminée"):
         tid = _ticket(reel, propre, statut=statut)
         r = c.post(f"/api/fidelite/grattage/KP-{tid:06d}", json=preuve)
         assert r.status_code == 409, (statut, r.text)
-        assert c.get(f"/api/fidelite/grattage/KP-{tid:06d}").json()["eligible"] is False
+        assert c.get(f"/api/fidelite/grattage/KP-{tid:06d}", params=preuve).json()["eligible"] is False
     tid = _ticket(reel, propre, statut="Réparation terminée", paye=1)
     with patch.object(fidelite_api.secrets, "randbelow", return_value=1):
         assert c.post(f"/api/fidelite/grattage/KP-{tid:06d}", json=preuve).status_code == 200
@@ -350,7 +374,7 @@ def test_grattage_tirage_au_hasard_et_non_au_compteur(reel, propre):
     """L'ancien compteur faisait gagner le N-ième grattage : prévisible. Désormais, un tirage
     1 chance sur N à chaque grattage (secrets.randbelow)."""
     c = reel["c"]
-    preuve = {"tel4": TEL[-4:]}
+    preuve = {"tel": TEL}
     gagnants = []
     with patch.object(fidelite_api.secrets, "randbelow", return_value=3) as tirage:
         for _ in range(11):
@@ -371,14 +395,16 @@ def test_grattage_tirage_au_hasard_et_non_au_compteur(reel, propre):
 def test_routes_publiques_par_code_limitees(reel, propre, route):
     c = reel["c"]
     tid = _ticket(reel, propre, statut="Clôturé", depot_il_y_a="3 days")
-    codes = [c.get(route.format(f"KP-{tid:06d}")).status_code for _ in range(31)]
-    assert codes[:30] == [200] * 30 and codes[30] == 429
+    n = suivi_api._LIMITEUR.limite
+    codes = [c.get(route.format(f"KP-{tid:06d}"), params={"tel": TEL}).status_code for _ in range(n + 1)]
+    assert codes[:n] == [200] * n and codes[n] == 429
 
 
 def test_fidelite_par_code_sans_total_ni_historique(reel, propre):
     c = reel["c"]
     tid = _ticket(reel, propre, statut="Clôturé", depot_il_y_a="3 days")
-    d = c.get(f"/api/fidelite/ticket/KP-{tid:06d}").json()
+    assert c.get(f"/api/fidelite/ticket/KP-{tid:06d}").status_code == 403   # code seul : rien
+    d = c.get(f"/api/fidelite/ticket/KP-{tid:06d}", params={"tel": TEL}).json()
     assert "points" in d and "prochaine_recompense" in d and "recompenses_disponibles" in d
     for cle in ("total_depense", "historique", "bon_grattage", "bon_grattage_label"):
         assert cle not in d
@@ -442,7 +468,7 @@ def test_depot_distance_journal_a_l_heure_de_paris(reel, propre, heure_utc):
 def test_suivi_devis_journal_a_l_heure_de_paris(reel, propre, heure_utc):
     c = reel["c"]
     tid = _ticket(reel, propre, statut="En attente d'accord client", depot_il_y_a="1 day")
-    r = c.post(f"/api/suivi/KP-{tid:06d}/valider-devis", json={"accepte": False, "tel4": TEL[-4:]})
+    r = c.post(f"/api/suivi/KP-{tid:06d}/valider-devis", json={"accepte": False, "tel": TEL})
     assert r.status_code == 200, r.text
     ligne = _sql(reel, "SELECT historique FROM tickets WHERE id = %s", tid)[0]["historique"].strip().splitlines()[-1]
     assert ligne[1:12] in _heures_paris_possibles(), ligne

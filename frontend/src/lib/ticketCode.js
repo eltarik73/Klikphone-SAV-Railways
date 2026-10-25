@@ -49,3 +49,14 @@ export function normalizePhoneInput(raw) {
   else if (String(raw ?? '').trim().startsWith('+33') && d.startsWith('33')) d = `0${d.slice(2)}`;
   return d;
 }
+
+/**
+ * URL publique de suivi d'un ticket. Le jeton du lien (`t`, tickets.suivi_token) ouvre le suivi
+ * sans rien demander ; sans jeton, le client saisit le téléphone donné au dépôt. Le code reste en
+ * fin d'URL : la douchette QWERTY sur un poste AZERTY n'est reconnue que par la fin du texte.
+ */
+export function lienSuivi(origin, code, token) {
+  const base = String(origin ?? '').replace(/\/+$/, '');
+  const jeton = token ? `t=${encodeURIComponent(token)}&` : '';
+  return `${base}/suivi?${jeton}ticket=${encodeURIComponent(String(code ?? '').trim())}`;
+}

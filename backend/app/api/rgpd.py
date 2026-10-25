@@ -241,10 +241,12 @@ def _anonymiser(cur, ids: list) -> tuple:
         WHERE client_id = ANY(%s) AND (COALESCE(pin, '') <> '' OR COALESCE(pattern, '') <> '')
     """, (faits,))
     codes = cur.rowcount or 0
-    # panne_detail = « pièce — notes » : la pièce (libellé des lignes facturées) reste, les notes partent
+    # panne_detail = « pièce — notes » : la pièce (libellé des lignes facturées) reste, les notes partent.
+    # suivi_token = NULL : plus aucun lien de suivi ni document public ne rouvre le dossier
+    # (jamais recréé, cf. public_documents.jeton_suivi et main._rattraper_jetons)
     cur.execute("""
         UPDATE tickets SET imei = NULL, notes_client = NULL, commentaire_client = NULL,
-               notes_internes = NULL, attention = NULL, tel_contact = NULL,
+               notes_internes = NULL, attention = NULL, tel_contact = NULL, suivi_token = NULL,
                panne_detail = NULLIF(regexp_replace(COALESCE(panne_detail, ''), '\\s*[—–].*$', ''), '')
         WHERE client_id = ANY(%s)
     """, (faits,))

@@ -183,6 +183,8 @@ export default function DepotPage() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
+      // Borne : aucun jeton du poste ; le serveur rend une référence client signée (client_ref,
+      // 20 min), jamais l'id d'une fiche, et le ticket est créé sans session avec cette référence
       const client = await api.createOrGetClient({
         nom: form.nom, prenom: form.prenom,
         telephone: form.telephone, email: form.email,
@@ -190,7 +192,7 @@ export default function DepotPage() {
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
       });
       const result = await api.createTicket({
-        client_id: client.id, categorie: form.categorie,
+        client_ref: client.client_ref, categorie: form.categorie,
         marque: form.marque,
         ...champsModele(form.marque, form.modele, form.modele_autre),
         panne: form.panne,
@@ -198,7 +200,7 @@ export default function DepotPage() {
         pattern: form.pattern, notes_client: form.notes_client,
         tel_contact: form.tel_contact.trim() || null,
         ...(form.attente_boutique ? { priorite: 'attente' } : {}),
-      });
+      }, { asStaff: false });
       setCreatedCode(result.ticket_code);
       // Synchro dashboard/clients (la borne tourne dans la même SPA que le staff)
       invalidateCache('tickets', 'dashboard', 'interactions', 'clients');

@@ -4,10 +4,10 @@ API Programme Fidélité + Jeu de Grattage.
 - Paliers : 1000 pts = film verre trempé, 5000 pts = réduction 10€
 - Jeu de grattage : 1 chance sur N (configurable), tirée au hasard à chaque grattage
 
-Routes publiques par code ticket (codes KP-000123 séquentiels, donc énumérables) : même
-limite de débit que GET /api/tickets/code. Le grattage exige en plus la preuve du suivi
-(jeton `t` du lien ou 4 derniers chiffres `tel4`, cf. api/suivi._ticket_autorise) et un
-ticket rendu, clôturé ou payé.
+Routes publiques par code ticket (codes KP-000123 séquentiels, donc énumérables) : toutes
+exigent la preuve du suivi (jeton `t` du lien, numéro de téléphone complet `tel` ou session
+du personnel, cf. api/suivi.preuve_suivi — 403 sinon). Le grattage exige en plus un ticket
+rendu, clôturé ou payé.
 """
 
 import random
@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from app.database import get_cursor
 from app.services import params as params_cache
 from app.api.auth import get_current_user
-from app.api.suivi import AccesSuivi, _ticket_autorise
+from app.api.suivi import AccesSuivi, preuve_suivi
 
 router = APIRouter(prefix="/api/fidelite", tags=["fidelite"])
 
@@ -300,21 +300,19 @@ _CHAMPS_PUBLICS = (
 )
 
 
-def _limite_publique(request: Request):
-    # Import tardif : tickets importe ce module (crediter_ticket)
-    from app.api.tickets import _rate_limit_public_lookup
-    _rate_limit_public_lookup(request)
-
-
 @router.get("/ticket/{ticket_code}")
-def get_fidelite_by_ticket(ticket_code: str, request: Request):
-    """Récupère les infos fidélité à partir d'un code ticket (pour suivi public)."""
-    _limite_publique(request)
-
+def get_fidelite_by_ticket(
+    ticket_code: str,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
+):
+    """Infos fidélité du client d'un ticket (suivi public) : preuve du suivi exigée."""
     with get_cursor() as cur:
-        cur.execute("SELECT client_id FROM tickets WHERE ticket_code = %s", (ticket_code,))
+        tk = preuve_suivi(cur, request, ticket_code, t, tel)
+        cur.execute("SELECT client_id FROM tickets WHERE id = %s", (tk["id"],))
         row = cur.fetchone()
-        if not row:
+        if not row or not row.get("client_id"):
             raise HTTPException(404, "Ticket non trouvé")
         client_id = row["client_id"]
 
@@ -352,9 +350,10 @@ def _etat_grattage(row, frequence: int) -> dict:
             "ticket_code": row["ticket_code"], "frequence": frequence}
 
 
-def _ticket_grattage(cur, request: Request, ticket_code: str, acces: AccesSuivi, t, tel4) -> dict:
+def _ticket_grattage(cur, request: Request, ticket_code: str, acces: Optional[AccesSuivi], t, tel) -> dict:
     """Ticket du visiteur (preuve du suivi exigée, 403 sinon), verrouillé pour le grattage."""
-    tk = _ticket_autorise(cur, request, ticket_code, acces, t, tel4)
+    acces = acces or AccesSuivi()
+    tk = preuve_suivi(cur, request, ticket_code, acces.t or t, acces.tel or tel)
     cur.execute(
         "SELECT id, client_id, ticket_code, statut, paye, grattage_fait, grattage_gain"
         " FROM tickets WHERE id = %s FOR UPDATE",
@@ -368,27 +367,14 @@ def get_grattage(
     ticket_code: str,
     request: Request,
     t: Optional[str] = Query(None),
-    tel4: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
-    """État du grattage. Sans preuve : seulement actif / éligible (preuve_requise) ; le
-    résultat d'un ticket déjà gratté n'est lu qu'avec le jeton du lien (ou tel4)."""
-    _limite_publique(request)
-
+    """État du grattage (preuve du suivi exigée : rien n'est dit d'un ticket au seul code)."""
     with get_cursor() as cur:
+        row = _ticket_grattage(cur, request, ticket_code, None, t, tel)
         if _get_param(cur, "grattage_actif", "1") == "0":
             return {"actif": False}
-        frequence = _frequence(cur)
-        if t or tel4:
-            return _etat_grattage(_ticket_grattage(cur, request, ticket_code, AccesSuivi(), t, tel4), frequence)
-        cur.execute(
-            "SELECT statut, paye FROM tickets WHERE ticket_code = %s",
-            ((ticket_code or "").strip().upper(),),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Ticket non trouvé")
-
-    return {"actif": True, "eligible": _eligible(row), "preuve_requise": True, "frequence": frequence}
+        return _etat_grattage(row, _frequence(cur))
 
 
 @router.post("/grattage/{ticket_code}/etat")
@@ -396,15 +382,15 @@ def etat_grattage(
     ticket_code: str,
     request: Request,
     acces: Optional[AccesSuivi] = Body(None),
+    t: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
-    """Même état que GET, preuve dans le corps (les 4 chiffres ne passent pas dans l'URL)."""
-    _limite_publique(request)
+    """Même état que GET, preuve de préférence dans le corps (le numéro ne passe pas dans l'URL)."""
     with get_cursor() as cur:
+        row = _ticket_grattage(cur, request, ticket_code, acces, t, tel)
         if _get_param(cur, "grattage_actif", "1") == "0":
             return {"actif": False}
-        frequence = _frequence(cur)
-        row = _ticket_grattage(cur, request, ticket_code, acces or AccesSuivi(), None, None)
-        return _etat_grattage(row, frequence)
+        return _etat_grattage(row, _frequence(cur))
 
 
 @router.post("/grattage/{ticket_code}")
@@ -413,18 +399,14 @@ def gratter(
     request: Request,
     acces: Optional[AccesSuivi] = Body(None),
     t: Optional[str] = Query(None),
-    tel4: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
 ):
     """Effectue le grattage d'un ticket (preuve du suivi, ticket rendu / clôturé / payé)."""
-    _limite_publique(request)
-
     with get_cursor() as cur:
-        grattage_actif = _get_param(cur, "grattage_actif", "1")
-        if grattage_actif == "0":
-            raise HTTPException(400, "Jeu de grattage désactivé")
-
         # Ligne verrouillée : deux grattages simultanés du même ticket ne tirent qu'une fois
-        row = _ticket_grattage(cur, request, ticket_code, acces or AccesSuivi(), t, tel4)
+        row = _ticket_grattage(cur, request, ticket_code, acces, t, tel)
+        if _get_param(cur, "grattage_actif", "1") == "0":
+            raise HTTPException(400, "Jeu de grattage désactivé")
         if row["grattage_fait"]:
             raise HTTPException(400, "Déjà gratté")
         if not _eligible(row):

@@ -18,6 +18,8 @@ from app.api.autocomplete import learn_terms
 from app.api.auth import client_ip, get_current_user, get_optional_user, require_admin
 from app.api.public_documents import LimiteurDebit
 from app.api.fidelite import crediter_ticket
+from app.api.suivi import preuve_suivi
+from app.services import client_ref
 from app.services.montants import calculer_montants, format_euros, statut_paiement
 from app.models import (
     PRIORITES, TicketCreate, TicketUpdate, TicketOut, TicketFull,
@@ -99,9 +101,10 @@ def bornes_utc(debut: str, fin: Optional[str] = None) -> tuple:
 
 
 
-# ─── Rate limiter in-memory (protection enumeration tickets publics) ─
+# ─── Rate limiter in-memory (routes publiques SANS donnée de ticket : tracking, tarifs) ─
 # Simple token bucket par IP. Pas persistant (reset au redeploy), mais
 # suffit largement contre les attaquants automatises qui font > 30 req/min.
+# Les routes publiques PAR CODE TICKET passent par suivi.preuve_suivi (preuve + limite).
 _RATE_BUCKETS: dict[str, deque] = defaultdict(deque)
 _RATE_LIMIT = 30        # max 30 requetes
 _RATE_WINDOW = 60       # par 60 secondes
@@ -743,49 +746,23 @@ def get_ticket(ticket_id: int, user: dict = Depends(get_current_user)):
     return result
 
 
-@router.get("/phone/{telephone}")
-def get_tickets_by_phone(telephone: str, request: Request):
-    """Récupère les tickets par téléphone client (public — pour suivi client).
-
-    Numéro complet exigé (≥ 9 chiffres, tout format : espaces, points, +33,
-    0033) : un fragment ne doit pas permettre d'énumérer les tickets d'autrui.
-    """
-    _rate_limit_public_lookup(request)
-    digits = search_engine.phone_digits(telephone)
-    if not 9 <= len(digits) <= 15:
-        raise HTTPException(400, "Numéro de téléphone complet requis")
-    with get_cursor() as cur:
-        cur.execute("""
-            SELECT t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
-                   t.panne, t.date_depot, t.date_maj, c.telephone AS _tel
-            FROM tickets t
-            JOIN clients c ON t.client_id = c.id
-            WHERE public.kp_phone_key(c.telephone) = %s
-            ORDER BY t.date_depot DESC
-            LIMIT 60
-        """, (search_engine.phone_key(digits),))
-        rows = cur.fetchall() or []
-    # Clé = 9 derniers chiffres : on exige en plus le même numéro complet
-    # (un numéro étranger peut partager ses 9 derniers chiffres).
-    out = []
-    for r in rows:
-        r = dict(r)
-        if search_engine.same_phone(r.pop("_tel", None), telephone):
-            out.append(r)
-    return out[:20]
-
-
 @router.get("/code/{ticket_code}")
-def get_ticket_by_code(ticket_code: str, request: Request):
-    """Récupère un ticket par code (public — pour suivi client).
+def get_ticket_by_code(
+    ticket_code: str,
+    request: Request,
+    t: Optional[str] = Query(None),
+    tel: Optional[str] = Query(None),
+):
+    """Fiche publique du suivi client, par code ticket.
 
-    ⚠️ Endpoint SANS auth, accessible à quiconque possède le code (imprimé sur
-    le ticket client + encodé dans son QR). Ne renvoyer QUE les champs affichés
-    par la page de suivi — jamais de code PIN, IMEI, notes internes ni
-    coordonnées client.
+    Les codes KP-000123 sont séquentiels : la fiche n'est rendue qu'avec une preuve
+    (jeton `t` du QR / lien envoyé, OU `tel` = numéro complet donné au dépôt, OU session
+    du personnel — cf. suivi.preuve_suivi, 403 sinon). Ne renvoyer QUE les champs affichés
+    par la page de suivi — jamais de code PIN, IMEI, notes internes ni coordonnées client.
+    (L'ancienne recherche publique par téléphone seul, GET /phone/{tel}, est supprimée.)
     """
-    _rate_limit_public_lookup(request)
     with get_cursor() as cur:
+        tk = preuve_suivi(cur, request, ticket_code, t, tel)
         cur.execute("""
             SELECT t.id, t.ticket_code, t.statut, t.marque, t.modele, t.modele_autre,
                    t.panne, t.panne_detail, t.date_depot, t.date_maj, t.date_recuperation,
@@ -793,8 +770,8 @@ def get_ticket_by_code(ticket_code: str, request: Request):
                    t.reduction_pourcentage, t.reparation_supp, t.commande_piece,
                    t.commentaire_client, t.prix_supp, t.tarif_final, t.paye, t.issue
             FROM tickets t
-            WHERE t.ticket_code = %s
-        """, (ticket_code,))
+            WHERE t.id = %s
+        """, (tk["id"],))
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Ticket non trouvé")
@@ -806,8 +783,35 @@ def get_ticket_by_code(ticket_code: str, request: Request):
 
 
 # ─── CRÉATION ───────────────────────────────────────────────────
-# Sans session (borne du magasin, formulaire public) : 15 tickets par IP et par 10 minutes
-_LIMITEUR_CREATION = LimiteurDebit(limite=15, fenetre=600)
+# Sans session (borne du magasin, formulaire public) : 15 tickets par IP et par 10 minutes,
+# 120 par heure toutes IP confondues
+_LIMITEUR_CREATION = LimiteurDebit(
+    limite=15, fenetre=600, limite_globale=120, fenetre_globale=3600,
+    message="Trop de tickets créés depuis ce poste : réessayez dans quelques minutes.",
+    message_global="Trop de dépôts en ce moment : réessayez dans quelques minutes.",
+)
+REFERENCE_CLIENT_REQUISE = ("Référence client requise ou expirée : recommencez l'enregistrement "
+                            "de vos coordonnées.")
+RESERVE_AU_PERSONNEL = "Le retour SAV est réservé au personnel."
+
+
+def _client_de_la_creation(data: TicketCreate, user: Optional[dict], request: Request) -> int:
+    """Fiche à laquelle rattacher le ticket.
+
+    Personnel : client_id (422 s'il manque). Sans session : seule la référence signée rendue
+    par POST /api/clients vaut (même IP, 20 min) — un client_id nu est refusé (422), un
+    ticket anonyme ne se rattache jamais à la fiche de n'importe qui.
+    """
+    if user:
+        if data.client_id is None:
+            raise HTTPException(422, "client_id requis")
+        return data.client_id
+    if data.client_id is not None and not data.client_ref:
+        raise HTTPException(422, {"code": "reference_client_requise", "message": REFERENCE_CLIENT_REQUISE})
+    cid = client_ref.verifier(data.client_ref, client_ip(request)) if data.client_ref else None
+    if cid is None:
+        raise HTTPException(422, {"code": "reference_client_requise", "message": REFERENCE_CLIENT_REQUISE})
+    return cid
 
 
 @router.post("", response_model=dict)
@@ -819,24 +823,30 @@ def create_ticket(
 ):
     """Crée un nouveau ticket (accessible sans auth — formulaire client).
 
-    Sans session staff, la borne du magasin (/client, /depot) peut seulement déclarer
+    Sans session staff : la fiche est désignée par `client_ref` (référence signée rendue par
+    POST /api/clients, même IP, 20 min ; un `client_id` nu est refusé, 422), le retour SAV est
+    réservé au personnel (422), la borne du magasin (/client, /depot) peut seulement déclarer
     que le client attend sur place ; express et pro restent réservés au personnel,
     et un dépôt à distance ne passe jamais devant la file. Sans session : débit limité
-    par IP (429) et aucun terme appris pour l'autocomplétion du personnel.
+    par IP et plafond global (429), aucun terme appris pour l'autocomplétion du personnel.
     cree_par = membre connecté, sinon 'distance' ou 'borne'. Client inconnu : 404.
+    La réponse porte le jeton de suivi (celui du QR imprimé) : il n'est rendu qu'au créateur,
+    pour que la borne ouvre « Suivre ma réparation » sans redemander le téléphone.
     """
     if not user:
-        try:
-            _LIMITEUR_CREATION.verifier(client_ip(request))
-        except HTTPException:
-            raise HTTPException(429, "Trop de tickets créés depuis ce poste : réessayez dans quelques minutes.")
+        _LIMITEUR_CREATION.verifier(client_ip(request))
+        # Retour SAV : rattache un dossier à un autre, réservé au personnel
+        if data.est_retour_sav or data.ticket_original_id is not None:
+            raise HTTPException(422, {"code": "reserve_au_personnel", "message": RESERVE_AU_PERSONNEL})
+    client_id = _client_de_la_creation(data, user, request)
     if user:
         priorite = data.priorite
     elif data.priorite == "attente" and (data.source or "boutique") == "boutique":
         priorite = "attente"
     else:
         priorite = "normal"
-    # Si retour SAV, vérifier que le ticket original existe et appartient au même client
+    # Retour SAV : le ticket original doit exister et appartenir au même client. Un seul 404
+    # pour les deux cas : la réponse ne dit pas si un identifiant de ticket existe chez un autre.
     if data.est_retour_sav and data.ticket_original_id:
         with get_cursor() as cur:
             cur.execute(
@@ -844,10 +854,8 @@ def create_ticket(
                 (data.ticket_original_id,),
             )
             orig = cur.fetchone()
-            if not orig:
-                raise HTTPException(404, "Ticket original non trouvé")
-            if orig["client_id"] != data.client_id:
-                raise HTTPException(400, "Le ticket original n'appartient pas à ce client")
+            if not orig or orig["client_id"] != client_id:
+                raise HTTPException(404, "Client ou ticket original introuvable")
 
     statut_initial = "Pré-enregistré" if data.source == "distance" else "En attente de diagnostic"
     # Reporting « Performance accueil » : qui a enregistré le ticket
@@ -864,7 +872,7 @@ def create_ticket(
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING id
             """, (
-                data.client_id, data.categorie, data.marque, data.modele,
+                client_id, data.categorie, data.marque, data.modele,
                 data.modele_autre, data.imei, data.panne, data.panne_detail,
                 data.pin, data.pattern or "", data.notes_client, data.commande_piece,
                 statut_initial, data.est_retour_sav or False, data.ticket_original_id,
@@ -882,8 +890,9 @@ def create_ticket(
     # Transaction séparée : si la migration suivi_token a échoué, la création
     # du ticket ne doit pas tomber (rattrapage au démarrage / à la demande)
     from app.api.public_documents import jeton_suivi
+    jeton = None
     try:
-        jeton_suivi(tid)
+        jeton = jeton_suivi(tid)
     except Exception as e:
         print(f"[tickets] jeton de suivi non créé pour le ticket {tid} : {e}")
 
@@ -896,7 +905,7 @@ def create_ticket(
     appareil = data.modele_autre if data.modele_autre else f"{data.marque} {data.modele}"
     background_tasks.add_task(notif_nouveau_ticket, code, appareil, data.panne or data.panne_detail or "Réparation")
 
-    return {"id": tid, "ticket_code": code}
+    return {"id": tid, "ticket_code": code, "suivi_token": jeton or None}
 
 
 # ─── LIENS DE PARTAGE CLIENT (documents publics par jeton) ──────
@@ -908,6 +917,45 @@ def get_share_links(ticket_id: int, request: Request, user: dict = Depends(get_c
     if not token:
         raise HTTPException(404, "Ticket non trouvé")
     return liens_partage(token, request)
+
+
+@router.post("/{ticket_id}/suivi-token/regenerer")
+def regenerer_suivi_token(ticket_id: int, request: Request, user: dict = Depends(get_current_user)):
+    """Nouveau jeton de suivi (QR, liens envoyés) : l'ancien ne vaut plus. Utile quand le jeton a
+    expiré (dossier rendu/clôturé depuis plus de SUIVI_JETON_JOURS jours) ou a été diffusé par
+    erreur. La régénération date le dossier (date_maj) : le nouveau jeton vaut de nouveau
+    SUIVI_JETON_JOURS jours, sinon il naîtrait expiré sur un dossier ancien.
+    Refusé pour le ticket d'un client anonymisé (RGPD : plus de lien de suivi)."""
+    from app.api.public_documents import liens_partage, nouveau_jeton
+    now, _ = _horodatage()
+    with get_cursor() as cur:
+        cur.execute("""
+            SELECT t.id, c.anonymise_le FROM tickets t LEFT JOIN clients c ON c.id = t.client_id
+            WHERE t.id = %s
+        """, (ticket_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Ticket non trouvé")
+        if row.get("anonymise_le"):
+            raise HTTPException(409, "Client anonymisé : ce dossier n'a plus de lien de suivi.")
+        cur.execute("UPDATE tickets SET suivi_token = %s, date_maj = %s WHERE id = %s RETURNING suivi_token",
+                    (nouveau_jeton(), now, ticket_id))
+        maj = cur.fetchone()
+    jeton = (maj or {}).get("suivi_token")
+    if not jeton:
+        raise HTTPException(404, "Ticket non trouvé")
+    _ajouter_historique_hors_transaction(ticket_id, "note_privee",
+                                         f"Lien de suivi régénéré par {_auteur(user)} (l'ancien QR ne vaut plus)")
+    return {"id": ticket_id, "suivi_token": jeton, "liens": liens_partage(jeton, request)}
+
+
+def _ajouter_historique_hors_transaction(ticket_id: int, type_event: str, contenu: str) -> None:
+    """Trace dans l'historique du ticket ; un échec n'annule pas l'opération principale."""
+    try:
+        with get_cursor() as cur:
+            _ajouter_historique(cur, ticket_id, type_event, contenu)
+    except Exception as e:
+        print(f"[tickets] historique non écrit pour le ticket {ticket_id} : {e}")
 
 
 # ─── MISE À JOUR ────────────────────────────────────────────────

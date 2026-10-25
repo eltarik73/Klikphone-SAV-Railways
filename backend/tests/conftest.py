@@ -76,10 +76,25 @@ def _limiteur_creation_ticket_vide():
 def _limiteurs_publics_vides():
     """Limites par IP des formulaires publics (dépôt à distance, commande auto de la borne)
     remises à zéro : toutes les requêtes de test partagent l'IP « testclient »."""
-    from app.api import depot_distance, parts
+    from app.api import depot_distance, iphone_tarifs, parts
     depot_distance._LIMITEUR_DEPOT._buckets.clear()
     parts._LIMITEUR_AUTO._buckets.clear()
+    # Plafonds globaux de la vitrine (20/h toutes IP, 2/h par e-mail) : remis à zéro aussi
+    iphone_tarifs._LIMITEUR_VITRINE_GLOBAL._buckets.clear()
+    iphone_tarifs._LIMITEUR_VITRINE_EMAIL._buckets.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _revocations_vides():
+    """Révocations en mémoire (sessions closes par cx, jetons d'élévation par sid) vidées entre
+    deux tests : chaque test simule son propre journal des connexions."""
+    from app.api import auth
+    auth.oublier_sessions()
+    auth.oublier_revocations()
+    yield
+    auth.oublier_sessions()
+    auth.oublier_revocations()
 
 
 @pytest.fixture
@@ -110,6 +125,23 @@ def auth_headers(auth_token):
 def admin_headers(admin_token):
     """Authorization headers for an admin user."""
     return {"Authorization": f"Bearer {admin_token}"}
+
+
+def ref_anonyme(cid: int = 1, ip: str = "testclient") -> str:
+    """Référence client signée (POST /api/clients sans session) pour l'IP vue par le serveur :
+    « testclient » sans X-Forwarded-For, sinon la DERNIÈRE valeur de l'en-tête."""
+    from app.services import client_ref
+    return client_ref.signer(cid, ip)
+
+
+def corps_borne(corps: dict, cid: int = 1, ip: str = "testclient") -> dict:
+    """Corps de POST /api/tickets pour la voie anonyme : client_ref à la place de client_id."""
+    return {**{k: v for k, v in corps.items() if k != "client_id"}, "client_ref": ref_anonyme(cid, ip)}
+
+
+@pytest.fixture
+def ref_client():
+    return ref_anonyme
 
 
 @pytest.fixture

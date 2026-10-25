@@ -12,19 +12,21 @@ import hmac
 import os
 import secrets
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime, timedelta, timezone
-from time import monotonic
-from typing import Optional
+from time import monotonic, time as horloge
+from typing import Any, Optional
 
 import psycopg2
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.database import get_cursor
 from app.services import params as params_cache
+from app.services import presence
 from app.models import LoginRequest, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -60,11 +62,12 @@ ADMIN_TOKEN_MINUTES = 10
 _ADMIN_TYP = "admin_elevation"
 
 
-def create_token(target: str, utilisateur: str, sid: Optional[str] = None) -> str:
+def create_token(target: str, utilisateur: str, sid: Optional[str] = None, cx: Optional[int] = None) -> str:
     """Crée un JWT token.
 
     `sid` : lignée de session du poste, nouvelle à chaque connexion par PIN et
     transmise par switch-user (preuve du code admin, cf. exiger_role_admin).
+    `cx` : ligne du journal des connexions (connexions_equipe.id) de cette session.
     """
     expire = datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS)
     payload = {
@@ -73,6 +76,8 @@ def create_token(target: str, utilisateur: str, sid: Optional[str] = None) -> st
         "sid": sid or secrets.token_urlsafe(16),
         "exp": expire,
     }
+    if isinstance(cx, int) and not isinstance(cx, bool):
+        payload["cx"] = cx
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
@@ -110,32 +115,134 @@ async def get_current_user(
     if not payload.get("sid"):
         payload["sid"] = _sid_ancien(credentials.credentials)
         payload["sid_ancien"] = True
+    # Jeton d'une session close (déconnexion, changement d'utilisateur) : refusé
+    if await run_in_threadpool(jeton_revoque, payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session terminée : reconnectez-vous.",
+        )
     # Un poste qui présente un jeton valide est un poste de la boutique (cf. verrou global)
     _IP_CONNUES.noter(client_ip(request))
+    # Activité de la session (journal des connexions), notée par le middleware après la réponse
+    request.state.kp_user = payload
     return payload
 
 
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[dict]:
-    """Auth optionnelle (pour les routes publiques qui bénéficient d'un contexte user)."""
+    """Auth optionnelle (pour les routes publiques qui bénéficient d'un contexte user).
+
+    Un jeton de session close vaut absence de session : le visiteur est anonyme."""
     if credentials is None:
         return None
     try:
-        return decode_token(credentials.credentials)
+        payload = decode_token(credentials.credentials)
     except HTTPException:
         return None
+    if await run_in_threadpool(jeton_revoque, payload):
+        return None
+    return payload
+
+
+# ─── RÉVOCATION DES JETONS DE SESSION (journal des connexions) ───
+# Le jeton dure 30 jours (tablettes du magasin) mais la déconnexion et le changement
+# d'utilisateur ferment sa ligne connexions_equipe (claim « cx ») : un jeton dont la ligne
+# est close est refusé. La lecture (indexée par cx) est gardée 30 s, comme le contrôle du
+# rôle admin ; une ligne close ne se rouvre jamais, l'état « close » est gardé tel quel.
+# Une ligne close « expiree » (12 h d'inactivité, cf. services/presence) n'est PAS une
+# révocation : la session reprend sur une nouvelle ligne, le jeton reste valable 30 jours.
+# Un jeton sans cx (émis avant le journal) reste accepté.
+SESSION_CLOSE_CACHE_S = 30.0
+_SESSIONS_CACHE_MAX = 1024
+_sessions_closes: "OrderedDict[int, tuple]" = OrderedDict()   # cx → (close, expire monotonic)
+_sessions_verrou = threading.Lock()
+_MOTIFS_SANS_REVOCATION = ("expiree",)
+
+
+def _cx(payload: dict) -> Optional[int]:
+    cx = (payload or {}).get("cx")
+    if isinstance(cx, int) and not isinstance(cx, bool):
+        return cx
+    return None
+
+
+def _session_close_en_base(cx: int) -> bool:
+    try:
+        with get_cursor() as cur:
+            cur.execute("SELECT fin, fin_motif FROM connexions_equipe WHERE id = %s", (cx,))
+            row = cur.fetchone()
+    except Exception as e:
+        # Journal indisponible : ne déconnecte pas toute la boutique
+        print(f"[auth] journal des connexions illisible : {e}")
+        return False
+    if not row or row.get("fin") is None:
+        return False
+    return (row.get("fin_motif") or "") not in _MOTIFS_SANS_REVOCATION
+
+
+def jeton_revoque(payload: dict) -> bool:
+    """Vrai si la ligne connexions_equipe du jeton (claim cx) est close par une déconnexion
+    ou un changement d'utilisateur. Lecture mise en cache 30 s par cx."""
+    cx = _cx(payload)
+    if cx is None:
+        return False
+    maintenant = monotonic()
+    with _sessions_verrou:
+        etat = _sessions_closes.get(cx)
+        if etat is not None:
+            close, expire = etat
+            if close or expire > maintenant:
+                _sessions_closes.move_to_end(cx)
+                return close
+            _sessions_closes.pop(cx, None)
+    close = _session_close_en_base(cx)
+    with _sessions_verrou:
+        if len(_sessions_closes) >= _SESSIONS_CACHE_MAX:
+            for k in [k for k, (c, e) in _sessions_closes.items() if not c and e <= maintenant]:
+                del _sessions_closes[k]
+            while len(_sessions_closes) >= _SESSIONS_CACHE_MAX:
+                _sessions_closes.popitem(last=False)
+        _sessions_closes[cx] = (close, maintenant + SESSION_CLOSE_CACHE_S)
+    return close
+
+
+def oublier_session(cx) -> None:
+    """La ligne vient d'être close (déconnexion, changement) : le prochain contrôle relit la base."""
+    if isinstance(cx, dict):
+        cx = _cx(cx)
+    if cx is None:
+        return
+    with _sessions_verrou:
+        _sessions_closes.pop(cx, None)
+
+
+def oublier_sessions() -> None:
+    with _sessions_verrou:
+        _sessions_closes.clear()
 
 
 # ─── IP RÉELLE ───────────────────────────────────────────────────
 
+def proxy_de_confiance() -> bool:
+    """KP_TRUST_PROXY : '1' (défaut, Railway) = l'IP de connexion est la DERNIÈRE valeur de
+    X-Forwarded-For, posée par le proxy ; '0' = aucun proxy, request.client.host seulement."""
+    return os.getenv("KP_TRUST_PROXY", "1").strip().lower() not in ("0", "false", "non", "off", "no")
+
+
 def client_ip(request: Request) -> str:
-    # Le proxy Railway ajoute l'IP de connexion en DERNIER dans X-Forwarded-For :
-    # les valeurs précédentes viennent du client et sont falsifiables.
-    xff = request.headers.get("x-forwarded-for", "")
-    dernier = xff.split(",")[-1].strip() if xff else ""
-    if dernier:
-        return dernier
+    """IP du client : seule fonction à lire X-Forwarded-For (limites de débit, verrous, journaux).
+
+    Le proxy Railway ajoute l'IP de connexion en DERNIER dans X-Forwarded-For : les valeurs
+    précédentes viennent du client et sont falsifiables. Sans proxy (KP_TRUST_PROXY=0),
+    l'en-tête est ignoré."""
+    if request is None:
+        return "inconnu"
+    if proxy_de_confiance():
+        xff = request.headers.get("x-forwarded-for", "")
+        dernier = xff.split(",")[-1].strip() if xff else ""
+        if dernier:
+            return dernier
     return request.client.host if request.client else "inconnu"
 
 
@@ -244,12 +351,58 @@ class IpConnues:
             self._ips.clear()
 
 
+class FenetreEchecs:
+    """Échecs comptés toutes clés confondues sur une fenêtre glissante : au-delà de `limite`,
+    refus jusqu'à ce que le plus ancien échec sorte de la fenêtre. Sûr en threadpool."""
+
+    def __init__(self, limite: int, fenetre: float):
+        self.limite = limite
+        self.fenetre = fenetre
+        self._echecs: deque = deque()
+        self._verrou = threading.Lock()
+
+    def _purger(self, now: float):
+        while self._echecs and now - self._echecs[0] > self.fenetre:
+            self._echecs.popleft()
+
+    def attente(self) -> float:
+        """Secondes avant qu'un essai soit de nouveau admis (0 si le plafond n'est pas atteint)."""
+        now = monotonic()
+        with self._verrou:
+            self._purger(now)
+            if len(self._echecs) < self.limite:
+                return 0.0
+            return max(1.0, self.fenetre - (now - self._echecs[0]))
+
+    def echec(self) -> float:
+        now = monotonic()
+        with self._verrou:
+            self._purger(now)
+            self._echecs.append(now)
+            if len(self._echecs) < self.limite:
+                return 0.0
+            return max(1.0, self.fenetre - (now - self._echecs[0]))
+
+    def __len__(self):
+        with self._verrou:
+            self._purger(monotonic())
+            return len(self._echecs)
+
+    def reset(self):
+        with self._verrou:
+            self._echecs.clear()
+
+
 # Par IP et par cible : 5 essais, puis 30 s, 1 min, 2 min… jusqu'à 15 min. Le compteur
 # survit au verrou de 15 min (fenêtre d'1 h) : sinon 5 essais neufs à chaque expiration.
 _ESSAIS_IP = AntiBruteForce(seuil=5, base=30, plafond=900, fenetre=3600)
 # Toutes IP inconnues confondues (attaque répartie) ; les postes connus n'y sont pas soumis.
 _ESSAIS_CIBLE = AntiBruteForce(seuil=50, base=60, plafond=900, fenetre=3600)
 _IP_CONNUES = IpConnues()
+# Plafond d'échecs de PIN toutes IP confondues, postes connus compris (un attaquant sur le
+# wifi de la boutique ou derrière un poste « connu ») : 200 par heure, puis 429 pour tous.
+PIN_ECHECS_GLOBAL_H = 200
+_ECHECS_PIN = FenetreEchecs(limite=PIN_ECHECS_GLOBAL_H, fenetre=3600)
 
 
 def _cles(request: Request, cible: str):
@@ -264,8 +417,26 @@ def _refus_verrou(attente: float):
     )
 
 
+def _refus_plafond_pin(attente: float):
+    raise HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Trop d'essais de code PIN incorrects sur l'ensemble des postes. "
+               f"Connexion suspendue : réessayez dans {_duree(attente)}.",
+        headers={"Retry-After": str(max(1, int(attente + 0.999)))},
+    )
+
+
+def _cible_pin(cible: str) -> bool:
+    return cible.startswith("pin:")
+
+
 def verifier_essais(request: Request, cible: str):
-    """429 si la cible est verrouillée pour cette IP (ou, IP inconnue, pour toutes)."""
+    """429 si la cible est verrouillée pour cette IP (ou, IP inconnue, pour toutes),
+    ou si le plafond global d'échecs de PIN est atteint (toutes IP confondues)."""
+    if _cible_pin(cible):
+        attente_pin = _ECHECS_PIN.attente()
+        if attente_pin > 0:
+            _refus_plafond_pin(attente_pin)
     cle_ip, cle_cible = _cles(request, cible)
     attente = _ESSAIS_IP.attente(cle_ip)
     if not _IP_CONNUES.connue(client_ip(request)):
@@ -278,12 +449,15 @@ def noter_echec(request: Request, cible: str):
     """Compte un échec ; 429 tout de suite si cet échec déclenche le verrou."""
     cle_ip, cle_cible = _cles(request, cible)
     ip = client_ip(request)
+    attente_pin = _ECHECS_PIN.echec() if _cible_pin(cible) else 0.0
     attente = _ESSAIS_IP.echec(cle_ip)
     if not _IP_CONNUES.connue(ip):
         attente = max(attente, _ESSAIS_CIBLE.echec(cle_cible))
     print(f"[auth] échec {cible} depuis {ip}")
     if attente > 0:
         _refus_verrou(attente)
+    if attente_pin > 0:
+        _refus_plafond_pin(attente_pin)
 
 
 def noter_succes(request: Request, cible: str):
@@ -296,6 +470,7 @@ def noter_succes(request: Request, cible: str):
 def reset_essais():
     _ESSAIS_IP.reset()
     _ESSAIS_CIBLE.reset()
+    _ECHECS_PIN.reset()
     _IP_CONNUES.reset()
 
 
@@ -412,11 +587,16 @@ def controler_admin_password(request: Request, password: str) -> bool:
 # ─── ÉLÉVATION ADMIN ─────────────────────────────────────────────
 
 def create_admin_token(user: dict) -> str:
+    """Jeton d'élévation (10 min) lié au membre ET à la lignée de session du poste (sid) ;
+    `iat` (horloge du processus, fraction de seconde) le date : une révocation du sid
+    postérieure (verrouillage, déconnexion, changement de membre) l'invalide."""
     payload = {
         "sub": user.get("sub"),
         "target": user.get("target"),
+        "sid": user.get("sid") or "",
         "typ": _ADMIN_TYP,
         "admin": True,
+        "iat": horloge(),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=ADMIN_TOKEN_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -427,6 +607,36 @@ def _refus_admin(code: str, message: str):
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": code, "message": message})
 
 
+# Dernière révocation par lignée de session (verrouillage du mode admin, déconnexion,
+# changement de membre) : un jeton d'élévation émis avant est refusé. Mémoire du processus
+# (mono-worker) ; sessions_admin n'a pas de colonne pour cet horodatage et la preuve y est
+# simplement supprimée (cf. revoquer_preuve_admin). Un jeton d'élévation ne vit que 10 min.
+_REVOCATIONS_MAX = 4096
+_revocations: "OrderedDict[str, float]" = OrderedDict()
+_revocations_verrou = threading.Lock()
+
+
+def _noter_revocation(sid: str) -> None:
+    with _revocations_verrou:
+        _revocations[sid] = horloge()
+        _revocations.move_to_end(sid)
+        while len(_revocations) > _REVOCATIONS_MAX:
+            _revocations.popitem(last=False)
+
+
+def derniere_revocation(sid: Optional[str]) -> float:
+    """Horodatage (time.time) de la dernière révocation de cette lignée, 0 si aucune."""
+    if not sid:
+        return 0.0
+    with _revocations_verrou:
+        return _revocations.get(sid, 0.0)
+
+
+def oublier_revocations() -> None:
+    with _revocations_verrou:
+        _revocations.clear()
+
+
 def _jeton_elevation_valide(request: Request, user: dict) -> bool:
     jeton = (request.headers.get("x-admin-token") or "").strip()
     if not jeton:
@@ -435,8 +645,17 @@ def _jeton_elevation_valide(request: Request, user: dict) -> bool:
         payload = jwt.decode(jeton, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         return False
-    return (payload.get("typ") == _ADMIN_TYP and payload.get("admin") is True
-            and payload.get("sub") == user.get("sub"))
+    if payload.get("typ") != _ADMIN_TYP or payload.get("admin") is not True:
+        return False
+    if payload.get("sub") != user.get("sub"):
+        return False
+    sid = user.get("sid") or ""
+    if not sid or payload.get("sid") != sid:
+        return False
+    iat = payload.get("iat")
+    if not isinstance(iat, (int, float)) or isinstance(iat, bool):
+        return False
+    return float(iat) > derniere_revocation(sid)
 
 
 def exiger_elevation(request: Request, user: dict) -> dict:
@@ -552,6 +771,8 @@ def revoquer_preuve_admin(sid: Optional[str]):
     """
     if not sid:
         return
+    # Les jetons d'élévation (X-Admin-Token) émis avant cet instant sur cette lignée sont refusés
+    _noter_revocation(sid)
     oublier_roles_admin()
     try:
         with get_cursor() as cur:
@@ -674,7 +895,15 @@ def login(req: LoginRequest, request: Request):
     noter_succes(request, cible)
 
     utilisateur = _membre_autorise(req.utilisateur, req.target)
-    token = create_token(req.target, utilisateur)
+    sid = secrets.token_urlsafe(16)
+    # Journal des connexions : nouvelle ligne ; la session précédente de ce navigateur (jeton
+    # encore présenté) est close « changement »
+    precedent = _jeton_precedent(request)
+    cx = presence.ouvrir_session(request, sid, utilisateur, req.target, req.poste, req.appareil,
+                                 precedent=precedent)
+    if precedent and cx != _cx(precedent):
+        oublier_session(precedent)   # l'ancien jeton (ligne close « changement ») est refusé
+    token = create_token(req.target, utilisateur, sid=sid, cx=cx)
 
     return TokenResponse(
         access_token=token,
@@ -683,8 +912,25 @@ def login(req: LoginRequest, request: Request):
     )
 
 
+def _jeton_precedent(request: Request) -> Optional[dict]:
+    """Jeton de session encore envoyé par le navigateur au moment d'une connexion par PIN."""
+    entete = request.headers.get("authorization") or ""
+    if not entete.lower().startswith("bearer "):
+        return None
+    jeton = entete[7:].strip()
+    try:
+        payload = decode_token(jeton)
+    except HTTPException:
+        return None
+    if not payload.get("sid"):
+        payload["sid"] = _sid_ancien(jeton)
+    return payload
+
+
 class SwitchUserRequest(BaseModel):
     utilisateur: str
+    poste: Optional[Any] = None
+    appareil: Optional[Any] = None
 
 
 def _reprendre_preuve_ancienne(user: dict):
@@ -701,7 +947,7 @@ def _reprendre_preuve_ancienne(user: dict):
 
 
 @router.post("/switch-user", response_model=TokenResponse)
-def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
+def switch_user(req: SwitchUserRequest, request: Request, user: dict = Depends(get_current_user)):
     """Change d'utilisateur sans re-saisir le PIN (le token courant est valide).
 
     La lignée (sid) suit, pas la preuve du code admin : un autre membre qui prend
@@ -713,12 +959,30 @@ def switch_user(req: SwitchUserRequest, user: dict = Depends(get_current_user)):
         revoquer_preuve_admin(user.get("sid"))
     elif user.get("sid_ancien"):
         _reprendre_preuve_ancienne(user)
-    token = create_token(target, utilisateur, sid=user.get("sid"))
+    # Journal des connexions : la session du membre précédent est close « changement »
+    cx = presence.ouvrir_session(request, user.get("sid"), utilisateur, target, req.poste, req.appareil,
+                                 precedent=user)
+    if cx != _cx(user):
+        oublier_session(user)   # l'ancien jeton (ligne close) est refusé dès la prochaine requête
+    token = create_token(target, utilisateur, sid=user.get("sid"), cx=cx)
     return TokenResponse(
         access_token=token,
         target=target,
         utilisateur=utilisateur,
     )
+
+
+@router.post("/logout")
+def logout(user: dict = Depends(get_current_user)):
+    """Déconnexion : la session courante est close dans le journal (motif « deconnexion ») et la
+    preuve du code admin de cette lignée est retirée. Ne renvoie jamais d'erreur métier."""
+    ferme = presence.fermer_session(user, "deconnexion")
+    oublier_session(user)   # le jeton est refusé dès la prochaine requête (ligne close)
+    try:
+        revoquer_preuve_admin(user.get("sid"))
+    except Exception:
+        pass
+    return {"ok": True, "session_close": ferme}
 
 
 @router.get("/me")

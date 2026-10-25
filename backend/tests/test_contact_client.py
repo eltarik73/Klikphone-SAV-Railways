@@ -512,10 +512,11 @@ def test_les_changements_de_statut_automatiques_bornent_le_contact(reel, propre)
 
     # 1) Commande de pièce automatique (dépôt, sans jeton) → En attente de pièce
     # (sans session : seulement le ticket que la borne vient de créer)
-    tid = _ticket(reel, depot_il_y_a="2 minutes")
+    tid = _ticket(reel, depot_il_y_a="2 minutes", suivi_token="JetonContact_0123456789")
     _note(reel, tid, "sms", "1 minute", "✅ SMS envoyé (reçu du dépôt)")
     assert _lectures(reel, tid)["dernier"]["canal"] == "sms"
-    r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "Écran", "fournisseur": "LCD"})
+    r = c.post("/api/parts/auto", json={"ticket_id": tid, "description": "Écran", "fournisseur": "LCD",
+                                         "t": "JetonContact_0123456789"})
     assert r.status_code == 200, r.text
     piece = r.json()["id"]
     assert _sql(reel, "SELECT statut FROM tickets WHERE id = %s", tid)[0]["statut"] == "En attente de pièce"

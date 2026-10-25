@@ -9,18 +9,77 @@ import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate, formatPrix } from '../lib/utils';
 import { normalizeTicketCode, normalizePhoneInput } from '../lib/ticketCode';
-import { useFocusTrap } from '../hooks/useFocusTrap';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, ShieldCheck, Loader2, AlertCircle, FileText } from 'lucide-react';
+import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, Loader2, AlertCircle, FileText, QrCode } from 'lucide-react';
 
 const SUIVI_POLL_MS = 30_000;
+// Preuve d'accès mémorisée par code ticket, le temps de l'onglet (survit à un rechargement)
+const CLE_PREUVE = 'kp_suivi_preuve:';
+const STAFF = ['accueil', 'tech'];
+
+export const TEXTES = {
+  aide: 'Les deux sont indiqués sur votre ticket de dépôt. Vous pouvez aussi scanner le QR code du ticket.',
+  codeInvalide: 'Indiquez le numéro de ticket tel qu\'il figure sur votre ticket de dépôt (ex. KP-000123).',
+  telIncomplet: 'Saisissez le numéro de téléphone complet donné lors du dépôt.',
+  introuvable: 'Aucun ticket ne correspond à ce numéro. Vérifiez le numéro indiqué sur votre ticket de dépôt.',
+  // Sans personnel connecté, un code inconnu et un mauvais numéro reçoivent la même réponse
+  // (verification_echouee) : le message couvre les deux sans révéler si le ticket existe
+  mauvaisNumero: 'Ticket introuvable ou numéro incorrect : vérifiez le numéro de ticket et le téléphone donné au dépôt.',
+  lienInvalide: 'Ce lien de suivi n\'est plus valable. Saisissez le numéro de téléphone donné lors du dépôt pour ouvrir votre suivi.',
+  preuveRequise: 'Pour protéger vos données, indiquez le numéro de téléphone donné lors du dépôt.',
+  reseau: 'Connexion impossible. Vérifiez votre réseau puis réessayez.',
+};
+
+export function lirePreuve(code) {
+  try {
+    const brut = sessionStorage.getItem(CLE_PREUVE + code);
+    const p = brut ? JSON.parse(brut) : null;
+    return p && (p.t || p.tel) ? p : null;
+  } catch {
+    return null;
+  }
+}
+export function memoriserPreuve(code, preuve) {
+  try {
+    if (preuve && (preuve.t || preuve.tel)) sessionStorage.setItem(CLE_PREUVE + code, JSON.stringify(preuve));
+  } catch { /* stockage indisponible : la preuve reste en mémoire */ }
+}
+export function oublierPreuve(code) {
+  try { sessionStorage.removeItem(CLE_PREUVE + code); } catch { /* idem */ }
+}
+
+const preuveRefusee = (err) => err?.status === 401 || err?.status === 403;
+// Le serveur a vu le numéro saisi et l'a refusé : le champ téléphone est invalide (aria-invalid)
+const numeroRefuse = (err) => preuveRefusee(err) && (err?.detail?.code || err?.code) === 'verification_echouee';
+
+// Attente après trop de tentatives (429) : Retry-After du serveur, sinon « quelques minutes »
+function texteAttente(err) {
+  const s = Number(err?.retryAfter);
+  if (Number.isFinite(s) && s > 0) {
+    const min = Math.ceil(s / 60);
+    return `Trop de tentatives. Réessayez dans ${min > 1 ? `${min} minutes` : 'une minute'}.`;
+  }
+  return 'Trop de tentatives. Réessayez dans quelques minutes.';
+}
 
 // Message à afficher pour un refus du serveur sur une action publique
 function messageErreur(err) {
-  if (err?.status === 429) return 'Trop de tentatives. Réessayez dans quelques minutes.';
-  if (err?.name === 'TypeError') return 'Connexion impossible. Vérifiez votre réseau puis réessayez.';
+  if (err?.status === 429) return texteAttente(err);
+  if (err?.name === 'TypeError') return TEXTES.reseau;
   return err?.message || 'Une erreur est survenue, réessayez.';
 }
-const preuveRefusee = (err) => err?.status === 401 || err?.status === 403;
+
+/** Message du formulaire d'accès pour une fiche refusée (404, 403 {code}, 429, réseau). */
+export function messageAcces(err, { depuisLien = false } = {}) {
+  if (err?.status === 404) return TEXTES.introuvable;
+  if (err?.status === 429) return texteAttente(err);
+  if (preuveRefusee(err)) {
+    const code = err?.detail?.code || err?.code;
+    if (code === 'verification_echouee') return TEXTES.mauvaisNumero;
+    if (code === 'lien_invalide' || depuisLien) return TEXTES.lienInvalide;
+    return TEXTES.preuveRequise;
+  }
+  return messageErreur(err);
+}
 
 // Sous-titre de carte (icône 16 px + libellé) : un seul style pour Détail réparation / Tarification
 function TitreBloc({ icone: Icone, children }) {
@@ -33,33 +92,39 @@ function TitreBloc({ icone: Icone, children }) {
 
 export default function SuiviPage() {
   const [searchParams] = useSearchParams();
-  const [code, setCode] = useState(searchParams.get('ticket') || searchParams.get('tel') || '');
+  // Code du ticket : ?ticket= (QR, lien, douchette) tel quel, normalisé à la soumission
+  const [code, setCode] = useState(() => (searchParams.get('ticket') || '').trim());
+  const [tel, setTel] = useState('');
+  const [erreurCode, setErreurCode] = useState('');
+  const [erreurTel, setErreurTel] = useState('');
+  // Numéro refusé par le serveur (verification_echouee) : champ invalide jusqu'à la prochaine saisie
+  const [telRefuse, setTelRefuse] = useState(false);
   const [ticket, setTicket] = useState(null);
-  const [phoneResults, setPhoneResults] = useState([]);
   const [commandes, setCommandes] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Ouverture par un lien avec jeton : pas de formulaire pendant le chargement
+  const [ouvertureLien, setOuvertureLien] = useState(() => Boolean(searchParams.get('ticket')));
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  // Preuve d'accès aux actions (accepter/refuser le devis, message, avis) : le jeton `t` du lien
-  // de suivi pour le ticket ouvert par ce lien ; sinon les 4 derniers chiffres du téléphone.
-  const [urlToken] = useState(() => searchParams.get('t') || '');
-  const [tokenCode, setTokenCode] = useState(null); // ticket_code auquel s'applique urlToken
-  const [verified, setVerified] = useState(null);   // { code, tel4 } déjà accepté par le serveur
-  const [verif, setVerif] = useState(null);         // demande en cours : { exec, digits, error, busy, info }
+  // Preuve acceptée par le serveur pour le ticket affiché : { t } (jeton du QR / lien) ou
+  // { tel } (numéro complet donné au dépôt). Jointe à TOUS les appels de la fiche.
+  const [preuve, setPreuve] = useState(null);
+  const preuveRef = useRef(null);
+  preuveRef.current = preuve;
   const [actionError, setActionError] = useState('');
 
-  // QR intelligent : si un membre du staff connecté scanne le QR d'un ticket
-  // (arrivée avec ?ticket=), on le redirige vers la fiche interne.
-  // Le client, sans session, reste sur le suivi public.
+  // Personnel connecté : la session suffit (pas de preuve) ; QR intelligent : un membre du staff
+  // qui scanne le QR d'un ticket (arrivée avec ?ticket=) va sur la fiche interne.
   const { user } = useAuth();
+  const estStaff = STAFF.includes(user?.target);
   const navigate = useNavigate();
   const fromQrRef = useRef(Boolean(searchParams.get('ticket')));
   useEffect(() => {
-    if (fromQrRef.current && ticket?.id && ['accueil', 'tech'].includes(user?.target)) {
+    if (fromQrRef.current && ticket?.id && estStaff) {
       navigate(`/${user.target}/ticket/${ticket.id}`, { replace: true });
     }
-  }, [user?.target, ticket?.id, navigate]);
+  }, [estStaff, user?.target, ticket?.id, navigate]);
 
   // Message state
   const [message, setMessage] = useState('');
@@ -78,54 +143,70 @@ export default function SuiviPage() {
   const [avisSent, setAvisSent] = useState(false);
   const [hasAvis, setHasAvis] = useState(false);
 
-  const isPhoneInput = (val) => /^\+?\d[\d\s.-]{5,}$/.test(val.trim());
+  // Focus : champ téléphone après un refus (lien invalide, mauvais numéro), titre après ouverture
+  const telRef = useRef(null);
+  const titreRef = useRef(null);
+  const [focusTel, setFocusTel] = useState(0);
+  useEffect(() => {
+    if (focusTel > 0) telRef.current?.focus();
+  }, [focusTel]);
 
-  const doSearch = useCallback(async (searchVal, { fromUrl = false } = {}) => {
-    const val = (searchVal || code).trim();
-    if (!val) return;
+  const chargerAnnexes = (ticketCode, p) => {
+    api.getPublicCommandes(ticketCode, p).then(setCommandes).catch(() => setCommandes([]));
+    api.suiviHasAvis(ticketCode, p).then(r => setHasAvis(Boolean(r?.has_avis))).catch(() => {});
+  };
+
+  // Charge la fiche avec la preuve (null pour le personnel connecté) ; un refus ramène au formulaire
+  const charger = useCallback(async (ticketCode, p, { depuisLien = false } = {}) => {
     setLoading(true);
     setError('');
+    setActionError('');
+    setTelRefuse(false);
     setTicket(null);
-    setPhoneResults([]);
+    setCommandes([]);
     setDevisResult(null);
     setMsgSent(false);
     setAvisSent(false);
-    setActionError('');
-    setVerif(null);
-
-    // « 123 », « kp123 », « #123 », URL du QR → KP-000123 ; un téléphone fait au moins 9 chiffres
-    const ticketCode = normalizeTicketCode(val, { allowBareNumber: true });
-
     try {
-      if (!ticketCode && isPhoneInput(val)) {
-        const results = await api.getTicketsByPhone(normalizePhoneInput(val));
-        if (results.length === 0) {
-          setError('Aucun ticket trouvé avec ce numéro.');
-        } else if (results.length === 1) {
-          const data = await api.getTicketByCode(results[0].ticket_code);
-          setTicket(data);
-          api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
-          api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
-        } else {
-          setPhoneResults(results);
-        }
-      } else {
-        const data = await api.getTicketByCode(encodeURIComponent(ticketCode || val.toUpperCase()));
-        setTicket(data);
-        if (fromUrl && urlToken) setTokenCode(data.ticket_code);
-        api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
-        api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
+      const data = await api.getTicketByCode(ticketCode, p);
+      const codeReel = data.ticket_code || ticketCode;
+      setCode(codeReel);
+      setPreuve(p);
+      preuveRef.current = p;
+      if (p) memoriserPreuve(codeReel, p);
+      setTicket(data);
+      chargerAnnexes(codeReel, p);
+      setTel('');
+      setTimeout(() => titreRef.current?.focus(), 0);
+    } catch (err) {
+      if (preuveRefusee(err)) {
+        oublierPreuve(ticketCode);
+        setPreuve(null);
+        preuveRef.current = null;
       }
-    } catch {
-      setError('Aucun ticket trouvé.');
+      setTelRefuse(numeroRefuse(err));
+      setError(messageAcces(err, { depuisLien }));
+      setFocusTel(n => n + 1);
     } finally {
       setLoading(false);
+      setOuvertureLien(false);
     }
-  }, [code, urlToken]);
+  }, []);
 
+  // Arrivée par URL : ?t=…&ticket=… (QR, lien envoyé) ouvre directement ; ?ticket= seul (ancien
+  // lien, douchette) rouvre avec la preuve mémorisée dans l'onglet, sinon formulaire prérempli
   useEffect(() => {
-    const ticketParam = searchParams.get('ticket') || searchParams.get('tel');
-    if (ticketParam) doSearch(ticketParam, { fromUrl: true });
+    const brut = searchParams.get('ticket');
+    if (!brut) return;
+    const ticketCode = normalizeTicketCode(brut, { allowBareNumber: true }) || brut.trim().toUpperCase();
+    setCode(ticketCode);
+    const jeton = (searchParams.get('t') || '').trim();
+    if (jeton) { charger(ticketCode, { t: jeton }, { depuisLien: true }); return; }
+    if (estStaff) { charger(ticketCode, null); return; }
+    const memo = lirePreuve(ticketCode);
+    if (memo) { charger(ticketCode, memo); return; }
+    setOuvertureLien(false);
+    setFocusTel(n => n + 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -136,103 +217,70 @@ export default function SuiviPage() {
     const current = ticketCodeRef.current;
     if (!current) return;
     try {
-      const data = await api.background(() => api.getTicketByCode(current));
+      const data = await api.background(() => api.getTicketByCode(current, preuveRef.current));
       if (ticketCodeRef.current !== current) return;
       setTicket(prev => (JSON.stringify(prev) === JSON.stringify(data) ? prev : data));
       setLastRefresh(new Date());
     } catch { /* silent */ }
   }, SUIVI_POLL_MS, { enabled: Boolean(ticket?.ticket_code), immediate: false });
 
-  const preuvePour = (ticketCode) => {
-    if (urlToken && tokenCode && tokenCode === ticketCode) return { t: urlToken };
-    if (verified?.code === ticketCode) return { tel4: verified.tel4 };
-    return null;
+  // Formulaire : numéro de ticket (KP-000123, « kp123 », URL du QR scanné…) + téléphone complet
+  const handleSubmit = (e) => {
+    e?.preventDefault();
+    if (loading) return;
+    const ticketCode = normalizeTicketCode(code, { allowBareNumber: true });
+    const chiffres = normalizePhoneInput(tel);
+    const errCode = ticketCode ? '' : TEXTES.codeInvalide;
+    const errTel = chiffres.length >= 9 ? '' : TEXTES.telIncomplet;
+    setErreurCode(errCode);
+    setErreurTel(errTel);
+    setTelRefuse(false);
+    setError('');
+    if (errCode || errTel) return;
+    charger(ticketCode, { tel: tel.trim() });
   };
 
-  // Exécute une action protégée ; sans preuve (ou preuve refusée), demande les 4 chiffres
+  // Retour au formulaire (preuve refusée par une action, ou « Autre ticket ») ; `refus` = l'erreur
+  // du serveur, pour marquer le téléphone invalide si c'est le numéro qui a été refusé
+  const retourFormulaire = (msg = '', refus = null) => {
+    const ticketCode = ticket?.ticket_code || code;
+    if (msg && ticketCode) oublierPreuve(ticketCode);
+    setTicket(null);
+    setCommandes([]);
+    setPreuve(null);
+    preuveRef.current = null;
+    setError(msg);
+    setTelRefuse(numeroRefuse(refus));
+    setActionError('');
+    setFocusTel(n => n + 1);
+  };
+
+  // Exécute une action protégée avec la preuve de la fiche ; preuve refusée → formulaire
   const avecPreuve = async (exec) => {
     if (!ticket) return;
-    const preuve = preuvePour(ticket.ticket_code);
+    const p = preuveRef.current;
     setActionError('');
-    if (!preuve) {
-      setVerif({ exec, digits: '', error: '', busy: false, info: '' });
+    if (!p && !estStaff) {
+      retourFormulaire(TEXTES.preuveRequise);
       return;
     }
     try {
-      await exec(preuve);
+      await exec(p || {});
     } catch (err) {
-      if (preuveRefusee(err)) {
-        if (preuve.t) setTokenCode(null);
-        else setVerified(null);
-        setVerif({
-          exec, digits: '', busy: false, error: '',
-          info: preuve.t ? 'Ce lien de suivi n\'est plus valable : confirmez avec votre numéro de téléphone.' : '',
-        });
-      } else {
-        setActionError(messageErreur(err));
-      }
+      if (preuveRefusee(err)) retourFormulaire(messageAcces(err, { depuisLien: Boolean(p?.t) }), err);
+      else setActionError(messageErreur(err));
     }
   };
 
-  const submitVerif = async (e) => {
-    e?.preventDefault();
-    if (!verif || verif.busy || !ticket) return;
-    const tel4 = verif.digits.replace(/\D/g, '');
-    if (tel4.length !== 4) {
-      setVerif(v => ({ ...v, error: 'Saisissez les 4 derniers chiffres de votre numéro.' }));
-      return;
-    }
-    const ticketCode = ticket.ticket_code;
-    setVerif(v => ({ ...v, busy: true, error: '' }));
-    try {
-      await verif.exec({ tel4 });
-      setVerified({ code: ticketCode, tel4 });
-      setVerif(null);
-    } catch (err) {
-      setVerif(v => (v ? {
-        ...v, busy: false,
-        error: preuveRefusee(err)
-          ? 'Ces 4 chiffres ne correspondent pas au numéro de téléphone du dossier.'
-          : messageErreur(err),
-      } : v));
-    }
-  };
-
-  // Fenêtre des 4 chiffres : focus piégé, Échap ferme, retour du focus sur le bouton déclencheur
-  const verifRef = useRef(null);
-  const verifBusyRef = useRef(false);
-  verifBusyRef.current = Boolean(verif?.busy);
-  useFocusTrap(verifRef, Boolean(verif && ticket), {
-    initialFocus: '#suivi-tel4',
-    onEscape: () => { if (!verifBusyRef.current) setVerif(null); },
-  });
-
-  const handleSearch = (e) => { e?.preventDefault(); doSearch(); };
-
-  const handleSelectPhoneResult = async (ticketCode) => {
-    setLoading(true);
-    try {
-      const data = await api.getTicketByCode(ticketCode);
-      setTicket(data);
-      setPhoneResults([]);
-      api.getPublicCommandes(data.ticket_code).then(setCommandes).catch(() => setCommandes([]));
-      api.suiviHasAvis(data.ticket_code).then(r => setHasAvis(r.has_avis)).catch(() => {});
-    } catch {
-      setError('Erreur de chargement du ticket.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Les actions lèvent l'erreur : avecPreuve / submitVerif décident du message à afficher
+  // Les actions lèvent l'erreur : avecPreuve décide du message à afficher
   const handleSendMessage = () => {
     const texte = message.trim();
     if (!texte || !ticket || sendingMsg) return;
     const ticketCode = ticket.ticket_code;
-    avecPreuve(async (preuve) => {
+    avecPreuve(async (p) => {
       setSendingMsg(true);
       try {
-        await api.suiviSendMessage(ticketCode, texte, preuve);
+        await api.suiviSendMessage(ticketCode, texte, p);
         setMessage('');
         setMsgSent(true);
         setTimeout(() => setMsgSent(false), 4000);
@@ -243,13 +291,13 @@ export default function SuiviPage() {
   const handleDevisValidation = (accepte) => {
     if (!ticket || devisLoading) return;
     const ticketCode = ticket.ticket_code;
-    avecPreuve(async (preuve) => {
+    avecPreuve(async (p) => {
       setDevisLoading(true);
       try {
-        await api.suiviValiderDevis(ticketCode, accepte, preuve);
+        await api.suiviValiderDevis(ticketCode, accepte, p);
         setDevisResult(accepte ? 'accepted' : 'refused');
         // Reload ticket to get new status
-        api.getTicketByCode(ticketCode).then(setTicket).catch(() => {});
+        api.getTicketByCode(ticketCode, p).then(setTicket).catch(() => {});
       } finally { setDevisLoading(false); }
     });
   };
@@ -259,10 +307,10 @@ export default function SuiviPage() {
     const ticketCode = ticket.ticket_code;
     const note = avisNote;
     const commentaire = avisComment.trim();
-    avecPreuve(async (preuve) => {
+    avecPreuve(async (p) => {
       setAvisLoading(true);
       try {
-        await api.suiviLaisserAvis(ticketCode, note, commentaire, preuve);
+        await api.suiviLaisserAvis(ticketCode, note, commentaire, p);
         setAvisSent(true);
         setHasAvis(true);
       } finally { setAvisLoading(false); }
@@ -283,6 +331,9 @@ export default function SuiviPage() {
     return [];
   };
 
+  const afficherFormulaire = !ticket && !ouvertureLien;
+  const describedByTel = [erreurTel ? 'suivi-tel-erreur' : '', error ? 'suivi-erreur' : '', 'suivi-aide'].filter(Boolean).join(' ');
+
   const isTerminal = ticket && ['Réparation terminée', 'Rendu au client', 'Clôturé'].includes(ticket.statut);
   const isAccordClient = ticket?.statut === "En attente d'accord client";
 
@@ -295,49 +346,64 @@ export default function SuiviPage() {
             <Smartphone className="w-7 h-7" />
           </div>
           <h1 className="t-display">Suivi de réparation</h1>
-          <p className="text-base text-slate-500 mt-1.5">Entrez votre code ticket ou numéro de téléphone</p>
+          <p className="text-base text-slate-500 mt-1.5">
+            {ticket ? 'Suivez l\'avancement de votre réparation' : 'Indiquez le numéro de ticket et le téléphone donnés lors du dépôt'}
+          </p>
         </div>
 
-        {/* Search (.depot-form : saisie 56 px / 16 px, pas de zoom iOS) */}
-        <form onSubmit={handleSearch} className="depot-form flex gap-2 mb-6">
-          <input type="text" value={code} onChange={(e) => setCode(e.target.value)}
-            placeholder="KP-000001 ou 06 12 34 56 78"
-            aria-label="Numéro de ticket ou téléphone"
-            autoComplete="off"
-            className="input flex-1 min-w-0 text-center font-mono font-bold tracking-wider placeholder:font-sans placeholder:font-normal placeholder:tracking-normal" autoFocus />
-          <button type="submit" disabled={loading} className="btn-primary btn-icon btn-lg min-w-14 min-h-14 shrink-0" aria-label="Rechercher">
-            {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
-          </button>
-        </form>
+        {/* Chargement d'un lien avec jeton (QR, SMS, e-mail) : pas de formulaire à l'écran */}
+        {ouvertureLien && !ticket && (
+          <div role="status" className="card card-body flex items-center justify-center gap-3 text-slate-600 mb-6">
+            <Loader2 className="w-5 h-5 motion-safe:animate-spin text-brand-600" aria-hidden="true" />
+            <span>Ouverture de votre suivi…</span>
+          </div>
+        )}
 
         {error && (
-          <div role="alert" className="callout callout-danger animate-in">
+          <div id="suivi-erreur" role="alert" className="callout callout-danger animate-in mb-4">
             <AlertCircle aria-hidden="true" />
             <p className="font-medium">{error}</p>
           </div>
         )}
 
-        {phoneResults.length > 0 && (
-          <div className="card overflow-hidden animate-in mb-5">
-            <div className="px-4 sm:px-5 py-3 border-b border-slate-100">
-              <p className="text-sm font-semibold text-slate-700">{phoneResults.length} ticket(s) trouvé(s)</p>
+        {/* Accès : numéro de ticket + téléphone (.depot-form : saisie 56 px / 16 px, pas de zoom iOS) */}
+        {afficherFormulaire && (
+          <form onSubmit={handleSubmit} noValidate aria-busy={loading || undefined} aria-describedby="suivi-aide"
+            className="depot-form card card-body animate-in mb-6">
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="suivi-code" className="input-label">Numéro de ticket</label>
+                <input id="suivi-code" type="text" value={code}
+                  onChange={(e) => { setCode(e.target.value); setErreurCode(''); }}
+                  placeholder="KP-000123"
+                  autoComplete="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="next"
+                  aria-invalid={erreurCode ? 'true' : undefined}
+                  aria-describedby={erreurCode ? 'suivi-code-erreur' : undefined}
+                  className="input font-mono font-bold tracking-wider uppercase placeholder:font-sans placeholder:font-normal placeholder:tracking-normal placeholder:normal-case"
+                  autoFocus={!code} />
+                {erreurCode && <p id="suivi-code-erreur" role="alert" className="input-error text-sm">{erreurCode}</p>}
+              </div>
+              <div>
+                <label htmlFor="suivi-tel" className="input-label">Numéro de téléphone</label>
+                <input id="suivi-tel" ref={telRef} type="tel" value={tel}
+                  onChange={(e) => { setTel(e.target.value); setErreurTel(''); setTelRefuse(false); }}
+                  placeholder="06 12 34 56 78"
+                  autoComplete="tel" inputMode="tel" enterKeyHint="go"
+                  aria-invalid={erreurTel || telRefuse ? 'true' : undefined}
+                  aria-describedby={describedByTel}
+                  className="input tabular-nums" />
+                {erreurTel && <p id="suivi-tel-erreur" role="alert" className="input-error text-sm">{erreurTel}</p>}
+              </div>
+              <p id="suivi-aide" className="flex items-start gap-2 text-sm text-slate-500">
+                <QrCode className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+                <span>{TEXTES.aide}</span>
+              </p>
+              <button type="submit" disabled={loading} className="btn-primary btn-lg btn-block min-h-14">
+                {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Search aria-hidden="true" />}
+                Voir mon suivi
+              </button>
             </div>
-            <div className="divide-y divide-slate-100">
-              {phoneResults.map(r => (
-                <button key={r.ticket_code} type="button" onClick={() => handleSelectPhoneResult(r.ticket_code)}
-                  className="w-full flex items-center gap-3 min-h-14 px-4 sm:px-5 py-3 text-left transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500">
-                  <div className="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center shrink-0" aria-hidden="true">
-                    <Hash className="w-4 h-4 text-brand-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="t-mono text-sm font-bold text-brand-700">{r.ticket_code}</p>
-                    <p className="t-small truncate">{r.marque} {r.modele || r.modele_autre} — {r.panne}</p>
-                  </div>
-                  <StatusBadge statut={r.statut} />
-                </button>
-              ))}
-            </div>
-          </div>
+          </form>
         )}
 
         {ticket && (
@@ -368,7 +434,7 @@ export default function SuiviPage() {
             <div className="card card-body">
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-4">
                 <div className="flex items-center gap-2 min-w-0">
-                  <h2 className="text-xl font-bold font-mono tabular-nums text-brand-700">{ticket.ticket_code}</h2>
+                  <h2 ref={titreRef} tabIndex={-1} className="text-xl font-bold font-mono tabular-nums text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{ticket.ticket_code}</h2>
                   {ticket.source === 'distance' && (
                     <span className="badge badge-info">
                       <Globe className="w-3.5 h-3.5" aria-hidden="true" /> Distance
@@ -651,8 +717,8 @@ export default function SuiviPage() {
             )}
 
             {/* Fidélité */}
-            <FideliteCard ticketCode={ticket.ticket_code} compact />
-            <ScratchCard ticketCode={ticket.ticket_code} />
+            <FideliteCard ticketCode={ticket.ticket_code} preuve={preuve} compact />
+            <ScratchCard ticketCode={ticket.ticket_code} preuve={preuve} />
 
             {/* ── MESSAGE CLIENT ── */}
             <div className="card card-body">
@@ -685,6 +751,13 @@ export default function SuiviPage() {
               <RefreshCw className="w-4 h-4" aria-hidden="true" />
               <span>Mise à jour automatique toutes les 30s</span>
               {lastRefresh && <span className="tabular-nums">— {lastRefresh.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>}
+            </div>
+
+            {/* Autre ticket : retour au formulaire (la preuve de celui-ci reste mémorisée dans l'onglet) */}
+            <div className="text-center">
+              <button type="button" onClick={() => retourFormulaire()} className="btn-ghost min-h-11">
+                <Hash aria-hidden="true" /> Suivre un autre ticket
+              </button>
             </div>
 
             {/* Contact */}
@@ -747,64 +820,6 @@ export default function SuiviPage() {
         </div>
       </div>
 
-      {/* Vérification : 4 derniers chiffres du téléphone (lien de suivi sans jeton) */}
-      {verif && ticket && (
-        <div className="modal-overlay"
-          onClick={() => { if (!verif.busy) setVerif(null); }}>
-          <form
-            ref={verifRef}
-            role="dialog" aria-modal="true" aria-labelledby="suivi-verif-titre" aria-describedby="suivi-verif-texte"
-            onClick={e => e.stopPropagation()}
-            onSubmit={submitVerif}
-            className="modal depot-form sm:max-w-sm"
-          >
-            <div className="modal-header">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center shrink-0" aria-hidden="true">
-                  <ShieldCheck className="w-5 h-5 text-brand-600" />
-                </div>
-                <h2 id="suivi-verif-titre" className="t-h2">Confirmez qu'il s'agit de votre dossier</h2>
-              </div>
-            </div>
-            <div className="modal-body">
-              {verif.info && (
-                <div className="callout callout-warning mb-4">
-                  <AlertCircle aria-hidden="true" />
-                  <span>{verif.info}</span>
-                </div>
-              )}
-              <p id="suivi-verif-texte" className="t-body-lg mb-4">
-                Saisissez les <strong>4 derniers chiffres</strong> du numéro de téléphone donné lors du dépôt de l'appareil ({ticket.ticket_code}).
-              </p>
-              <label htmlFor="suivi-tel4" className="input-label">4 derniers chiffres</label>
-              <input
-                id="suivi-tel4"
-                type="text" inputMode="numeric" pattern="[0-9]*" maxLength={4} autoComplete="off"
-                value={verif.digits}
-                onChange={e => setVerif(v => ({ ...v, digits: e.target.value.replace(/\D/g, '').slice(0, 4), error: '' }))}
-                aria-invalid={Boolean(verif.error)}
-                aria-describedby={verif.error ? 'suivi-tel4-erreur' : undefined}
-                className="input text-center font-mono text-2xl tracking-[0.5em]"
-                placeholder="••••"
-              />
-              {verif.error && (
-                <div id="suivi-tel4-erreur" role="alert" className="input-error text-sm">{verif.error}</div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button type="button" onClick={() => setVerif(null)} disabled={verif.busy}
-                className="btn-ghost min-h-11 flex-1 sm:flex-none">
-                Annuler
-              </button>
-              <button type="submit" disabled={verif.busy || verif.digits.length !== 4}
-                className="btn-primary min-h-11 flex-1 sm:flex-none">
-                {verif.busy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
-                Confirmer
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </div>
   );
 }

@@ -40,6 +40,8 @@ from app.api import grille
 from app.api import reception as reception_api
 from app.api import rgpd as rgpd_api
 from app.api import propositions_prix
+from app.api import equipe as equipe_api
+from app.services import presence
 from app.services import veille_prix
 from app.services import mentions
 
@@ -304,6 +306,38 @@ _DDL_TABLES = [
         date_maj TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (ticket_id, phase)
     )""",
+    # Journal des connexions de l'équipe (services/presence.py, api/equipe.py) : jamais de
+    # coordonnées ni d'adresse IP en clair ; position effacée à 60 jours, ligne à 183 jours
+    """CREATE TABLE IF NOT EXISTS connexions_equipe (
+        id SERIAL PRIMARY KEY,
+        sid TEXT NOT NULL,
+        utilisateur TEXT NOT NULL,
+        cible TEXT NOT NULL DEFAULT 'accueil',
+        poste TEXT,
+        appareil_type TEXT NOT NULL DEFAULT 'inconnu',
+        appareil_marque TEXT,
+        appareil_modele TEXT,
+        systeme TEXT,
+        navigateur TEXT,
+        ip_empreinte TEXT DEFAULT '',
+        debut TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+        derniere_activite TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+        fin TIMESTAMP,
+        fin_motif TEXT,
+        actions INTEGER NOT NULL DEFAULT 0,
+        geo_statut TEXT,
+        geo_distance_m INTEGER,
+        geo_precision_m INTEGER,
+        geo_le TIMESTAMP
+    )""",
+    # Remise de la note d'information (pointage de présence) : par membre et par version du
+    # texte ; un membre sans remise de la version en vigueur n'est jamais géolocalisé
+    """CREATE TABLE IF NOT EXISTS equipe_notes_remises (
+        utilisateur TEXT PRIMARY KEY,
+        remise_le TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+        remise_par TEXT,
+        version TEXT NOT NULL
+    )""",
     # Postes (lignée de session, cf. auth.py) qui ont saisi le code admin
     """CREATE TABLE IF NOT EXISTS sessions_admin (
         sid TEXT PRIMARY KEY,
@@ -542,6 +576,11 @@ _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_tarifs_historique_lot ON tarifs_historique (lot_id)",
     "CREATE INDEX IF NOT EXISTS idx_tarifs_historique_ligne ON tarifs_historique (table_nom, ligne_id, id DESC)",
     "CREATE INDEX IF NOT EXISTS idx_tarifs_imports_lot ON tarifs_imports (lot_id) WHERE lot_id IS NOT NULL",
+    # Journal des connexions : semaine d'un salarié, session d'un poste, connectés et expiration
+    "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_utilisateur ON connexions_equipe (utilisateur, debut DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_sid ON connexions_equipe (sid)",
+    "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_activite ON connexions_equipe (derniere_activite)",
+    "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_debut ON connexions_equipe (debut)",
 ]
 
 
@@ -787,6 +826,14 @@ _DONNEES_FIXES = [
     """INSERT INTO params (cle, valeur) VALUES ('URL_SUIVI', 'https://klikphone-sav-v2-production.up.railway.app')
     ON CONFLICT (cle) DO UPDATE SET valeur = 'https://klikphone-sav-v2-production.up.railway.app'
     WHERE params.valeur != 'https://klikphone-sav-v2-production.up.railway.app'""",
+    # Jeton de suivi expirable (public_documents.jeton_perime) : jours de validité du QR / des
+    # liens envoyés après restitution ou clôture ; le numéro complet reste accepté sans limite
+    """INSERT INTO params (cle, valeur) VALUES ('SUIVI_JETON_JOURS', '180')
+    ON CONFLICT (cle) DO NOTHING""",
+    # RGPD : un client anonymisé n'a plus de lien de suivi (rattrapage des anonymisations
+    # faites avant que rgpd._anonymiser efface suivi_token ; jamais recréé, cf. _rattraper_jetons)
+    """UPDATE tickets t SET suivi_token = NULL
+    FROM clients c WHERE c.id = t.client_id AND c.anonymise_le IS NOT NULL AND t.suivi_token IS NOT NULL""",
     # Identité et mentions légales : clés canoniques remplies une fois depuis les anciennes
     mentions.SQL_MIGRATION,
     mentions.SQL_MIGRATION_FLAG,
@@ -821,7 +868,9 @@ def _donnees_de_demarrage():
                            NOT EXISTS (SELECT 1 FROM smartphones_tarifs) AS smartphones_tarifs,
                            NOT EXISTS (SELECT 1 FROM templates_marketing) AS templates_marketing,
                            NOT EXISTS (SELECT 1 FROM membres_equipe WHERE nom = 'Système') AS systeme,
-                           EXISTS (SELECT 1 FROM tickets WHERE suivi_token IS NULL) AS jetons
+                           EXISTS (SELECT 1 FROM tickets t WHERE t.suivi_token IS NULL
+                                   AND NOT EXISTS (SELECT 1 FROM clients c WHERE c.id = t.client_id
+                                                   AND c.anonymise_le IS NOT NULL)) AS jetons
                 """)
                 besoins = dict(cur.fetchone())
             except Exception as e:
@@ -865,13 +914,17 @@ def _donnees_de_demarrage():
 
 
 def _rattraper_jetons():
-    """Jetons de partage manquants (tickets antérieurs, conversion de devis…)."""
+    """Jetons de partage manquants (tickets antérieurs, conversion de devis…).
+
+    Jamais pour le ticket d'un client anonymisé : RGPD, son lien de suivi a été retiré."""
     import secrets
     from psycopg2.extras import execute_values
     from app.database import get_cursor
     try:
         with get_cursor() as cur:
-            cur.execute("SELECT id FROM tickets WHERE suivi_token IS NULL")
+            cur.execute("""SELECT t.id FROM tickets t WHERE t.suivi_token IS NULL
+                           AND NOT EXISTS (SELECT 1 FROM clients c WHERE c.id = t.client_id
+                                           AND c.anonymise_le IS NOT NULL)""")
             manquants = [(r["id"], secrets.token_urlsafe(16)) for r in cur.fetchall()]
             if manquants:
                 execute_values(
@@ -1291,6 +1344,9 @@ async def lifespan(app: FastAPI):
     # Rétention RGPD : vérification horaire en tâche de fond, sans effet tant qu'un admin ne l'a
     # pas activée (RGPD_RETENTION_AUTO = '1', premier passage 7 jours après l'activation)
     rgpd_api.demarrer_retention_quotidienne()
+    # Journal des connexions : position effacée à 60 jours, lignes à 183 jours, sessions inactives
+    # depuis 12 h closes (chaque heure ; KP_RETENTION_AUTO=0 empêche la tâche)
+    presence.demarrer_retention()
     # Veille des prix : un passage par semaine (comptages et notification, aucun prix écrit) ;
     # KP_VEILLE_PRIX=0 empêche même la tâche
     veille_prix.demarrer_veille_hebdomadaire()
@@ -1342,13 +1398,17 @@ app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
 async def security_and_cache_headers(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
+    # Journal des connexions : activité de la session (mémoire, écrite au plus une fois par minute)
+    presence.noter_requete(request, response.status_code)
 
     # ─── Security headers (toujours posés sur les réponses HTML/JSON) ───
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = (
-        "geolocation=(), microphone=(), camera=(), payment=()"
+        # geolocation=(self) : une lecture de position par session (pointage de présence, désactivé
+        # par défaut, réglé par l'admin) ; jamais pour un cadre tiers
+        "geolocation=(self), microphone=(), camera=(), payment=()"
     )
     # HSTS uniquement sur HTTPS (Railway sert en HTTPS, donc actif)
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -1382,6 +1442,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 # de la réponse ne sait pas les encoder (500) ; même 422, sans l'entrée.
 @app.exception_handler(RequestValidationError)
 async def validation_handler(request: Request, exc: RequestValidationError):
+    # Pointage de présence : jamais l'entrée dans la réponse (coordonnées)
+    if request.url.path.startswith("/api/equipe/position"):
+        return JSONResponse(status_code=422, content={"detail": equipe_api.ERREUR_POSITION})
     try:
         return await request_validation_exception_handler(request, exc)
     except ValueError:
@@ -1446,6 +1509,7 @@ app.include_router(search_api.router)
 app.include_router(grille.router)
 app.include_router(reception_api.router)
 app.include_router(rgpd_api.router)
+app.include_router(equipe_api.router)
 
 
 # --- HEALTH CHECK ---

@@ -453,10 +453,12 @@ def test_dashboard_rejects_bad_filters(client, auth_headers, params):
     assert client.get("/api/tickets/stats/dashboard", params=params, headers=auth_headers).status_code == 422
 
 
-def test_public_phone_requires_full_number(client):
-    assert client.get("/api/tickets/phone/06").status_code == 400
-    assert client.get("/api/tickets/phone/0").status_code == 400
-    assert client.get("/api/tickets/phone/06 12 34 56 78").status_code == 200
+def test_public_phone_lookup_removed(client, auth_headers):
+    """La recherche publique des tickets par téléphone seul n'existe plus : le suivi exige
+    le code du ticket ET une preuve (cf. tests/test_suivi_preuve.py)."""
+    for tel in ("06", "0", "06 12 34 56 78"):
+        assert client.get(f"/api/tickets/phone/{tel}").status_code in (401, 404, 405)
+        assert client.get(f"/api/tickets/phone/{tel}", headers=auth_headers).status_code in (404, 405)
 
 
 def test_client_model_normalizes_phone():

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.database import get_cursor
-from app.api.auth import get_current_user
+from app.api.auth import client_ip, get_current_user
 from app.api.tickets import _rate_limit_public_lookup
 
 
@@ -44,14 +44,9 @@ def track_event(data: TrackEventRequest, request: Request):
     source = (data.source or "").strip()[:60] or None
     target = (data.target or "").strip()[:120] or None
 
-    # IP anonymisee (hash, pas stockee en clair)
-    ip = "unknown"
-    if request.client:
-        ip = request.client.host
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        ip = xff.split(",")[0].strip()
-    ip_hash = _hash_ip(ip)
+    # IP anonymisée (hash, jamais stockée en clair) ; IP réelle = auth.client_ip (dernière
+    # valeur de X-Forwarded-For posée par le proxy, cf. KP_TRUST_PROXY), jamais la première
+    ip_hash = _hash_ip(client_ip(request))
 
     with get_cursor() as cur:
         cur.execute(

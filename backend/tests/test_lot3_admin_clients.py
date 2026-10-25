@@ -139,13 +139,14 @@ def test_creation_publique_limitee_par_ip(client, limiteur_neuf):
         assert r.status_code != 429
 
 
-def test_creation_poste_connu_non_limitee(client, limiteur_neuf):
+def test_creation_poste_connu_limitee_aussi(client, limiteur_neuf):
+    """Audit H : une IP « connue » (un jeton y a été vu) n'est plus exemptée sur la voie anonyme."""
     gc, _ = _fausse_base()
     auth_api._IP_CONNUES.noter("testclient")
     with patch.object(clients_api, "get_cursor", gc), patch.object(clients_api, "find_client_by_phone", lambda cur, t: None):
-        codes = {client.post("/api/clients", json={"nom": "Fictif", "telephone": f"06000098{i:02d}"}).status_code
-                 for i in range(12)}
-    assert codes == {200}
+        codes = [client.post("/api/clients", json={"nom": "Fictif", "telephone": f"06000098{i:02d}"}).status_code
+                 for i in range(12)]
+    assert codes[:10] == [200] * 10 and codes[10:] == [429, 429]
 
 
 @pytest.mark.parametrize("corps", [
