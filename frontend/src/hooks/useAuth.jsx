@@ -54,6 +54,9 @@ export function AuthProvider({ children }) {
           try { localStorage.setItem('kp_role', role); } catch { /* stockage indisponible */ }
           setUser((u) => (u && u.role !== role ? { ...u, role } : u));
           setVerifying(false);
+          // Session reprise (application rouverte, page rechargée) : pointage s'il n'a pas encore
+          // été fait pour elle (activé après la connexion, par exemple) — une fois par session
+          setTimeout(() => { lancerPointage(api, stored.token).catch(() => null); }, 0);
         })
         .catch((err) => {
           if (cancelled) return;
