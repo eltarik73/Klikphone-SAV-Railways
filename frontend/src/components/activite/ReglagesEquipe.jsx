@@ -25,8 +25,9 @@ function dateFr(d) {
 export function etatRemise(x) {
   if (!x) return 'À remettre';
   if (x.a_jour) return `Remise le ${dateFr(x.remise_le)}${x.remise_par ? ` par ${x.remise_par}` : ''}`.trim();
-  // Le serveur ne donne pas la date de modification de la note : celle de la remise situe la version
-  if (x.remise_le) return `Version périmée : rayon modifié depuis la remise du ${dateFr(x.remise_le)}`;
+  // La version est l'empreinte du texte complet (rayon, mais aussi nom, adresse et contact de la
+  // boutique) ; le serveur ne dit ni ce qui a changé ni quand : la date de la remise situe la version
+  if (x.remise_le) return `Version périmée : la note a changé depuis la remise du ${dateFr(x.remise_le)}`;
   return 'À remettre';
 }
 
@@ -36,8 +37,9 @@ export function etatRemise(x) {
  * interrupteur du pointage (bloqué tant que le serveur donne une raison), rayon, position de la
  * boutique, nom de ce poste, rappel des durées de conservation.
  * `sensible` : useAdminElevation (élévation redemandée si expirée).
- * `onInformationRemise(reglages)` : après chaque remise confirmée ou retirée, avec l'état renvoyé
- * par le serveur (la page parente rafraîchit son rappel).
+ * `onInformationRemise(reglages)` : au chargement et après chaque action dont la réponse dit si la
+ * note est remise à tous (remise, retrait, rayon changé), avec l'état renvoyé par le serveur (la
+ * page parente rafraîchit son rappel, nouveau salarié compris).
  */
 export default function ReglagesEquipe({ open, onFermer, sensible, onInformationRemise }) {
   const boite = useRef(null);
@@ -48,6 +50,12 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
   const [poste, setPoste] = useState(lirePoste);
   const [occupe, setOccupe] = useState('');
   const [retour, setRetour] = useState({ type: '', texte: '' });
+  // Remises en vol (noms) : chaque ligne garde son état optimiste jusqu'à SA réponse, même si une
+  // autre réponse arrive entre-temps ; la case n'est jamais `disabled` (le focus clavier resterait
+  // sur <body>), elle ignore seulement un nouveau clic tant que la réponse n'est pas arrivée
+  const enVolRef = useRef(new Set());
+  const [enVol, setEnVol] = useState([]);
+  const listeRef = useRef(null);
 
   const charger = () => {
     setEtat((e) => ({ ...e, statut: 'chargement', erreur: '' }));
@@ -55,6 +63,9 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
       .then((r) => {
         setEtat({ statut: 'pret', r: r || {}, erreur: '' });
         setRayon(String(r?.rayon_m ?? 150));
+        // Dès le chargement : la page parente apprend si la note manque à quelqu'un (salarié
+        // embauché depuis, note modifiée ailleurs) sans attendre une action ni « Actualiser »
+        if (typeof r?.information_remise === 'boolean') onInformationRemise?.(r);
       })
       .catch((err) => setEtat({ statut: 'erreur', r: null, erreur: message(err, 'Réglages indisponibles.') || 'Réglages indisponibles.' }));
   };
@@ -78,7 +89,19 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
     ? (r.pointage_blocage || '')
     : (noteRemise || remises.some((x) => x.a_jour) ? '' : 'Désactivé tant que la remise de la note d’information n’est pas confirmée.');
   const bloque = Boolean(blocage) && !actif;
-  const remiseEnCours = occupe === 'remise' || occupe.startsWith('remise:');
+  const remiseEnCours = enVol.length > 0;
+
+  /** Lignes renvoyées par le serveur, sauf celles d'une remise encore en vol : leur état optimiste
+   *  est gardé jusqu'à leur propre réponse (deux cases cochées coup sur coup). */
+  const fusionnerRemises = (courantes, serveur) => {
+    const parNom = new Map((courantes || []).map((x) => [x.utilisateur, x]));
+    return serveur.map((x) => (enVolRef.current.has(x.utilisateur) && parNom.has(x.utilisateur) ? parNom.get(x.utilisateur) : x));
+  };
+  const appliquerServeur = (res, patch) => setEtat((e) => {
+    const serveur = res && typeof res === 'object' ? res : {};
+    const remisesServeur = Array.isArray(serveur.remises) ? { remises: fusionnerRemises(e.r?.remises, serveur.remises) } : {};
+    return { ...e, r: { ...e.r, ...serveur, ...(patch || {}), ...remisesServeur } };
+  });
 
   /** Appel « sensible » puis état renvoyé par le serveur fusionné ; `{ res }` ou null en cas d'échec.
    *  La page parente est prévenue dès que le serveur dit si la note est remise à tous (une remise,
@@ -88,7 +111,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
     setRetour({ type: '', texte: '' });
     try {
       const res = await sensible(fn);
-      setEtat((e) => ({ ...e, r: { ...e.r, ...(res && typeof res === 'object' ? res : {}), ...(ok?.patch || {}) } }));
+      appliquerServeur(res, ok?.patch);
       if (ok?.texte) setRetour({ type: 'ok', texte: ok.texte });
       if (typeof res?.information_remise === 'boolean') onInformationRemise?.(res);
       return { res };
@@ -109,19 +132,45 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
       : { ...x, a_jour: false, remise_le: null, remise_par: null };
   });
 
+  const poserEnVol = (noms, ajouter) => {
+    noms.forEach((n) => (ajouter ? enVolRef.current.add(n) : enVolRef.current.delete(n)));
+    setEnVol(Array.from(enVolRef.current));
+  };
+
   const confirmerRemise = async (nom, coche = true) => {
-    const avant = etat.r;
     const noms = nom ? [nom] : remises.map((x) => x.utilisateur);
+    if (noms.some((n) => enVolRef.current.has(n))) return; // réponse attendue : clic répété ignoré
+    const avant = new Map(remises.filter((x) => noms.includes(x.utilisateur)).map((x) => [x.utilisateur, x]));
+    // « Tout confirmer » disparaît une fois tout remis : le focus clavier passe sur la première case
+    const depuisBouton = !nom && typeof document !== 'undefined' && document.activeElement?.closest?.('[data-tout-confirmer]');
+    poserEnVol(noms, true);
+    if (!nom) setOccupe('remise');
+    setRetour({ type: '', texte: '' });
     setEtat((e) => ({ ...e, r: { ...e.r, remises: poserRemises(noms, coche)(e.r?.remises || []) } }));
-    const fn = nom
-      ? () => api.confirmerInformationRemise(coche ? { membres: [nom] } : { retirer: [nom] })
-      : () => api.confirmerInformationRemise();
-    const texte = nom
-      ? (coche ? `Remise de la note à ${nom} enregistrée.` : `Remise de la note à ${nom} retirée.`)
-      : 'Remise de la note enregistrée pour toute l’équipe.';
-    const ok = await action(nom ? `remise:${nom}` : 'remise', fn, { texte });
-    if (!ok) setEtat((e) => ({ ...e, r: avant }));
-    else if (typeof ok.res?.information_remise !== 'boolean') onInformationRemise?.(null); // réponse sans état : « remise » supposée
+    try {
+      const res = await sensible(nom
+        ? () => api.confirmerInformationRemise(coche ? { membres: [nom] } : { retirer: [nom] })
+        : () => api.confirmerInformationRemise());
+      poserEnVol(noms, false);
+      appliquerServeur(res);
+      setRetour({
+        type: 'ok',
+        texte: nom
+          ? (coche ? `Remise de la note à ${nom} enregistrée.` : `Remise de la note à ${nom} retirée.`)
+          : 'Remise de la note enregistrée pour toute l’équipe.',
+      });
+      // Réponse sans état (ancien serveur) : « remise » supposée par la page parente
+      onInformationRemise?.(typeof res?.information_remise === 'boolean' ? res : null);
+      if (depuisBouton) listeRef.current?.querySelector('input[type="checkbox"]')?.focus();
+    } catch (err) {
+      poserEnVol(noms, false);
+      // Retour à l'état d'avant pour ces lignes seulement : les autres remises en vol continuent
+      setEtat((e) => ({ ...e, r: { ...e.r, remises: (e.r?.remises || []).map((x) => avant.get(x.utilisateur) || x) } }));
+      const t = message(err, 'Enregistrement impossible.');
+      if (t) setRetour({ type: 'erreur', texte: t });
+    } finally {
+      if (!nom) setOccupe('');
+    }
   };
 
   const basculer = () => {
@@ -194,7 +243,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
           </button>
         </div>
 
-        <div className="modal-body space-y-5">
+        <div className="modal-body overflow-x-hidden space-y-5">
           {etat.statut === 'chargement' && (
             <p className="loading-inline" role="status"><Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Chargement…</p>
           )}
@@ -219,7 +268,9 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                     <Printer aria-hidden="true" /> Imprimer la note
                   </button>
                   {remises.length > 0 && (manquants.length ? (
-                    <button type="button" className="btn-primary min-h-[44px]" onClick={() => confirmerRemise(null)} disabled={remiseEnCours}>
+                    <button type="button" className="btn-primary min-h-[44px]" data-tout-confirmer
+                      onClick={() => { if (!remiseEnCours) confirmerRemise(null); }}
+                      aria-busy={remiseEnCours || undefined} aria-disabled={remiseEnCours || undefined}>
                       {occupe === 'remise' ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
                       Tout confirmer
                     </button>
@@ -233,15 +284,16 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                 {perimes.length > 0 && (
                   <p className="callout callout-warning items-center gap-2 py-2 text-[13px]" role="status">
                     <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>Le rayon a changé : réimprimez la note et remettez-la à nouveau.</span>
+                    <span>La note a changé (rayon ou coordonnées de la boutique) : réimprimez-la et remettez-la à nouveau.</span>
                   </p>
                 )}
                 {remises.length ? (
-                  <ul aria-label="Remise de la note par salarié"
+                  <ul aria-label="Remise de la note par salarié" ref={listeRef}
                     className="rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-[27.5rem] overflow-y-auto overscroll-contain">
                     {remises.map((x, i) => {
                       const id = `reg-remise-${i}`;
                       const perime = !x.a_jour && Boolean(x.remise_le);
+                      const enCours = enVol.includes(x.utilisateur);
                       return (
                         <li key={x.utilisateur} className="flex items-center gap-3 px-3 min-h-[44px]">
                           <input
@@ -249,12 +301,14 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                             type="checkbox"
                             className="checkbox"
                             checked={Boolean(x.a_jour)}
-                            disabled={occupe === 'remise' || occupe === `remise:${x.utilisateur}`}
+                            aria-busy={enCours || undefined}
+                            aria-disabled={enCours || undefined}
                             onChange={(e) => confirmerRemise(x.utilisateur, e.target.checked)}
                             aria-label={`Note remise à ${x.utilisateur}`}
                             aria-describedby={`${id}-etat`}
                           />
-                          <label htmlFor={id} className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2 py-2 cursor-pointer text-[13px] leading-snug">
+                          <label htmlFor={id} className={`flex-1 min-w-0 self-stretch min-h-[44px] flex flex-wrap content-center items-baseline gap-x-2 py-1
+                            text-[13px] leading-snug ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
                             <span className="font-medium text-slate-900">{x.utilisateur}</span>
                             <span id={`${id}-etat`} className={perime ? 'text-amber-800' : x.a_jour ? 'text-slate-600' : 'text-slate-500'}>
                               {etatRemise(x)}
@@ -328,7 +382,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                   {r.boutique_position_confirmee
                     ? <span className="badge badge-success">Position de la boutique enregistrée</span>
                     : <span className="badge badge-warning">Position par défaut, à confirmer</span>}
-                  <button type="button" className="btn-secondary min-h-[44px]" onClick={enregistrerBoutique} disabled={occupe === 'boutique'}>
+                  <button type="button" className="btn-secondary min-h-[44px] h-auto whitespace-normal text-left" onClick={enregistrerBoutique} disabled={occupe === 'boutique'}>
                     {occupe === 'boutique' ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MapPin aria-hidden="true" />}
                     Enregistrer la position de la boutique (depuis ce poste)
                   </button>
@@ -357,7 +411,15 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
             </>
           )}
 
-          <p aria-live="polite" className={`text-sm ${retour.type === 'erreur' ? 'text-red-700' : 'text-emerald-700'} ${retour.texte ? '' : 'sr-only'}`}>
+          {/* Retour (succès/erreur) : collé au bas du corps, qui défile avec la liste des salariés ;
+              la zone aria-live reste montée (sr-only à vide) pour être annoncée */}
+          <p
+            aria-live="polite"
+            className={retour.texte
+              ? `sticky bottom-0 z-10 !mt-3 -mb-4 -mx-5 px-5 py-2.5 text-sm border-t bg-white/95
+                 ${retour.type === 'erreur' ? 'text-red-700 border-red-200' : 'text-emerald-700 border-emerald-200'}`
+              : 'sr-only'}
+          >
             {retour.texte}
           </p>
         </div>

@@ -117,8 +117,8 @@ def _tracer(request: Request, user: dict, action: str, details: str, regrouper: 
 
 # ─── État du dispositif : réglages, note en vigueur, remises par membre ─
 
-MSG_NOTE_A_REMETTRE = ("Remettez d'abord la note d'information aux salariés, puis confirmez-le "
-                       "(« J'ai remis la note aux salariés ») : aucune donnée ne peut être collectée par un "
+MSG_NOTE_A_REMETTRE = ("Remettez d'abord la note d'information aux salariés, puis cochez la remise "
+                       "pour chacun dans la liste ci-dessus : aucune donnée ne peut être collectée par un "
                        "dispositif dont ils n'ont pas été informés au préalable (article L1222-4 du Code du "
                        "travail).")
 MSG_BOUTIQUE_A_CONFIRMER = ("Enregistrez d'abord la position de la boutique depuis un téléphone ou une tablette "

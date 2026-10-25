@@ -560,7 +560,7 @@ describe('Page « Activité de l’équipe »', () => {
     const lignes = within(liste).getAllByRole('listitem');
     expect(lignes.map((li) => li.textContent)).toEqual([
       'NourRemise le 20/10/2026 par Tarik',
-      'KarimVersion périmée : rayon modifié depuis la remise du 12/10/2026',
+      'KarimVersion périmée : la note a changé depuis la remise du 12/10/2026',
       'LéaÀ remettre',
     ]);
     expect(within(liste).getByRole('checkbox', { name: 'Note remise à Nour' })).toBeChecked();
@@ -568,7 +568,7 @@ describe('Page « Activité de l’équipe »', () => {
     expect(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' })).not.toBeChecked();
     expect(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' })).toHaveAccessibleDescription('À remettre');
     // Explication d'une ligne pour la version périmée, bouton « Tout confirmer » tant qu'il manque quelqu'un
-    expect(within(fenetre).getByText('Le rayon a changé : réimprimez la note et remettez-la à nouveau.')).toBeInTheDocument();
+    expect(within(fenetre).getByText('La note a changé (rayon ou coordonnées de la boutique) : réimprimez-la et remettez-la à nouveau.')).toBeInTheDocument();
     expect(within(fenetre).getByRole('button', { name: 'Tout confirmer' })).toBeInTheDocument();
     expect(within(fenetre).queryByRole('button', { name: 'J’ai remis la note aux salariés' })).toBeNull();
     // Interrupteur piloté par la raison donnée par le serveur
@@ -588,15 +588,23 @@ describe('Page « Activité de l’équipe »', () => {
     const fenetre = await ouvrirReglages();
     const liste = within(fenetre).getByRole('list', { name: 'Remise de la note par salarié' });
 
-    fireEvent.click(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' }));
+    const caseLea = within(liste).getByRole('checkbox', { name: 'Note remise à Léa' });
+    caseLea.focus(); // au clavier : Tab jusqu'à la case, Espace
+    fireEvent.click(caseLea);
     expect(apiMock.confirmerInformationRemise).toHaveBeenCalledWith({ membres: ['Léa'] });
     // Optimiste : cochée tout de suite, datée d'aujourd'hui, sans admin tant que le serveur n'a pas répondu
-    const caseLea = within(liste).getByRole('checkbox', { name: 'Note remise à Léa' });
     expect(caseLea).toBeChecked();
-    expect(caseLea).toBeDisabled();
     expect(within(liste).getAllByRole('listitem')[2]).toHaveTextContent('LéaRemise le 20/10/2026');
+    // Jamais `disabled` (un élément désactivé perd le focus) : occupée, et un nouveau clic est ignoré
+    expect(caseLea).toBeEnabled();
+    expect(caseLea).toHaveAttribute('aria-busy', 'true');
+    expect(caseLea).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(caseLea);
+    fireEvent.click(caseLea);
+    expect(apiMock.confirmerInformationRemise).toHaveBeenCalledTimes(1);
     // Les autres restent cliquables
     expect(within(liste).getByRole('checkbox', { name: 'Note remise à Karim' })).not.toBeDisabled();
+    expect(within(liste).getByRole('checkbox', { name: 'Note remise à Karim' })).not.toHaveAttribute('aria-busy');
 
     const apres = reglages({
       remises: [REMISES[0], REMISES[1], { utilisateur: 'Léa', remise_le: '2026-10-20T12:05:00', remise_par: 'Tarik', a_jour: true }],
@@ -604,7 +612,10 @@ describe('Page « Activité de l’équipe »', () => {
     });
     await act(async () => { repondre(apres); });
     await waitFor(() => expect(within(liste).getAllByRole('listitem')[2]).toHaveTextContent('LéaRemise le 20/10/2026 par Tarik'));
-    expect(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' })).not.toBeDisabled();
+    expect(caseLea).not.toHaveAttribute('aria-busy');
+    expect(caseLea).not.toHaveAttribute('aria-disabled');
+    // Le focus est resté sur la case : on enchaîne au clavier sur le salarié suivant sans retraverser la fenêtre
+    expect(document.activeElement).toBe(caseLea);
     expect(within(fenetre).getByText('Remise de la note à Léa enregistrée.')).toBeInTheDocument();
     // Karim manque toujours : le rappel de la page reste
     expect(screen.getByText(/la remise de la note d’information aux salariés n’est pas confirmée/)).toBeInTheDocument();
@@ -613,11 +624,83 @@ describe('Page « Activité de l’équipe »', () => {
       remises: [{ ...REMISES[0], remise_le: null, remise_par: null, a_jour: false }, REMISES[1], REMISES[2]],
       information_remise_le: null, information_remise_par: null, membres_sans_note: ['Nour', 'Karim', 'Léa'],
     }));
-    fireEvent.click(within(liste).getByRole('checkbox', { name: 'Note remise à Nour' }));
+    const caseNour = within(liste).getByRole('checkbox', { name: 'Note remise à Nour' });
+    caseNour.focus();
+    fireEvent.click(caseNour);
     expect(apiMock.confirmerInformationRemise).toHaveBeenLastCalledWith({ retirer: ['Nour'] });
-    expect(within(liste).getByRole('checkbox', { name: 'Note remise à Nour' })).not.toBeChecked();
+    expect(caseNour).not.toBeChecked();
     await waitFor(() => expect(within(liste).getAllByRole('listitem')[0]).toHaveTextContent('NourÀ remettre'));
     expect(within(fenetre).getByText('Remise de la note à Nour retirée.')).toBeInTheDocument();
+    expect(document.activeElement).toBe(caseNour);
+  });
+
+  it('réglages : deux cases cochées coup sur coup → chaque ligne garde son état jusqu’à SA réponse', async () => {
+    apiMock.getActiviteEquipe.mockResolvedValue(activite({ information_remise: false }));
+    const SAM = { utilisateur: 'Sam', remise_le: null, remise_par: null, a_jour: false };
+    apiMock.getReglagesEquipe.mockResolvedValue(reglages({ remises: [...REMISES, SAM], membres_sans_note: ['Karim', 'Léa', 'Sam'] }));
+    const reponses = [];
+    apiMock.confirmerInformationRemise.mockImplementation(() => new Promise((res) => { reponses.push(res); }));
+    renderPage();
+    await screen.findByRole('table');
+    const fenetre = await ouvrirReglages();
+    const liste = within(fenetre).getByRole('list', { name: 'Remise de la note par salarié' });
+    const caseKarim = within(liste).getByRole('checkbox', { name: 'Note remise à Karim' });
+    const caseLea = within(liste).getByRole('checkbox', { name: 'Note remise à Léa' });
+    fireEvent.click(caseKarim);
+    fireEvent.click(caseLea);
+    expect(apiMock.confirmerInformationRemise.mock.calls).toEqual([[{ membres: ['Karim'] }], [{ membres: ['Léa'] }]]);
+    expect(caseKarim).toBeChecked();
+    expect(caseLea).toBeChecked();
+    // « Tout confirmer » attend que les réponses arrivent (clic ignoré, bouton jamais désactivé)
+    const tout = within(fenetre).getByRole('button', { name: 'Tout confirmer' });
+    expect(tout).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(tout);
+    expect(apiMock.confirmerInformationRemise).toHaveBeenCalledTimes(2);
+
+    // Réponse de Karim : côté serveur, Léa n'est pas encore remise → sa ligne garde l'état optimiste
+    await act(async () => {
+      reponses[0](reglages({
+        remises: [REMISES[0], { utilisateur: 'Karim', remise_le: '2026-10-20T12:05:00', remise_par: 'Tarik', a_jour: true }, REMISES[2], SAM],
+        membres_sans_note: ['Léa', 'Sam'],
+      }));
+    });
+    await waitFor(() => expect(within(liste).getAllByRole('listitem')[1]).toHaveTextContent('KarimRemise le 20/10/2026 par Tarik'));
+    expect(caseLea).toBeChecked();
+    expect(caseLea).toHaveAttribute('aria-busy', 'true');
+    expect(within(liste).getAllByRole('listitem')[2]).toHaveTextContent('LéaRemise le 20/10/2026');
+    expect(within(liste).getAllByRole('listitem')[2]).not.toHaveTextContent('À remettre');
+    expect(caseKarim).not.toHaveAttribute('aria-busy');
+
+    // Réponse de Léa : Karim et Léa à jour, Sam manque toujours → « Tout confirmer » redevient actif
+    await act(async () => {
+      reponses[1](reglages({
+        remises: [...REMISES.map((x) => ({ ...x, remise_le: '2026-10-20T12:06:00', remise_par: 'Tarik', a_jour: true })), SAM],
+        membres_sans_note: ['Sam'],
+      }));
+    });
+    await waitFor(() => expect(within(liste).getAllByRole('listitem')[2]).toHaveTextContent('LéaRemise le 20/10/2026 par Tarik'));
+    expect(caseLea).not.toHaveAttribute('aria-busy');
+    expect(within(liste).getByRole('checkbox', { name: 'Note remise à Sam' })).not.toBeChecked();
+    expect(within(fenetre).getByRole('button', { name: 'Tout confirmer' })).not.toHaveAttribute('aria-busy');
+    expect(screen.getByText(/la remise de la note d’information aux salariés n’est pas confirmée/)).toBeInTheDocument();
+  });
+
+  it('réglages : dès l’ouverture, la page parente apprend qu’un salarié n’a pas la note (embauché depuis)', async () => {
+    // La page croit la note remise à tous ; les réglages, plus frais, montrent un nouveau salarié sans remise
+    apiMock.getActiviteEquipe.mockResolvedValue(activite({ information_remise: true }));
+    apiMock.getReglagesEquipe.mockResolvedValue(reglages({
+      remises: [REMISES[0], { ...REMISES[1], remise_le: '2026-10-20T12:00:00', a_jour: true }, { utilisateur: 'Yanis', remise_le: null, remise_par: null, a_jour: false }],
+      membres_sans_note: ['Yanis'], information_remise: false, pointage_blocage: BLOCAGE_NOTE,
+    }));
+    renderPage();
+    await screen.findByRole('table');
+    expect(screen.queryByText(/la remise de la note d’information aux salariés n’est pas confirmée/)).toBeNull();
+    const fenetre = await ouvrirReglages();
+    expect(within(fenetre).getAllByRole('listitem')[2]).toHaveTextContent('YanisÀ remettre');
+    expect(within(fenetre).getByRole('checkbox', { name: 'Note remise à Yanis' })).not.toBeChecked();
+    // Rappel de la page sans attendre une action ni « Actualiser »
+    expect(screen.getByText(/la remise de la note d’information aux salariés n’est pas confirmée/)).toBeInTheDocument();
+    expect(apiMock.getActiviteEquipe).toHaveBeenCalledTimes(1);
   });
 
   it('réglages : « Tout confirmer » (corps vide) → tous à jour, interrupteur débloqué, rappel de la page retiré', async () => {
@@ -635,12 +718,16 @@ describe('Page « Activité de l’équipe »', () => {
     const fenetre = await ouvrirReglages();
     expect(within(fenetre).getByRole('switch')).toBeDisabled();
 
-    fireEvent.click(within(fenetre).getByRole('button', { name: 'Tout confirmer' }));
+    const tout = within(fenetre).getByRole('button', { name: 'Tout confirmer' });
+    tout.focus();
+    fireEvent.click(tout);
     expect(apiMock.confirmerInformationRemise).toHaveBeenCalledTimes(1);
     expect(apiMock.confirmerInformationRemise).toHaveBeenCalledWith();
     expect(await within(fenetre).findByText('Remise à tous les salariés (3)')).toBeInTheDocument();
     expect(within(fenetre).queryByRole('button', { name: 'Tout confirmer' })).toBeNull();
-    expect(within(fenetre).queryByText(/Le rayon a changé/)).toBeNull();
+    // Le bouton a disparu : le focus clavier passe sur la première case de la liste, pas sur <body>
+    expect(document.activeElement).toBe(within(fenetre).getByRole('checkbox', { name: 'Note remise à Nour' }));
+    expect(within(fenetre).queryByText(/La note a changé/)).toBeNull();
     for (const c of within(fenetre).getAllByRole('checkbox')) expect(c).toBeChecked();
     await waitFor(() => expect(within(fenetre).getByRole('switch')).not.toBeDisabled());
     expect(screen.queryByText(/la remise de la note d’information aux salariés n’est pas confirmée/)).toBeNull();
@@ -657,7 +744,7 @@ describe('Page « Activité de l’équipe »', () => {
     fireEvent.change(within(fenetre).getByLabelText('Rayon autour de la boutique'), { target: { value: '200' } });
     fireEvent.click(within(fenetre).getAllByRole('button', { name: 'Enregistrer' })[0]);
     await waitFor(() => expect(apiMock.updateReglagesEquipe).toHaveBeenLastCalledWith({ rayon_m: 200 }));
-    expect(await within(fenetre).findByText('Le rayon a changé : réimprimez la note et remettez-la à nouveau.')).toBeInTheDocument();
+    expect(await within(fenetre).findByText('La note a changé (rayon ou coordonnées de la boutique) : réimprimez-la et remettez-la à nouveau.')).toBeInTheDocument();
     expect(within(fenetre).getByRole('button', { name: 'Tout confirmer' })).toBeInTheDocument();
     expect(within(fenetre).getByRole('switch')).toBeDisabled();
     expect(within(fenetre).getByRole('switch')).toHaveAttribute('aria-checked', 'false');
@@ -680,9 +767,16 @@ describe('Page « Activité de l’équipe »', () => {
     await screen.findByRole('table');
     const fenetre = await ouvrirReglages();
     const liste = within(fenetre).getByRole('list', { name: 'Remise de la note par salarié' });
-    fireEvent.click(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' }));
-    expect(await within(fenetre).findByText('Salarié inconnu ou inactif : Léa')).toBeInTheDocument();
-    expect(within(liste).getByRole('checkbox', { name: 'Note remise à Léa' })).not.toBeChecked();
+    const caseLea = within(liste).getByRole('checkbox', { name: 'Note remise à Léa' });
+    caseLea.focus();
+    fireEvent.click(caseLea);
+    const msg = await within(fenetre).findByText('Salarié inconnu ou inactif : Léa');
+    expect(msg).toHaveAttribute('aria-live', 'polite');
+    // Collé au bas du corps défilant : visible sans défiler, même avec dix salariés dans la liste
+    expect(msg).toHaveClass('sticky', 'bottom-0');
+    expect(caseLea).not.toBeChecked();
+    expect(caseLea).not.toHaveAttribute('aria-busy');
+    expect(document.activeElement).toBe(caseLea);
     expect(within(liste).getAllByRole('listitem')[2]).toHaveTextContent('LéaÀ remettre');
   });
 
@@ -696,10 +790,10 @@ describe('Page « Activité de l’équipe »', () => {
     renderPage();
     await screen.findByRole('table');
     const fenetre = await ouvrirReglages();
-    expect(within(fenetre).getByText('Le rayon a changé : réimprimez la note et remettez-la à nouveau.')).toBeInTheDocument();
+    expect(within(fenetre).getByText('La note a changé (rayon ou coordonnées de la boutique) : réimprimez-la et remettez-la à nouveau.')).toBeInTheDocument();
     const liste = within(fenetre).getByRole('list', { name: 'Remise de la note par salarié' });
     expect(within(liste).getAllByRole('listitem')).toHaveLength(3);
-    for (const li of within(liste).getAllByRole('listitem')) expect(li).toHaveTextContent(/Version périmée : rayon modifié depuis la remise du 12\/10\/2026/);
+    for (const li of within(liste).getAllByRole('listitem')) expect(li).toHaveTextContent(/Version périmée : la note a changé depuis la remise du 12\/10\/2026/);
     for (const c of within(liste).getAllByRole('checkbox')) expect(c).not.toBeChecked();
     const inter = within(fenetre).getByRole('switch');
     expect(inter).toBeDisabled();
