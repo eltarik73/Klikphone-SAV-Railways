@@ -420,6 +420,9 @@ def activite(request: Request, semaine: Optional[str] = None, user: dict = Depen
         "information_remise": bool(etat["remises"]) and not etat["sans_note"],
         "membres_sans_note": etat["sans_note"],
         "pointage_actif": etat["pointage_actif"],
+        # Pourquoi aucune position n'est relevée (affiché en haut de la page) : note, boutique, interrupteur
+        "pointage_raison": None if etat["pointage_actif"] else (
+            etat["blocage"] or "L'interrupteur « Pointage de présence » est désactivé dans les réglages."),
         "connectes": connectes,
         "salaries": salaries,
     }

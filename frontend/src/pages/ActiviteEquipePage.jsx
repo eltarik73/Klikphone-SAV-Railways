@@ -46,6 +46,10 @@ export function normaliserActivite(data) {
   return {
     semaine: { debut: semaine.debut || jours[0], fin: semaine.fin || jours[6], jours, aujourdhui: semaine.aujourdhui || null },
     information_remise: Boolean(d.information_remise),
+    // En pause seulement si le serveur le dit (champ absent : rien à signaler)
+    pointage_en_pause: d.pointage_actif === false,
+    pointage_raison: typeof d.pointage_raison === 'string' ? d.pointage_raison : '',
+    membres_sans_note: Array.isArray(d.membres_sans_note) ? d.membres_sans_note : [],
     connectes: Array.isArray(d.connectes) ? d.connectes : [],
     salaries,
   };
@@ -324,11 +328,13 @@ export default function ActiviteEquipePage() {
     <div className="page max-w-[1280px] lg:py-6">
       {adminPrompt}
 
-      {data && !data.information_remise && (
+      {data && (!data.information_remise || data.pointage_en_pause) && (
         <div className="callout callout-warning items-center py-2 mb-3">
           <AlertTriangle aria-hidden="true" className="!mt-0" />
           <p className="flex-1 min-w-0">
-            Pointage de présence désactivé : la remise de la note d’information aux salariés n’est pas confirmée.
+            {!data.information_remise
+              ? 'Pointage de présence désactivé : la remise de la note d’information aux salariés n’est pas confirmée.'
+              : `Pointage de présence en pause, aucune position n’est demandée : ${data.pointage_raison || 'voir les réglages.'}`}
           </p>
           <button type="button" className="btn-ghost btn-sm min-h-[44px] underline text-amber-900" onClick={() => setReglages(true)}>
             Ouvrir les réglages
@@ -412,7 +418,8 @@ export default function ActiviteEquipePage() {
 
       <ReglagesEquipe
         open={reglages}
-        onFermer={() => setReglages(false)}
+        // Réglages refermés : état du pointage relu (ligne « en pause » en haut de la page)
+        onFermer={() => { setReglages(false); charger(); }}
         sensible={sensible}
         onInformationRemise={(reglages) => setEtat((e) => (e.data ? {
           ...e,
