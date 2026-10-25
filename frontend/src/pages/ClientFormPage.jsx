@@ -825,7 +825,7 @@ export default function ClientFormPage() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => navigate(lienSuivi('', createdCode, createdToken))}
+                onClick={() => navigate(lienSuivi('', createdCode, createdToken), { state: { retour: '/client' } })}
                 className="btn-primary btn-lg btn-block"
               >
                 <Send aria-hidden="true" /> Suivre {isAchat ? 'mon achat' : isCommande ? 'ma commande' : 'ma réparation'}

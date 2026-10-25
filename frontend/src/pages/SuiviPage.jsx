@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { usePolling } from '../hooks/usePolling';
@@ -43,6 +43,17 @@ export function memoriserPreuve(code, preuve) {
     if (preuve && (preuve.t || preuve.tel)) sessionStorage.setItem(CLE_PREUVE + code, JSON.stringify(preuve));
   } catch { /* stockage indisponible : la preuve reste en mémoire */ }
 }
+// Bornes de la boutique qui ouvrent le suivi (tablette en mode dépôt) : elles seules
+// donnent un retour à l'accueil, avec retour automatique. Arrivé par le QR ou un lien (téléphone
+// du client), aucun retour vers l'accueil ni la connexion du personnel.
+const RETOURS_BOUTIQUE = ['/client', '/depot', '/deposer'];
+export const RETOUR_AUTO_MS = 60_000;
+
+export function retourBoutique(etat) {
+  const r = typeof etat?.retour === 'string' ? etat.retour : '';
+  return RETOURS_BOUTIQUE.includes(r.split('?')[0]) ? r : null;
+}
+
 export function oublierPreuve(code) {
   try { sessionStorage.removeItem(CLE_PREUVE + code); } catch { /* idem */ }
 }
@@ -119,9 +130,13 @@ export default function SuiviPage() {
   const { user } = useAuth();
   const estStaff = STAFF.includes(user?.target);
   const navigate = useNavigate();
+  // Ouvert depuis la tablette de la boutique : retour à son accueil, preuve jamais mémorisée
+  // (appareil partagé), pas de bascule vers la fiche interne même si un membre y est connecté
+  const retour = retourBoutique(useLocation().state);
+  const boutiqueRef = useRef(Boolean(retour));
   const fromQrRef = useRef(Boolean(searchParams.get('ticket')));
   useEffect(() => {
-    if (fromQrRef.current && ticket?.id && estStaff) {
+    if (fromQrRef.current && ticket?.id && estStaff && !boutiqueRef.current) {
       navigate(`/${user.target}/ticket/${ticket.id}`, { replace: true });
     }
   }, [estStaff, user?.target, ticket?.id, navigate]);
@@ -173,7 +188,7 @@ export default function SuiviPage() {
       setCode(codeReel);
       setPreuve(p);
       preuveRef.current = p;
-      if (p) memoriserPreuve(codeReel, p);
+      if (p && !boutiqueRef.current) memoriserPreuve(codeReel, p);
       setTicket(data);
       chargerAnnexes(codeReel, p);
       setTel('');
@@ -201,8 +216,9 @@ export default function SuiviPage() {
     const ticketCode = normalizeTicketCode(brut, { allowBareNumber: true }) || brut.trim().toUpperCase();
     setCode(ticketCode);
     const jeton = (searchParams.get('t') || '').trim();
+    // Personnel connecté qui scanne un QR (hors borne) : sa session suffit, le jeton n'est pas joint
+    if (estStaff && !boutiqueRef.current) { charger(ticketCode, null); return; }
     if (jeton) { charger(ticketCode, { t: jeton }, { depuisLien: true }); return; }
-    if (estStaff) { charger(ticketCode, null); return; }
     const memo = lirePreuve(ticketCode);
     if (memo) { charger(ticketCode, memo); return; }
     setOuvertureLien(false);
@@ -223,6 +239,28 @@ export default function SuiviPage() {
       setLastRefresh(new Date());
     } catch { /* silent */ }
   }, SUIVI_POLL_MS, { enabled: Boolean(ticket?.ticket_code), immediate: false });
+
+  // Tablette de la boutique : retour à l'accueil d'où l'on vient, de lui-même après une minute
+  // sans activité (le client suivant ne doit pas trouver le dossier ouvert)
+  const quitterVersAccueil = useCallback(() => {
+    if (ticketCodeRef.current) oublierPreuve(ticketCodeRef.current);
+    navigate(retour, { replace: true });
+  }, [navigate, retour]);
+  useEffect(() => {
+    if (!retour) return undefined;
+    let minuterie;
+    const relancer = () => {
+      clearTimeout(minuterie);
+      minuterie = setTimeout(quitterVersAccueil, RETOUR_AUTO_MS);
+    };
+    const evenements = ['pointerdown', 'keydown', 'touchstart'];
+    evenements.forEach((e) => window.addEventListener(e, relancer, { passive: true }));
+    relancer();
+    return () => {
+      clearTimeout(minuterie);
+      evenements.forEach((e) => window.removeEventListener(e, relancer));
+    };
+  }, [retour, quitterVersAccueil]);
 
   // Formulaire : numéro de ticket (KP-000123, « kp123 », URL du QR scanné…) + téléphone complet
   const handleSubmit = (e) => {
@@ -801,11 +839,16 @@ export default function SuiviPage() {
           </div>
         </a>
 
-        {/* Back */}
+        {/* Retour : seulement sur la tablette de la boutique (jamais depuis le QR ou un lien) */}
         <div className="mt-6 text-center">
-          <a href="/" className="btn-ghost min-h-11">
-            <ArrowLeft aria-hidden="true" /> Retour à l'accueil
-          </a>
+          {retour && (
+            <>
+              <button type="button" onClick={quitterVersAccueil} className="btn-ghost min-h-11">
+                <ArrowLeft aria-hidden="true" /> Retour à l'accueil
+              </button>
+              <p className="text-xs text-slate-500 mt-1">Retour automatique après 1 minute sans activité.</p>
+            </>
+          )}
           <p className="text-center py-3 text-xs text-slate-500">
             Propulsé par{' '}
             <span className="font-extrabold">

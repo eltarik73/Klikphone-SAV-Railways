@@ -279,6 +279,21 @@ def test_staff_sans_preuve(client, faux, route):
     assert r.status_code == 200, r.text
 
 
+def test_staff_numero_saisi_toujours_verifie(client, faux):
+    """Poste connecté (tablette de la boutique) : un numéro saisi qui ne correspond ni au téléphone
+    de la fiche ni au second numéro du ticket n'ouvre pas le dossier ; le bon numéro, si."""
+    r = _get(client, "/api/tickets/code/{}", params={"tel": "06 00 00 09 99"}, headers={**STAFF, **_ip(30)})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
+    r = _get(client, "/api/tickets/code/{}", headers={**STAFF, "X-Suivi-Tel": "06 00 00 09 99", **_ip(30)})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
+    assert _get(client, "/api/tickets/code/{}", params={"tel": TEL_CLIENT}, headers={**STAFF, **_ip(30)}).status_code == 200
+    r = _get(client, "/api/tickets/code/{}", params={"t": "MauvaisJeton_012345678"}, headers={**STAFF, **_ip(30)})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "lien_invalide"
+    # Code inexistant avec un numéro : même refus qu'un visiteur, pas de 404
+    r = _get(client, "/api/tickets/code/{}", code="KP-999999", params={"tel": TEL_CLIENT}, headers={**STAFF, **_ip(31)})
+    assert r.status_code == 403 and r.json()["detail"]["code"] == "verification_echouee"
+
+
 def test_staff_jeton_perime_ignore(client, faux):
     """Un jeton de session expiré ou bidon ne vaut rien : preuve requise comme pour tout le monde."""
     r = _get(client, "/api/tickets/code/{}", headers={"Authorization": "Bearer pas.un.jeton", **_ip()})

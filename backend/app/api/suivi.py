@@ -188,7 +188,10 @@ def preuve_suivi(cur, request: Request, code: str, t: Optional[str] = None, tel:
         WHERE t.ticket_code = %s
     """, (code,))
     row = cur.fetchone()
-    staff = _staff_connecte(request)
+    # Session du personnel : accès sans preuve (QR scanné au comptoir). Une preuve fournie (numéro
+    # saisi, lien) est en revanche toujours vérifiée : sur un poste connecté, comme la tablette de
+    # la boutique, un numéro qui ne correspond pas n'ouvre jamais le dossier.
+    staff = _staff_connecte(request) and not jeton and not tel
     if not row and staff:
         raise HTTPException(404, "Ticket non trouvé")
     # Code inexistant, visiteur anonyme : même chemin qu'un ticket sans preuve (aucun jeton ni

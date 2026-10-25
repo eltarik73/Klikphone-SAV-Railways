@@ -502,10 +502,13 @@ class ApiClient {
   // jeton `t` en query, numéro de téléphone en en-tête X-Suivi-Tel — jamais dans l'URL, sans
   // repli : un 403 (preuve_requise, verification_echouee, lien_invalide) remonte tel quel. Les
   // écritures (message, devis, avis, grattage) mettent déjà la preuve dans le corps.
+  // Avec une preuve (jeton ou numéro), la session du poste n'est jamais jointe : sur un poste
+  // connecté (tablette de la boutique), seul le numéro saisi ou le lien décide de l'accès.
+  // Sans preuve : session du personnel (QR scanné au comptoir).
   suiviGet(path, preuve) {
     const { query, headers } = suiviAcces(preuve);
-    if (!headers[SUIVI_TEL_HEADER]) return this.get(`${path}${query}`);
-    return this.request(path, { headers });
+    if (headers[SUIVI_TEL_HEADER]) return this.request(path, { headers, auth: false });
+    return query ? this.get(`${path}${query}`, { auth: false }) : this.get(path);
   }
 
   // GET partagé : deux appels identiques en vol ne font qu'une requête, sauf si une écriture

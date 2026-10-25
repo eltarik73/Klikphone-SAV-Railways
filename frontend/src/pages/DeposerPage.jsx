@@ -267,7 +267,7 @@ export default function DeposerPage() {
             <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => navigate(lienSuivi('', createdCode, createdToken))}
+                onClick={() => navigate(lienSuivi('', createdCode, createdToken), { state: { retour: '/deposer' } })}
                 className="btn-primary btn-lg btn-block"
               >
                 <Send aria-hidden="true" /> Suivre ma réparation

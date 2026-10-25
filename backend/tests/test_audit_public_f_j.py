@@ -425,8 +425,10 @@ def test_g_jeton_d_un_ticket_cloture_depuis_200_j_refuse_numero_accepte(client, 
     assert r.status_code == 200 and r.json()["statut"] == "Clôturé"
     r = client.get(f"/api/tickets/code/{CODE}", headers={**_ip(10), "X-Suivi-Tel": TEL_CONTACT})
     assert r.status_code == 200
-    # Le personnel n'est pas concerné par l'expiration
-    assert client.get(f"/api/tickets/code/{CODE}", params={"t": JETON}, headers={**STAFF, **_ip(10)}).status_code == 200
+    # Le personnel ouvre le dossier par sa session (QR scanné au comptoir : aucune preuve jointe) ;
+    # une preuve fournie est toujours vérifiée, même sur un poste connecté
+    assert client.get(f"/api/tickets/code/{CODE}", headers={**STAFF, **_ip(10)}).status_code == 200
+    assert client.get(f"/api/tickets/code/{CODE}", params={"t": JETON}, headers={**STAFF, **_ip(10)}).status_code == 403
 
 
 def test_g_jeton_d_un_ticket_cloture_recent_accepte(client):
