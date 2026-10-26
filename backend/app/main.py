@@ -1427,8 +1427,10 @@ async def security_and_cache_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = (
         # geolocation=(self) : une lecture de position par session (pointage de présence, désactivé
-        # par défaut, réglé par l'admin) ; jamais pour un cadre tiers
-        "geolocation=(self), microphone=(), camera=(), payment=()"
+        # par défaut, réglé par l'admin) ; microphone=(self) : le micro de l'appareil peut servir sur
+        # le site (dictée…), toujours après l'autorisation du navigateur sur CET appareil, jamais à
+        # distance ; jamais pour un cadre tiers
+        "geolocation=(self), microphone=(self), camera=(), payment=()"
     )
     # HSTS uniquement sur HTTPS (Railway sert en HTTPS, donc actif)
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
