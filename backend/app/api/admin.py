@@ -10,16 +10,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ..database import get_cursor
-from ..services import nettoyage
 from ..services import params as params_cache
-from .tickets import bornes_utc, heure_paris, jour_paris
+from .tickets import bornes_utc, jour_paris
 from .auth import (
-    ADMIN_TOKEN_MINUTES, client_ip, controler_admin_password, create_admin_token, ecrire_admin_password,
+    ADMIN_TOKEN_MINUTES, controler_admin_password, create_admin_token, ecrire_admin_password,
     exiger_role_admin, get_current_user, membre_admin, noter_echec, noter_preuve_admin,
-    require_admin, revoquer_preuve_admin, verifier_essais,
+    revoquer_preuve_admin, verifier_essais,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -85,36 +84,6 @@ def change_admin_password(data: dict, request: Request, user: dict = Depends(get
     params_cache.invalidate()
 
     return {"success": True, "message": "Mot de passe modifié"}
-
-
-# ============================================================
-# TRI DES RÉPARATIONS OUBLIÉES (services/nettoyage)
-# ============================================================
-class ClotureAnciens(BaseModel):
-    jours: int = Field(nettoyage.JOURS_DEFAUT, ge=nettoyage.JOURS_MIN, le=nettoyage.JOURS_MAX)
-    # Dossiers de l'aperçu cochés par l'admin : rien d'autre n'est clôturé
-    ids: list[int] = Field(..., min_length=1, max_length=nettoyage.IDS_MAX)
-
-
-@router.get("/anciens")
-def apercu_anciens(
-    jours: int = Query(nettoyage.JOURS_DEFAUT, ge=nettoyage.JOURS_MIN, le=nettoyage.JOURS_MAX),
-    user: dict = Depends(require_admin),
-):
-    """Dossiers ouverts déposés depuis plus de `jours` jours (rien n'est modifié)."""
-    with get_cursor() as cur:
-        return nettoyage.apercu(cur, jours)
-
-
-@router.post("/anciens/cloturer")
-def cloturer_anciens(data: ClotureAnciens, request: Request, user: dict = Depends(require_admin)):
-    """Passe en « Clôturé » les dossiers choisis qui ont toujours plus de `jours` jours
-    (note « Clôturé car plus de N jours », historique ; sans paiement ni message au client)."""
-    with get_cursor() as cur:
-        resultat = nettoyage.cloturer(cur, data.jours, data.ids, user.get("sub") or "Admin",
-                                      heure_paris().strftime("%d/%m %H:%M"))
-        nettoyage.journaliser(cur, user, client_ip(request), resultat)
-    return resultat
 
 
 # ============================================================

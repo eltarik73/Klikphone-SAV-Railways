@@ -32,9 +32,9 @@ from app.services.notifications import (
 from app.api.notifications_center import push_notification
 from app.services import contact
 from app.services import etagere
-from app.services import nettoyage
 from app.services import params as params_cache
 from app.services import search as search_engine
+from app.api import search as search_api
 
 router = APIRouter(prefix="/api/tickets", tags=["tickets"])
 
@@ -426,15 +426,28 @@ _KPI_SQL = f"""
                          AND statut IN ('Rendu au client', 'Clôturé')) as clotures_aujourdhui,
         COUNT(*) FILTER (WHERE date_depot >= %s AND date_depot < %s) as nouveaux_aujourdhui,
         COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres,
-        COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer,
-        COUNT(*) FILTER (WHERE {nettoyage.ouvert_ancien_sql("tickets", "%s")}) as anciens
+        COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer
     FROM tickets
 """
 
 
 def _params_kpi() -> tuple:
     debut, fin = bornes_utc(jour_paris())
-    return (debut, fin, debut, fin, nettoyage.seuil(nettoyage.JOURS_DEFAUT, _maintenant_utc()))
+    return (debut, fin, debut, fin)
+
+
+def _avec_fautes(pq):
+    """Fautes de frappe et noms mal écrits tolérés (« dupond », « ipone ») : chaque mot est aussi
+    cherché par similarité pg_trgm et correction sur le vocabulaire (api/search.fuzzy_context) ;
+    les correspondances exactes passent devant (ticket_order_sql). Renvoie (pq, instructions à
+    exécuter avant la requête : seuil de similarité, propre à la transaction)."""
+    if pq.numeric or not pq.words:
+        return pq, []
+    vocab, trgm = search_api.fuzzy_context()
+    fq = search_engine.fuzzy_query(pq, vocab, trgm)
+    if not fq:
+        return pq, []
+    return fq, ([search_api.SQL_SEUIL_TRGM] if trgm else [])
 
 
 def _kpi(row) -> dict:
@@ -473,15 +486,41 @@ _HEURE_PROMISE_SQL = (r"CASE WHEN t.date_recuperation ~ '^\d{4}-\d{2}-\d{2}' "
 
 
 # ─── DASHBOARD COMBINÉ (KPI + tickets en 1 appel) ────────────────
-def _lire_dashboard(colonne_reception, colonnes_etagere, where, order, params_tickets, limit, offset):
+# Colonnes lues par la liste du tableau de bord (DashboardPage, scan, changement groupé) : pas
+# l'historique, les notes internes, les messages envoyés ni le jeton de suivi, rechargés toutes
+# les 60 s sur chaque poste sans jamais être affichés (réponse deux fois plus légère). Le code et
+# le schéma de déverrouillage ne partent que vers l'espace technicien, qui les affiche.
+_COLONNES_DASHBOARD = (
+    "id", "ticket_code", "client_id", "statut", "statut_paiement", "paye", "categorie", "marque", "modele",
+    "modele_autre", "panne", "panne_detail", "reparation_supp", "commande_piece", "type_ecran", "attention",
+    "priorite", "source", "est_retour_sav", "technicien_assigne", "date_depot", "date_maj", "date_recuperation",
+    "devis_estime", "tarif_final", "acompte", "prix_supp", "reduction_montant", "reduction_pourcentage",
+    "reste_a_payer", "emplacement", "tel_contact", "telephone_pret", "telephone_pret_rendu",
+)
+_COLONNES_TECH = ("pin", "pattern")
+
+
+def _colonnes_dashboard(user: dict, vue: Optional[str]) -> str:
+    """Fragment SELECT des colonnes du ticket (noms fixes du code, jamais une saisie)."""
+    if vue == "a_recuperer":
+        return "t.*"   # l'étagère (services/etagere.enrichir) lit les montants et le chronomètre
+    cols = _COLONNES_DASHBOARD + (_COLONNES_TECH if (user or {}).get("target") == "tech" else ())
+    return ", ".join(f"t.{c}" for c in cols)
+
+
+def _lire_dashboard(colonne_reception, colonnes_etagere, where, order, params_tickets, limit, offset,
+                    colonnes: str = "t.*", prelude=()):
     with get_cursor() as cur:
         # KPI in one query
         cur.execute(_KPI_SQL, _params_kpi())
         kpi_row = cur.fetchone()
 
+        # Seuil de similarité des mots approchés (SET LOCAL : cette transaction seulement)
+        for sql, params in prelude:
+            cur.execute(sql, params)
         # Tickets list
         cur.execute(f"""
-            SELECT t.*,
+            SELECT {colonnes},
                    c.nom as client_nom, c.prenom as client_prenom,
                    c.telephone as client_tel, c.email as client_email,
                    c.societe as client_societe, c.carte_camby as client_carte_camby,
@@ -565,8 +604,9 @@ def get_dashboard(
     # Même sens que idx_tickets_date_depot (DESC, nulls en tête) : sans recherche,
     # PostgreSQL lit les `limit` premiers tickets par l'index au lieu de tout trier.
     order = "t.date_depot DESC, t.id DESC"
+    prelude = []
     if search:
-        pq = search_engine.parse_query(search)
+        pq, prelude = _avec_fautes(search_engine.parse_query(search))
         conditions.append(search_engine.ticket_where_sql(pq, sp))
         if not pq.empty:
             order = search_engine.ticket_order_sql(pq, sp)
@@ -577,18 +617,21 @@ def get_dashboard(
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
     params_tickets = {**sp.values, "limit": limit, "offset": offset}
+    colonnes = _colonnes_dashboard(user, vue)
 
     global _reception_absente_le
     colonne_reception = _colonne_reception()
     try:
         kpi_row, tickets, total = _lire_dashboard(colonne_reception, colonnes_etagere,
-                                                  where, order, params_tickets, limit, offset)
+                                                  where, order, params_tickets, limit, offset,
+                                                  colonnes, prelude)
     except pg_errors.UndefinedTable:
         if colonne_reception != _RECEPTION_SQL:
             raise
         _reception_absente_le = time()
         kpi_row, tickets, total = _lire_dashboard(_colonne_reception(), colonnes_etagere,
-                                                  where, order, params_tickets, limit, offset)
+                                                  where, order, params_tickets, limit, offset,
+                                                  colonnes, prelude)
 
     if vue == "a_recuperer":
         return {"kpi": _kpi(kpi_row), "tickets": etagere.enrichir(tickets), "total": total,
@@ -685,6 +728,7 @@ def list_tickets(
     conditions = []
     sp = search_engine.SqlParams()
     order = "t.date_depot DESC, t.id DESC"
+    prelude = []
 
     if statut:
         conditions.append(f"t.statut = {sp.add(statut)}")
@@ -711,7 +755,7 @@ def list_tickets(
         pq_nom.ticket_id = pq_nom.code_prefix = pq_nom.imei = None
         conditions.append(search_engine.client_where_sql(pq_nom, sp, c="c"))
     if search:
-        pq = search_engine.parse_query(search)
+        pq, prelude = _avec_fautes(search_engine.parse_query(search))
         conditions.append(search_engine.ticket_where_sql(pq, sp))
         if not pq.empty:
             order = search_engine.ticket_order_sql(pq, sp)
@@ -733,6 +777,8 @@ def list_tickets(
     """
 
     with get_cursor() as cur:
+        for sql, p in prelude:
+            cur.execute(sql, p)
         cur.execute(query, params)
         return [contact.poser(r) for r in (cur.fetchall() or [])]
 

@@ -43,6 +43,7 @@ from app.api import propositions_prix
 from app.api import equipe as equipe_api
 from app.services import presence
 from app.services import veille_prix
+from app.services import nettoyage
 from app.services import mentions
 
 logger = logging.getLogger("klikphone.startup")
@@ -1367,6 +1368,9 @@ async def lifespan(app: FastAPI):
     # Rétention RGPD : vérification horaire en tâche de fond, sans effet tant qu'un admin ne l'a
     # pas activée (RGPD_RETENTION_AUTO = '1', premier passage 7 jours après l'activation)
     rgpd_api.demarrer_retention_quotidienne()
+    # Tri des réparations oubliées : dossiers ouverts de plus de TRI_AUTO_JOURS (60) jours clôturés
+    # une fois par jour, signés « Tri automatique » (KP_TRI_AUTO=0 empêche la tâche)
+    nettoyage.demarrer_tri_quotidien()
     # Journal des connexions : position effacée à 60 jours, lignes à 183 jours, sessions inactives
     # depuis 12 h closes (chaque heure ; KP_RETENTION_AUTO=0 empêche la tâche)
     presence.demarrer_retention()

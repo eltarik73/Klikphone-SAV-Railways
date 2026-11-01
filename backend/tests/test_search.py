@@ -437,7 +437,7 @@ def test_kpi_compares_date_cloture_as_text(client, auth_headers):
     sql, params = cur.execute.call_args.args
     # Texte comparé au texte : bornes UTC du jour de Paris, jamais de cast
     assert "date_cloture::" not in sql and "date_cloture >= %s AND date_cloture < %s" in sql
-    assert len(params) == 5 and all(len(p) == 19 for p in params)
+    assert len(params) == 4 and all(len(p) == 19 for p in params)
 
 
 def test_ticket_list_tolerates_text_date_cloture():

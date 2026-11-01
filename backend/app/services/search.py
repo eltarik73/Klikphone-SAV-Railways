@@ -844,15 +844,40 @@ def ticket_exact_sql(pq: ParsedQuery, P: SqlParams, t: str = "t") -> str:
     return "COALESCE(" + " OR ".join(parts) + ", FALSE)" if parts else "FALSE"
 
 
+def _word_exact_sql(w: Word, P: SqlParams, t: str, c: str) -> str:
+    """Le mot (ou un synonyme / sa correction) est écrit tel quel dans l'appareil, le travail
+    ou le client de la ligne : évalué sur les seules lignes trouvées, jamais pour chercher."""
+    p = P.add(w.patterns)
+    ors = [_any(doc_sql(t, T_DEVICE_COLS), p), _any(doc_sql(t, T_WORK_COLS), p), _any(doc_sql(c, C_COLS), p)]
+    if w.compact:
+        cp = P.add(w.compact)
+        ors.append(_any(compact_sql(doc_sql(t, T_DEVICE_COLS)), cp))
+        ors.append(_any(compact_sql(doc_sql(c, C_NOM_COLS)), cp))
+    return "(" + " OR ".join(ors) + ")"
+
+
+def ticket_exact_words_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> Optional[str]:
+    """Vrai quand chaque mot cherché par similarité (fuzzy_query) est en fait trouvé tel quel :
+    « dupont » passe avant « dupond » pour la saisie « dupont ». None sans mot approché."""
+    approx = [w for w in pq.words if w.trgm or w.fuzzy]
+    if not approx:
+        return None
+    return "(" + " AND ".join(_word_exact_sql(w, P, t, c) for w in approx) + ")"
+
+
 def ticket_order_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> str:
-    """Désignation exacte, puis rang (ticket_rang_sql), puis du plus récent au plus ancien,
-    tous statuts confondus : un ticket clôturé hier passe avant un ticket ouvert il y a un an."""
+    """Désignation exacte, puis rang (ticket_rang_sql), mots écrits tels quels avant les mots
+    approchés, puis du plus récent au plus ancien, tous statuts confondus : un ticket clôturé
+    hier passe avant un ticket ouvert il y a un an."""
     exact = ticket_exact_sql(pq, P, t)
     rang = ticket_rang_sql(pq, P, t, c)
+    mots = ticket_exact_words_sql(pq, P, t, c)
     # « ORDER BY FALSE » est refusé par PostgreSQL (constante non entière)
     head = "" if exact == "FALSE" else f"{exact} DESC, "
     if rang != "0::int":
         head += f"{rang} DESC, "
+    if mots:
+        head += f"{mots} DESC, "
     return f"{head}{t}.date_depot DESC NULLS LAST, {t}.id DESC"
 
 
@@ -965,10 +990,21 @@ _WORK_FIELDS = (("panne", "panne"), ("panne_detail", "détail panne"), ("reparat
 
 def _word_label(w: Word, row: dict, fallback: bool = True) -> Optional[str]:
     """Champ où le mot a été trouvé ; sinon « note » (notes_tickets, absentes de row),
-    ou None si fallback=False."""
+    ou None si fallback=False. Un mot corrigé par le vocabulaire (« tartempoin » → Tartempion)
+    se lit « nom (approché) » ; un mot trouvé par similarité seule, « approché »."""
     def hit(value, patterns):
         doc = doc_text(value)
         return any(like_match(p, doc) for p in patterns)
+
+    if w.fuzzy:
+        strict = make_word(w.text)
+        if set(w.patterns) - set(strict.patterns):
+            label = _word_label(replace(w, patterns=strict.patterns, compact=strict.compact, fuzzy=False, trgm=False),
+                                row, fallback=False)
+            if label:
+                return label
+            label = _word_label(replace(w, fuzzy=False, trgm=False), row, fallback=False)
+            return f"{label} (approché)" if label else ("approché" if fallback else None)
 
     for key, label in _CLIENT_FIELDS:
         if hit(row.get(key), w.patterns):
@@ -1030,5 +1066,5 @@ def ticket_match_label(pq: ParsedQuery, row: dict) -> str:
     for lab in labels:
         if lab not in out:
             out.append(lab)
-    text = ", ".join(out) or "recherche"
-    return text + " (approché)" if pq.fuzzy and "approché" not in text else text
+    # Un mot approché se lit « approché » (_word_label) : un ticket trouvé tel quel n'est pas marqué
+    return ", ".join(out) or "recherche"

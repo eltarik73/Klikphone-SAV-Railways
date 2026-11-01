@@ -56,8 +56,6 @@ const panneAffichee = (t) => {
 
 // Santé des prix : réservée à l'admin, chargée seulement pour lui
 const SantePrixWidget = lazy(() => import('../components/SantePrixWidget'));
-// Tri des réparations oubliées (+60 jours) : réservé à l'admin, chargé à l'ouverture
-const TriAnciens = lazy(() => import('../components/TriAnciens'));
 
 // « À faire » : masque les réparations terminées (et rendues / clôturées), pour n'avoir sous les
 // yeux que ce qui reste à faire — réglage gardé sur le poste (la technicienne le laisse coché)
@@ -211,8 +209,6 @@ export default function DashboardPage() {
   const [activeKpi, setActiveKpi] = useState(null);
   // Étagère « À récupérer » (carte KPI) : liste filtrée et triée par le serveur, au-dessus du tableau
   const [showEtagere, setShowEtagere] = useState(false);
-  const [showTri, setShowTri] = useState(false);
-  const triId = useId();
   const [aFaire, setAFaire] = useState(lireAFaire);
   // Ticket dont l'appel téléphonique attend une confirmation (ligne sous la rangée)
   const [appelAConfirmer, setAppelAConfirmer] = useState(null);
@@ -312,7 +308,6 @@ export default function DashboardPage() {
   // For tech view: filter by assigned tech
   const isTech = user?.target === 'tech';
   const techName = user?.utilisateur;
-  const isRoleAdmin = user?.role === 'admin';
   const toggleAFaire = () => {
     setAFaire((v) => {
       const next = !v;
@@ -936,26 +931,10 @@ export default function DashboardPage() {
           onRemettre={ouvrirRemise} onClose={() => setShowEtagere(false)} />
       )}
 
-      {showTri && isRoleAdmin && (
-        <Suspense fallback={<div className="skeleton h-24 mb-6" aria-hidden="true" />}>
-          <TriAnciens id={triId} basePath={basePath} onOpenTicket={openTicket} onClose={() => setShowTri(false)} />
-        </Suspense>
-      )}
 
       {/* ★ Chips d'alerte — commandes, dépôts distants, interactions (une seule teinte, sauf « sur place ») */}
-      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0
-        || (isRoleAdmin && kpi?.anciens > 0)) && (
+      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0) && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          {isRoleAdmin && kpi?.anciens > 0 && (
-            <button type="button" onClick={() => setShowTri(v => !v)}
-              aria-expanded={showTri} aria-controls={showTri ? triId : undefined}
-              className={`btn btn-sm rounded-full text-sm font-medium ${
-                showTri ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-              }`}>
-              <AlertTriangle aria-hidden="true" />
-              <span><span className="font-bold">{kpi.anciens}</span> dossier{kpi.anciens > 1 ? 's' : ''} de + de 60 j à trier</span>
-            </button>
-          )}
           {nbAttenteSurPlace > 0 && (
             <button type="button" onClick={() => setFilterPriorite(f => (f === 'attente' ? '' : 'attente'))}
               aria-pressed={filterPriorite === 'attente'}
@@ -1032,7 +1011,7 @@ export default function DashboardPage() {
             <div className="relative flex-1 min-w-[220px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
               <label htmlFor="dashboard-search" className="sr-only">Rechercher un ticket</label>
-              <input id="dashboard-search" type="text" placeholder="Nom, téléphone, IMEI, code, modèle, panne..."
+              <input id="dashboard-search" type="text" placeholder="Nom, téléphone, IMEI, code, modèle, panne… (fautes tolérées)"
                 value={search} onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={onSearchKeyDown}
                 enterKeyHint="search"

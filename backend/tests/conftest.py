@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("KP_DECONNEXION_DEMARRAGE", "0")
 # Lieu des connexions (Base Adresse Nationale) : jamais d'appel réseau dans les tests
 os.environ.setdefault("KP_GEO_LIEU", "0")
+# Tri automatique des réparations oubliées : jamais en tâche de fond pendant les tests
+os.environ.setdefault("KP_TRI_AUTO", "0")
 
 from app.api.auth import create_token, JWT_SECRET, JWT_ALGORITHM
 
@@ -58,6 +60,16 @@ def _params_cache_vide():
     params_cache.invalidate()
     yield
     params_cache.invalidate()
+
+
+@pytest.fixture(autouse=True)
+def _vocabulaire_recherche_vide():
+    """Vocabulaire / pg_trgm de la recherche approchée (api/search.fuzzy_context) oubliés entre
+    deux tests : un test sur base réelle ne doit pas laisser « pg_trgm présent » aux tests simulés."""
+    from app.api import search as search_api
+    search_api._fuzzy_cache.update(at=0.0, vocab=None, trgm=False)
+    yield
+    search_api._fuzzy_cache.update(at=0.0, vocab=None, trgm=False)
 
 
 @pytest.fixture(autouse=True)

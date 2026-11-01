@@ -47,6 +47,8 @@ _TICKET_SELECT = """
 _FUZZY_TTL = 600
 _fuzzy_cache = {"at": 0.0, "vocab": None, "trgm": False}
 _fuzzy_lock = threading.Lock()
+# Seuil de l'opérateur <% (kp_word_match), servi par les index GIN trigram ; propre à la transaction
+SQL_SEUIL_TRGM = ("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)", (str(S.TRGM_THRESHOLD),))
 
 
 def _savepoint(cur, label, fn, default):
@@ -62,17 +64,23 @@ def _savepoint(cur, label, fn, default):
         return default
 
 
-def _fuzzy_context(cur):
-    """Vocabulaire marques / modèles / pannes et présence de pg_trgm (cache 10 min)."""
+def fuzzy_context(cur=None):
+    """Vocabulaire (marques, modèles, pannes, noms et prénoms des clients : correction des fautes
+    de frappe) et présence de pg_trgm, en cache 10 min ; sans curseur, en ouvre un au besoin."""
     with _fuzzy_lock:
         if _fuzzy_cache["vocab"] is not None and time.monotonic() - _fuzzy_cache["at"] < _FUZZY_TTL:
             return _fuzzy_cache["vocab"], _fuzzy_cache["trgm"]
+    if cur is None:
+        with get_cursor() as c:
+            return fuzzy_context(c)
 
     def load():
         cur.execute("""
             SELECT marque AS v FROM catalog_marques
             UNION SELECT modele FROM catalog_modeles
             UNION SELECT terme FROM autocompletion WHERE length(terme) <= 60
+            UNION SELECT nom FROM clients WHERE length(nom) <= 60
+            UNION SELECT prenom FROM clients WHERE length(prenom) <= 60
         """)
         return [r["v"] for r in (cur.fetchall() or [])]
 
@@ -222,22 +230,22 @@ def search(
     with get_cursor() as cur:
         cur.execute("SET LOCAL statement_timeout = '5s'")
         used = pq
-        tickets, t_total = _search_tickets(cur, pq, limit)
-        clients, c_total = _search_clients(cur, pq, limit)
-        if not tickets and not clients:
-            vocab, trgm = _fuzzy_context(cur)
-            fq = S.fuzzy_query(pq, vocab, trgm)
-            if fq:
-                def approx():
-                    if trgm:
-                        # Seuil de l'opérateur <% (kp_word_match), servi par les index GIN trigram
-                        cur.execute("SELECT set_config('pg_trgm.word_similarity_threshold', %s, true)",
-                                    (str(S.TRGM_THRESHOLD),))
-                    return _search_tickets(cur, fq, limit), _search_clients(cur, fq, limit)
-                found = _savepoint(cur, "approchée", approx, None)
-                if found:
-                    used = fq
-                    (tickets, t_total), (clients, c_total) = found
+        found = None
+        # Fautes de frappe et noms mal écrits tolérés d'emblée (une seule requête : les lignes
+        # trouvées telles quelles passent devant les approchées) ; en cas d'échec, recherche stricte
+        fq = None if pq.numeric or not pq.words else S.fuzzy_query(pq, *fuzzy_context(cur))
+        if fq:
+            def approx():
+                if any(w.trgm for w in fq.words):
+                    cur.execute(*SQL_SEUIL_TRGM)
+                return _search_tickets(cur, fq, limit), _search_clients(cur, fq, limit)
+            found = _savepoint(cur, "approchée", approx, None)
+        if found:
+            used = fq
+            (tickets, t_total), (clients, c_total) = found
+        else:
+            tickets, t_total = _search_tickets(cur, pq, limit)
+            clients, c_total = _search_clients(cur, pq, limit)
         groups["devis"] = _savepoint(cur, "devis", lambda: _search_devis(cur, used, limit), [])
         groups["commandes"] = _savepoint(cur, "commandes", lambda: _search_commandes(cur, used, limit), [])
 

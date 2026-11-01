@@ -47,7 +47,6 @@ import {
   Flag, PhoneCall, PhoneForwarded, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
   MapPin, CreditCard, FileSignature, Ticket, Gift, Coins, CalendarClock,
 } from 'lucide-react';
-import { motion, useReducedMotion } from 'framer-motion';
 
 const ANIM_ENTREE = 'motion-safe:animate-[fadeIn_0.3s_ease-out_forwards]';
 const STATUTS_REMISE = new Set(['Rendu au client', 'Clôturé']);
@@ -752,7 +751,10 @@ function TicketDetail({ id }) {
   const { user } = useAuth();
   const toast = useToast();
   const { actif: smsServeur } = useSmsServeur();
-  const reduireAnimations = useReducedMotion();
+  // Pas de bibliothèque d'animation sur cette page (122 ko évités) : l'en-tête arrive en CSS (.animate-in,
+  // coupée par prefers-reduced-motion) et le défilement vers la réception suit le même réglage
+  const reduireAnimations = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uid = useId();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const isTech = user?.target === 'tech';
@@ -3258,11 +3260,7 @@ function TicketDetail({ id }) {
   return (
     <div className="page max-w-7xl">
       {/* En-tête sombre (identité comptoir) : ≤ 140 px, sans dégradé ni marge négative */}
-      <motion.header
-        initial={reduireAnimations ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: reduireAnimations ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}
-        className="rounded-xl bg-slate-900 text-white px-4 py-4 sm:px-5 mb-4">
+      <header className="rounded-xl bg-slate-900 text-white px-4 py-4 sm:px-5 mb-4 motion-safe:animate-in">
         {/* Ligne 1 : retour, code, copier, badges, statut */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <button type="button" onClick={() => navigate(-1)}
@@ -3351,7 +3349,7 @@ function TicketDetail({ id }) {
             </button>
           </div>
         </div>
-      </motion.header>
+      </header>
 
       {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard, le scan et
           l'étagère) : une ligne sous l'en-tête, là où l'accueil regarde d'abord. ContactClient fait 44 px au doigt. */}
