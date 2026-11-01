@@ -187,15 +187,16 @@ def test_recherche_sql_couvre_le_second_numero():
     sql = S.ticket_where_sql(S.parse_query("887766"), P)
     assert "(x.tel_contact IS NOT NULL AND public.kp_phone_digits(x.tel_contact) LIKE ANY(%(" in sql
     assert len(set(PLACEHOLDER.findall(sql))) == len(P.values)
-    # Score : téléphone du client 700, ticket joignable à ce numéro 650 ; fragment 300 / 250
+    # Rang : numéro complet du client ou du ticket = désignation forte (2) ; fragment = 1
     P = S.SqlParams()
-    sql = S.ticket_score_sql(pq, P)
-    assert "THEN 700 WHEN (t.tel_contact IS NOT NULL AND public.kp_phone_key(t.tel_contact) = %(" in sql
-    assert "THEN 650" in sql and "THEN 300 WHEN (t.tel_contact IS NOT NULL AND public.kp_phone_digits(t.tel_contact) LIKE ANY(" in sql
+    sql = S.ticket_rang_sql(pq, P)
+    assert "OR (t.tel_contact IS NOT NULL AND public.kp_phone_key(t.tel_contact) = %(" in sql
+    assert "THEN 2" in sql and "(t.tel_contact IS NOT NULL AND public.kp_phone_digits(t.tel_contact) LIKE ANY(" in sql
+    assert "THEN 1" in sql
     assert len(set(PLACEHOLDER.findall(sql))) == len(P.values)
     # Sans chiffres : rien du second numéro
     assert "tel_contact" not in S.ticket_where_sql(S.parse_query("dupont"), S.SqlParams())
-    assert "tel_contact" not in S.ticket_score_sql(S.parse_query("dupont"), S.SqlParams())
+    assert "tel_contact" not in S.ticket_rang_sql(S.parse_query("dupont"), S.SqlParams())
 
 
 def test_recherche_etiquette_autre_numero():

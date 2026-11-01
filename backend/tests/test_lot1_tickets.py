@@ -90,7 +90,9 @@ def test_kpi_jour_de_paris_en_bornes_utc(client, monkeypatch):
     with patch("app.api.tickets.get_cursor", cm):
         assert client.get("/api/tickets/stats/kpi", headers=H).status_code == 200
     sql, params = cur.execute.call_args.args
-    assert params == ("2026-10-19 22:00:00", "2026-10-20 22:00:00") * 2
+    # 5e paramètre : seuil des dossiers de plus de 60 jours (services/nettoyage), en UTC
+    assert params[:4] == ("2026-10-19 22:00:00", "2026-10-20 22:00:00") * 2
+    assert params[4] == "2026-08-20 22:30:00" and len(params) == 5
     assert "date_cloture::" not in sql and "date_depot::date" not in sql
 
 

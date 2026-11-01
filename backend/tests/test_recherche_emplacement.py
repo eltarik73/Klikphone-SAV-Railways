@@ -19,7 +19,7 @@ from app.services import etagere
 from app.services import search as S
 
 PLACEHOLDER = re.compile(r"%\((\w+)\)s")
-BUILDERS = (S.ticket_where_sql, S.ticket_score_sql, S.ticket_order_sql, S.ticket_exact_sql)
+BUILDERS = (S.ticket_where_sql, S.ticket_rang_sql, S.ticket_order_sql, S.ticket_exact_sql)
 
 # Requêtes dont le SQL ne doit pas bouger : code KP / # / préfixe / QR, IMEI, téléphones,
 # code + mots.
@@ -158,12 +158,12 @@ def test_emplacement_hors_clients_devis_commandes():
         assert "emplacement" not in builder(pq, S.SqlParams())
 
 
-def test_score_emplacement_apres_code_et_imei():
-    assert 700 < S.EMPLACEMENT_SCORE < 800
+def test_rang_emplacement_apres_code_et_imei():
     P = S.SqlParams()
-    score = S.ticket_score_sql(S.parse_query("b3"), P)
+    rang = S.ticket_rang_sql(S.parse_query("b3"), P)
     ph = _param_of(P, "B3")
-    assert f"CASE WHEN {_cond('t', ph)} THEN {S.EMPLACEMENT_SCORE} ELSE 0 END" in score
+    # désignation forte (rang 2), départagée ensuite par la date
+    assert _cond("t", ph) in rang and rang.startswith("(CASE WHEN ") and "THEN 2" in rang
     # pas une désignation exacte : le code ticket et l'IMEI gardent la tête
     assert "emplacement" not in S.ticket_exact_sql(S.parse_query("b3"), S.SqlParams())
 

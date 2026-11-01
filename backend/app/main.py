@@ -987,6 +987,9 @@ def _migrations_recherche():
         ("idx_tickets_imei_trgm", "tickets", "public.kp_alnum(imei)", ""),
         ("idx_tickets_pret_imei_trgm", "tickets", "public.kp_alnum(telephone_pret_imei)", ""),
         ("idx_clients_doc_trgm_v1", "clients", S.doc_sql("", S.C_COLS), ""),
+        # Forme compacte nom + prénom (« dartagnan », « oneil ») : sans cet index, chaque mot cherché
+        # recalculait kp_doc sur tous les clients (mesuré : recherche 4 à 10 fois plus lente)
+        ("idx_clients_nom_compact_trgm_v1", "clients", S.compact_sql(S.doc_sql("", S.C_NOM_COLS)), ""),
         ("idx_clients_phone_digits_trgm", "clients", "public.kp_phone_digits(telephone)", ""),
         ("idx_tickets_tel_contact_digits_trgm", "tickets", "public.kp_phone_digits(tel_contact)",
          "tel_contact IS NOT NULL"),

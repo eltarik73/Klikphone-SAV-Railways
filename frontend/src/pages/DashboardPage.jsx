@@ -56,6 +56,16 @@ const panneAffichee = (t) => {
 
 // Santé des prix : réservée à l'admin, chargée seulement pour lui
 const SantePrixWidget = lazy(() => import('../components/SantePrixWidget'));
+// Tri des réparations oubliées (+60 jours) : réservé à l'admin, chargé à l'ouverture
+const TriAnciens = lazy(() => import('../components/TriAnciens'));
+
+// « À faire » : masque les réparations terminées (et rendues / clôturées), pour n'avoir sous les
+// yeux que ce qui reste à faire — réglage gardé sur le poste (la technicienne le laisse coché)
+const A_FAIRE_KEY = 'kp_dash_a_faire';
+export const STATUTS_FAITS = new Set(['Réparation terminée', ...ARCHIVE_STATUTS]);
+function lireAFaire() {
+  try { return localStorage.getItem(A_FAIRE_KEY) === '1'; } catch { return false; }
+}
 
 // Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
 const DASH_STATE_KEY = 'kp_dashboard_filters';
@@ -201,6 +211,9 @@ export default function DashboardPage() {
   const [activeKpi, setActiveKpi] = useState(null);
   // Étagère « À récupérer » (carte KPI) : liste filtrée et triée par le serveur, au-dessus du tableau
   const [showEtagere, setShowEtagere] = useState(false);
+  const [showTri, setShowTri] = useState(false);
+  const triId = useId();
+  const [aFaire, setAFaire] = useState(lireAFaire);
   // Ticket dont l'appel téléphonique attend une confirmation (ligne sous la rangée)
   const [appelAConfirmer, setAppelAConfirmer] = useState(null);
   const etagereId = useId();
@@ -299,6 +312,14 @@ export default function DashboardPage() {
   // For tech view: filter by assigned tech
   const isTech = user?.target === 'tech';
   const techName = user?.utilisateur;
+  const isRoleAdmin = user?.role === 'admin';
+  const toggleAFaire = () => {
+    setAFaire((v) => {
+      const next = !v;
+      try { localStorage.setItem(A_FAIRE_KEY, next ? '1' : '0'); } catch { /* stockage indisponible */ }
+      return next;
+    });
+  };
 
   // Filtres envoyés au serveur. Vue actifs : liste complète (≤ 500) paginée ici ;
   // vue archives : pagination serveur ; recherche : tous statuts, actifs d'abord.
@@ -553,7 +574,9 @@ export default function DashboardPage() {
   };
 
   // Dates et vue sont filtrées par le serveur ; restent ici le technicien quand il n'est pas
-  // envoyé (voir techOnServer), les interactions et, en recherche, l'onglet de statut.
+  // envoyé (voir techOnServer), les interactions, « À faire » (hors recherche et archives : on
+  // cherche aussi un ticket terminé) et, en recherche, l'onglet de statut.
+  const aFaireActif = aFaire && !searchMode && !showArchived;
   const baseTickets = useMemo(() => {
     let list = tickets;
     if (filterTech && !techOnServer) {
@@ -563,6 +586,9 @@ export default function DashboardPage() {
         list = list.filter(t => matchTech(t.technicien_assigne, filterTech));
       }
     }
+    if (aFaireActif) {
+      list = list.filter(t => !STATUTS_FAITS.has(t.statut));
+    }
     if (interactionTicketIds) {
       list = list.filter(t => interactionTicketIds.has(t.id));
     }
@@ -570,7 +596,7 @@ export default function DashboardPage() {
       list = list.filter(t => normaliserPriorite(t.priorite) === filterPriorite);
     }
     return list;
-  }, [tickets, filterTech, techOnServer, mineOnly, techName, interactionTicketIds, filterPriorite]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tickets, filterTech, techOnServer, mineOnly, techName, aFaireActif, interactionTicketIds, filterPriorite]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clients qui attendent en boutique (vue des actifs : liste complète)
   const nbAttenteSurPlace = useMemo(() => {
@@ -593,7 +619,7 @@ export default function DashboardPage() {
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
 
   // Compteurs du bandeau : KPI serveur (toute la base), indépendants de la recherche
-  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds || filterPriorite);
+  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds || filterPriorite || aFaireActif);
   // CA estimé : calculé seulement sur la liste complète des actifs (sans recherche ni filtre serveur),
   // puis conservé tel quel pendant qu'on filtre.
   const caActifs = useMemo(() => {
@@ -656,10 +682,12 @@ export default function DashboardPage() {
       return sortDir === 'desc' ? -cmp : cmp;
     });
   }, [keepServerOrder, sortField, sortDir]);
+  // Recherche : une seule liste, du plus récent au plus ancien (ordre du serveur), actifs et
+  // archivés mêlés — un ticket clôturé hier passe avant un ticket ouvert il y a un an.
   const sortedTickets = useMemo(() => {
-    if (searchMode) return [...sortList(activeTickets), ...sortList(archivedTickets)];
+    if (searchMode) return sortList(filteredTickets);
     return sortList(showArchived ? archivedTickets : activeTickets);
-  }, [searchMode, showArchived, archivedTickets, activeTickets, sortList]);
+  }, [searchMode, showArchived, filteredTickets, archivedTickets, activeTickets, sortList]);
   const totalCount = serverPaged ? (serverTotal ?? sortedTickets.length) : sortedTickets.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage = Math.min(page, totalPages - 1);
@@ -741,7 +769,7 @@ export default function DashboardPage() {
 
   // État vide explicite : ne jamais afficher « Aucun ticket » quand des résultats existent ailleurs
   const emptyState = (() => {
-    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); setFilterPriorite(''); };
+    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); setFilterPriorite(''); if (aFaire) toggleAFaire(); };
     if (searchMode) {
       if (filterStatut && baseTickets.length > 0) {
         return {
@@ -775,6 +803,15 @@ export default function DashboardPage() {
         title: 'Aucun ticket actif avec ces filtres',
         text: `${archivedTotal} ticket(s) rendus ou clôturés correspondent à ces filtres.`,
         action: { label: `Voir les ${archivedTotal} archivé(s)`, onClick: showArchives },
+      };
+    }
+    if (aFaireActif && tickets.length > 0 && baseTickets.length === 0) {
+      return {
+        title: 'Rien à faire',
+        text: filterTech
+          ? 'Toutes les réparations de ce technicien sont terminées, rendues ou clôturées.'
+          : 'Toutes les réparations sont terminées, rendues ou clôturées.',
+        action: { label: 'Voir aussi les terminées', onClick: toggleAFaire },
       };
     }
     if (showArchived) {
@@ -899,9 +936,26 @@ export default function DashboardPage() {
           onRemettre={ouvrirRemise} onClose={() => setShowEtagere(false)} />
       )}
 
+      {showTri && isRoleAdmin && (
+        <Suspense fallback={<div className="skeleton h-24 mb-6" aria-hidden="true" />}>
+          <TriAnciens id={triId} basePath={basePath} onOpenTicket={openTicket} onClose={() => setShowTri(false)} />
+        </Suspense>
+      )}
+
       {/* ★ Chips d'alerte — commandes, dépôts distants, interactions (une seule teinte, sauf « sur place ») */}
-      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0) && (
+      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0
+        || (isRoleAdmin && kpi?.anciens > 0)) && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
+          {isRoleAdmin && kpi?.anciens > 0 && (
+            <button type="button" onClick={() => setShowTri(v => !v)}
+              aria-expanded={showTri} aria-controls={showTri ? triId : undefined}
+              className={`btn btn-sm rounded-full text-sm font-medium ${
+                showTri ? 'bg-amber-600 text-white hover:bg-amber-700' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+              }`}>
+              <AlertTriangle aria-hidden="true" />
+              <span><span className="font-bold">{kpi.anciens}</span> dossier{kpi.anciens > 1 ? 's' : ''} de + de 60 j à trier</span>
+            </button>
+          )}
           {nbAttenteSurPlace > 0 && (
             <button type="button" onClick={() => setFilterPriorite(f => (f === 'attente' ? '' : 'attente'))}
               aria-pressed={filterPriorite === 'attente'}
@@ -1026,6 +1080,15 @@ export default function DashboardPage() {
                 ))}
               </select>
             )}
+            <button type="button" onClick={toggleAFaire} aria-pressed={aFaire}
+              disabled={searchMode || showArchived}
+              title={searchMode || showArchived ? 'Sans effet en recherche et dans les archives' : 'Masquer les réparations terminées, rendues et clôturées'}
+              className={`btn min-h-11 rounded-lg text-sm font-medium disabled:opacity-50 ${
+                aFaire ? 'bg-brand-600 text-white hover:bg-brand-700' : 'btn-secondary'
+              }`}>
+              <ClipboardList aria-hidden="true" />
+              À faire{aFaire ? ' seulement' : ''}
+            </button>
           </div>
         </div>
         <div className="px-3 sm:px-4 py-2 bg-slate-50/60 rounded-b-xl">

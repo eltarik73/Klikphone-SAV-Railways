@@ -223,20 +223,26 @@ export function hrefFor(type, id, basePath, extra = {}) {
   }
 }
 
+// Nombre total trouvé par le serveur (au-delà des SEARCH_LIMIT affichés), null s'il n'est pas connu
+function totalTrouve(res, key, shown) {
+  const n = Number(res?.totaux?.[key]);
+  return Number.isFinite(n) && n > shown ? n : null;
+}
+
 export function buildResultGroups(res, basePath) {
   const g = res?.groups || {};
   const groups = [];
   const tickets = (g.tickets || []).filter((t) => t && t.id != null);
   if (tickets.length) {
     groups.push({
-      key: 'tickets', label: 'Tickets', icon: Smartphone,
+      key: 'tickets', label: 'Tickets', icon: Smartphone, total: totalTrouve(res, 'tickets', tickets.length),
       items: tickets.map((t) => ({ type: 'ticket', key: `ticket-${t.id}`, id: t.id, href: hrefFor('ticket', t.id, basePath), data: t })),
     });
   }
   const clients = (g.clients || []).filter((c) => c && c.id != null);
   if (clients.length) {
     groups.push({
-      key: 'clients', label: 'Clients', icon: User,
+      key: 'clients', label: 'Clients', icon: User, total: totalTrouve(res, 'clients', clients.length),
       items: clients.map((c) => ({ type: 'client', key: `client-${c.id}`, id: c.id, href: hrefFor('client', c.id, basePath), data: c })),
     });
   }
@@ -930,7 +936,11 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
                   className="sticky top-0 z-[1] bg-white/95 px-4 pt-2 pb-1 t-overline flex items-center gap-1.5">
                   {GroupIcon && <GroupIcon className="w-3.5 h-3.5" aria-hidden="true" />}
                   {g.label}
-                  {showResults && <span className="font-semibold">· {g.items.length}</span>}
+                  {showResults && (
+                    <span className="font-semibold">
+                      · {g.total ? `${g.items.length} plus récents sur ${g.total}` : g.items.length}
+                    </span>
+                  )}
                 </div>
                 {g.items.map((opt) => {
                   flatIndex += 1;

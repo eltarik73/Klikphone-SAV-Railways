@@ -441,6 +441,8 @@ class KPIResponse(BaseModel):
     clotures_aujourdhui: int = 0
     nouveaux_aujourdhui: int = 0
     a_recuperer: int = 0
+    # Dossiers ouverts déposés il y a plus de 60 jours (services/nettoyage) : à trier
+    anciens: int = 0
 
 
 # ============================================================

@@ -93,17 +93,17 @@ def _fuzzy_context(cur):
 
 
 def _search_tickets(cur, pq, limit):
+    """Tickets trouvés : désignation exacte, rang (S.ticket_rang_sql), puis du plus récent au
+    plus ancien, quel que soit le statut (même ordre que le dashboard)."""
     P = S.SqlParams()
     where = S.ticket_where_sql(pq, P)
-    score = S.ticket_score_sql(pq, P)
-    exact = S.ticket_exact_sql(pq, P)
+    order = S.ticket_order_sql(pq, P)
     P.values["limit"] = limit
     cur.execute(
-        "SELECT " + _TICKET_SELECT + ", " + score + " AS _score, " + exact + " AS _exact, "
-        + S.actif_sql("t") + " AS _actif, COUNT(*) OVER () AS _total"
+        "SELECT " + _TICKET_SELECT + ", COUNT(*) OVER () AS _total"
         " FROM tickets t JOIN clients c ON c.id = t.client_id"
         " WHERE " + where +
-        " ORDER BY _exact DESC, _actif DESC, _score DESC, t.date_depot DESC NULLS LAST, t.id DESC"
+        " ORDER BY " + order +
         " LIMIT %(limit)s",
         P.values,
     )
@@ -210,11 +210,14 @@ def search(
     limit: int = Query(8, ge=1, le=25),
     user: dict = Depends(get_current_user),
 ):
-    """Recherche multi-critères : code, téléphone (tout format), IMEI, nom, appareil, panne, notes."""
+    """Recherche multi-critères : code, téléphone (tout format), IMEI, nom, appareil, panne, notes.
+
+    totaux : nombre de tickets et de clients trouvés au-delà de `limit` (la palette affiche
+    « 8 sur 45 » et renvoie vers la liste complète)."""
     pq = S.parse_query(q)
     groups = {"tickets": [], "clients": [], "devis": [], "commandes": []}
     if pq.empty:
-        return {"q": q, "resolved": None, "groups": groups}
+        return {"q": q, "resolved": None, "groups": groups, "totaux": {"tickets": 0, "clients": 0}}
 
     with get_cursor() as cur:
         cur.execute("SET LOCAL statement_timeout = '5s'")
@@ -242,7 +245,8 @@ def search(
         {**{k: r.get(k) for k in TICKET_FIELDS}, "match": S.ticket_match_label(used, r)} for r in tickets
     ]
     groups["clients"] = [{k: r.get(k) for k in CLIENT_FIELDS} for r in clients]
-    return {"q": q, "resolved": _resolved(pq, tickets, t_total, clients, c_total), "groups": groups}
+    return {"q": q, "resolved": _resolved(pq, tickets, t_total, clients, c_total), "groups": groups,
+            "totaux": {"tickets": t_total, "clients": c_total}}
 
 
 _RESOLVE_BY_IMEI = (

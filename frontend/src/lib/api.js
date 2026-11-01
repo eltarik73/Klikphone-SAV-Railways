@@ -1053,6 +1053,18 @@ class ApiClient {
   }
 
   // ─── ADMIN ──────────────────────────────────
+  // Tri des réparations oubliées (élévation admin) : dossiers ouverts déposés depuis plus de `jours`
+  // jours → { jours, seuil, total, bloques, par_statut, tickets, tronque } ; rien n'est modifié
+  getAnciens(jours = 60) {
+    return this.request(`/api/admin/anciens${buildQuery({ jours })}`, { retries: 0, cache: 'no-store' });
+  }
+  // Clôture des dossiers choisis (ids de l'aperçu) → { jours, clotures, ignores, par_statut }
+  cloturerAnciens(jours, ids) {
+    this._invalidate('/api/tickets');
+    return this.request('/api/admin/anciens/cloturer', {
+      method: 'POST', body: JSON.stringify({ jours, ids }),
+    }, 60000);
+  }
   // → { success, admin_token, expires_in } : le jeton (10 min) part ensuite en X-Admin-Token
   // (sauf vers les routes publiques)
   async verifyAdmin(login, password) {

@@ -32,6 +32,7 @@ from app.services.notifications import (
 from app.api.notifications_center import push_notification
 from app.services import contact
 from app.services import etagere
+from app.services import nettoyage
 from app.services import params as params_cache
 from app.services import search as search_engine
 
@@ -425,14 +426,15 @@ _KPI_SQL = f"""
                          AND statut IN ('Rendu au client', 'Clôturé')) as clotures_aujourdhui,
         COUNT(*) FILTER (WHERE date_depot >= %s AND date_depot < %s) as nouveaux_aujourdhui,
         COUNT(*) FILTER (WHERE statut = 'Pré-enregistré') as pre_enregistres,
-        COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer
+        COUNT(*) FILTER (WHERE {etagere.a_recuperer_sql("tickets")}) as a_recuperer,
+        COUNT(*) FILTER (WHERE {nettoyage.ouvert_ancien_sql("tickets", "%s")}) as anciens
     FROM tickets
 """
 
 
 def _params_kpi() -> tuple:
     debut, fin = bornes_utc(jour_paris())
-    return (debut, fin, debut, fin)
+    return (debut, fin, debut, fin, nettoyage.seuil(nettoyage.JOURS_DEFAUT, _maintenant_utc()))
 
 
 def _kpi(row) -> dict:

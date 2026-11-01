@@ -240,7 +240,7 @@ def test_fuzzy_trgm_uses_indexable_operator():
 ])
 def test_builders_are_parameterized(q):
     pq = S.parse_query(q)
-    for builder in (S.ticket_where_sql, S.ticket_score_sql, S.ticket_order_sql,
+    for builder in (S.ticket_where_sql, S.ticket_rang_sql, S.ticket_order_sql,
                     S.client_where_sql, S.client_score_sql, S.devis_where_sql, S.commande_where_sql):
         P = S.SqlParams()
         sql = builder(pq, P)
@@ -437,7 +437,7 @@ def test_kpi_compares_date_cloture_as_text(client, auth_headers):
     sql, params = cur.execute.call_args.args
     # Texte comparé au texte : bornes UTC du jour de Paris, jamais de cast
     assert "date_cloture::" not in sql and "date_cloture >= %s AND date_cloture < %s" in sql
-    assert len(params) == 4 and all(len(p) == 19 for p in params)
+    assert len(params) == 5 and all(len(p) == 19 for p in params)
 
 
 def test_ticket_list_tolerates_text_date_cloture():

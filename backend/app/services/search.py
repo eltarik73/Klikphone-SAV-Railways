@@ -20,8 +20,6 @@ MAX_WORDS = 6
 TRGM_THRESHOLD = 0.5
 # Miroir de services/etagere.EMPLACEMENT_MAX (longueur maximale d'un emplacement « B3 »)
 EMPLACEMENT_MAX = 20
-# Juste après code ticket explicite (1000) et IMEI (900 / 800), avant le téléphone (700)
-EMPLACEMENT_SCORE = 750
 # Expression couverte par idx_tickets_emplacement (main.py, _DDL_INDEXES, partiel
 # « emplacement IS NOT NULL ») : la comparaison de base doit rester exactement celle-ci.
 EMPLACEMENT_INDEX_EXPR = "upper(emplacement)"
@@ -71,6 +69,12 @@ SYNONYMES = {
     "faceid": ["face id"],
     "touchid": ["touch id"],
     "oxyde": ["oxydation", "desoxydation"],
+    # Marque → gammes : un « Pixel 7 » saisi sans la marque (ou en « Autre ») est un Google.
+    # Sens unique : « pixel » ne doit pas ramener tous les Google.
+    "google": ["pixel"],
+    "samsung": ["galaxy"],
+    "xiaomi": ["redmi", "poco"],
+    "apple": ["iphone", "ipad", "ipod", "macbook", "airpods", "imac"],
 }
 
 VOCAB_STATIQUE = (
@@ -794,49 +798,38 @@ def _phone_full_score(pq: ParsedQuery, P: SqlParams, c: str) -> str:
     return f"CASE WHEN public.kp_phone_digits({c}.telephone) = ANY({P.add(pq.phone_full)}::text[]) THEN 100 ELSE 0 END"
 
 
-def ticket_score_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> str:
-    parts = []
-    if pq.ticket_id:
-        pts = 1000 if pq.ticket_explicit else 500
-        parts.append(f"CASE WHEN {_tid_sql(pq, P, t)} THEN {pts} ELSE 0 END")
-    if pq.code_prefix:
-        parts.append(f"CASE WHEN {t}.ticket_code LIKE {P.add(pq.code_prefix)} THEN 400 ELSE 0 END")
-    if pq.imei:
-        i = P.add(pq.imei)
-        parts.append(
-            f"CASE WHEN {_imei_exact_sql(t, 'imei', i)} THEN 900"
-            f" WHEN {_imei_exact_sql(t, 'telephone_pret_imei', i)} THEN 800 ELSE 0 END"
-        )
+def ticket_rang_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> str:
+    """Rang de la correspondance, départagé ensuite par la date de dépôt (plus récent d'abord) :
+    2 = désignation forte (numéro de ticket, téléphone complet du client ou du ticket,
+    emplacement), 1 = fragment de téléphone ou d'IMEI d'une saisie toute en chiffres,
+    0 = mots (nom, modèle, panne, notes…), classés par la seule récence.
+
+    « 0::int » sans désignation : rien à départager (un entier nu dans ORDER BY serait lu
+    comme un numéro de colonne)."""
+    forts = _code_sql(pq, P, t)
     if pq.phone_key:
         k = P.add(pq.phone_key)
-        # Le téléphone du client d'abord (700), un ticket joignable à ce numéro juste après (650)
-        parts.append(f"CASE WHEN public.kp_phone_key({c}.telephone) = {k} THEN 700"
-                     f" WHEN {_tel_contact_key_sql(t, k)} THEN 650 ELSE 0 END")
-        parts.append(_phone_full_score(pq, P, c))
+        forts.append(f"public.kp_phone_key({c}.telephone) = {k}")
+        forts.append(_tel_contact_key_sql(t, k))
     if pq.emplacement:
-        parts.append(f"CASE WHEN {_emplacement_sql(pq, t, P.add(pq.emplacement))}"
-                     f" THEN {EMPLACEMENT_SCORE} ELSE 0 END")
-    phones, imeis, prefixes = _all(pq.words, "phone"), _all(pq.words, "imei"), _all(pq.words, "prefixes")
-    if phones:
-        ph = P.add(phones)
-        parts.append(f"CASE WHEN {_any(f'public.kp_phone_digits({c}.telephone)', ph)} THEN 300"
-                     f" WHEN {_tel_contact_sql(t, _any(f'public.kp_phone_digits({t}.tel_contact)', ph))} THEN 250"
-                     " ELSE 0 END")
-    if imeis:
-        i = P.add(imeis)
-        parts.append(
-            f"CASE WHEN {_any(f'public.kp_alnum({t}.imei)', i)} OR {_any(f'public.kp_alnum({t}.telephone_pret_imei)', i)}"
-            " THEN 250 ELSE 0 END"
-        )
-    if prefixes:
-        pp = P.add(prefixes)
-        parts.append(f"CASE WHEN {_any(doc_sql(c, C_COLS), pp)} THEN 120 ELSE 0 END")
-        parts.append(f"CASE WHEN {_any(doc_sql(t, T_DEVICE_COLS), pp)} THEN 60 ELSE 0 END")
-    parts.append(
-        f"CASE {t}.statut WHEN 'Réparation terminée' THEN 90 WHEN 'Rendu au client' THEN 0"
-        " WHEN 'Clôturé' THEN 0 ELSE 50 END"
-    )
-    return "(" + " + ".join(parts) + ")"
+        forts.append(_emplacement_sql(pq, t, P.add(pq.emplacement)))
+    fragments = []
+    if pq.numeric:
+        phones, imeis = _all(pq.words, "phone"), _all(pq.words, "imei")
+        if phones:
+            ph = P.add(phones)
+            fragments.append(_any(f"public.kp_phone_digits({c}.telephone)", ph))
+            fragments.append(_tel_contact_sql(t, _any(f"public.kp_phone_digits({t}.tel_contact)", ph)))
+        if imeis:
+            i = P.add(imeis)
+            fragments.append(_any(f"public.kp_alnum({t}.imei)", i))
+            fragments.append(_any(f"public.kp_alnum({t}.telephone_pret_imei)", i))
+    cas = []
+    if forts:
+        cas.append(f"WHEN {' OR '.join(forts)} THEN 2")
+    if fragments:
+        cas.append(f"WHEN {' OR '.join(fragments)} THEN 1")
+    return f"(CASE {' '.join(cas)} ELSE 0 END)" if cas else "0::int"
 
 
 def ticket_exact_sql(pq: ParsedQuery, P: SqlParams, t: str = "t") -> str:
@@ -852,14 +845,15 @@ def ticket_exact_sql(pq: ParsedQuery, P: SqlParams, t: str = "t") -> str:
 
 
 def ticket_order_sql(pq: ParsedQuery, P: SqlParams, t: str = "t", c: str = "c") -> str:
-    """Désignation exacte, puis actifs avant archivés, puis pertinence, puis récence."""
+    """Désignation exacte, puis rang (ticket_rang_sql), puis du plus récent au plus ancien,
+    tous statuts confondus : un ticket clôturé hier passe avant un ticket ouvert il y a un an."""
     exact = ticket_exact_sql(pq, P, t)
+    rang = ticket_rang_sql(pq, P, t, c)
     # « ORDER BY FALSE » est refusé par PostgreSQL (constante non entière)
     head = "" if exact == "FALSE" else f"{exact} DESC, "
-    return (
-        f"{head}{actif_sql(t)} DESC, {ticket_score_sql(pq, P, t, c)} DESC,"
-        f" {t}.date_depot DESC NULLS LAST, {t}.id DESC"
-    )
+    if rang != "0::int":
+        head += f"{rang} DESC, "
+    return f"{head}{t}.date_depot DESC NULLS LAST, {t}.id DESC"
 
 
 def _client_word_sql(w: Word, P: SqlParams, c: str) -> str:
