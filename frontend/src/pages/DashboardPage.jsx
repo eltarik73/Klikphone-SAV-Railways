@@ -61,6 +61,12 @@ const SantePrixWidget = lazy(() => import('../components/SantePrixWidget'));
 // yeux que ce qui reste à faire — réglage gardé sur le poste (la technicienne le laisse coché)
 const A_FAIRE_KEY = 'kp_dash_a_faire';
 export const STATUTS_FAITS = new Set(['Réparation terminée', ...ARCHIVE_STATUTS]);
+// Pastilles « accords / messages / avis » : ce qu'un ticket listé porte (GET …/dashboard?interaction=)
+export const INTERACTION_LIBELLES = {
+  accord_client: 'une réponse au devis non lue',
+  messages: 'un message client non lu',
+  avis: 'un avis client non lu',
+};
 function lireAFaire() {
   try { return localStorage.getItem(A_FAIRE_KEY) === '1'; } catch { return false; }
 }
@@ -319,7 +325,11 @@ export default function DashboardPage() {
   // Filtres envoyés au serveur. Vue actifs : liste complète (≤ 500) paginée ici ;
   // vue archives : pagination serveur ; recherche : tous statuts, actifs d'abord.
   const searchMode = Boolean(debouncedSearch);
-  const vue = searchMode ? 'tous' : (showArchived ? 'archives' : 'actifs');
+  // Pastille « accords / messages / avis » : liste servie par le serveur, tous statuts confondus
+  // (un avis arrive après restitution, un message non lu peut viser un dossier clôturé)
+  const interactionMode = Boolean(interactionFilter);
+  const listeMelangee = searchMode || interactionMode;
+  const vue = listeMelangee ? 'tous' : (showArchived ? 'archives' : 'actifs');
   const serverPaged = vue === 'archives';
   const mineOnly = filterTech === '__mine__';
   // Le serveur compare le technicien à l'identique : en actifs et en recherche (listes complètes)
@@ -328,15 +338,16 @@ export default function DashboardPage() {
   const techOnServer = Boolean(filterTech) && serverPaged;
   const serverTech = techOnServer ? (mineOnly ? (techName || '') : filterTech) : '';
   const queryParams = useMemo(() => {
-    const p = { vue, limit: serverPaged ? pageSize : (searchMode ? 200 : 500) };
+    const p = { vue, limit: serverPaged ? pageSize : (listeMelangee ? 200 : 500) };
     if (serverPaged) p.offset = page * pageSize;
     if (debouncedSearch) p.search = debouncedSearch;
-    if (filterStatut && !searchMode) p.statut = filterStatut;
+    if (interactionFilter) p.interaction = interactionFilter;
+    if (filterStatut && !listeMelangee) p.statut = filterStatut;
     if (dateFrom) p.date_from = dateFrom;
     if (dateTo) p.date_to = dateTo;
     if (serverTech) p.tech = serverTech;
     return p;
-  }, [vue, serverPaged, searchMode, pageSize, page, debouncedSearch, filterStatut, dateFrom, dateTo, serverTech]);
+  }, [vue, serverPaged, listeMelangee, pageSize, page, debouncedSearch, interactionFilter, filterStatut, dateFrom, dateTo, serverTech]);
   const dashKey = useMemo(() => `dashboard:${JSON.stringify(queryParams)}`, [queryParams]);
 
   // SWR: Dashboard data (KPI + tickets)
@@ -362,14 +373,14 @@ export default function DashboardPage() {
 
   // Nombre d'archivés correspondant aux mêmes filtres (bouton « Voir N archivé(s) », état vide)
   const archCountParams = useMemo(() => {
-    if (searchMode || showArchived || filterStatut) return null;
+    if (listeMelangee || showArchived || filterStatut) return null;
     const p = { vue: 'archives', limit: 1 };
     if (dateFrom) p.date_from = dateFrom;
     if (dateTo) p.date_to = dateTo;
     const t = mineOnly ? (techName || '') : filterTech;
     if (t) p.tech = t;
     return p;
-  }, [searchMode, showArchived, filterStatut, dateFrom, dateTo, mineOnly, techName, filterTech]);
+  }, [listeMelangee, showArchived, filterStatut, dateFrom, dateTo, mineOnly, techName, filterTech]);
   const { data: archCountData } = useApi(
     archCountParams ? `dashboard:archcount:${JSON.stringify(archCountParams)}` : null,
     () => api.getDashboard(archCountParams),
@@ -418,12 +429,17 @@ export default function DashboardPage() {
     return map;
   }, [interactions]);
 
-  // Build set of ticket IDs for active interaction filter
+  // Pastille active : la liste vient du serveur (paramètre `interaction`) ; les identifiants des
+  // pastilles, relus dès qu'un ticket est ouvert, retirent tout de suite ce qu'on vient de lire
   const interactionTicketIds = useMemo(() => {
     if (!interactionFilter || !interactions) return null;
     const ids = interactions[interactionFilter]?.ticket_ids;
     return Array.isArray(ids) && ids.length > 0 ? new Set(ids) : null;
   }, [interactionFilter, interactions]);
+  // Plus rien à lire dans cette catégorie (tout ouvert) : le filtre se retire tout seul
+  useEffect(() => {
+    if (interactionFilter && interactions && !(interactions[interactionFilter]?.count > 0)) setInteractionFilter(null);
+  }, [interactions, interactionFilter]);
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
@@ -571,7 +587,7 @@ export default function DashboardPage() {
   // Dates et vue sont filtrées par le serveur ; restent ici le technicien quand il n'est pas
   // envoyé (voir techOnServer), les interactions, « À faire » (hors recherche et archives : on
   // cherche aussi un ticket terminé) et, en recherche, l'onglet de statut.
-  const aFaireActif = aFaire && !searchMode && !showArchived;
+  const aFaireActif = aFaire && !listeMelangee && !showArchived;
   const baseTickets = useMemo(() => {
     let list = tickets;
     if (filterTech && !techOnServer) {
@@ -600,8 +616,8 @@ export default function DashboardPage() {
   }, [tickets, vue]);
 
   const filteredTickets = useMemo(
-    () => (searchMode && filterStatut ? baseTickets.filter(t => t.statut === filterStatut) : baseTickets),
-    [baseTickets, searchMode, filterStatut]
+    () => (listeMelangee && filterStatut ? baseTickets.filter(t => t.statut === filterStatut) : baseTickets),
+    [baseTickets, listeMelangee, filterStatut]
   );
 
   const statutCounts = useMemo(() => {
@@ -614,7 +630,7 @@ export default function DashboardPage() {
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
 
   // Compteurs du bandeau : KPI serveur (toute la base), indépendants de la recherche
-  const hasListFilters = Boolean(searchMode || filterStatut || dateFrom || dateTo || filterTech || interactionTicketIds || filterPriorite || aFaireActif);
+  const hasListFilters = Boolean(listeMelangee || filterStatut || dateFrom || dateTo || filterTech || filterPriorite || aFaireActif);
   // CA estimé : calculé seulement sur la liste complète des actifs (sans recherche ni filtre serveur),
   // puis conservé tel quel pendant qu'on filtre.
   const caActifs = useMemo(() => {
@@ -680,9 +696,9 @@ export default function DashboardPage() {
   // Recherche : une seule liste, du plus récent au plus ancien (ordre du serveur), actifs et
   // archivés mêlés — un ticket clôturé hier passe avant un ticket ouvert il y a un an.
   const sortedTickets = useMemo(() => {
-    if (searchMode) return sortList(filteredTickets);
+    if (listeMelangee) return sortList(filteredTickets);
     return sortList(showArchived ? archivedTickets : activeTickets);
-  }, [searchMode, showArchived, filteredTickets, archivedTickets, activeTickets, sortList]);
+  }, [listeMelangee, showArchived, filteredTickets, archivedTickets, activeTickets, sortList]);
   const totalCount = serverPaged ? (serverTotal ?? sortedTickets.length) : sortedTickets.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage = Math.min(page, totalPages - 1);
@@ -776,7 +792,7 @@ export default function DashboardPage() {
       if (tickets.length > 0) {
         return {
           title: 'Résultats masqués par un filtre',
-          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien, priorité ou interactions.`,
+          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien ou priorité.`,
           action: { label: 'Retirer ces filtres', onClick: resetFilters },
         };
       }
@@ -791,6 +807,21 @@ export default function DashboardPage() {
         title: `Aucun ticket ne correspond à « ${debouncedSearch} »`,
         text: 'Essayez le téléphone, le code (KP-000123 ou 123), l’IMEI, ou cherchez aussi dans les clients, devis et commandes.',
         action: { label: 'Recherche globale', onClick: () => openSearchPalette(debouncedSearch) },
+      };
+    }
+    if (interactionMode) {
+      const libelle = INTERACTION_LIBELLES[interactionFilter];
+      if (tickets.length > 0) {
+        return {
+          title: 'Tickets masqués par un filtre',
+          text: `${tickets.length} ticket(s) ont ${libelle} mais sont masqués par le filtre technicien, priorité ou statut.`,
+          action: { label: 'Retirer ces filtres', onClick: () => { setFilterStatut(''); setActiveKpi(null); setFilterTech(''); setFilterPriorite(''); } },
+        };
+      }
+      return {
+        title: 'Rien de nouveau',
+        text: `Aucun ticket avec ${libelle}. Les pastilles se mettent à jour dans la minute.`,
+        action: { label: 'Retirer le filtre', onClick: () => setInteractionFilter(null) },
       };
     }
     if (!showArchived && archivedTotal > 0 && (dateFrom || dateTo || filterTech)) {
@@ -933,7 +964,7 @@ export default function DashboardPage() {
 
 
       {/* ★ Chips d'alerte — commandes, dépôts distants, interactions (une seule teinte, sauf « sur place ») */}
-      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0) && (
+      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0 || interactionFilter) && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
           {nbAttenteSurPlace > 0 && (
             <button type="button" onClick={() => setFilterPriorite(f => (f === 'attente' ? '' : 'attente'))}
@@ -963,39 +994,34 @@ export default function DashboardPage() {
               <ChevronRight className="text-slate-400" aria-hidden="true" />
             </button>
           )}
-          {interactions?.accord_client?.count > 0 && (
-            <button type="button" onClick={() => setInteractionFilter(interactionFilter === 'accord_client' ? null : 'accord_client')}
-              aria-pressed={interactionFilter === 'accord_client'}
-              className={`btn btn-sm rounded-full text-sm font-medium ${
-                interactionFilter === 'accord_client' ? 'bg-brand-100 text-brand-800 hover:bg-brand-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}>
-              <FileCheck className={interactionFilter === 'accord_client' ? '' : 'text-slate-500'} aria-hidden="true" />
-              <span className="font-bold text-brand-700">{interactions.accord_client.count}</span>
-              <span>accord{interactions.accord_client.count > 1 ? 's' : ''}</span>
-            </button>
-          )}
-          {interactions?.messages?.count > 0 && (
-            <button type="button" onClick={() => setInteractionFilter(interactionFilter === 'messages' ? null : 'messages')}
-              aria-pressed={interactionFilter === 'messages'}
-              className={`btn btn-sm rounded-full text-sm font-medium ${
-                interactionFilter === 'messages' ? 'bg-brand-100 text-brand-800 hover:bg-brand-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}>
-              <MessageCircle className={interactionFilter === 'messages' ? '' : 'text-slate-500'} aria-hidden="true" />
-              <span className="font-bold text-brand-700">{interactions.messages.count}</span>
-              <span>message{interactions.messages.count > 1 ? 's' : ''} client</span>
-            </button>
-          )}
-          {interactions?.avis?.count > 0 && (
-            <button type="button" onClick={() => setInteractionFilter(interactionFilter === 'avis' ? null : 'avis')}
-              aria-pressed={interactionFilter === 'avis'}
-              className={`btn btn-sm rounded-full text-sm font-medium ${
-                interactionFilter === 'avis' ? 'bg-brand-100 text-brand-800 hover:bg-brand-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}>
-              <Star className={interactionFilter === 'avis' ? '' : 'text-slate-500'} aria-hidden="true" />
-              <span className="font-bold text-brand-700">{interactions.avis.count}</span>
-              <span>avis</span>
-            </button>
-          )}
+          {/* Ce que le client a laissé depuis sa page de suivi : une teinte par nature (réponse au devis,
+              message, avis), pleine quand la pastille filtre la liste. Le libellé complet est dans le
+              nom accessible (« 2 messages client non lus »). */}
+          {[
+            { cle: 'accord_client', icone: FileCheck, mot: ['réponse au devis non lue', 'réponses au devis non lues'],
+              clair: 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100', plein: 'bg-emerald-700 text-white hover:bg-emerald-800', icoClair: 'text-emerald-700' },
+            { cle: 'messages', icone: MessageCircle, mot: ['message client non lu', 'messages client non lus'],
+              clair: 'bg-blue-50 text-blue-800 hover:bg-blue-100', plein: 'bg-blue-700 text-white hover:bg-blue-800', icoClair: 'text-blue-700' },
+            { cle: 'avis', icone: Star, mot: ['avis non lu', 'avis non lus'],
+              clair: 'bg-amber-50 text-amber-900 hover:bg-amber-100', plein: 'bg-amber-700 text-white hover:bg-amber-800', icoClair: 'text-amber-700' },
+          ].map(({ cle, icone: Icone, mot, clair, plein, icoClair }) => {
+            const n = interactions?.[cle]?.count || 0;
+            if (!(n > 0)) return null;
+            const actif = interactionFilter === cle;
+            // Pastille courte à l'écran (« 2 messages client »), complète pour le lecteur d'écran
+            const libelle = (n > 1 ? mot[1] : mot[0]).replace(/ non lue?s?$/, '');
+            return (
+              <button key={cle} type="button" onClick={() => setInteractionFilter(actif ? null : cle)}
+                aria-pressed={actif}
+                aria-label={`${n} ${n > 1 ? mot[1] : mot[0]}${actif ? ' — filtre actif' : ' — afficher ces tickets'}`}
+                className={`btn btn-sm rounded-full text-sm font-medium ${actif ? plein : clair}`}>
+                <Icone className={actif ? '' : icoClair} aria-hidden="true" />
+                <span className="font-bold">{n}</span>
+                <span>{libelle}</span>
+                {!actif && <span className="badge-dot bg-current opacity-60" aria-hidden="true" />}
+              </button>
+            );
+          })}
           {interactionFilter && (
             <button type="button" onClick={() => setInteractionFilter(null)} className="btn-ghost btn-sm ml-auto">
               <X aria-hidden="true" /> Réinitialiser
@@ -1060,8 +1086,8 @@ export default function DashboardPage() {
               </select>
             )}
             <button type="button" onClick={toggleAFaire} aria-pressed={aFaire}
-              disabled={searchMode || showArchived}
-              title={searchMode || showArchived ? 'Sans effet en recherche et dans les archives' : 'Masquer les réparations terminées, rendues et clôturées'}
+              disabled={listeMelangee || showArchived}
+              title={listeMelangee || showArchived ? 'Sans effet en recherche, dans les archives et sur une pastille' : 'Masquer les réparations terminées, rendues et clôturées'}
               className={`btn min-h-11 rounded-lg text-sm font-medium disabled:opacity-50 ${
                 aFaire ? 'bg-brand-600 text-white hover:bg-brand-700' : 'btn-secondary'
               }`}>
@@ -1074,7 +1100,7 @@ export default function DashboardPage() {
           <div className="scroll-fade-x xl:[mask-image:none] xl:[-webkit-mask-image:none]">
             <div className="segmented flex w-full">
               {filterTabs.map(({ label, value }) => {
-                const count = searchMode ? (value ? (statutCounts[value] || 0) : baseTickets.length) : null;
+                const count = listeMelangee ? (value ? (statutCounts[value] || 0) : baseTickets.length) : null;
                 return (
                   <button key={value} type="button" aria-pressed={filterStatut === value}
                     onClick={() => startTransition(() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(ARCHIVE_STATUTS.includes(value)); })}
@@ -1102,6 +1128,13 @@ export default function DashboardPage() {
               <strong className="text-slate-900">{filteredTickets.length}</strong> résultat{filteredTickets.length > 1 ? 's' : ''} pour « {debouncedSearch} »
               {' '}— {activeTickets.length} en cours, {archivedTickets.length} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
               {truncatedBy ? ` (${tickets.length} premiers sur ${truncatedBy})` : ''}
+            </span>
+          </p>
+        ) : interactionMode ? (
+          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
+            <span>
+              <strong className="text-slate-900">{filteredTickets.length}</strong> ticket{filteredTickets.length > 1 ? 's' : ''} avec {INTERACTION_LIBELLES[interactionFilter]}
+              {' '}— {activeTickets.length} en cours, {archivedTickets.length} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
             </span>
           </p>
         ) : (
@@ -1316,7 +1349,7 @@ export default function DashboardPage() {
           <div>
             {displayedTickets.map((t, rowIdx) => {
               const archivedRow = ARCHIVE_STATUTS.includes(t.statut);
-              const showArchiveSeparator = searchMode && archivedRow
+              const showArchiveSeparator = listeMelangee && archivedRow
                 && (rowIdx === 0 || !ARCHIVE_STATUTS.includes(displayedTickets[rowIdx - 1].statut));
               const clientName = `${t.client_prenom || ''} ${t.client_nom || ''}`.trim();
               const contact = normaliserContact(t.contact);
@@ -1365,7 +1398,7 @@ export default function DashboardPage() {
                   lg:grid ${GRID_COLS} lg:gap-x-1.5 lg:gap-y-1 lg:items-center xl:gap-y-0 xl:py-0
                   ${compactMode ? 'lg:py-1 xl:min-h-12' : 'lg:py-1.5 xl:min-h-14'}
                   transition-colors duration-150 hover:bg-slate-50
-                  ${selected ? 'bg-brand-50/60 hover:bg-brand-50/60' : searchMode && archivedRow ? 'bg-slate-50/60' : ''}`}
+                  ${selected ? 'bg-brand-50/60 hover:bg-brand-50/60' : listeMelangee && archivedRow ? 'bg-slate-50/60' : ''}`}
               >
                 {/* Checkbox (sur iPad : centrée sur les deux lignes de la grille) */}
                 <div className="hidden lg:flex items-center justify-center lg:row-span-2 xl:row-span-1">
@@ -1428,16 +1461,17 @@ export default function DashboardPage() {
                           <Clock className="w-4 h-4 text-amber-700" aria-hidden="true" />
                         </span>
                       ) : null}
+                      {/* Même teinte que les pastilles du haut : pastille ronde, pas une icône nue */}
                       {ticketInteractions[t.id]?.messages && (
-                        <span className="inline-flex shrink-0" title="Message client non lu">
-                          <MessageCircle className="w-4 h-4 text-blue-700" aria-hidden="true" />
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 shrink-0" title="Message client non lu">
+                          <MessageCircle className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />
                           <span className="sr-only">Message client non lu</span>
                         </span>
                       )}
                       {ticketInteractions[t.id]?.avis && (
-                        <span className="inline-flex shrink-0" title="Avis client">
-                          <Star className="w-4 h-4 text-amber-700" aria-hidden="true" />
-                          <span className="sr-only">Avis client</span>
+                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-50 shrink-0" title="Avis client non lu">
+                          <Star className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
+                          <span className="sr-only">Avis client non lu</span>
                         </span>
                       )}
                     </div>

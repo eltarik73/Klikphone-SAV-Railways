@@ -499,6 +499,9 @@ _COLONNES_DASHBOARD = (
 )
 _COLONNES_TECH = ("pin", "pattern")
 
+# Pastilles du tableau de bord (api/suivi._interactions) → type de note client non lue
+_INTERACTIONS_NOTE = {"accord_client": "validation_devis", "messages": "message_client", "avis": "avis_client"}
+
 
 def _colonnes_dashboard(user: dict, vue: Optional[str]) -> str:
     """Fragment SELECT des colonnes du ticket (noms fixes du code, jamais une saisie)."""
@@ -554,6 +557,7 @@ def get_dashboard(
     date_to: Optional[str] = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     tech: Optional[str] = None,
     vue: Optional[str] = Query(None, pattern="^(actifs|archives|tous|a_recuperer)$"),
+    interaction: Optional[str] = Query(None, pattern="^(accord_client|messages|avis)$"),
     user: dict = Depends(get_current_user),
 ):
     """Retourne KPI + tickets en une seule requête pour le dashboard.
@@ -561,6 +565,11 @@ def get_dashboard(
     Filtres serveur optionnels : dates de dépôt (YYYY-MM-DD), technicien,
     vue actifs / archives / tous / a_recuperer, pagination (offset) ; `total` =
     nombre de tickets correspondant aux filtres, hors limit/offset.
+
+    interaction = accord_client / messages / avis : tickets portant une note client
+    non lue de ce type (mêmes critères que les pastilles, api/suivi._interactions),
+    à combiner avec vue=tous — un avis arrive après restitution, un message non lu
+    peut concerner un dossier clôturé.
 
     Vue a_recuperer (étagère, services/etagere) : « Réparation terminée » et
     « Rendu au client » non payés, terminés d'abord, du plus ancien au plus récent
@@ -596,6 +605,12 @@ def get_dashboard(
         conditions.append(etagere.a_recuperer_sql("t"))
     if tech:
         conditions.append(f"t.technicien_assigne = {sp.add(tech)}")
+    if interaction:
+        conditions.append(
+            "t.id IN (SELECT n.ticket_id FROM notes_tickets n"
+            f" WHERE n.type_note = {sp.add(_INTERACTIONS_NOTE[interaction])}"
+            " AND (n.is_read = FALSE OR n.is_read IS NULL))"
+        )
     # Jours de Paris : bornes UTC (date_depot est un TIMESTAMP naïf en UTC)
     if date_from:
         conditions.append(f"t.date_depot >= {sp.add(bornes_utc(date_from)[0])}")
@@ -1527,7 +1542,8 @@ def get_notes(ticket_id: int, user: dict = Depends(get_current_user)):
         try:
             cur.execute("""
                 SELECT id, auteur, contenu, important, date_creation,
-                       COALESCE(type_note, 'note') as type_note
+                       COALESCE(type_note, 'note') as type_note,
+                       COALESCE(is_read, FALSE) AS is_read
                 FROM notes_tickets
                 WHERE ticket_id = %s
                 ORDER BY date_creation DESC

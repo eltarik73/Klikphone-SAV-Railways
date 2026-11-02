@@ -25,7 +25,7 @@ import EmplacementInput from '../components/EmplacementInput';
 import PrevenirClient from '../components/PrevenirClient';
 import ContactClient from '../components/ContactClient';
 import { normaliserEmplacement } from '../lib/etagere';
-import { estAutreNumero, formatTel } from '../lib/contact';
+import { estAutreNumero, formatTel, telJoignable } from '../lib/contact';
 import { PrioriteBadge, PrioriteSelecteur, normaliserPriorite } from '../components/PrioriteBadge';
 import { useCatalog } from '../hooks/useCatalog';
 import { MARQUE_AUTRE } from '../lib/catalog';
@@ -66,6 +66,13 @@ const EVENT_TICKET_MAJ = 'kp:ticket-updated';
 const BON_REDUCTION = 10;
 // Termes appris par l'autocomplétion, en fin de saisie seulement (jamais les fragments « batt »)
 const CHAMPS_APPRIS = { panne: 'panne', panne_detail: 'detail_panne', modele_autre: 'modele_custom' };
+// Note laissée par le client depuis sa page de suivi : message ou avis (la réponse au devis a sa
+// bannière). Anciennes notes : auteur « Client » sans type_note.
+export function estNoteClient(n) {
+  const type = n?.type_note || 'note';
+  if (type === 'message_client' || type === 'avis_client') return true;
+  return type === 'note' && String(n?.auteur || '').trim().toLowerCase() === 'client';
+}
 
 // ─── Données ↔ formulaires ─────────────────────────────────────
 function formulaireAppareil(d) {
@@ -807,6 +814,8 @@ function TicketDetail({ id }) {
 
   // Notes privées
   const [privateNotes, setPrivateNotes] = useState([]);
+  // Notes du client non lues à l'ouverture de la fiche (badge « Nouveau » de l'encart « Du client »)
+  const nouveauxRef = useRef(null);
   const [newNoteText, setNewNoteText] = useState('');
   const [newNoteImportant, setNewNoteImportant] = useState(false);
 
@@ -1109,6 +1118,10 @@ function TicketDetail({ id }) {
       appliquerTicket(data, cat, { force: showSpinner });
       setCommandes(Array.isArray(cmds) ? cmds : []);
       setPrivateNotes(Array.isArray(notes) ? notes : []);
+      // Première lecture : ce que le client a laissé et que personne n'avait encore ouvert
+      if (nouveauxRef.current === null && Array.isArray(notes)) {
+        nouveauxRef.current = new Set(notes.filter(n => n.is_read === false && estNoteClient(n)).map(n => n.id));
+      }
     } catch (err) {
       if (seq !== loadSeqRef.current || !mountedRef.current) return;
       console.error('[loadTicket]', err);
@@ -1119,8 +1132,8 @@ function TicketDetail({ id }) {
   }, [id, appliquerTicket]);
 
   useEffect(() => {
-    loadTicket();
-    api.markTicketRead(id).then(() => invalidateCache('interactions')).catch(() => {});
+    // Les notes sont lues avant d'être marquées lues : l'encart « Du client » sait lesquelles sont nouvelles
+    loadTicket().then(() => api.markTicketRead(id).then(() => invalidateCache('interactions')).catch(() => {}));
   }, [loadTicket, id]);
 
   // Remise, encaissement ou statut faits depuis le scan rapide sur ce ticket : la fiche se relit
@@ -2194,6 +2207,8 @@ function TicketDetail({ id }) {
   const surDevisSansPrix = !t.est_retour_sav && totalTTC === 0 && !t.paye && (t.type_document || 'devis') !== 'facture';
   // Décision la plus récente sur le devis (notes triées de la plus récente à la plus ancienne)
   const decisionDevis = privateNotes.find(n => /^(✅|❌) Devis/.test(String(n.contenu || '').trim()));
+  // Encart « Du client » : messages et avis (la réponse au devis a sa propre bannière), du plus récent au plus ancien
+  const notesClient = privateNotes.filter(estNoteClient);
   const devisRefuse = !remis && (t.issue === 'refus_devis' || String(decisionDevis?.contenu || '').trim().startsWith('❌'));
   const peutRendre = !remis && t.statut !== 'Pré-enregistré';
   const proposerRemise = peutRendre && (t.statut === 'Réparation terminée' || devisRefuse);
@@ -3354,6 +3369,56 @@ function TicketDetail({ id }) {
       {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard, le scan et
           l'étagère) : une ligne sous l'en-tête, là où l'accueil regarde d'abord. ContactClient fait 44 px au doigt. */}
       <ContactClient ticket={t} taille="carte" auteur={user?.utilisateur || 'Accueil'} onContacte={clientContacte} className="mb-4" />
+
+      {/* Messages et avis laissés par le client (page de suivi) : lisibles dès l'ouverture, pas enfouis
+          dans les notes internes. « Nouveau » = non lu à l'ouverture de la fiche (la fiche marque lu). */}
+      {notesClient.length > 0 && (() => {
+        const nouveaux = notesClient.filter(n => nouveauxRef.current?.has(n.id)).length;
+        const tel = telJoignable(t);
+        return (
+          <section aria-labelledby={`${uid}-du-client`} className="callout callout-info flex-col gap-2 mb-4 motion-safe:animate-in">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <MessageCircle className="w-5 h-5 shrink-0 text-blue-700" aria-hidden="true" />
+              <h2 id={`${uid}-du-client`} className="font-bold text-blue-900">Du client</h2>
+              {nouveaux > 0 && (
+                <span className="badge badge-sm bg-blue-600 text-white">{nouveaux} nouveau{nouveaux > 1 ? 'x' : ''}</span>
+              )}
+              <span className="text-xs text-blue-800">depuis sa page de suivi</span>
+              {tel && (
+                <div className="ml-auto flex items-center gap-1">
+                  <a href={waLink(tel, `Bonjour, concernant votre ticket ${t.ticket_code} : `)} target="_blank" rel="noopener noreferrer"
+                    className="btn-secondary btn-sm">
+                    <MessageCircle className="text-emerald-600" aria-hidden="true" /> Répondre WhatsApp
+                  </a>
+                  <a href={smsLink(tel, `Klikphone : concernant votre ticket ${t.ticket_code}, `)} className="btn-secondary btn-sm">
+                    <Send aria-hidden="true" /> SMS
+                  </a>
+                </div>
+              )}
+            </div>
+            <ul className="space-y-1.5">
+              {notesClient.slice(0, 3).map(n => {
+                const avis = n.type_note === 'avis_client';
+                const Icone = avis ? Star : MessageCircle;
+                return (
+                  <li key={n.id} className="flex items-start gap-2">
+                    <Icone className={`w-4 h-4 mt-0.5 shrink-0 ${avis ? 'text-amber-600' : 'text-blue-600'}`} aria-hidden="true" />
+                    <span className="sr-only">{avis ? 'Avis' : 'Message'} : </span>
+                    <p className={`flex-1 min-w-0 break-words text-slate-900 ${nouveauxRef.current?.has(n.id) ? 'font-semibold' : ''}`}>{n.contenu}</p>
+                    {nouveauxRef.current?.has(n.id) && <span className="badge badge-sm bg-blue-600 text-white shrink-0">Nouveau</span>}
+                    <span className="t-caption whitespace-nowrap shrink-0 mt-0.5 tabular-nums text-blue-800">
+                      {n.date_creation ? new Date(n.date_creation).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                  </li>
+                );
+              })}
+              {notesClient.length > 3 && (
+                <li className="t-caption text-blue-800">+ {notesClient.length - 3} plus ancien{notesClient.length - 3 > 1 ? 's' : ''} dans les notes</li>
+              )}
+            </ul>
+          </section>
+        );
+      })()}
 
       {/* Bannière statut devis — verte si validé, rouge si refusé, orange si en attente */}
       {(() => {
