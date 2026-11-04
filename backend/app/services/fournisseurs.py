@@ -65,6 +65,7 @@ UTOPYA_RAISON = ("Utopya n'offre ni export ni API : ses prix ne sont visibles qu
 P_TOKEN = "MOBILAX_TOKEN"                    # jeton d'accès (renouvelé à chaque passage)
 P_REFRESH = "MOBILAX_REFRESH_TOKEN"          # jeton de rafraîchissement (la connexion du gérant)
 P_ID_CLIENT = "MOBILAX_ID_CLIENT"            # id_customer (prix du compte)
+P_PALIER = "MOBILAX_PALIER"                  # palier tarifaire du compte, JSON {id, nom} (Bronze, Silver, Gold…)
 P_ACTIVE = "MOBILAX_SYNCHRO_ACTIVE"          # '0' : synchro quotidienne coupée (bouton manuel possible)
 P_DERNIERE = "MOBILAX_SYNCHRO_DERNIERE"      # fin du dernier passage (ISO UTC)
 P_OK = "MOBILAX_SYNCHRO_OK"                  # '1' / '0'
@@ -111,7 +112,8 @@ def _utc() -> str:
 
 _CLES_REFRESH = ("web_mobi_refresh_token", "refreshToken", "refresh_token", "refresh")
 _CLES_TOKEN = ("web_mobi_token", "token", "access_token")
-_CLES_ID = ("web_mobi_user_id", "userId", "id_customer", "id_client", "user_id")
+_CLES_ID = ("web_mobi_user_id", "id_customer", "id_client", "user_id")
+_CLES_FICHE = ("userId", "user", "web_mobi_user")   # fiche client rangée par le site : {"state":{"user":{…}}}
 _JETON_RE = re.compile(r"[A-Za-z0-9._~+/=-]{20,}")
 
 
@@ -135,6 +137,37 @@ def _premier(d: dict, cles) -> str:
     return ""
 
 
+def _fiche_collee(d: dict) -> dict:
+    """Fiche client que le site range dans localStorage (userId : {"state":{"user":{id, category…}}})."""
+    for cle in _CLES_FICHE:
+        v = d.get(cle)
+        if isinstance(v, str) and v.lstrip().startswith("{"):
+            try:
+                v = json.loads(v)
+            except ValueError:
+                continue
+        if not isinstance(v, dict):
+            continue
+        u = v.get("state", v)
+        u = u.get("user", u) if isinstance(u, dict) else {}
+        if isinstance(u, dict) and (u.get("id") or u.get("category")):
+            return u
+    return {}
+
+
+def palier_compte(fiche) -> dict:
+    """{id, nom} du palier tarifaire (Bronze, Silver, Gold, Platinum, Diamond) d'une fiche client
+    Mobilax (clé category), {} s'il n'en montre aucun. Chaque produit porte un prix par palier."""
+    c = fiche.get("category") if isinstance(fiche, dict) else None
+    if not isinstance(c, dict):
+        return {}
+    nom = str(c.get("name") or "").strip()[:30]
+    ident = _nombre(c.get("id"))
+    if not nom and ident is None:
+        return {}
+    return {"id": int(ident) if ident is not None else None, "nom": nom}
+
+
 def lire_jetons(texte) -> dict:
     """{refresh, token, id_client} depuis le texte collé : JSON de localStorage
     (copy(JSON.stringify(localStorage)) sur mobilax.fr connecté) ou le seul jeton de
@@ -144,7 +177,7 @@ def lire_jetons(texte) -> dict:
         raise ValueError("Texte trop long : collez seulement le résultat de la commande copy(JSON.stringify(localStorage)).")
     if not s:
         raise ValueError("Collez le texte copié depuis mobilax.fr.")
-    out = {"refresh": "", "token": "", "id_client": ""}
+    out = {"refresh": "", "token": "", "id_client": "", "palier": {}}
     if s.startswith("{"):
         try:
             d = json.loads(s)
@@ -154,7 +187,9 @@ def lire_jetons(texte) -> dict:
             raise ValueError("Texte illisible : attendu le résultat de copy(JSON.stringify(localStorage)).")
         out["refresh"] = _premier(d, _CLES_REFRESH)
         out["token"] = _premier(d, _CLES_TOKEN)
-        out["id_client"] = _premier(d, _CLES_ID)
+        fiche = _fiche_collee(d)
+        out["id_client"] = _premier(d, _CLES_ID) or str(fiche.get("id") or "")
+        out["palier"] = palier_compte(fiche)
     elif _JETON_RE.fullmatch(s):
         out["refresh"] = s
     if not _JETON_RE.fullmatch(out["refresh"] or ""):
@@ -173,8 +208,9 @@ class ClientMobilax:
     `transport` (httpx.MockTransport) sert aux tests : aucune requête réseau."""
 
     def __init__(self, refresh: str, token: str = "", id_client: str = "", transport=None,
-                 pause: float = PAUSE, dormir=time.sleep):
+                 pause: float = PAUSE, dormir=time.sleep, palier: dict = None):
         self.refresh, self.token, self.id_client = refresh, token or "", str(id_client or "")
+        self.palier = dict(palier or {})          # {id, nom} : palier tarifaire du compte
         self.pause, self._dormir = pause, dormir
         self.requetes = 0
         self.http = httpx.Client(base_url=MOBILAX_API, timeout=TIMEOUT, transport=transport,
@@ -242,10 +278,13 @@ class ClientMobilax:
         return corps
 
     def details_client(self) -> dict:
-        """Fiche du compte (id, show_prices…) ; {} si l'API ne la donne pas."""
+        """Fiche du compte (id, show_prices, category = palier tarifaire…) ; {} si l'API ne la donne pas."""
         d = self._donnees(self._get("user/customers/details") or {})
         if d.get("id") and not self.id_client:
             self.id_client = str(d["id"])
+        pal = palier_compte(d)
+        if pal:
+            self.palier = pal
         return d
 
     def page_produits(self, recherche: str, page: int = 1) -> tuple:
@@ -348,8 +387,28 @@ def _prix_dans(v, profondeur: int = 0) -> Optional[Decimal]:
     return None
 
 
-def prix_produit(p: dict) -> Optional[Decimal]:
-    """Prix HT d'un produit (price / price_ht / prices…), None s'il n'en montre aucun."""
+def _prix_palier(paliers, palier: dict) -> Optional[Decimal]:
+    """Prix du palier du compte dans la liste `prices` de Mobilax
+    ([{id, name: Bronze|Silver|Gold|Platinum|Diamond, rate, price, ca_min, ca_max}, …])."""
+    if not palier or not isinstance(paliers, list):
+        return None
+    ident, nom = palier.get("id"), normaliser(palier.get("nom") or "")
+    for x in paliers:
+        if not isinstance(x, dict) or "quantity" in x:        # paliers de quantité : autre logique
+            continue
+        meme_id = ident is not None and _nombre(x.get("id")) == Decimal(ident)
+        meme_nom = bool(nom) and normaliser(str(x.get("name") or "")) == nom
+        if meme_id or meme_nom:
+            return _prix_dans(x, 1)
+    return None
+
+
+def prix_produit(p: dict, palier: dict = None) -> Optional[Decimal]:
+    """Prix HT d'un produit : celui du palier du compte (liste prices) quand il est connu — le champ
+    price est le prix de base (Bronze) —, sinon price / price_ht… ; None s'il n'en montre aucun."""
+    n = _prix_palier(p.get("prices"), palier)
+    if n is not None and 0 < n <= import_prix._MAX_HT:
+        return n.quantize(Decimal("0.01"))
     for cle in _CLES_PRIX:
         if cle in p and p[cle] not in (None, "", [], {}):
             n = _prix_dans(p[cle])
@@ -422,9 +481,9 @@ def designation_import(nom: str) -> str:
     return " ".join(mots)
 
 
-def ligne_produit(p: dict) -> Optional[dict]:
-    """{reference, designation, prix_ht} d'un produit, None sans prix."""
-    ht = prix_produit(p)
+def ligne_produit(p: dict, palier: dict = None) -> Optional[dict]:
+    """{reference, designation, prix_ht} d'un produit (prix du palier du compte), None sans prix."""
+    ht = prix_produit(p, palier)
     if ht is None:
         return None
     nom = designation_import(p.get("title_name") or p.get("name") or "")[:250]
@@ -587,9 +646,17 @@ def _amorcer_depuis_env(cur, p: dict) -> dict:
     return p
 
 
+def _palier_lu(texte) -> dict:
+    try:
+        d = json.loads(texte or "")
+    except ValueError:
+        return {}
+    return palier_compte({"category": {"id": d.get("id"), "name": d.get("nom")}}) if isinstance(d, dict) else {}
+
+
 def _jetons(cur) -> dict:
-    p = _amorcer_depuis_env(cur, _lire(cur, [P_REFRESH, P_TOKEN, P_ID_CLIENT]))
-    return {"refresh": p[P_REFRESH], "token": p[P_TOKEN], "id_client": p[P_ID_CLIENT]}
+    p = _amorcer_depuis_env(cur, _lire(cur, [P_REFRESH, P_TOKEN, P_ID_CLIENT, P_PALIER]))
+    return {"refresh": p[P_REFRESH], "token": p[P_TOKEN], "id_client": p[P_ID_CLIENT], "palier": _palier_lu(p[P_PALIER])}
 
 
 def _sauver_jetons(client: ClientMobilax):
@@ -598,6 +665,8 @@ def _sauver_jetons(client: ClientMobilax):
         _ecrire(cur, P_TOKEN, client.token)
         if client.id_client:
             _ecrire(cur, P_ID_CLIENT, client.id_client)
+        if client.palier:
+            _ecrire(cur, P_PALIER, json.dumps(client.palier, ensure_ascii=False))
     params_cache.invalidate()
 
 
@@ -695,16 +764,15 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
             raise ErreurJeton("Mobilax non connecté : collez vos jetons (Réparation smartphones → Mobilax).", "non_configure")
         requetes = requetes_modeles(modeles)
         resume["modeles"] = len(requetes)
-        client = ClientMobilax(jetons["refresh"], jetons["token"], jetons["id_client"], transport=transport, dormir=dormir)
+        client = ClientMobilax(jetons["refresh"], jetons["token"], jetons["id_client"], transport=transport,
+                               dormir=dormir, palier=jetons["palier"])
         client.rafraichir()
+        try:                                   # id du compte et palier tarifaire (peut changer avec le CA)
+            client.details_client()
+        except ErreurMobilax:
+            pass
         _sauver_jetons(client)
-        if not client.id_client:
-            try:
-                client.details_client()
-            except ErreurMobilax:
-                pass
-            if client.id_client:
-                _sauver_jetons(client)
+        resume["palier"] = client.palier.get("nom") or None
         produits, vus, erreurs_suite = [], set(), 0
         for i, q in enumerate(requetes):
             if time.monotonic() - t0 > BUDGET_SECONDES:
@@ -730,7 +798,7 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
         resume["requetes"] = client.requetes
         resume["produits"] = len(produits)
         resume["champs"] = sorted({k for p in produits[:50] for k in p})[:40]
-        lignes = [l for l in (ligne_produit(p) for p in produits if produit_pertinent(p)) if l]
+        lignes = [l for l in (ligne_produit(p, client.palier) for p in produits if produit_pertinent(p)) if l]
         resume["produits_prix"] = len(lignes)
         if produits and not lignes:
             resume["prix_masques"] = True
@@ -878,7 +946,8 @@ def _resume_lu(texte):
 
 def etat(cur=None) -> dict:
     """État des synchros fournisseurs, sans aucun jeton : {mobilax: {...}, utopya: {...}}."""
-    p = params_cache.get_params([P_REFRESH, P_ID_CLIENT, P_ACTIVE, P_DERNIERE, P_OK, P_RESUME, P_CONNEXION], cur=cur)
+    p = params_cache.get_params([P_REFRESH, P_ID_CLIENT, P_PALIER, P_ACTIVE, P_DERNIERE, P_OK, P_RESUME, P_CONNEXION],
+                                cur=cur)
     configure = bool(p[P_REFRESH]) or bool(_JETON_RE.fullmatch(os.getenv(ENV_REFRESH, "").strip() or ""))
     resume = _resume_lu(p[P_RESUME])
     connexion = "absente" if not configure else (p[P_CONNEXION].strip() or "a_verifier")
@@ -889,7 +958,7 @@ def etat(cur=None) -> dict:
             "en_cours": actif, "debut": _etat["debut"] if actif else None,
             "derniere_synchro": p[P_DERNIERE].strip() or None, "ok": _vrai(p[P_OK]),
             "resume": resume, "erreur": (resume or {}).get("erreur"), "message": _etat.get("message"),
-            "compte": bool(p[P_ID_CLIENT]),
+            "compte": bool(p[P_ID_CLIENT]), "palier": _palier_lu(p[P_PALIER]).get("nom") or None,
         },
         "utopya": {"disponible": False, "raison": UTOPYA_RAISON},
     }
@@ -909,10 +978,10 @@ def enregistrer_connexion(texte, transport=None) -> dict:
     (renouvellement), enregistrés dans params. ValueError (texte), ErreurJeton (refusé),
     ErreurMobilax (injoignable) : messages pour l'utilisateur. → etat()."""
     j = lire_jetons(texte)
-    client = ClientMobilax(j["refresh"], j["token"], j["id_client"], transport=transport)
+    client = ClientMobilax(j["refresh"], j["token"], j["id_client"], transport=transport, palier=j["palier"])
     try:
         client.rafraichir()
-        if not client.id_client:
+        if not client.id_client or not client.palier:
             try:
                 client.details_client()
             except (ErreurMobilax, ErreurJeton):
@@ -922,6 +991,8 @@ def enregistrer_connexion(texte, transport=None) -> dict:
             _ecrire(cur, P_TOKEN, client.token)
             if client.id_client:
                 _ecrire(cur, P_ID_CLIENT, client.id_client)
+            if client.palier:
+                _ecrire(cur, P_PALIER, json.dumps(client.palier, ensure_ascii=False))
             _ecrire(cur, P_CONNEXION, "ok")
             cur.execute("SELECT valeur FROM params WHERE cle = %s", (P_ACTIVE,))
             if cur.fetchone() is None:
@@ -935,7 +1006,7 @@ def enregistrer_connexion(texte, transport=None) -> dict:
 def oublier_connexion() -> dict:
     """Retire les jetons (la synchro quotidienne s'arrête)."""
     with get_cursor() as cur:
-        cur.execute("DELETE FROM params WHERE cle = ANY(%s)", ([P_REFRESH, P_TOKEN, P_ID_CLIENT],))
+        cur.execute("DELETE FROM params WHERE cle = ANY(%s)", ([P_REFRESH, P_TOKEN, P_ID_CLIENT, P_PALIER],))
         _ecrire(cur, P_CONNEXION, "")
     _vider_caches()
     return etat()

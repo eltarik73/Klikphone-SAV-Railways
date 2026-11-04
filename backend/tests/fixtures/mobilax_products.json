@@ -1,5 +1,5 @@
 {
-  "_commentaire": "Réponse de GET https://apiv2.mobilax.fr/v1.0/catalogs/web/products?search=…&id_lang=1&id_customer=4242 (forme relevée sur mobilax.fr le 2026-11-04 : enveloppe data/products, champs anonymes ; price/prices/quantity ajoutés comme pour un compte connecté, prix fictifs).",
+  "_commentaire": "Réponse de GET https://apiv2.mobilax.fr/v1.0/catalogs/web/products?search=…&id_lang=1&id_customer=4242 (forme relevée sur mobilax.fr le 2026-11-04 : enveloppe data/products, champs anonymes ; price/prices/quantity ajoutés comme pour un compte connecté, prix fictifs ; prices = un prix par palier client — Bronze, Silver, Gold, Platinum, Diamond : id, name, rate, price, ca_min, ca_max —, price = prix de base (Bronze), forme relevée le 2026-11-04 sur un compte connecté).",
   "data": {
     "currentPage": 1,
     "limit": 50,
@@ -26,7 +26,48 @@
         "category_name": "Bloc Écran Complet avec Châssis et Batterie Original",
         "image_principal_id": 68875,
         "price": 128.9,
-        "prices": [{"quantity": 1, "price": 128.9}, {"quantity": 5, "price": 122.5}],
+        "prices": [
+          {
+            "id": 1,
+            "name": "Bronze",
+            "rate": 0,
+            "price": 128.9,
+            "ca_max": 1499.99,
+            "ca_min": 0
+          },
+          {
+            "id": 2,
+            "name": "Silver",
+            "rate": 0.25,
+            "price": 127.9,
+            "ca_max": 2999.99,
+            "ca_min": 1500
+          },
+          {
+            "id": 3,
+            "name": "Gold",
+            "rate": 0.5,
+            "price": 126.9,
+            "ca_max": 5999.99,
+            "ca_min": 3000
+          },
+          {
+            "id": 4,
+            "name": "Platinum",
+            "rate": 0.75,
+            "price": 125.9,
+            "ca_max": 14999.99,
+            "ca_min": 6000
+          },
+          {
+            "id": 5,
+            "name": "Diamond",
+            "rate": 1,
+            "price": 124.9,
+            "ca_max": 1000000000,
+            "ca_min": 15000
+          }
+        ],
         "quantity": 3,
         "discount_amount": 0
       },

@@ -46,7 +46,22 @@ def test_lire_jetons_depuis_localstorage():
         "web_mobi_user_type": "customer",
     })
     j = F.lire_jetons(texte)
-    assert j == {"refresh": REFRESH, "token": TOKEN, "id_client": "4242"}
+    assert j == {"refresh": REFRESH, "token": TOKEN, "id_client": "4242", "palier": {}}
+
+
+def test_lire_jetons_fiche_client_donne_le_palier_et_l_id():
+    # Le site range la fiche du compte dans localStorage (clé userId, chaîne JSON) : palier tarifaire
+    fiche = json.dumps({"state": {"user": {"id": 1099, "show_prices": True, "company": "X",
+                                           "category": {"id": 3, "name": "Gold", "rate": 0.5}}}, "version": 0})
+    j = F.lire_jetons(json.dumps({"web_mobi_refresh_token": REFRESH, "userId": fiche}))
+    assert j["id_client"] == "1099" and j["palier"] == {"id": 3, "nom": "Gold"}
+    # web_mobi_user_id prime ; fiche illisible ou sans palier : rien de cassé
+    j = F.lire_jetons(json.dumps({"web_mobi_refresh_token": REFRESH, "web_mobi_user_id": "7", "userId": fiche}))
+    assert j["id_client"] == "7" and j["palier"]["nom"] == "Gold"
+    j = F.lire_jetons(json.dumps({"web_mobi_refresh_token": REFRESH, "userId": "{pas du json"}))
+    assert j["id_client"] == "" and j["palier"] == {}
+    assert F.palier_compte({"category": {"name": "Silver"}}) == {"id": None, "nom": "Silver"}
+    assert F.palier_compte({"category": "Gold"}) == {} and F.palier_compte(None) == {}
 
 
 def test_lire_jetons_seul_jeton_ou_erreurs():
@@ -91,6 +106,27 @@ def test_lire_page_toutes_enveloppes():
 ])
 def test_prix_produit(produit, attendu):
     assert F.prix_produit(produit) == attendu
+
+
+def test_prix_du_palier_du_compte():
+    # Forme réelle : price = prix de base (Bronze), prices = un prix par palier client
+    p = {"price": 1.7, "prices": [
+        {"id": 1, "name": "Bronze", "rate": 0, "price": 1.7, "ca_min": 0, "ca_max": 1499.99},
+        {"id": 2, "name": "Silver", "rate": 0.25, "price": 1.65, "ca_min": 1500, "ca_max": 2999.99},
+        {"id": 3, "name": "Gold", "rate": 0.5, "price": 1.6, "ca_min": 3000, "ca_max": 5999.99},
+        {"id": 4, "name": "Platinum", "rate": 0.75, "price": None, "ca_min": 6000, "ca_max": 14999.99},
+    ]}
+    assert F.prix_produit(p, {"id": 3, "nom": "Gold"}) == Decimal("1.60")
+    assert F.prix_produit(p, {"id": None, "nom": "gold"}) == Decimal("1.60")      # par le nom
+    assert F.prix_produit(p, {"id": 2, "nom": "Autre"}) == Decimal("1.65")        # l'id prime
+    assert F.prix_produit(p, {"id": 4, "nom": "Platinum"}) == Decimal("1.70")     # palier sans prix : base
+    assert F.prix_produit(p, {"id": 9, "nom": "Inconnu"}) == Decimal("1.70")
+    assert F.prix_produit(p) == Decimal("1.70") and F.prix_produit(p, {}) == Decimal("1.70")
+    # Paliers de quantité : la logique « plus petite quantité » reste
+    q = {"prices": [{"quantity": 5, "price": 40}, {"quantity": 1, "price": 45.5}]}
+    assert F.prix_produit(q, {"id": 3, "nom": "Gold"}) == Decimal("45.50")
+    assert F.ligne_produit({"id": 5, "name": "Ecran X", **p}, {"id": 3, "nom": "Gold"})["prix_ht"] == Decimal("1.60")
+    assert F.ligne_produit({"id": 5, "name": "Ecran X", **p})["prix_ht"] == Decimal("1.70")
 
 
 def test_produit_pertinent_ecarte_protections_accessoires_et_inactifs():
@@ -384,6 +420,38 @@ def test_synchroniser_complet_avec_import_simule(monkeypatch):
     assert all(req.url.params.get("id_customer") == "4242" for req in journal if "web/products" in req.url.path)
 
 
+def test_synchroniser_applique_le_palier_du_compte(monkeypatch):
+    produits = _produits()
+    base = _Base({F.P_REFRESH: REFRESH}, [("Honor", "200 5G")])
+    details = {"id": 4242, "show_prices": True, "category": {"id": 3, "name": "Gold", "rate": 0.5}}
+    transport = _transport({"Honor 200 5G": [produits]}, [], details=details)
+    csv_recus = []
+
+    def faux_import(cur, cible, contenu, nom, r):
+        csv_recus.append(import_prix.lire_tableau(nom, contenu))
+        return {"cible": cible, "import_id": 1, "lot_id": "lot", "erreur": None, "lignes": 4, "reconnues": 0,
+                "non_reconnues": 0, "inconnues": 0, "verrouillees": 0, "obsoletes": 0, "variantes": 0,
+                "a_valider": 0, "modifies": 0, "confirmes": 0, "propositions": 0}
+
+    monkeypatch.setattr(F, "_importer", faux_import)
+    monkeypatch.setattr(F.prix, "regles", lambda cur: {})
+    with _sur(base):
+        _params(monkeypatch, base.params)
+        r = F.synchroniser(transport=transport, dormir=lambda s: None)
+        assert r["ok"] is True and r["palier"] == "Gold", r
+        # Le bloc écran (paliers) au prix Gold, les autres au seul prix affiché
+        tableau = csv_recus[0]
+        prix_par_ref = {ligne[0]: ligne[2] for ligne in tableau[1:]}
+        assert import_prix.lire_prix(prix_par_ref["3000000321676"]) == Decimal("126.90")
+        assert import_prix.lire_prix(prix_par_ref["3000000355123"]) == Decimal("54.90")
+        assert json.loads(base.params[F.P_PALIER]) == {"id": 3, "nom": "Gold"} and base.params[F.P_ID_CLIENT] == "4242"
+        assert F.etat()["mobilax"]["palier"] == "Gold"
+        # Passage suivant : le palier mémorisé sert même si la fiche ne répond plus
+        r2 = F.synchroniser(transport=_transport({"Honor 200 5G": [produits]}, [], details={}), dormir=lambda s: None)
+        assert r2["ok"] and r2["palier"] == "Gold"
+        assert import_prix.lire_prix({l[0]: l[2] for l in csv_recus[1][1:]}["3000000321676"]) == Decimal("126.90")
+
+
 def test_synchroniser_prix_masques_et_budget_reseau(monkeypatch):
     base = _Base({F.P_REFRESH: REFRESH}, [("Honor", "200 5G")])
     with _sur(base):
@@ -503,7 +571,19 @@ def test_enregistrer_connexion_verifie_puis_enregistre(monkeypatch):
         e = F.enregistrer_connexion(texte, transport=_transport({}, journal))
     assert base.params[F.P_REFRESH] == REFRESH and base.params[F.P_TOKEN] == TOKEN
     assert base.params[F.P_ID_CLIENT] == "4242" and base.params[F.P_CONNEXION] == "ok" and base.params[F.P_ACTIVE] == "1"
-    assert e["mobilax"]["configure"] is True
+    assert e["mobilax"]["configure"] is True and e["mobilax"]["palier"] is None
+    # Fiche collée avec le palier : rien à demander à Mobilax, palier enregistré et affiché
+    fiche = json.dumps({"state": {"user": {"id": 1099, "category": {"id": 4, "name": "Platinum"}}}})
+    journal2, base2 = [], _Base({})
+    with _sur(base2):
+        _params(monkeypatch, base2.params)
+        e2 = F.enregistrer_connexion(json.dumps({"web_mobi_refresh_token": REFRESH, "userId": fiche}),
+                                     transport=_transport({}, journal2))
+        assert [req.url.path.rsplit("/", 1)[-1] for req in journal2] == ["refresh-token"]
+        assert base2.params[F.P_ID_CLIENT] == "1099" and json.loads(base2.params[F.P_PALIER])["nom"] == "Platinum"
+        assert e2["mobilax"]["palier"] == "Platinum"
+        F.oublier_connexion()
+    assert F.P_PALIER not in base2.params and F.P_ID_CLIENT not in base2.params
     with _sur(_Base({})):
         with pytest.raises(F.ErreurJeton):
             F.enregistrer_connexion(texte, transport=_transport({}, journal, refresh_ok=False))
