@@ -11,6 +11,7 @@ import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useAvertirAvantDepart, useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
 import { useToast } from '../components/Toast';
 import AdminLoginModal from '../components/AdminLoginModal';
+import SynchroFournisseur from '../components/SynchroFournisseur';
 import HistoriquePrix, {
   BadgeDatePrix, FiltreAnciens, SEUILS_FRAICHEUR, dateFr, estEcran, euros, fraicheurPrix, fusionnerRegles, lireDate,
   messageErreurPrix, plusDeTroisMois,
@@ -1096,6 +1097,9 @@ export default function TarifsPage() {
           onAjouter={() => ouvrirAjout(modeleChoisi ? { marque: marqueUrl, modele: modeleUrl } : search)}
           onDevenirAdmin={() => setShowAdminLogin(true)}
         />
+
+        {/* Tarifs Mobilax mis à jour chaque jour (une connexion à coller une fois) ; Utopya : import de fichier */}
+        <SynchroFournisseur estAdmin={isAdmin} />
 
         <MethodeCalcul regles={regles} methode={methode} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, Clock, Inbox, ListChecks, PlugZap, RefreshCw, RotateCcw, Smartphone, TrendingDown, Loader2,
+  Activity, AlertTriangle, Clock, Inbox, ListChecks, PlugZap, RefreshCw, RotateCcw, Smartphone, TrendingDown, Truck, Loader2,
 } from 'lucide-react';
 import api from '../lib/api';
 import { formatDate, formatDateShort } from '../lib/utils';
@@ -15,6 +15,8 @@ export const INTERVALLE_SUIVI_SYNCHRO = 5000;
 const SUIVI_MAX_TOURS = 120; // ~10 min
 // Synchro plus ancienne : signalée en orange dans la santé des prix
 export const JOURS_SYNCHRO_ANCIENNE = 30;
+// Synchro Mobilax quotidienne : au-delà de 2 jours sans passage, signalée en orange
+export const JOURS_MOBILAX_ANCIENNE = 2;
 
 const booleen = (v) => (typeof v === 'boolean' ? v : v === 'true' ? true : v === 'false' ? false : null);
 
@@ -243,6 +245,28 @@ export function tuilesSante(d, basePath = '/accueil', maintenant = Date.now()) {
   const grille = `${basePath}/tarifs`;
   // Filtre de la grille dans l'URL (?source= / ?fraicheur= / ?marge=), appliqué par TarifsPage (lireFiltresUrl)
   const grilleFiltree = (filtre) => `${grille}?${filtre}`;
+  // Synchro automatique des tarifs Mobilax (/api/tarifs/fournisseurs/etat, résumé dans la santé des prix)
+  const fm = d?.fournisseurs?.mobilax || {};
+  const mobDate = fm.derniere_synchro ? new Date(fm.derniere_synchro) : null;
+  const mobJours = mobDate && !Number.isNaN(mobDate.getTime()) ? Math.floor((maintenant - mobDate.getTime()) / 86_400_000) : null;
+  const mobOk = booleen(fm.ok);
+  let mobValeur = mobJours === null ? '—' : mobJours === 0 ? 'Auj.' : `${mobJours} j`;
+  let mobTon = 'neutre';
+  let mobDetail;
+  if (fm.en_cours) {
+    mobTon = 'marque'; mobDetail = 'synchronisation en cours…';
+  } else if (!fm.configure) {
+    mobTon = 'orange'; mobDetail = 'à connecter (une seule fois)'; mobValeur = '—';
+  } else if (fm.connexion === 'expiree') {
+    mobTon = 'rouge'; mobDetail = 'connexion expirée';
+  } else if (mobOk === false) {
+    mobTon = 'rouge'; mobDetail = `${mobDate ? formatDateShort(fm.derniere_synchro) : 'dernier passage'} · échouée`;
+  } else if (mobDate && mobJours !== null) {
+    mobTon = mobJours > JOURS_MOBILAX_ANCIENNE ? 'orange' : 'neutre';
+    mobDetail = `${formatDateShort(fm.derniere_synchro)} · ${fr(entier(fm.modifies) ?? 0)} prix mis à jour`;
+  } else {
+    mobDetail = 'première synchro à venir';
+  }
   const jRevoir = entier(d?.seuils?.jours_a_revoir) ?? 90;
   const jPerime = entier(d?.seuils?.jours_perime) ?? 180;
   return [
@@ -287,6 +311,11 @@ export function tuilesSante(d, basePath = '/accueil', maintenant = Date.now()) {
         ? `Dernière synchro LCD-Phone le ${formatDateShort(lcd.derniere_synchro)}${lcdOk === false ? ', échouée' : ''}, voir les téléphones`
         : 'Aucune synchro LCD-Phone, voir les téléphones',
     },
+    {
+      cle: 'mobilax', icone: Truck, valeur: mobValeur, titre: 'Synchro Mobilax', detail: mobDetail,
+      lien: `${basePath}/tarifs`, ton: mobTon,
+      aria: `Synchro des tarifs Mobilax : ${mobDetail}, voir la réparation smartphones`,
+    },
   ];
 }
 
@@ -301,7 +330,7 @@ async function avecRepliSynchro(data) {
   return stats?.derniere_sync ? { ...d, lcdphone: { ...(d.lcdphone || {}), derniere_synchro: stats.derniere_sync } } : d;
 }
 
-/** Widget admin « Santé des prix » : fraîcheur de la grille, propositions, modèles sans prix, LCD-Phone. */
+/** Widget admin « Santé des prix » : fraîcheur de la grille, propositions, modèles sans prix, LCD-Phone, synchro Mobilax. */
 export default function SantePrixWidget({ basePath = '/accueil' }) {
   const titreId = useId();
   const [etat, setEtat] = useState({ statut: 'chargement', data: null });
@@ -332,8 +361,8 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
         )}
       </div>
       {statut === 'chargement' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3" aria-hidden="true">
-          {Array.from({ length: 7 }).map((_, i) => <div key={i} className="skeleton h-[88px]" />)}
+        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-4 gap-3" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-[88px]" />)}
         </div>
       ) : statut === 'erreur' ? (
         <div className="card flex flex-wrap items-center gap-3 px-4 py-3">
@@ -343,7 +372,7 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
           </button>
         </div>
       ) : (
-        <ul className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <ul className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-4 gap-3">
           {tuiles.map(({ cle, icone: Icone, valeur, titre, detail, lien, ton, aria, badge }) => (
             <li key={cle}>
               <Link to={lien} aria-label={aria}

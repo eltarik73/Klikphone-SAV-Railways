@@ -1358,6 +1358,9 @@ def sante(cur, r=None) -> dict:
     out["derniere_veille"] = p["VEILLE_PRIX_DERNIERE"] or None
     out["lcdphone"] = {"derniere_synchro": p["LCDPHONE_DERNIERE_SYNCHRO"] or None,
                        "ok": _vrai(p["LCDPHONE_SYNCHRO_OK"]) if p["LCDPHONE_SYNCHRO_OK"] else None}
+    # Synchro automatique des tarifs fournisseurs (import différé : fournisseurs importe ce module)
+    from app.services import fournisseurs
+    out["fournisseurs"] = fournisseurs.sante(cur)
     out["seuils"] = {"jours_a_revoir": r["jours_a_revoir"], "jours_perime": r["jours_perime"],
                      "seuil_marge_alerte": r["seuil_marge_alerte"]}
     return out

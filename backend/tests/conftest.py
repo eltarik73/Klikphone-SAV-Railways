@@ -14,6 +14,8 @@ os.environ.setdefault("KP_DECONNEXION_DEMARRAGE", "0")
 os.environ.setdefault("KP_GEO_LIEU", "0")
 # Tri automatique des réparations oubliées : jamais en tâche de fond pendant les tests
 os.environ.setdefault("KP_TRI_AUTO", "0")
+# Synchro des tarifs fournisseurs (Mobilax) : jamais en tâche de fond pendant les tests
+os.environ.setdefault("KP_SYNC_FOURNISSEURS", "0")
 
 from app.api.auth import create_token, JWT_SECRET, JWT_ALGORITHM
 

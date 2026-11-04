@@ -40,10 +40,12 @@ from app.api import grille
 from app.api import reception as reception_api
 from app.api import rgpd as rgpd_api
 from app.api import propositions_prix
+from app.api import fournisseurs as fournisseurs_api
 from app.api import equipe as equipe_api
 from app.services import presence
 from app.services import veille_prix
 from app.services import nettoyage
+from app.services import fournisseurs
 from app.services import mentions
 
 logger = logging.getLogger("klikphone.startup")
@@ -1371,6 +1373,9 @@ async def lifespan(app: FastAPI):
     # Tri des réparations oubliées : dossiers ouverts de plus de TRI_AUTO_JOURS (60) jours clôturés
     # une fois par jour, signés « Tri automatique » (KP_TRI_AUTO=0 empêche la tâche)
     nettoyage.demarrer_tri_quotidien()
+    # Tarifs Mobilax : un passage par jour dès que le gérant a collé sa connexion (prix d'achat
+    # mis à jour, grosses variations en propositions) ; KP_SYNC_FOURNISSEURS=0 empêche la tâche
+    fournisseurs.demarrer_synchro_quotidienne()
     # Journal des connexions : position effacée à 60 jours, lignes à 183 jours, sessions inactives
     # depuis 12 h closes (chaque heure ; KP_RETENTION_AUTO=0 empêche la tâche)
     presence.demarrer_retention()
@@ -1521,6 +1526,7 @@ app.include_router(fidelite.router)
 app.include_router(email_api.router)
 # Avant tarifs : /api/tarifs/propositions… ne doit pas être pris pour /api/tarifs/{id}
 app.include_router(propositions_prix.router)
+app.include_router(fournisseurs_api.router)
 app.include_router(tarifs.router)
 app.include_router(marketing.router)
 app.include_router(telephones.router)

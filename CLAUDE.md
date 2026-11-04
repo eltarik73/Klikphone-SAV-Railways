@@ -200,9 +200,38 @@ KP_HOTES_SUPPLEMENTAIRES=a,b      # Hôtes supplémentaires acceptés dans X-For
 KP_IP_MAGASIN=1.2.3.4,5.6.7.8     # IP du magasin (borne) : exemptée des seuls plafonds GLOBAUX, jamais du quota par IP
 ```
 
+Synchro automatique des tarifs Mobilax (`app/services/fournisseurs.py`, cf. section ci-dessous) :
+
+```
+MOBILAX_REFRESH_TOKEN=...         # Facultatif : amorce la connexion Mobilax si le gérant préfère la poser dans Railway
+                                  # plutôt que de coller ses jetons dans l'app (copié dans params au premier passage)
+MOBILAX_ID_CLIENT=1234            # Facultatif : id_customer Mobilax (sinon lu auprès de l'API)
+KP_SYNC_FOURNISSEURS=0            # Empêche la tâche quotidienne (tests, maintenance)
+```
+
 Paramètre en base (table `params`, modifiable sans redéploiement) : `SUIVI_JETON_JOURS`
 (défaut 180) — validité du jeton de suivi (QR, liens) après restitution ou clôture du dossier ;
 le numéro de téléphone complet reste accepté sans limite de temps.
+
+## Synchro automatique des tarifs fournisseurs (Mobilax)
+
+- **Une seule action du gérant** : connecté sur mobilax.fr, console du navigateur →
+  `copy(JSON.stringify(localStorage))`, puis coller le texte dans *Réparation smartphones → Connecter Mobilax*
+  (ou poser `MOBILAX_REFRESH_TOKEN` dans Railway). Les jetons vont dans `params`
+  (`MOBILAX_TOKEN`, `MOBILAX_REFRESH_TOKEN`, masqués par `api/config`), jamais dans le code ni dans une réponse API.
+- **Chaque jour** (`fournisseurs.demarrer_synchro_quotidienne`, lancé dans le `lifespan`, vérification horaire,
+  un passage par jour réservé par compare-and-set dans `params`, 3 essais au plus, verrou 40 min entre workers) :
+  jeton renouvelé (`POST user/refresh-token`), chaque modèle de la grille cherché
+  (`GET catalogs/web/products?search=…&id_customer=…`), produits passés au moteur d'import
+  (`import_prix.apercu` → `appliquer`) : prix d'achat HT et prix client recalculé écrits (lot annulable,
+  historique source `import`, par « Synchro Mobilax »), grosse variation → `tarifs_propositions` (tuile
+  « Propositions »), pièce verrouillée / obsolète jamais touchée, produit inconnu jamais créé.
+- **Bouton « Synchroniser maintenant »** : `POST /api/tarifs/fournisseurs/mobilax/sync` (tâche de fond) ;
+  état : `GET /api/tarifs/fournisseurs/etat` et tuile « Synchro Mobilax » de la santé des prix.
+  Jeton refusé → connexion « expirée » affichée, à recoller une fois ; aucun plantage.
+- **Utopya** : pas de synchro possible (prix sous connexion, challenge Cloudflare) → import de fichier.
+- **Tests** : `tests/test_fournisseurs_mobilax.py` (httpx.MockTransport, fixture `fixtures/mobilax_products.json`,
+  aucun appel réseau ; base réelle via `KP_TEST_DATABASE_URL`).
 
 ## Workflow automatique après chaque modification UI
 

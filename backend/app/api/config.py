@@ -157,7 +157,8 @@ def _controler_etagere(cle: str, valeur: str) -> str:
 # POST /api/tarifs/appliquer (aperçu, lot annulable, rôle admin et code) ; dates et résumés de
 # veille et de synchro, drapeaux de migration, colonnes d'import mémorisées : le serveur seul.
 CLES_MOTEUR_PRIX = frozenset({prix_moteur.CLE_REGLES})
-PREFIXES_MOTEUR_PRIX = ("IMPORT_MAPPING_", "VEILLE_PRIX_", "LCDPHONE_", "MIGRATION_PRIX_", "MODELES_ALIAS_")
+PREFIXES_MOTEUR_PRIX = ("IMPORT_MAPPING_", "VEILLE_PRIX_", "LCDPHONE_", "MIGRATION_PRIX_", "MODELES_ALIAS_",
+                        "MOBILAX_")
 # Cadenas des grilles boutique ({table: [ids]}, ReglesPrixPanel) : écriture de prix, donc rôle
 # admin et code, comme les routes /api/tarifs
 PARAM_VERROUS_BOUTIQUE = "PRIX_LIGNES_VERROUILLEES"

@@ -1,0 +1,164 @@
+/**
+ * Synchro automatique des tarifs Mobilax : tuile « Synchro Mobilax » de la santé des prix,
+ * bloc SynchroFournisseur (état, connexion en une étape, « Synchroniser maintenant »).
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+
+const { apiMock } = vi.hoisted(() => {
+  const base = {};
+  const apiMock = new Proxy(base, {
+    get(target, cle) {
+      if (!(cle in target)) target[cle] = vi.fn().mockResolvedValue({});
+      return target[cle];
+    },
+  });
+  return { apiMock };
+});
+
+vi.mock('../lib/api', () => ({ default: apiMock, api: apiMock }));
+
+import { ToastProvider } from '../components/Toast';
+import { tuilesSante } from '../components/SantePrixWidget';
+import SynchroFournisseur, { decrireMobilax, COMMANDE_CONSOLE } from '../components/SynchroFournisseur';
+
+const MAINTENANT = new Date('2026-11-04T12:00:00').getTime();
+const UTOPYA = { disponible: false, raison: 'Utopya : prix sous connexion, Cloudflare.' };
+const RESUME_OK = { ok: true, modifies: 12, confirmes: 300, propositions: 3, verrouillees: 2, produits: 1450, modeles: 210 };
+const CONNECTE = {
+  configure: true, connexion: 'ok', active: true, en_cours: false, debut: null,
+  derniere_synchro: '2026-11-04T05:10:00', ok: true, resume: RESUME_OK, erreur: null, message: null, compte: true,
+};
+const NON_CONNECTE = {
+  configure: false, connexion: 'absente', active: true, en_cours: false, debut: null,
+  derniere_synchro: null, ok: null, resume: null, erreur: null, message: null, compte: false,
+};
+
+function resetApi() {
+  for (const fn of Object.values(apiMock)) {
+    if (typeof fn?.mockReset === 'function') fn.mockReset().mockResolvedValue({});
+  }
+}
+
+beforeEach(() => { resetApi(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+
+const rendre = (props = {}) => render(<ToastProvider><SynchroFournisseur intervalle={10} {...props} /></ToastProvider>);
+
+describe('tuile « Synchro Mobilax » de la santé des prix', () => {
+  const tuile = (mobilax) => Object.fromEntries(tuilesSante({ fournisseurs: { mobilax } }, '/accueil', MAINTENANT).map(x => [x.cle, x])).mobilax;
+
+  it('à connecter, expirée, échouée, à jour, ancienne, en cours', () => {
+    expect(tuile(NON_CONNECTE)).toMatchObject({ valeur: '—', ton: 'orange', detail: 'à connecter (une seule fois)', lien: '/accueil/tarifs' });
+    expect(tuile({ ...CONNECTE, connexion: 'expiree' })).toMatchObject({ ton: 'rouge', detail: 'connexion expirée' });
+    expect(tuile({ ...CONNECTE, ok: false, derniere_synchro: '2026-11-03T05:10:00' })).toMatchObject({ ton: 'rouge', valeur: '1 j', detail: '03/11/2026 · échouée' });
+    expect(tuile({ ...CONNECTE, modifies: 12 })).toMatchObject({ ton: 'neutre', valeur: 'Auj.', detail: '04/11/2026 · 12 prix mis à jour', titre: 'Synchro Mobilax' });
+    expect(tuile({ ...CONNECTE, derniere_synchro: '2026-10-30T05:10:00', modifies: 0 })).toMatchObject({ ton: 'orange', valeur: '5 j' });
+    expect(tuile({ ...CONNECTE, en_cours: true })).toMatchObject({ ton: 'marque', detail: 'synchronisation en cours…' });
+    expect(tuile({ ...CONNECTE, derniere_synchro: null, ok: null })).toMatchObject({ valeur: '—', ton: 'neutre', detail: 'première synchro à venir' });
+    // Sans la clé (ancien serveur) : jamais de plantage
+    expect(Object.fromEntries(tuilesSante({}, '/tech').map(x => [x.cle, x])).mobilax).toMatchObject({ ton: 'orange', valeur: '—' });
+  });
+
+  it('huit tuiles, la tuile Mobilax après LCD-Phone', () => {
+    const cles = tuilesSante({}, '/accueil').map(x => x.cle);
+    expect(cles).toEqual(['estimes', 'a_revoir', 'perimes', 'marges', 'propositions', 'sans_prix', 'lcdphone', 'mobilax']);
+  });
+});
+
+describe('decrireMobilax', () => {
+  it('phrases selon l’état', () => {
+    expect(decrireMobilax(null).ton).toBe('neutre');
+    expect(decrireMobilax(NON_CONNECTE)).toMatchObject({ ton: 'attention', titre: 'Mobilax : pas encore connecté' });
+    expect(decrireMobilax({ ...CONNECTE, connexion: 'expiree' })).toMatchObject({ ton: 'danger', titre: 'Connexion Mobilax expirée' });
+    expect(decrireMobilax({ ...CONNECTE, en_cours: true, debut: '2026-11-04T11:58:00' }).titre).toBe('Synchronisation Mobilax en cours…');
+    const ok = decrireMobilax(CONNECTE);
+    expect(ok.ton).toBe('ok');
+    expect(ok.titre).toMatch(/^Dernière synchro Mobilax : 04\/11\/2026/);
+    expect(ok.detail).toBe('12 prix mis à jour · 300 confirmés · 3 à valider (Propositions) · 2 verrouillés — 1450 produits lus pour 210 modèles.');
+    expect(decrireMobilax({ ...CONNECTE, ok: false, erreur: 'Mobilax indisponible (HTTP 503)' })).toMatchObject({ ton: 'danger', detail: 'Mobilax indisponible (HTTP 503)' });
+    expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null })).toMatchObject({ ton: 'neutre', titre: 'Mobilax connecté' });
+    expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null, active: false }).detail).toBe('Synchro quotidienne coupée.');
+  });
+});
+
+describe('bloc SynchroFournisseur', () => {
+  it('personnel : état seul, sans bouton ; mention Utopya', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA });
+    rendre({ estAdmin: false });
+    expect(await screen.findByText(/Dernière synchro Mobilax : 04\/11\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Utopya : pas de synchro automatique possible/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Synchroniser maintenant/ })).not.toBeInTheDocument();
+  });
+
+  it('admin non connecté : « Synchroniser maintenant » bloqué, connexion en une étape', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: NON_CONNECTE, utopya: UTOPYA });
+    apiMock.connecterMobilax.mockResolvedValue({ mobilax: { ...CONNECTE, ok: null, derniere_synchro: null, resume: null }, utopya: UTOPYA });
+    rendre({ estAdmin: true });
+    expect(await screen.findByText('Mobilax : pas encore connecté')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Synchroniser maintenant/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Connecter Mobilax' }));
+    expect(screen.getByText(COMMANDE_CONSOLE)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /mobilax\.fr/ })).toHaveAttribute('target', '_blank');
+    const zone = screen.getByLabelText('Texte copié depuis mobilax.fr');
+    const enregistrer = screen.getByRole('button', { name: 'Enregistrer la connexion' });
+    expect(enregistrer).toBeDisabled();
+    fireEvent.change(zone, { target: { value: '{"web_mobi_refresh_token":"abc"}' } });
+    fireEvent.click(enregistrer);
+    await waitFor(() => expect(apiMock.connecterMobilax).toHaveBeenCalledWith('{"web_mobi_refresh_token":"abc"}'));
+    expect(await screen.findByText('Mobilax connecté')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Texte copié depuis mobilax.fr')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Synchroniser maintenant/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reconnecter Mobilax' })).toBeInTheDocument();
+  });
+
+  it('connexion refusée : message d’erreur, jetons jamais affichés', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: NON_CONNECTE, utopya: UTOPYA });
+    apiMock.connecterMobilax.mockRejectedValue(Object.assign(new Error('Jeton Mobilax refusé ou expiré'), { status: 422 }));
+    rendre({ estAdmin: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Connecter Mobilax' }));
+    fireEvent.change(screen.getByLabelText('Texte copié depuis mobilax.fr'), { target: { value: 'secret-jeton-xyz' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer la connexion' }));
+    expect(await screen.findByText(/Connexion Mobilax refusée : Jeton Mobilax refusé ou expiré/)).toBeInTheDocument();
+    // Le texte collé reste dans la zone (pour corriger), jamais dans l'état affiché
+    expect(screen.getByLabelText('Texte copié depuis mobilax.fr')).toHaveValue('secret-jeton-xyz');
+    expect(screen.getByRole('status')).not.toHaveTextContent('secret-jeton-xyz');
+  });
+
+  it('admin connecté : « Synchroniser maintenant » lance puis suit jusqu’à la fin', async () => {
+    apiMock.getEtatFournisseurs
+      .mockResolvedValueOnce({ mobilax: CONNECTE, utopya: UTOPYA })
+      .mockResolvedValueOnce({ mobilax: { ...CONNECTE, en_cours: true }, utopya: UTOPYA })
+      .mockResolvedValue({ mobilax: { ...CONNECTE, resume: { ...RESUME_OK, modifies: 7, propositions: 0 } }, utopya: UTOPYA });
+    apiMock.syncMobilax.mockResolvedValue({ lance: true, message: 'Synchronisation lancée : quelques minutes.' });
+    rendre({ estAdmin: true });
+    const bouton = await screen.findByRole('button', { name: 'Synchroniser maintenant' });
+    fireEvent.click(bouton);
+    await waitFor(() => expect(apiMock.syncMobilax).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Synchronisation Mobilax en cours…')).toBeInTheDocument();
+    expect(await screen.findByText(/Synchronisation Mobilax terminée : 7 prix mis à jour/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Synchroniser maintenant' })).toBeEnabled());
+    expect(apiMock.getEtatFournisseurs.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('admin : synchro quotidienne coupée ou remise, connexion oubliée', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA });
+    apiMock.reglerSynchroMobilax.mockResolvedValue({ mobilax: { ...CONNECTE, active: false }, utopya: UTOPYA });
+    apiMock.deconnecterMobilax.mockResolvedValue({ mobilax: NON_CONNECTE, utopya: UTOPYA });
+    rendre({ estAdmin: true });
+    const chaqueJour = await screen.findByRole('checkbox', { name: 'Chaque jour' });
+    expect(chaqueJour).toBeChecked();
+    fireEvent.click(chaqueJour);
+    await waitFor(() => expect(apiMock.reglerSynchroMobilax).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Chaque jour' })).not.toBeChecked());
+    fireEvent.click(screen.getByRole('button', { name: 'Oublier la connexion' }));
+    await waitFor(() => expect(apiMock.deconnecterMobilax).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Mobilax : pas encore connecté')).toBeInTheDocument();
+  });
+
+  it('état indisponible : phrase neutre, pas de plantage', async () => {
+    apiMock.getEtatFournisseurs.mockRejectedValue(new Error('500'));
+    rendre({ estAdmin: true });
+    expect(await screen.findByText('Synchro Mobilax : état indisponible pour le moment')).toBeInTheDocument();
+  });
+});

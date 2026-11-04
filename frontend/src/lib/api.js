@@ -1509,6 +1509,25 @@ class ApiClient {
   supprimerAliasModele(id) { return this.delete(`/api/grille/alias/${encodeURIComponent(id)}`); }
   getSantePrix() { return this.get('/api/tarifs/sante'); }
 
+  // ─── FOURNISSEURS : synchro automatique des tarifs Mobilax (jetons collés une fois par le gérant) ──
+  // → { mobilax: { configure, connexion: 'ok'|'expiree'|'absente'|'a_verifier', active, en_cours, debut,
+  //     derniere_synchro, ok, resume: { modifies, confirmes, propositions, produits, erreur… }, erreur, message },
+  //     utopya: { disponible: false, raison } } — jamais de jeton
+  getEtatFournisseurs() { return this.request('/api/tarifs/fournisseurs/etat', { cache: 'no-store' }); }
+  // Lance la synchro Mobilax en arrière-plan (admin) → { lance, message, etat } ; suivre avec getEtatFournisseurs
+  syncMobilax() { return this._ecriturePrix('/api/tarifs/fournisseurs/mobilax/sync', {}, 30_000); }
+  // Texte collé depuis mobilax.fr (copy(JSON.stringify(localStorage))) : jetons vérifiés puis enregistrés → état
+  connecterMobilax(texte) {
+    return this.request('/api/tarifs/fournisseurs/mobilax/connexion', {
+      method: 'POST', body: JSON.stringify({ texte: String(texte || '') }), retries: 0,
+    }, 45_000);
+  }
+  deconnecterMobilax() { return this.request('/api/tarifs/fournisseurs/mobilax/connexion', { method: 'DELETE' }); }
+  // Synchro quotidienne en marche (true) ou coupée (false) ; le bouton « Synchroniser maintenant » reste possible
+  reglerSynchroMobilax(active) {
+    return this.request('/api/tarifs/fournisseurs/mobilax/active', { method: 'POST', body: JSON.stringify({ active: Boolean(active) }) });
+  }
+
   // ─── VENTES iPHONE (stock + générateur vidéo Story) ──
   getIphones(params = {}) {
     // Cached 30s — frequent reads from TelephonesVente + Dashboard widgets
