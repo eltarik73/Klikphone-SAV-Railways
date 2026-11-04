@@ -483,25 +483,176 @@ def designation_import(nom: str) -> str:
     return " ".join(mots)
 
 
-def ligne_produit(p: dict, palier: dict = None) -> Optional[dict]:
-    """{reference, designation, prix_ht} d'un produit (prix du palier du compte), None sans prix."""
+# ─── Catégorie Mobilax → pièce et qualité de la grille ──────────
+# Chaque nom Mobilax commence par sa catégorie (« Ecran Tactile Soft Oled Apple iPhone 13 (IC
+# Removable) Noir », category_name = « Ecran Tactile Soft Oled ») : la catégorie dit la pièce et la
+# qualité, le reste du nom le modèle (marque comprise) suivi d'un suffixe technique, de codes
+# constructeur et du coloris. Lire la catégorie est bien plus sûr que deviner dans le nom.
+
+# (début de la catégorie normalisée, type de pièce de la grille) — le premier motif qui convient
+CATEGORIES_PIECES = (
+    ("ecran", "Ecran"), ("bloc ecran", "Ecran"), ("batterie", "Batterie"),
+    ("connecteur de charge", "Connecteur de charge"), ("cache arriere", "Vitre arriere"),
+    ("vitre arriere", "Vitre arriere"), ("appareil photo", "Camera arriere"), ("camera arriere", "Camera arriere"),
+    ("camera principale", "Camera arriere"), ("camera visio", "Camera avant"), ("camera avant", "Camera avant"),
+    ("haut parleur", "Haut-parleur"), ("ecouteur interne", "Ecouteur interne"),
+    ("lentille", "Vitre camera arriere"), ("vitre camera", "Vitre camera arriere"),
+)
+# Catégories de ces familles qui ne sont pas la pièce suivie : écran externe d'un pliant, batterie
+# secondaire ou sans BMS, port à souder, nappes, protections…
+CATEGORIES_EXCLUES = ("externe", "secondaire", "sans bms", "a souder", "magsafe", "nappe", "protection", "adhesif",
+                      "film", "support", "outil", "moule")
+# Qualité d'après la catégorie, du plus précis au plus général (« Original Refurb » = reconditionné)
+QUALITES_CATEGORIE = (
+    ("soft oled", "Soft OLED"), ("hard oled", "OLED"), ("amoled", "OLED"), ("oled", "OLED"),
+    ("incell", "Incell"), ("in cell", "Incell"), ("ltps", "Incell"),
+    ("refurb", "Reconditionnee"), ("pulled", "Reconditionnee"), ("reconditionne", "Reconditionnee"),
+    ("tft", "LCD"), ("lcd", "LCD"),
+    ("service pack", "Original"), ("original", "Original"),
+    ("oem", "Compatible"), ("premium", "Compatible"), ("aftermarket", "Compatible"), ("compatible", "Compatible"),
+)
+
+
+def piece_categorie(category_name) -> Optional[tuple]:
+    """(type de pièce de la grille, qualité ou None) d'après la catégorie Mobilax ; None si la
+    catégorie n'est pas une pièce suivie par la grille."""
+    c = normaliser(category_name or "")
+    if not c or any(m in c for m in CATEGORIES_EXCLUES):
+        return None
+    for motif, piece in CATEGORIES_PIECES:
+        if c.startswith(motif):
+            q = next((v for m, v in QUALITES_CATEGORIE if m in c), None)
+            # « Ecran Tactile » sans autre mention : l'écran de rechange ordinaire de Mobilax
+            return piece, (q or "Compatible") if piece == "Ecran" else q
+    return None
+
+
+_PAREN = re.compile(r"\(([^()]*)\)")
+_ETOILES = re.compile(r"\*[^*]*\*")                       # « *1 An de Garantie Toute Casse* »
+_GRADE = re.compile(r"\bGrade\s*[A-D]\+*", re.IGNORECASE)   # « Grade A++ »
+_CODE_NUM = re.compile(r"(?<![\w-])\d{2,}-\d{2,}(?:-\d+)*(?![\w-])")   # 661-10851 (avec lettres : _CODE_PIECE)
+_COUPURES = {"avec", "sans", "pour"}                        # « P20 Lite Avec Jack et Micro » : fin du modèle
+_CODE_COURT = re.compile(r"^(?=.*\d)(?=.*[A-Z])(?:[A-Z]+\d+[A-Z]+\d+|[A-Z]\d{2}[A-Z]{2}|[A-Z]{2}\d[A-Z]\d|[A-Z]{3,}\d{2,})[A-Z0-9]*$")
+_CODE_LONG = re.compile(r"\b\d{7,}\b")                     # 2011100371, 621035000148 (OnePlus, Oppo…)
+_CODE_SAMSUNG = re.compile(r"\b[A-Z]\d{3}[A-Z]{0,2}\b")      # A057, A145F, M127 après « Galaxy A05s » (jamais un modèle)
+# Mots de fin de nom qui ne font pas partie du modèle (puce de batterie, diagnostic, côté…)
+_BRUIT_FIN = {"ti", "genuine", "diagnostic", "universal", "wifi", "wi-fi", "cellular", "gauche", "droit", "droite",
+              "inferieur", "superieur", "keyboard", "backlight", "usb", "lvds", "partner-pack", "neuf", "sans",
+              "avec", "nappe", "without", "part", "parts", "version", "us", "eu", "qwerty", "azerty", "a", "b", "c"}
+# Mots qui peuvent précéder la marque dans le reste du nom (« Diagnostic Apple iPhone 12 Mini »)
+_BRUIT_DEBUT = {"diagnostic", "premium", "plus", "original", "originale", "oem", "pulled", "refurb", "refurbished",
+                "aftermarket", "sans", "avec", "chassis", "complet", "complete", "et", "batterie", "lcd", "tactile",
+                "oled", "soft", "hard", "incell", "fhd", "hd", "hd+", "ltps", "partner-pack", "magsafe", "piec", "pour"}
+_GAMMES_TETE = {"iphone", "ipad", "macbook", "galaxy", "redmi", "poco", "pixel", "moto", "nord", "mi"}
+# Coloris supplémentaires rencontrés chez Mobilax (fin de nom)
+_COULEURS_FIN.update({
+    "sideral", "siderale", "volcanique", "porcelaine", "neige", "obsidienne", "vif", "vive", "cosmique", "cosmos",
+    "aloe", "charbon", "citron", "lagon", "sauge", "sage", "chalk", "seafoam", "licorice", "quartz", "mojito",
+    "amande", "oh", "so", "sorta", "kinda", "almost", "bay", "lemon", "lime", "olive", "ivory", "ivoire", "cuivre",
+    "copper", "champagne", "rubis", "ruby", "saphir", "sapphire", "onyx", "crystal", "cristal", "nacre", "nacree",
+    "peche", "peach", "zinc", "acier", "steel", "smoke", "fume", "fumee", "vert", "blush", "bronze", "mauve",
+    "scarlet", "carmin", "pacific", "atlantic", "nordic", "prune", "plum", "violet", "cobalt", "azur", "azure",
+    "aube", "dawn", "dusk", "crepuscule", "jet", "slate", "ardoise", "ebony", "ebene", "noir", "noire", "white",
+    "stone", "pierre", "sand", "sable", "cream", "linen", "lin", "oat", "beige", "wintergreen",
+})
+
+
+def modele_produit(p: dict) -> str:
+    """Modèle (marque comprise) lu dans le nom Mobilax privé de sa catégorie, du suffixe technique
+    (« (IC Removable) », « (TI 3630mAh) »), des codes constructeur, des mégapixels, du coloris et des
+    mots de bruit finaux. Les parenthèses utiles (année, génération, 5G, numéro) restent."""
+    from app.api import grille   # import différé : grille importe services/prix
+    nom = " ".join(str(p.get("title_name") or p.get("name") or "").split())
+    cat = " ".join(str(p.get("category_name") or "").split())
+    reste = nom[len(cat):] if cat and nom.lower().startswith(cat.lower()) else nom
+    suffixe = " ".join(str(p.get("suffix") or "").split())
+    if suffixe and suffixe in reste:
+        reste = reste.replace(suffixe, " ", 1)
+    reste = _ETOILES.sub(" ", reste)
+    reste = _GRADE.sub(" ", reste)
+    reste = _PAREN.sub(lambda m: f" ({m.group(1).strip()}) " if grille._garder_parenthese(m.group(1)) else " ", reste)
+    reste = _CODE_PIECE.sub(" ", reste)
+    reste = _CODE_NUM.sub(" ", reste)
+    reste = _CODE_LONG.sub(" ", reste)
+    if "galaxy" in reste.lower():
+        reste = _CODE_SAMSUNG.sub(" ", reste)
+    reste = _MEGAPIXELS.sub(" ", reste)
+    mots = [m for m in reste.split() if any(ch.isalnum() for ch in m)]
+    coupe = next((i for i, m in enumerate(mots) if i and normaliser(m) in _COUPURES), None)
+    if coupe:
+        mots = mots[:coupe]
+    # Bruit avant la marque : coupé jusqu'à la marque ou la gamme si l'une des cinq premiers mots l'est
+    bas = [normaliser(m) for m in mots[:5]]
+    debut = next((i for i, b in enumerate(bas) if b in grille._MARQUES_CONNUES or b in grille._ALIAS_MARQUE
+                  or b in _GAMMES_TETE), None)
+    if debut:
+        mots = mots[debut:]
+    else:
+        while len(mots) > 1 and normaliser(mots[0]) in _BRUIT_DEBUT:
+            mots.pop(0)
+    while len(mots) > 1:
+        bas = normaliser(mots[-1])
+        if bas in _COULEURS_FIN or bas in _BRUIT_FIN or (_CODE_COURT.match(mots[-1]) and not re.fullmatch(r"[A-Z]\d{4}", mots[-1])):
+            mots.pop()
+        else:
+            break
+    return " ".join(mots)
+
+
+def segments_marques(modele: str) -> list:
+    """Un nom qui cite plusieurs marques (« Honor 20/8X Huawei Mate 20 Lite/Nova 5T », « Huawei Y6p
+    Honor 9A ») : un morceau par marque, chacun commençant par la sienne."""
+    from app.api import grille
+    mots = modele.split()
+    debuts = [i for i, m in enumerate(mots) if i and normaliser(m) in grille._MARQUES_CONNUES
+              and normaliser(m) not in grille._ALIAS_MARQUE]
+    if not debuts or not mots or normaliser(mots[0]) not in grille._MARQUES_CONNUES:
+        return [modele]
+    bornes = [0] + debuts + [len(mots)]
+    return [" ".join(mots[a:b]) for a, b in zip(bornes, bornes[1:]) if b > a]
+
+
+def lignes_produit(p: dict, palier: dict = None) -> list:
+    """Lignes d'import d'un produit au prix du palier du compte : [{reference, designation, modele,
+    type_piece, qualite, prix_ht}] — une ligne par marque citée dans le nom (même référence et même
+    prix), aucune sans prix ou pour une catégorie qui n'est pas une pièce suivie (nappe, protection…).
+    Pièce et qualité viennent de la catégorie Mobilax, le modèle du nom ; sans catégorie connue, les
+    colonnes restent vides et le moteur d'import lit la désignation."""
     ht = prix_produit(p, palier)
     if ht is None:
-        return None
-    nom = designation_import(p.get("title_name") or p.get("name") or "")[:250]
+        return []
+    nom = p.get("title_name") or p.get("name") or ""
+    cat = p.get("category_name") or ""
+    pq = piece_categorie(cat)
+    if pq is None and cat and any(normaliser(cat).startswith(m) for m, _ in CATEGORIES_PIECES):
+        return []            # famille suivie mais variante écartée (écran externe, batterie secondaire…)
     ref = str(p.get("ean13") or p.get("reference") or p.get("sku") or "").strip()
     if not ref and p.get("id"):
         ref = f"MX{p['id']}"
-    return {"reference": ref[:60], "designation": nom, "prix_ht": ht}
+    base = {"reference": ref[:60], "designation": designation_import(nom)[:250],
+            "type_piece": pq[0] if pq else "", "qualite": (pq[1] or "") if pq else "", "prix_ht": ht}
+    modeles = segments_marques(modele_produit(p)) if pq else [""]
+    return [{**base, "modele": m[:250]} for m in modeles]
+
+
+def ligne_produit(p: dict, palier: dict = None) -> Optional[dict]:
+    """Première ligne de lignes_produit (None sans prix ni pièce suivie)."""
+    lignes = lignes_produit(p, palier)
+    return lignes[0] if lignes else None
+
+
+COLONNES_CSV = ("Référence", "Désignation", "Marque", "Modèle", "Type de pièce", "Qualité", "Prix HT")
 
 
 def csv_lignes(lignes: list) -> bytes:
-    """Fichier CSV (« ; », décimales à virgule) lu par import_prix comme un fichier fournisseur."""
+    """Fichier CSV (« ; », décimales à virgule) lu par import_prix comme un fichier fournisseur :
+    colonnes Modèle / Type de pièce / Qualité remplies quand la catégorie est connue."""
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";", lineterminator="\n")
-    w.writerow(["Référence", "Désignation", "Prix HT"])
+    w.writerow(COLONNES_CSV)
     for l in lignes:
-        w.writerow([l["reference"], l["designation"], str(l["prix_ht"]).replace(".", ",")])
+        w.writerow([l["reference"], l["designation"], l.get("marque") or "", l.get("modele") or "",
+                    l.get("type_piece") or "", l.get("qualite") or "", str(l["prix_ht"]).replace(".", ",")])
     return buf.getvalue().encode("utf-8-sig")
 
 
@@ -581,14 +732,30 @@ def remplacable(desc, regles=None, maintenant=None) -> bool:
     return ((maintenant or _maintenant()) - maj).days > jours
 
 
-def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None) -> dict:
+def moins_cher_ailleurs(desc, ht, fournisseur, regles=None, maintenant=None) -> bool:
+    """Le prix de référence de la pièce vient d'un AUTRE fournisseur et n'est pas plus cher que `ht` :
+    la pièce reste chez le moins-disant (un prix remplaçable — estimé, périmé — ne protège rien)."""
+    if not fournisseur or not isinstance(desc, dict) or not desc.get("fournisseur"):
+        return False
+    if normaliser(desc["fournisseur"]) == normaliser(fournisseur) or remplacable(desc, regles, maintenant):
+        return False
+    try:
+        return Decimal(str(desc.get("ht"))) <= Decimal(str(ht))
+    except (InvalidOperation, TypeError):
+        return False
+
+
+def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None, fournisseur: str = None) -> dict:
     """Parmi les lignes reconnues de l'aperçu (import_prix.apercu) : lignes à appliquer,
     propositions à créer (grosse variation d'un prix de référence), pièces laissées (verrou,
-    obsolète, variante plus chère). descs : prix.decrire_tarifs des pièces reconnues — une pièce
-    au prix absent, estimé ou périmé (`remplacable`) est appliquée même avec une grosse
-    variation (comptée dans `remplaces`).
+    obsolète, variante plus chère, autre fournisseur moins cher). descs : prix.decrire_tarifs des
+    pièces reconnues — une pièce au prix absent, estimé ou périmé (`remplacable`) est appliquée
+    même avec une grosse variation (comptée dans `remplaces`). fournisseur : celui des lignes
+    (« Mobilax », « Utopya ») — une pièce dont le prix de référence vient d'un autre fournisseur
+    moins cher ou égal est laissée (`plus_cher_ailleurs`) ; moins cher ici → appliqué (ou proposé).
 
-    → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces}
+    → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces,
+       plus_cher_ailleurs}
     """
     par_n = {}
     for rec in ap.get("reconnues") or []:
@@ -596,7 +763,7 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     vise = {}   # cle → HT retenu
     descs = descs or {}
     out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0,
-           "remplaces": 0}
+           "remplaces": 0, "plus_cher_ailleurs": 0}
     # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère
     for n, recs in sorted(par_n.items(), key=lambda kv: (Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
         hts = {r["cle"]: Decimal(str(r["nouveau_ht"])) for r in recs}
@@ -613,6 +780,9 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
             continue
         if any(r["obsolete"] for r in recs):
             out["obsoletes"] += 1
+            continue
+        if any(moins_cher_ailleurs(descs.get(r["cle"]), hts[r["cle"]], fournisseur, regles, maintenant) for r in recs):
+            out["plus_cher_ailleurs"] += 1
             continue
         alertes = set()
         for r in recs:
@@ -631,10 +801,11 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
 
 
 _COMPTES = ("lignes", "reconnues", "non_reconnues", "inconnues", "verrouillees", "obsoletes", "variantes",
-            "a_valider", "remplaces", "modifies", "confirmes", "propositions", "propositions_fermees")
+            "a_valider", "remplaces", "plus_cher_ailleurs", "modifies", "confirmes", "propositions",
+            "propositions_fermees")
 
 
-def _fermer_propositions(cur, lot_id: str) -> int:
+def _fermer_propositions(cur, lot_id: str, auteur: str = AUTEUR) -> int:
     """Propositions en attente des pièces dont le coût HT vient d'être écrit par ce lot, au même prix
     (à 1 € près) : acceptées par le passage — plus rien à valider pour ces pièces. Une annulation du
     lot les rouvre (prix._rouvrir_propositions)."""
@@ -647,36 +818,39 @@ def _fermer_propositions(cur, lot_id: str) -> int:
            AND p.tarif_cle = CASE WHEN h.table_nom = 'tarifs' THEN 'tarifs:' || h.ligne_id
                                   ELSE h.table_nom || ':' || h.ligne_id || ':' || split_part(h.colonne, '_', 1) END
            AND h.nouveau IS NOT NULL AND abs(p.nouveau_ht - h.nouveau) <= 1
-    """, (AUTEUR, lot_id, lot_id))
+    """, (auteur, lot_id, lot_id))
     return max(int(cur.rowcount or 0), 0)
 
 
-def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict) -> dict:
-    """Aperçu puis application automatique sur une cible ; propositions pour les grosses variations."""
+def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict, fournisseur: str = FOURNISSEUR,
+              auteur: str = AUTEUR, source: str = "mobilax") -> dict:
+    """Aperçu puis application automatique sur une cible ; propositions pour les grosses variations.
+    fournisseur / auteur / source : Mobilax par défaut, « Utopya » pour la collecte (services/utopya)."""
     res = {"cible": cible, "import_id": None, "lot_id": None, "erreur": None, **{k: 0 for k in _COMPTES}}
     try:
-        ap = import_prix.apercu(cur, nom_fichier, contenu, FOURNISSEUR, cible, r=r, par=AUTEUR)
+        ap = import_prix.apercu(cur, nom_fichier, contenu, fournisseur, cible, r=r, par=auteur)
     except import_prix.ImportErreur as e:
         res["erreur"] = str(e)
         return res
     cles = sorted({rec["cle"] for rec in ap.get("reconnues") or []})
     descs = prix.decrire_tarifs(cur, cles, r) if cles else {}
-    plan = planifier(ap, descs, r)
+    plan = planifier(ap, descs, r, fournisseur=fournisseur)
     resume = ap["resume"]
     res.update(import_id=ap["import_id"], lignes=resume["lignes"], reconnues=resume["pieces_reconnues"],
                non_reconnues=resume["non_reconnues"], inconnues=resume["nouvelles"],
-               **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider", "remplaces")})
+               **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider", "remplaces",
+                                       "plus_cher_ailleurs")})
     res["_cles"] = cles   # pour le diagnostic du passage (retiré du résumé enregistré)
     if plan["lignes"]:
         app = import_prix.appliquer(cur, ap["import_id"], {"lignes": plan["lignes"], "ignorer_invalides": True},
-                                    AUTEUR, r=r)
+                                    auteur, r=r)
         res.update(modifies=app["modifies"], confirmes=app["confirmes"], lot_id=app["lot_id"])
         if app.get("lot_id"):
-            res["propositions_fermees"] = _fermer_propositions(cur, app["lot_id"])
+            res["propositions_fermees"] = _fermer_propositions(cur, app["lot_id"], auteur)
     else:
         cur.execute("UPDATE tarifs_imports SET statut = 'synchro' WHERE id = %s", (ap["import_id"],))
     for p in plan["propositions"]:
-        if prix.creer_proposition(cur, p["cle"], p["ht"], "mobilax", AUTEUR) is not None:
+        if prix.creer_proposition(cur, p["cle"], p["ht"], source, auteur) is not None:
             res["propositions"] += 1
     # Le détail des lignes (gros JSON) ne sert qu'à l'application : seuls le résumé et les données
     # d'annulation du lot restent
@@ -686,12 +860,19 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict) -> dic
 
 # ─── Diagnostic : pièces de la grille sans prix Mobilax ─────────
 
-RAISONS = {
-    "aucun_produit": "Mobilax ne renvoie aucun produit pour ce modèle",
-    "piece_absente": "Mobilax a des produits pour ce modèle, mais pas cette pièce",
-    "non_reconnue": "Des produits Mobilax ressemblent, sans être rattachés à la pièce (nom à vérifier)",
+_RAISONS_MODELES = {
+    "aucun_produit": "{f} ne renvoie aucun produit pour ce modèle",
+    "piece_absente": "{f} a des produits pour ce modèle, mais pas cette pièce",
+    "non_reconnue": "Des produits {f} ressemblent, sans être rattachés à la pièce (nom à vérifier)",
     "non_cherchee": "Modèle non cherché (passage incomplet)",
 }
+
+
+def raisons_pour(fournisseur: str = FOURNISSEUR) -> dict:
+    return {k: v.format(f=fournisseur) for k, v in _RAISONS_MODELES.items()}
+
+
+RAISONS = raisons_pour(FOURNISSEUR)
 _FAMILLES = {"ecran": ("ecran", "lcd", "oled", "dalle", "vitre tactile"), "batterie": ("batterie", "battery"),
              "connecteur": ("connecteur", "port de charge", "nappe de charge", "dock")}
 
@@ -767,7 +948,8 @@ def diagnostic_pieces(pieces, produits, reconnues, modeles=None, palier=None, ch
             fam = famille_piece(pc["type_piece"])
             mots = _FAMILLES.get(fam, (fam,) if fam else ())
             candidats = [p for p in prods
-                         if produit_pertinent(p) and any(m in normaliser(_nom_produit(p)) for m in mots)]
+                         if produit_pertinent(p) and (any(m in normaliser(_nom_produit(p)) for m in mots)
+                                                      or any(m in normaliser(p.get("category_name") or "") for m in mots))]
             raison = "aucun_produit" if not prods else "non_reconnue" if candidats else "piece_absente"
         par_raison[raison] += 1
         if len(out) < DIAG_MAX_PIECES:
@@ -782,11 +964,13 @@ def diagnostic_pieces(pieces, produits, reconnues, modeles=None, palier=None, ch
     return {"le": maintenant or _utc(), "n": n, "par_raison": par_raison, "pieces": out, "tronque": n > len(out)}
 
 
-def diagnostic(admin: bool = False, cur=None) -> dict:
-    """Diagnostic du dernier passage (params MOBILAX_DIAGNOSTIC) ; prix HT des candidats pour l'admin."""
-    d = _resume_lu(params_cache.get_params([P_DIAG], cur=cur)[P_DIAG]) or {}
+def diagnostic(admin: bool = False, cur=None, cle: str = P_DIAG, fournisseur: str = FOURNISSEUR) -> dict:
+    """Diagnostic du dernier passage (params MOBILAX_DIAGNOSTIC, ou la clé d'un autre fournisseur) ;
+    prix HT des candidats pour l'admin."""
+    d = _resume_lu(params_cache.get_params([cle], cur=cur)[cle]) or {}
     out = {"le": d.get("le"), "n": int(d.get("n") or 0), "par_raison": d.get("par_raison") or {},
-           "pieces": list(d.get("pieces") or []), "tronque": bool(d.get("tronque")), "raisons": RAISONS}
+           "pieces": list(d.get("pieces") or []), "tronque": bool(d.get("tronque")),
+           "raisons": raisons_pour(fournisseur), "fournisseur": fournisseur}
     if not admin:
         out["pieces"] = [{**p, "candidats": [{"nom": c.get("nom")} for c in p.get("candidats") or []]}
                          for p in out["pieces"]]
@@ -976,7 +1160,7 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
         resume["requetes"] = client.requetes
         resume["produits"] = len(produits)
         resume["champs"] = sorted({k for p in produits[:50] for k in p if not str(k).startswith("_")})[:40]
-        lignes = [l for l in (ligne_produit(p, client.palier) for p in produits if produit_pertinent(p)) if l]
+        lignes = [l for p in produits if produit_pertinent(p) for l in lignes_produit(p, client.palier)]
         resume["produits_prix"] = len(lignes)
         if produits and not lignes:
             resume["prix_masques"] = True
@@ -1146,8 +1330,17 @@ def etat(cur=None) -> dict:
             "resume": resume, "erreur": (resume or {}).get("erreur"), "message": _etat.get("message"),
             "compte": bool(p[P_ID_CLIENT]), "palier": _palier_lu(p[P_PALIER]).get("nom") or None,
         },
-        "utopya": {"disponible": False, "raison": UTOPYA_RAISON},
+        "utopya": _etat_utopya(cur),
     }
+
+
+def _etat_utopya(cur=None) -> dict:
+    from app.services import utopya   # import différé : utopya importe ce module
+    try:
+        return utopya.etat(cur)
+    except Exception as e:             # pragma: no cover - jamais bloquant pour l'état Mobilax
+        logger.error("État Utopya illisible (%s)", type(e).__name__)
+        return {"disponible": False, "raison": UTOPYA_RAISON}
 
 
 def sante(cur=None) -> dict:

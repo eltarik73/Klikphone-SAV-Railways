@@ -20,7 +20,7 @@ vi.mock('../lib/api', () => ({ default: apiMock, api: apiMock }));
 
 import { ToastProvider } from '../components/Toast';
 import { tuilesSante } from '../components/SantePrixWidget';
-import SynchroFournisseur, { decrireMobilax, COMMANDE_CONSOLE, DiagnosticMobilax } from '../components/SynchroFournisseur';
+import SynchroFournisseur, { decrireMobilax, decrireUtopya, COMMANDE_CONSOLE, DiagnosticMobilax } from '../components/SynchroFournisseur';
 
 const MAINTENANT = new Date('2026-11-04T12:00:00').getTime();
 const UTOPYA = { disponible: false, raison: 'Utopya : prix sous connexion, Cloudflare.' };
@@ -146,7 +146,8 @@ describe('bloc SynchroFournisseur', () => {
     apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA });
     rendre({ estAdmin: false });
     expect(await screen.findByText(/Dernière synchro Mobilax : 04\/11\/2026/)).toBeInTheDocument();
-    expect(screen.getByText(/Utopya : pas de synchro automatique possible/)).toBeInTheDocument();
+    expect(screen.getByText('Utopya : collecte indisponible')).toBeInTheDocument();
+    expect(screen.getByText('Utopya : prix sous connexion, Cloudflare.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Synchroniser maintenant/ })).not.toBeInTheDocument();
   });
 
@@ -181,7 +182,7 @@ describe('bloc SynchroFournisseur', () => {
     expect(await screen.findByText(/Connexion Mobilax refusée : Jeton Mobilax refusé ou expiré/)).toBeInTheDocument();
     // Le texte collé reste dans la zone (pour corriger), jamais dans l'état affiché
     expect(screen.getByLabelText('Texte copié depuis mobilax.fr')).toHaveValue('secret-jeton-xyz');
-    expect(screen.getByRole('status')).not.toHaveTextContent('secret-jeton-xyz');
+    expect(screen.getAllByRole('status')[0]).not.toHaveTextContent('secret-jeton-xyz');
   });
 
   it('admin connecté : « Synchroniser maintenant » lance puis suit jusqu’à la fin', async () => {
@@ -219,5 +220,78 @@ describe('bloc SynchroFournisseur', () => {
     apiMock.getEtatFournisseurs.mockRejectedValue(new Error('500'));
     rendre({ estAdmin: true });
     expect(await screen.findByText('Synchro Mobilax : état indisponible pour le moment')).toBeInTheDocument();
+  });
+});
+
+describe('collecte Utopya (favori dans le navigateur du gérant)', () => {
+  const UTO_OK = {
+    disponible: true, configure: true, en_cours: false, debut: null, derniere_collecte: '2026-11-04T18:00:00', ok: true, erreur: null, message: null,
+    resume: { modifies: 40, remplaces: 30, propositions: 2, plus_cher_ailleurs: 15, sans_prix: 120, produits: 9000, pages_lues: 260, pages_total: 266, erreurs_pages: 0, interrompu: false },
+  };
+  const UTO_VIDE = { disponible: true, configure: false, en_cours: false, debut: null, derniere_collecte: null, ok: null, resume: null, erreur: null, message: null };
+
+  it('decrireUtopya : indisponible, à installer, installé, en cours, réussie, échouée', () => {
+    expect(decrireUtopya(null).ton).toBe('neutre');
+    expect(decrireUtopya({ disponible: false, raison: 'Cloudflare' })).toMatchObject({ ton: 'neutre', titre: 'Utopya : collecte indisponible', detail: 'Cloudflare' });
+    expect(decrireUtopya(UTO_VIDE)).toMatchObject({ ton: 'attention', titre: 'Utopya : collecteur à installer' });
+    expect(decrireUtopya({ ...UTO_VIDE, configure: true })).toMatchObject({ ton: 'neutre', titre: 'Collecteur Utopya installé' });
+    expect(decrireUtopya({ ...UTO_OK, en_cours: true }).titre).toBe('Collecte Utopya en cours…');
+    const ok = decrireUtopya(UTO_OK);
+    expect(ok.ton).toBe('ok');
+    expect(ok.titre).toMatch(/^Dernière collecte Utopya : 04\/11\/2026/);
+    expect(ok.detail).toContain('40 prix mis à jour');
+    expect(ok.detail).toContain('dont 30 prix estimés ou périmés remplacés');
+    expect(ok.detail).toContain('2 à valider (Propositions)');
+    expect(ok.detail).toContain('15 restés chez Mobilax (moins cher)');
+    expect(ok.detail).toContain('120 pièces de la grille sans prix Utopya');
+    expect(ok.detail).toContain('9000 produits lus sur 260 pages');
+    expect(decrireUtopya({ ...UTO_OK, resume: { ...UTO_OK.resume, interrompu: true } }).detail).toContain('collecte arrêtée avant la fin');
+    expect(decrireUtopya({ ...UTO_OK, ok: false, erreur: 'connectez-vous' })).toMatchObject({ ton: 'danger', detail: 'connectez-vous' });
+    // Mobilax : pièces restées chez Utopya (moins cher)
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, plus_cher_ailleurs: 3 } }).detail).toContain('3 restés chez Utopya (moins cher)');
+  });
+
+  it('personnel : état de la collecte, diagnostic Utopya, aucun bouton', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTO_OK });
+    apiMock.getDiagnosticUtopya.mockResolvedValue({ n: 1, raisons: {}, pieces: [{ cle: 'tarifs:1', marque: 'Apple', modele: 'iPhone 13', type_piece: 'Ecran', qualite: 'Original', raison: 'non_reconnue', candidats: [{ nom: 'Ecran Complet iPhone 13 (ReLife)' }] }] });
+    rendre();
+    expect(await screen.findByText(/^Dernière collecte Utopya : 04\/11\/2026/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /collecteur/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /120 pièces sans prix Utopya/ }));
+    await waitFor(() => expect(apiMock.getDiagnosticUtopya).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Des produits Utopya ressemblent/)).toBeInTheDocument();
+    expect(screen.getByText(/Utopya : Ecran Complet iPhone 13 \(ReLife\)/)).toBeInTheDocument();
+  });
+
+  it('admin : installer le collecteur → favori (adresse javascript:), copie, nouvelle clé', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTO_VIDE });
+    apiMock.getCollecteurUtopya.mockResolvedValue({ url: 'javascript:void(1)', version: '1', site: 'https://www.utopya.fr/', api: 'https://kp.example' });
+    apiMock.regenererCollecteurUtopya.mockResolvedValue({ url: 'javascript:void(2)', version: '1', site: 'https://www.utopya.fr/', api: 'https://kp.example' });
+    rendre({ estAdmin: true });
+    expect(await screen.findByText('Utopya : collecteur à installer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Installer le collecteur' }));
+    await waitFor(() => expect(apiMock.getCollecteurUtopya).toHaveBeenCalledTimes(1));
+    const lien = await screen.findByRole('link', { name: 'Collecte Utopya' });
+    await waitFor(() => expect(lien.getAttribute('href')).toBe('javascript:void(1)'));
+    expect(lien).toHaveAttribute('draggable', 'true');
+    // Un clic ici ne lance rien (le favori se clique sur utopya.fr)
+    fireEvent.click(lien);
+    expect(await screen.findByText(/glissez ce bouton dans la barre des favoris/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /utopya\.fr/ })).toHaveAttribute('href', 'https://www.utopya.fr/');
+    expect(screen.getByRole('button', { name: 'Réinstaller le collecteur' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Nouvelle clé/ }));
+    await waitFor(() => expect(apiMock.regenererCollecteurUtopya).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Collecte Utopya' }).getAttribute('href')).toBe('javascript:void(2)'));
+    expect(screen.getByRole('link', { name: 'Collecte Utopya' })).not.toHaveTextContent('kp.example');
+  });
+
+  it('collecte en cours : suivie jusqu’à la fin', async () => {
+    apiMock.getEtatFournisseurs
+      .mockResolvedValueOnce({ mobilax: CONNECTE, utopya: { ...UTO_OK, en_cours: true, ok: null } })
+      .mockResolvedValue({ mobilax: CONNECTE, utopya: UTO_OK });
+    rendre();
+    expect(await screen.findByText('Collecte Utopya en cours…')).toBeInTheDocument();
+    expect(await screen.findByText(/^Dernière collecte Utopya : 04\/11\/2026/)).toBeInTheDocument();
+    expect(apiMock.getEtatFournisseurs.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -1521,10 +1521,15 @@ class ApiClient {
   // ─── FOURNISSEURS : synchro automatique des tarifs Mobilax (jetons collés une fois par le gérant) ──
   // → { mobilax: { configure, connexion: 'ok'|'expiree'|'absente'|'a_verifier', active, en_cours, debut,
   //     derniere_synchro, ok, resume: { modifies, confirmes, propositions, produits, erreur… }, erreur, message },
-  //     utopya: { disponible: false, raison } } — jamais de jeton
+  //     utopya: { disponible, configure, en_cours, debut, derniere_collecte, ok, resume, erreur, message } } — jamais de jeton
   getEtatFournisseurs() { return this.request('/api/tarifs/fournisseurs/etat', { cache: 'no-store' }); }
   // Pièces de la grille sans prix Mobilax au dernier passage → { le, n, par_raison, pieces: [{…, raison, candidats}], raisons }
   getDiagnosticMobilax() { return this.request('/api/tarifs/fournisseurs/mobilax/diagnostic', { cache: 'no-store' }); }
+  // Utopya : collecte depuis le navigateur du gérant (favori « Collecte Utopya », services/utopya).
+  // Adresse du favori (script + clé, admin) → { url: 'javascript:…', version, site, api } ; clé créée au besoin
+  getCollecteurUtopya() { return this.request('/api/tarifs/fournisseurs/utopya/collecteur', { cache: 'no-store' }); }
+  regenererCollecteurUtopya() { return this._ecriturePrix('/api/tarifs/fournisseurs/utopya/collecteur/regenerer', {}, 15_000); }
+  getDiagnosticUtopya() { return this.request('/api/tarifs/fournisseurs/utopya/diagnostic', { cache: 'no-store' }); }
   // Lance la synchro Mobilax en arrière-plan (admin) → { lance, message, etat } ; suivre avec getEtatFournisseurs
   syncMobilax() { return this._ecriturePrix('/api/tarifs/fournisseurs/mobilax/sync', {}, 30_000); }
   // Texte collé depuis mobilax.fr (copy(JSON.stringify(localStorage))) : jetons vérifiés puis enregistrés → état

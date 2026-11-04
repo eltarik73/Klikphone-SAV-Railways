@@ -294,7 +294,7 @@ def test_pieces_que_seule_la_reference_distingue_jamais_toutes_a_la_fois():
         assert t == [] and raison.startswith("plusieurs modèles possibles"), d
     d = 'Ecran complet Original pour MacBook Air 13" A1932 (2018-2019)'
     t, niveau, raison = index.associer({"designation": d}, import_prix.interpreter({"designation": d}))
-    assert [e["cle"] for e in t] == ["tarifs_apple_devices:29:ecran"] and niveau == "exact"
+    assert [e["cle"] for e in t] == ["tarifs_apple_devices:29:ecran"] and niveau == "ref"
 
 
 def test_marque_deduite_du_nom():
@@ -1408,3 +1408,93 @@ def test_reel_grille_iphone_date_des_prix_distincte_du_stock(base):
     apres = _sql(base, "SELECT prix_maj_le, updated_at FROM iphone_tarifs WHERE id = %s", it["id"])[0]
     assert apres["prix_maj_le"] == it["prix_maj_le"] and apres["updated_at"] > it["updated_at"]
     assert ligne["prix_maj_le"].startswith(it["prix_maj_le"].isoformat()[:19])
+
+
+# ─── Repli de qualité d'écran, références Apple, modèle raccourci, noms groupés ───
+
+def _ligne_tarif(i, marque, modele, type_piece, qualite):
+    return {"id": i, "marque": marque, "modele": modele, "type_piece": type_piece, "qualite": qualite,
+            "nom_fournisseur": None, "ref_fournisseur": None, "fournisseur": "Mobilax", "prix_fournisseur_ht": None,
+            "prix_client": None, "categorie": "standard", "verrou_manuel": False, "obsolete": False}
+
+
+def test_repli_qualite_ecran_et_modele_raccourci():
+    index = import_prix.Index(_CurIndex([
+        _ligne_tarif(1, "Apple", "iPhone 11", "Ecran", "Compatible"), _ligne_tarif(2, "Apple", "iPhone 11", "Ecran", "Original"),
+        _ligne_tarif(3, "Samsung", "Galaxy A14", "Ecran", "LCD"), _ligne_tarif(4, "Apple", "iPhone 13", "Ecran", "Incell"),
+        _ligne_tarif(5, "Google", "Pixel 9a", "Batterie", None), _ligne_tarif(6, "Samsung", "Galaxy A54", "Ecran", "Incell"),
+    ]), "tarifs")
+
+    def assoc(designation, **cols):
+        ligne = {"designation": designation, **cols}
+        return index.associer(ligne, import_prix.interpreter(ligne))
+
+    # Pas de ligne Incell pour l'iPhone 11 : l'écran Incell vaut pour la ligne « Compatible »
+    t, niveau, raison = assoc("Ecran Incell iPhone 11")
+    assert [e["cle"] for e in t] == ["tarifs:1"], raison
+    # Original reconditionné → ligne « Original » (pas de ligne Reconditionnee)
+    t, _, raison = assoc("Ecran Original Refurb iPhone 11")
+    assert [e["cle"] for e in t] == ["tarifs:2"], raison
+    # OEM / compatible sur un modèle qui n'a qu'une ligne LCD → cette ligne
+    t, _, raison = assoc("Ecran compatible Galaxy A14", marque="Samsung", modele="Galaxy A14", type_piece="Ecran", qualite="Compatible")
+    assert [e["cle"] for e in t] == ["tarifs:3"], raison
+    t, _, raison = assoc("Ecran OEM Galaxy A54", marque="Samsung", modele="Galaxy A54", type_piece="Ecran", qualite="Compatible")
+    assert [e["cle"] for e in t] == ["tarifs:6"], raison            # Compatible → Incell
+    # La qualité exacte existe : pas de repli
+    t, _, _ = assoc("Ecran Incell iPhone 13")
+    assert [e["cle"] for e in t] == ["tarifs:4"]
+    # OLED sur un modèle qui n'a qu'une ligne Incell : rien (un OLED ne vaut pas un Incell)
+    t, _, raison = assoc("Ecran OLED iPhone 13")
+    assert t == [] and raison == "aucune pièce correspondante"
+    # Modèle raccourci de ses mots de fin parasites (code, puce) — jamais un mot de modèle ni un nom groupé
+    assert import_prix.Index._modeles_essayes("Google Pixel 9a G526Q") == ["Google Pixel 9a G526Q", "Google Pixel 9a"]
+    assert import_prix.Index._modeles_essayes("Apple iPhone 14 Plus") == ["Apple iPhone 14 Plus"]
+    assert import_prix.Index._modeles_essayes("Apple iPhone 13 Ti Genuine") == \
+        ["Apple iPhone 13 Ti Genuine", "Apple iPhone 13 Ti", "Apple iPhone 13"]
+    assert import_prix.Index._modeles_essayes("Apple iPhone 12/iPhone 12 Pro Ti") == ["Apple iPhone 12/iPhone 12 Pro Ti"]
+    assert import_prix.Index._modeles_essayes("Pixel 9a") == ["Pixel 9a"]
+    t, _, raison = assoc("Batterie Google Pixel 9a G526Q", type_piece="Batterie", modele="Google Pixel 9a G526Q")
+    assert [e["cle"] for e in t] == ["tarifs:5"], raison
+    # Ambiguïté à un niveau tolérant mais modèles déjà trouvés d'un nom groupé : ils valent
+    index2 = import_prix.Index(_CurIndex([_ligne_tarif(7, "Huawei", "P Smart 2019", "Connecteur de charge", None),
+                                          _ligne_tarif(8, "Huawei", "P Smart 2020", "Connecteur de charge", None)]), "tarifs")
+    ligne = {"designation": "Connecteur de Charge Premium Huawei P Smart 2019/P Smart Plus 2019", "type_piece": "Connecteur de charge",
+             "modele": "Huawei P Smart 2019/P Smart Plus 2019", "qualite": "Compatible"}
+    t, niveau, raison = index2.associer(ligne, import_prix.interpreter(ligne))
+    assert [e["cle"] for e in t] == ["tarifs:7"] and niveau == "exact", raison
+
+
+def test_references_apple_niveau_ref():
+    index = import_prix.Index(_CurIndex([_apple(28, 'MacBook Air 13" A1466 (2013-2017)'),
+                                         _apple(29, 'MacBook Air 13" A1932 (2018-2019)'),
+                                         _apple(30, 'MacBook Air 13" A2179 (2020 Intel)'),
+                                         _apple(31, 'MacBook Pro 13" A1706/A1989 Touch Bar (2016-2019)')]), "tarifs_apple_devices")
+    cles = import_prix.cles_modele('MacBook Air 13" A1932 (2018-2019)', "Apple")
+    assert cles["ref"] == frozenset({"a1932"}) and import_prix.cles_modele("Galaxy A14", "Samsung")["ref"] == frozenset()
+    # Un nom groupé Mobilax : une pièce par référence citée
+    d = 'Connecteur de Charge Apple MacBook Air 13" (2020) A2179/MacBook Air 13" (Early 2019) A1932/MacBook Air 13" (2018) A1932'
+    ligne = {"designation": d, "modele": 'Apple MacBook Air 13" (2020) A2179/MacBook Air 13" (Early 2019) A1932/MacBook Air 13" (2018) A1932',
+             "type_piece": "Batterie"}
+    t, niveau, raison = index.associer(ligne, import_prix.interpreter(ligne))
+    assert sorted(e["cle"] for e in t) == ["tarifs_apple_devices:29:batterie", "tarifs_apple_devices:30:batterie"] and niveau == "ref", raison
+    ligne = {"designation": 'Ecran sans Châssis Apple MacBook Pro Touch Bar Retina 13" (2019) A1989/MacBook Pro Touch Bar Retina 13" (2017) A1706',
+             "modele": 'Apple MacBook Pro Touch Bar Retina 13" (2019) A1989/MacBook Pro Touch Bar Retina 13" (2017) A1706', "type_piece": "Ecran"}
+    t, niveau, raison = index.associer(ligne, import_prix.interpreter(ligne))
+    assert [e["cle"] for e in t] == ["tarifs_apple_devices:31:ecran"] and niveau == "ref", raison
+
+
+def test_variantes_noms_groupes_avec_marque_et_reseau():
+    from app.api import grille
+    assert grille.variantes("Apple iPhone 12/iPhone 12 Pro") == ["Apple iPhone 12", "Apple iPhone 12 Pro"]
+    assert grille.variantes("Galaxy A34 5G/A35 5G/A54 5G") == ["Galaxy A34 5G", "Galaxy A35 5G", "Galaxy A54 5G"]
+    assert grille.variantes("OPPO A77 5G/A57") == ["OPPO A77 5G", "OPPO A57"]
+    assert grille.variantes("Xiaomi Mi 11 Lite 4G/Mi 11 Lite 5G/11 Lite 5G NE") == \
+        ["Xiaomi Mi 11 Lite 4G", "Xiaomi Mi 11 Lite 5G", "Xiaomi 11 Lite 5G NE"]
+    assert grille.variantes("Honor X8b/X8a/90 Lite/200 Lite") == ["Honor X8b", "Honor X8a", "Honor 90 Lite", "Honor 200 Lite"]
+    assert grille.variantes("Motorola Moto E22i/Moto E22") == ["Motorola Moto E22i", "Motorola Moto E22"]
+    assert grille.variantes("iPhone 7/8/7+/8+") == ["iPhone 7", "iPhone 8", "iPhone 7+", "iPhone 8+"]
+    assert grille.variantes("iPhone 12 / 12 Pro") == ["iPhone 12", "iPhone 12 Pro"]
+    assert grille.variantes("Galaxy A52 / A52s") == ["Galaxy A52", "Galaxy A52s"]
+    assert grille.variantes("OPPO A94 5G/F19 Pro") == ["OPPO A94 5G", "OPPO F19 Pro"]
+    assert grille.variantes("Huawei P Smart 2019/P Smart Plus 2019") == ["Huawei P Smart 2019", "Huawei P Smart Plus 2019"]
+    assert grille.variantes("iPhone 13") == ["iPhone 13"] and grille.variantes("") == [""]

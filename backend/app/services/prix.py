@@ -693,7 +693,7 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
     if voulues.get("tarifs"):
         cur.execute("""
             SELECT id, marque, modele, type_piece, qualite, categorie, prix_fournisseur_ht, prix_client,
-                   verrou_manuel, obsolete, prix_maj_le, prix_source
+                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur
             FROM tarifs WHERE id = ANY(%s)
         """, (list(voulues["tarifs"]),))
         for row in cur.fetchall() or []:
@@ -705,11 +705,12 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
                     "ht": row["prix_fournisseur_ht"], "client": row["prix_client"],
                     "verrou": bool(row["verrou_manuel"]), "obsolete": bool(row["obsolete"]),
                     "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
+                    "fournisseur": row.get("fournisseur"),
                 }
     if voulues.get("tarifs_apple_devices"):
         cur.execute("""
             SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
-                   verrou_manuel, obsolete, prix_maj_le, prix_source
+                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur
             FROM tarifs_apple_devices WHERE id = ANY(%s)
         """, (list(voulues["tarifs_apple_devices"]),))
         for row in cur.fetchall() or []:
@@ -722,6 +723,7 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
                     "ht": row[f"{piece}_prix_ht"], "client": row[f"{piece}_prix_vente"],
                     "verrou": bool(row["verrou_manuel"]), "obsolete": bool(row["obsolete"]),
                     "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
+                    "fournisseur": row.get("fournisseur"),
                 }
     return out
 

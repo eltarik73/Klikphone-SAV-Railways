@@ -247,16 +247,38 @@ def cle_souple(cle: str) -> str:
 
 
 def variantes(modele) -> list:
-    """Noms groupés dépliés : « iPhone 7/8/7+/8+ » → iPhone 7, iPhone 8, iPhone 7+, iPhone 8+."""
+    """Noms groupés dépliés : « iPhone 7/8/7+/8+ » → iPhone 7, iPhone 8, iPhone 7+, iPhone 8+.
+
+    La partie suivante reprend le début du premier nom jusqu'au mot qu'elle répète (« Apple iPhone
+    12/iPhone 12 Pro » → Apple iPhone 12 Pro ; « Motorola Moto E22i/Moto E22 » → Motorola Moto E22),
+    sinon remplace autant de mots de fin qu'elle en compte (« Galaxy A34 5G/A35 5G » → Galaxy A35 5G,
+    « Honor X8b/90 Lite » → Honor 90 Lite), à défaut le dernier mot (« iPhone 12/12 Pro »)."""
     parties = [p.strip() for p in str(modele or "").split("/") if p.strip()]
     if len(parties) <= 1:
         return [str(modele or "")]
     mots = parties[0].split()
-    prefixe = " ".join(mots[:-1])
-    tete = normaliser(mots[0]) if mots else ""
+    bas = [normaliser(m) for m in mots]
     out = [parties[0]]
     for p in parties[1:]:
-        out.append(p if not prefixe or normaliser(p).split()[:1] == [tete] else f"{prefixe} {p}")
+        pm = normaliser(p).split()
+        if not pm or not mots:
+            out.append(p)
+            continue
+        if pm[0] == bas[0]:
+            out.append(p)                                   # nom complet répété
+            continue
+        k = next((i for i in range(1, len(mots)) if bas[i] == pm[0]), None)
+        # Le réseau (5G, 4G) n'est pas un mot du modèle : « OPPO A77 5G/A57 » → OPPO A57
+        coeur = [m for m in bas if m not in _RESEAU] or bas
+        pm_coeur = [m for m in pm if m not in _RESEAU] or pm
+        chiffre = any(ch.isdigit() for ch in pm_coeur[0])
+        if chiffre and len(pm_coeur) < len(coeur) and any(ch.isdigit() for m in coeur[-len(pm_coeur):] for ch in m):
+            prefixe = mots[:len(coeur) - len(pm_coeur)]     # « Galaxy A34 5G/A35 5G », « Xiaomi Mi 11 Lite 4G/11 Lite 5G NE »
+        elif k is not None:
+            prefixe = mots[:k]                              # « Apple iPhone 12/iPhone 12 Pro », « iPhone 12/12 Pro »
+        else:
+            prefixe = mots[:len(coeur) - 1]                 # « Honor X8b/90 Lite », « OPPO A94 5G/F19 Pro »
+        out.append(f"{' '.join(prefixe)} {p}".strip())
     return out
 
 

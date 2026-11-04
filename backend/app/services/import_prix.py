@@ -104,6 +104,18 @@ _MOTS_VIDES = {"de", "du", "d", "pour", "avec", "sans", "et", "le", "la", "les",
                "noir", "noire", "blanc", "blanche", "bleu", "rouge", "vert", "violet", "rose", "gris", "jaune",
                "argent", "dore", "black", "white", "blue", "silver", "gold", "graphite"}
 _PLIANTS = ("fold", "flip", "razr")
+# Qualité d'écran de la grille ← qualités du fournisseur qui en tiennent lieu quand le modèle n'a
+# pas de ligne de la qualité exacte (Index._qualite)
+REPLI_ECRAN = (("Compatible", ("Incell", "LCD", "OLED", "Soft OLED")), ("LCD", ("Compatible", "Incell")),
+               ("Incell", ("Compatible", "LCD")), ("OLED", ("Soft OLED",)), ("Original", ("Reconditionnee",)))
+# Mots de fin de modèle jamais retirés pour retenter une correspondance (Index._modeles_essayes)
+_MOTS_MODELE = {"pro", "max", "plus", "mini", "ultra", "lite", "fe", "neo", "note", "edge", "nord", "air", "fold",
+                "flip", "se", "xl", "xs", "xr", "x", "s", "a", "c", "e", "g", "m", "t", "z", "y", "v", "gen", "pouces",
+                "prime", "power", "play", "smart", "core", "one", "go", "youth", "5g", "4g", "lte", "m1", "m2", "m3",
+                "m4", "intel", "retina", "touch", "bar", "active", "sport", "classic", "pad", "tab", "watch", "book",
+                "phone", "pixel", "galaxy", "redmi", "poco", "reno", "find", "magic", "nova", "mate", "razr", "moto",
+                "narzo", "ce", "gt", "2a", "3a", "4a", "5a", "6a", "7a", "8a", "9a", "10a", "fusion", "turbo", "slim",
+                "curve", "stylus", "ace", "nothing", "iphone", "ipad", "macbook"}
 # Accessoire désigné AVANT la pièce (« Adhésif écran », « Film de protection caméra », « Coque
 # batterie ») : la ligne n'est pas cette pièce (jamais le prix d'un adhésif sur une batterie)
 _ACCESSOIRES = {"adhesif", "adhesifs", "colle", "film", "films", "protection", "protections", "protecteur",
@@ -379,7 +391,11 @@ _TAILLE = re.compile(r"\b\d{1,2}(?:[.,]\d{1,2})?\s*(?:\"|”|″|''|pouces?\b|in
 # Niveaux de correspondance, du plus strict au plus tolérant : nom écrit à l'identique (références,
 # années et tailles comprises) ; nom normalisé ; sans 5G/4G ni année ; sans référence Apple A1234 ;
 # sans taille d'écran en pouces
-NIVEAUX = ("exact", "modele", "souple", "sans_ref", "sans_taille")
+NIVEAUX = ("ref", "exact", "modele", "souple", "sans_ref", "sans_taille")
+# Niveau « ref » : références Apple (A1932, A2337) du nom — un iPad ou MacBook se reconnaît à sa
+# référence quelle que soit la façon d'écrire le reste (« MacBook Air 13" (2020) A2179 » = « MacBook
+# Air 13" A2179 (2020 Intel) »)
+_REFS_APPLE = re.compile(r"\ba\d{4}\b")
 
 
 def _cle_exacte(nom) -> str:
@@ -396,6 +412,8 @@ def cles_modele(modele, marque) -> dict:
     apple = grille.marque_canonique(marque) == "apple" or grille.marque_canonique(grille.deviner_marque(modele)) == "apple"
     out = {n: set() for n in NIVEAUX}
     for v in grille.variantes(modele):
+        if apple:
+            out["ref"] |= set(_REFS_APPLE.findall(normaliser(v)))
         out["exact"].add(_cle_exacte(v))
         c = grille.cle_modele(v, marque or "")
         if c:
@@ -520,9 +538,19 @@ class Index:
     def _qualite(self, cands, piece, qualite):
         if self.cible != "tarifs":
             return cands
-        if piece == "ecran":
-            return [e for e in cands if e["qualite"] == qualite]
         meme = [e for e in cands if e["qualite"] == qualite]
+        if piece == "ecran":
+            if meme:
+                return meme
+            # Le modèle n'a pas de ligne de cette qualité : un écran de rechange (Incell, LCD, OLED…)
+            # vaut pour sa ligne « Compatible », un original reconditionné pour sa ligne « Original »
+            # (la variante la moins chère l'emporte ensuite, cf. fournisseurs.planifier)
+            for cible_q, sources in REPLI_ECRAN:
+                if qualite in sources:
+                    repli = [e for e in cands if e["qualite"] == cible_q]
+                    if repli:
+                        return repli
+            return []
         return meme or [e for e in cands if e["qualite"] is None]
 
     @staticmethod
@@ -564,42 +592,76 @@ class Index:
             return [], None, "modèle non reconnu"
         if self.cible == "tarifs_apple_devices" and interp["marque_c"] not in ("", "apple"):
             return [], None, "marque autre qu'Apple"
-        toutes = cles_modele(interp["modele"], interp["marque"])
-        partiel = None
-        for niveau in NIVEAUX:
-            cles = toutes[niveau]
-            if not cles:
-                continue
-            cands, vus = [], set()
-            for k in cles:
-                for e in self.idx[niveau].get((piece, k), []):
-                    if e["cle"] not in vus:
-                        vus.add(e["cle"])
-                        cands.append(e)
-            if interp["marque_c"]:
-                cands = [e for e in cands if e["marque_c"] == interp["marque_c"]]
-            cands = self._qualite(cands, piece, interp["qualite"])
-            if not cands:
-                continue
-            choisis, ambigu = self._choisir(cands, cles, niveau)
-            if not choisis:
-                continue
-            if len({e["marque_c"] for e in choisis}) > 1:
-                return [], None, "marque ambiguë : précisez la marque"
-            if ambigu or (len(cles) == 1 and len({e["cles"]["modele"] for e in choisis}) > 1):
-                return [], None, "plusieurs modèles possibles : associez la ligne à la main"
-            if piece == "ecran" and self.cible == "tarifs" and len({e["qualite"] for e in choisis}) > 1:
-                return [], None, "qualité d'écran à préciser"
-            # Nom groupé (« Galaxy A52 / A52s ») : un niveau qui trouve chacun de ses modèles d'abord
-            if len(cles) > 1 and not all(any(k in e["cles"][niveau] for e in choisis) for k in cles):
-                partiel = partiel or (choisis, niveau)
-                continue
-            return choisis, niveau, None
+        partiel, refus = None, None
+        for modele in self._modeles_essayes(interp["modele"]):
+            toutes = cles_modele(modele, interp["marque"])
+            for niveau in NIVEAUX:
+                cles = toutes[niveau]
+                if not cles:
+                    continue
+                cands, vus = [], set()
+                for k in cles:
+                    for e in self.idx[niveau].get((piece, k), []):
+                        if e["cle"] not in vus:
+                            vus.add(e["cle"])
+                            cands.append(e)
+                if interp["marque_c"]:
+                    cands = [e for e in cands if e["marque_c"] == interp["marque_c"]]
+                cands = self._qualite(cands, piece, interp["qualite"])
+                if not cands:
+                    continue
+                choisis, ambigu = self._choisir(cands, cles, niveau)
+                if not choisis:
+                    continue
+                if len({e["marque_c"] for e in choisis}) > 1:
+                    refus = "marque ambiguë : précisez la marque"
+                elif ambigu or (len(cles) == 1 and len({e["cles"]["modele"] for e in choisis}) > 1):
+                    refus = "plusieurs modèles possibles : associez la ligne à la main"
+                elif piece == "ecran" and self.cible == "tarifs" and len({e["qualite"] for e in choisis}) > 1:
+                    refus = "qualité d'écran à préciser"
+                if refus:
+                    # Modèle reconnu mais ambigu à ce niveau : les modèles déjà trouvés d'un nom groupé
+                    # (« P Smart 2019/P Smart Plus 2019 ») valent ; sinon la ligne s'associe à la main
+                    break
+                # Nom groupé (« Galaxy A52 / A52s ») : un niveau qui trouve chacun de ses modèles d'abord
+                if len(cles) > 1 and not all(any(k in e["cles"][niveau] for e in choisis) for k in cles):
+                    partiel = partiel or (choisis, niveau)
+                    continue
+                return choisis, niveau, None
+            if partiel or refus:
+                break
         if partiel:
             return partiel[0], partiel[1], None
+        if refus:
+            return [], None, refus
         if self.cible == "tarifs" and piece == "ecran" and interp["qualite"] is None:
             return [], None, "qualité d'écran à préciser"
         return [], None, "aucune pièce correspondante"
+
+    @staticmethod
+    def _modeles_essayes(modele: str) -> list:
+        """Le modèle tel quel, puis privé d'un, deux ou trois mots de fin qui ne font pas partie
+        d'un nom de modèle (« iPhone 13 Ti », « Pixel 9a G526Q », « Galaxy A54 5G (A546B) Diagnostic ») :
+        un mot sans chiffre hors _MOTS_MODELE, ou un code (lettres et au moins trois chiffres) après
+        un mot qui porte déjà un chiffre. Un nom groupé (« / ») n'est jamais raccourci."""
+        out = [modele]
+        if "/" in modele:
+            return out
+        mots = modele.split()
+        for _ in range(3):
+            if len(mots) < 3:
+                break
+            dernier = normaliser(mots[-1])
+            if not dernier or dernier in _MOTS_MODELE or dernier in grille._MARQUES_CONNUES:
+                break
+            chiffres = sum(ch.isdigit() for ch in dernier)
+            avant_chiffre = any(ch.isdigit() for m in mots[1:-1] for ch in m)
+            if chiffres == 0 or (chiffres >= 3 and any(ch.isalpha() for ch in dernier) and avant_chiffre):
+                mots = mots[:-1]
+                out.append(" ".join(mots))
+            else:
+                break
+        return out
 
     def categorie_nouvelle(self, interp, cles) -> str:
         if self.cible == "tarifs_apple_devices":

@@ -238,9 +238,50 @@ le numéro de téléphone complet reste accepté sans limite de temps.
 - **Bouton « Synchroniser maintenant »** : `POST /api/tarifs/fournisseurs/mobilax/sync` (tâche de fond) ;
   état : `GET /api/tarifs/fournisseurs/etat` et tuile « Synchro Mobilax » de la santé des prix.
   Jeton refusé → connexion « expirée » affichée, à recoller une fois ; aucun plantage.
-- **Utopya** : pas de synchro possible (prix sous connexion, challenge Cloudflare) → import de fichier.
+- **Rattachement des produits Mobilax** (`fournisseurs.lignes_produit`) : chaque nom Mobilax commence par sa
+  catégorie (`category_name`, « Ecran Tactile Soft Oled », « Batterie Originale », « Appareil Photo Original Pulled ») :
+  `piece_categorie` en tire la pièce et la qualité (`CATEGORIES_PIECES`, `QUALITES_CATEGORIE`, variantes écartées
+  `CATEGORIES_EXCLUES` : écran externe, batterie secondaire, port à souder…), `modele_produit` lit le modèle dans le reste
+  du nom (suffixe technique `suffix`, codes constructeur, mégapixels, coloris, « Diagnostic/Ti/Genuine » retirés), un nom
+  citant plusieurs marques donne une ligne par marque (`segments_marques`). Le CSV passé au moteur d'import porte les
+  colonnes Marque / Modèle / Type de pièce / Qualité (`COLONNES_CSV`). Évalué sur un relevé anonyme réel : 84 % des
+  pièces de la grille reçoivent un prix (38 % avant).
+- **Moteur d'import** (`import_prix`) : niveau « ref » (références Apple A1932… : un MacBook / iPad se reconnaît à sa
+  référence), repli de qualité d'écran quand le modèle n'a pas la ligne exacte (`REPLI_ECRAN` : Incell/LCD/OLED → ligne
+  Compatible, Compatible → LCD ou Incell, Reconditionné → Original ; la variante la moins chère l'emporte ensuite),
+  modèle raccourci de ses mots de fin parasites (`Index._modeles_essayes` : « Pixel 9a G526Q »), ambiguïté à un niveau
+  tolérant sans perdre les modèles déjà trouvés d'un nom groupé. `grille.variantes` déplie correctement
+  « Apple iPhone 12/iPhone 12 Pro », « Galaxy A34 5G/A35 5G », « Xiaomi Mi 11 Lite 4G/11 Lite 5G NE ».
+- **Moins-disant entre fournisseurs** (`fournisseurs.planifier(..., fournisseur=)`, `moins_cher_ailleurs`) : une pièce dont
+  le prix de référence (réel, récent) vient de l'autre fournisseur et n'est pas plus cher est laissée (`plus_cher_ailleurs`
+  dans le résumé) ; moins cher ici → appliqué (ou proposé si grosse variation) et la pièce change de fournisseur.
+  `prix.decrire_tarifs` renvoie `fournisseur`.
 - **Tests** : `tests/test_fournisseurs_mobilax.py` (httpx.MockTransport, fixture `fixtures/mobilax_products.json`,
   aucun appel réseau ; base réelle via `KP_TEST_DATABASE_URL`).
+
+## Collecte Utopya depuis le navigateur du gérant (`app/services/utopya.py`)
+
+- **Pourquoi** : utopya.fr (Magento) ne montre ses prix qu'à un compte connecté et répond 403 (challenge Cloudflare) à tout
+  programme : aucune synchro serveur. La collecte passe par le navigateur du gérant, déjà connecté.
+- **Une installation** : *Réparation smartphones → Installer le collecteur* (admin) → `GET /api/tarifs/fournisseurs/utopya/collecteur`
+  rend l'adresse `javascript:` d'un favori « Collecte Utopya » (script `utopya.SCRIPT`, origine publique du serveur, clé
+  `UTOPYA_COLLECTE_TOKEN` créée dans `params`, masquée par `api/config`) à glisser dans la barre des favoris. « Nouvelle clé »
+  (`POST …/collecteur/regenerer`) invalide l'ancien favori.
+- **Une action par collecte** : sur utopya.fr connecté, cliquer le favori. Le script lit le menu (une page par modèle :
+  `/samsung/galaxy-a/a54-5g-a546b.html`), l'envoie à `POST …/utopya/plan` (en-tête `X-Collecte-Cle`) → `utopya.plan`
+  apparie les modèles de la grille aux pages (clés de modèle d'`import_prix`) et ajoute les pages de série des marques sans
+  page par modèle (Pixel, OnePlus, Série Reno…) ; puis lit chaque page (`?product_list_limit=200`, pagination, 400 ms
+  entre pages, fenêtre de progression, bouton Arrêter) et envoie les tuiles (nom, référence, prix) à `POST …/utopya/collecte`.
+- **Serveur** (`utopya.traiter`, fil de fond, `GET …/utopya/suivi` pour le script, `/etat` pour l'app) :
+  `lignes_collecte` traduit chaque nom (`piece_de`, qualité d'écran `qualite_nom` : Service Pack → Original, Soft/Hard OLED,
+  LTPS/Incell, ReLife/Prime/BOLT/SPARK/Alcalian → Compatible, Pulled → Reconditionné ; sans étiquette : référence
+  numérique = origine du catalogue Utopya, sinon compatible ; prix HT lu dans le texte, TTC ramené en HT), marque de la page,
+  puis `fournisseurs._importer(…, fournisseur="Utopya", source="utopya")` : mêmes règles que Mobilax (remplaçable, propositions,
+  moins-disant). Résumé `UTOPYA_COLLECTE_*`, diagnostic `UTOPYA_DIAGNOSTIC` (`GET …/utopya/diagnostic`, bouton « N pièces
+  sans prix Utopya »).
+- **Tests** : `tests/test_utopya_collecte.py` (menu et tuiles réels, import simulé, routes avec clé), vitest
+  `synchro_fournisseur.test.jsx`. Non vérifié sans compte : la forme des prix dans les tuiles connectées (le collecteur
+  envoie `data-price-amount` et le texte ; `prix_collecte` lit « HT », sinon le montant).
 
 ## Batterie changée « par l'écran » (`app/services/par_ecran.py`)
 

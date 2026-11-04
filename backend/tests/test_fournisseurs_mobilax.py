@@ -9,7 +9,7 @@ annulent la transaction.
 import json
 import os
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -172,15 +172,21 @@ def test_lignes_et_csv_relus_par_le_moteur_d_import():
     lignes = [l for l in (F.ligne_produit(p) for p in _produits() if F.produit_pertinent(p)) if l]
     # 4 pièces avec prix (le connecteur n'a pas de prix, le verre trempé et le tiroir inactif sont écartés)
     assert [l["reference"] for l in lignes] == ["3000000321676", "3000000321677", "3000000355123", "3000000355200"]
+    # Pièce et qualité lues dans la catégorie Mobilax, modèle dans le nom (marque comprise)
     assert lignes[2] == {"reference": "3000000355123", "designation": "Ecran Tactile OEM Honor 200 5G",
+                         "modele": "Honor 200 5G", "type_piece": "Ecran", "qualite": "Compatible",
                          "prix_ht": Decimal("54.90")}
     assert lignes[3]["designation"] == "Batterie Originale Honor 200 5G"
-    assert F.ligne_produit({"id": 77, "name": "X", "price": 3})["reference"] == "MX77"
+    assert (lignes[3]["modele"], lignes[3]["type_piece"], lignes[3]["qualite"]) == ("Honor 200 5G", "Batterie", "Original")
+    assert lignes[0]["type_piece"] == "Ecran" and lignes[0]["qualite"] == "Original"   # bloc écran complet
+    sans_cat = F.ligne_produit({"id": 77, "name": "X", "price": 3})
+    assert sans_cat["reference"] == "MX77" and sans_cat["modele"] == "" and sans_cat["type_piece"] == ""
     contenu = F.csv_lignes(lignes)
     tableau = import_prix.lire_tableau("mobilax-auto.csv", contenu)
     i_entete, colonnes, mapping = import_prix.detecter_entete(tableau)
-    assert i_entete == 0 and set(mapping) == {"reference", "designation", "prix_ht"}
+    assert i_entete == 0 and set(mapping) == {"reference", "designation", "marque", "modele", "type_piece", "qualite", "prix_ht"}
     assert import_prix.lire_prix(tableau[3][colonnes.index(mapping["prix_ht"])]) == Decimal("54.90")
+    assert tableau[3][colonnes.index(mapping["modele"])] == "Honor 200 5G" and tableau[3][colonnes.index(mapping["marque"])] == ""
 
 
 def test_requetes_modeles_depliees_et_sans_doublon():
@@ -214,7 +220,7 @@ def test_planifier_applique_propose_et_laisse():
     assert plan["propositions"] == [{"cle": "tarifs:2", "ht": "20.0", "label": "tarifs:2"}]
     assert (plan["verrouillees"], plan["obsoletes"], plan["variantes"], plan["a_valider"]) == (1, 1, 2, 1)
     assert F.planifier({"reconnues": []}) == {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0,
-                                               "variantes": 0, "a_valider": 0, "remplaces": 0}
+                                               "variantes": 0, "a_valider": 0, "remplaces": 0, "plus_cher_ailleurs": 0}
 
 
 # ─── Prix sans valeur de référence : remplacés sans validation ──
@@ -314,7 +320,9 @@ def test_diagnostic_tronque_et_lecture_selon_le_role(monkeypatch):
     with _sur(_Base({})):
         _params(monkeypatch, {})
         vide = F.diagnostic(admin=True)
-    assert vide == {"le": None, "n": 0, "par_raison": {}, "pieces": [], "tronque": False, "raisons": F.RAISONS}
+    assert vide == {"le": None, "n": 0, "par_raison": {}, "pieces": [], "tronque": False, "raisons": F.RAISONS,
+                    "fournisseur": "Mobilax"}
+    assert F.raisons_pour("Utopya")["aucun_produit"] == "Utopya ne renvoie aucun produit pour ce modèle"
 
 
 def test_route_diagnostic_selon_le_role(client, monkeypatch):
@@ -558,7 +566,7 @@ def test_synchroniser_applique_le_palier_du_compte(monkeypatch):
         assert r["ok"] is True and r["palier"] == "Gold", r
         # Le bloc écran (paliers) au prix Gold, les autres au seul prix affiché
         tableau = csv_recus[0]
-        prix_par_ref = {ligne[0]: ligne[2] for ligne in tableau[1:]}
+        prix_par_ref = {ligne[0]: ligne[6] for ligne in tableau[1:]}
         assert import_prix.lire_prix(prix_par_ref["3000000321676"]) == Decimal("126.90")
         assert import_prix.lire_prix(prix_par_ref["3000000355123"]) == Decimal("54.90")
         assert json.loads(base.params[F.P_PALIER]) == {"id": 3, "nom": "Gold"} and base.params[F.P_ID_CLIENT] == "4242"
@@ -566,7 +574,7 @@ def test_synchroniser_applique_le_palier_du_compte(monkeypatch):
         # Passage suivant : le palier mémorisé sert même si la fiche ne répond plus
         r2 = F.synchroniser(transport=_transport({"Honor 200 5G": [produits]}, [], details={}), dormir=lambda s: None)
         assert r2["ok"] and r2["palier"] == "Gold"
-        assert import_prix.lire_prix({l[0]: l[2] for l in csv_recus[1][1:]}["3000000321676"]) == Decimal("126.90")
+        assert import_prix.lire_prix({l[0]: l[6] for l in csv_recus[1][1:]}["3000000321676"]) == Decimal("126.90")
 
 
 def test_synchroniser_prix_masques_et_budget_reseau(monkeypatch):
@@ -665,7 +673,8 @@ def test_etat_et_sante_sans_jeton(monkeypatch):
     assert e["mobilax"]["configure"] is True and e["mobilax"]["connexion"] == "ok" and e["mobilax"]["ok"] is True
     assert e["mobilax"]["derniere_synchro"] == "2026-11-04T05:10:00" and e["mobilax"]["resume"]["modifies"] == 12
     assert e["mobilax"]["active"] is True and e["mobilax"]["compte"] is True
-    assert e["utopya"]["disponible"] is False and "Cloudflare" in e["utopya"]["raison"]
+    # Utopya : collecte depuis le navigateur (services/utopya), état sans clé
+    assert e["utopya"]["disponible"] is True and e["utopya"]["configure"] is False and e["utopya"]["en_cours"] is False
     assert REFRESH not in json.dumps(e) and TOKEN not in json.dumps(e)
     s = F.sante()["mobilax"]
     assert s == {"derniere_synchro": "2026-11-04T05:10:00", "ok": True, "configure": True, "connexion": "ok",
@@ -715,11 +724,11 @@ def test_routes_fournisseurs(client, monkeypatch):
     monkeypatch.delenv(F.ENV_REFRESH, raising=False)
     etat_vide = {"mobilax": {"configure": False, "connexion": "absente", "active": True, "en_cours": False, "debut": None,
                              "derniere_synchro": None, "ok": None, "resume": None, "erreur": None, "message": None,
-                             "compte": False}, "utopya": {"disponible": False, "raison": F.UTOPYA_RAISON}}
+                             "compte": False}, "utopya": {"disponible": True, "configure": False, "en_cours": False}}
     monkeypatch.setattr(F, "etat", lambda cur=None: etat_vide)
     assert client.get("/api/tarifs/fournisseurs/etat").status_code == 401
     r = client.get("/api/tarifs/fournisseurs/etat", headers=_headers())
-    assert r.status_code == 200 and r.json()["mobilax"]["connexion"] == "absente" and r.json()["utopya"]["disponible"] is False
+    assert r.status_code == 200 and r.json()["mobilax"]["connexion"] == "absente" and r.json()["utopya"]["configure"] is False
     # Écritures : rôle admin et code prouvé
     _, gc_staff = fake_db(lambda sql, params: None)
     with patch("app.api.auth.get_cursor", gc_staff):
@@ -869,3 +878,152 @@ def test_synchro_reelle_ecrit_les_prix_et_propose_les_grosses_variations(db, mon
     cur.execute("SELECT count(*) AS n FROM tarifs_propositions WHERE tarif_cle = %s AND statut = 'en_attente'", (f"tarifs:{id_batt}",))
     assert cur.fetchone()["n"] == 1
     params_cache.invalidate()
+
+
+# ─── Catégorie Mobilax → pièce, qualité, modèle ─────────────────
+
+@pytest.mark.parametrize("categorie, attendu", [
+    ("Ecran Tactile Soft Oled", ("Ecran", "Soft OLED")),
+    ("Ecran Tactile Hard Oled", ("Ecran", "OLED")),
+    ("Ecran Tactile Incell FHD LTPS", ("Ecran", "Incell")),
+    ("Ecran Tactile Premium Plus Incell FHD LTPS", ("Ecran", "Incell")),
+    ("Ecran Tactile Original Refurb (PIEC)", ("Ecran", "Reconditionnee")),
+    ("Ecran Tactile Original Pulled avec Châssis (PIEC)", ("Ecran", "Reconditionnee")),
+    ("Ecran Tactile Original", ("Ecran", "Original")),
+    ("Ecran Tactile OEM avec Châssis", ("Ecran", "Compatible")),
+    ("Ecran LCD Complet OEM", ("Ecran", "LCD")),          # ligne LCD du modèle, sinon Compatible (import_prix.REPLI_ECRAN)
+    ("Ecran LCD Complet Original Pulled (PIEC)", ("Ecran", "Reconditionnee")),
+    ("Ecran Tactile", ("Ecran", "Compatible")),
+    ("Bloc Écran Complet avec Châssis et Batterie Original", ("Ecran", "Original")),
+    ("Ecran Tactile Externe Original", None),
+    ("Batterie", ("Batterie", None)),
+    ("Batterie Originale", ("Batterie", "Original")),
+    ("Batterie Premium", ("Batterie", "Compatible")),
+    ("Batterie Diagnostic High Capacity", ("Batterie", None)),
+    ("Batterie Secondaire Originale", None),
+    ("Batterie sans BMS", None),
+    ("Connecteur de Charge Original Pulled (PIEC)", ("Connecteur de charge", "Reconditionnee")),
+    ("Connecteur de Charge à Souder Original", None),
+    ("Connecteur FPC", None),
+    ("Cache Arrière Premium", ("Vitre arriere", "Compatible")),
+    ("Vitre Arrière", ("Vitre arriere", None)),
+    ("Appareil Photo Original Pulled (PIEC)", ("Camera arriere", "Reconditionnee")),
+    ("Caméra Visio Originale Pulled", ("Camera avant", "Reconditionnee")),
+    ("Haut-Parleur Premium", ("Haut-parleur", "Compatible")),
+    ("Écouteur Interne", ("Ecouteur interne", None)),
+    ("Lentille Premium", ("Vitre camera arriere", "Compatible")),
+    ("Protection Lentille", None),
+    ("Vitre avec Film OCA", None),
+    ("Nappe Écran", None),
+    ("Coque de Réparation", None),
+    ("", None), (None, None),
+])
+def test_piece_categorie(categorie, attendu):
+    assert F.piece_categorie(categorie) == attendu
+
+
+@pytest.mark.parametrize("produit, attendu", [
+    ({"name": "Ecran Tactile Soft Oled Apple iPhone 13 (IC Removable) Noir", "category_name": "Ecran Tactile Soft Oled",
+      "suffix": "(IC Removable)"}, "Apple iPhone 13"),
+    ({"name": "Ecran Tactile Incell FHD LTPS Diagnostic Apple iPhone 12 Mini Noir", "category_name": "Ecran Tactile Incell FHD LTPS"},
+     "Apple iPhone 12 Mini"),
+    ({"name": "Batterie Apple iPhone 14 Plus Ti", "category_name": "Batterie"}, "Apple iPhone 14 Plus"),
+    ({"name": "Batterie High Capacity Apple iPhone 13 (TI 3630mAh)", "category_name": "Batterie High Capacity",
+      "suffix": "(TI 3630mAh)"}, "Apple iPhone 13"),
+    ({"name": "Batterie Originale Google Pixel 7a G949-00398-00  GP5JE", "category_name": "Batterie Originale", "suffix": " GP5JE"},
+     "Google Pixel 7a"),
+    ({"name": "Ecran Tactile Original Google Pixel 7 Pro G949-00290-01 G949-00291-01 Noir", "category_name": "Ecran Tactile Original"},
+     "Google Pixel 7 Pro"),
+    ({"name": "Appareil Photo Original Apple iPhone XR 661-10851 (Service Pack) 12MP", "category_name": "Appareil Photo Original",
+      "suffix": "(Service Pack) 12MP"}, "Apple iPhone XR"),
+    ({"name": "Ecran Tactile Hard Oled Apple iPhone 12/iPhone 12 Pro (IC Removable) Noir", "category_name": "Ecran Tactile Hard Oled",
+      "suffix": "(IC Removable)"}, "Apple iPhone 12/iPhone 12 Pro"),
+    ({"name": "Ecran LCD Complet OEM Apple MacBook Air M1 13\" (2020) A2337 Gris Sidéral", "category_name": "Ecran LCD Complet OEM"},
+     'Apple MacBook Air M1 13" (2020) A2337'),
+    ({"name": "Cache Arrière Original Pulled (PIEC) Apple iPhone 15 Pro Max Grade A++ Titane Naturel",
+      "category_name": "Cache Arrière Original Pulled (PIEC)", "suffix": "Grade A++"}, "Apple iPhone 15 Pro Max"),
+    ({"name": "Ecran Tactile Premium Plus Incell FHD LTPS Apple iPhone 15 Pro Max (COF IC Removable) *1 An de Garantie Toute Casse* Noir",
+      "category_name": "Ecran Tactile Premium Plus Incell FHD LTPS", "suffix": ""}, "Apple iPhone 15 Pro Max"),
+    ({"name": "Batterie Originale Samsung Galaxy A15 5G A156B/Galaxy A15 4G A155 GH82-33000A", "category_name": "Batterie Originale"},
+     "Samsung Galaxy A15 5G /Galaxy A15 4G"),
+    ({"name": "Ecran Tactile Original OnePlus 10 Pro 5G 2011100371 Foret Emeraude", "category_name": "Ecran Tactile Original"},
+     "OnePlus 10 Pro 5G Foret"),
+    ({"name": "Connecteur de Charge Premium Huawei P20 Lite Avec Jack et Micro", "category_name": "Connecteur de Charge Premium"},
+     "Huawei P20 Lite"),
+    ({"name": "Haut-Parleur Apple MacBook Air M1 13\" (2020) A2337 Gauche", "category_name": "Haut-Parleur"},
+     'Apple MacBook Air M1 13" (2020) A2337'),
+    ({"name": "Appareil Photo Original Pulled (PIEC) Apple iPhone 15 Plus 48MP+12MP", "category_name": "Appareil Photo Original Pulled (PIEC)",
+      "suffix": "48MP+12MP"}, "Apple iPhone 15 Plus"),
+    ({"name": "Batterie Apple iPhone 13", "category_name": ""}, "Apple iPhone 13"),
+])
+def test_modele_produit(produit, attendu):
+    assert F.modele_produit(produit) == attendu
+
+
+def test_segments_marques_et_lignes_produit_multi_marques():
+    assert F.segments_marques("Honor 20/8X/Play/View 10 Huawei Mate 20 Lite/Nova 5T/P10 Plus") == \
+        ["Honor 20/8X/Play/View 10", "Huawei Mate 20 Lite/Nova 5T/P10 Plus"]
+    assert F.segments_marques("Huawei P Smart 2021 Honor 10X Lite") == ["Huawei P Smart 2021", "Honor 10X Lite"]
+    assert F.segments_marques("Samsung Galaxy A54 5G") == ["Samsung Galaxy A54 5G"]
+    assert F.segments_marques("Apple iPhone 12/iPhone 12 Pro") == ["Apple iPhone 12/iPhone 12 Pro"]   # gamme ≠ marque
+    assert F.segments_marques("") == [""]
+    p = {"id": 5, "name": "Batterie Premium Huawei Y6p Honor 9A HB526489EEW", "category_name": "Batterie Premium",
+         "price": 7.5, "ean13": "3000000000055"}
+    lignes = F.lignes_produit(p)
+    assert [(l["modele"], l["type_piece"], l["qualite"], l["reference"], l["prix_ht"]) for l in lignes] == [
+        ("Huawei Y6p", "Batterie", "Compatible", "3000000000055", Decimal("7.50")),
+        ("Honor 9A", "Batterie", "Compatible", "3000000000055", Decimal("7.50"))]
+    assert F.ligne_produit(p)["modele"] == "Huawei Y6p"
+    # Famille suivie mais variante écartée : aucune ligne ; sans prix : aucune
+    assert F.lignes_produit({"id": 6, "name": "Ecran Tactile Externe Original Google Pixel 9 Pro Fold", "price": 90,
+                             "category_name": "Ecran Tactile Externe Original"}) == []
+    assert F.lignes_produit({"id": 7, "name": "Batterie Apple iPhone 13", "category_name": "Batterie"}) == []
+
+
+def test_lignes_structurees_reconnues_par_le_moteur_d_import():
+    """Le vrai moteur (Index.associer) sur des noms Mobilax réels : pièce et qualité de la catégorie, modèle du nom."""
+    from tests.test_prix_moteur import _CurIndex
+
+    def _tarif(i, marque, modele, type_piece, qualite):
+        return {"id": i, "marque": marque, "modele": modele, "type_piece": type_piece, "qualite": qualite,
+                "nom_fournisseur": None, "ref_fournisseur": None, "fournisseur": "Mobilax", "prix_fournisseur_ht": None,
+                "prix_client": None, "categorie": "standard", "verrou_manuel": False, "obsolete": False}
+    index = import_prix.Index(_CurIndex([
+        _tarif(1, "Apple", "iPhone 13", "Ecran", "Incell"), _tarif(2, "Apple", "iPhone 13", "Ecran", "OLED"),
+        _tarif(3, "Apple", "iPhone 14 Plus", "Batterie", None), _tarif(4, "Samsung", "Galaxy A54", "Ecran", "Original"),
+        _tarif(5, "Samsung", "Galaxy A15", "Batterie", None), _tarif(6, "Huawei", "P Smart 2019", "Connecteur de charge", None),
+        _tarif(7, "Huawei", "P Smart 2020", "Connecteur de charge", None), _tarif(8, "Google", "Pixel 9a", "Batterie", None),
+    ]), "tarifs")
+    produits = [
+        ({"name": "Ecran Tactile Incell FHD LTPS Apple iPhone 13 (COF IC Removable) Noir", "category_name": "Ecran Tactile Incell FHD LTPS",
+          "suffix": "(COF IC Removable)"}, ["tarifs:1"]),
+        ({"name": "Ecran Tactile Hard Oled Apple iPhone 13 (IC Removable) Noir", "category_name": "Ecran Tactile Hard Oled",
+          "suffix": "(IC Removable)"}, ["tarifs:2"]),
+        ({"name": "Batterie Apple iPhone 14 Plus Ti", "category_name": "Batterie"}, ["tarifs:3"]),
+        ({"name": "Ecran Tactile Original Samsung Galaxy A54 5G A546 GH82-31231A Noir", "category_name": "Ecran Tactile Original"}, ["tarifs:4"]),
+        ({"name": "Batterie Originale Samsung Galaxy A15 5G A156B/Galaxy A15 4G A155 GH82-33000A", "category_name": "Batterie Originale"}, ["tarifs:5"]),
+        ({"name": "Connecteur de Charge Premium Huawei P Smart 2019/P Smart Plus 2019", "category_name": "Connecteur de Charge Premium"}, ["tarifs:6"]),
+        ({"name": "Batterie Premium Google Pixel 9a G526Q", "category_name": "Batterie Premium", "suffix": "G526Q"}, ["tarifs:8"]),
+    ]
+    for p, attendu in produits:
+        l = F.ligne_produit({**p, "id": 1, "price": 10})
+        trouves, niveau, raison = index.associer(l, import_prix.interpreter(l))
+        assert [e["cle"] for e in trouves] == attendu, (p["name"], raison)
+
+
+def test_planifier_moins_disant_entre_fournisseurs():
+    desc = lambda f, ht, source="import": {"fournisseur": f, "ht": ht, "prix_source": source, "prix_maj_le": datetime.now()}
+    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 12, "Utopya") is True          # Mobilax moins cher : laissé
+    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 10, "Utopya") is True          # égal : laissé
+    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 9, "Utopya") is False          # Utopya moins cher : appliqué
+    assert F.moins_cher_ailleurs(desc("Utopya", 10), 12, "Utopya") is False          # même fournisseur
+    assert F.moins_cher_ailleurs(desc("Mobilax", 10, "estimation_2026_02"), 12, "Utopya") is False   # estimé : remplacé
+    assert F.moins_cher_ailleurs(desc(None, 10), 12, "Utopya") is False and F.moins_cher_ailleurs(None, 12, "Utopya") is False
+    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 12, None) is False
+    ap = {"reconnues": [_rec(1, "tarifs:1", 12.0), _rec(2, "tarifs:2", 9.0), _rec(3, "tarifs:3", 30.0, ["variation"])]}
+    descs = {"tarifs:1": desc("Mobilax", 10), "tarifs:2": desc("Mobilax", 10), "tarifs:3": desc("Mobilax", 10)}
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Utopya")
+    assert plan["lignes"] == [2] and plan["plus_cher_ailleurs"] == 2 and plan["propositions"] == []
+    # Même fournisseur : logique habituelle (variation → proposition)
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Mobilax")
+    assert plan["lignes"] == [1, 2] and plan["plus_cher_ailleurs"] == 0 and [p["cle"] for p in plan["propositions"]] == ["tarifs:3"]
