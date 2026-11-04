@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 FOURNISSEUR = "Utopya"
 AUTEUR = "Collecte Utopya"
 SOURCE = "utopya"
-VERSION = "1"
+VERSION = "2"
 SITE = "https://www.utopya.fr/"
 
 P_CLE = "UTOPYA_COLLECTE_TOKEN"           # clé du collecteur (masquée par api/config : *_TOKEN)
@@ -566,7 +566,9 @@ def script_collecteur(api: str, cle: str) -> str:
     """Adresse « javascript: » du favori, pour l'origine publique `api` et la clé du collecteur."""
     corps = SCRIPT.strip().replace("__API__", api.rstrip("/")).replace("__CLE__", cle).replace("__VER__", VERSION)
     corps = " ".join(l.strip() for l in corps.splitlines() if l.strip())
-    return "javascript:void(" + corps + ")"
+    # Le script se termine par « })(); » : le « ; » final est retiré, sinon « void(…;) » est une
+    # SyntaxError et Chrome ne fait rien au clic (erreur seulement dans la console).
+    return "javascript:void(" + corps.rstrip("; ") + ")"
 
 
 def collecteur(api: str) -> dict:

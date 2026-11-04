@@ -266,7 +266,9 @@ le numéro de téléphone complet reste accepté sans limite de temps.
 - **Une installation** : *Réparation smartphones → Installer le collecteur* (admin) → `GET /api/tarifs/fournisseurs/utopya/collecteur`
   rend l'adresse `javascript:` d'un favori « Collecte Utopya » (script `utopya.SCRIPT`, origine publique du serveur, clé
   `UTOPYA_COLLECTE_TOKEN` créée dans `params`, masquée par `api/config`) à glisser dans la barre des favoris. « Nouvelle clé »
-  (`POST …/collecteur/regenerer`) invalide l'ancien favori.
+  (`POST …/collecteur/regenerer`) invalide l'ancien favori. L'adresse est `javascript:void(<script>)` **sans « ; » final**
+  (sinon SyntaxError muette : Chrome ne fait rien au clic) ; `utopya.VERSION` change à chaque modification du script
+  (le gérant réinstalle le favori) ; le test `test_script_du_favori_est_du_javascript_valide` le vérifie avec `node --check`.
 - **Une action par collecte** : sur utopya.fr connecté, cliquer le favori. Le script lit le menu (une page par modèle :
   `/samsung/galaxy-a/a54-5g-a546b.html`), l'envoie à `POST …/utopya/plan` (en-tête `X-Collecte-Cle`) → `utopya.plan`
   apparie les modèles de la grille aux pages (clés de modèle d'`import_prix`) et ajoute les pages de série des marques sans

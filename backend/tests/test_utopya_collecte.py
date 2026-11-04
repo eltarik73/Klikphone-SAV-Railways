@@ -5,6 +5,8 @@ l'import est simulé (fournisseurs._importer), la base par le curseur des tests 
 """
 
 import json
+import shutil
+import subprocess
 from contextlib import contextmanager
 from decimal import Decimal
 from unittest.mock import patch
@@ -269,6 +271,7 @@ def test_cle_valide_et_script(monkeypatch):
     assert not U.cle_valide(CLE)
     url = U.script_collecteur("https://klikphone.example/", CLE)
     assert url.startswith("javascript:void(") and "\n" not in url and "%" not in url
+    assert url.endswith("})())") and not url.endswith(";)")
     assert "API='https://klikphone.example'" in url and "'/api/tarifs/fournisseurs/utopya/'+" in url
     assert f"CLE='{CLE}'" in url and "X-Collecte-Cle" in url and "utopya.fr" in url and "product_list_limit=200" in url
     assert "//" not in url.replace("https://", "").replace("http://", "")
@@ -341,3 +344,16 @@ def test_diagnostic_utopya_lit_sa_cle_et_nomme_le_fournisseur(monkeypatch):
     assert out["n"] == 1 and out["fournisseur"] == "Utopya" and out["raisons"]["non_reconnue"].startswith("Des produits Utopya")
     assert out["pieces"][0]["candidats"][0] == {"nom": "Ecran Complet iPhone 13 (ReLife)", "prix_ht": 40.0}
     assert U.diagnostic(admin=False)["pieces"][0]["candidats"] == [{"nom": "Ecran Complet iPhone 13 (ReLife)"}]
+
+
+def test_script_du_favori_est_du_javascript_valide(tmp_path):
+    """Une adresse javascript: mal formée ne fait rien au clic (SyntaxError muette dans la console
+    de Chrome) : le corps du favori est vérifié par node quand il est installé."""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node absent")
+    url = U.script_collecteur("https://klikphone.example", CLE)
+    fichier = tmp_path / "favori.js"
+    fichier.write_text(url[len("javascript:"):], encoding="utf-8")
+    r = subprocess.run([node, "--check", str(fichier)], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
