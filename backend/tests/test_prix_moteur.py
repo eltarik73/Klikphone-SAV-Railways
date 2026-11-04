@@ -47,7 +47,7 @@ def _texte(nom: str) -> bytes:
 def test_regles_par_defaut_du_contrat():
     assert prix.REGLES_DEFAUT == {
         "tva": 1.2, "ecran": {"standard": 60, "haut_de_gamme": 70, "pliant": 100}, "autre": 60, "ipad": 110,
-        "macbook": 120, "arrondi": "9_sup", "seuil_marge_alerte": 40, "variation_alerte_pct": 25,
+        "macbook": 120, "batterie_par_ecran": 70, "arrondi": "9_sup", "seuil_marge_alerte": 40, "variation_alerte_pct": 25,
         "variation_alerte_eur": 30, "jours_a_revoir": 90, "jours_perime": 180,
     }
 

@@ -1267,9 +1267,9 @@ class ApiClient {
   _apresEcriturePrix() {
     ['/api/tarifs', '/api/iphone-tarifs', '/api/smartphones-tarifs', '/api/grille'].forEach((p) => this._invalidate(p));
   }
-  async _ecriturePrix(path, body, timeoutMs) {
+  async _ecriturePrix(path, body, timeoutMs, method = 'POST') {
     try {
-      return await this.request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }, timeoutMs);
+      return await this.request(path, { method, body: JSON.stringify(body ?? {}) }, timeoutMs);
     } finally {
       this._apresEcriturePrix();
     }
@@ -1388,6 +1388,15 @@ class ApiClient {
     } finally {
       this._apresEcriturePrix();
     }
+  }
+  // Case « batterie changée par l'écran » d'un modèle de la grille des pièces (admin) : actif true / false, null = règle
+  // par défaut (Google oui) → { actif, explicite, defaut, modifies, lot_id, ecrits } ; les batteries du modèle sont recalculées
+  setBatterieParEcran({ marque, modele, actif }) {
+    return this._ecriturePrix('/api/tarifs/modeles/batterie-par-ecran', { marque, modele, actif }, 20_000, 'PUT');
+  }
+  // Même case sur une fiche iPad / MacBook (null = règle par défaut : iPad oui, MacBook non)
+  setBatterieParEcranApple(deviceId, actif) {
+    return this._ecriturePrix(`/api/tarifs/apple-devices/${encodeURIComponent(deviceId)}/batterie-par-ecran`, { actif }, 20_000, 'PUT');
   }
   // getSantePrix() (staff) : défini plus bas avec les propositions de prix
 

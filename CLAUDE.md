@@ -242,6 +242,24 @@ le numéro de téléphone complet reste accepté sans limite de temps.
 - **Tests** : `tests/test_fournisseurs_mobilax.py` (httpx.MockTransport, fixture `fixtures/mobilax_products.json`,
   aucun appel réseau ; base réelle via `KP_TEST_DATABASE_URL`).
 
+## Batterie changée « par l'écran » (`app/services/par_ecran.py`)
+
+- **Règle** : sur les appareils où la batterie n'est accessible qu'en décollant l'écran (iPad, Google Pixel…), le
+  gérant facture le risque : prix client de la batterie = arrondi((HT écran + HT batterie) × TVA + marge
+  `batterie_par_ecran`, 70 € par défaut dans `prix.REGLES_DEFAUT`, réglable dans « Modifier les règles »).
+- **Quels modèles** : case par modèle sur la fiche du modèle (admin) — `tarifs_modeles_options` (grille des pièces,
+  `PUT /api/tarifs/modeles/batterie-par-ecran`) ou colonne `batterie_par_ecran` d'une fiche iPad / Mac
+  (`PUT /api/tarifs/apple-devices/{id}/batterie-par-ecran`) ; sans réglage : Google et iPad oui, les autres non.
+- **Quel écran** : l'original / reconditionné le moins cher du modèle (Original, Pulled, Refurbished,
+  Reconditionné, Service Pack), sinon le moins cher (`choisir_ecran`) ; sans écran au prix connu, calcul ordinaire.
+- **Dépendance entre lignes** : `prix.ecrire_prix_lot` passe tout lot par `par_ecran.deriver_changements` (prix
+  client des batteries concernées recalculé dans le même lot, écran ou batterie modifié, import, synchro Mobilax,
+  proposition, règles) — `deriver=False` pour un prix tapé par l'admin, jamais à l'annulation d'un lot ;
+  `par_ecran.recalculer` après une création de pièce ou un changement de case. Batterie verrouillée jamais touchée.
+- **Affichage** : `GET /reparation-smartphones/modele` → `batterie_par_ecran {actif, explicite, defaut, ecran, marge}`,
+  pièce `par_ecran: true` et `calcul {ht, ht_ecran, …}` — « (15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 € ».
+- **Tests** : `tests/test_batterie_par_ecran.py` (curseurs simulés), vitest `reparation_smartphones.test.jsx`.
+
 ## Workflow automatique après chaque modification UI
 
 Après chaque modification d'un fichier .tsx, .jsx ou .html dans src/components ou app/ :

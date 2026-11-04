@@ -244,16 +244,18 @@ def test_methode_calcul_texte_selon_le_role():
     # Mot pour mot la phrase du contrat
     assert admin["texte"] == ("Prix client = arrondi au 9 supérieur de (prix fournisseur HT × 1,2 + marge) · "
                               "marge 60 € (écran standard, autres pièces), 70 € (écran haut de gamme), 100 € (pliant) · "
-                              "iPad +110 €, MacBook +120 €")
+                              "iPad +110 €, MacBook +120 € · batterie changée par l'écran (iPad, Pixel…) : "
+                              "(HT écran + HT batterie) × 1,2 + 70 €")
     assert admin["regles"] == {"tva": 1.2, "arrondi": "9_sup", "ecran": {"standard": 60, "haut_de_gamme": 70, "pliant": 100},
-                               "autre": 60, "ipad": 110, "macbook": 120}   # sans les seuils d'alerte
+                               "autre": 60, "ipad": 110, "macbook": 120, "batterie_par_ecran": 70}   # sans les seuils d'alerte
     assert admin["exemple"] == {"ht": 42.0, "tva": 1.2, "marge": 60, "brut": 110.4, "arrondi": 119}
     # Règles modifiées : la phrase de l'admin suit, celle du personnel ne révèle rien
     r = prix.valider_regles({"tva": 1.1, "arrondi": "entier", "autre": 55, "ecran": {"standard": 62.5}})
     a = prix.methode_calcul(r, admin=True)
     assert a["texte"] == ("Prix client = arrondi à l'euro supérieur de (prix fournisseur HT × 1,1 + marge) · "
                           "marge 62,5 € (écran standard), 70 € (écran haut de gamme), 100 € (pliant), 55 € (autres pièces) · "
-                          "iPad +110 €, MacBook +120 €")
+                          "iPad +110 €, MacBook +120 € · batterie changée par l'écran (iPad, Pixel…) : "
+                          "(HT écran + HT batterie) × 1,1 + 70 €")
     assert a["regles"]["autre"] == 55 and a["exemple"]["arrondi"] == prix.prix_client(42, "Ecran", "standard", r)
     s = prix.methode_calcul(r, admin=False)
     assert "arrondi à l'euro supérieur" in s["texte"] and "× 1,1" in s["texte"]

@@ -530,6 +530,19 @@ _DDL_ALTERS = [
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS ref_fournisseur TEXT",
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS fournisseur TEXT DEFAULT 'Mobilax'",
     "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS obsolete BOOLEAN DEFAULT FALSE",
+    # Batterie changée par l'écran (services/par_ecran) : réglage par fiche iPad / Mac (NULL = règle par
+    # défaut : iPad oui, MacBook non) et par modèle de la grille des pièces (NULL/absent = Google oui)
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS batterie_par_ecran BOOLEAN",
+    """CREATE TABLE IF NOT EXISTS tarifs_modeles_options (
+        marque_cle TEXT NOT NULL,
+        modele_cle TEXT NOT NULL,
+        marque TEXT NOT NULL DEFAULT '',
+        modele TEXT NOT NULL DEFAULT '',
+        batterie_par_ecran BOOLEAN,
+        par TEXT,
+        updated_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (marque_cle, modele_cle)
+    )""",
     "ALTER TABLE tarifs_reparation ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
     "ALTER TABLE iphone_tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
     "ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",

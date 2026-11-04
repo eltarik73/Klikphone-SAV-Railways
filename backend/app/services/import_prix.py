@@ -1253,4 +1253,11 @@ def _inserer(cur, cible, nouvelles, fournisseur, par, lot) -> list:
             INSERT INTO tarifs_historique (table_nom, ligne_id, colonne, ancien, nouveau, source, lot_id, par)
             VALUES %s
         """, [(t, i, c, a, n, "import", lot, par) for t, i, c, a, n in historique], page_size=len(historique))
+    if ids:
+        # Batteries « par l'écran » des modèles touchés (nouvelle batterie, ou nouvel écran du modèle)
+        from app.services import par_ecran
+        if cible == "tarifs":
+            par_ecran.recalculer(cur, "import", par, lot, modeles={(x["marque"], x["modele"]) for x in nouvelles})
+        else:
+            par_ecran.recalculer(cur, "import", par, lot, devices=ids)
     return ids

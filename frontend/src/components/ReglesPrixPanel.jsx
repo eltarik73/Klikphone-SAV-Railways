@@ -41,6 +41,7 @@ const CHAMPS_MARGE = [
   { id: 'autre', label: 'Autres pièces', aide: 'Batterie, connecteur, caméra, vitre…' },
   { id: 'ipad', label: 'iPad', aide: 'Écran et batterie' },
   { id: 'macbook', label: 'MacBook', aide: 'Écran et batterie' },
+  { id: 'batterie_par_ecran', label: 'Batterie par l’écran', aide: 'iPad, Pixel… : (écran + batterie) HT × TVA + cette marge' },
 ];
 const CHAMPS_ALERTE = [
   { id: 'seuil_marge_alerte', label: 'Marge minimale sur un écran', unite: '€', aide: 'En dessous, la ligne est signalée en rouge' },

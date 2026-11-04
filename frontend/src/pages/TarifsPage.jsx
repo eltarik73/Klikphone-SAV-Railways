@@ -103,7 +103,7 @@ export function phraseMethode(regles) {
   const marges = r.autre === r.ecran.standard
     ? `marge ${r.ecran.standard} € (écran standard, autres pièces), ${r.ecran.haut_de_gamme} € (écran haut de gamme), ${r.ecran.pliant} € (pliant)`
     : `marge ${r.ecran.standard} € (écran standard), ${r.ecran.haut_de_gamme} € (écran haut de gamme), ${r.ecran.pliant} € (pliant), ${r.autre} € (autres pièces)`;
-  return `Prix client = ${arrondi} de (prix fournisseur HT × ${tva} + marge) · ${marges} · iPad +${r.ipad} €, MacBook +${r.macbook} €`;
+  return `Prix client = ${arrondi} de (prix fournisseur HT × ${tva} + marge) · ${marges} · iPad +${r.ipad} €, MacBook +${r.macbook} € · batterie changée par l’écran (iPad, Pixel…) : (HT écran + HT batterie) × ${tva} + ${r.batterie_par_ecran} €`;
 }
 
 // ─── Filtres reçus par l'URL (tuiles « Santé des prix » du tableau de bord) ───
@@ -589,6 +589,7 @@ export default function TarifsPage() {
         const client = r?.nouveau_client ?? piece.prix_client;
         return {
           client,
+          derives: r?.derives,
           patch: () => ({
             prix_fournisseur_ht: r?.nouveau_ht ?? corps.prix_fournisseur_ht, prix_client: client, prix_source: corps.source,
             prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok', estime: false, a_renseigner: false, calcul: null,
@@ -600,6 +601,7 @@ export default function TarifsPage() {
       const ligne = r && typeof r === 'object' ? r : {};
       return {
         client: ligne.prix_client ?? piece.prix_client,
+        derives: ligne.derives,
         patch: (p) => ({
           ...ligne,
           prix_fournisseur_ht: ligne.prix_fournisseur_ht ?? corps.prix_fournisseur_ht,
@@ -611,10 +613,12 @@ export default function TarifsPage() {
     }, { avant, apres: optimiste });
 
     if (res.ok) {
-      const { client, patch } = res.reponse;
+      const { client, patch, derives } = res.reponse;
       // Champs d'une saisie plus récente encore en file : gardés tels qu'affichés
       majPiece(ident, (p) => Object.fromEntries(Object.entries(patch(p)).filter(([k]) => !res.proteges.has(k))));
       toast.success(`${nomPiece(piece, marqueUrl, modeleUrl)} : achat ${euros(corps.prix_fournisseur_ht)} HT → prix client ${euros(client)}.`);
+      // Une autre ligne a suivi (batterie changée par l'écran recalculée après son écran) : le modèle est relu
+      if (Array.isArray(derives) && derives.length) mutateModele();
       if (etaitARenseigner) decompterSansPrix(marque, modele);
       marquerPerime('tarifs');
       chargerSanteDiffere();
@@ -627,6 +631,29 @@ export default function TarifsPage() {
       return;
     }
     throw res.erreur;
+  }
+
+  // Case « batterie changée par l'écran » du modèle : réglage puis relecture (batteries recalculées par le serveur)
+  async function basculerParEcran(actif) {
+    const regle = modeleData?.batterie_par_ecran;
+    if (!regle || enCours === 'par_ecran') return;
+    setEnCours('par_ecran');
+    try {
+      const res = await sensible(() => (modeleData?.categorie_apple && regle.device_id !== null && regle.device_id !== undefined
+        ? api.setBatterieParEcranApple(regle.device_id, actif)
+        : api.setBatterieParEcran({ marque: marqueUrl, modele: modeleUrl, actif })));
+      const n = Number(res?.modifies) || 0;
+      toast.success(actif
+        ? `${marqueUrl} ${modeleUrl} : batterie changée par l’écran (écran + batterie + ${r?.batterie_par_ecran ?? 70} €)${n ? ` — ${n} prix recalculé${n > 1 ? 's' : ''}` : ''}.`
+        : `${marqueUrl} ${modeleUrl} : batterie au calcul ordinaire${n ? ` — ${n} prix recalculé${n > 1 ? 's' : ''}` : ''}.`);
+      await mutateModele();
+      marquerPerime('tarifs');
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Réglage non enregistré');
+      if (msg) toast.error(msg);
+    } finally {
+      setEnCours(null);
+    }
   }
 
   async function basculerVerrou(piece, marque = marqueUrl, modele = modeleUrl) {
@@ -895,6 +922,26 @@ export default function TarifsPage() {
             )}
           </div>
         </div>
+
+        {modeleData?.batterie_par_ecran && pieces.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mx-4 sm:mx-5 mb-3 text-sm">
+            {isAdmin ? (
+              <label className="inline-flex items-center gap-2 min-h-[44px] cursor-pointer select-none">
+                <input type="checkbox" className="accent-brand-600 w-4 h-4" checked={Boolean(modeleData.batterie_par_ecran.actif)}
+                  disabled={enCours === 'par_ecran'} onChange={(e) => basculerParEcran(e.target.checked)} />
+                <span>Batterie changée par l’écran : prix client de la batterie = (écran + batterie) HT × TVA + {modeleData.batterie_par_ecran.marge ?? r?.batterie_par_ecran ?? 70} €</span>
+              </label>
+            ) : modeleData.batterie_par_ecran.actif ? (
+              <span className="inline-flex items-center gap-2 min-h-[44px]"><Info aria-hidden="true" className="w-4 h-4 text-brand-600" /> Batterie changée par l’écran : le prix de la batterie comprend l’écran (risque de casse).</span>
+            ) : null}
+            {modeleData.batterie_par_ecran.actif && modeleData.batterie_par_ecran.ecran?.qualite && (
+              <span className="t-caption">écran retenu : {modeleData.batterie_par_ecran.ecran.qualite}</span>
+            )}
+            {modeleData.batterie_par_ecran.actif && !modeleData.batterie_par_ecran.ecran && (
+              <span className="t-caption text-amber-800">aucun écran au prix connu : batterie au calcul ordinaire en attendant</span>
+            )}
+          </div>
+        )}
 
         {htMasqueModele && (
           <div role="status" className="callout callout-warning items-center flex-wrap mx-4 sm:mx-5 mb-3">

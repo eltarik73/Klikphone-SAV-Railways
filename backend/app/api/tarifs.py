@@ -35,6 +35,7 @@ from app.database import get_cursor
 from app.api import grille
 from app.api.auth import exiger_role_admin, get_current_user
 from app.services import import_prix
+from app.services import par_ecran
 from app.services import params as params_cache
 from app.services import prix
 from app.services.prestations import normaliser
@@ -489,6 +490,10 @@ def _inserer_tarifs(cur, lignes: list, source_prix: str, par, lot_id) -> list:
             INSERT INTO tarifs_historique (table_nom, ligne_id, colonne, ancien, nouveau, source, lot_id, par)
             VALUES %s
         """, historique, page_size=len(historique))
+    if rows:
+        # Batteries « par l'écran » des modèles touchés (services/par_ecran)
+        par_ecran.recalculer(cur, source_prix if source_prix in prix.SOURCES else "formule", par, lot_id,
+                             modeles={(l["marque"], l["modele"]) for l in lignes})
     return [row["id"] for row in rows or []]
 
 
@@ -1048,6 +1053,61 @@ def _ref_fournisseur(ref: Optional[str]) -> Optional[str]:
     return r or None
 
 
+class BatterieParEcranIn(BaseModel):
+    marque: str = Field(..., min_length=1, max_length=60)
+    modele: str = Field(..., min_length=1, max_length=120)
+    actif: Optional[bool] = None    # None : retour à la règle par défaut (Google oui, les autres non)
+
+
+class BatterieParEcranAppleIn(BaseModel):
+    actif: Optional[bool] = None    # None : règle par défaut (iPad oui, MacBook non)
+
+
+@router.put("/modeles/batterie-par-ecran")
+def regler_batterie_par_ecran(body: BatterieParEcranIn, user: dict = Depends(_admin)):
+    """Case « batterie changée par l'écran » d'un modèle de la grille des pièces : réglage enregistré
+    (toutes les orthographes rattachées au modèle), prix client de ses batteries recalculé — formule
+    (HT écran + HT batterie) × TVA + marge si actif, formule ordinaire sinon (lot annulable).
+    → {actif, explicite, defaut, modifies, lot_id, ecrits}. Fiche iPad / Mac : route dédiée."""
+    marque_c = grille.marque_canonique(body.marque)
+    if not marque_c:
+        raise HTTPException(400, "Marque requise")
+    par, lot = _par(user), prix.nouveau_lot()
+    with get_cursor() as cur:
+        r = prix.regles(cur)
+        e = _trouver_entree(_modeles_reparation(cur, marque_c), marque_c, body.modele, body.marque)
+        if e is not None and _cat_apple_entree(e):
+            raise HTTPException(400, "Fiche iPad / Mac : réglez la case sur la fiche (PUT /apple-devices/{id}/batterie-par-ecran)")
+        paires = [(" ".join(body.marque.split()), " ".join(body.modele.split()))]
+        if e is not None:
+            paires = _paires_entree(e) + [p for p in paires if p not in _paires_entree(e)]
+        for m, mo in paires:
+            par_ecran.regler_modele(cur, m, mo, body.actif, par)
+        res = par_ecran.recalculer(cur, "formule", par, lot, r, modeles=paires)
+        regle = par_ecran.etat_modele(cur, paires)
+    _cache.clear()
+    return {**regle, "modifies": len(res["ecrits"]), "lot_id": lot if res["ecrits"] else None,
+            "ecrits": [{"table": t, "id": i, "ancien": a, "nouveau": n} for t, i, a, n in res["ecrits"]]}
+
+
+@router.put("/apple-devices/{device_id}/batterie-par-ecran")
+def regler_batterie_par_ecran_apple(device_id: int, body: BatterieParEcranAppleIn, user: dict = Depends(_admin)):
+    """Case « batterie changée par l'écran » d'une fiche iPad / Mac ; prix de vente de la batterie
+    recalculé. → {actif, explicite, defaut, modifies, lot_id, ecrits}"""
+    par, lot = _par(user), prix.nouveau_lot()
+    with get_cursor() as cur:
+        cur.execute("UPDATE tarifs_apple_devices SET batterie_par_ecran = %s, updated_at = NOW() WHERE id = %s "
+                    "RETURNING categorie", (body.actif, device_id))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(404, "Appareil non trouvé")
+        res = par_ecran.recalculer(cur, "formule", par, lot, devices=[device_id])
+        regle = par_ecran.etat_modele(cur, [], categorie_apple=row["categorie"], explicite_apple=body.actif)
+    _cache.clear()
+    return {**regle, "device_id": device_id, "modifies": len(res["ecrits"]), "lot_id": lot if res["ecrits"] else None,
+            "ecrits": [{"table": t, "id": i, "ancien": a, "nouveau": n} for t, i, a, n in res["ecrits"]]}
+
+
 class PrixManuel(BaseModel):
     prix_fournisseur_ht: Optional[float] = Field(None, gt=0, le=5000)
     prix_client: Optional[int] = Field(None, gt=0, le=100000)
@@ -1099,9 +1159,14 @@ def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin))
             """, (ref, url, fournisseur, tarif_id)))
         res = prix.ecrire_prix_lot(cur, "tarifs", changements, body.source, _par(user), prix.nouveau_lot(),
                                    lignes={row["id"]: row}, sql_joint=joint,
-                                   relire=(f"SELECT *, {_FRAICHEUR_SQL} FROM tarifs WHERE id = %s", (tarif_id,)))
+                                   relire=(f"SELECT *, {_FRAICHEUR_SQL} FROM tarifs WHERE id = %s", (tarif_id,)),
+                                   deriver=body.prix_client is None)
         out = _fraicheur(res["relu"][0], r)
-    out["calcul"] = _calcul_tarif(out, r)
+        ecran = _ecran_pour_ligne(cur, out) if body.prix_client is None else None
+    out["calcul"] = _calcul_tarif(out, r, ecran)
+    out["par_ecran"] = bool(ecran)
+    # Autres lignes écrites dans le lot (batterie « par l'écran » recalculée après un écran)
+    out["derives"] = [{"id": i, "colonne": c, "ancien": a, "nouveau": n} for i, c, a, n in res["ecrits"] if i != tarif_id]
     _cache.clear()
     return out
 
@@ -1363,12 +1428,29 @@ def _sans_prix(ht, client) -> bool:
         return True
 
 
-def _calcul_tarif(row: dict, r: dict):
-    """Détail du calcul d'une ligne tarifs (None sans HT positif)."""
+def _calcul_tarif(row: dict, r: dict, ecran: Optional[dict] = None):
+    """Détail du calcul d'une ligne tarifs (None sans HT positif) ; `ecran` ({ht, cle, qualite}) pour une
+    batterie changée par l'écran : (HT écran + HT batterie) × TVA + marge (services/par_ecran)."""
     ht = row.get("prix_fournisseur_ht")
     if ht is None or float(ht) <= 0:
         return None
+    if ecran and par_ecran.est_batterie(row.get("type_piece")):
+        return par_ecran.calcul_detail(ht, ecran["ht"], r, ecran)
     return prix.calcul_detail(ht, row.get("type_piece"), row.get("categorie"), r)
+
+
+def _ecran_pour_ligne(cur, row: dict) -> Optional[dict]:
+    """L'écran du calcul d'une batterie de la grille des pièces si la règle « par l'écran » vaut pour son
+    modèle, sinon None (ligne tarifs : marque, modele, type_piece)."""
+    if not par_ecran.est_batterie(row.get("type_piece")):
+        return None
+    paires = [(row.get("marque"), row.get("modele"))]
+    if not par_ecran.etat_modele(cur, paires)["actif"]:
+        return None
+    lignes = par_ecran._lignes_modeles(cur, [par_ecran.cle_modele(*paires[0])])
+    pieces = [{"type_piece": x["type_piece"], "qualite": x["qualite"], "ht": x["prix_fournisseur_ht"], "id": x["id"],
+               "cle": prix.tarif_cle("tarifs", x["id"])} for ls in lignes.values() for x in ls]
+    return par_ecran.choisir_ecran(pieces)
 
 
 def _est_iphone(modele, marque) -> bool:
@@ -1403,6 +1485,7 @@ def _piece_tarif(row) -> dict:
 def _piece_apple(row, piece) -> dict:
     return {"table": "tarifs_apple_devices", "id": None, "device_id": row["id"], "piece": piece,
             "cle": prix.tarif_cle("tarifs_apple_devices", row["id"], piece),
+            "par_ecran_explicite": row.get("batterie_par_ecran"),
             "marque": "Apple", "modele": row["modele"], "type_piece": "Écran" if piece == "ecran" else "Batterie",
             "qualite": None, "categorie": row["categorie"], "nom_fournisseur": None,
             "ht": row[f"{piece}_prix_ht"], "client": row[f"{piece}_prix_vente"], "en_stock": None,
@@ -1438,7 +1521,7 @@ def _groupes_pieces(cur, marque_c: Optional[str]) -> list:
     if marque_c in (None, "apple"):
         cur.execute("""
             SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
-                   prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur
+                   prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur, batterie_par_ecran
             FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE
             ORDER BY categorie, modele, id
         """)
@@ -1526,19 +1609,26 @@ def _cat_apple_entree(e: dict) -> Optional[str]:
     return _categorie_apple(e["modele"], e["categorie"]) if e["marque_c"] == "apple" else None
 
 
-def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Optional[str] = None) -> dict:
+def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Optional[str] = None,
+               ecran: Optional[dict] = None) -> dict:
+    """`ecran` ({ht, cle, qualite}) : l'écran du calcul quand la règle « batterie par l'écran » vaut
+    pour le modèle — une batterie porte alors par_ecran=true et son calcul dérivé (admin)."""
     a_renseigner = _sans_prix(p["ht"], p["client"])
     f = grille.fraicheur(p["prix_maj_le"], p["prix_source"], seuils, maintenant)
     if a_renseigner:
         f["fraicheur"] = None
-    out = {k: v for k, v in p.items() if k not in ("ht", "client")}
+    out = {k: v for k, v in p.items() if k not in ("ht", "client", "par_ecran_explicite")}
     out.update(f)
     out["prix_client"] = int(p["client"]) if p["client"] is not None else None
     out["a_renseigner"] = a_renseigner
     out["prix_fournisseur_ht"] = float(p["ht"]) if admin and p["ht"] is not None else None
+    derivee = bool(ecran) and par_ecran.est_batterie(p["type_piece"])
+    out["par_ecran"] = derivee
     calcul = None
     if admin and not a_renseigner:
-        if p["table"] == "tarifs":
+        if derivee:
+            calcul = par_ecran.calcul_detail(p["ht"], ecran["ht"], r, ecran)
+        elif p["table"] == "tarifs":
             calcul = prix.calcul_detail(p["ht"], p["type_piece"], p["categorie"], r)
         else:
             calcul = prix.calcul_detail_apple(p["ht"], p["categorie"], r)
@@ -1623,20 +1713,68 @@ def reparation_smartphones_modele(
         entrees = _modeles_reparation(cur, marque_c)
         seuils = grille._seuils(cur)
         r = prix.regles(cur)
-    e = _trouver_entree(entrees, marque_c, modele, marque)
+        e = _trouver_entree(entrees, marque_c, modele, marque)
+        regle = _regle_par_ecran(cur, e) if e is not None else None
     maintenant = grille.maintenant_utc()
     if e is None:
         return {"marque": " ".join(marque.split()), "modele": " ".join(modele.split()), "categorie": None,
                 "categorie_apple": None, "au_catalogue": False, "modele_trouve": False, "admin": admin,
-                "pieces": [], "liens": _liens(marque, modele), "noms": []}
+                "pieces": [], "liens": _liens(marque, modele), "noms": [], "batterie_par_ecran": None}
     resume = _resume_entree(e, seuils, maintenant)
     cat_apple = _cat_apple_entree(e)
+    pieces = _pieces_entree(e)
+    ecran = _ecran_entree(pieces, cat_apple) if regle["actif"] else None
     return {
         "marque": e["marque"], "modele": e["modele"], "categorie": e["categorie"], "categorie_apple": cat_apple,
         "au_catalogue": e["au_catalogue"], "modele_trouve": True, "admin": admin,
-        "pieces": [_piece_out(p, admin, r, seuils, maintenant, cat_apple) for p in _pieces_entree(e)],
+        "pieces": [_piece_out(p, admin, r, seuils, maintenant, cat_apple, ecran) for p in pieces],
         "liens": _liens(e["marque"], e["modele"]), "noms": resume["noms"],
+        "batterie_par_ecran": {
+            **regle, "device_id": _device_entree(e),
+            "ecran": {"cle": ecran["cle"], "qualite": ecran["qualite"]} if ecran else None,
+            "marge": r["batterie_par_ecran"] if admin else None,
+        },
     }
+
+
+def _paires_entree(e: dict) -> list:
+    """(marque, modèle) de l'entrée et de ses groupes de pièces (orthographes rattachées)."""
+    paires = [(e["marque"], e["modele"])]
+    for g in e["groupes"]:
+        if (g["marque"], g["modele"]) not in paires:
+            paires.append((g["marque"], g["modele"]))
+    return paires
+
+
+def _device_entree(e: dict) -> Optional[int]:
+    for g in e["groupes"]:
+        for p in g["pieces"]:
+            if p["table"] == "tarifs_apple_devices":
+                return p["device_id"]
+    return None
+
+
+def _regle_par_ecran(cur, e: dict) -> dict:
+    """{actif, explicite, defaut} de la règle « batterie par l'écran » pour une entrée : fiche iPad / Mac
+    (réglage de la fiche) ou modèle de la grille des pièces (réglage par modèle, Google par défaut)."""
+    cat_apple = _cat_apple_entree(e)
+    explicite = None
+    if cat_apple:
+        for g in e["groupes"]:
+            for p in g["pieces"]:
+                if p["table"] == "tarifs_apple_devices" and p.get("par_ecran_explicite") is not None:
+                    explicite = p["par_ecran_explicite"]
+    return par_ecran.etat_modele(cur, _paires_entree(e), categorie_apple=cat_apple, explicite_apple=explicite)
+
+
+def _ecran_entree(pieces: list, cat_apple: Optional[str]) -> Optional[dict]:
+    """L'écran du calcul : celui de la fiche iPad / Mac, sinon par_ecran.choisir_ecran sur la grille."""
+    if cat_apple:
+        for p in pieces:
+            if p["table"] == "tarifs_apple_devices" and p.get("piece") == "ecran" and p["ht"] is not None and float(p["ht"]) > 0:
+                return {"ht": p["ht"], "cle": p["cle"], "qualite": None, "origine": True}
+        return None
+    return par_ecran.choisir_ecran([p for p in pieces if p["table"] == "tarifs"])
 
 
 class PiecesCourantes(BaseModel):

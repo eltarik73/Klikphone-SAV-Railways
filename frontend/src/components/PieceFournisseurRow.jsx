@@ -89,9 +89,14 @@ export function detailCalcul(ht, typePiece, categorie, regles) {
   return { ht: h, tva: r.tva, marge, brut, arrondi };
 }
 
-/** « 42,00 × 1,2 + 60 = 110,40 → 119 € » */
+/** « 42,00 × 1,2 + 60 = 110,40 → 119 € » ; batterie par l'écran : « (15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 € » */
 export function texteCalcul(calcul) {
   if (!calcul || calcul.ht === null || calcul.ht === undefined) return '';
+  if (calcul.par_ecran && calcul.ht_ecran !== null && calcul.ht_ecran !== undefined) {
+    const somme = Number(calcul.ht_ecran) + Number(calcul.ht);
+    const brut = calcul.brut ?? Math.round((somme * Number(calcul.tva) + Number(calcul.marge)) * 100) / 100;
+    return `(${deuxDecimales(calcul.ht_ecran)} + ${deuxDecimales(calcul.ht)}) × ${texteTva(calcul.tva)} + ${Number(calcul.marge)} = ${deuxDecimales(brut)} → ${calcul.arrondi} €`;
+  }
   const brut = calcul.brut ?? Math.round((Number(calcul.ht) * Number(calcul.tva) + Number(calcul.marge)) * 100) / 100;
   return `${deuxDecimales(calcul.ht)} × ${texteTva(calcul.tva)} + ${Number(calcul.marge)} = ${deuxDecimales(brut)} → ${calcul.arrondi} €`;
 }
@@ -426,6 +431,7 @@ export default function PieceFournisseurRow({
         {htVisible && (
           <td className="text-xs text-slate-500 tabular-nums align-top">
             {calcul ? <span className="whitespace-nowrap">{texteCalcul(calcul)}</span> : <span aria-hidden="true">—</span>}
+            {calcul?.par_ecran && <div className="text-brand-700">écran{calcul.ecran_qualite ? ` ${calcul.ecran_qualite}` : ''} + batterie (changée par l’écran)</div>}
             {calcul && verrou && <div className="text-amber-800">Prix client fixé à la main</div>}
           </td>
         )}

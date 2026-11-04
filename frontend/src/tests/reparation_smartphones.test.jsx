@@ -44,7 +44,7 @@ import Navbar from '../components/Navbar';
 import {
   detailCalcul, lienMobilax, lienUtopya, liensFournisseur, prixARenseigner, slugModele, texteCalcul,
 } from '../components/PieceFournisseurRow';
-import { REGLES_DEFAUT, euros } from '../components/HistoriquePrix';
+import { REGLES_DEFAUT, euros, prixClientBatterieParEcran } from '../components/HistoriquePrix';
 
 // Montants affichés par euros() : espace insécable avant le symbole (noms accessibles, textes exacts, toasts) ;
 // getByText normalise les blancs, un espace ordinaire y suffit
@@ -163,9 +163,20 @@ describe('méthode de calcul et liens fournisseurs', () => {
   });
 
   it('phrase de la méthode lisible en 5 secondes, valeurs des règles', () => {
-    expect(phraseMethode(null)).toBe('Prix client = arrondi au 9 supérieur de (prix fournisseur HT × 1,2 + marge) · marge 60 € (écran standard, autres pièces), 70 € (écran haut de gamme), 100 € (pliant) · iPad +110 €, MacBook +120 €');
+    expect(phraseMethode(null)).toBe('Prix client = arrondi au 9 supérieur de (prix fournisseur HT × 1,2 + marge) · marge 60 € (écran standard, autres pièces), 70 € (écran haut de gamme), 100 € (pliant) · iPad +110 €, MacBook +120 € · batterie changée par l’écran (iPad, Pixel…) : (HT écran + HT batterie) × 1,2 + 70 €');
+    expect(phraseMethode({ ...REGLES_DEFAUT, batterie_par_ecran: 80 })).toContain('(HT écran + HT batterie) × 1,2 + 80 €');
     expect(phraseMethode({ ...REGLES_DEFAUT, autre: 50, ipad: 115 })).toContain('50 € (autres pièces)');
     expect(phraseMethode({ ...REGLES_DEFAUT, autre: 50, ipad: 115 })).toContain('iPad +115 €');
+  });
+
+  it('batterie changée par l’écran : « (15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 € », même formule que le serveur', () => {
+    const calcul = { ht: 13, ht_ecran: 15, tva: 1.2, marge: 70, brut: 103.6, arrondi: 109, par_ecran: true, ecran_qualite: 'Original', ecran_cle: 'tarifs:2' };
+    expect(texteCalcul(calcul)).toBe('(15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 €');
+    expect(texteCalcul({ ...calcul, brut: undefined })).toBe('(15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 €');
+    expect(prixClientBatterieParEcran(13, 15, null)).toBe(109);
+    expect(prixClientBatterieParEcran(12.5, 60, { ...REGLES_DEFAUT, batterie_par_ecran: 80 })).toBe(169);
+    expect(prixClientBatterieParEcran(13, 15, { ...REGLES_DEFAUT, arrondi: 'entier' })).toBe(104);
+    expect(REGLES_DEFAUT.batterie_par_ecran).toBe(70);
   });
 
   it('prix à renseigner : HT à 0 ou prix client absent', () => {
@@ -634,6 +645,70 @@ describe('Réparation smartphones : administrateur', () => {
 });
 
 // ─── Réparation iPhone : où sont les prix ? ─────
+describe('Réparation smartphones : batterie changée par l’écran', () => {
+  const PIXEL = () => ({
+    marque: 'Google', modele: 'Pixel 7', categorie: 'Smartphone', categorie_apple: null, au_catalogue: true, modele_trouve: true, admin: true, noms: [],
+    liens: { utopya: 'https://www.utopya.fr/catalogsearch/result/?q=Google+Pixel+7', mobilax: 'https://www.mobilax.fr/recherche?q=Pixel+7' },
+    batterie_par_ecran: { actif: true, explicite: null, defaut: true, device_id: null, ecran: { cle: 'tarifs:2', qualite: 'Original' }, marge: 70 },
+    pieces: [
+      piece({ id: 2, cle: 'tarifs:2', marque: 'Google', modele: 'Pixel 7', qualite: 'Original', prix_fournisseur_ht: 60, prix_client: 139,
+        calcul: { ht: 60, tva: 1.2, marge: 60, brut: 132, arrondi: 139 }, par_ecran: false, liens: {} }),
+      piece({ id: 3, cle: 'tarifs:3', marque: 'Google', modele: 'Pixel 7', type_piece: 'Batterie', qualite: null, prix_fournisseur_ht: 12, prix_client: 159,
+        calcul: { ht: 12, ht_ecran: 60, tva: 1.2, marge: 70, brut: 156.4, arrondi: 159, par_ecran: true, ecran_qualite: 'Original', ecran_cle: 'tarifs:2' },
+        par_ecran: true, liens: {} }),
+    ],
+  });
+
+  it('admin : case cochée (Pixel par défaut), calcul écran + batterie, décocher → PUT puis modèle relu au calcul ordinaire', async () => {
+    localStorage.setItem('klikphone_admin', 'true');
+    etat.modeles['Google::Pixel 7'] = PIXEL();
+    apiMock.setBatterieParEcran.mockImplementation(async ({ actif }) => {
+      const m = PIXEL();
+      m.batterie_par_ecran = { ...m.batterie_par_ecran, actif, explicite: actif };
+      m.pieces[1] = { ...m.pieces[1], prix_client: 79, par_ecran: false, calcul: { ht: 12, tva: 1.2, marge: 60, brut: 74.4, arrondi: 79 } };
+      etat.modeles['Google::Pixel 7'] = m;
+      return { actif, explicite: actif, defaut: true, modifies: 1, lot_id: 'lot-1', ecrits: [] };
+    });
+    page('/accueil/tarifs?marque=Google&modele=Pixel%207');
+    const table = await screen.findByRole('table');
+    const caseRegle = screen.getByRole('checkbox', { name: /Batterie changée par l’écran/ });
+    expect(caseRegle).toBeChecked();
+    expect(screen.getByText(/écran retenu : Original/)).toBeInTheDocument();
+    expect(within(table).getByText('(60,00 + 12,00) × 1,2 + 70 = 156,40 → 159 €')).toBeInTheDocument();
+    expect(within(table).getByText(/écran Original \+ batterie/)).toBeInTheDocument();
+    expect(within(table).getByText('60,00 × 1,2 + 60 = 132,00 → 139 €')).toBeInTheDocument();
+    fireEvent.click(caseRegle);
+    await waitFor(() => expect(apiMock.setBatterieParEcran).toHaveBeenCalledWith({ marque: 'Google', modele: 'Pixel 7', actif: false }));
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Batterie changée par l’écran/ })).not.toBeChecked());
+    expect(await within(screen.getByRole('table')).findByText('12,00 × 1,2 + 60 = 74,40 → 79 €')).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('calcul ordinaire'));
+    expect(apiMock.setBatterieParEcranApple).not.toHaveBeenCalled();
+  });
+
+  it('personnel : mention sans case ni montant ; iPad : route de la fiche', async () => {
+    auth.user.role = 'accueil';
+    try {
+      etat.modeles['Google::Pixel 7'] = { ...PIXEL(), admin: false, batterie_par_ecran: { actif: true, explicite: null, defaut: true, device_id: null, ecran: { cle: 'tarifs:2', qualite: 'Original' }, marge: null },
+        pieces: PIXEL().pieces.map((p) => ({ ...p, prix_fournisseur_ht: null, calcul: null })) };
+      page('/accueil/tarifs?marque=Google&modele=Pixel%207');
+      expect(await screen.findByText(/le prix de la batterie comprend l’écran/)).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: /Batterie changée par l’écran/ })).not.toBeInTheDocument();
+    } finally {
+      auth.user.role = 'admin';
+    }
+    cleanup();
+    localStorage.setItem('klikphone_admin', 'true');
+    etat.modeles['Apple::iPad 9'] = { ...IPAD, categorie_apple: 'ipad', batterie_par_ecran: { actif: false, explicite: false, defaut: true, device_id: 11, ecran: null, marge: 70 } };
+    apiMock.setBatterieParEcranApple.mockResolvedValue({ actif: true, explicite: true, defaut: true, device_id: 11, modifies: 1, lot_id: 'lot-2', ecrits: [] });
+    page('/accueil/tarifs?marque=Apple&modele=iPad%209');
+    const caseIpad = await screen.findByRole('checkbox', { name: /Batterie changée par l’écran/ });
+    expect(caseIpad).not.toBeChecked();
+    fireEvent.click(caseIpad);
+    await waitFor(() => expect(apiMock.setBatterieParEcranApple).toHaveBeenCalledWith(11, true));
+    expect(apiMock.setBatterieParEcran).not.toHaveBeenCalled();
+  });
+});
+
 describe('Réparation iPhone : bandeau d’aide', () => {
   it('renvoie vers « Réparation smartphones » pour les autres marques et iPad / Mac', async () => {
     apiMock.getTarifsReparation.mockResolvedValue([]);

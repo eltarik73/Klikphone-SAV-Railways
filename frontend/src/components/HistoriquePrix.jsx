@@ -88,6 +88,7 @@ export const REGLES_DEFAUT = Object.freeze({
   autre: 60,
   ipad: 110,
   macbook: 120,
+  batterie_par_ecran: 70,
   arrondi: '9_sup',
   seuil_marge_alerte: 40,
   variation_alerte_pct: 25,
@@ -120,6 +121,12 @@ export function prixClientPiece(ht, typePiece, categorie, regles) {
   const cat = String(categorie || 'standard').toLowerCase();
   const marge = estEcran(typePiece) ? (r.ecran[cat] ?? r.ecran.standard) : r.autre;
   return arrondirPrix(Number(ht) * r.tva + marge, r.arrondi);
+}
+
+/** Batterie changée par l'écran (iPad, Pixel… : services/par_ecran) : (HT écran + HT batterie) × TVA + marge, arrondi. */
+export function prixClientBatterieParEcran(htBatterie, htEcran, regles) {
+  const r = fusionnerRegles(regles);
+  return arrondirPrix((Number(htBatterie) + Number(htEcran)) * r.tva + r.batterie_par_ecran, r.arrondi);
 }
 
 /** Prix de vente iPad / MacBook. */

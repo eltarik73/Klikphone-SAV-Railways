@@ -52,6 +52,7 @@ REGLES_DEFAUT = {
     "autre": 60,
     "ipad": 110,
     "macbook": 120,
+    "batterie_par_ecran": 70,    # (HT écran + HT batterie) × TVA + cette marge (services/par_ecran)
     "arrondi": "9_sup",
     "seuil_marge_alerte": 40,
     "variation_alerte_pct": 25,
@@ -138,7 +139,8 @@ def valider_regles(entree: dict, base: dict = None) -> dict:
         r["tva"] = float(r["tva"])
     for k in CATEGORIES_ECRAN:
         r["ecran"][k] = _nombre(r["ecran"].get(k, REGLES_DEFAUT["ecran"][k]), 0, 1000, f"Marge écran {k}")
-    for k, nom in (("autre", "Marge autres pièces"), ("ipad", "Marge iPad"), ("macbook", "Marge MacBook")):
+    for k, nom in (("autre", "Marge autres pièces"), ("ipad", "Marge iPad"), ("macbook", "Marge MacBook"),
+                   ("batterie_par_ecran", "Marge batterie par l'écran")):
         r[k] = _nombre(r[k], 0, 1000, nom)
     if r["arrondi"] not in ARRONDIS:
         raise ValueError("Arrondi : '9_sup' ou 'entier'")
@@ -274,7 +276,7 @@ def _euros(v) -> str:
 def regles_publiques(r: dict) -> dict:
     """Les règles qui font le prix (TVA, arrondi, marges), sans les seuils d'alerte."""
     return {"tva": r["tva"], "arrondi": r["arrondi"], "ecran": dict(r["ecran"]), "autre": r["autre"],
-            "ipad": r["ipad"], "macbook": r["macbook"]}
+            "ipad": r["ipad"], "macbook": r["macbook"], "batterie_par_ecran": r["batterie_par_ecran"]}
 
 
 def methode_calcul(r: dict = None, admin: bool = False) -> dict:
@@ -307,7 +309,9 @@ def methode_calcul(r: dict = None, admin: bool = False) -> dict:
     return {
         "admin": True,
         "texte": f"Prix client = {arrondi} de (prix fournisseur HT × {tva} + marge) · {marges} · "
-                 f"iPad +{_euros(r['ipad'])} €, MacBook +{_euros(r['macbook'])} €",
+                 f"iPad +{_euros(r['ipad'])} €, MacBook +{_euros(r['macbook'])} € · "
+                 f"batterie changée par l'écran (iPad, Pixel…) : (HT écran + HT batterie) × {tva} + "
+                 f"{_euros(r['batterie_par_ecran'])} €",
         "regles": regles_publiques(r),
         "exemple": calcul_detail(42, "Ecran", "standard", r),
     }
@@ -476,7 +480,8 @@ def _composer(cur, sql: str, params=None) -> bytes:
 
 
 def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id: str = None,
-                    saisie: bool = None, *, lignes: dict = None, sql_joint=(), relire=None) -> dict:
+                    saisie: bool = None, *, lignes: dict = None, sql_joint=(), relire=None,
+                    deriver: bool = True) -> dict:
     """Écrit un lot de prix d'une table en UN aller-retour (plus la lecture sous verrou).
 
     changements : [(ligne_id, colonne, nouveau)] — la dernière valeur d'un couple l'emporte.
@@ -501,6 +506,12 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
       vont dans res["relu"] (la réponse de la route sans requête de plus).
     Fragments SQL fixes du code (noms de la liste blanche TABLES), jamais une saisie.
 
+    deriver (tarifs, tarifs_apple_devices) : les batteries « changées par l'écran » des modèles
+    touchés reçoivent leur prix client dérivé (services/par_ecran.deriver_changements) dans le
+    même lot — passer False pour une valeur tapée par l'admin (ligne alors verrouillée) ou un
+    recalcul déjà dérivé ; jamais de dérivation à l'annulation d'un lot (valeurs rétablies telles
+    quelles).
+
     → {ecrits: [(id, colonne, ancien, nouveau)], verrouilles: [id], inchanges: n, absents: [id]}
       (+ relu: [lignes] si `relire`)
     """
@@ -515,20 +526,24 @@ def ecrire_prix_lot(cur, table: str, changements, source: str, par: str, lot_id:
     for ligne_id, colonne, nouveau in changements:
         t = _type_colonne(table, colonne)
         voulu[(int(ligne_id), colonne)] = normaliser_valeur(t, nouveau)
+    if deriver and voulu and source != "annulation" and table in ("tarifs", "tarifs_apple_devices"):
+        from app.services import par_ecran
+        derives = par_ecran.deriver_changements(cur, table, [(i, c, v) for (i, c), v in voulu.items()])
+        voulu = {(int(i), c): normaliser_valeur(_type_colonne(table, c), v) for i, c, v in derives}
     res = {"ecrits": [], "verrouilles": [], "inchanges": 0, "absents": []}
     if not voulu and not sql_joint and relire is None:
         return res
-    if voulu and lignes is None:
-        ids = sorted({i for i, _ in voulu})
+    lignes = dict(lignes) if lignes else {}
+    a_lire = sorted({i for i, _ in voulu} - set(lignes)) if voulu else []
+    if a_lire:
         colonnes = sorted({c for _, c in voulu})
         extra = ", prix_maj_le" + (", prix_source" if meta["source"] else "") + (", verrou_manuel" if meta["verrou"] else "")
-        # Noms issus de la liste blanche TABLES uniquement
+        # Noms issus de la liste blanche TABLES uniquement ; lignes déjà lues par l'appelant conservées
         cur.execute(
             f"SELECT id, {', '.join(colonnes)}{extra} FROM {table} WHERE id = ANY(%s) ORDER BY id FOR UPDATE",
-            (ids,),
+            (a_lire,),
         )
-        lignes = {r["id"]: r for r in cur.fetchall() or []}
-    lignes = lignes or {}
+        lignes.update({r["id"]: r for r in cur.fetchall() or []})
     cadenas = set()
     if voulu and table in TABLES_BOUTIQUE and not passe_verrou:
         cadenas = lignes_verrouillees(cur).get(table, set())
@@ -740,9 +755,16 @@ def appliquer_ht(cur, cle: str, nouveau_ht, source: str, par: str, lot_id: str =
         # qu'annuler_lot la rouvre
         cur.execute("UPDATE tarifs_propositions SET lot_id = %s WHERE tarif_cle = %s AND statut = 'en_attente'",
                     (lot_id, desc["cle"]))
+    # Prix client réellement écrit (batterie « par l'écran » : dérivé) et autres valeurs du lot
+    for i, c, _, n in res["ecrits"]:
+        if i == desc["id"] and c == col_client:
+            client = n
+    derives = [{"id": i, "colonne": c, "ancien": a, "nouveau": n} for i, c, a, n in res["ecrits"]
+               if not (i == desc["id"] and c in (col_ht, col_client))]
     return {
         "ok": bool(res["ecrits"]), "absent": False, "verrouille": bool(res["verrouilles"]),
         "ancien_ht": desc["ht"], "nouveau_ht": ht, "ancien_client": desc["client"], "nouveau_client": client,
+        "derives": derives,
     }
 
 
@@ -811,13 +833,16 @@ def _alertes_piece(ancien, nouveau, client, ht, ecran, r) -> list:
 
 def _plan_fournisseur(cur, r_nouv, f, ajustement, r_actu, ignores):
     """Pièces fournisseur : prix client depuis le HT (règles r_nouv), HT ajusté le cas échéant."""
+    from app.services import par_ecran
     out = []
     tp = _norm(f.get("type_piece"))
     cur.execute("""
         SELECT id, marque, modele, type_piece, qualite, categorie, prix_fournisseur_ht, prix_client, verrou_manuel
         FROM tarifs WHERE obsolete IS NOT TRUE ORDER BY id
     """)
-    for row in cur.fetchall() or []:
+    rows = [dict(r) for r in cur.fetchall() or []]
+    retenues = []          # (row, ht, nouveau_ht) des lignes du plan
+    for row in rows:
         if not _garde(row, f) or (tp and tp != _norm(row["type_piece"])):
             continue
         if "qualite" in f and _norm(row["qualite"]) != _norm(f["qualite"]):
@@ -832,7 +857,13 @@ def _plan_fournisseur(cur, r_nouv, f, ajustement, r_actu, ignores):
         if nouveau_ht <= 0:
             ignores.append(f"tarifs:{row['id']}")
             continue
-        client = prix_client(nouveau_ht, row["type_piece"], row["categorie"], r_nouv)
+        retenues.append((row, ht, nouveau_ht))
+    # Batteries « par l'écran » : prix dérivé des HT après ajustement (écran du modèle compris)
+    derives = par_ecran.derives_plan(cur, rows, {row["id"]: nh for row, _, nh in retenues}, r_nouv)
+    for row, ht, nouveau_ht in retenues:
+        client = derives.get(row["id"])
+        if client is None:
+            client = prix_client(nouveau_ht, row["type_piece"], row["categorie"], r_nouv)
         ch = [(row["id"], "prix_client", client)]
         if ajustement:
             ch.insert(0, (row["id"], "prix_fournisseur_ht", nouveau_ht))
@@ -849,14 +880,25 @@ def _plan_apple(cur, r_nouv, f, ajustement, ignores):
     pieces = {c.split("_")[0] for c in f.get("colonnes", ())} & set(PIECES_APPLE)
     cur.execute("""
         SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
-               verrou_manuel
+               verrou_manuel, batterie_par_ecran
         FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE ORDER BY id
     """)
+    from app.services import par_ecran
     for row in cur.fetchall() or []:
         if not _garde(row, f, marque="Apple"):
             continue
         if "categorie" in f and _norm(row["categorie"]) != _norm(f["categorie"]):
             continue
+        # HT de chaque pièce après le plan (ajustée si elle en fait partie) : l'écran compte pour la batterie
+        apres = {}
+        for piece in PIECES_APPLE:
+            h = row[f"{piece}_prix_ht"]
+            dans_plan = not (tp and not piece.startswith(tp) and not tp.startswith(piece)) and (not pieces or piece in pieces)
+            if h is not None and h > 0 and ajustement and dans_plan:
+                apres[piece] = Decimal(str(ajuster(h, ajustement, False)))
+            else:
+                apres[piece] = Decimal(h) if h is not None and h > 0 else None
+        par_ecran_actif = par_ecran.effectif(row.get("batterie_par_ecran"), categorie=row["categorie"])
         for piece in PIECES_APPLE:
             if tp and not piece.startswith(tp) and not tp.startswith(piece):
                 continue
@@ -871,7 +913,10 @@ def _plan_apple(cur, r_nouv, f, ajustement, ignores):
             if nouveau_ht <= 0:
                 ignores.append(tarif_cle("tarifs_apple_devices", row["id"], piece))
                 continue
-            client = prix_apple(nouveau_ht, row["categorie"], r_nouv)
+            if piece == "batterie" and par_ecran_actif and apres.get("ecran"):
+                client = par_ecran.prix_batterie(nouveau_ht, apres["ecran"], r_nouv)
+            else:
+                client = prix_apple(nouveau_ht, row["categorie"], r_nouv)
             ancien = row[f"{piece}_prix_vente"]
             ch = [(row["id"], f"{piece}_prix_vente", client)]
             if ajustement:
