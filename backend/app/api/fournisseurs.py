@@ -6,6 +6,8 @@ POST /api/tarifs/fournisseurs/mobilax/sync       lance un passage en tâche de f
 POST /api/tarifs/fournisseurs/mobilax/connexion  {texte} collé depuis mobilax.fr → jetons vérifiés puis enregistrés
 DELETE /api/tarifs/fournisseurs/mobilax/connexion oublie les jetons
 POST /api/tarifs/fournisseurs/mobilax/active     {active} : synchro quotidienne en marche ou coupée
+GET  /api/tarifs/fournisseurs/mobilax/diagnostic pièces de la grille sans prix Mobilax après le dernier passage
+                                                  (prix des candidats pour l'admin seulement)
 
 Écritures : rôle admin ET code admin prouvé sur le poste (auth.exiger_role_admin), comme les
 autres écritures de prix. Monté AVANT le routeur /api/tarifs (main.py) : « fournisseurs »
@@ -40,6 +42,19 @@ class ActiveIn(BaseModel):
 def etat_fournisseurs(user: dict = Depends(get_current_user)):
     """État des synchros (Mobilax : connexion, dernier passage, compteurs ; Utopya : indisponible)."""
     return fournisseurs.etat()
+
+
+@router.get("/mobilax/diagnostic")
+def diagnostic_mobilax(request: Request, user: dict = Depends(get_current_user)):
+    """Pièces de la grille restées sans prix Mobilax au dernier passage, avec la raison et jusqu'à
+    trois produits Mobilax ressemblants : {le, n, par_raison, pieces: [{cle, marque, modele, type_piece,
+    qualite, raison, candidats: [{nom, prix_ht}]}]}. Prix HT des candidats réservés à l'admin."""
+    admin = True
+    try:
+        exiger_role_admin(request, dict(user))
+    except HTTPException:
+        admin = False
+    return fournisseurs.diagnostic(admin=admin)
 
 
 @router.post("/mobilax/sync")

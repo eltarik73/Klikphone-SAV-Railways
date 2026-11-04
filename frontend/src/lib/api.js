@@ -1514,6 +1514,8 @@ class ApiClient {
   //     derniere_synchro, ok, resume: { modifies, confirmes, propositions, produits, erreur… }, erreur, message },
   //     utopya: { disponible: false, raison } } — jamais de jeton
   getEtatFournisseurs() { return this.request('/api/tarifs/fournisseurs/etat', { cache: 'no-store' }); }
+  // Pièces de la grille sans prix Mobilax au dernier passage → { le, n, par_raison, pieces: [{…, raison, candidats}], raisons }
+  getDiagnosticMobilax() { return this.request('/api/tarifs/fournisseurs/mobilax/diagnostic', { cache: 'no-store' }); }
   // Lance la synchro Mobilax en arrière-plan (admin) → { lance, message, etat } ; suivre avec getEtatFournisseurs
   syncMobilax() { return this._ecriturePrix('/api/tarifs/fournisseurs/mobilax/sync', {}, 30_000); }
   // Texte collé depuis mobilax.fr (copy(JSON.stringify(localStorage))) : jetons vérifiés puis enregistrés → état

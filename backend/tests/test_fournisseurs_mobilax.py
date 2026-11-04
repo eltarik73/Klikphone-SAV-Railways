@@ -214,7 +214,121 @@ def test_planifier_applique_propose_et_laisse():
     assert plan["propositions"] == [{"cle": "tarifs:2", "ht": "20.0", "label": "tarifs:2"}]
     assert (plan["verrouillees"], plan["obsoletes"], plan["variantes"], plan["a_valider"]) == (1, 1, 2, 1)
     assert F.planifier({"reconnues": []}) == {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0,
-                                               "variantes": 0, "a_valider": 0}
+                                               "variantes": 0, "a_valider": 0, "remplaces": 0}
+
+
+# ─── Prix sans valeur de référence : remplacés sans validation ──
+
+def test_remplacable_absent_estime_perime_ou_recent():
+    from datetime import datetime
+    now = datetime(2026, 11, 4, 12, 0, 0)
+    r = {"jours_perime": 180}
+    assert F.remplacable({"ht": None, "prix_source": "import", "prix_maj_le": now}, r, now)
+    assert F.remplacable({"ht": 0, "prix_source": "import", "prix_maj_le": now}, r, now)
+    assert F.remplacable({"ht": 42, "prix_source": "estimation_2026_02", "prix_maj_le": now}, r, now)
+    assert F.remplacable({"ht": 42, "prix_source": "import", "prix_maj_le": None}, r, now)
+    assert F.remplacable({"ht": 42, "prix_source": "import", "prix_maj_le": "2026-02-10T08:00:00"}, r, now)   # 267 j
+    assert not F.remplacable({"ht": 42, "prix_source": "import", "prix_maj_le": "2026-09-01T08:00:00"}, r, now)
+    assert not F.remplacable({"ht": 42, "prix_source": "manuel", "prix_maj_le": now}, r, now)
+    assert F.remplacable(None, r, now) is False and F.remplacable({}, r, now) is True
+    # Règle du magasin : « périmé » à 90 jours → un prix de 100 jours est remplacé
+    assert F.remplacable({"ht": 42, "prix_source": "import", "prix_maj_le": "2026-07-20T08:00:00"}, {"jours_perime": 90}, now)
+
+
+def test_planifier_remplace_les_prix_estimes_et_perimes_mais_propose_les_recents():
+    from datetime import datetime
+    now = datetime(2026, 11, 4, 12, 0, 0)
+    ap = {"reconnues": [
+        _rec(2, "tarifs:1", 55.0, ["variation"]),      # estimé → appliqué
+        _rec(3, "tarifs:2", 20.0, ["variation"]),      # récent → proposition
+        _rec(4, "tarifs:3", 30.0, ["variation"]),      # périmé → appliqué
+        _rec(5, "tarifs:4", 12.0, ["variation"]),      # sans HT → appliqué
+        _rec(6, "tarifs:5", 70.0),                     # pas de variation → appliqué
+        _rec(7, "tarifs:6", 90.0, ["variation"]),      # pièce non décrite → proposition (prudence)
+    ]}
+    descs = {
+        "tarifs:1": {"ht": 10, "prix_source": "estimation_2026_02", "prix_maj_le": now},
+        "tarifs:2": {"ht": 10, "prix_source": "import", "prix_maj_le": datetime(2026, 10, 1)},
+        "tarifs:3": {"ht": 10, "prix_source": "import", "prix_maj_le": datetime(2026, 1, 1)},
+        "tarifs:4": {"ht": None, "prix_source": None, "prix_maj_le": None},
+    }
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, now)
+    assert plan["lignes"] == [2, 4, 5, 6]
+    assert [p["cle"] for p in plan["propositions"]] == ["tarifs:2", "tarifs:6"]
+    assert plan["remplaces"] == 3 and plan["a_valider"] == 2
+    # Sans descriptions : comportement d'origine (toute grosse variation proposée)
+    plan0 = F.planifier(ap)
+    assert plan0["lignes"] == [6] and plan0["remplaces"] == 0 and plan0["a_valider"] == 5
+
+
+# ─── Diagnostic : pièces de la grille sans prix ──────────────────
+
+def _prod(i, nom, q, prix=10.0, actif=True):
+    return {"id": i, "title_name": nom, "name": nom, "price": prix, "active": actif, "_q": q}
+
+
+def test_diagnostic_pieces_raisons_et_candidats():
+    pieces = [
+        {"cle": "tarifs:1", "marque": "Google", "modele": "Pixel 7", "type_piece": "Ecran", "qualite": "Compatible"},
+        {"cle": "tarifs:2", "marque": "Google", "modele": "Pixel 7", "type_piece": "Batterie", "qualite": None},
+        {"cle": "tarifs:3", "marque": "Google", "modele": "Pixel 7", "type_piece": "Connecteur de charge", "qualite": None},
+        {"cle": "tarifs:4", "marque": "Oppo", "modele": "Reno 10", "type_piece": "Ecran", "qualite": None},
+        {"cle": "tarifs:5", "marque": "Sony", "modele": "Xperia 1", "type_piece": "Ecran", "qualite": None},
+        {"cle": "tarifs_apple_devices:9:batterie", "marque": "Apple", "modele": "iPad 9", "type_piece": "Batterie", "qualite": None},
+    ]
+    produits = [
+        _prod(1, "Ecran Complet Google Pixel 7 Noir", "Google Pixel 7", 61.9),
+        _prod(2, "Batterie Google Pixel 7 GTF8P", "Google Pixel 7", 12.5),
+        _prod(3, "Coque silicone Google Pixel 7", "Google Pixel 7", 2.0),
+        _prod(4, "Batterie Apple iPad 9 A2602", "iPad 9", 14.0),
+    ]
+    modeles = [("Google", "Pixel 7"), ("Oppo", "Reno 10"), ("Sony", "Xperia 1"), ("Apple", "iPad 9")]
+    d = F.diagnostic_pieces(pieces, produits, {"tarifs:1"}, modeles, {"id": 3, "nom": "Gold"},
+                            cherchees=["Google Pixel 7", "Oppo Reno 10", "iPad 9"], maintenant="2026-11-04T13:00:00")
+    assert d["n"] == 5 and d["le"] == "2026-11-04T13:00:00" and d["tronque"] is False
+    par_cle = {p["cle"]: p for p in d["pieces"]}
+    assert "tarifs:1" not in par_cle                                      # reconnue
+    assert par_cle["tarifs:2"]["raison"] == "non_reconnue"               # une batterie Pixel 7 existe chez Mobilax
+    assert par_cle["tarifs:2"]["candidats"] == [{"nom": "Batterie Google Pixel 7 GTF8P", "prix_ht": 12.5}]
+    assert par_cle["tarifs:3"]["raison"] == "piece_absente" and par_cle["tarifs:3"]["candidats"] == []
+    assert par_cle["tarifs:4"]["raison"] == "aucun_produit"
+    assert par_cle["tarifs:5"]["raison"] == "non_cherchee"
+    assert par_cle["tarifs_apple_devices:9:batterie"]["raison"] == "non_reconnue"
+    assert d["par_raison"] == {"aucun_produit": 1, "piece_absente": 1, "non_reconnue": 2, "non_cherchee": 1}
+    assert set(F.RAISONS) == set(d["par_raison"])
+
+
+def test_diagnostic_tronque_et_lecture_selon_le_role(monkeypatch):
+    monkeypatch.setattr(F, "DIAG_MAX_PIECES", 2)
+    pieces = [{"cle": f"tarifs:{i}", "marque": "Sony", "modele": "Xperia 1", "type_piece": "Ecran", "qualite": None}
+              for i in range(4)]
+    d = F.diagnostic_pieces(pieces, [_prod(1, "Ecran Sony Xperia 1", "Sony Xperia 1", 99.0)], set(), [("Sony", "Xperia 1")])
+    assert d["n"] == 4 and len(d["pieces"]) == 2 and d["tronque"] is True
+    base = _Base({F.P_DIAG: json.dumps(d)})
+    with _sur(base):
+        _params(monkeypatch, base.params)
+        admin = F.diagnostic(admin=True)
+        staff = F.diagnostic(admin=False)
+    assert admin["n"] == 4 and admin["pieces"][0]["candidats"][0]["prix_ht"] == 99.0 and admin["raisons"] == F.RAISONS
+    assert staff["pieces"][0]["candidats"] == [{"nom": "Ecran Sony Xperia 1"}]
+    with _sur(_Base({})):
+        _params(monkeypatch, {})
+        vide = F.diagnostic(admin=True)
+    assert vide == {"le": None, "n": 0, "par_raison": {}, "pieces": [], "tronque": False, "raisons": F.RAISONS}
+
+
+def test_route_diagnostic_selon_le_role(client, monkeypatch):
+    appels = []
+    monkeypatch.setattr(F, "diagnostic", lambda admin=False, cur=None: appels.append(admin) or {"n": 1, "pieces": []})
+    assert client.get("/api/tarifs/fournisseurs/mobilax/diagnostic").status_code == 401
+    _, gc_staff = fake_db(lambda sql, params: None)
+    with patch("app.api.auth.get_cursor", gc_staff):
+        r = client.get("/api/tarifs/fournisseurs/mobilax/diagnostic", headers=_headers())
+    assert r.status_code == 200 and r.json()["n"] == 1 and appels == [False]
+    _, gc_admin = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
+    with patch("app.api.auth.get_cursor", gc_admin):
+        r2 = client.get("/api/tarifs/fournisseurs/mobilax/diagnostic", headers=_headers())
+    assert r2.status_code == 200 and appels == [False, True]
 
 
 # ─── Client Mobilax (transport simulé) ───────────────────────────
@@ -410,7 +524,10 @@ def test_synchroniser_complet_avec_import_simule(monkeypatch):
     assert imports == [("tarifs", f"mobilax-{date.today().isoformat()}.csv", 5),
                        ("tarifs_apple_devices", f"mobilax-{date.today().isoformat()}-apple.csv", 1)]
     assert r["modifies"] == 2 and r["propositions"] == 2 and r["lots"] == ["lot-tarifs", "lot-tarifs_apple_devices"]
-    assert "price" in r["champs"] and "ean13" in r["champs"]
+    assert "price" in r["champs"] and "ean13" in r["champs"] and "_q" not in r["champs"]
+    # Diagnostic du passage enregistré (pièces de la grille sans prix : aucune pièce dans la base simulée)
+    diag = json.loads(base.params[F.P_DIAG])
+    assert diag["n"] == 0 and diag["pieces"] == [] and r["sans_prix"] == 0
     # Jetons tournés et conservés ; état durable
     assert base.params[F.P_REFRESH] == "rot-" + "e" * 30 and base.params[F.P_TOKEN] == TOKEN
     assert base.params[F.P_OK] == "1" and base.params[F.P_CONNEXION] == "ok"

@@ -20,7 +20,7 @@ vi.mock('../lib/api', () => ({ default: apiMock, api: apiMock }));
 
 import { ToastProvider } from '../components/Toast';
 import { tuilesSante } from '../components/SantePrixWidget';
-import SynchroFournisseur, { decrireMobilax, COMMANDE_CONSOLE } from '../components/SynchroFournisseur';
+import SynchroFournisseur, { decrireMobilax, COMMANDE_CONSOLE, DiagnosticMobilax } from '../components/SynchroFournisseur';
 
 const MAINTENANT = new Date('2026-11-04T12:00:00').getTime();
 const UTOPYA = { disponible: false, raison: 'Utopya : prix sous connexion, Cloudflare.' };
@@ -77,8 +77,67 @@ describe('decrireMobilax', () => {
     expect(ok.titre).toMatch(/^Dernière synchro Mobilax : 04\/11\/2026/);
     expect(ok.detail).toBe('12 prix mis à jour · 300 confirmés · 3 à valider (Propositions) · 2 verrouillés — 1450 produits lus pour 210 modèles.');
     expect(decrireMobilax({ ...CONNECTE, ok: false, erreur: 'Mobilax indisponible (HTTP 503)' })).toMatchObject({ ton: 'danger', detail: 'Mobilax indisponible (HTTP 503)' });
+    // Prix estimés / périmés remplacés sans validation, propositions réglées, pièces sans prix
+    const riche = decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 250, propositions_fermees: 300, sans_prix: 412 } });
+    expect(riche.detail).toBe('12 prix mis à jour · 300 confirmés · dont 250 prix estimés ou périmés remplacés sans validation · 3 à valider (Propositions) · 300 propositions réglées · 2 verrouillés · 412 pièces de la grille sans prix Mobilax — 1450 produits lus pour 210 modèles.');
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 1, sans_prix: 1, propositions_fermees: 1 } }).detail).toContain('dont 1 prix estimé ou périmé remplacé sans validation · 3 à valider (Propositions) · 1 proposition réglée · 2 verrouillés · 1 pièce de la grille sans prix Mobilax');
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null })).toMatchObject({ ton: 'neutre', titre: 'Mobilax connecté' });
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null, active: false }).detail).toBe('Synchro quotidienne coupée.');
+  });
+});
+
+describe('pièces sans prix Mobilax (DiagnosticMobilax)', () => {
+  const DIAG = {
+    le: '2026-11-04T12:46:27', n: 3, tronque: false,
+    par_raison: { non_reconnue: 1, piece_absente: 1, aucun_produit: 1, non_cherchee: 0 },
+    raisons: { non_reconnue: 'Des produits Mobilax ressemblent, sans être rattachés à la pièce (nom à vérifier)', piece_absente: 'Mobilax a des produits pour ce modèle, mais pas cette pièce', aucun_produit: 'Mobilax ne renvoie aucun produit pour ce modèle', non_cherchee: 'Modèle non cherché (passage incomplet)' },
+    pieces: [
+      { cle: 'tarifs:2', marque: 'Google', modele: 'Pixel 7', type_piece: 'Batterie', qualite: null, raison: 'non_reconnue', candidats: [{ nom: 'Batterie Google Pixel 7 GTF8P', prix_ht: 12.5 }] },
+      { cle: 'tarifs:3', marque: 'Google', modele: 'Pixel 7', type_piece: 'Connecteur de charge', qualite: null, raison: 'piece_absente', candidats: [] },
+      { cle: 'tarifs:4', marque: 'Oppo', modele: 'Reno 10', type_piece: 'Ecran', qualite: 'OLED', raison: 'aucun_produit', candidats: [] },
+    ],
+  };
+
+  it('rien à afficher quand toutes les pièces ont un prix', () => {
+    const { container } = render(<DiagnosticMobilax nombre={0} estAdmin />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('admin : liste par raison avec les prix des candidats ; le diagnostic n’est lu qu’à l’ouverture', async () => {
+    apiMock.getDiagnosticMobilax.mockResolvedValue(DIAG);
+    render(<DiagnosticMobilax nombre={3} estAdmin />);
+    const bouton = screen.getByRole('button', { name: /3 pièces sans prix Mobilax/ });
+    expect(bouton).toHaveAttribute('aria-expanded', 'false');
+    expect(apiMock.getDiagnosticMobilax).not.toHaveBeenCalled();
+    fireEvent.click(bouton);
+    expect(await screen.findByText('Google Pixel 7 — Batterie')).toBeInTheDocument();
+    expect(screen.getByText(/Batterie Google Pixel 7 GTF8P \(12,50 € HT\)/)).toBeInTheDocument();
+    expect(screen.getByText('Google Pixel 7 — Connecteur de charge')).toBeInTheDocument();
+    expect(screen.getByText('Oppo Reno 10 — Ecran OLED')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Des produits Mobilax ressemblent.*\(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /aucun produit pour ce modèle.*\(1\)/ })).toBeInTheDocument();
+    expect(apiMock.getDiagnosticMobilax).toHaveBeenCalledTimes(1);
+    fireEvent.click(bouton);
+    expect(screen.queryByText('Google Pixel 7 — Batterie')).not.toBeInTheDocument();
+  });
+
+  it('personnel : les candidats sans prix ; erreur de lecture affichée', async () => {
+    apiMock.getDiagnosticMobilax.mockResolvedValue({ ...DIAG, pieces: DIAG.pieces.map((p) => ({ ...p, candidats: p.candidats.map((c) => ({ nom: c.nom })) })) });
+    render(<DiagnosticMobilax nombre={1} estAdmin={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /1 pièce sans prix Mobilax/ }));
+    expect(await screen.findByText(/Batterie Google Pixel 7 GTF8P/)).toBeInTheDocument();
+    expect(screen.queryByText(/€ HT/)).not.toBeInTheDocument();
+    cleanup();
+    apiMock.getDiagnosticMobilax.mockRejectedValue(new Error('500'));
+    render(<DiagnosticMobilax nombre={2} />);
+    fireEvent.click(screen.getByRole('button', { name: /2 pièces sans prix Mobilax/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('500');
+  });
+
+  it('bloc de synchro : le bouton apparaît après un passage réussi avec des pièces sans prix', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: { ...CONNECTE, resume: { ...RESUME_OK, sans_prix: 412 } }, utopya: UTOPYA });
+    rendre({ estAdmin: false });
+    expect(await screen.findByRole('button', { name: /412 pièces sans prix Mobilax/ })).toBeInTheDocument();
   });
 });
 

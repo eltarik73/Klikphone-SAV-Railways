@@ -226,8 +226,15 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   liste `prices` de chaque produit, palier lu sur la fiche client et gardé dans `params.MOBILAX_PALIER` ;
   le champ `price` seul est le prix Bronze), produits passés au moteur d'import
   (`import_prix.apercu` → `appliquer`) : prix d'achat HT et prix client recalculé écrits (lot annulable,
-  historique source `import`, par « Synchro Mobilax »), grosse variation → `tarifs_propositions` (tuile
-  « Propositions »), pièce verrouillée / obsolète jamais touchée, produit inconnu jamais créé.
+  historique source `import`, par « Synchro Mobilax »). Grosse variation d'un prix **de référence** (réel et
+  plus récent que `jours_perime`) → `tarifs_propositions` (tuile « Propositions ») ; un prix **absent, estimé**
+  (`prix_source` estimation_…) **ou périmé** est remplacé sans validation (`fournisseurs.remplacable`), et les
+  propositions Mobilax en attente d'une pièce dont le HT vient d'être écrit sont réglées (`acceptee`, même lot).
+  Pièce verrouillée / obsolète jamais touchée, produit inconnu jamais créé.
+- **Diagnostic** : après chaque passage, `params.MOBILAX_DIAGNOSTIC` liste les pièces de la grille restées sans
+  prix (raison : aucun produit pour le modèle, pièce absente, nom non rattaché, modèle non cherché) avec jusqu'à
+  trois produits Mobilax ressemblants — `GET /api/tarifs/fournisseurs/mobilax/diagnostic` (prix des candidats pour
+  l'admin), bouton « N pièces sans prix Mobilax » du bloc de synchro.
 - **Bouton « Synchroniser maintenant »** : `POST /api/tarifs/fournisseurs/mobilax/sync` (tâche de fond) ;
   état : `GET /api/tarifs/fournisseurs/etat` et tuile « Synchro Mobilax » de la santé des prix.
   Jeton refusé → connexion « expirée » affichée, à recoller une fois ; aucun plantage.

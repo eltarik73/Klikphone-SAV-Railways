@@ -73,6 +73,7 @@ P_RESUME = "MOBILAX_SYNCHRO_RESUME"          # JSON (compteurs, erreur)
 P_JOUR = "MOBILAX_SYNCHRO_JOUR"              # AAAA-MM-JJ (fait) ou AAAA-MM-JJ#n (n-ième essai en cours ou raté)
 P_VERROU = "MOBILAX_SYNCHRO_VERROU"          # ISO UTC du début du passage en cours ('' : libre)
 P_CONNEXION = "MOBILAX_CONNEXION"            # 'ok' | 'expiree' | ''
+P_DIAG = "MOBILAX_DIAGNOSTIC"                # JSON : pièces de la grille sans prix Mobilax au dernier passage
 ENV_REFRESH = "MOBILAX_REFRESH_TOKEN"        # amorçage par l'environnement (Railway)
 ENV_ID_CLIENT = "MOBILAX_ID_CLIENT"
 
@@ -85,6 +86,7 @@ ERREURS_MAX = 5          # erreurs réseau consécutives → arrêt du passage
 VERROU_MINUTES = 40
 ESSAIS_PAR_JOUR = 3
 RESUME_MAX = 20000       # octets du JSON gardé dans params
+DIAG_MAX_PIECES = 500    # pièces détaillées dans le diagnostic (les autres sont seulement comptées)
 _FMT = "%Y-%m-%dT%H:%M:%S"
 
 
@@ -547,17 +549,54 @@ def modeles_grille(cur) -> list:
 
 # ─── Choix automatique des lignes d'un aperçu ───────────────────
 
-def planifier(ap: dict) -> dict:
-    """Parmi les lignes reconnues de l'aperçu (import_prix.apercu) : lignes à appliquer,
-    propositions à créer (grosse variation), pièces laissées (verrou, obsolète, variante plus chère).
+def _maintenant():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
-    → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider}
+
+def remplacable(desc, regles=None, maintenant=None) -> bool:
+    """Le prix actuel de la pièce n'est pas une référence — absent, estimé (prix_source
+    estimation_…) ou périmé (plus vieux que la règle jours_perime) — : le prix réel du fournisseur
+    le remplace sans validation. Un prix récent qui varie beaucoup reste proposé au gérant."""
+    if not isinstance(desc, dict):
+        return False
+    ht = desc.get("ht")
+    try:
+        if ht is None or Decimal(str(ht)) <= 0:
+            return True
+    except InvalidOperation:
+        return True
+    if str(desc.get("prix_source") or "").lower().startswith("estimation"):
+        return True
+    maj = desc.get("prix_maj_le")
+    if maj is None:
+        return True
+    if isinstance(maj, str):
+        try:
+            maj = datetime.fromisoformat(maj.replace("Z", ""))
+        except ValueError:
+            return True
+    if getattr(maj, "tzinfo", None) is not None:
+        maj = maj.astimezone(timezone.utc).replace(tzinfo=None)
+    jours = int((regles or {}).get("jours_perime") or 180)
+    return ((maintenant or _maintenant()) - maj).days > jours
+
+
+def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None) -> dict:
+    """Parmi les lignes reconnues de l'aperçu (import_prix.apercu) : lignes à appliquer,
+    propositions à créer (grosse variation d'un prix de référence), pièces laissées (verrou,
+    obsolète, variante plus chère). descs : prix.decrire_tarifs des pièces reconnues — une pièce
+    au prix absent, estimé ou périmé (`remplacable`) est appliquée même avec une grosse
+    variation (comptée dans `remplaces`).
+
+    → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces}
     """
     par_n = {}
     for rec in ap.get("reconnues") or []:
         par_n.setdefault(rec["n"], []).append(rec)
     vise = {}   # cle → HT retenu
-    out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0}
+    descs = descs or {}
+    out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0,
+           "remplaces": 0}
     # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère
     for n, recs in sorted(par_n.items(), key=lambda kv: (Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
         hts = {r["cle"]: Decimal(str(r["nouveau_ht"])) for r in recs}
@@ -579,6 +618,10 @@ def planifier(ap: dict) -> dict:
         for r in recs:
             alertes |= set(r.get("alertes") or [])
         if "variation" in alertes:
+            if all(remplacable(descs.get(r["cle"]), regles, maintenant) for r in recs):
+                out["remplaces"] += 1
+                out["lignes"].append(n)
+                continue
             out["a_valider"] += 1
             out["propositions"] += [{"cle": r["cle"], "ht": str(hts[r["cle"]]), "label": r["label"]} for r in recs]
         else:
@@ -588,7 +631,24 @@ def planifier(ap: dict) -> dict:
 
 
 _COMPTES = ("lignes", "reconnues", "non_reconnues", "inconnues", "verrouillees", "obsoletes", "variantes",
-            "a_valider", "modifies", "confirmes", "propositions")
+            "a_valider", "remplaces", "modifies", "confirmes", "propositions", "propositions_fermees")
+
+
+def _fermer_propositions(cur, lot_id: str) -> int:
+    """Propositions en attente des pièces dont le coût HT vient d'être écrit par ce lot, au même prix
+    (à 1 € près) : acceptées par le passage — plus rien à valider pour ces pièces. Une annulation du
+    lot les rouvre (prix._rouvrir_propositions)."""
+    cur.execute("""
+        UPDATE tarifs_propositions AS p
+           SET statut = 'acceptee', traite_le = NOW(), traite_par = %s, lot_id = %s
+          FROM tarifs_historique AS h
+         WHERE p.statut = 'en_attente' AND h.lot_id = %s
+           AND h.colonne IN ('prix_fournisseur_ht', 'ecran_prix_ht', 'batterie_prix_ht')
+           AND p.tarif_cle = CASE WHEN h.table_nom = 'tarifs' THEN 'tarifs:' || h.ligne_id
+                                  ELSE h.table_nom || ':' || h.ligne_id || ':' || split_part(h.colonne, '_', 1) END
+           AND h.nouveau IS NOT NULL AND abs(p.nouveau_ht - h.nouveau) <= 1
+    """, (AUTEUR, lot_id, lot_id))
+    return max(int(cur.rowcount or 0), 0)
 
 
 def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict) -> dict:
@@ -599,15 +659,20 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict) -> dic
     except import_prix.ImportErreur as e:
         res["erreur"] = str(e)
         return res
-    plan = planifier(ap)
+    cles = sorted({rec["cle"] for rec in ap.get("reconnues") or []})
+    descs = prix.decrire_tarifs(cur, cles, r) if cles else {}
+    plan = planifier(ap, descs, r)
     resume = ap["resume"]
     res.update(import_id=ap["import_id"], lignes=resume["lignes"], reconnues=resume["pieces_reconnues"],
                non_reconnues=resume["non_reconnues"], inconnues=resume["nouvelles"],
-               **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider")})
+               **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider", "remplaces")})
+    res["_cles"] = cles   # pour le diagnostic du passage (retiré du résumé enregistré)
     if plan["lignes"]:
         app = import_prix.appliquer(cur, ap["import_id"], {"lignes": plan["lignes"], "ignorer_invalides": True},
                                     AUTEUR, r=r)
         res.update(modifies=app["modifies"], confirmes=app["confirmes"], lot_id=app["lot_id"])
+        if app.get("lot_id"):
+            res["propositions_fermees"] = _fermer_propositions(cur, app["lot_id"])
     else:
         cur.execute("UPDATE tarifs_imports SET statut = 'synchro' WHERE id = %s", (ap["import_id"],))
     for p in plan["propositions"]:
@@ -617,6 +682,115 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict) -> dic
     # d'annulation du lot restent
     cur.execute("UPDATE tarifs_imports SET resume = resume - 'donnees' WHERE id = %s", (ap["import_id"],))
     return res
+
+
+# ─── Diagnostic : pièces de la grille sans prix Mobilax ─────────
+
+RAISONS = {
+    "aucun_produit": "Mobilax ne renvoie aucun produit pour ce modèle",
+    "piece_absente": "Mobilax a des produits pour ce modèle, mais pas cette pièce",
+    "non_reconnue": "Des produits Mobilax ressemblent, sans être rattachés à la pièce (nom à vérifier)",
+    "non_cherchee": "Modèle non cherché (passage incomplet)",
+}
+_FAMILLES = {"ecran": ("ecran", "lcd", "oled", "dalle", "vitre tactile"), "batterie": ("batterie", "battery"),
+             "connecteur": ("connecteur", "port de charge", "nappe de charge", "dock")}
+
+
+def famille_piece(type_piece) -> str:
+    t = normaliser(type_piece or "")
+    for f, mots in _FAMILLES.items():
+        if t.startswith(f) or any(t.startswith(m) for m in mots):
+            return f
+    return t.split(" ")[0] if t else ""
+
+
+def _nom_produit(p) -> str:
+    return " ".join(str(p.get("title_name") or p.get("name") or "").split())
+
+
+def requetes_par_modele(modeles) -> dict:
+    """{(marque, modèle): [requêtes]} — les mêmes requêtes que requetes_modeles, par modèle."""
+    from app.api import grille
+    out = {}
+    for marque, modele in modeles or ():
+        qs = []
+        for v in grille.variantes(modele) or [modele]:
+            q = requete_modele(marque, v)
+            if q and normaliser(q) not in {normaliser(x) for x in qs}:
+                qs.append(q)
+        out[(marque, modele)] = qs
+    return out
+
+
+def _pieces_grille(cur) -> list:
+    """Pièces fournisseur en vigueur : {cle, marque, modele, type_piece, qualite}."""
+    cur.execute("SELECT id, marque, modele, type_piece, qualite FROM tarifs WHERE obsolete IS NOT TRUE "
+                "ORDER BY marque, modele, id")
+    out = [{"cle": prix.tarif_cle("tarifs", r["id"]), "marque": r["marque"] or "", "modele": r["modele"] or "",
+            "type_piece": r["type_piece"] or "", "qualite": r["qualite"]} for r in cur.fetchall() or []]
+    cur.execute("SELECT id, modele FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE "
+                "ORDER BY modele, id")
+    for r in cur.fetchall() or []:
+        for piece in ("ecran", "batterie"):
+            out.append({"cle": prix.tarif_cle("tarifs_apple_devices", r["id"], piece), "marque": "Apple",
+                        "modele": r["modele"] or "", "type_piece": "Écran" if piece == "ecran" else "Batterie",
+                        "qualite": None})
+    return out
+
+
+def diagnostic_pieces(pieces, produits, reconnues, modeles=None, palier=None, cherchees=None, maintenant=None) -> dict:
+    """Pièces de la grille restées sans prix après un passage : raison (RAISONS) et jusqu'à trois
+    produits Mobilax de la même recherche qui ressemblent (même famille de pièce).
+
+    pieces : _pieces_grille ; produits : ceux du passage, chacun marqué de sa recherche (_q) ;
+    reconnues : clés des pièces qui ont reçu une ligne ; modeles : (marque, modèle) cherchés ;
+    cherchees : requêtes réellement envoyées (passage incomplet).
+    → {le, n, par_raison, pieces: [{cle, marque, modele, type_piece, qualite, raison, candidats}], tronque}
+    """
+    par_q = {}
+    for p in produits or []:
+        par_q.setdefault(normaliser(p.get("_q") or ""), []).append(p)
+    requetes = requetes_par_modele(modeles) if modeles is not None else {}
+    reconnues = set(reconnues or ())
+    faites = {normaliser(q) for q in cherchees} if cherchees is not None else None
+    out, par_raison = [], {k: 0 for k in RAISONS}
+    for pc in pieces or []:
+        if pc["cle"] in reconnues:
+            continue
+        qs = requetes.get((pc["marque"], pc["modele"]))
+        if qs is None:
+            qs = [q for q in [requete_modele(pc["marque"], pc["modele"])] if q]
+        if faites is not None and not any(normaliser(q) in faites for q in qs):
+            raison, candidats = "non_cherchee", []
+        else:
+            prods = [p for q in qs for p in par_q.get(normaliser(q), [])]
+            fam = famille_piece(pc["type_piece"])
+            mots = _FAMILLES.get(fam, (fam,) if fam else ())
+            candidats = [p for p in prods
+                         if produit_pertinent(p) and any(m in normaliser(_nom_produit(p)) for m in mots)]
+            raison = "aucun_produit" if not prods else "non_reconnue" if candidats else "piece_absente"
+        par_raison[raison] += 1
+        if len(out) < DIAG_MAX_PIECES:
+            out.append({
+                "cle": pc["cle"], "marque": pc["marque"], "modele": pc["modele"], "type_piece": pc["type_piece"],
+                "qualite": pc.get("qualite"), "raison": raison,
+                "candidats": [{"nom": _nom_produit(p)[:160],
+                               "prix_ht": float(prix_produit(p, palier)) if prix_produit(p, palier) is not None else None}
+                              for p in candidats[:3]],
+            })
+    n = sum(par_raison.values())
+    return {"le": maintenant or _utc(), "n": n, "par_raison": par_raison, "pieces": out, "tronque": n > len(out)}
+
+
+def diagnostic(admin: bool = False, cur=None) -> dict:
+    """Diagnostic du dernier passage (params MOBILAX_DIAGNOSTIC) ; prix HT des candidats pour l'admin."""
+    d = _resume_lu(params_cache.get_params([P_DIAG], cur=cur)[P_DIAG]) or {}
+    out = {"le": d.get("le"), "n": int(d.get("n") or 0), "par_raison": d.get("par_raison") or {},
+           "pieces": list(d.get("pieces") or []), "tronque": bool(d.get("tronque")), "raisons": RAISONS}
+    if not admin:
+        out["pieces"] = [{**p, "candidats": [{"nom": c.get("nom")} for c in p.get("candidats") or []]}
+                         for p in out["pieces"]]
+    return out
 
 
 # ─── Paramètres (jetons, état) ──────────────────────────────────
@@ -749,7 +923,8 @@ def _noter(resume: dict):
 def _resume_vide() -> dict:
     return {"debut": _utc(), "fin": None, "ok": False, "erreur": None, "code": None, "requetes": 0, "modeles": 0,
             "recherches": 0, "erreurs_reseau": 0, "produits": 0, "produits_prix": 0, "incomplet": False,
-            "prix_masques": False, "lots": [], "imports": [], "champs": [], **{k: 0 for k in _COMPTES}}
+            "prix_masques": False, "lots": [], "imports": [], "champs": [], "sans_prix": None,
+            **{k: 0 for k in _COMPTES}}
 
 
 def synchroniser(transport=None, dormir=time.sleep) -> dict:
@@ -773,7 +948,7 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
             pass
         _sauver_jetons(client)
         resume["palier"] = client.palier.get("nom") or None
-        produits, vus, erreurs_suite = [], set(), 0
+        produits, vus, erreurs_suite, cherchees = [], set(), 0, []
         for i, q in enumerate(requetes):
             if time.monotonic() - t0 > BUDGET_SECONDES:
                 resume["incomplet"] = True
@@ -788,16 +963,19 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
                     raise ErreurMobilax(f"{e} ({erreurs_suite} erreurs de suite)", e.code)
                 continue
             resume["recherches"] += 1
+            cherchees.append(q)
             for p in lus:
                 cle = p.get("id") or p.get("ean13") or json.dumps(p, sort_keys=True, default=str)[:200]
                 if cle not in vus:
                     vus.add(cle)
+                    if isinstance(p, dict):
+                        p["_q"] = q
                     produits.append(p)
             if i + 1 < len(requetes):
                 dormir(client.pause)
         resume["requetes"] = client.requetes
         resume["produits"] = len(produits)
-        resume["champs"] = sorted({k for p in produits[:50] for k in p})[:40]
+        resume["champs"] = sorted({k for p in produits[:50] for k in p if not str(k).startswith("_")})[:40]
         lignes = [l for l in (ligne_produit(p, client.palier) for p in produits if produit_pertinent(p)) if l]
         resume["produits_prix"] = len(lignes)
         if produits and not lignes:
@@ -812,12 +990,20 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
                 resultats = [_importer(cur, "tarifs", csv_lignes(lignes), f"mobilax-{jour}.csv", r)]
                 if apple:
                     resultats.append(_importer(cur, "tarifs_apple_devices", csv_lignes(apple), f"mobilax-{jour}-apple.csv", r))
+            cles_reconnues = set()
             for res in resultats:
+                cles_reconnues |= set(res.pop("_cles", None) or ())
                 for k in _COMPTES:
-                    resume[k] += res[k]
+                    resume[k] += int(res.get(k) or 0)
                 if res["lot_id"]:
                     resume["lots"].append(res["lot_id"])
                 resume["imports"].append({k: res[k] for k in ("cible", "import_id", "lot_id", "erreur")})
+            # Pièces restées sans prix : pourquoi, et quels produits Mobilax ressemblent
+            with get_cursor() as cur:
+                diag = diagnostic_pieces(_pieces_grille(cur), produits, cles_reconnues, modeles, client.palier,
+                                         cherchees)
+                _ecrire(cur, P_DIAG, json.dumps(diag, ensure_ascii=False, default=str))
+            resume["sans_prix"] = diag["n"]
         resume["ok"] = True
         if resume["modifies"] or resume["propositions"]:
             logger.info("Synchro Mobilax : %s prix mis à jour, %s proposition(s), %s produits lus",

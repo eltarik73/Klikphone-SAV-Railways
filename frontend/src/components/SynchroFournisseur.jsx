@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, ClipboardPaste, Copy, Info, KeyRound, Loader2, RefreshCw, Truck, Unplug,
+  AlertTriangle, CheckCircle2, ChevronDown, ClipboardPaste, Copy, Info, KeyRound, Loader2, RefreshCw, SearchX, Truck, Unplug,
 } from 'lucide-react';
 import api from '../lib/api';
 import { formatDate } from '../lib/utils';
@@ -49,8 +49,11 @@ export function decrireMobilax(m) {
   }
   if (m.ok === true) {
     const morceaux = [`${pluriel(n(r.modifies), 'prix mis à jour', 'prix mis à jour')}`, `${n(r.confirmes)} confirmé${n(r.confirmes) > 1 ? 's' : ''}`];
+    if (n(r.remplaces)) morceaux.push(`dont ${n(r.remplaces)} prix estimé${n(r.remplaces) > 1 ? 's' : ''} ou périmé${n(r.remplaces) > 1 ? 's' : ''} remplacé${n(r.remplaces) > 1 ? 's' : ''} sans validation`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
+    if (n(r.propositions_fermees)) morceaux.push(`${n(r.propositions_fermees)} proposition${n(r.propositions_fermees) > 1 ? 's' : ''} réglée${n(r.propositions_fermees) > 1 ? 's' : ''}`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
+    if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Mobilax`);
     if (r.incomplet) morceaux.push('passage incomplet (temps écoulé)');
     return {
       ton: 'ok',
@@ -62,6 +65,83 @@ export function decrireMobilax(m) {
     ton: 'neutre', titre: 'Mobilax connecté',
     detail: m.active ? 'Première synchro cette nuit, ou tout de suite avec « Synchroniser maintenant ».' : 'Synchro quotidienne coupée.',
   };
+}
+
+const RAISONS_DEFAUT = {
+  aucun_produit: 'Mobilax ne renvoie aucun produit pour ce modèle',
+  piece_absente: 'Mobilax a des produits pour ce modèle, mais pas cette pièce',
+  non_reconnue: 'Des produits Mobilax ressemblent, sans être rattachés à la pièce (nom à vérifier)',
+  non_cherchee: 'Modèle non cherché (passage incomplet)',
+};
+const ORDRE_RAISONS = ['non_reconnue', 'piece_absente', 'aucun_produit', 'non_cherchee'];
+const euros = (v) => (Number.isFinite(Number(v)) ? `${Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT` : '');
+
+/**
+ * Pièces de la grille restées sans prix Mobilax au dernier passage (GET …/mobilax/diagnostic), groupées par
+ * raison, avec les produits Mobilax ressemblants (prix pour l'admin). Rien quand tout a un prix.
+ */
+export function DiagnosticMobilax({ nombre, estAdmin = false }) {
+  const [ouvert, setOuvert] = useState(false);
+  const [diag, setDiag] = useState(null);
+  const [erreur, setErreur] = useState('');
+  const [chargement, setChargement] = useState(false);
+  const [tout, setTout] = useState(false);
+  const id = useId();
+  if (!n(nombre)) return null;
+  const basculer = async () => {
+    const suivant = !ouvert;
+    setOuvert(suivant);
+    if (!suivant || diag || chargement) return;
+    setChargement(true);
+    setErreur('');
+    try {
+      setDiag(await api.getDiagnosticMobilax());
+    } catch (e) {
+      setErreur(e?.message || 'Lecture du diagnostic impossible');
+    } finally {
+      setChargement(false);
+    }
+  };
+  const raisons = { ...RAISONS_DEFAUT, ...(diag?.raisons || {}) };
+  const pieces = Array.isArray(diag?.pieces) ? diag.pieces : [];
+  const groupes = ORDRE_RAISONS.map((r) => ({ raison: r, pieces: pieces.filter((p) => p.raison === r) })).filter((g) => g.pieces.length);
+  const LIMITE = 40;
+  return (
+    <div className="w-full">
+      <button type="button" onClick={basculer} aria-expanded={ouvert} aria-controls={id} className="btn-secondary btn-sm">
+        <SearchX aria-hidden="true" /> {pluriel(n(nombre), 'pièce sans prix Mobilax', 'pièces sans prix Mobilax')}
+        <ChevronDown aria-hidden="true" className={`transition-transform motion-reduce:transition-none ${ouvert ? 'rotate-180' : ''}`} />
+      </button>
+      {ouvert && (
+        <div id={id} className="mt-2 rounded-xl border border-slate-200 bg-white p-4 text-slate-800 text-sm">
+          {chargement && <p className="loading-inline" role="status"><Loader2 aria-hidden="true" /> Lecture du diagnostic…</p>}
+          {erreur && <p role="alert" className="text-red-700">{erreur}</p>}
+          {diag && !pieces.length && <p>Toutes les pièces de la grille ont reçu un prix au dernier passage.</p>}
+          {groupes.map((g) => (
+            <section key={g.raison} className="mb-3 last:mb-0">
+              <h3 className="font-semibold">{raisons[g.raison] || g.raison} <span className="font-normal text-slate-500">({g.pieces.length})</span></h3>
+              <ul className="mt-1 space-y-1">
+                {(tout ? g.pieces : g.pieces.slice(0, LIMITE)).map((p) => (
+                  <li key={p.cle} className="flex flex-wrap gap-x-2">
+                    <span className="font-medium">{p.marque} {p.modele} — {p.type_piece}{p.qualite ? ` ${p.qualite}` : ''}</span>
+                    {Array.isArray(p.candidats) && p.candidats.length > 0 && (
+                      <span className="text-slate-600">
+                        Mobilax : {p.candidats.map((c) => `${c.nom}${estAdmin && c.prix_ht !== null && c.prix_ht !== undefined ? ` (${euros(c.prix_ht)})` : ''}`).join(' · ')}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {!tout && g.pieces.length > LIMITE && (
+                <button type="button" onClick={() => setTout(true)} className="btn-secondary btn-sm mt-1">Voir les {g.pieces.length} pièces</button>
+              )}
+            </section>
+          ))}
+          {diag?.tronque && <p className="text-xs text-slate-500">Liste limitée aux {pieces.length} premières pièces ({n(diag.n)} au total).</p>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const TONS = {
@@ -224,6 +304,8 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
           Utopya : pas de synchro automatique possible (prix visibles seulement connecté, site protégé par Cloudflare) — passez par « Importer une liste de prix ».
         </p>
       </div>
+
+      {!enCours && m?.ok === true && <DiagnosticMobilax nombre={m?.resume?.sans_prix} estAdmin={estAdmin} />}
 
       {estAdmin && (
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
