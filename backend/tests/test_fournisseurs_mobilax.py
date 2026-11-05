@@ -9,7 +9,7 @@ annulent la transaction.
 import json
 import os
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -175,7 +175,7 @@ def test_lignes_et_csv_relus_par_le_moteur_d_import():
     # Pièce et qualité lues dans la catégorie Mobilax, modèle dans le nom (marque comprise)
     assert lignes[2] == {"reference": "3000000355123", "designation": "Ecran Tactile OEM Honor 200 5G",
                          "modele": "Honor 200 5G", "type_piece": "Ecran", "qualite": "Compatible",
-                         "prix_ht": Decimal("54.90")}
+                         "prix_ht": Decimal("54.90"), "en_stock": True, "url": None}
     assert lignes[3]["designation"] == "Batterie Originale Honor 200 5G"
     assert (lignes[3]["modele"], lignes[3]["type_piece"], lignes[3]["qualite"]) == ("Honor 200 5G", "Batterie", "Original")
     assert lignes[0]["type_piece"] == "Ecran" and lignes[0]["qualite"] == "Original"   # bloc écran complet
@@ -220,7 +220,8 @@ def test_planifier_applique_propose_et_laisse():
     assert plan["propositions"] == [{"cle": "tarifs:2", "ht": "20.0", "label": "tarifs:2"}]
     assert (plan["verrouillees"], plan["obsoletes"], plan["variantes"], plan["a_valider"]) == (1, 1, 2, 1)
     assert F.planifier({"reconnues": []}) == {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0,
-                                               "variantes": 0, "a_valider": 0, "remplaces": 0, "plus_cher_ailleurs": 0}
+                                               "variantes": 0, "a_valider": 0, "remplaces": 0, "plus_cher_ailleurs": 0,
+                                               "autre_fournisseur_choisi": 0}
 
 
 # ─── Prix sans valeur de référence : remplacés sans validation ──
@@ -300,7 +301,8 @@ def test_diagnostic_pieces_raisons_et_candidats():
     assert par_cle["tarifs:4"]["raison"] == "aucun_produit"
     assert par_cle["tarifs:5"]["raison"] == "non_cherchee"
     assert par_cle["tarifs_apple_devices:9:batterie"]["raison"] == "non_reconnue"
-    assert d["par_raison"] == {"aucun_produit": 1, "piece_absente": 1, "non_reconnue": 2, "non_cherchee": 1}
+    assert d["par_raison"] == {"aucun_produit": 1, "piece_absente": 1, "non_reconnue": 2, "non_cherchee": 1,
+                               "sans_prix_fournisseur": 0}
     assert set(F.RAISONS) == set(d["par_raison"])
 
 
@@ -515,7 +517,7 @@ def test_synchroniser_complet_avec_import_simule(monkeypatch):
     ]]}, journal, nouveau_refresh="rot-" + "e" * 30)
     imports = []
 
-    def faux_import(cur, cible, contenu, nom, r):
+    def faux_import(cur, cible, contenu, nom, r, **kw):
         tableau = import_prix.lire_tableau(nom, contenu)
         imports.append((cible, nom, len(tableau) - 1))
         return {"cible": cible, "import_id": len(imports), "lot_id": f"lot-{cible}", "erreur": None,
@@ -552,7 +554,7 @@ def test_synchroniser_applique_le_palier_du_compte(monkeypatch):
     transport = _transport({"Honor 200 5G": [produits]}, [], details=details)
     csv_recus = []
 
-    def faux_import(cur, cible, contenu, nom, r):
+    def faux_import(cur, cible, contenu, nom, r, **kw):
         csv_recus.append(import_prix.lire_tableau(nom, contenu))
         return {"cible": cible, "import_id": 1, "lot_id": "lot", "erreur": None, "lignes": 4, "reconnues": 0,
                 "non_reconnues": 0, "inconnues": 0, "verrouillees": 0, "obsoletes": 0, "variantes": 0,
@@ -1027,3 +1029,116 @@ def test_planifier_moins_disant_entre_fournisseurs():
     # Même fournisseur : logique habituelle (variation → proposition)
     plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Mobilax")
     assert plan["lignes"] == [1, 2] and plan["plus_cher_ailleurs"] == 0 and [p["cle"] for p in plan["propositions"]] == ["tarifs:3"]
+
+
+# ─── Nappe power, produits sans prix, requêtes iPad et par famille, fournisseur choisi ──
+
+def test_categorie_nappe_power_et_lignes_sans_prix():
+    assert F.piece_categorie("Nappe Power On/Off et Volume Premium") == ("Bouton power", "Compatible")
+    assert F.piece_categorie("Nappe Power On/Off Originale") == ("Bouton power", "Original")
+    assert F.piece_categorie("Nappe de Connexion Premium") is None and F.piece_categorie("Nappe LCD Premium") is None
+    assert F.piece_categorie("Bouton On/Off et Volume Premium") is None
+    p = {"id": 7, "name": "Nappe Power On/Off Apple iPhone 11 (Flash)", "category_name": "Nappe Power On/Off",
+         "active": True, "quantity": 0, "url": "https://www.mobilax.fr/nappe-power-iphone-11"}
+    assert F.lignes_produit(p) == []
+    l = F.lignes_produit(p, sans_prix=True)
+    assert len(l) == 1 and l[0]["prix_ht"] is None and l[0]["type_piece"] == "Bouton power"
+    assert l[0]["modele"] == "Apple iPhone 11" and l[0]["en_stock"] is False and l[0]["url"] == p["url"]
+    l = F.lignes_produit({**p, "price": 9.5, "quantity": 3, "url": "nappe-power-iphone-11"})
+    assert l[0]["prix_ht"] == Decimal("9.50") and l[0]["en_stock"] is True and l[0]["url"] is None
+    assert F.en_stock_produit({"is_availibility_alert": True}) is False and F.en_stock_produit({}) is None
+    assert F.infos_lignes(l) == {l[0]["reference"]: {"url": None, "en_stock": True}}
+
+
+def test_requetes_ipad_canoniques():
+    assert F.requetes_pour("Apple", 'iPad 7 (2019) 10.2"') == ["iPad 7"]
+    assert F.requete_modele("Apple", 'iPad 9 (2021) 10.2"') == "iPad 9"
+    assert F.requetes_pour("Apple", 'iPad Pro 11" 3e gen M1 (2021)') == ["iPad Pro 11", "A2377"]
+    assert F.requetes_pour("Apple", 'iPad Air 6 M2 11" (2024)') == ["iPad Air 6", "A2902"]
+    assert F.requetes_pour("Apple", "iPad Mini 6 (2021)") == ["iPad Mini 6"]
+    assert F.requetes_pour("Apple", "iPhone 12/12 Pro") == ["iPhone 12", "iPhone 12 Pro"]
+    assert F.requetes_pour("Samsung", "Galaxy A54 5G") == ["Galaxy A54 5G"]
+    assert F.requetes_modeles([("Apple", 'iPad 7 (2019) 10.2"'), ("Apple", "iPad 7 (2019)")]) == ["iPad 7"]
+    assert F.requetes_par_modele([("Apple", "iPad Mini 6 (2021)")]) == {("Apple", "iPad Mini 6 (2021)"): ["iPad Mini 6"]}
+
+
+def test_synchroniser_cherche_par_famille_quand_la_recherche_deborde(monkeypatch):
+    produits = _produits()
+    journal = []
+    base = _Base({F.P_REFRESH: REFRESH}, [("Honor", "200 5G")])
+    pages = [produits[:2], produits[2:4], produits[4:6], produits[6:8], [produits[0]]]     # 5 pages > PAGES_MAX
+    nappe = {"id": 777, "name": "Nappe Power On/Off et Volume Premium Honor 200 5G", "ean13": "3000000777777",
+             "price": 7.9, "active": True, "category_name": "Nappe Power On/Off et Volume Premium", "quantity": 4}
+    transport = _transport({"Honor 200 5G": pages, "Nappe Power Honor 200 5G": [[nappe]]}, journal)
+    csv_recus = []
+
+    def faux_import(cur, cible, contenu, nom, r, **kw):
+        csv_recus.append((import_prix.lire_tableau(nom, contenu), kw.get("infos")))
+        return {"cible": cible, "import_id": 1, "lot_id": "lot", "erreur": None, **{k: 0 for k in F._COMPTES}}
+
+    monkeypatch.setattr(F, "_importer", faux_import)
+    monkeypatch.setattr(F.prix, "regles", lambda cur: {"tva": 1.2})
+    with _sur(base):
+        r = F.synchroniser(transport=transport, dormir=lambda s: None)
+    assert r["ok"] is True, r
+    recherches = [req.url.params.get("search") for req in journal if "web/products" in req.url.path]
+    assert recherches[:4] == ["Honor 200 5G"] * 4
+    assert set(recherches[4:]) == {f"{fam} Honor 200 5G" for fam in F.FAMILLES_REQUETES}
+    assert r["debordements"] == 1 and r["recherches"] == 1
+    # La nappe power trouvée par la recherche de famille est importée, avec son stock
+    tableau, infos = csv_recus[0]
+    assert any("Nappe Power" in " ".join(str(c) for c in ligne) for ligne in tableau)
+    assert infos["3000000777777"] == {"url": None, "en_stock": True}
+
+
+def test_planifier_respecte_le_fournisseur_choisi():
+    maintenant = datetime(2026, 11, 5, 12, 0)
+    recent = maintenant - timedelta(days=3)
+    ap = {"reconnues": [
+        {"n": 1, "cle": "tarifs:1", "nouveau_ht": 30.0, "verrou": False, "obsolete": False, "alertes": [], "label": "a"},
+        {"n": 2, "cle": "tarifs:2", "nouveau_ht": 30.0, "verrou": False, "obsolete": False, "alertes": [], "label": "b"},
+        {"n": 3, "cle": "tarifs:3", "nouveau_ht": 30.0, "verrou": False, "obsolete": False, "alertes": [], "label": "c"},
+    ]}
+    descs = {
+        # Utopya moins cher, mais le gérant a choisi Mobilax : appliqué quand même
+        "tarifs:1": {"ht": 20, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": "Mobilax"},
+        # Le gérant a choisi Utopya : jamais touché par Mobilax
+        "tarifs:2": {"ht": 50, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": "Utopya"},
+        # Sans choix : moins-disant (Utopya à 20 < 30 → laissé)
+        "tarifs:3": {"ht": 20, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": None},
+    }
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax")
+    assert plan["lignes"] == [1] and plan["autre_fournisseur_choisi"] == 1 and plan["plus_cher_ailleurs"] == 1
+    assert F.fournisseur_choisi(descs["tarifs:1"]) == "Mobilax" and F.fournisseur_choisi({}) is None
+
+
+def test_diagnostic_sans_prix_fournisseur_et_familles():
+    assert F.famille_piece("Vitre arriere") == "vitre arriere" and F.famille_piece("Vitre camera arriere") == "vitre camera"
+    assert F.famille_piece("Bouton power") == "bouton power" and F.famille_piece("Ecran") == "ecran"
+    pieces = [{"cle": "tarifs:1", "marque": "Apple", "modele": "iPhone 11", "type_piece": "Bouton power", "qualite": None},
+              {"cle": "tarifs:2", "marque": "Apple", "modele": "iPhone 11", "type_piece": "Vitre arriere", "qualite": None}]
+    cache = {"id": 1, "name": "Vitre avec Film OCA Apple iPhone 11", "category_name": "Vitre avec Film OCA", "active": True, "_q": "iPhone 11"}
+    d = F.diagnostic_pieces(pieces, [cache], set(), modeles=[("Apple", "iPhone 11")], cherchees=["iPhone 11"],
+                            sans_prix={"tarifs:1": [{"designation": "Nappe Power On/Off Apple iPhone 11 (Flash)", "en_stock": False}]})
+    assert d["par_raison"]["sans_prix_fournisseur"] == 1 and d["par_raison"]["piece_absente"] == 1
+    assert d["pieces"][0]["candidats"] == [{"nom": "Nappe Power On/Off Apple iPhone 11 (Flash)", "prix_ht": None,
+                                            "sans_prix": True, "en_stock": False}]
+    # « Vitre avec Film OCA » n'est pas une vitre arrière : aucun candidat trompeur
+    assert d["pieces"][1]["raison"] == "piece_absente" and d["pieces"][1]["candidats"] == []
+    assert "sans_prix_fournisseur" in F.RAISONS
+
+
+def test_importer_memorise_le_prix_du_fournisseur(monkeypatch):
+    ap = {"import_id": 5, "reconnues": [{"n": 1, "cle": "tarifs:1", "nouveau_ht": 12.0, "ref": "R1", "designation": "x",
+                                          "verrou": False, "obsolete": False, "alertes": [], "label": "l"}],
+          "resume": {"lignes": 1, "pieces_reconnues": 1, "non_reconnues": 0, "nouvelles": 0}}
+    monkeypatch.setattr(F.import_prix, "apercu", lambda *a, **k: ap)
+    monkeypatch.setattr(F.prix, "decrire_tarifs", lambda cur, cles, r: {"tarifs:1": {"ht": None, "fournisseur": None}})
+    monkeypatch.setattr(F.import_prix, "appliquer", lambda *a, **k: {"modifies": 1, "confirmes": 0, "lot_id": "lot"})
+    monkeypatch.setattr(F, "_fermer_propositions", lambda cur, lot, auteur: 0)
+    notes = []
+    monkeypatch.setattr(F.prix, "enregistrer_prix_fournisseur", lambda cur, f, s, recs, infos: notes.append((f, s, recs, infos)) or 1)
+    base = _Base()
+    res = F._importer(base, "tarifs", b"", "x.csv", {}, fournisseur="Utopya", source="utopya",
+                      infos={"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}})
+    assert res["modifies"] == 1 and notes == [("Utopya", "utopya", ap["reconnues"], {"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}})]

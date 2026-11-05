@@ -685,6 +685,64 @@ export default function TarifsPage() {
     }
   }
 
+  // Grille comparative : le gérant retient Mobilax ou Utopya pour une pièce (null : moins-disant). Le serveur
+  // applique le prix connu de ce fournisseur (prix client recalculé) et la synchro respecte ensuite le choix.
+  async function choisirFournisseur(piece, fournisseur) {
+    const ident = idPiece(piece);
+    const nom = nomPiece(piece, piece.marque || marqueUrl, piece.modele || modeleUrl);
+    setEnCours(ident);
+    try {
+      const res = await sensible(() => (estPieceApple(piece)
+        ? api.choisirFournisseurApple(piece.device_id, { piece: piece.piece, fournisseur })
+        : api.choisirFournisseurPiece(piece.id, fournisseur)));
+      const a = res?.applique && typeof res.applique === 'object' ? res.applique : null;
+      majPiece(ident, (p) => ({
+        fournisseur_choisi: res?.fournisseur_choisi ?? fournisseur ?? null,
+        ...(a ? {
+          fournisseur: a.fournisseur || p.fournisseur,
+          prix_fournisseur_ht: a.nouveau_ht ?? p.prix_fournisseur_ht,
+          prix_client: a.nouveau_client ?? p.prix_client,
+          prix_source: String(a.fournisseur || '').toLowerCase() || p.prix_source,
+          prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok', estime: false, a_renseigner: false, calcul: null,
+        } : {}),
+      }));
+      if (res?.verrouille) toast.success(`${nom} : fournisseur noté ; le prix est verrouillé, il ne change pas.`);
+      else if (a) toast.success(`${nom} : prix ${a.fournisseur} retenu${Number(a.nouveau_client) > 0 ? ` (${a.nouveau_client} € client)` : ''}.`);
+      else if (fournisseur) toast.success(`${nom} : ${fournisseur} retenu ; son prix sera pris au prochain passage.`);
+      else toast.success(`${nom} : retour au fournisseur le moins cher.`);
+      invalidateCache('tarifs');
+      chargerSanteDiffere();
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Fournisseur non enregistré');
+      if (msg) toast.error(msg);
+    } finally {
+      setEnCours(null);
+    }
+  }
+
+  // Vitre arrière et bouton power sur TOUS les modèles de la grille (prix à renseigner, remplis par la synchro
+  // Mobilax et la collecte Utopya)
+  async function completerGrille() {
+    setEnCours('completer');
+    try {
+      const res = await sensible(() => api.creerPiecesCourantesTous({ types: ['Vitre arriere', 'Bouton power'] }));
+      const nb = Number(res?.crees) || 0;
+      const modeles = Number(res?.modeles) || 0;
+      toast.success(nb === 0
+        ? 'Tous les modèles ont déjà leur vitre arrière et leur bouton power.'
+        : `${nb} pièce${nb > 1 ? 's' : ''} créée${nb > 1 ? 's' : ''} sur ${modeles} modèle${modeles > 1 ? 's' : ''} (prix à renseigner) : lancez la synchro Mobilax et la collecte Utopya.`);
+      invalidateCache('tarifs');
+      mutateModele();
+      mutateMarques();
+      chargerSante();
+    } catch (e) {
+      const msg = messageErreurPrix(e, 'Pièces non créées');
+      if (msg) toast.error(msg);
+    } finally {
+      setEnCours(null);
+    }
+  }
+
   async function ajouterPiecesCourantes() {
     setEnCours('courantes');
     try {
@@ -983,7 +1041,8 @@ export default function TarifsPage() {
         ) : (
           <div className="border-t border-slate-100">
             <TableauPieces pieces={pieces} marque={marqueUrl} modele={modeleUrl} regles={regles} seuils={seuils} isAdmin={isAdmin}
-              htVisible={htVisibleModele} onEnregistrer={enregistrerHt} onVerrou={basculerVerrou} onStock={basculerStock} enCours={enCours} envoiEnCours={envoisHt.enCours} />
+              htVisible={htVisibleModele} onEnregistrer={enregistrerHt} onVerrou={basculerVerrou} onStock={basculerStock}
+              onChoisirFournisseur={choisirFournisseur} enCours={enCours} envoiEnCours={envoisHt.enCours} />
           </div>
         )}
       </section>
@@ -1145,8 +1204,21 @@ export default function TarifsPage() {
           onDevenirAdmin={() => setShowAdminLogin(true)}
         />
 
-        {/* Tarifs Mobilax mis à jour chaque jour (une connexion à coller une fois) ; Utopya : import de fichier */}
+        {/* Tarifs Mobilax mis à jour chaque jour (une connexion à coller une fois) ; Utopya : favori dans le navigateur */}
         <SynchroFournisseur estAdmin={isAdmin} />
+
+        {isAdmin && (
+          <div className="card-section flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium text-slate-900">Compléter la grille : vitre arrière et bouton power</p>
+              <p className="t-caption">Crée ces deux pièces (prix à renseigner) sur chaque modèle qui ne les a pas ; la synchro Mobilax et la collecte Utopya les remplissent ensuite.</p>
+            </div>
+            <button type="button" onClick={completerGrille} disabled={enCours === 'completer'} className="btn-secondary btn-sm">
+              {enCours === 'completer' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <ListPlus aria-hidden="true" />}
+              Compléter tous les modèles
+            </button>
+          </div>
+        )}
 
         <MethodeCalcul regles={regles} methode={methode} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
 

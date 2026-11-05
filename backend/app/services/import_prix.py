@@ -74,13 +74,19 @@ _PIECES = [
     # Caméra avant : pièce à part (jamais le prix de la caméra arrière)
     ("camera_avant", "Camera avant", ["camera avant", "camera frontale", "camera selfie", "appareil photo avant"]),
     ("camera_arriere", "Camera arriere", ["camera arriere", "camera principale", "appareil photo arriere", "camera"]),
+    # Nappe du bouton power (marche/arrêt, souvent avec le volume) : la pièce que l'on change. Le capuchon
+    # seul (« Bouton On/Off ») n'est pas cette pièce : ses noms ne citent ni nappe ni power
+    ("bouton_power", "Bouton power", ["nappe power on off", "nappe bouton power", "nappe boutons power",
+                                      "nappe power volume", "nappe power", "nappe on off", "nappe allumage",
+                                      "nappe marche arret", "power flex", "flex power", "bouton power"]),
     ("connecteur", "Connecteur de charge", ["nappe connecteur de charge", "nappe connecteur charge",
                                             "nappe connecteur", "connecteur de charge", "connecteur charge",
                                             "connecteur", "port de charge", "dock de charge"]),
     ("haut_parleur", "Haut-parleur", ["haut parleur", "buzzer", "speaker"]),
     ("ecouteur", "Ecouteur interne", ["ecouteur interne", "ecouteur"]),
     ("batterie", "Batterie", ["batterie", "battery"]),
-    ("ecran", "Ecran", ["bloc ecran", "ecran", "afficheur", "screen", "display"]),
+    # « LCD iPad 10.2" (7/8/9e Gen) » (Utopya) : l'afficheur seul est la pièce écran (sa qualité : LCD)
+    ("ecran", "Ecran", ["bloc ecran", "ecran", "afficheur", "screen", "display", "lcd"]),
 ]
 _TYPE_PIECE = {cle: valeur for cle, valeur, _ in _PIECES}
 # (valeur enregistrée dans tarifs.qualite, motifs) : ordre = priorité (« Soft OLED » avant « OLED »)
@@ -120,7 +126,10 @@ _MOTS_MODELE = {"pro", "max", "plus", "mini", "ultra", "lite", "fe", "neo", "not
 # batterie ») : la ligne n'est pas cette pièce (jamais le prix d'un adhésif sur une batterie)
 _ACCESSOIRES = {"adhesif", "adhesifs", "colle", "film", "films", "protection", "protections", "protecteur",
                 "protege", "trempe", "coque", "coques", "etui", "housse", "chargeur", "cable", "cables", "outil",
-                "outils", "tournevis", "ventouse", "spatule", "sticker", "autocollant", "joint", "joints"}
+                "outils", "tournevis", "ventouse", "spatule", "sticker", "autocollant", "joint", "joints",
+                # « Nappe LCD », « Nappe écran », « Nappe batterie » : une nappe n'est pas la pièce qu'elle cite
+                # (la nappe power est reconnue par son propre motif, en tête du nom)
+                "nappe"}
 
 
 class ImportErreur(ValueError):
@@ -391,11 +400,111 @@ _TAILLE = re.compile(r"\b\d{1,2}(?:[.,]\d{1,2})?\s*(?:\"|”|″|''|pouces?\b|in
 # Niveaux de correspondance, du plus strict au plus tolérant : nom écrit à l'identique (références,
 # années et tailles comprises) ; nom normalisé ; sans 5G/4G ni année ; sans référence Apple A1234 ;
 # sans taille d'écran en pouces
-NIVEAUX = ("ref", "exact", "modele", "souple", "sans_ref", "sans_taille")
+NIVEAUX = ("ref", "exact", "modele", "souple", "ipad", "sans_ref", "sans_taille")
 # Niveau « ref » : références Apple (A1932, A2337) du nom — un iPad ou MacBook se reconnaît à sa
 # référence quelle que soit la façon d'écrire le reste (« MacBook Air 13" (2020) A2179 » = « MacBook
 # Air 13" A2179 (2020 Intel) »)
 _REFS_APPLE = re.compile(r"\ba\d{4}\b")
+
+
+# ─── iPad : une clé par génération ──────────────────────────────
+# Un iPad s'écrit de mille façons (« iPad 7 (2019) 10.2" », « iPad 10.2" (7/8/9e Gen) », « iPad 10.2" (2019)
+# A2197 », « iPad Air 11 M2 2024 », « iPad Pro 11 (2021/2022) ») : le niveau « ipad » ramène chaque nom à une
+# clé canonique par génération, d'après la famille, le numéro, la taille, l'année, la puce ou la référence.
+# (clé, famille, numéro, taille en pouces, année, puce, références Apple)
+IPADS = (
+    ("ipad 5", "ipad", 5, "9.7", 2017, None, ("A1822", "A1823")),
+    ("ipad 6", "ipad", 6, "9.7", 2018, None, ("A1893", "A1954")),
+    ("ipad 7", "ipad", 7, "10.2", 2019, None, ("A2197", "A2198", "A2200")),
+    ("ipad 8", "ipad", 8, "10.2", 2020, None, ("A2270", "A2428", "A2429", "A2430")),
+    ("ipad 9", "ipad", 9, "10.2", 2021, None, ("A2602", "A2603", "A2604", "A2605")),
+    ("ipad 10", "ipad", 10, "10.9", 2022, None, ("A2696", "A2757", "A2777", "A3162")),
+    ("ipad 11", "ipad", 11, "11", 2025, "a16", ("A3354", "A3355", "A3356")),
+    ("ipad air 2", "air", 2, "9.7", 2014, None, ("A1566", "A1567")),
+    ("ipad air 3", "air", 3, "10.5", 2019, None, ("A2152", "A2123", "A2153", "A2154")),
+    ("ipad air 4", "air", 4, "10.9", 2020, None, ("A2316", "A2324", "A2325", "A2072")),
+    ("ipad air 5", "air", 5, "10.9", 2022, "m1", ("A2588", "A2589", "A2591")),
+    ("ipad air 6 11", "air", 6, "11", 2024, "m2", ("A2902", "A2903", "A2904", "A2905")),
+    ("ipad air 6 13", "air", 6, "13", 2024, "m2", ("A2898", "A2899", "A2900", "A2901")),
+    ("ipad air 7 11", "air", 7, "11", 2025, "m3", ()),
+    ("ipad air 7 13", "air", 7, "13", 2025, "m3", ("A3268",)),
+    ("ipad mini 4", "mini", 4, "7.9", 2015, None, ("A1538", "A1550")),
+    ("ipad mini 5", "mini", 5, "7.9", 2019, None, ("A2133", "A2124", "A2126", "A2125")),
+    ("ipad mini 6", "mini", 6, "8.3", 2021, None, ("A2567", "A2568", "A2569")),
+    ("ipad mini 7", "mini", 7, "8.3", 2024, "a17", ("A2993", "A2995", "A2996")),
+    ("ipad pro 9.7", "pro", 1, "9.7", 2016, None, ("A1673", "A1674", "A1675")),
+    ("ipad pro 10.5", "pro", 1, "10.5", 2017, None, ("A1701", "A1709", "A1852")),
+    ("ipad pro 11 2018", "pro", 1, "11", 2018, None, ("A1980", "A2013", "A1934", "A1979")),
+    ("ipad pro 11 2020", "pro", 2, "11", 2020, None, ("A2228", "A2068", "A2230", "A2231")),
+    ("ipad pro 11 2021", "pro", 3, "11", 2021, "m1", ("A2377", "A2459", "A2301", "A2460")),
+    ("ipad pro 11 2022", "pro", 4, "11", 2022, "m2", ("A2759", "A2435", "A2761", "A2762")),
+    ("ipad pro 11 2024", "pro", 5, "11", 2024, "m4", ("A2836", "A2837", "A3006")),
+    ("ipad pro 12.9 2017", "pro", 2, "12.9", 2017, None, ("A1670", "A1671", "A1821")),
+    ("ipad pro 12.9 2018", "pro", 3, "12.9", 2018, None, ("A1876", "A2014", "A1895", "A1983")),
+    ("ipad pro 12.9 2020", "pro", 4, "12.9", 2020, None, ("A2229", "A2069", "A2232", "A2233")),
+    ("ipad pro 12.9 2021", "pro", 5, "12.9", 2021, "m1", ("A2378", "A2461", "A2379", "A2462")),
+    ("ipad pro 12.9 2022", "pro", 6, "12.9", 2022, "m2", ("A2436", "A2764", "A2437", "A2766")),
+    ("ipad pro 13 2024", "pro", 7, "13", 2024, "m4", ("A2925", "A2926", "A3007")),
+)
+_IPAD_RE = re.compile(r"\bipad\s*(air|mini|pro)?\b", re.IGNORECASE)
+_TAILLE_IPAD = re.compile(r"(\d{1,2}(?:[.,]\d)?)\s*(?:\"|”|″|''|pouces?\b|inch(?:es)?\b)", re.IGNORECASE)
+_GEN_IPAD = re.compile(r"((?:\d{1,2}\s*/\s*)*\d{1,2})\s*(?:e|er|re|eme|ème|th|st|nd|rd)?\s*(?:gen\b|g[ée]n[ée]ration)",
+                       re.IGNORECASE)
+_ANNEE_IPAD = re.compile(r"\b(20[12]\d)\b")
+_PUCE_IPAD = re.compile(r"\b(m[1-5]|a1[0-9])\b", re.IGNORECASE)
+_NUMEROS_IPAD = re.compile(r"(?<![\w.])(\d{1,2}(?:[.,]\d)?(?:\s*/\s*\d{1,2})*)(?![\w.])")
+
+
+def _ipad_segment(fam: str, seg: str) -> set:
+    """Clés d'un morceau de nom qui suit « iPad [Air|Mini|Pro] »."""
+    tailles = {t.replace(",", ".") for t in _TAILLE_IPAD.findall(seg)}
+    seg = _TAILLE_IPAD.sub(" ", seg)
+    annees = {int(a) for a in _ANNEE_IPAD.findall(seg)}
+    seg = _ANNEE_IPAD.sub(" ", seg)
+    puces = {x.lower() for x in _PUCE_IPAD.findall(seg)}
+    seg = _PUCE_IPAD.sub(" ", seg)
+    gens = set()
+    mg = _GEN_IPAD.search(seg)
+    if mg:
+        gens = {int(x) for x in re.split(r"\s*/\s*", mg.group(1))}
+    else:
+        mn = _NUMEROS_IPAD.search(seg)
+        if mn:
+            nums = re.split(r"\s*/\s*", mn.group(1).replace(",", "."))
+            # « iPad Air 11 M2 2024 », « iPad Pro 11 (2021/2022) » : un nombre ≥ 9 d'un Air ou d'un Pro est sa
+            # taille (les générations Air vont de 1 à 7), un nombre à virgule aussi
+            if fam == "pro" or (fam == "air" and float(nums[0]) >= 9) or "." in nums[0]:
+                tailles = tailles or {nums[0]}
+            else:
+                gens = {int(float(n)) for n in nums}
+    out = set()
+    for cle, f, n, taille, annee, puce, _ in IPADS:
+        if f != fam:
+            continue
+        if gens:
+            if n not in gens:
+                continue
+            if f == "pro" and taille not in tailles:
+                continue              # la génération d'un Pro ne vaut que pour sa taille
+            if f == "air" and n >= 6 and tailles and taille not in tailles:
+                continue              # Air 6 / 7 : 11" ou 13"
+            out.add(cle)
+        elif taille in tailles and (annee in annees or (puce and puce in puces) or (not annees and not puces)):
+            out.add(cle)
+    return out
+
+
+def cles_ipad(nom) -> frozenset:
+    """Clés canoniques « ipad 7 », « ipad air 5 », « ipad pro 11 2021 » d'un nom (plusieurs pour un nom
+    groupé « iPad 10.2" (7/8/9e Gen) », « iPad Air 4/iPad Air 5 ») ; vide si ce n'est pas un iPad."""
+    s = str(nom or "")
+    refs = {r.upper() for r in _REFS_APPLE.findall(s.lower())}
+    out = {cle for cle, *_, rs in IPADS if refs & set(rs)}
+    debuts = list(_IPAD_RE.finditer(s))
+    for i, m in enumerate(debuts):
+        fin = debuts[i + 1].start() if i + 1 < len(debuts) else len(s)
+        out |= _ipad_segment((m.group(1) or "ipad").lower(), s[m.end():fin])
+    return frozenset(out)
 
 
 def _cle_exacte(nom) -> str:
@@ -411,6 +520,8 @@ def cles_modele(modele, marque) -> dict:
     """{niveau: clés} d'un modèle, une clé par nom déplié (« iPhone 12/12 Pro »)."""
     apple = grille.marque_canonique(marque) == "apple" or grille.marque_canonique(grille.deviner_marque(modele)) == "apple"
     out = {n: set() for n in NIVEAUX}
+    if apple:
+        out["ipad"] = set(cles_ipad(modele))     # sur le nom entier : « (7/8/9e Gen) » se déplie ici
     for v in grille.variantes(modele):
         if apple:
             out["ref"] |= set(_REFS_APPLE.findall(normaliser(v)))

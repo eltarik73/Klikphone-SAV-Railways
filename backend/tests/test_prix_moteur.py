@@ -1498,3 +1498,118 @@ def test_variantes_noms_groupes_avec_marque_et_reseau():
     assert grille.variantes("OPPO A94 5G/F19 Pro") == ["OPPO A94 5G", "OPPO F19 Pro"]
     assert grille.variantes("Huawei P Smart 2019/P Smart Plus 2019") == ["Huawei P Smart 2019", "Huawei P Smart Plus 2019"]
     assert grille.variantes("iPhone 13") == ["iPhone 13"] and grille.variantes("") == [""]
+
+
+# ─── iPad par génération, nappe du bouton power, nappes accessoires ─────────
+
+class _CurGrille:
+    def __init__(self, tarifs=(), apple=()):
+        self.t, self.a, self.sql = list(tarifs), list(apple), ""
+
+    def execute(self, sql, params=None):
+        self.sql = sql
+
+    def fetchall(self):
+        if "tarifs_apple_devices" in self.sql:
+            return self.a
+        if "FROM tarifs" in self.sql:
+            return self.t
+        return []
+
+    def fetchone(self):
+        return None
+
+
+def _grille_tarif(id, marque, modele, type_piece, qualite=None):
+    return {"id": id, "marque": marque, "modele": modele, "type_piece": type_piece, "qualite": qualite,
+            "nom_fournisseur": None, "ref_fournisseur": None, "fournisseur": "Mobilax", "prix_fournisseur_ht": None,
+            "prix_client": None, "categorie": "standard", "verrou_manuel": False, "obsolete": False}
+
+
+def _grille_apple(id, modele, categorie="ipad"):
+    return {"id": id, "categorie": categorie, "modele": modele, "ecran_prix_ht": None, "batterie_prix_ht": None,
+            "ecran_prix_vente": None, "batterie_prix_vente": None, "verrou_manuel": False, "obsolete": False,
+            "actif": True, "fournisseur": "Mobilax", "ref_fournisseur": None}
+
+
+def _ligne_import(designation, modele, type_piece, qualite="", marque="Apple", ht="40"):
+    return {"reference": "", "designation": designation, "marque": marque, "modele": modele, "type_piece": type_piece,
+            "qualite": qualite, "prix_ht": Decimal(ht)}
+
+
+def test_cles_ipad_par_generation():
+    cas = {
+        'iPad 7 (2019) 10.2"': {"ipad 7"},
+        'LCD iPad 10.2" (7/8/9e Gen)': {"ipad 7", "ipad 8", "ipad 9"},
+        'Ecran LCD Complet Apple iPad 10.2" (2019) A2197/A2198/A2200': {"ipad 7"},
+        "Apple iPad Air 11 M2 2024/iPad Air 11 M3 2025": {"ipad air 6 11", "ipad air 7 11"},
+        'iPad Air 6 M2 13" (2024)': {"ipad air 6 13"},
+        "Ecran Complet iPad Air 4/5 Gen (Wifi)": {"ipad air 4", "ipad air 5"},
+        "iPad Air 5 M1 (2022)": {"ipad air 5"},
+        'iPad Pro 11" 3e gen M1 (2021)': {"ipad pro 11 2021"},
+        "Ecran Complet iPad Pro 11 (2021/2022)": {"ipad pro 11 2021", "ipad pro 11 2022"},
+        'iPad Pro 11" M4 (2024)': {"ipad pro 11 2024"},
+        'Ecran Tactile FOG Apple iPad Pro 12.9" (2e génération) A1670/A1671 Blanc': {"ipad pro 12.9 2017"},
+        "iPad mini 5 (2019)": {"ipad mini 5"},
+        "Ecran Complet iPad Mini 6/7 (WiFi/Cellulaire)": {"ipad mini 6", "ipad mini 7"},
+        "LCD iPad 10/11 (2022/2025)": {"ipad 10", "ipad 11"},
+        "Batterie Apple iPad 6/iPad Air 1/iPad 7/iPad 5/iPad 8/iPad 9 A1822/A1823": {"ipad 5", "ipad 6", "ipad 7", "ipad 8", "ipad 9"},
+        "iPad Air 2": {"ipad air 2"},
+        'iPad Pro 10.5" (2017)': {"ipad pro 10.5"},
+        "iPhone 13": set(),
+        'MacBook Air 13" M2 A2681 (2022)': set(),
+    }
+    for nom, attendu in cas.items():
+        assert set(import_prix.cles_ipad(nom)) == attendu, nom
+    assert "ipad" in import_prix.NIVEAUX
+    assert import_prix.cles_modele('iPad 7 (2019) 10.2"', "Apple")["ipad"] == frozenset({"ipad 7"})
+    assert import_prix.cles_modele("Galaxy A54 5G", "Samsung")["ipad"] == frozenset()
+
+
+def test_ipad_utopya_et_mobilax_rattaches_par_generation():
+    tarifs = [_grille_tarif(1, "Apple", "iPad 7 (2019)", "Ecran", "Compatible"),
+              _grille_tarif(2, "Apple", "iPad 8 (2020)", "Ecran", "Compatible"),
+              _grille_tarif(3, "Apple", "iPad 9 (2021)", "Ecran", "Compatible"),
+              _grille_tarif(4, "Apple", "iPad Air 5 M1 (2022)", "Ecran", "Original"),
+              _grille_tarif(5, "Apple", "iPad Air 5 M1 (2022)", "Batterie")]
+    apple = [_grille_apple(10, 'iPad 7 (2019) 10.2"'), _grille_apple(11, 'iPad Pro 11" 3e gen M1 (2021)'),
+             _grille_apple(12, 'iPad Pro 11" 4e gen M2 (2022)'), _grille_apple(13, 'iPad Pro 11" M4 (2024)')]
+    ix = import_prix.Index(_CurGrille(tarifs, apple), "tarifs")
+    ixa = import_prix.Index(_CurGrille(tarifs, apple), "tarifs_apple_devices")
+    # Utopya : un LCD pour trois générations → les trois lignes « Compatible » (repli de qualité LCD)
+    l = _ligne_import('LCD iPad 10.2" (7/8/9e Gen) (ReLife)', 'iPad 10.2" (7/8/9e Gen)', "Ecran", "LCD")
+    trouves, niveau, raison = ix.associer(l, import_prix.interpreter(l))
+    assert niveau == "ipad" and {e["cle"] for e in trouves} == {"tarifs:1", "tarifs:2", "tarifs:3"}, raison
+    trouves, niveau, _ = ixa.associer(l, import_prix.interpreter(l))
+    assert niveau == "ipad" and {e["cle"] for e in trouves} == {"tarifs_apple_devices:10:ecran"}
+    # Mobilax : taille, année et références
+    l = _ligne_import('Ecran LCD Complet OEM Apple iPad 10.2" (2019) A2197/A2198/A2200',
+                      'Apple iPad 10.2" (2019) A2197/A2198/A2200', "Ecran", "Compatible")
+    trouves, niveau, _ = ix.associer(l, import_prix.interpreter(l))
+    assert {e["cle"] for e in trouves} == {"tarifs:1"}
+    # Pro par taille et années (deux fiches), batterie Air 4/5 (nom groupé)
+    l = _ligne_import("Ecran Complet iPad Pro 11 (2021/2022)", "iPad Pro 11 (2021/2022)", "Ecran", "Original")
+    trouves, niveau, _ = ixa.associer(l, import_prix.interpreter(l))
+    assert niveau == "ipad" and {e["cle"] for e in trouves} == {"tarifs_apple_devices:11:ecran", "tarifs_apple_devices:12:ecran"}
+    l = _ligne_import("Batterie Apple iPad Air 4/iPad Air 5 A2072/A2589", "Apple iPad Air 4/iPad Air 5 A2072/A2589", "Batterie")
+    trouves, niveau, _ = ix.associer(l, import_prix.interpreter(l))
+    assert {e["cle"] for e in trouves} == {"tarifs:5"}
+
+
+def test_bouton_power_nappe_et_nappes_accessoires():
+    assert import_prix.piece_de("Nappe Power On/Off et Volume Premium Apple iPhone 11")[0] == "bouton_power"
+    assert import_prix.piece_de("Nappe Power + Volume iPhone 13 Pro")[0] == "bouton_power"
+    assert import_prix.piece_de("Bouton power")[0] == "bouton_power" and import_prix._TYPE_PIECE["bouton_power"] == "Bouton power"
+    # Le capuchon seul n'est pas la nappe ; une nappe LCD / écran / batterie n'est pas la pièce qu'elle cite
+    assert import_prix.piece_de("Bouton On/Off Original Apple iPhone 11 Noir") == (None, None)
+    for designation, attendu in [("Nappe LCD iPhone 11", None), ("Nappe Batterie iPhone 11", None),
+                                 ("Nappe Power iPhone 11", "bouton_power"), ("Nappe Connecteur de Charge iPhone 11", "connecteur"),
+                                 ("LCD iPad 10.2\" (7/8/9e Gen)", "ecran")]:
+        interp = import_prix.interpreter({"reference": "", "designation": designation, "marque": "Apple", "modele": "",
+                                          "type_piece": "", "qualite": "", "prix_ht": Decimal("5")})
+        assert interp["piece"] == attendu, designation
+    # Une ligne « Bouton power » trouve la ligne de la grille (qualité quelconque → ligne sans qualité)
+    ix = import_prix.Index(_CurGrille([_grille_tarif(7, "Apple", "iPhone 11", "Bouton power")]), "tarifs")
+    l = _ligne_import("Nappe Power On/Off Apple iPhone 11 (Flash)", "Apple iPhone 11", "Bouton power", "Compatible")
+    trouves, niveau, raison = ix.associer(l, import_prix.interpreter(l))
+    assert {e["cle"] for e in trouves} == {"tarifs:7"}, raison

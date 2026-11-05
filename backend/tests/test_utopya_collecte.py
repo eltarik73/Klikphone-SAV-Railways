@@ -119,7 +119,8 @@ def test_qualite_nom(nom, sku, attendu):
 def test_ligne_collecte_pieces_modeles_et_ecarts():
     l = U.ligne_collecte(_tuile("Ecran Complet Blanc Galaxy A54 5G (A546B)", "973876", A54), "Samsung", 1.2)
     assert l == {"reference": "973876", "designation": "Ecran Complet Blanc Galaxy A54 5G (A546B)", "marque": "Samsung",
-                 "modele": "Galaxy A54 5G", "type_piece": "Ecran", "qualite": "Original", "prix_ht": Decimal("12.50")}
+                 "modele": "Galaxy A54 5G", "type_piece": "Ecran", "qualite": "Original", "prix_ht": Decimal("12.50"),
+                 "en_stock": None, "url": None}
     cas = {
         "Connecteur de Charge Lumière Stellaire iPhone 13 (ReLife)": ("iPhone 13", "Connecteur de charge", ""),
         "Haut-Parleur iPhone 13": ("iPhone 13", "Haut-parleur", ""),
@@ -178,7 +179,7 @@ def test_traiter_importe_tarifs_et_apple_et_note_le_resume(monkeypatch):
     base = _Base({}, [("Apple", "iPhone 13"), ("Apple", 'MacBook Air 13" A2179 (2020 Intel)')])
     imports = []
 
-    def faux_import(cur, cible, contenu, nom, r, fournisseur="Mobilax", auteur="x", source="mobilax"):
+    def faux_import(cur, cible, contenu, nom, r, fournisseur="Mobilax", auteur="x", source="mobilax", infos=None):
         imports.append((cible, nom, fournisseur, auteur, source, contenu.decode("utf-8-sig").count("\n") - 1))
         return {"cible": cible, "import_id": len(imports), "lot_id": f"lot-{cible}", "erreur": None,
                 "_cles": {f"tarifs:{len(imports)}"}, **{k: 1 for k in F._COMPTES}}

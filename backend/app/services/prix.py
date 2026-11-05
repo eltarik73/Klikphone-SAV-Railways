@@ -693,7 +693,7 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
     if voulues.get("tarifs"):
         cur.execute("""
             SELECT id, marque, modele, type_piece, qualite, categorie, prix_fournisseur_ht, prix_client,
-                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur
+                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur, fournisseur_choisi
             FROM tarifs WHERE id = ANY(%s)
         """, (list(voulues["tarifs"]),))
         for row in cur.fetchall() or []:
@@ -705,12 +705,12 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
                     "ht": row["prix_fournisseur_ht"], "client": row["prix_client"],
                     "verrou": bool(row["verrou_manuel"]), "obsolete": bool(row["obsolete"]),
                     "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
-                    "fournisseur": row.get("fournisseur"),
+                    "fournisseur": row.get("fournisseur"), "fournisseur_choisi": row.get("fournisseur_choisi"),
                 }
     if voulues.get("tarifs_apple_devices"):
         cur.execute("""
             SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
-                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur
+                   verrou_manuel, obsolete, prix_maj_le, prix_source, fournisseur, fournisseur_choisi
             FROM tarifs_apple_devices WHERE id = ANY(%s)
         """, (list(voulues["tarifs_apple_devices"]),))
         for row in cur.fetchall() or []:
@@ -723,9 +723,148 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
                     "ht": row[f"{piece}_prix_ht"], "client": row[f"{piece}_prix_vente"],
                     "verrou": bool(row["verrou_manuel"]), "obsolete": bool(row["obsolete"]),
                     "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
-                    "fournisseur": row.get("fournisseur"),
+                    "fournisseur": row.get("fournisseur"), "fournisseur_choisi": row.get("fournisseur_choisi"),
                 }
     return out
+
+
+# ─── Prix par fournisseur (grille comparative Mobilax / Utopya) ──
+# tarifs_fournisseurs_prix garde, pour chaque pièce et chaque fournisseur, le dernier prix HT relevé
+# (synchro Mobilax, collecte Utopya, saisie admin), qu'il soit retenu ou non comme coût de la pièce.
+# Le coût retenu reste prix_fournisseur_ht / *_prix_ht (colonne `fournisseur` = d'où il vient) :
+# le moins-disant, sauf fournisseur_choisi posé par le gérant (choisir_fournisseur).
+
+FOURNISSEURS_CONNUS = ("Mobilax", "Utopya")
+
+
+def fournisseur_propre(f) -> str:
+    f = " ".join(str(f or "").split())
+    for c in FOURNISSEURS_CONNUS:
+        if f.lower() == c.lower():
+            return c
+    return f[:40]
+
+
+def enregistrer_prix_fournisseur(cur, fournisseur: str, source: str, reconnues, infos: dict = None) -> int:
+    """Prix de CE fournisseur pour chaque pièce reconnue d'un aperçu (import_prix.apercu : la variante la
+    moins chère) → tarifs_fournisseurs_prix ; prix_maj_le renouvelé seulement quand le prix change.
+    infos : {référence: {url, en_stock}}. → nombre de pièces notées."""
+    f = fournisseur_propre(fournisseur)
+    meilleurs = {}
+    for rec in reconnues or []:
+        try:
+            ht = Decimal(str(rec.get("nouveau_ht")))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if ht <= 0 or not rec.get("cle"):
+            continue
+        if rec["cle"] not in meilleurs or ht < meilleurs[rec["cle"]][0]:
+            meilleurs[rec["cle"]] = (ht, rec)
+    if not meilleurs or not f:
+        return 0
+    infos = infos or {}
+    lignes = []
+    for cle, (ht, rec) in meilleurs.items():
+        ref = (str(rec.get("ref") or "").strip()[:120]) or None
+        info = infos.get(ref or "") or {}
+        en_stock = info.get("en_stock")
+        lignes.append((cle, f, ht, ref, (str(rec.get("designation") or "").strip()[:250]) or None,
+                       info.get("url") or None, True if en_stock is None else bool(en_stock), source))
+    execute_values(cur, """
+        INSERT INTO tarifs_fournisseurs_prix
+            (tarif_cle, fournisseur, prix_ht, ref_fournisseur, designation, url, en_stock, source, vu_le, prix_maj_le)
+        VALUES %s
+        ON CONFLICT (tarif_cle, fournisseur) DO UPDATE SET
+            prix_maj_le = CASE WHEN tarifs_fournisseurs_prix.prix_ht IS DISTINCT FROM EXCLUDED.prix_ht
+                               THEN NOW() ELSE tarifs_fournisseurs_prix.prix_maj_le END,
+            prix_ht = EXCLUDED.prix_ht, ref_fournisseur = EXCLUDED.ref_fournisseur,
+            designation = EXCLUDED.designation, url = COALESCE(EXCLUDED.url, tarifs_fournisseurs_prix.url),
+            en_stock = EXCLUDED.en_stock, source = EXCLUDED.source, vu_le = NOW()
+    """, lignes, template="(%s, %s, %s::numeric, %s, %s, %s, %s::boolean, %s, NOW(), NOW())", page_size=200)
+    return len(lignes)
+
+
+def noter_vus_sans_prix(cur, fournisseur: str, par_cle: dict) -> int:
+    """Pièces désignées par un produit du fournisseur vu SANS prix (rupture, prix masqué) : ligne notée
+    en_stock False, vue maintenant, prix connu gardé. par_cle : {cle: [lignes]}."""
+    f = fournisseur_propre(fournisseur)
+    lignes = []
+    for cle, ls in (par_cle or {}).items():
+        l = (ls or [{}])[0]
+        lignes.append((cle, f, (str(l.get("reference") or "").strip()[:120]) or None,
+                       (str(l.get("designation") or "").strip()[:250]) or None, l.get("url") or None))
+    if not lignes or not f:
+        return 0
+    execute_values(cur, """
+        INSERT INTO tarifs_fournisseurs_prix
+            (tarif_cle, fournisseur, prix_ht, ref_fournisseur, designation, url, en_stock, source, vu_le, prix_maj_le)
+        VALUES %s
+        ON CONFLICT (tarif_cle, fournisseur) DO UPDATE SET
+            ref_fournisseur = COALESCE(EXCLUDED.ref_fournisseur, tarifs_fournisseurs_prix.ref_fournisseur),
+            designation = COALESCE(EXCLUDED.designation, tarifs_fournisseurs_prix.designation),
+            url = COALESCE(EXCLUDED.url, tarifs_fournisseurs_prix.url), en_stock = FALSE, vu_le = NOW()
+    """, lignes, template="(%s, %s, NULL, %s, %s, %s, FALSE, 'vu_sans_prix', NOW(), NULL)", page_size=200)
+    return len(lignes)
+
+
+def prix_fournisseurs(cur, cles) -> dict:
+    """{cle: {fournisseur: {ht, ref, designation, url, en_stock, vu_le, prix_maj_le, source}}}."""
+    cles = [c for c in (cles or []) if c]
+    if not cles:
+        return {}
+    cur.execute("""
+        SELECT tarif_cle, fournisseur, prix_ht, ref_fournisseur, designation, url, en_stock, vu_le, prix_maj_le, source
+        FROM tarifs_fournisseurs_prix WHERE tarif_cle = ANY(%s)
+    """, (cles,))
+    out = {}
+    for r in cur.fetchall() or []:
+        out.setdefault(r["tarif_cle"], {})[r["fournisseur"]] = {
+            "ht": float(r["prix_ht"]) if r["prix_ht"] is not None else None, "ref": r["ref_fournisseur"],
+            "designation": r["designation"], "url": r["url"], "en_stock": r["en_stock"], "vu_le": r["vu_le"],
+            "prix_maj_le": r["prix_maj_le"], "source": r["source"],
+        }
+    return out
+
+
+def choisir_fournisseur(cur, cle: str, fournisseur, par: str, r=None) -> dict:
+    """Le gérant choisit le fournisseur d'une pièce (None = moins-disant) : colonne fournisseur_choisi,
+    et le coût HT retenu devient le prix connu de ce fournisseur (en « auto » : le moins cher disponible),
+    sauf pièce verrouillée. La synchro et la collecte respectent ensuite ce choix (fournisseurs.planifier).
+    → {cle, fournisseur_choisi, applique: {…appliquer_ht, fournisseur} | None, verrouille, disponibles}"""
+    r = r or regles(cur)
+    table, ligne_id, col = parse_tarif_cle(cle)
+    if table not in ("tarifs", "tarifs_apple_devices"):
+        raise ValueError("Clé de pièce invalide")
+    f = fournisseur_propre(fournisseur) if fournisseur else None
+    if f and f not in FOURNISSEURS_CONNUS:
+        raise ValueError("Fournisseur inconnu")
+    cur.execute(f"UPDATE {table} SET fournisseur_choisi = %s WHERE id = %s", (f, ligne_id))
+    if not cur.rowcount:
+        return {"cle": cle, "absent": True}
+    cle = tarif_cle(table, ligne_id, col)
+    desc = decrire_tarifs(cur, [cle], r).get(cle)
+    dispo = prix_fournisseurs(cur, [cle]).get(cle, {})
+    candidats = [(nom, d) for nom, d in dispo.items() if d["ht"] and (f is None or nom == f)]
+    if f is None:
+        candidats = [c for c in candidats if c[1]["en_stock"] is not False] or candidats
+    candidats.sort(key=lambda c: c[1]["ht"])
+    applique, verrouille = None, False
+    if candidats and desc:
+        nom, d = candidats[0]
+        if desc["verrou"]:
+            verrouille = True
+        else:
+            applique = appliquer_ht(cur, cle, d["ht"], nom.lower(), par, nouveau_lot(), r)
+            applique["fournisseur"] = nom
+            if table == "tarifs":
+                cur.execute("UPDATE tarifs SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur), "
+                            "url_fournisseur = COALESCE(%s, url_fournisseur) WHERE id = %s",
+                            (nom, d.get("ref"), d.get("url"), ligne_id))
+            else:
+                cur.execute("UPDATE tarifs_apple_devices SET fournisseur = %s, "
+                            "ref_fournisseur = COALESCE(%s, ref_fournisseur) WHERE id = %s", (nom, d.get("ref"), ligne_id))
+    return {"cle": cle, "fournisseur_choisi": f, "applique": applique, "verrouille": verrouille,
+            "disponibles": sorted(dispo)}
 
 
 def client_pour(desc: dict, ht, r) -> int:

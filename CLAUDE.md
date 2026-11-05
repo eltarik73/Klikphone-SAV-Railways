@@ -282,8 +282,41 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   moins-disant). Résumé `UTOPYA_COLLECTE_*`, diagnostic `UTOPYA_DIAGNOSTIC` (`GET …/utopya/diagnostic`, bouton « N pièces
   sans prix Utopya »).
 - **Tests** : `tests/test_utopya_collecte.py` (menu et tuiles réels, import simulé, routes avec clé), vitest
-  `synchro_fournisseur.test.jsx`. Non vérifié sans compte : la forme des prix dans les tuiles connectées (le collecteur
-  envoie `data-price-amount` et le texte ; `prix_collecte` lit « HT », sinon le montant).
+  `synchro_fournisseur.test.jsx`. Vérifié sur le compte du gérant (04/11/2026) : tuile connectée
+  `<span class="price">94,90€</span>` sans HT/TTC ni `data-price-amount`, prix affichés hors taxe (Magento
+  `display_cart_subtotal_excl_tax`) — `prix_collecte` lit ce montant en HT. Première collecte réelle : 266 pages, 7 050
+  produits, 680 pièces reconnues. Les codes de batterie (« BP46 », « EB-BA546ABY ») sont retirés du modèle (`_CODE_BATTERIE`).
+
+## Grille comparative des fournisseurs (`tarifs_fournisseurs_prix`, `prix.choisir_fournisseur`)
+
+- **Un prix par fournisseur et par pièce** : chaque import fournisseur (synchro Mobilax, collecte Utopya) note le prix de
+  CE fournisseur dans `tarifs_fournisseurs_prix` (`prix.enregistrer_prix_fournisseur` : clé de pièce, fournisseur, HT de la
+  variante la moins chère, référence, désignation, page, `en_stock`, `vu_le`, `prix_maj_le`), retenu ou non. Le coût retenu
+  reste `prix_fournisseur_ht` / `*_prix_ht` (colonne `fournisseur` = d'où il vient) : moins-disant par défaut.
+- **Choix du gérant** : colonne `fournisseur_choisi` (`tarifs`, `tarifs_apple_devices` ; NULL = automatique) —
+  `PATCH /api/tarifs/{id}/fournisseur` et `PATCH /api/tarifs/apple-devices/{id}/fournisseur` `{fournisseur: Mobilax|Utopya|null}`
+  (admin) → `prix.choisir_fournisseur` applique le prix connu de ce fournisseur (ou, en auto, le moins cher disponible)
+  via `appliquer_ht`, sauf pièce verrouillée. `fournisseurs.planifier` respecte le choix : l'autre fournisseur ne touche
+  jamais la pièce (`autre_fournisseur_choisi`), le fournisseur choisi est appliqué même plus cher.
+- **Affichage** : `GET /reparation-smartphones/modele` → pièce `fournisseur_choisi` et `prix_fournisseurs {Mobilax: {ht (admin),
+  ref, url, en_stock, vu_le, connu}, Utopya: …}` ; colonne « Mobilax / Utopya » du tableau (`CelluleFournisseurs`, admin avec
+  code) : prix, « rupture », « retenu », boutons « Retenir » / « Auto ».
+- **Produit vu sans prix** (rupture, prix masqué) : la synchro Mobilax rattache aussi les produits sans prix
+  (`lignes_produit(sans_prix=True)`, `rattacher_sans_prix`) → ligne notée `en_stock = FALSE` (prix connu gardé) et raison
+  `sans_prix_fournisseur` dans le diagnostic, au lieu d'un faux « non reconnu ».
+- **Recherche Mobilax** : une recherche qui déborde (`PAGES_MAX` pages : iPhone, Galaxy S…) est complétée par une recherche
+  par famille (`FAMILLES_REQUETES` : « Batterie Apple iPhone 13 »…, `PAGES_FAMILLE` pages) ; un iPad est cherché sous son nom
+  canonique et sa référence (`requetes_ipad` : « iPad 7 », « iPad Pro 11 » + « A2377 »), jamais « iPad 7 (2019) 10.2" ».
+- **iPad par génération** : niveau `ipad` du moteur d'import (`import_prix.cles_ipad`, table `IPADS` : famille, numéro,
+  taille, année, puce, références) — « iPad 10.2" (7/8/9e Gen) », « iPad Air 11 M2 2024 », « iPad Pro 11 (2021/2022) »,
+  « A2197 » et « iPad 7 (2019) 10.2" » tombent sur la même clé « ipad 7 » / « ipad air 6 11 » / « ipad pro 11 2021 ».
+- **Bouton power** : type de pièce `Bouton power` (`_PIECES` bouton_power : nappe power / on-off / allumage ; le capuchon
+  « Bouton On/Off » seul n'en est pas), catégories Mobilax « Nappe Power… » (`CATEGORIES_GARDEES`), Utopya « Nappe Power ».
+  `PIECES_COURANTES` = écran, batterie, connecteur, vitre arrière, bouton power ;
+  `POST /reparation-smartphones/pieces-courantes/tous {types}` (admin) les crée sur tous les modèles de la grille (bouton
+  « Compléter tous les modèles »). Une nappe est un accessoire pour toute autre pièce (« Nappe LCD » ≠ écran).
+- **Tests** : `tests/test_grille_fournisseurs.py`, `test_prix_moteur.py` (iPad, nappe power), `test_fournisseurs_mobilax.py`
+  (familles, débordement, choix), vitest `reparation_smartphones.test.jsx` (« grille comparative »).
 
 ## Batterie changée « par l'écran » (`app/services/par_ecran.py`)
 

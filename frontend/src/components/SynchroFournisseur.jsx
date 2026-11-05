@@ -57,6 +57,7 @@ export function decrireMobilax(m) {
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
     if (n(r.propositions_fermees)) morceaux.push(`${n(r.propositions_fermees)} proposition${n(r.propositions_fermees) > 1 ? 's' : ''} réglée${n(r.propositions_fermees) > 1 ? 's' : ''}`);
     if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Utopya (moins cher)`);
+    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à l’autre fournisseur (votre choix)`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Mobilax`);
     if (r.incomplet) morceaux.push('passage incomplet (temps écoulé)');
@@ -99,6 +100,7 @@ export function decrireUtopya(u) {
     if (n(r.remplaces)) morceaux.push(`dont ${n(r.remplaces)} prix estimé${n(r.remplaces) > 1 ? 's' : ''} ou périmé${n(r.remplaces) > 1 ? 's' : ''} remplacé${n(r.remplaces) > 1 ? 's' : ''}`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
     if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Mobilax (moins cher)`);
+    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à l’autre fournisseur (votre choix)`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Utopya`);
     if (r.interrompu) morceaux.push('collecte arrêtée avant la fin');
@@ -116,12 +118,17 @@ export function decrireUtopya(u) {
 }
 
 const RAISONS_DEFAUT = (nom) => ({
+  sans_prix_fournisseur: `${nom} a la pièce, mais sans prix pour votre compte (rupture ou produit retiré)`,
   aucun_produit: `${nom} ne renvoie aucun produit pour ce modèle`,
   piece_absente: `${nom} a des produits pour ce modèle, mais pas cette pièce`,
   non_reconnue: `Des produits ${nom} ressemblent, sans être rattachés à la pièce (nom à vérifier)`,
   non_cherchee: 'Modèle non cherché (passage incomplet)',
 });
-const ORDRE_RAISONS = ['non_reconnue', 'piece_absente', 'aucun_produit', 'non_cherchee'];
+const ORDRE_RAISONS = ['sans_prix_fournisseur', 'non_reconnue', 'piece_absente', 'aucun_produit', 'non_cherchee'];
+const libelleCandidat = (c, estAdmin) => {
+  if (c.sans_prix) return `${c.nom} (sans prix${c.en_stock === false ? ', rupture' : ''})`;
+  return `${c.nom}${estAdmin && c.prix_ht !== null && c.prix_ht !== undefined ? ` (${euros(c.prix_ht)})` : ''}`;
+};
 const euros = (v) => (Number.isFinite(Number(v)) ? `${Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € HT` : '');
 
 /**
@@ -174,7 +181,7 @@ export function DiagnosticFournisseur({ nombre, estAdmin = false, nom = 'Mobilax
                     <span className="font-medium">{p.marque} {p.modele} — {p.type_piece}{p.qualite ? ` ${p.qualite}` : ''}</span>
                     {Array.isArray(p.candidats) && p.candidats.length > 0 && (
                       <span className="text-slate-600">
-                        {nom} : {p.candidats.map((c) => `${c.nom}${estAdmin && c.prix_ht !== null && c.prix_ht !== undefined ? ` (${euros(c.prix_ht)})` : ''}`).join(' · ')}
+                        {nom} : {p.candidats.map((c) => libelleCandidat(c, estAdmin)).join(' · ')}
                       </span>
                     )}
                   </li>

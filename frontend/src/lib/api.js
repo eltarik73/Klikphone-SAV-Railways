@@ -1362,13 +1362,28 @@ class ApiClient {
   }
   // → { pieces: [{ id, type_piece, qualite, prix_fournisseur_ht (null hors admin), prix_client,
   //   calcul: { ht, tva, marge, brut, arrondi } (null hors admin), prix_maj_le, prix_source, age_jours,
-  //   fraicheur, verrou, en_stock, ref_fournisseur, fournisseur, url_fournisseur }], liens: { utopya, mobilax } }
+  //   fraicheur, verrou, en_stock, ref_fournisseur, fournisseur, url_fournisseur, fournisseur_choisi,
+  //   prix_fournisseurs: { Mobilax: { ht (admin), ref, url, en_stock, vu_le, connu }, Utopya: {…} } }], liens: { utopya, mobilax } }
   getReparationSmartphonesModele({ marque, modele } = {}) {
     return this.request(`/api/tarifs/reparation-smartphones/modele${buildQuery({ marque, modele })}`, { cache: 'no-store' }, 20_000);
   }
   // Modèle du catalogue sans pièce : écran / batterie / connecteur pré-créés à 0 € HT (prix à renseigner)
   creerPiecesCourantes({ marque, modele }) {
     return this._ecriturePrix('/api/tarifs/reparation-smartphones/pieces-courantes', { marque, modele }, 20_000);
+  }
+  // Tous les modèles de la grille (iPhone, iPad, Mac exclus) : les types demandés qui manquent, créés à 0 € HT
+  // (défaut : écran, batterie, connecteur, vitre arrière, bouton power) → { modeles, crees, par_type }
+  creerPiecesCourantesTous({ types } = {}) {
+    return this._ecriturePrix('/api/tarifs/reparation-smartphones/pieces-courantes/tous', types ? { types } : {}, 30_000);
+  }
+  // Grille comparative : fournisseur retenu pour une pièce ('Mobilax' | 'Utopya' | null = moins-disant). Le prix connu
+  // de ce fournisseur devient le coût HT (prix client recalculé) → { cle, fournisseur_choisi, applique: { nouveau_ht,
+  // nouveau_client, fournisseur } | null, verrouille, disponibles }
+  choisirFournisseurPiece(id, fournisseur) {
+    return this._ecriturePrix(`/api/tarifs/${encodeURIComponent(id)}/fournisseur`, { fournisseur }, 20_000, 'PATCH');
+  }
+  choisirFournisseurApple(deviceId, { piece, fournisseur }) {
+    return this._ecriturePrix(`/api/tarifs/apple-devices/${encodeURIComponent(deviceId)}/fournisseur`, { piece, fournisseur }, 20_000, 'PATCH');
   }
   // Nouveau prix d'achat HT d'une pièce fournisseur : { prix_fournisseur_ht, source: 'manuel' | 'utopya' | 'mobilax',
   // ref_fournisseur?, url_fournisseur? } (ou { prix_client } : pièce verrouillée) → ligne relue avec sa fraîcheur.

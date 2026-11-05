@@ -1171,6 +1171,90 @@ def modifier_prix(tarif_id: int, body: PrixManuel, user: dict = Depends(_admin))
     return out
 
 
+class ChoixFournisseur(BaseModel):
+    # None : moins-disant (automatique)
+    fournisseur: Optional[str] = Field(None, pattern="^(Mobilax|Utopya)$")
+
+
+class ChoixFournisseurApple(ChoixFournisseur):
+    piece: str = Field(..., pattern="^(ecran|batterie)$")
+
+
+@router.patch("/{tarif_id}/fournisseur")
+def choisir_fournisseur_piece(tarif_id: int, body: ChoixFournisseur, user: dict = Depends(_admin)):
+    """Le gérant choisit le fournisseur d'une pièce de la grille (grille comparative Mobilax / Utopya) :
+    son prix connu devient le coût HT retenu (prix client recalculé), la synchro respecte le choix.
+    fournisseur null : retour au moins-disant. → prix.choisir_fournisseur"""
+    with get_cursor() as cur:
+        try:
+            out = prix.choisir_fournisseur(cur, prix.tarif_cle("tarifs", tarif_id), body.fournisseur, _par(user))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if out.get("absent"):
+        raise HTTPException(404, "Tarif non trouve")
+    _cache.clear()
+    return out
+
+
+@router.patch("/apple-devices/{device_id}/fournisseur")
+def choisir_fournisseur_apple(device_id: int, body: ChoixFournisseurApple, user: dict = Depends(_admin)):
+    with get_cursor() as cur:
+        try:
+            out = prix.choisir_fournisseur(cur, prix.tarif_cle("tarifs_apple_devices", device_id, body.piece),
+                                           body.fournisseur, _par(user))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if out.get("absent"):
+        raise HTTPException(404, "Fiche non trouvée")
+    _cache.clear()
+    return out
+
+
+class PiecesCourantesTous(BaseModel):
+    types: list = Field(default_factory=lambda: list(PIECES_COURANTES), max_length=10)
+
+
+@router.post("/reparation-smartphones/pieces-courantes/tous")
+def creer_pieces_courantes_tous(body: PiecesCourantesTous, user: dict = Depends(_admin)):
+    """Pré-crée, pour TOUS les modèles de la grille des pièces (iPhone, iPad et Mac exclus), les types
+    demandés qui leur manquent (défaut : PIECES_COURANTES) à 0 € HT « prix à renseigner », remplis par
+    la synchro Mobilax / la collecte Utopya suivante. → {modeles, crees, par_type: {type: n}}"""
+    types = [t for t in PIECES_COURANTES if any(_famille(t) == _famille(str(x)) for x in body.types)]
+    if not types:
+        raise HTTPException(400, f"Types attendus parmi : {', '.join(PIECES_COURANTES)}")
+    valeurs, par_type = [], {t: 0 for t in types}
+    with get_cursor() as cur:
+        for g in _groupes_pieces(cur, None):
+            pieces = [p for p in g["pieces"] if p["table"] == "tarifs"]
+            if not pieces:
+                continue
+            familles = {_famille(p["type_piece"]) for p in pieces}
+            categorie = pieces[0].get("categorie") or "standard"
+            for t in types:
+                if _famille(t) not in familles:
+                    valeurs.append((g["marque"], g["modele"], t, categorie))
+                    par_type[t] += 1
+        crees = 0
+        if valeurs:
+            rows = execute_values(cur, """
+                INSERT INTO tarifs (marque, modele, type_piece, qualite, nom_fournisseur, prix_fournisseur_ht,
+                                    prix_client, categorie, source, en_stock, updated_at, prix_maj_le, prix_source,
+                                    fournisseur, ref_fournisseur, verrou_manuel, obsolete)
+                VALUES %s
+                ON CONFLICT DO NOTHING
+                RETURNING id
+            """, [(m, mo, t, None, None, 0, 0, c, "manuel", None, SOURCE_A_RENSEIGNER, None, None, False, False)
+                  for m, mo, t, c in valeurs],
+                template="(%s, %s, %s, %s, %s, %s::numeric, %s::integer, %s, %s, %s::boolean, NOW(), NULL, %s, "
+                         "%s, %s, %s::boolean, %s::boolean)", page_size=500, fetch=True)
+            crees = len(rows or [])
+            if crees:
+                _audit_pieces_courantes(cur, user, "tarifs", None,
+                                        f"{crees} pièces ({', '.join(types)}) créées à 0 € HT sur tous les modèles")
+    _cache.clear()
+    return {"modeles": len({(m, mo) for m, mo, _, _ in valeurs}), "crees": crees, "par_type": par_type}
+
+
 class PrixApple(BaseModel):
     piece: str = Field(..., pattern="^(ecran|batterie)$")
     prix_fournisseur_ht: float = Field(..., gt=0, le=5000)
@@ -1355,13 +1439,13 @@ def _liens(marque, modele, type_piece=None) -> dict:
 # catalogue candidat qui n'a reçu aucune pièce exacte — la même règle que les suggestions de
 # ticket (meilleur score seulement). Sinon la pièce fait son propre modèle (nom fournisseur).
 
-PIECES_COURANTES = ("Ecran", "Batterie", "Connecteur de charge")
+PIECES_COURANTES = ("Ecran", "Batterie", "Connecteur de charge", "Vitre arriere", "Bouton power")
 SOURCE_A_RENSEIGNER = "a_renseigner"
 _CATEGORIE_APPLE = {"ipad": "Tablette", "macbook": "PC Portable"}
 _TYPE_APPLE = {"ecran": "Écran", "batterie": "Batterie"}
 _NOM_APPLE = {"ipad": "iPad", "macbook": "MacBook"}
 _LIBELLE_CATEGORIE_ECRAN = {"standard": "écran standard", "haut_de_gamme": "écran haut de gamme", "pliant": "écran pliant"}
-_ORDRE_TYPES = ("ecran", "batterie", "connecteur", "vitre arriere", "camera", "haut parleur", "ecouteur")
+_ORDRE_TYPES = ("ecran", "batterie", "connecteur", "vitre arriere", "bouton", "camera", "haut parleur", "ecouteur")
 
 
 def _nom_cle(s) -> str:
@@ -1479,7 +1563,8 @@ def _piece_tarif(row) -> dict:
             "client": row["prix_client"], "en_stock": row["en_stock"],
             "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
             "verrou": bool(row["verrou_manuel"]), "ref_fournisseur": row["ref_fournisseur"],
-            "fournisseur": row["fournisseur"], "url_fournisseur": row.get("url_fournisseur")}
+            "fournisseur": row["fournisseur"], "url_fournisseur": row.get("url_fournisseur"),
+            "fournisseur_choisi": row.get("fournisseur_choisi")}
 
 
 def _piece_apple(row, piece) -> dict:
@@ -1491,7 +1576,8 @@ def _piece_apple(row, piece) -> dict:
             "ht": row[f"{piece}_prix_ht"], "client": row[f"{piece}_prix_vente"], "en_stock": None,
             "prix_maj_le": row["prix_maj_le"], "prix_source": row["prix_source"],
             "verrou": bool(row["verrou_manuel"]), "ref_fournisseur": row["ref_fournisseur"],
-            "fournisseur": row["fournisseur"], "url_fournisseur": None}
+            "fournisseur": row["fournisseur"], "url_fournisseur": None,
+            "fournisseur_choisi": row.get("fournisseur_choisi")}
 
 
 def _groupes_pieces(cur, marque_c: Optional[str]) -> list:
@@ -1501,7 +1587,7 @@ def _groupes_pieces(cur, marque_c: Optional[str]) -> list:
     cur.execute("""
         SELECT id, marque, modele, type_piece, qualite, categorie, nom_fournisseur, prix_fournisseur_ht,
                prix_client, en_stock, prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur,
-               url_fournisseur
+               url_fournisseur, fournisseur_choisi
         FROM tarifs WHERE obsolete IS NOT TRUE
         ORDER BY marque, modele, type_piece, qualite, id
     """)
@@ -1521,7 +1607,8 @@ def _groupes_pieces(cur, marque_c: Optional[str]) -> list:
     if marque_c in (None, "apple"):
         cur.execute("""
             SELECT id, categorie, modele, ecran_prix_ht, batterie_prix_ht, ecran_prix_vente, batterie_prix_vente,
-                   prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur, batterie_par_ecran
+                   prix_maj_le, prix_source, verrou_manuel, ref_fournisseur, fournisseur, batterie_par_ecran,
+                   fournisseur_choisi
             FROM tarifs_apple_devices WHERE actif IS NOT FALSE AND obsolete IS NOT TRUE
             ORDER BY categorie, modele, id
         """)
@@ -1609,10 +1696,21 @@ def _cat_apple_entree(e: dict) -> Optional[str]:
     return _categorie_apple(e["modele"], e["categorie"]) if e["marque_c"] == "apple" else None
 
 
+def _prix_fournisseurs_out(pf: Optional[dict], admin: bool) -> dict:
+    """{fournisseur: {ht (admin), ref, url, designation, en_stock, vu_le, prix_maj_le}} d'une pièce."""
+    out = {}
+    for nom, d in (pf or {}).items():
+        out[nom] = {"ht": d["ht"] if admin else None, "ref": d.get("ref"), "url": d.get("url"),
+                    "designation": d.get("designation"), "en_stock": d.get("en_stock"),
+                    "vu_le": d.get("vu_le"), "prix_maj_le": d.get("prix_maj_le"), "connu": d["ht"] is not None}
+    return out
+
+
 def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Optional[str] = None,
-               ecran: Optional[dict] = None) -> dict:
+               ecran: Optional[dict] = None, prix_fournisseurs: Optional[dict] = None) -> dict:
     """`ecran` ({ht, cle, qualite}) : l'écran du calcul quand la règle « batterie par l'écran » vaut
-    pour le modèle — une batterie porte alors par_ecran=true et son calcul dérivé (admin)."""
+    pour le modèle — une batterie porte alors par_ecran=true et son calcul dérivé (admin).
+    `prix_fournisseurs` : {fournisseur: {...}} de prix.prix_fournisseurs pour la grille comparative."""
     a_renseigner = _sans_prix(p["ht"], p["client"])
     f = grille.fraicheur(p["prix_maj_le"], p["prix_source"], seuils, maintenant)
     if a_renseigner:
@@ -1635,6 +1733,8 @@ def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Opt
     out["calcul"] = calcul
     out["alerte_marge"] = _alerte_marge(p, cat_apple, admin, r)
     out["liens"] = _liens(p["marque"], p["modele"], p["type_piece"])
+    out["fournisseur_choisi"] = p.get("fournisseur_choisi")
+    out["prix_fournisseurs"] = _prix_fournisseurs_out(prix_fournisseurs, admin)
     return out
 
 
@@ -1715,6 +1815,8 @@ def reparation_smartphones_modele(
         r = prix.regles(cur)
         e = _trouver_entree(entrees, marque_c, modele, marque)
         regle = _regle_par_ecran(cur, e) if e is not None else None
+        pieces = _pieces_entree(e) if e is not None else []
+        pf = prix.prix_fournisseurs(cur, [p["cle"] for p in pieces]) if pieces else {}
     maintenant = grille.maintenant_utc()
     if e is None:
         return {"marque": " ".join(marque.split()), "modele": " ".join(modele.split()), "categorie": None,
@@ -1722,12 +1824,11 @@ def reparation_smartphones_modele(
                 "pieces": [], "liens": _liens(marque, modele), "noms": [], "batterie_par_ecran": None}
     resume = _resume_entree(e, seuils, maintenant)
     cat_apple = _cat_apple_entree(e)
-    pieces = _pieces_entree(e)
     ecran = _ecran_entree(pieces, cat_apple) if regle["actif"] else None
     return {
         "marque": e["marque"], "modele": e["modele"], "categorie": e["categorie"], "categorie_apple": cat_apple,
         "au_catalogue": e["au_catalogue"], "modele_trouve": True, "admin": admin,
-        "pieces": [_piece_out(p, admin, r, seuils, maintenant, cat_apple, ecran) for p in pieces],
+        "pieces": [_piece_out(p, admin, r, seuils, maintenant, cat_apple, ecran, pf.get(p["cle"])) for p in pieces],
         "liens": _liens(e["marque"], e["modele"]), "noms": resume["noms"],
         "batterie_par_ecran": {
             **regle, "device_id": _device_entree(e),

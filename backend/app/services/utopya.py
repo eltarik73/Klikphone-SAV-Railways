@@ -92,6 +92,10 @@ _MOTS_PIECE = {"grand", "angle", "interieur", "principal", "principale", "comple
 IGNORES = ("ultra grand angle", "teleobjectif", "macro", "profondeur", "periscope", "externe", "exterieur",
            "haute capacite", "modeles multiples", "sans bms", "a souder", "lot de", "boite de", "set de")
 _PAREN = re.compile(r"\(([^()]*)\)")
+# Code constructeur d'une batterie, jamais un modèle : « Batterie BP46 Xiaomi 12/12X », « EB-BA546ABY »,
+# « HB526488EEW », « BLP911 », « LIS1654ERPC », « MC50 », « NT50 » (Motorola)
+_CODE_BATTERIE = re.compile(r"^(?:EB-?[A-Z0-9]{5,}|B[PMNL]\d{1,2}[A-Z0-9]?|BLP\d{3}[A-Z]?|HB\d{4,}[A-Z]*|LIS\d{4}[A-Z]*|"
+                            r"[A-Z]{2}\d{2}|SCUD-?[A-Z0-9]+|HQ-?\d+[A-Z]*|WT\d{2,}[A-Z]*|[A-Z]{3}\d{4,}[A-Z]*)$")
 _MEGAPIXELS = re.compile(r"\b\d{1,3}\s?MP\b", re.IGNORECASE)
 _NUMERIQUE = re.compile(r"^\d{4,}$")
 _COULEURS = fournisseurs._COULEURS_FIN | {
@@ -274,9 +278,10 @@ def qualite_nom(nom: str, sku: str = "") -> Optional[str]:
     return "Original" if _NUMERIQUE.match(str(sku or "").strip()) else "Compatible"
 
 
-def modele_nom(nom: str, motif_piece: str) -> str:
+def modele_nom(nom: str, motif_piece: str, piece: str = None) -> str:
     """Modèle lu dans un nom Utopya : ce qui suit la pièce, sans coloris, qualité, mégapixels ni
-    parenthèses inutiles (année, génération, 5G, numéro gardés)."""
+    parenthèses inutiles (année, génération, 5G, numéro gardés) ; pour une batterie, sans le code
+    constructeur (« BP46 », « EB-BA546ABY »)."""
     from app.api import grille
     s = _PAREN.sub(lambda m: f" ({m.group(1).strip()}) " if grille._garder_parenthese(m.group(1)) else " ", nom)
     s = _MEGAPIXELS.sub(" ", s)
@@ -299,6 +304,8 @@ def modele_nom(nom: str, motif_piece: str) -> str:
         if not b or all(x in _COULEURS or x in _MOTS_QUALITE or x in import_prix._MOTS_VIDES or x in _MOTS_PIECE
                         for x in b.split()):
             continue
+        if piece == "batterie" and _CODE_BATTERIE.match(m.strip("(),")):
+            continue
         garde.append(m)
     return " ".join(garde)
 
@@ -311,23 +318,34 @@ def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
     if not nom:
         return None
     bas = normaliser(nom)
-    if any(m in bas for m in IGNORES) or (bas.split() and bas.split()[0] in import_prix._ACCESSOIRES):
+    if any(m in bas for m in IGNORES):
         return None
     cle, motif = import_prix.piece_de(nom)
     if not cle or motif is None:
         return None
+    # Accessoire nommé avant la pièce (« Adhésif écran », « Nappe LCD ») : ce n'est pas cette pièce
+    plat = bas.split()
+    pos = import_prix._trouver(plat, motif.split())
+    if any(t in import_prix._ACCESSOIRES for t in plat[:pos or 0]):
+        return None
+    if cle == "bouton_power" and not re.search(r"\b(nappe|flex)\b", bas):
+        return None          # « Bouton Power iPhone 11 (Noir) » : le capuchon, pas la nappe
     ht = prix_collecte(p, tva)
     if ht is None:
         return None
     type_piece = import_prix._TYPE_PIECE[cle]
     qualite = qualite_nom(nom, p.get("sku")) if cle == "ecran" else (
         "Original" if re.search(r"\b(service pack|original|origine)\b", bas) else None)
-    modele = modele_nom(nom, motif)
+    modele = modele_nom(nom, motif, cle)
     if not modele:
         return None
     ref = str(p.get("sku") or "").strip()[:60]
+    href = str(p.get("href") or "").strip()
+    if href.startswith("/"):
+        href = SITE.rstrip("/") + href
     return {"reference": ref, "designation": nom[:250], "marque": str(marque_page or "")[:40], "modele": modele[:250],
-            "type_piece": type_piece, "qualite": qualite or "", "prix_ht": ht}
+            "type_piece": type_piece, "qualite": qualite or "", "prix_ht": ht, "en_stock": None,
+            "url": href[:300] if href.startswith("https://") else None}
 
 
 def lignes_collecte(produits, pages, tva=None) -> tuple:
@@ -410,12 +428,13 @@ def traiter(collecte: dict) -> dict:
             jour = date.today().isoformat()
             apple = [l for l in lignes if any(m in normaliser(l["modele"]) for m in ("ipad", "macbook"))]
             with get_cursor() as cur:
+                infos = fournisseurs.infos_lignes(lignes)
                 resultats = [fournisseurs._importer(cur, "tarifs", fournisseurs.csv_lignes(lignes), f"utopya-{jour}.csv",
-                                                    r, fournisseur=FOURNISSEUR, auteur=AUTEUR, source=SOURCE)]
+                                                    r, fournisseur=FOURNISSEUR, auteur=AUTEUR, source=SOURCE, infos=infos)]
                 if apple:
                     resultats.append(fournisseurs._importer(cur, "tarifs_apple_devices", fournisseurs.csv_lignes(apple),
                                                             f"utopya-{jour}-apple.csv", r, fournisseur=FOURNISSEUR,
-                                                            auteur=AUTEUR, source=SOURCE))
+                                                            auteur=AUTEUR, source=SOURCE, infos=infos))
             for res in resultats:
                 cles_reconnues |= set(res.pop("_cles", None) or ())
                 for k in fournisseurs._COMPTES:

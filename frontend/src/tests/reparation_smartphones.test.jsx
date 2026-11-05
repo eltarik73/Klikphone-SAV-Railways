@@ -432,7 +432,7 @@ describe('Réparation smartphones : administrateur', () => {
     page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
     const table = await screen.findByRole('table');
     // Admin : la date du prix est sous le HT (source, référence), pas de colonne « Prix du »
-    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Pièce', 'Prix fournisseur HT', 'Calcul', 'Prix client TTC', 'Actions']);
+    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Pièce', 'Prix fournisseur HT', 'Calcul', 'Mobilax / Utopya', 'Prix client TTC', 'Actions']);
     expect(within(table).getByText('42,00 € HT')).toBeInTheDocument();
     expect(within(table).getByText('42,00 × 1,2 + 60 = 110,40 → 119 €')).toBeInTheDocument();
     expect(within(table).getByText('11,00 × 1,2 + 60 = 73,20 → 79 €')).toBeInTheDocument();
@@ -645,6 +645,88 @@ describe('Réparation smartphones : administrateur', () => {
 });
 
 // ─── Réparation iPhone : où sont les prix ? ─────
+describe('Réparation smartphones : grille comparative Mobilax / Utopya', () => {
+  beforeEach(() => localStorage.setItem('klikphone_admin', 'true'));
+
+  const PRIX_FOURNISSEURS = {
+    Mobilax: { ht: 42, ref: 'M-1', url: null, en_stock: true, vu_le: '2026-11-05T01:26:30', prix_maj_le: '2026-11-05T01:26:30', connu: true },
+    Utopya: { ht: 39.9, ref: '102273', url: 'https://www.utopya.fr/ecran-galaxy-a54.html', en_stock: false, vu_le: '2026-11-04T23:15:01', prix_maj_le: '2026-11-04T23:15:01', connu: true },
+  };
+
+  it('admin : prix de chaque fournisseur, rupture, fournisseur retenu ; « Retenir » impose Utopya, « Auto » revient au moins-disant', async () => {
+    etat.modeles['Samsung::Galaxy A54'] = modele({ pieces: [piece({ prix_fournisseurs: PRIX_FOURNISSEURS, fournisseur_choisi: null })] });
+    apiMock.choisirFournisseurPiece.mockImplementation(async (id, fournisseur) => {
+      const applique = fournisseur === 'Utopya'
+        ? { ok: true, nouveau_ht: 39.9, nouveau_client: 109, fournisseur: 'Utopya' }
+        : { ok: true, nouveau_ht: 42, nouveau_client: 119, fournisseur: 'Mobilax' };
+      // Le serveur a écrit le prix : une relecture du modèle rend la ligne dans son nouvel état
+      etat.modeles['Samsung::Galaxy A54'] = modele({ pieces: [piece({
+        prix_fournisseurs: PRIX_FOURNISSEURS, fournisseur_choisi: fournisseur, fournisseur: applique.fournisseur,
+        prix_fournisseur_ht: applique.nouveau_ht, prix_client: applique.nouveau_client, calcul: null,
+        prix_source: fournisseur ? fournisseur.toLowerCase() : 'import',
+      })] });
+      return { cle: `tarifs:${id}`, fournisseur_choisi: fournisseur, applique, verrouille: false, disponibles: ['Mobilax', 'Utopya'] };
+    });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const table = await screen.findByRole('table');
+    const ligne = within(table).getByText('Ecran').closest('tr');
+    // Mobilax retenu (coût importé de Mobilax), Utopya moins cher mais en rupture
+    expect(within(ligne).getByText('42,00 €')).toBeInTheDocument();
+    expect(within(ligne).getByText('39,90 €')).toBeInTheDocument();
+    expect(within(ligne).getByText('rupture')).toBeInTheDocument();
+    expect(within(ligne).getByText('retenu')).toBeInTheDocument();
+    const fiche = within(ligne).getByText('Utopya (nouvel onglet)').closest('a');
+    expect(fiche).toHaveAttribute('href', 'https://www.utopya.fr/ecran-galaxy-a54.html');
+    expect(fiche).toHaveAttribute('target', '_blank');
+    expect(within(ligne).queryByRole('button', { name: /Retenir le prix Mobilax/ })).not.toBeInTheDocument();
+    // Le gérant impose Utopya : PATCH, HT et prix client de la ligne mis à jour, « Auto » proposé
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Retenir le prix Utopya pour Samsung Galaxy A54 · Ecran Soft OLED' }));
+    await waitFor(() => expect(apiMock.choisirFournisseurPiece).toHaveBeenCalledWith(1, 'Utopya'));
+    expect(await within(table).findByText('39,90 € HT')).toBeInTheDocument();
+    expect(within(table).getByText('109 €')).toBeInTheDocument();
+    expect(within(table).getByText('retenu (votre choix)')).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith('Samsung Galaxy A54 · Ecran Soft OLED : prix Utopya retenu (109 € client).');
+    fireEvent.click(within(table).getByRole('button', { name: 'Samsung Galaxy A54 · Ecran Soft OLED : revenir au fournisseur le moins cher' }));
+    await waitFor(() => expect(apiMock.choisirFournisseurPiece).toHaveBeenLastCalledWith(1, null));
+    expect(await within(table).findByText('42,00 € HT')).toBeInTheDocument();
+    // « Auto » : le serveur applique aussitôt le moins cher disponible (Utopya en rupture → Mobilax)
+    expect(toast.success).toHaveBeenLastCalledWith('Samsung Galaxy A54 · Ecran Soft OLED : prix Mobilax retenu (119 € client).');
+    expect(within(table).getByText('retenu')).toBeInTheDocument();
+  });
+
+  it('pièce verrouillée : le choix est noté, le prix ne bouge pas ; sans relevé : mention', async () => {
+    etat.modeles['Samsung::Galaxy A54'] = modele({ pieces: [
+      piece({ prix_fournisseurs: PRIX_FOURNISSEURS, verrou: true }),
+      piece({ id: 2, cle: 'tarifs:2', type_piece: 'Batterie', qualite: null, prix_fournisseur_ht: 11, prix_client: 79, calcul: { ht: 11, tva: 1.2, marge: 60, brut: 73.2, arrondi: 79 }, prix_fournisseurs: {} }),
+    ] });
+    apiMock.choisirFournisseurPiece.mockResolvedValue({ cle: 'tarifs:1', fournisseur_choisi: 'Utopya', applique: null, verrouille: true, disponibles: ['Mobilax', 'Utopya'] });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const table = await screen.findByRole('table');
+    expect(within(table).getByText('Aucun relevé fournisseur')).toBeInTheDocument();
+    fireEvent.click(within(table).getByRole('button', { name: /Retenir le prix Utopya/ }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Samsung Galaxy A54 · Ecran Soft OLED : fournisseur noté ; le prix est verrouillé, il ne change pas.'));
+    expect(within(table).getByText('42,00 € HT')).toBeInTheDocument();
+  });
+
+  it('personnel : ni colonne comparative ni « Retenir »', async () => {
+    localStorage.removeItem('klikphone_admin');
+    etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: [piece({ prix_fournisseur_ht: null, calcul: null, prix_fournisseurs: { Mobilax: { ht: null, en_stock: true, connu: true }, Utopya: { ht: null, en_stock: false, connu: true } } })] });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((c) => c.textContent)).not.toContain('Mobilax / Utopya');
+    expect(within(table).queryByRole('button', { name: /Retenir/ })).not.toBeInTheDocument();
+  });
+
+  it('« Compléter tous les modèles » : vitre arrière et bouton power créés sur toute la grille', async () => {
+    apiMock.creerPiecesCourantesTous.mockResolvedValue({ modeles: 180, crees: 350, par_type: { 'Vitre arriere': 170, 'Bouton power': 180 } });
+    page('/accueil/tarifs');
+    const bouton = await screen.findByRole('button', { name: 'Compléter tous les modèles' });
+    fireEvent.click(bouton);
+    await waitFor(() => expect(apiMock.creerPiecesCourantesTous).toHaveBeenCalledWith({ types: ['Vitre arriere', 'Bouton power'] }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('350 pièces créées sur 180 modèles (prix à renseigner) : lancez la synchro Mobilax et la collecte Utopya.'));
+  });
+});
+
 describe('Réparation smartphones : batterie changée par l’écran', () => {
   const PIXEL = () => ({
     marque: 'Google', modele: 'Pixel 7', categorie: 'Smartphone', categorie_apple: null, au_catalogue: true, modele_trouve: true, admin: true, noms: [],

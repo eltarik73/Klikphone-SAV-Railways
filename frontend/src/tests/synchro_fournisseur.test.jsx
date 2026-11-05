@@ -81,6 +81,7 @@ describe('decrireMobilax', () => {
     const riche = decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 250, propositions_fermees: 300, sans_prix: 412 } });
     expect(riche.detail).toBe('12 prix mis à jour · 300 confirmés · dont 250 prix estimés ou périmés remplacés sans validation · 3 à valider (Propositions) · 300 propositions réglées · 2 verrouillés · 412 pièces de la grille sans prix Mobilax — 1450 produits lus pour 210 modèles.');
     expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 1, sans_prix: 1, propositions_fermees: 1 } }).detail).toContain('dont 1 prix estimé ou périmé remplacé sans validation · 3 à valider (Propositions) · 1 proposition réglée · 2 verrouillés · 1 pièce de la grille sans prix Mobilax');
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, autre_fournisseur_choisi: 2 } }).detail).toContain('2 laissées à l’autre fournisseur (votre choix)');
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null })).toMatchObject({ ton: 'neutre', titre: 'Mobilax connecté' });
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null, active: false }).detail).toBe('Synchro quotidienne coupée.');
   });
@@ -132,6 +133,24 @@ describe('pièces sans prix Mobilax (DiagnosticMobilax)', () => {
     render(<DiagnosticMobilax nombre={2} />);
     fireEvent.click(screen.getByRole('button', { name: /2 pièces sans prix Mobilax/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('500');
+  });
+
+  it('produit vu sans prix (rupture) : sa propre raison, en tête, candidats marqués', async () => {
+    apiMock.getDiagnosticMobilax.mockResolvedValue({
+      ...DIAG, n: 2, par_raison: { sans_prix_fournisseur: 1, non_reconnue: 1 },
+      raisons: { ...DIAG.raisons, sans_prix_fournisseur: 'Mobilax a la pièce, mais sans prix pour votre compte (rupture ou produit retiré)' },
+      pieces: [
+        { cle: 'tarifs:9', marque: 'Apple', modele: 'iPhone 11', type_piece: 'Bouton power', qualite: null, raison: 'sans_prix_fournisseur',
+          candidats: [{ nom: 'Nappe Power On/Off Apple iPhone 11 (Flash)', prix_ht: null, sans_prix: true, en_stock: false }] },
+        DIAG.pieces[0],
+      ],
+    });
+    render(<DiagnosticMobilax nombre={2} estAdmin />);
+    fireEvent.click(screen.getByRole('button', { name: /2 pièces sans prix Mobilax/ }));
+    const titres = await screen.findAllByRole('heading');
+    expect(titres[0]).toHaveTextContent(/Mobilax a la pièce, mais sans prix pour votre compte.*\(1\)/);
+    expect(screen.getByText('Apple iPhone 11 — Bouton power')).toBeInTheDocument();
+    expect(screen.getByText(/Nappe Power On\/Off Apple iPhone 11 \(Flash\) \(sans prix, rupture\)/)).toBeInTheDocument();
   });
 
   it('bloc de synchro : le bouton apparaît après un passage réussi avec des pièces sans prix', async () => {

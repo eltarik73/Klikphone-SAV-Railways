@@ -299,17 +299,76 @@ function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer, brouill
   );
 }
 
+// ─── Grille comparative des fournisseurs ─────────
+export const FOURNISSEURS = Object.freeze(['Mobilax', 'Utopya']);
+// Sources dont la colonne `fournisseur` dit bien d'où vient le coût retenu (une saisie manuelle ou une
+// estimation laisse la colonne à sa valeur par défaut)
+const SOURCES_FOURNISSEUR = new Set(['import', 'mobilax', 'utopya', 'commande']);
+
+/** Le fournisseur dont vient le coût HT retenu de la pièce (null : prix à renseigner, manuel, estimé). */
+export function fournisseurRetenu(piece) {
+  if (!piece || prixARenseigner(piece) || !SOURCES_FOURNISSEUR.has(String(piece.prix_source || '').toLowerCase())) return null;
+  const f = sansAccents(piece.fournisseur);
+  return FOURNISSEURS.find((x) => sansAccents(x) === f) || null;
+}
+
+/**
+ * Cellule « Mobilax / Utopya » d'une pièce (admin, prix d'achat reçus) : le dernier prix relevé chez chaque
+ * fournisseur (synchro, collecte, saisie), rupture, celui qui est retenu, et « Retenir » / « Auto » pour
+ * imposer un fournisseur (PATCH /api/tarifs/{id}/fournisseur) ou revenir au moins-disant.
+ */
+export function CelluleFournisseurs({ piece, nom, editable = false, occupe = false, onChoisir = null }) {
+  const dispo = piece?.prix_fournisseurs || {};
+  const retenu = fournisseurRetenu(piece);
+  const lignes = FOURNISSEURS.filter((f) => dispo[f] && (dispo[f].connu || dispo[f].ht !== null && dispo[f].ht !== undefined || dispo[f].en_stock === false));
+  if (!lignes.length) return <span className="text-slate-400">Aucun relevé fournisseur</span>;
+  return (
+    <ul className="space-y-0.5">
+      {lignes.map((f) => {
+        const d = dispo[f];
+        const estRetenu = retenu === f;
+        const choisi = piece.fournisseur_choisi === f;
+        const prixConnu = d.ht !== null && d.ht !== undefined;
+        return (
+          <li key={f} className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+            <span className={`w-14 ${estRetenu ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{f}</span>
+            {prixConnu
+              ? <span className={estRetenu ? 'font-semibold text-slate-900' : 'text-slate-700'}>{deuxDecimales(d.ht)} €</span>
+              : <span className="text-slate-400" title="Prix masqué ou inconnu">—</span>}
+            {d.en_stock === false && <span className="badge badge-sm badge-danger">rupture</span>}
+            {estRetenu && <span className="badge badge-sm badge-success">{choisi ? 'retenu (votre choix)' : 'retenu'}</span>}
+            {editable && onChoisir && prixConnu && !estRetenu && (
+              <button type="button" disabled={occupe} onClick={() => onChoisir(piece, f)} aria-label={`Retenir le prix ${f} pour ${nom}`}
+                className="btn-ghost btn-sm min-h-[44px] -my-2 text-brand-700">Retenir</button>
+            )}
+            {editable && onChoisir && choisi && (
+              <button type="button" disabled={occupe} onClick={() => onChoisir(piece, null)} aria-label={`${nom} : revenir au fournisseur le moins cher`}
+                className="btn-ghost btn-sm min-h-[44px] -my-2">Auto</button>
+            )}
+            {d.url && (
+              <a href={d.url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {f} (nouvel onglet)</span>
+              </a>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 // ─── Ligne ────────────────────────────────────────
 /**
  * Props : piece, marque, modele, regles, seuils, isAdmin (édition), htVisible (prix d'achat reçus),
- * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), enCours (id en cours d'écriture :
- * verrou… la ligne attend), envoiEnCours(id) (prix HT parti en arrière-plan : « Enregistrement… », la saisie
- * suivante reste possible, elle part après dans la file de la ligne),
- * marge (texte sous le prix, filtre « marges faibles »), nbColonnes (colSpan du volet).
+ * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), onChoisirFournisseur(piece, nom | null)
+ * (grille comparative), enCours (id en cours d'écriture : verrou… la ligne attend), envoiEnCours(id) (prix HT
+ * parti en arrière-plan : « Enregistrement… », la saisie suivante reste possible, elle part après dans la file
+ * de la ligne), marge (texte sous le prix, filtre « marges faibles »), nbColonnes (colSpan du volet).
  */
 export default function PieceFournisseurRow({
   piece, marque, modele, regles = null, seuils = SEUILS_FRAICHEUR, isAdmin = false, htVisible = false,
-  onEnregistrer, onVerrou, onStock, enCours = null, envoiEnCours = null, marge = null, nbColonnes = 6,
+  onEnregistrer, onVerrou, onStock, onChoisirFournisseur = null, enCours = null, envoiEnCours = null, marge = null, nbColonnes = 7,
 }) {
   const toast = useToast();
   const [edition, setEdition] = useState(false);
@@ -436,6 +495,12 @@ export default function PieceFournisseurRow({
           </td>
         )}
 
+        {htVisible && (
+          <td className="text-xs tabular-nums align-top">
+            <CelluleFournisseurs piece={piece} nom={nom} editable={editable} occupe={occupe || envoi} onChoisir={onChoisirFournisseur} />
+          </td>
+        )}
+
         <td className="table-cell-num align-top">
           {aRenseigner || !(Number(piece.prix_client) > 0) ? <span className="text-slate-400 font-normal">—</span> : <span className="text-base">{euros(piece.prix_client)}</span>}
           {marge && <div className="text-xs mt-1 font-semibold text-red-700 tabular-nums">{marge}</div>}
@@ -485,9 +550,10 @@ export default function PieceFournisseurRow({
  * quand les prix d'achat sont reçus (admin avec le code saisi) ; actions pour l'admin.
  */
 export function TableauPieces({
-  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock, enCours, envoiEnCours, margeDe, dense = false,
+  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock, onChoisirFournisseur = null,
+  enCours, envoiEnCours, margeDe, dense = false,
 }) {
-  const colonnes = 2 + (htVisible ? 2 : 1) + (isAdmin ? 1 : 0);
+  const colonnes = 2 + (htVisible ? 3 : 1) + (isAdmin ? 1 : 0);
   // `relative` : les textes « sr-only » (en-tête « Actions », liens) sont en position absolue ; sans ancêtre
   // positionné dans le conteneur défilant, ils échappent au rognage et élargissent la page de toute la
   // largeur du tableau. `container-type` : le volet « Mettre à jour le HT » se dimensionne en 100cqw.
@@ -499,6 +565,7 @@ export function TableauPieces({
             <th scope="col" className="table-sticky-col bg-slate-50">Pièce</th>
             {htVisible && <th scope="col">Prix fournisseur HT</th>}
             {htVisible && <th scope="col">Calcul</th>}
+            {htVisible && <th scope="col">Mobilax / Utopya</th>}
             <th scope="col" className="text-right">Prix client TTC</th>
             {!htVisible && <th scope="col">Prix du</th>}
             {isAdmin && <th scope="col"><span className="sr-only">Actions</span></th>}
@@ -508,11 +575,12 @@ export function TableauPieces({
           {pieces.map((p) => (
             <PieceFournisseurRow key={idPiece(p) ?? `${p.type_piece}-${p.qualite || ''}`} piece={p} marque={marque} modele={modele}
               regles={regles} seuils={seuils} isAdmin={isAdmin} htVisible={htVisible} onEnregistrer={onEnregistrer}
-              onVerrou={onVerrou} onStock={onStock} enCours={enCours} envoiEnCours={envoiEnCours} marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} />
+              onVerrou={onVerrou} onStock={onStock} onChoisirFournisseur={onChoisirFournisseur} enCours={enCours} envoiEnCours={envoiEnCours}
+              marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} />
           ))}
         </tbody>
       </table>
-      {htVisible && <p className="sm:hidden t-caption px-4 py-2 border-t border-slate-100">Faites défiler le tableau vers la droite pour le calcul et le prix client.</p>}
+      {htVisible && <p className="sm:hidden t-caption px-4 py-2 border-t border-slate-100">Faites défiler le tableau vers la droite pour le calcul, les prix Mobilax / Utopya et le prix client.</p>}
     </div>
   );
 }

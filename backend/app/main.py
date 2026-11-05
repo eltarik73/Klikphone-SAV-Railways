@@ -548,6 +548,23 @@ _DDL_ALTERS = [
     "ALTER TABLE smartphones_tarifs ADD COLUMN IF NOT EXISTS prix_maj_le TIMESTAMP",
     # Lot de l'acceptation d'une proposition (prix.appliquer_ht) : annuler ce lot la rouvre
     "ALTER TABLE tarifs_propositions ADD COLUMN IF NOT EXISTS lot_id TEXT",
+    # Grille comparative des fournisseurs (services/prix.enregistrer_prix_fournisseur) : le dernier prix de
+    # chaque fournisseur par pièce, retenu ou non ; fournisseur_choisi = choix du gérant (NULL = moins-disant)
+    "ALTER TABLE tarifs ADD COLUMN IF NOT EXISTS fournisseur_choisi TEXT",
+    "ALTER TABLE tarifs_apple_devices ADD COLUMN IF NOT EXISTS fournisseur_choisi TEXT",
+    """CREATE TABLE IF NOT EXISTS tarifs_fournisseurs_prix (
+        tarif_cle TEXT NOT NULL,
+        fournisseur TEXT NOT NULL,
+        prix_ht NUMERIC(10,2),
+        ref_fournisseur TEXT,
+        designation TEXT,
+        url TEXT,
+        en_stock BOOLEAN,
+        source TEXT,
+        vu_le TIMESTAMP NOT NULL DEFAULT NOW(),
+        prix_maj_le TIMESTAMP,
+        PRIMARY KEY (tarif_cle, fournisseur)
+    )""",
 ]
 
 # Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
