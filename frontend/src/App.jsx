@@ -32,13 +32,14 @@ const AttestationPage = lazy(() => import('./pages/AttestationPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const TarifsPage = lazy(() => import('./pages/TarifsPage'));
+// Rubrique Tarifs : une entrée de menu, les grilles en onglets (adresses inchangées)
+import OngletsTarifs from './components/OngletsTarifs';
 const DepotPage = lazy(() => import('./pages/DepotPage'));
 const AvisGooglePage = lazy(() => import('./pages/AvisGoogle'));
 const CommunityManagerPage = lazy(() => import('./pages/CommunityManager'));
 const TarifsTelephonesPage = lazy(() => import('./pages/TarifsTelephonesPage'));
 const DevisPage = lazy(() => import('./pages/DevisPage'));
 const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
-const TelephonesVentePage = lazy(() => import('./pages/TelephonesVentePage'));
 const DeposerPage = lazy(() => import('./pages/DeposerPage'));
 const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
 const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage'));
@@ -349,36 +350,36 @@ function AppRoutes() {
         <Route path="/accueil/clients" element={<P targets={['accueil']}><ClientsPage /></P>} />
         <Route path="/accueil/commandes" element={<P targets={['accueil']}><CommandesPage /></P>} />
         <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
-        <Route path="/accueil/tarifs" element={<P targets={['accueil']}><TarifsPage /></P>} />
-        <Route path="/accueil/tarifs-telephones" element={<P targets={['accueil']}><TarifsTelephonesPage /></P>} />
+        <Route path="/accueil/tarifs" element={<P targets={['accueil']}><OngletsTarifs><TarifsPage /></OngletsTarifs></P>} />
+        <Route path="/accueil/tarifs-telephones" element={<P targets={['accueil']}><OngletsTarifs><TarifsTelephonesPage /></OngletsTarifs></P>} />
         <Route path="/accueil/devis" element={<P targets={['accueil']}><DevisPage /></P>} />
         <Route path="/accueil/devis-flash" element={<P targets={['accueil']}><DevisFlashPage /></P>} />
-        <Route path="/accueil/telephones-vente" element={<P targets={['accueil']}><TelephonesVentePage /></P>} />
+        <Route path="/accueil/telephones-vente" element={<Navigate to="/accueil/tarifs-telephones" replace />} />
         <Route path="/accueil/config" element={<AG targets={['accueil']}><ConfigPage /></AG>} />
         <Route path="/accueil/avis-google" element={<AG targets={['accueil']}><AvisGooglePage /></AG>} />
         <Route path="/accueil/community" element={<AG targets={['accueil']}><CommunityManagerPage /></AG>} />
-        <Route path="/accueil/tarifs-reparation" element={<P targets={['accueil']}><TarifsReparationPage /></P>} />
+        <Route path="/accueil/tarifs-reparation" element={<P targets={['accueil']}><OngletsTarifs><TarifsReparationPage /></OngletsTarifs></P>} />
         <Route path="/accueil/admin" element={<AG targets={['accueil']}><AdminPage /></AG>} />
-        <Route path="/accueil/tarifs-iphone" element={<P targets={['accueil']}><AdminTarifsIphonePage /></P>} />
-        <Route path="/accueil/tarifs-smartphones" element={<P targets={['accueil']}><AdminTarifsSmartphonesPage /></P>} />
+        <Route path="/accueil/tarifs-iphone" element={<P targets={['accueil']}><OngletsTarifs><AdminTarifsIphonePage /></OngletsTarifs></P>} />
+        <Route path="/accueil/tarifs-smartphones" element={<P targets={['accueil']}><OngletsTarifs><AdminTarifsSmartphonesPage /></OngletsTarifs></P>} />
 
         <Route path="/tech" element={<P targets={['tech']}><DashboardPage /></P>} />
         <Route path="/tech/ticket/:id" element={<P targets={['tech']}><TicketDetailPage /></P>} />
         <Route path="/tech/clients" element={<P targets={['tech']}><ClientsPage /></P>} />
         <Route path="/tech/commandes" element={<P targets={['tech']}><CommandesPage /></P>} />
         <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
-        <Route path="/tech/tarifs" element={<P targets={['tech']}><TarifsPage /></P>} />
-        <Route path="/tech/tarifs-telephones" element={<P targets={['tech']}><TarifsTelephonesPage /></P>} />
+        <Route path="/tech/tarifs" element={<P targets={['tech']}><OngletsTarifs><TarifsPage /></OngletsTarifs></P>} />
+        <Route path="/tech/tarifs-telephones" element={<P targets={['tech']}><OngletsTarifs><TarifsTelephonesPage /></OngletsTarifs></P>} />
         <Route path="/tech/devis" element={<P targets={['tech']}><DevisPage /></P>} />
         <Route path="/tech/devis-flash" element={<P targets={['tech']}><DevisFlashPage /></P>} />
-        <Route path="/tech/telephones-vente" element={<P targets={['tech']}><TelephonesVentePage /></P>} />
+        <Route path="/tech/telephones-vente" element={<Navigate to="/tech/tarifs-telephones" replace />} />
         <Route path="/tech/config" element={<AG targets={['tech']}><ConfigPage /></AG>} />
         <Route path="/tech/avis-google" element={<AG targets={['tech']}><AvisGooglePage /></AG>} />
         <Route path="/tech/community" element={<AG targets={['tech']}><CommunityManagerPage /></AG>} />
-        <Route path="/tech/tarifs-reparation" element={<P targets={['tech']}><TarifsReparationPage /></P>} />
+        <Route path="/tech/tarifs-reparation" element={<P targets={['tech']}><OngletsTarifs><TarifsReparationPage /></OngletsTarifs></P>} />
         <Route path="/tech/admin" element={<AG targets={['tech']}><AdminPage /></AG>} />
-        <Route path="/tech/tarifs-iphone" element={<P targets={['tech']}><AdminTarifsIphonePage /></P>} />
-        <Route path="/tech/tarifs-smartphones" element={<P targets={['tech']}><AdminTarifsSmartphonesPage /></P>} />
+        <Route path="/tech/tarifs-iphone" element={<P targets={['tech']}><OngletsTarifs><AdminTarifsIphonePage /></OngletsTarifs></P>} />
+        <Route path="/tech/tarifs-smartphones" element={<P targets={['tech']}><OngletsTarifs><AdminTarifsSmartphonesPage /></OngletsTarifs></P>} />
         <Route path="/accueil/demandes-commandes" element={<P targets={['accueil']}><DemandesCommandesPage /></P>} />
         <Route path="/tech/demandes-commandes" element={<P targets={['tech']}><DemandesCommandesPage /></P>} />
         <Route path="/accueil/prix-a-revoir" element={<AG targets={['accueil']}><ModelesSansPrixPage /></AG>} />

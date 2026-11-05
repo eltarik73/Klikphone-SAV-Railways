@@ -6,11 +6,12 @@ import { usePolling } from '../hooks/usePolling';
 import AdminLoginModal, { ADMIN_MODE_EVENT } from './AdminLoginModal';
 import NotificationCenter from './NotificationCenter';
 import { openSearchPalette, shortcutLabel } from './SearchPalette';
+import { cheminsTarifs } from './OngletsTarifs';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
-  RefreshCw, Tag, Star, Megaphone, ChevronDown, Wrench, Smartphone,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, FlaskConical, Tv, Inbox, CalendarClock,
+  RefreshCw, Tag, Star, Megaphone, ChevronDown,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, Tv, Inbox, CalendarClock,
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
@@ -127,9 +128,7 @@ export default function Navbar() {
   const collapsed = collapsedPref && desktop;
   const [pendingCount, setPendingCount] = useState(0);
   const [commandesEnCours, setCommandesEnCours] = useState(0);
-  const [tarifsOpen, setTarifsOpen] = useState(() => localStorage.getItem('kp_tarifs_open') !== '0');
   const [adminOpen, setAdminOpen] = useState(() => localStorage.getItem('kp_admin_open') !== '0');
-  const [betaOpen, setBetaOpen] = useState(() => localStorage.getItem('kp_beta_open') === '1');
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
   const [interactionCount, setInteractionCount] = useState(0);
   const [demandesCmdNew, setDemandesCmdNew] = useState(0);
@@ -220,7 +219,7 @@ export default function Navbar() {
     el.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
     return () => { el.removeEventListener('scroll', update); window.removeEventListener('resize', update); };
-  }, [user?.utilisateur, collapsed, mobileOpen, tarifsOpen, adminOpen, betaOpen, devisOpen, moduleDevis, moduleDevisFlash, isAdminMode]);
+  }, [user?.utilisateur, collapsed, mobileOpen, adminOpen, devisOpen, moduleDevis, moduleDevisFlash, isAdminMode]);
 
   const toggleCollapse = () => {
     const next = !collapsedPref;
@@ -240,6 +239,8 @@ export default function Navbar() {
     { path: `${basePath}/commandes`, label: 'Commandes', icon: Package, badge: commandesEnCours },
     { path: `${basePath}/demandes-commandes`, label: 'Demandes de commande', icon: ShoppingBag, badge: demandesCmdNew },
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
+    // Une seule entrée pour toutes les grilles (réparations, ventes, catalogue) : onglets sur la page
+    { path: `${basePath}/tarifs`, label: 'Tarifs', icon: Tag, match: cheminsTarifs(basePath) },
     { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
   ];
 
@@ -261,12 +262,6 @@ export default function Navbar() {
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
     { path: '/site-tarifs-iphone', label: 'Site Tarifs iPhone', icon: Tv, pill: 'BETA' },
-  ];
-
-  // « Réparation smartphones » (/tarifs) est désormais dans la rubrique Tarifs
-  const betaItems = [
-    { path: `${basePath}/tarifs-telephones`, label: 'Téléphones', icon: Smartphone },
-    { path: `${basePath}/telephones-vente`, label: 'Mes téléphones', icon: ShoppingBag },
   ];
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
@@ -431,8 +426,8 @@ export default function Navbar() {
             <NotificationCenter collapsed={collapsed} />
           </div>
 
-          {navItems.map(({ path, label, icon: Icon, badge, alertBadge }) => {
-            const active = isActive(path);
+          {navItems.map(({ path, label, icon: Icon, badge, alertBadge, match }) => {
+            const active = match ? match.some(isActive) : isActive(path);
             return (
               <Tooltip collapsed={collapsed} key={path} label={label} badge={badge}>
                 <button onClick={() => handleNav(path)}
@@ -495,44 +490,6 @@ export default function Navbar() {
             </div>
           )}
 
-          {/* ─── Tarifs section ─── */}
-          <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
-            <SectionHeader
-                collapsed={collapsed}
-              label="Tarifs"
-              icon={Tag}
-              open={tarifsOpen}
-              onToggle={() => {
-                const next = !tarifsOpen;
-                setTarifsOpen(next);
-                localStorage.setItem('kp_tarifs_open', next ? '1' : '0');
-              }}
-            />
-            {(tarifsOpen || collapsed) && (
-              <div className="space-y-0.5">
-                {[
-                  // Réparations : grille boutique iPhone, puis prix fournisseur (Mobilax / Utopya) des autres marques
-                  { path: `${basePath}/tarifs-reparation`, label: 'Réparation iPhone', icon: Wrench },
-                  { path: `${basePath}/tarifs`, label: 'Réparation smartphones', icon: Smartphone },
-                  // Téléphones à la vente
-                  { path: `${basePath}/tarifs-iphone`, label: 'Vente iPhones', icon: Tag },
-                  { path: `${basePath}/tarifs-smartphones`, label: 'Vente smartphones', icon: ShoppingBag },
-                ].map(({ path, label, icon: Icon }) => {
-                  const active = isActive(path);
-                  return (
-                    <Tooltip collapsed={collapsed} key={path} label={label}>
-                      <button onClick={() => handleNav(path)} className={navBtnClass(active)}
-                        aria-label={collapsed ? label : undefined} aria-current={active ? 'page' : undefined}>
-                        <Icon className={iconCls(active)} aria-hidden="true" />
-                        {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
-                      </button>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           {/* ─── Administration section : réservée aux membres autorisés (ADMIN_MEMBRES, côté serveur) ─── */}
           {isRoleAdmin && (
           <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
@@ -569,47 +526,6 @@ export default function Navbar() {
                   );
                 })}
 
-                {/* ── Beta sub-group ── */}
-                {!collapsed ? (
-                  <button
-                    type="button"
-                    aria-expanded={!!betaOpen}
-                    onClick={() => {
-                      const next = !betaOpen;
-                      setBetaOpen(next);
-                      localStorage.setItem('kp_beta_open', next ? '1' : '0');
-                    }}
-                    className={`w-full min-h-11 flex items-center gap-3 px-3 py-2 mt-1 rounded-lg
-                      text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]
-                      transition-colors duration-150 ease-out group/beta ${FOCUS_DARK}`}
-                  >
-                    <FlaskConical className="w-5 h-5 shrink-0" aria-hidden="true" />
-                    <span className="text-[13px] font-medium flex-1 text-left">Beta</span>
-                    <span className="bg-white/10 text-slate-300 text-xs font-bold rounded px-1.5 py-0.5 tracking-wide leading-none">
-                      DEV
-                    </span>
-                    <ChevronDown className={`w-4 h-4 transition-transform duration-150 ease-out ${betaOpen ? 'rotate-0' : '-rotate-90'}`} aria-hidden="true" />
-                  </button>
-                ) : (
-                  <div className="relative my-2 flex justify-center" aria-hidden="true">
-                    <span className="block w-6 h-px bg-white/10" />
-                    <FlaskConical className="w-4 h-4 absolute -top-2 bg-slate-900 px-0.5 text-slate-400" />
-                  </div>
-                )}
-                {(betaOpen || collapsed) && betaItems.map(({ path, label, icon: Icon }) => {
-                  const active = isActive(path);
-                  return (
-                    <Tooltip collapsed={collapsed} key={path} label={label}>
-                      <button onClick={() => handleAdminNav(path)}
-                        className={`${navBtnClass(active)} ${collapsed ? '' : 'pl-6'}`}
-                        aria-label={collapsed ? label : undefined} aria-current={active ? 'page' : undefined}
-                      >
-                        <Icon className={iconCls(active)} aria-hidden="true" />
-                        {!collapsed && <span className="flex-1 text-left truncate">{label}</span>}
-                      </button>
-                    </Tooltip>
-                  );
-                })}
               </div>
             )}
           </div>

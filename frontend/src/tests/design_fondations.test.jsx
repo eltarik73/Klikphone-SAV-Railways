@@ -264,19 +264,23 @@ describe('Navbar : entrées, états et focus', () => {
     expect(await screen.findAllByRole('button', { name: /^Devis$/ })).toHaveLength(2);
     expect(screen.getByRole('button', { name: /^Devis Flash$/ })).toBeInTheDocument();
     for (const libelle of ['Clients', 'Commandes', 'Demandes de commande', 'Attestation', 'Suivi (vue client)',
-      'Réparation iPhone', 'Réparation smartphones', 'Vente iPhones', 'Vente smartphones', 'Reporting', 'Prix à revoir', 'Avis Google',
-      'Community Manager', 'Configuration', 'Site Tarifs iPhone', 'Beta', 'Réduire', 'Changer', 'Déconnexion']) {
+      'Tarifs', 'Reporting', 'Prix à revoir', 'Avis Google',
+      'Community Manager', 'Configuration', 'Site Tarifs iPhone', 'Réduire', 'Changer', 'Déconnexion']) {
       expect(screen.getByRole('button', { name: new RegExp(`^${libelle.replace(/[()]/g, '\\$&')}`) })).toBeInTheDocument();
     }
     const clients = screen.getByRole('button', { name: /^Clients/ });
     expect(clients).toHaveAttribute('aria-current', 'page');
     expect(clients.className).toMatch(/bg-brand-600\/20/);
     expect(screen.getByRole('button', { name: /^Commandes/ })).not.toHaveAttribute('aria-current');
-    // Rubriques : un seul style, plus de couleur par rubrique
-    const tarifs = screen.getByRole('button', { name: /^Tarifs$/ });
-    expect(tarifs).toHaveAttribute('aria-expanded', 'true');
-    expect(tarifs.getAttribute('style')).toBeNull();
-    expect(tarifs.querySelector('.t-overline')).not.toBeNull();
+    // Rubriques : un seul style, plus de couleur par rubrique (« Tarifs » est une entrée simple, sans rubrique)
+    const devis = screen.getAllByRole('button', { name: /^Devis$/ })[0];
+    expect(devis).toHaveAttribute('aria-expanded', 'true');
+    expect(devis.getAttribute('style')).toBeNull();
+    expect(devis.querySelector('.t-overline')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /^Tarifs$/ })).not.toHaveAttribute('aria-expanded');
+    for (const absent of ['Réparation iPhone', 'Vente iPhones', 'Vente smartphones', 'Beta', 'Mes téléphones']) {
+      expect(screen.queryByRole('button', { name: new RegExp(`^${absent}`) })).not.toBeInTheDocument();
+    }
   });
 
   it('compteurs : total slate 18 px + point rouge d’urgence sur Dashboard (plus deux badges juxtaposés)', async () => {

@@ -41,6 +41,7 @@ import { clearCache } from '../hooks/useApi';
 import TarifsPage, { VUES_MODELES, chercherModeles, filtrerModeles, phraseMethode, trierModeles } from '../pages/TarifsPage';
 import TarifsReparationPage from '../pages/TarifsReparationPage';
 import Navbar from '../components/Navbar';
+import OngletsTarifs, { estPageTarifs } from '../components/OngletsTarifs';
 import {
   detailCalcul, lienMobilax, lienUtopya, liensFournisseur, prixARenseigner, slugModele, texteCalcul,
 } from '../components/PieceFournisseurRow';
@@ -229,31 +230,46 @@ describe('méthode de calcul et liens fournisseurs', () => {
 });
 
 // ─── Menu ────────────────────────────────────────
-describe('Navbar : rubrique Tarifs', () => {
+describe('Navbar et onglets : une seule entrée « Tarifs »', () => {
   const naviguer = (url = '/accueil') => render(
     <MemoryRouter initialEntries={[url]}>
       <Routes><Route path="*" element={<><Navbar /><Adresse /></>} /></Routes>
     </MemoryRouter>,
   );
 
-  it('« Réparation smartphones » sous « Réparation iPhone », ventes renommées, plus d’entrée Beta « Réparations (Mobilax) »', async () => {
+  it('menu : « Tarifs » seul (ni Réparation iPhone, ni Vente, ni Beta), allumé sur chaque grille', async () => {
     apiMock.getKPI.mockResolvedValue({ total_actifs: 3 });
     apiMock.getConfig.mockResolvedValue({ MODULE_DEVIS_VISIBLE: 'true', MODULE_DEVIS_FLASH_VISIBLE: 'true' });
-    naviguer('/accueil/clients');
-    const rubrique = await screen.findByRole('button', { name: /^Tarifs$/ });
-    expect(rubrique).toHaveAttribute('aria-expanded', 'true');
-    const boutons = screen.getAllByRole('button').map((b) => b.textContent.trim());
-    const iPhone = boutons.indexOf('Réparation iPhone');
-    expect(iPhone).toBeGreaterThan(-1);
-    expect(boutons[iPhone + 1]).toBe('Réparation smartphones');
-    expect(boutons[iPhone + 2]).toBe('Vente iPhones');
-    expect(boutons[iPhone + 3]).toBe('Vente smartphones');
-    expect(screen.queryByRole('button', { name: /Réparations \(Mobilax\)/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^Tarifs iPhones/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^Réparation smartphones/ }));
+    naviguer('/accueil/tarifs-reparation');
+    const tarifs = await screen.findByRole('button', { name: /^Tarifs$/ });
+    expect(tarifs).toHaveAttribute('aria-current', 'page');
+    for (const absent of ['Réparation iPhone', 'Réparation smartphones', 'Vente iPhones', 'Vente smartphones', 'Beta', 'Téléphones', 'Mes téléphones']) {
+      expect(screen.queryByRole('button', { name: new RegExp(`^${absent}$`) })).not.toBeInTheDocument();
+    }
+    fireEvent.click(tarifs);
     expect(screen.getByTestId('adresse')).toHaveTextContent('/accueil/tarifs');
-    expect(screen.getByRole('button', { name: /^Réparation smartphones/ })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: /^Réparation iPhone/ })).not.toHaveAttribute('aria-current');
+    cleanup();
+    naviguer('/accueil/clients');
+    expect(await screen.findByRole('button', { name: /^Tarifs$/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('onglets : les cinq grilles, l’onglet de la page courante en aria-current, adresses inchangées', () => {
+    render(
+      <MemoryRouter initialEntries={['/tech/tarifs-iphone']}>
+        <Routes><Route path="*" element={<OngletsTarifs><p>contenu de la grille</p><Adresse /></OngletsTarifs>} /></Routes>
+      </MemoryRouter>,
+    );
+    const nav = screen.getByRole('navigation', { name: 'Grilles de tarifs' });
+    const liens = within(nav).getAllByRole('link');
+    expect(liens.map((l) => l.textContent)).toEqual(['Réparation smartphones', 'Réparation iPhone', 'Vente iPhones', 'Vente smartphones', 'Catalogue téléphones']);
+    expect(liens.map((l) => l.getAttribute('href'))).toEqual(['/tech/tarifs', '/tech/tarifs-reparation', '/tech/tarifs-iphone', '/tech/tarifs-smartphones', '/tech/tarifs-telephones']);
+    expect(within(nav).getByRole('link', { name: 'Vente iPhones' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'Réparation iPhone' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByText('contenu de la grille')).toBeInTheDocument();
+    fireEvent.click(within(nav).getByRole('link', { name: 'Catalogue téléphones' }));
+    expect(screen.getByTestId('adresse')).toHaveTextContent('/tech/tarifs-telephones');
+    expect(estPageTarifs('/accueil/tarifs-smartphones')).toBe(true);
+    expect(estPageTarifs('/accueil/clients')).toBe(false);
   });
 });
 

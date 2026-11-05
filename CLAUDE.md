@@ -287,6 +287,15 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   `display_cart_subtotal_excl_tax`) — `prix_collecte` lit ce montant en HT. Première collecte réelle : 266 pages, 7 050
   produits, 680 pièces reconnues. Les codes de batterie (« BP46 », « EB-BA546ABY ») sont retirés du modèle (`_CODE_BATTERIE`).
 
+## Rubrique « Tarifs » : une entrée de menu, des onglets (`components/OngletsTarifs.jsx`)
+
+- Le menu n'a qu'une entrée **Tarifs** (`Navbar.jsx`, `match: cheminsTarifs(basePath)` : allumée sur toutes les grilles).
+  La page porte les onglets Réparation smartphones (`/tarifs`), Réparation iPhone (`/tarifs-reparation`), Vente iPhones
+  (`/tarifs-iphone`), Vente smartphones (`/tarifs-smartphones`), Catalogue téléphones (`/tarifs-telephones`) — chaque
+  route de `App.jsx` enveloppe sa page dans `<OngletsTarifs>` ; adresses inchangées (liens, favoris, tuiles).
+- Plus de rubrique « Tarifs » dépliable ni de sous-groupe « Beta » ; `/telephones-vente` (« Mes téléphones », doublon du
+  catalogue) redirige vers `/tarifs-telephones`. « Prix à revoir » et « Site Tarifs iPhone » restent dans Administration.
+
 ## Grille comparative des fournisseurs (`tarifs_fournisseurs_prix`, `prix.choisir_fournisseur`)
 
 - **Un prix par fournisseur et par pièce** : chaque import fournisseur (synchro Mobilax, collecte Utopya) note le prix de
