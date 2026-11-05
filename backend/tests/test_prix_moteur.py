@@ -1432,9 +1432,10 @@ def test_repli_qualite_ecran_et_modele_raccourci():
     # Pas de ligne Incell pour l'iPhone 11 : l'écran Incell vaut pour la ligne « Compatible »
     t, niveau, raison = assoc("Ecran Incell iPhone 11")
     assert [e["cle"] for e in t] == ["tarifs:1"], raison
-    # Original reconditionné → ligne « Original » (pas de ligne Reconditionnee)
+    # Original reconditionné : JAMAIS la ligne « Original » (l'officiel) ; sans ligne Reconditionnee, rien
     t, _, raison = assoc("Ecran Original Refurb iPhone 11")
-    assert [e["cle"] for e in t] == ["tarifs:2"], raison
+    assert t == [] and raison == "aucune pièce correspondante"
+    assert ("Original", ("Reconditionnee",)) not in import_prix.REPLI_ECRAN
     # OEM / compatible sur un modèle qui n'a qu'une ligne LCD → cette ligne
     t, _, raison = assoc("Ecran compatible Galaxy A14", marque="Samsung", modele="Galaxy A14", type_piece="Ecran", qualite="Compatible")
     assert [e["cle"] for e in t] == ["tarifs:3"], raison

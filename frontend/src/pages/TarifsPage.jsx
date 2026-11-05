@@ -16,7 +16,7 @@ import HistoriquePrix, {
   BadgeDatePrix, FiltreAnciens, SEUILS_FRAICHEUR, dateFr, estEcran, euros, fraicheurPrix, fusionnerRegles, lireDate,
   messageErreurPrix, plusDeTroisMois,
 } from '../components/HistoriquePrix';
-import { TableauPieces, detailCalcul, estPieceApple, idPiece, liensFournisseur, nomPiece, prixARenseigner, sansAccents, texteCalcul } from '../components/PieceFournisseurRow';
+import { FOURNISSEURS, TableauPieces, detailCalcul, estPieceApple, idPiece, liensFournisseur, nomPiece, prixARenseigner, sansAccents, texteCalcul } from '../components/PieceFournisseurRow';
 
 // Fenêtres admin chargées à la demande (le personnel de l'accueil ne les ouvre jamais)
 const ImportPrixModal = lazy(() => import('../components/ImportPrixModal'));
@@ -320,6 +320,9 @@ export default function TarifsPage() {
     [filtreSource, filtreFraicheur, filtreMarge],
   );
   const filtreUrlActif = Boolean(filtreSource || filtreFraicheur || filtreMarge);
+  // Grille affichée : les prix en vigueur ('retenue'), ou la grille d'un fournisseur (?grille=mobilax|utopya)
+  const grilleUrl = sansAccents(searchParams.get('grille') || '');
+  const grille = FOURNISSEURS.find((f) => sansAccents(f) === grilleUrl) || 'retenue';
   const [anciensSeuls, setAnciensSeuls] = useState(false);
   const modeFiltre = filtreUrlActif || anciensSeuls;
   const [vueModeles, setVueModeles] = useState('prix'); // 'prix' | 'a_creer' | 'tous' (liste d'une marque)
@@ -685,39 +688,20 @@ export default function TarifsPage() {
     }
   }
 
-  // Grille comparative : le gérant retient Mobilax ou Utopya pour une pièce (null : moins-disant). Le serveur
-  // applique le prix connu de ce fournisseur (prix client recalculé) et la synchro respecte ensuite le choix.
-  async function choisirFournisseur(piece, fournisseur) {
-    const ident = idPiece(piece);
-    const nom = nomPiece(piece, piece.marque || marqueUrl, piece.modele || modeleUrl);
-    setEnCours(ident);
-    try {
-      const res = await sensible(() => (estPieceApple(piece)
-        ? api.choisirFournisseurApple(piece.device_id, { piece: piece.piece, fournisseur })
-        : api.choisirFournisseurPiece(piece.id, fournisseur)));
-      const a = res?.applique && typeof res.applique === 'object' ? res.applique : null;
-      majPiece(ident, (p) => ({
-        fournisseur_choisi: res?.fournisseur_choisi ?? fournisseur ?? null,
-        ...(a ? {
-          fournisseur: a.fournisseur || p.fournisseur,
-          prix_fournisseur_ht: a.nouveau_ht ?? p.prix_fournisseur_ht,
-          prix_client: a.nouveau_client ?? p.prix_client,
-          prix_source: String(a.fournisseur || '').toLowerCase() || p.prix_source,
-          prix_maj_le: new Date().toISOString(), age_jours: 0, fraicheur: 'ok', estime: false, a_renseigner: false, calcul: null,
-        } : {}),
-      }));
-      if (res?.verrouille) toast.success(`${nom} : fournisseur noté ; le prix est verrouillé, il ne change pas.`);
-      else if (a) toast.success(`${nom} : prix ${a.fournisseur} retenu${Number(a.nouveau_client) > 0 ? ` (${a.nouveau_client} € client)` : ''}.`);
-      else if (fournisseur) toast.success(`${nom} : ${fournisseur} retenu ; son prix sera pris au prochain passage.`);
-      else toast.success(`${nom} : retour au fournisseur le moins cher.`);
-      invalidateCache('tarifs');
-      chargerSanteDiffere();
-    } catch (e) {
-      const msg = messageErreurPrix(e, 'Fournisseur non enregistré');
-      if (msg) toast.error(msg);
-    } finally {
-      setEnCours(null);
-    }
+  // Trois grilles : les prix en vigueur, la grille Mobilax, la grille Utopya (même tableau, lecture seule)
+  function renderChoixGrille() {
+    const choix = [{ cle: 'retenue', libelle: 'Prix retenus' }, ...FOURNISSEURS.map((f) => ({ cle: f, libelle: `Grille ${f}` }))];
+    return (
+      <div className="segmented" role="group" aria-label="Grille affichée">
+        {choix.map((c) => (
+          <button key={c.cle} type="button" aria-pressed={grille === c.cle}
+            onClick={() => poserParams((p) => { if (c.cle === 'retenue') p.delete('grille'); else p.set('grille', c.cle.toLowerCase()); }, { replace: true })}
+            className={`segmented-item ${grille === c.cle ? 'segmented-item-active' : ''}`}>
+            {c.libelle}
+          </button>
+        ))}
+      </div>
+    );
   }
 
   // Vitre arrière et bouton power sur TOUS les modèles de la grille (prix à renseigner, remplis par la synchro
@@ -981,6 +965,13 @@ export default function TarifsPage() {
           </div>
         </div>
 
+        {pieces.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mx-4 sm:mx-5 mb-3 text-sm">
+            {renderChoixGrille()}
+            {grille !== 'retenue' && <span className="t-caption">Prix relevés chez {grille}, prix client calculé avec vos règles. Les prix en vigueur restent ceux de « Prix retenus ».</span>}
+          </div>
+        )}
+
         {modeleData?.batterie_par_ecran && pieces.length > 0 && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mx-4 sm:mx-5 mb-3 text-sm">
             {isAdmin ? (
@@ -1042,7 +1033,7 @@ export default function TarifsPage() {
           <div className="border-t border-slate-100">
             <TableauPieces pieces={pieces} marque={marqueUrl} modele={modeleUrl} regles={regles} seuils={seuils} isAdmin={isAdmin}
               htVisible={htVisibleModele} onEnregistrer={enregistrerHt} onVerrou={basculerVerrou} onStock={basculerStock}
-              onChoisirFournisseur={choisirFournisseur} enCours={enCours} envoiEnCours={envoisHt.enCours} />
+              enCours={enCours} envoiEnCours={envoisHt.enCours} grille={grille} />
           </div>
         )}
       </section>
@@ -1104,7 +1095,7 @@ export default function TarifsPage() {
                   </div>
                   <TableauPieces pieces={items} marque={marque} modele={modele} regles={regles} seuils={seuils} isAdmin={isAdmin}
                     htVisible={htVisibleListe} onEnregistrer={(p, corps, opts) => enregistrerHt({ ...p, marque, modele }, corps, opts)}
-                    onVerrou={(p) => basculerVerrou(p, marque, modele)} onStock={basculerStock} enCours={enCours} envoiEnCours={envoisHt.enCours} margeDe={margeDe} dense />
+                    onVerrou={(p) => basculerVerrou(p, marque, modele)} onStock={basculerStock} enCours={enCours} envoiEnCours={envoisHt.enCours} margeDe={margeDe} dense grille={grille} />
                 </div>
               ))}
             </div>

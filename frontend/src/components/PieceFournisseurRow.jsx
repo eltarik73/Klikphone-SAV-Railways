@@ -313,62 +313,81 @@ export function fournisseurRetenu(piece) {
 }
 
 /**
- * Cellule « Mobilax / Utopya » d'une pièce (admin, prix d'achat reçus) : le dernier prix relevé chez chaque
- * fournisseur (synchro, collecte, saisie), rupture, celui qui est retenu, et « Retenir » / « Auto » pour
- * imposer un fournisseur (PATCH /api/tarifs/{id}/fournisseur) ou revenir au moins-disant.
+ * Ligne d'une grille fournisseur (Mobilax ou Utopya) : le dernier prix relevé chez ce fournisseur pour la
+ * pièce, son calcul et le prix client qu'il donnerait, en lecture seule ; « retenu » quand c'est le coût
+ * en vigueur, « rupture » quand le fournisseur n'a plus la pièce.
  */
-export function CelluleFournisseurs({ piece, nom, editable = false, occupe = false, onChoisir = null }) {
-  const dispo = piece?.prix_fournisseurs || {};
-  const retenu = fournisseurRetenu(piece);
-  const lignes = FOURNISSEURS.filter((f) => dispo[f] && (dispo[f].connu || dispo[f].ht !== null && dispo[f].ht !== undefined || dispo[f].en_stock === false));
-  if (!lignes.length) return <span className="text-slate-400">Aucun relevé fournisseur</span>;
+function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seuils }) {
+  const d = piece.prix_fournisseurs?.[grille] || null;
+  const Icone = getPieceIcon(piece.type_piece);
+  const nom = nomPiece(piece, marque, modele);
+  const connu = !!d && (d.connu || (d.ht !== null && d.ht !== undefined) || (d.client !== null && d.client !== undefined));
+  const retenu = fournisseurRetenu(piece) === grille;
+  const rupture = d?.en_stock === false;
+  const ligneDate = d ? { prix_maj_le: d.prix_maj_le || d.vu_le, prix_source: 'import' } : null;
+  const badgeDate = ligneDate?.prix_maj_le ? <BadgeDatePrix row={ligneDate} seuils={seuils} court /> : null;
   return (
-    <ul className="space-y-0.5">
-      {lignes.map((f) => {
-        const d = dispo[f];
-        const estRetenu = retenu === f;
-        const choisi = piece.fournisseur_choisi === f;
-        const prixConnu = d.ht !== null && d.ht !== undefined;
-        return (
-          <li key={f} className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
-            <span className={`w-14 ${estRetenu ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{f}</span>
-            {prixConnu
-              ? <span className={estRetenu ? 'font-semibold text-slate-900' : 'text-slate-700'}>{deuxDecimales(d.ht)} €</span>
-              : <span className="text-slate-400" title="Prix masqué ou inconnu">—</span>}
-            {d.en_stock === false && <span className="badge badge-sm badge-danger">rupture</span>}
-            {estRetenu && <span className="badge badge-sm badge-success">{choisi ? 'retenu (votre choix)' : 'retenu'}</span>}
-            {editable && onChoisir && prixConnu && !estRetenu && (
-              <button type="button" disabled={occupe} onClick={() => onChoisir(piece, f)} aria-label={`Retenir le prix ${f} pour ${nom}`}
-                className="btn-ghost btn-sm min-h-[44px] -my-2 text-brand-700">Retenir</button>
-            )}
-            {editable && onChoisir && choisi && (
-              <button type="button" disabled={occupe} onClick={() => onChoisir(piece, null)} aria-label={`${nom} : revenir au fournisseur le moins cher`}
-                className="btn-ghost btn-sm min-h-[44px] -my-2">Auto</button>
-            )}
-            {d.url && (
-              <a href={d.url} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {f} (nouvel onglet)</span>
-              </a>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <tr className={`table-row ${rupture ? 'opacity-80' : ''}`} data-piece-id={idPiece(piece) || undefined}>
+      <td className="table-sticky-col">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icone className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-semibold text-slate-900">{piece.type_piece}</span>
+              {piece.qualite && <span className="badge badge-sm badge-neutral">{piece.qualite}</span>}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+              {retenu && <span className="badge badge-sm badge-success">retenu</span>}
+              {rupture && <span className="badge badge-sm badge-danger">Rupture</span>}
+              {!connu && <span className="badge badge-sm badge-neutral">pas de prix {grille}</span>}
+            </div>
+          </div>
+        </div>
+      </td>
+      {htVisible && (
+        <td className="tabular-nums align-top">
+          {!connu ? <span className="text-slate-400">—</span>
+            : d.ht !== null && d.ht !== undefined ? <span className="font-medium text-slate-900">{deuxDecimales(d.ht)} € HT</span>
+              : <span className="text-slate-400" title="Masqué sans le code administrateur"><Lock className="w-4 h-4 inline" aria-hidden="true" /><span className="sr-only">Prix d’achat masqué</span></span>}
+          {connu && (
+            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+              {badgeDate}
+              {d.ref && <span>· réf. {d.ref}</span>}
+              {d.url && (
+                <a href={d.url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {grille} (nouvel onglet)</span>
+                </a>
+              )}
+            </div>
+          )}
+        </td>
+      )}
+      {htVisible && (
+        <td className="text-xs text-slate-500 tabular-nums align-top">
+          {d?.calcul ? <span className="whitespace-nowrap">{texteCalcul(d.calcul)}</span> : <span aria-hidden="true">—</span>}
+        </td>
+      )}
+      <td className="table-cell-num align-top">
+        {connu && Number(d.client) > 0 ? <span className="text-base">{euros(d.client)}</span> : <span className="text-slate-400 font-normal">—</span>}
+      </td>
+      {!htVisible && <td className="align-top">{badgeDate || <span className="text-slate-400">—</span>}</td>}
+    </tr>
   );
 }
 
 // ─── Ligne ────────────────────────────────────────
 /**
  * Props : piece, marque, modele, regles, seuils, isAdmin (édition), htVisible (prix d'achat reçus),
- * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), onChoisirFournisseur(piece, nom | null)
- * (grille comparative), enCours (id en cours d'écriture : verrou… la ligne attend), envoiEnCours(id) (prix HT
- * parti en arrière-plan : « Enregistrement… », la saisie suivante reste possible, elle part après dans la file
- * de la ligne), marge (texte sous le prix, filtre « marges faibles »), nbColonnes (colSpan du volet).
+ * onEnregistrer(piece, corps) → Promise, onVerrou(piece), onStock(piece), enCours (id en cours d'écriture :
+ * verrou… la ligne attend), envoiEnCours(id) (prix HT parti en arrière-plan : « Enregistrement… », la saisie
+ * suivante reste possible, elle part après dans la file de la ligne), marge (texte sous le prix, filtre
+ * « marges faibles »), nbColonnes (colSpan du volet), grille ('retenue' : les prix en vigueur, éditables ;
+ * 'Mobilax' | 'Utopya' : la grille de ce fournisseur, en lecture seule).
  */
 export default function PieceFournisseurRow({
   piece, marque, modele, regles = null, seuils = SEUILS_FRAICHEUR, isAdmin = false, htVisible = false,
-  onEnregistrer, onVerrou, onStock, onChoisirFournisseur = null, enCours = null, envoiEnCours = null, marge = null, nbColonnes = 7,
+  onEnregistrer, onVerrou, onStock, enCours = null, envoiEnCours = null, marge = null, nbColonnes = 6, grille = 'retenue',
 }) {
   const toast = useToast();
   const [edition, setEdition] = useState(false);
@@ -390,6 +409,10 @@ export default function PieceFournisseurRow({
   const liens = piece.liens?.utopya || piece.liens?.mobilax ? piece.liens : liensFournisseur({ marque, modele, typePiece: piece.type_piece });
   const htConnu = piece.prix_fournisseur_ht !== null && piece.prix_fournisseur_ht !== undefined;
   const classeLigne = `table-row ${!enStock ? 'opacity-80' : ''}`;
+
+  if (grille && grille !== 'retenue') {
+    return <LigneGrilleFournisseur piece={piece} marque={marque} modele={modele} grille={grille} htVisible={htVisible} seuils={seuils} />;
+  }
 
   // Envoi en arrière-plan (volet déjà fermé) : un échec rouvre le volet avec la saisie et l'erreur
   function enregistrer(corps, { prixClientPrevu = null, saisie = null } = {}) {
@@ -495,11 +518,6 @@ export default function PieceFournisseurRow({
           </td>
         )}
 
-        {htVisible && (
-          <td className="text-xs tabular-nums align-top">
-            <CelluleFournisseurs piece={piece} nom={nom} editable={editable} occupe={occupe || envoi} onChoisir={onChoisirFournisseur} />
-          </td>
-        )}
 
         <td className="table-cell-num align-top">
           {aRenseigner || !(Number(piece.prix_client) > 0) ? <span className="text-slate-400 font-normal">—</span> : <span className="text-base">{euros(piece.prix_client)}</span>}
@@ -550,10 +568,12 @@ export default function PieceFournisseurRow({
  * quand les prix d'achat sont reçus (admin avec le code saisi) ; actions pour l'admin.
  */
 export function TableauPieces({
-  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock, onChoisirFournisseur = null,
-  enCours, envoiEnCours, margeDe, dense = false,
+  pieces, marque, modele, regles, seuils, isAdmin, htVisible, onEnregistrer, onVerrou, onStock,
+  enCours, envoiEnCours, margeDe, dense = false, grille = 'retenue',
 }) {
-  const colonnes = 2 + (htVisible ? 3 : 1) + (isAdmin ? 1 : 0);
+  const fournisseur = grille && grille !== 'retenue' ? grille : null;
+  const actions = isAdmin && !fournisseur;
+  const colonnes = 2 + (htVisible ? 2 : 1) + (actions ? 1 : 0);
   // `relative` : les textes « sr-only » (en-tête « Actions », liens) sont en position absolue ; sans ancêtre
   // positionné dans le conteneur défilant, ils échappent au rognage et élargissent la page de toute la
   // largeur du tableau. `container-type` : le volet « Mettre à jour le HT » se dimensionne en 100cqw.
@@ -563,24 +583,23 @@ export function TableauPieces({
         <thead>
           <tr className="table-header border-b border-slate-200 bg-slate-50">
             <th scope="col" className="table-sticky-col bg-slate-50">Pièce</th>
-            {htVisible && <th scope="col">Prix fournisseur HT</th>}
+            {htVisible && <th scope="col">{fournisseur ? `Prix ${fournisseur} HT` : 'Prix fournisseur HT'}</th>}
             {htVisible && <th scope="col">Calcul</th>}
-            {htVisible && <th scope="col">Mobilax / Utopya</th>}
-            <th scope="col" className="text-right">Prix client TTC</th>
-            {!htVisible && <th scope="col">Prix du</th>}
-            {isAdmin && <th scope="col"><span className="sr-only">Actions</span></th>}
+            <th scope="col" className="text-right">{fournisseur ? `Prix client avec ${fournisseur}` : 'Prix client TTC'}</th>
+            {!htVisible && <th scope="col">{fournisseur ? 'Relevé le' : 'Prix du'}</th>}
+            {actions && <th scope="col"><span className="sr-only">Actions</span></th>}
           </tr>
         </thead>
         <tbody>
           {pieces.map((p) => (
             <PieceFournisseurRow key={idPiece(p) ?? `${p.type_piece}-${p.qualite || ''}`} piece={p} marque={marque} modele={modele}
               regles={regles} seuils={seuils} isAdmin={isAdmin} htVisible={htVisible} onEnregistrer={onEnregistrer}
-              onVerrou={onVerrou} onStock={onStock} onChoisirFournisseur={onChoisirFournisseur} enCours={enCours} envoiEnCours={envoiEnCours}
-              marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} />
+              onVerrou={onVerrou} onStock={onStock} enCours={enCours} envoiEnCours={envoiEnCours}
+              marge={margeDe ? margeDe(p) : null} nbColonnes={colonnes} grille={grille} />
           ))}
         </tbody>
       </table>
-      {htVisible && <p className="sm:hidden t-caption px-4 py-2 border-t border-slate-100">Faites défiler le tableau vers la droite pour le calcul, les prix Mobilax / Utopya et le prix client.</p>}
+      {htVisible && <p className="sm:hidden t-caption px-4 py-2 border-t border-slate-100">Faites défiler le tableau vers la droite pour le calcul et le prix client.</p>}
     </div>
   );
 }

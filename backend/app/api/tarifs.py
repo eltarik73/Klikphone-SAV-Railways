@@ -1696,11 +1696,17 @@ def _cat_apple_entree(e: dict) -> Optional[str]:
     return _categorie_apple(e["modele"], e["categorie"]) if e["marque_c"] == "apple" else None
 
 
-def _prix_fournisseurs_out(pf: Optional[dict], admin: bool) -> dict:
-    """{fournisseur: {ht (admin), ref, url, designation, en_stock, vu_le, prix_maj_le}} d'une pièce."""
+def _prix_fournisseurs_out(pf: Optional[dict], admin: bool, p: Optional[dict] = None, r: Optional[dict] = None) -> dict:
+    """{fournisseur: {ht (admin), client, calcul (admin), ref, url, designation, en_stock, vu_le, prix_maj_le, connu}}
+    d'une pièce : la grille de chaque fournisseur, prix client calculé avec les règles comme pour le coût retenu."""
     out = {}
     for nom, d in (pf or {}).items():
-        out[nom] = {"ht": d["ht"] if admin else None, "ref": d.get("ref"), "url": d.get("url"),
+        calcul = None
+        if d.get("ht") and p is not None and r is not None:
+            calcul = (prix.calcul_detail_apple(d["ht"], p.get("categorie"), r) if p.get("table") == "tarifs_apple_devices"
+                      else prix.calcul_detail(d["ht"], p.get("type_piece"), p.get("categorie"), r))
+        out[nom] = {"ht": d["ht"] if admin else None, "client": calcul["arrondi"] if calcul else None,
+                    "calcul": calcul if admin else None, "ref": d.get("ref"), "url": d.get("url"),
                     "designation": d.get("designation"), "en_stock": d.get("en_stock"),
                     "vu_le": d.get("vu_le"), "prix_maj_le": d.get("prix_maj_le"), "connu": d["ht"] is not None}
     return out
@@ -1734,7 +1740,7 @@ def _piece_out(p: dict, admin: bool, r: dict, seuils, maintenant, cat_apple: Opt
     out["alerte_marge"] = _alerte_marge(p, cat_apple, admin, r)
     out["liens"] = _liens(p["marque"], p["modele"], p["type_piece"])
     out["fournisseur_choisi"] = p.get("fournisseur_choisi")
-    out["prix_fournisseurs"] = _prix_fournisseurs_out(prix_fournisseurs, admin)
+    out["prix_fournisseurs"] = _prix_fournisseurs_out(prix_fournisseurs, admin, p, r)
     return out
 
 

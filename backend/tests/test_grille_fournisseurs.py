@@ -114,3 +114,62 @@ def test_routes_choix_fournisseur_et_pieces_courantes_tous(client, monkeypatch):
         assert r.json() == {"modeles": 1, "crees": 1, "par_type": {"Ecran": 0, "Vitre arriere": 0, "Bouton power": 1}}
         assert [v[:3] for v in inserts[0]] == [("Samsung", "Galaxy A54 5G", "Bouton power")]
         assert client.post("/api/tarifs/reparation-smartphones/pieces-courantes/tous", json={"types": ["Camera"]}, headers=_headers()).status_code == 400
+
+
+def test_appliquer_preference_aligne_toute_la_grille(monkeypatch):
+    class _CurPref(_Cur):
+        def fetchall(self):
+            if self.sql and "FROM tarifs_fournisseurs_prix" in self.sql[-1][0]:
+                return [
+                    {"tarif_cle": "tarifs:1", "fournisseur": "Mobilax", "prix_ht": Decimal("25"), "ref_fournisseur": "M1", "url": None, "en_stock": True},
+                    {"tarif_cle": "tarifs:1", "fournisseur": "Utopya", "prix_ht": Decimal("21"), "ref_fournisseur": "U1", "url": "https://www.utopya.fr/u", "en_stock": True},
+                    {"tarif_cle": "tarifs:2", "fournisseur": "Utopya", "prix_ht": Decimal("30"), "ref_fournisseur": "U2", "url": None, "en_stock": True},
+                    {"tarif_cle": "tarifs:3", "fournisseur": "Mobilax", "prix_ht": Decimal("9"), "ref_fournisseur": "M3", "url": None, "en_stock": True},
+                    {"tarif_cle": "tarifs_apple_devices:4:ecran", "fournisseur": "Mobilax", "prix_ht": Decimal("80"), "ref_fournisseur": None, "url": None, "en_stock": True},
+                ]
+            return []
+    cur = _CurPref()
+    monkeypatch.setattr(P, "regles", lambda c=None: {"tva": 1.2})
+    descs = {
+        "tarifs:1": {"cle": "tarifs:1", "table": "tarifs", "id": 1, "verrou": False, "obsolete": False, "ht": Decimal("21"), "fournisseur": "Utopya", "fournisseur_choisi": None},
+        "tarifs:2": {"cle": "tarifs:2", "table": "tarifs", "id": 2, "verrou": True, "obsolete": False, "ht": Decimal("40"), "fournisseur": "Mobilax", "fournisseur_choisi": None},
+        "tarifs:3": {"cle": "tarifs:3", "table": "tarifs", "id": 3, "verrou": False, "obsolete": False, "ht": Decimal("9"), "fournisseur": "Mobilax", "fournisseur_choisi": "Mobilax"},
+        "tarifs_apple_devices:4:ecran": {"cle": "tarifs_apple_devices:4:ecran", "table": "tarifs_apple_devices", "id": 4, "verrou": False, "obsolete": False, "ht": Decimal("70"), "fournisseur": "Utopya", "fournisseur_choisi": None},
+    }
+    monkeypatch.setattr(P, "decrire_tarifs", lambda c, cles, r=None: {k: v for k, v in descs.items() if k in cles})
+    appliques = []
+    monkeypatch.setattr(P, "appliquer_ht", lambda c, cle, ht, source, par, lot=None, r=None: appliques.append((cle, ht, source, lot)) or {"ok": True})
+    # Préférence Mobilax : tarifs:1 passe de Utopya 21 à Mobilax 25 ; tarifs:2 n'a pas de prix Mobilax ;
+    # tarifs:3 déjà à Mobilax 9 ; la fiche iPad passe à 80
+    res = P.appliquer_preference(cur, "Mobilax", "admin")
+    assert res["examinees"] == 4 and res["modifies"] == 2 and res["inchangees"] == 1 and res["sans_prix"] == 1
+    assert [a[:3] for a in appliques] == [("tarifs:1", Decimal("25"), "mobilax"), ("tarifs_apple_devices:4:ecran", Decimal("80"), "mobilax")]
+    assert len({a[3] for a in appliques}) == 1 and res["lot_id"] == appliques[0][3]
+    assert any(sql.startswith("UPDATE tarifs SET fournisseur = %s") and p[0] == "Mobilax" and p[-1] == 1 for sql, p in cur.sql)
+    assert any(sql.startswith("UPDATE tarifs_apple_devices SET fournisseur = %s") for sql, _ in cur.sql)
+    # Sans préférence : le moins cher disponible ; la pièce verrouillée est laissée ; un choix à la pièce prime
+    appliques.clear()
+    descs["tarifs:1"].update(ht=Decimal("25"), fournisseur="Mobilax")
+    descs["tarifs_apple_devices:4:ecran"].update(ht=Decimal("80"), fournisseur="Mobilax")
+    res = P.appliquer_preference(cur, None, "admin")
+    assert [a[:3] for a in appliques] == [("tarifs:1", Decimal("21"), "utopya")] and res["verrouillees"] == 1
+    assert res["modifies"] == 1 and res["inchangees"] == 2
+
+
+def test_route_preference_fournisseur(client, monkeypatch):
+    from app.services import fournisseurs as F
+    _, gc_staff = fake_db(lambda sql, params: None)
+    with patch("app.api.auth.get_cursor", gc_staff):
+        assert client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": "Utopya"}, headers=_headers()).status_code == 403
+    _, gc_admin = fake_db(lambda sql, params: _ADMIN_PROUVE if "membres_equipe" in sql else None)
+    regles, lances = [], []
+    monkeypatch.setattr(F, "regler_preference", lambda f: regles.append(f) or f)
+    monkeypatch.setattr(F, "lancer_preference", lambda auteur="admin": lances.append(auteur) or True)
+    monkeypatch.setattr(F, "etat", lambda cur=None: {"preference": "Utopya", "preference_en_cours": True})
+    with patch("app.api.auth.get_cursor", gc_admin):
+        r = client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": "Utopya"}, headers=_headers())
+        assert r.status_code == 200 and r.json()["preference"] == "Utopya" and r.json()["lance"] is True
+        r = client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": None}, headers=_headers())
+        assert r.status_code == 200 and r.json()["preference"] is None
+        assert client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": "Autre"}, headers=_headers()).status_code == 422
+    assert regles == ["Utopya", None] and len(lances) == 2

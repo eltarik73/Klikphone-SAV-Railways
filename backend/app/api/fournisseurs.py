@@ -49,6 +49,24 @@ class ActiveIn(BaseModel):
     active: bool
 
 
+class PreferenceIn(BaseModel):
+    # None : le moins cher (automatique)
+    fournisseur: Optional[str] = Field(None, pattern="^(Mobilax|Utopya)$")
+
+
+@router.put("/preference")
+def regler_preference_fournisseur(body: PreferenceIn, user: dict = Depends(_admin)):
+    """Fournisseur préféré pour TOUTE la grille (Mobilax, Utopya, ou aucun = le moins cher disponible) :
+    enregistré, puis les coûts retenus de toutes les pièces sont alignés en tâche de fond
+    (prix.appliquer_preference, un lot annulable). → {preference, lance, etat}"""
+    try:
+        f = fournisseurs.regler_preference(body.fournisseur)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    lance = fournisseurs.lancer_preference(auteur=str(user.get("sub") or user.get("utilisateur") or "admin"))
+    return {"preference": f, "lance": lance, "etat": fournisseurs.etat()}
+
+
 @router.get("/etat")
 def etat_fournisseurs(user: dict = Depends(get_current_user)):
     """État des synchros (Mobilax : connexion, dernier passage, compteurs ; Utopya : indisponible)."""

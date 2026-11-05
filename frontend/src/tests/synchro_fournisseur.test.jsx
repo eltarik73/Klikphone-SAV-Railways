@@ -3,7 +3,7 @@
  * bloc SynchroFournisseur (état, connexion en une étape, « Synchroniser maintenant »).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react';
 
 const { apiMock } = vi.hoisted(() => {
   const base = {};
@@ -239,6 +239,39 @@ describe('bloc SynchroFournisseur', () => {
     apiMock.getEtatFournisseurs.mockRejectedValue(new Error('500'));
     rendre({ estAdmin: true });
     expect(await screen.findByText('Synchro Mobilax : état indisponible pour le moment')).toBeInTheDocument();
+  });
+});
+
+describe('préférence fournisseur : prix retenus dans la grille', () => {
+  it('admin : le moins cher par défaut ; « Toujours Utopya » enregistre et aligne les prix (tâche de fond)', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: null, preference_en_cours: false, preference_resultat: null });
+    apiMock.setPreferenceFournisseur.mockResolvedValue({ preference: 'Utopya', lance: true, etat: { mobilax: CONNECTE, utopya: UTOPYA, preference: 'Utopya', preference_en_cours: true, preference_resultat: null } });
+    rendre({ estAdmin: true });
+    expect(await screen.findByText('Prix retenus dans la grille : le moins cher disponible')).toBeInTheDocument();
+    const groupe = screen.getByRole('group', { name: 'Prix retenus dans la grille' });
+    expect(within(groupe).getByRole('button', { name: 'Le moins cher' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(groupe).getByRole('button', { name: 'Toujours Utopya' }));
+    await waitFor(() => expect(apiMock.setPreferenceFournisseur).toHaveBeenCalledWith('Utopya'));
+    expect(await screen.findByText('Prix retenus dans la grille : toujours Utopya')).toBeInTheDocument();
+    expect(screen.getByText('Alignement des prix en cours…')).toBeInTheDocument();
+    expect(within(groupe).getByRole('button', { name: 'Toujours Utopya' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(groupe).getByRole('button', { name: 'Toujours Mobilax' })).toBeDisabled();
+  });
+
+  it('résultat du dernier alignement ; personnel : rien', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: 'Mobilax', preference_en_cours: false,
+      preference_resultat: { modifies: 40, inchangees: 700, verrouillees: 2, sans_prix: 10 } });
+    rendre({ estAdmin: true });
+    expect(await screen.findByText('Prix retenus dans la grille : toujours Mobilax')).toBeInTheDocument();
+    expect(screen.getByText('Dernier alignement : 40 prix changés, 700 inchangés, 2 verrouillés.')).toBeInTheDocument();
+    cleanup();
+    rendre({ estAdmin: false });
+    await screen.findByText(/Dernière synchro Mobilax/);
+    expect(screen.queryByText(/Prix retenus dans la grille/)).not.toBeInTheDocument();
+  });
+
+  it('phrases : grosses variations appliquées sans validation', () => {
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, propositions: 0, variations_appliquees: 4 } }).detail).toContain('dont 4 grosses variations appliquées');
   });
 });
 

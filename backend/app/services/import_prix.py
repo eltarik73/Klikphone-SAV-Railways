@@ -112,8 +112,10 @@ _MOTS_VIDES = {"de", "du", "d", "pour", "avec", "sans", "et", "le", "la", "les",
 _PLIANTS = ("fold", "flip", "razr")
 # Qualité d'écran de la grille ← qualités du fournisseur qui en tiennent lieu quand le modèle n'a
 # pas de ligne de la qualité exacte (Index._qualite)
+# Jamais Original ← Reconditionnee : un « Original Pulled / Refurb » est un écran reconditionné, l'écran
+# « Original » de la grille est l'officiel (Service Pack, « Ecran Original Google »)
 REPLI_ECRAN = (("Compatible", ("Incell", "LCD", "OLED", "Soft OLED")), ("LCD", ("Compatible", "Incell")),
-               ("Incell", ("Compatible", "LCD")), ("OLED", ("Soft OLED",)), ("Original", ("Reconditionnee",)))
+               ("Incell", ("Compatible", "LCD")), ("OLED", ("Soft OLED",)))
 # Mots de fin de modèle jamais retirés pour retenter une correspondance (Index._modeles_essayes)
 _MOTS_MODELE = {"pro", "max", "plus", "mini", "ultra", "lite", "fe", "neo", "note", "edge", "nord", "air", "fold",
                 "flip", "se", "xl", "xs", "xr", "x", "s", "a", "c", "e", "g", "m", "t", "z", "y", "v", "gen", "pouces",
@@ -654,7 +656,7 @@ class Index:
             if meme:
                 return meme
             # Le modèle n'a pas de ligne de cette qualité : un écran de rechange (Incell, LCD, OLED…)
-            # vaut pour sa ligne « Compatible », un original reconditionné pour sa ligne « Original »
+            # vaut pour sa ligne « Compatible » ; un reconditionné ne vaut jamais pour « Original »
             # (la variante la moins chère l'emporte ensuite, cf. fournisseurs.planifier)
             for cible_q, sources in REPLI_ECRAN:
                 if qualite in sources:

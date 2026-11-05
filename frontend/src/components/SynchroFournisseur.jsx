@@ -54,6 +54,7 @@ export function decrireMobilax(m) {
   if (m.ok === true) {
     const morceaux = [`${pluriel(n(r.modifies), 'prix mis à jour', 'prix mis à jour')}`, `${n(r.confirmes)} confirmé${n(r.confirmes) > 1 ? 's' : ''}`];
     if (n(r.remplaces)) morceaux.push(`dont ${n(r.remplaces)} prix estimé${n(r.remplaces) > 1 ? 's' : ''} ou périmé${n(r.remplaces) > 1 ? 's' : ''} remplacé${n(r.remplaces) > 1 ? 's' : ''} sans validation`);
+    if (n(r.variations_appliquees)) morceaux.push(`dont ${n(r.variations_appliquees)} grosse${n(r.variations_appliquees) > 1 ? 's' : ''} variation${n(r.variations_appliquees) > 1 ? 's' : ''} appliquée${n(r.variations_appliquees) > 1 ? 's' : ''}`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
     if (n(r.propositions_fermees)) morceaux.push(`${n(r.propositions_fermees)} proposition${n(r.propositions_fermees) > 1 ? 's' : ''} réglée${n(r.propositions_fermees) > 1 ? 's' : ''}`);
     if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Utopya (moins cher)`);
@@ -98,6 +99,7 @@ export function decrireUtopya(u) {
   if (u.ok === true) {
     const morceaux = [`${pluriel(n(r.modifies), 'prix mis à jour', 'prix mis à jour')}`];
     if (n(r.remplaces)) morceaux.push(`dont ${n(r.remplaces)} prix estimé${n(r.remplaces) > 1 ? 's' : ''} ou périmé${n(r.remplaces) > 1 ? 's' : ''} remplacé${n(r.remplaces) > 1 ? 's' : ''}`);
+    if (n(r.variations_appliquees)) morceaux.push(`dont ${n(r.variations_appliquees)} grosse${n(r.variations_appliquees) > 1 ? 's' : ''} variation${n(r.variations_appliquees) > 1 ? 's' : ''} appliquée${n(r.variations_appliquees) > 1 ? 's' : ''}`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
     if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Mobilax (moins cher)`);
     if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à l’autre fournisseur (votre choix)`);
@@ -243,6 +245,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
   const { sensible, adminPrompt } = useAdminElevation();
   const titreId = useId();
   const titreUtopyaId = useId();
+  const titrePreferenceId = useId();
   const texteId = useId();
   const [etat, setEtat] = useState(null);
   const [indisponible, setIndisponible] = useState(false);
@@ -270,7 +273,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
         let e;
         try { e = await relire(); } catch { continue; }
         const m = e?.mobilax;
-        if (m?.en_cours || e?.utopya?.en_cours) continue;
+        if (m?.en_cours || e?.utopya?.en_cours || e?.preference_en_cours) continue;
         if (annoncer && m) {
           if (m.message) toast.warning(m.message);
           else if (m.ok === false) toast.error(`Synchronisation Mobilax échouée : ${m.erreur || 'erreur inconnue'}`);
@@ -286,7 +289,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
   useEffect(() => {
     monteRef.current = true;
     relire()
-      .then((e) => { if (e?.mobilax?.en_cours || e?.utopya?.en_cours) suivre(false); })
+      .then((e) => { if (e?.mobilax?.en_cours || e?.utopya?.en_cours || e?.preference_en_cours) suivre(false); })
       .catch(() => { if (monteRef.current) setIndisponible(true); });
     return () => { monteRef.current = false; };
   }, [relire, suivre]);
@@ -428,6 +431,29 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
   const tonUtopya = TONS[descriptionUtopya.ton] || TONS.neutre;
   const IconeUtopya = tonUtopya.Icone;
   const utopyaDisponible = Boolean(u && u.disponible !== false);
+  const preference = etat?.preference || null;
+  const preferenceEnCours = Boolean(etat?.preference_en_cours) || occupe === 'preference';
+  const preferenceResultat = etat?.preference_resultat || null;
+
+  // Fournisseur préféré pour toute la grille : le serveur aligne les coûts retenus (tâche de fond), puis la
+  // synchro et la collecte respectent ce choix — rien à valider pièce par pièce
+  const choisirPreference = async (f) => {
+    if (preferenceEnCours || f === preference) return;
+    setOccupe('preference');
+    try {
+      const r = await sensible(() => api.setPreferenceFournisseur(f));
+      if (!monteRef.current) return;
+      if (r?.etat) setEtat(r.etat);
+      else setEtat((e) => ({ ...(e || {}), preference: f, preference_en_cours: true }));
+      toast.success(f ? `Grille alignée sur ${f} : les prix ${f} deviennent les prix retenus.` : 'Grille alignée sur le moins cher disponible.');
+      suivre(false);
+    } catch (err) {
+      const msg = messageErreur(err, 'Préférence non enregistrée');
+      if (msg) toast.error(msg);
+    } finally {
+      if (monteRef.current) setOccupe('');
+    }
+  };
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -562,6 +588,31 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
           </div>
         )}
       </section>
+
+      {estAdmin && (
+        <section aria-labelledby={titrePreferenceId} className="callout callout-info flex-wrap items-center">
+          <div className="min-w-[240px] flex-1">
+            <p id={titrePreferenceId} className="font-semibold">Prix retenus dans la grille : {preference ? `toujours ${preference}` : 'le moins cher disponible'}</p>
+            <p className="text-xs sm:text-sm">
+              {preferenceEnCours
+                ? 'Alignement des prix en cours…'
+                : preferenceResultat?.erreur
+                  ? `Dernier alignement : ${preferenceResultat.erreur}`
+                  : preferenceResultat
+                    ? `Dernier alignement : ${n(preferenceResultat.modifies)} prix changé${n(preferenceResultat.modifies) > 1 ? 's' : ''}, ${n(preferenceResultat.inchangees)} inchangé${n(preferenceResultat.inchangees) > 1 ? 's' : ''}${n(preferenceResultat.verrouillees) ? `, ${n(preferenceResultat.verrouillees)} verrouillé${n(preferenceResultat.verrouillees) > 1 ? 's' : ''}` : ''}.`
+                    : 'Les prix du fournisseur choisi deviennent les coûts retenus, sans validation ; une pièce qu’il n’a pas garde l’autre.'}
+            </p>
+          </div>
+          <div className="segmented" role="group" aria-label="Prix retenus dans la grille">
+            {[{ cle: null, libelle: 'Le moins cher' }, { cle: 'Mobilax', libelle: 'Toujours Mobilax' }, { cle: 'Utopya', libelle: 'Toujours Utopya' }].map((c) => (
+              <button key={c.libelle} type="button" aria-pressed={preference === c.cle} disabled={preferenceEnCours}
+                onClick={() => choisirPreference(c.cle)} className={`segmented-item ${preference === c.cle ? 'segmented-item-active' : ''}`}>
+                {c.libelle}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       {adminPrompt}
     </div>
   );

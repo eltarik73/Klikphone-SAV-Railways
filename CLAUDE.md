@@ -302,14 +302,21 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   CE fournisseur dans `tarifs_fournisseurs_prix` (`prix.enregistrer_prix_fournisseur` : clé de pièce, fournisseur, HT de la
   variante la moins chère, référence, désignation, page, `en_stock`, `vu_le`, `prix_maj_le`), retenu ou non. Le coût retenu
   reste `prix_fournisseur_ht` / `*_prix_ht` (colonne `fournisseur` = d'où il vient) : moins-disant par défaut.
-- **Choix du gérant** : colonne `fournisseur_choisi` (`tarifs`, `tarifs_apple_devices` ; NULL = automatique) —
-  `PATCH /api/tarifs/{id}/fournisseur` et `PATCH /api/tarifs/apple-devices/{id}/fournisseur` `{fournisseur: Mobilax|Utopya|null}`
-  (admin) → `prix.choisir_fournisseur` applique le prix connu de ce fournisseur (ou, en auto, le moins cher disponible)
-  via `appliquer_ht`, sauf pièce verrouillée. `fournisseurs.planifier` respecte le choix : l'autre fournisseur ne touche
-  jamais la pièce (`autre_fournisseur_choisi`), le fournisseur choisi est appliqué même plus cher.
-- **Affichage** : `GET /reparation-smartphones/modele` → pièce `fournisseur_choisi` et `prix_fournisseurs {Mobilax: {ht (admin),
-  ref, url, en_stock, vu_le, connu}, Utopya: …}` ; colonne « Mobilax / Utopya » du tableau (`CelluleFournisseurs`, admin avec
-  code) : prix, « rupture », « retenu », boutons « Retenir » / « Auto ».
+- **Rien à valider** : la synchro et la collecte appliquent les prix du fournisseur, grosses variations comprises
+  (`planifier(proposer=False)`, compteur `variations_appliquees`) ; les propositions ne servent plus qu'aux commandes.
+- **Préférence pour toute la grille** : param `FOURNISSEUR_PREFERE` (`Mobilax`, `Utopya`, vide = le moins cher disponible),
+  `PUT /api/tarifs/fournisseurs/preference {fournisseur}` (admin) → `prix.appliquer_preference` aligne les coûts retenus de
+  toutes les pièces en tâche de fond (`lancer_preference`, un lot, `etat().preference_en_cours / preference_resultat`) ;
+  `planifier` la respecte (`fournisseur_choisi(desc, prefere)`). Bloc « Prix retenus dans la grille » de SynchroFournisseur.
+  Un choix par pièce reste possible (`fournisseur_choisi`, `PATCH …/{id}/fournisseur`, `prix.choisir_fournisseur`), sans UI.
+- **Trois grilles** : `GET /reparation-smartphones/modele` → pièce `prix_fournisseurs {Mobilax: {ht (admin), client, calcul
+  (admin), ref, url, en_stock, vu_le, connu}, Utopya: …}` ; dans Réparation smartphones, « Prix retenus | Grille Mobilax |
+  Grille Utopya » (`?grille=mobilax|utopya`, `TableauPieces grille=`, `LigneGrilleFournisseur` en lecture seule : prix
+  relevé, calcul, prix client qu'il donnerait, « retenu », « Rupture »).
+- **Qualités d'écran** : « Original » = l'officiel seulement (Service Pack, « Ecran Tactile Original », « Ecran Original
+  Google ») ; « Original Pulled / Refurb / Assembled » (Mobilax) et « Pulled » (Utopya) = Reconditionnee, jamais la ligne
+  Original (`REPLI_ECRAN` sans Original ← Reconditionnee). Utopya : sans étiquette, SKU numérique = origine
+  (« Ecran Complet Noir Galaxy A54 5G (A546B) »), SKU alphanumérique (« A546-OLED@ », « IP11-BOLT ») = compatible.
 - **Produit vu sans prix** (rupture, prix masqué) : la synchro Mobilax rattache aussi les produits sans prix
   (`lignes_produit(sans_prix=True)`, `rattacher_sans_prix`) → ligne notée `en_stock = FALSE` (prix connu gardé) et raison
   `sans_prix_fournisseur` dans le diagnostic, au lieu d'un faux « non reconnu ».

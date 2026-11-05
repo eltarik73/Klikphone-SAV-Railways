@@ -221,7 +221,11 @@ def test_planifier_applique_propose_et_laisse():
     assert (plan["verrouillees"], plan["obsoletes"], plan["variantes"], plan["a_valider"]) == (1, 1, 2, 1)
     assert F.planifier({"reconnues": []}) == {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0,
                                                "variantes": 0, "a_valider": 0, "remplaces": 0, "plus_cher_ailleurs": 0,
-                                               "autre_fournisseur_choisi": 0}
+                                               "autre_fournisseur_choisi": 0, "variations_appliquees": 0}
+    # Synchro et collecte : rien à valider, la grosse variation est appliquée
+    plan = F.planifier(ap, proposer=False)
+    assert plan["lignes"] == [2, 3, 5, 9, 10] and plan["propositions"] == [] and plan["a_valider"] == 0
+    assert plan["variations_appliquees"] == 1
 
 
 # ─── Prix sans valeur de référence : remplacés sans validation ──
@@ -892,6 +896,8 @@ def test_synchro_reelle_ecrit_les_prix_et_propose_les_grosses_variations(db, mon
     ("Ecran Tactile Original Refurb (PIEC)", ("Ecran", "Reconditionnee")),
     ("Ecran Tactile Original Pulled avec Châssis (PIEC)", ("Ecran", "Reconditionnee")),
     ("Ecran Tactile Original", ("Ecran", "Original")),
+    ("Ecran Tactile Original sans Châssis", ("Ecran", "Original")),
+    ("Ecran Tactile Original Assembled avec Châssis Compatible", ("Ecran", "Reconditionnee")),   # remonté, pas l'officiel
     ("Ecran Tactile OEM avec Châssis", ("Ecran", "Compatible")),
     ("Ecran LCD Complet OEM", ("Ecran", "LCD")),          # ligne LCD du modèle, sinon Compatible (import_prix.REPLI_ECRAN)
     ("Ecran LCD Complet Original Pulled (PIEC)", ("Ecran", "Reconditionnee")),
@@ -1110,6 +1116,12 @@ def test_planifier_respecte_le_fournisseur_choisi():
     plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax")
     assert plan["lignes"] == [1] and plan["autre_fournisseur_choisi"] == 1 and plan["plus_cher_ailleurs"] == 1
     assert F.fournisseur_choisi(descs["tarifs:1"]) == "Mobilax" and F.fournisseur_choisi({}) is None
+    # Préférence pour toute la grille : vaut pour les pièces sans choix propre
+    assert F.fournisseur_choisi({}, "Utopya") == "Utopya" and F.fournisseur_choisi(descs["tarifs:1"], "Utopya") == "Mobilax"
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax", prefere="Mobilax")
+    assert plan["lignes"] == [1, 3] and plan["autre_fournisseur_choisi"] == 1 and plan["plus_cher_ailleurs"] == 0
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax", prefere="Utopya")
+    assert plan["lignes"] == [1] and plan["autre_fournisseur_choisi"] == 2
 
 
 def test_diagnostic_sans_prix_fournisseur_et_familles():
@@ -1138,6 +1150,7 @@ def test_importer_memorise_le_prix_du_fournisseur(monkeypatch):
     monkeypatch.setattr(F, "_fermer_propositions", lambda cur, lot, auteur: 0)
     notes = []
     monkeypatch.setattr(F.prix, "enregistrer_prix_fournisseur", lambda cur, f, s, recs, infos: notes.append((f, s, recs, infos)) or 1)
+    monkeypatch.setattr(F, "preference", lambda cur=None: None)
     base = _Base()
     res = F._importer(base, "tarifs", b"", "x.csv", {}, fournisseur="Utopya", source="utopya",
                       infos={"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}})

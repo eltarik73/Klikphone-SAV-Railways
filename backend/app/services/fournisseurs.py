@@ -74,6 +74,7 @@ P_JOUR = "MOBILAX_SYNCHRO_JOUR"              # AAAA-MM-JJ (fait) ou AAAA-MM-JJ#n
 P_VERROU = "MOBILAX_SYNCHRO_VERROU"          # ISO UTC du début du passage en cours ('' : libre)
 P_CONNEXION = "MOBILAX_CONNEXION"            # 'ok' | 'expiree' | ''
 P_DIAG = "MOBILAX_DIAGNOSTIC"                # JSON : pièces de la grille sans prix Mobilax au dernier passage
+P_PREFERE = "FOURNISSEUR_PREFERE"            # 'Mobilax' | 'Utopya' | '' : fournisseur préféré pour toute la grille
 ENV_REFRESH = "MOBILAX_REFRESH_TOKEN"        # amorçage par l'environnement (Railway)
 ENV_ID_CLIENT = "MOBILAX_ID_CLIENT"
 
@@ -513,7 +514,9 @@ CATEGORIES_EXCLUES = ("externe", "secondaire", "sans bms", "a souder", "magsafe"
 QUALITES_CATEGORIE = (
     ("soft oled", "Soft OLED"), ("hard oled", "OLED"), ("amoled", "OLED"), ("oled", "OLED"),
     ("incell", "Incell"), ("in cell", "Incell"), ("ltps", "Incell"),
+    # « Original Pulled / Refurb / Assembled » : un écran reconditionné ou remonté, jamais l'officiel
     ("refurb", "Reconditionnee"), ("pulled", "Reconditionnee"), ("reconditionne", "Reconditionnee"),
+    ("assembled", "Reconditionnee"),
     ("tft", "LCD"), ("lcd", "LCD"),
     ("service pack", "Original"), ("original", "Original"),
     ("oem", "Compatible"), ("premium", "Compatible"), ("aftermarket", "Compatible"), ("compatible", "Compatible"),
@@ -803,21 +806,38 @@ def remplacable(desc, regles=None, maintenant=None) -> bool:
     return ((maintenant or _maintenant()) - maj).days > jours
 
 
-def fournisseur_choisi(desc) -> Optional[str]:
-    """Fournisseur imposé par le gérant pour la pièce (colonne fournisseur_choisi), None = moins-disant."""
-    if not isinstance(desc, dict):
-        return None
-    f = " ".join(str(desc.get("fournisseur_choisi") or "").split())
+def fournisseur_choisi(desc, prefere: str = None) -> Optional[str]:
+    """Fournisseur imposé pour la pièce : colonne fournisseur_choisi, sinon la préférence de toute la grille
+    (`prefere`, param FOURNISSEUR_PREFERE) ; None = moins-disant."""
+    f = " ".join(str(desc.get("fournisseur_choisi") or "").split()) if isinstance(desc, dict) else ""
+    return f or (" ".join(str(prefere or "").split()) or None)
+
+
+def preference(cur=None) -> Optional[str]:
+    """Fournisseur préféré pour toute la grille (param FOURNISSEUR_PREFERE), None = le moins cher."""
+    f = prix.fournisseur_propre(params_cache.get_params([P_PREFERE], cur=cur)[P_PREFERE])
+    return f if f in prix.FOURNISSEURS_CONNUS else None
+
+
+def regler_preference(fournisseur) -> Optional[str]:
+    """Enregistre la préférence ('Mobilax', 'Utopya' ou None) ; les coûts retenus sont alignés par
+    lancer_preference (tâche de fond)."""
+    f = prix.fournisseur_propre(fournisseur) if fournisseur else ""
+    if f and f not in prix.FOURNISSEURS_CONNUS:
+        raise ValueError("Fournisseur inconnu")
+    with get_cursor() as cur:
+        _ecrire(cur, P_PREFERE, f)
+    params_cache.invalidate()
     return f or None
 
 
-def moins_cher_ailleurs(desc, ht, fournisseur, regles=None, maintenant=None) -> bool:
+def moins_cher_ailleurs(desc, ht, fournisseur, regles=None, maintenant=None, prefere: str = None) -> bool:
     """Le prix de référence de la pièce vient d'un AUTRE fournisseur et n'est pas plus cher que `ht` :
     la pièce reste chez le moins-disant (un prix remplaçable — estimé, périmé — ne protège rien).
-    Jamais quand le gérant a choisi ce fournisseur pour la pièce."""
+    Jamais quand le gérant a choisi ce fournisseur (pour la pièce, ou pour toute la grille)."""
     if not fournisseur or not isinstance(desc, dict) or not desc.get("fournisseur"):
         return False
-    choisi = fournisseur_choisi(desc)
+    choisi = fournisseur_choisi(desc, prefere)
     if choisi and normaliser(choisi) == normaliser(fournisseur):
         return False
     if normaliser(desc["fournisseur"]) == normaliser(fournisseur) or remplacable(desc, regles, maintenant):
@@ -828,7 +848,8 @@ def moins_cher_ailleurs(desc, ht, fournisseur, regles=None, maintenant=None) -> 
         return False
 
 
-def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None, fournisseur: str = None) -> dict:
+def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None, fournisseur: str = None,
+              proposer: bool = True, prefere: str = None) -> dict:
     """Parmi les lignes reconnues de l'aperçu (import_prix.apercu) : lignes à appliquer,
     propositions à créer (grosse variation d'un prix de référence), pièces laissées (verrou,
     obsolète, variante plus chère, autre fournisseur moins cher). descs : prix.decrire_tarifs des
@@ -837,11 +858,13 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     (« Mobilax », « Utopya ») — une pièce dont le prix de référence vient d'un autre fournisseur
     moins cher ou égal est laissée (`plus_cher_ailleurs`) ; moins cher ici → appliqué (ou proposé).
 
-    Une pièce dont le gérant a choisi l'autre fournisseur (fournisseur_choisi) n'est jamais touchée
-    (`autre_fournisseur_choisi`) ; celle où il a choisi celui-ci est appliquée même plus chère.
+    Une pièce dont le gérant a choisi l'autre fournisseur (fournisseur_choisi, ou `prefere` pour toute la
+    grille) n'est jamais touchée (`autre_fournisseur_choisi`) ; celle où il a choisi celui-ci est appliquée
+    même plus chère. proposer=False (synchro, collecte) : une grosse variation est appliquée aussi, comptée
+    dans `variations_appliquees` — le gérant ne valide rien.
 
     → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces,
-       plus_cher_ailleurs, autre_fournisseur_choisi}
+       plus_cher_ailleurs, autre_fournisseur_choisi, variations_appliquees}
     """
     par_n = {}
     for rec in ap.get("reconnues") or []:
@@ -849,7 +872,7 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     vise = {}   # cle → HT retenu
     descs = descs or {}
     out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0,
-           "remplaces": 0, "plus_cher_ailleurs": 0, "autre_fournisseur_choisi": 0}
+           "remplaces": 0, "plus_cher_ailleurs": 0, "autre_fournisseur_choisi": 0, "variations_appliquees": 0}
     # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère
     for n, recs in sorted(par_n.items(), key=lambda kv: (Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
         hts = {r["cle"]: Decimal(str(r["nouveau_ht"])) for r in recs}
@@ -867,12 +890,13 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
         if any(r["obsolete"] for r in recs):
             out["obsoletes"] += 1
             continue
-        if fournisseur and any(fournisseur_choisi(descs.get(r["cle"]))
-                               and normaliser(fournisseur_choisi(descs.get(r["cle"]))) != normaliser(fournisseur)
+        if fournisseur and any(fournisseur_choisi(descs.get(r["cle"]), prefere)
+                               and normaliser(fournisseur_choisi(descs.get(r["cle"]), prefere)) != normaliser(fournisseur)
                                for r in recs):
             out["autre_fournisseur_choisi"] += 1
             continue
-        if any(moins_cher_ailleurs(descs.get(r["cle"]), hts[r["cle"]], fournisseur, regles, maintenant) for r in recs):
+        if any(moins_cher_ailleurs(descs.get(r["cle"]), hts[r["cle"]], fournisseur, regles, maintenant, prefere)
+               for r in recs):
             out["plus_cher_ailleurs"] += 1
             continue
         alertes = set()
@@ -881,6 +905,10 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
         if "variation" in alertes:
             if all(remplacable(descs.get(r["cle"]), regles, maintenant) for r in recs):
                 out["remplaces"] += 1
+                out["lignes"].append(n)
+                continue
+            if not proposer:
+                out["variations_appliquees"] += 1
                 out["lignes"].append(n)
                 continue
             out["a_valider"] += 1
@@ -892,8 +920,8 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
 
 
 _COMPTES = ("lignes", "reconnues", "non_reconnues", "inconnues", "verrouillees", "obsoletes", "variantes",
-            "a_valider", "remplaces", "plus_cher_ailleurs", "autre_fournisseur_choisi", "modifies", "confirmes",
-            "propositions", "propositions_fermees")
+            "a_valider", "remplaces", "plus_cher_ailleurs", "autre_fournisseur_choisi", "variations_appliquees",
+            "modifies", "confirmes", "propositions", "propositions_fermees")
 
 
 def _fermer_propositions(cur, lot_id: str, auteur: str = AUTEUR) -> int:
@@ -939,12 +967,13 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict, fourni
     descs = prix.decrire_tarifs(cur, cles, r) if cles else {}
     if cles:
         prix.enregistrer_prix_fournisseur(cur, fournisseur, source, ap.get("reconnues") or [], infos or {})
-    plan = planifier(ap, descs, r, fournisseur=fournisseur)
+    # Les prix du fournisseur sont appliqués, grosses variations comprises : rien à valider
+    plan = planifier(ap, descs, r, fournisseur=fournisseur, proposer=False, prefere=preference(cur))
     resume = ap["resume"]
     res.update(import_id=ap["import_id"], lignes=resume["lignes"], reconnues=resume["pieces_reconnues"],
                non_reconnues=resume["non_reconnues"], inconnues=resume["nouvelles"],
                **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider", "remplaces",
-                                       "plus_cher_ailleurs", "autre_fournisseur_choisi")})
+                                       "plus_cher_ailleurs", "autre_fournisseur_choisi", "variations_appliquees")})
     res["_cles"] = cles   # pour le diagnostic du passage (retiré du résumé enregistré)
     if plan["lignes"]:
         app = import_prix.appliquer(cur, ap["import_id"], {"lignes": plan["lignes"], "ignorer_invalides": True},
@@ -1480,7 +1509,41 @@ def etat(cur=None) -> dict:
             "compte": bool(p[P_ID_CLIENT]), "palier": _palier_lu(p[P_PALIER]).get("nom") or None,
         },
         "utopya": _etat_utopya(cur),
+        # Fournisseur préféré pour toute la grille (None : le moins cher) et alignement en cours
+        "preference": preference(cur), "preference_en_cours": en_cours_preference(),
+        "preference_resultat": _etat_pref.get("resultat"),
     }
+
+
+_etat_pref = {"thread": None, "resultat": None}
+
+
+def en_cours_preference() -> bool:
+    t = _etat_pref["thread"]
+    return bool(t is not None and t.is_alive())
+
+
+def lancer_preference(auteur: str = "admin") -> bool:
+    """Aligne les coûts retenus de toute la grille sur la préférence (prix.appliquer_preference), en tâche
+    de fond (Railway coupe une requête à ~15 s). False si un alignement est déjà en cours."""
+    if en_cours_preference():
+        return False
+
+    def run():
+        try:
+            with get_cursor() as cur:
+                res = prix.appliquer_preference(cur, preference(cur), auteur)
+            _etat_pref["resultat"] = {**res, "fin": _utc(), "erreur": None}
+        except Exception as e:
+            logger.error("Préférence fournisseur : échec (%s)", type(e).__name__)
+            _etat_pref["resultat"] = {"fin": _utc(), "erreur": f"Erreur interne ({type(e).__name__})"}
+        finally:
+            params_cache.invalidate()
+
+    t = threading.Thread(target=run, daemon=True, name="preference_fournisseur")
+    _etat_pref.update(thread=t, resultat=None)
+    t.start()
+    return True
 
 
 def _etat_utopya(cur=None) -> dict:

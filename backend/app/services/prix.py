@@ -867,6 +867,57 @@ def choisir_fournisseur(cur, cle: str, fournisseur, par: str, r=None) -> dict:
             "disponibles": sorted(dispo)}
 
 
+def appliquer_preference(cur, prefere, par: str, r=None) -> dict:
+    """Aligne le coût retenu de chaque pièce sur la préférence : prix connu du fournisseur préféré (ou, sans
+    préférence, le moins cher disponible), sauf pièce verrouillée ; un fournisseur choisi à la pièce prime.
+    Un seul lot (annulable). → {examinees, modifies, verrouillees, inchangees, sans_prix, lot_id}"""
+    r = r or regles(cur)
+    f = fournisseur_propre(prefere) if prefere else None
+    cur.execute("SELECT tarif_cle, fournisseur, prix_ht, ref_fournisseur, url, en_stock "
+                "FROM tarifs_fournisseurs_prix WHERE prix_ht IS NOT NULL")
+    par_cle = {}
+    for row in cur.fetchall() or []:
+        par_cle.setdefault(row["tarif_cle"], {})[row["fournisseur"]] = dict(row)
+    out = {"examinees": len(par_cle), "modifies": 0, "verrouillees": 0, "inchangees": 0, "sans_prix": 0, "lot_id": None}
+    if not par_cle:
+        return out
+    descs = decrire_tarifs(cur, list(par_cle), r)
+    lot = nouveau_lot()
+    for cle, dispo in par_cle.items():
+        desc = descs.get(cle)
+        if desc is None or desc.get("obsolete"):
+            continue
+        choix = " ".join(str(desc.get("fournisseur_choisi") or "").split()) or f
+        if choix:
+            cible = dispo.get(choix)
+        else:
+            cands = [d for d in dispo.values() if d.get("en_stock") is not False] or list(dispo.values())
+            cible = min(cands, key=lambda d: Decimal(str(d["prix_ht"]))) if cands else None
+        if cible is None:
+            out["sans_prix"] += 1
+            continue
+        if desc.get("verrou"):
+            out["verrouillees"] += 1
+            continue
+        ht = Decimal(str(cible["prix_ht"]))
+        meme = str(desc.get("fournisseur") or "").lower() == str(cible["fournisseur"]).lower()
+        if meme and desc.get("ht") is not None and Decimal(str(desc["ht"])) == ht:
+            out["inchangees"] += 1
+            continue
+        appliquer_ht(cur, cle, ht, str(cible["fournisseur"]).lower(), par, lot, r)
+        table, ligne_id, _ = parse_tarif_cle(cle)
+        if table == "tarifs":
+            cur.execute("UPDATE tarifs SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur), "
+                        "url_fournisseur = COALESCE(%s, url_fournisseur) WHERE id = %s",
+                        (cible["fournisseur"], cible.get("ref_fournisseur"), cible.get("url"), ligne_id))
+        else:
+            cur.execute("UPDATE tarifs_apple_devices SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur) "
+                        "WHERE id = %s", (cible["fournisseur"], cible.get("ref_fournisseur"), ligne_id))
+        out["modifies"] += 1
+        out["lot_id"] = lot
+    return out
+
+
 def client_pour(desc: dict, ht, r) -> int:
     """Prix client d'une pièce décrite par decrire_tarifs pour un HT donné."""
     if desc["table"] == "tarifs":
