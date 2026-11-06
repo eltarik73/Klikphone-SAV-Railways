@@ -31,6 +31,7 @@ import copy
 import json
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Optional
 
 from psycopg2.extras import execute_values
 
