@@ -7,7 +7,9 @@ import api from '../lib/api';
 import { formatDate, formatDateShort } from '../lib/utils';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from './Toast';
-import { cheminPrixARevoir } from './PropositionsPrix';
+
+/** Page « Modèles sans prix et alias » (anciennement « Prix à revoir »), onglet sans-prix | alias. */
+export const cheminModelesSansPrix = (basePath = '/accueil', onglet = 'sans-prix') => `${basePath}/modeles-sans-prix?onglet=${onglet}`;
 
 // ─── Synchro LCD-Phone (catalogue des téléphones à vendre) ──────────────────
 
@@ -235,7 +237,7 @@ export function tuilesSante(d, basePath = '/accueil', maintenant = Date.now()) {
   const estimes = entier(d?.estimes);
   const aRevoir = entier(d?.a_revoir);
   const perimes = entier(d?.perimes);
-  const propositions = entier(d?.propositions_en_attente);
+  const appliques = entier(d?.appliques_7j);
   const marges = entier(d?.marges_faibles);
   const sansPrix = entier(d?.modeles_sans_prix);
   const lcd = d?.lcdphone || {};
@@ -289,14 +291,15 @@ export function tuilesSante(d, basePath = '/accueil', maintenant = Date.now()) {
       ton: marges ? 'rouge' : 'neutre', aria: `${fr(marges)} marges sous le seuil d’alerte, voir la grille`,
     },
     {
-      cle: 'propositions', icone: Inbox, valeur: fr(propositions), titre: 'Propositions', detail: 'issues des commandes',
-      lien: cheminPrixARevoir(basePath, 'propositions'), ton: propositions ? 'marque' : 'neutre', badge: Boolean(propositions),
-      aria: `${fr(propositions)} proposition${propositions > 1 ? 's' : ''} de prix en attente, à valider`,
+      // Rien à valider : les prix des fournisseurs et des commandes s'appliquent seuls ; cette tuile dit combien
+      cle: 'appliques', icone: Inbox, valeur: fr(appliques), titre: 'Prix appliqués', detail: '7 derniers jours, sans validation',
+      lien: `${basePath}/tarifs-fournisseurs`, ton: 'neutre',
+      aria: `${fr(appliques)} prix appliqué${appliques > 1 ? 's' : ''} automatiquement ces 7 derniers jours, voir la recherche fournisseurs`,
     },
     {
       cle: 'sans_prix', icone: ListChecks, valeur: fr(sansPrix), titre: 'Modèles sans prix',
       detail: sansPrix === null ? 'compté par la veille' : 'au catalogue',
-      lien: cheminPrixARevoir(basePath, 'sans-prix'), ton: sansPrix ? 'orange' : 'neutre',
+      lien: cheminModelesSansPrix(basePath, 'sans-prix'), ton: sansPrix ? 'orange' : 'neutre',
       aria: sansPrix === null ? 'Modèles du catalogue sans prix de réparation, voir la liste'
         : `${fr(sansPrix)} modèles du catalogue sans prix de réparation`,
     },

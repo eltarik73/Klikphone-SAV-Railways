@@ -1407,6 +1407,8 @@ async def lifespan(app: FastAPI):
     # KP_DECONNEXION_DEMARRAGE=0 l'empêche (tests : jetons préparés avant le démarrage)
     if os.getenv("KP_DECONNEXION_DEMARRAGE", "1") != "0":
         auth.deconnexion_generale_unique("2026_10_25")
+    # Plus rien à valider (gérant, 06/11/2026) : les propositions de prix encore en attente sont réglées une fois
+    propositions_prix.valider_en_attente_au_demarrage()
     # Recherche staff : après les ALTER, pour que toutes les colonnes indexées existent
     _migrations_recherche()
     # Fiche ticket : après le seed, pour fusionner « Écran casse » dans « Écran cassé »

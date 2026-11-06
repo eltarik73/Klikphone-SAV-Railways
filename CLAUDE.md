@@ -295,7 +295,15 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   fournisseurs (`/tarifs-fournisseurs`, cf. section suivante) — chaque route de `App.jsx` enveloppe sa page dans
   `<OngletsTarifs>` ; adresses inchangées (liens, favoris, tuiles).
 - Plus de rubrique « Tarifs » dépliable ni de sous-groupe « Beta » ; `/telephones-vente` (« Mes téléphones », doublon du
-  catalogue) redirige vers `/tarifs-telephones`. « Prix à revoir » et « Site Tarifs iPhone » restent dans Administration.
+  catalogue) redirige vers `/tarifs-telephones`. « Site Tarifs iPhone » reste dans Administration.
+- **Plus de « Prix à revoir »** (gérant, 06/11/2026 : « valide tout et efface cette catégorie ») : l'entrée du menu et
+  l'onglet « Propositions de prix » ont disparu ; la page devient « Modèles sans prix et alias » (`/modeles-sans-prix`,
+  `ModelesSansPrixPage.jsx`, ancienne adresse `/prix-a-revoir` redirigée), atteinte depuis la grille (« Modèles sans prix
+  et alias ») et la tuile « Modèles sans prix » de la santé des prix. Une tuile « Prix appliqués » (`sante.appliques_7j`)
+  remplace « Propositions » et mène à Recherche fournisseurs, dont le bas de page liste « Derniers prix appliqués
+  automatiquement » (`GET /api/tarifs/fournisseurs/recents?q=&jours=`, `api/fournisseurs.prix_recents` : historique
+  des coûts de source import / mobilax / utopya / commande, ancien → nouveau prix client, HT pour l'admin) — information
+  seulement, pour repérer une erreur en passant.
 
 ## Grille comparative des fournisseurs (`tarifs_fournisseurs_prix`, `prix.cible_fournisseur`)
 
@@ -303,8 +311,14 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   CE fournisseur dans `tarifs_fournisseurs_prix` (`prix.enregistrer_prix_fournisseur` : clé de pièce, fournisseur, HT de la
   variante la moins chère, référence, désignation, page, `en_stock`, `vu_le`, `prix_maj_le`), retenu ou non. Le coût retenu
   reste `prix_fournisseur_ht` / `*_prix_ht` (colonne `fournisseur` = d'où il vient).
-- **Rien à valider** : la synchro et la collecte appliquent les prix du fournisseur, grosses variations comprises
-  (`planifier(proposer=False)`, compteur `variations_appliquees`) ; les propositions ne servent plus qu'aux commandes.
+- **Rien à valider, nulle part** : la synchro et la collecte appliquent les prix du fournisseur, grosses variations
+  comprises (`planifier(proposer=False)`, compteur `variations_appliquees`) ; le prix HT payé sur une commande devient le
+  coût de la pièce tout de suite (`prix.appliquer_prix_commande`, appelé par `api/parts._appliquer_prix` : écart > 1 €,
+  source `commande`, lot annulable, trace `tarifs_propositions` statut `acceptee` — `refusee` pour une pièce verrouillée,
+  jamais touchée ; réponse `proposition_id` (trace) + `prix_applique`). Les propositions encore en attente ont été réglées
+  une fois au démarrage (`propositions_prix.valider_en_attente_au_demarrage`, marqueur `PROPOSITIONS_VALIDEES_2026_11_06` :
+  commande → appliquée ; fournisseur → appliquée si c'est le retenu ou si le coût n'était pas une référence, sinon
+  fermée ; verrou → refusée). Les routes `/api/tarifs/propositions` restent (historique, tests).
 - **Fournisseur retenu pour toute la grille — jamais « le moins cher »** (décision du gérant, 06/11/2026) : param
   `FOURNISSEUR_PREFERE` (`Mobilax` | `Utopya` ; vide = `fournisseurs.PREFERENCE_DEFAUT` = Mobilax, `etat().preference_defaut`),
   `PUT /api/tarifs/fournisseurs/preference {fournisseur}` (admin, obligatoire) → `prix.appliquer_preference` aligne les coûts

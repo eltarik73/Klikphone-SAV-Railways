@@ -76,6 +76,88 @@ def etat_fournisseurs(user: dict = Depends(get_current_user)):
 
 
 _TYPES_RECHERCHE = ("ecran", "batterie", "connecteur", "vitre arriere", "bouton power", "camera")
+_COLONNES_HT = ("prix_fournisseur_ht", "ecran_prix_ht", "batterie_prix_ht")
+_COLONNES_CLIENT = ("prix_client", "ecran_prix_vente", "batterie_prix_vente")
+_SOURCES_AUTO = ("import", "mobilax", "utopya", "commande")
+
+
+def prix_recents(cur, q: str = "", jours: int = 7, limite: int = 100, admin: bool = False) -> dict:
+    """Prix appliqués sans validation (synchro Mobilax, collecte Utopya, prix payé sur une commande, purge) ces
+    `jours` derniers jours, du plus récent au plus ancien, un par pièce et par lot : ancien → nouveau prix client,
+    coût HT pour l'admin, source, auteur. `q` : chaque mot doit être dans « marque modèle pièce qualité ».
+    → {jours, admin, n, tronque, changements: [{le, table, id, cle, marque, modele, type_piece, qualite, source, par,
+    fournisseur, client: {ancien, nouveau}, ht: {ancien, nouveau} | None, vide}]}"""
+    mots = [m for m in normaliser(q or "").split() if len(m) >= 2 or m.isdigit()][:8]
+    brut = 2500 if mots else int(limite)
+    cur.execute("""
+        SELECT h.table_nom, h.ligne_id, h.lot_id,
+               CASE WHEN h.table_nom = 'tarifs_apple_devices' THEN split_part(h.colonne, '_', 1) ELSE 'piece' END AS piece,
+               min(h.le) AS le, min(h.source) AS source, min(h.par) AS par,
+               max(CASE WHEN h.colonne IN %(ht)s THEN h.ancien END) AS ht_ancien,
+               max(CASE WHEN h.colonne IN %(ht)s THEN h.nouveau END) AS ht_nouveau,
+               max(CASE WHEN h.colonne IN %(client)s THEN h.ancien END) AS client_ancien,
+               max(CASE WHEN h.colonne IN %(client)s THEN h.nouveau END) AS client_nouveau
+        FROM tarifs_historique h
+        WHERE h.le >= NOW() - make_interval(days => %(jours)s) AND h.source IN %(sources)s
+          AND h.table_nom IN ('tarifs', 'tarifs_apple_devices')
+        GROUP BY h.table_nom, h.ligne_id, h.lot_id,
+                 CASE WHEN h.table_nom = 'tarifs_apple_devices' THEN split_part(h.colonne, '_', 1) ELSE 'piece' END
+        ORDER BY min(h.le) DESC, h.lot_id DESC, h.ligne_id DESC
+        LIMIT %(limite)s
+    """, {"ht": _COLONNES_HT, "client": _COLONNES_CLIENT, "jours": int(jours), "sources": _SOURCES_AUTO, "limite": brut})
+    rows = [dict(x) for x in cur.fetchall() or []]
+    ids_t = sorted({x["ligne_id"] for x in rows if x["table_nom"] == "tarifs"})
+    ids_a = sorted({x["ligne_id"] for x in rows if x["table_nom"] == "tarifs_apple_devices"})
+    noms = {}
+    if ids_t:
+        cur.execute("SELECT id, marque, modele, type_piece, qualite, fournisseur FROM tarifs WHERE id = ANY(%s)", (ids_t,))
+        for x in cur.fetchall() or []:
+            noms[("tarifs", x["id"])] = dict(x)
+    if ids_a:
+        cur.execute("SELECT id, modele, fournisseur FROM tarifs_apple_devices WHERE id = ANY(%s)", (ids_a,))
+        for x in cur.fetchall() or []:
+            noms[("tarifs_apple_devices", x["id"])] = dict(x)
+    out, tronque = [], len(rows) >= brut
+    for x in rows:
+        n = noms.get((x["table_nom"], x["ligne_id"]))
+        if n is None:
+            continue
+        if x["table_nom"] == "tarifs":
+            cle = prix.tarif_cle("tarifs", x["ligne_id"])
+            marque, type_piece, qualite = n.get("marque") or "", n.get("type_piece") or "", n.get("qualite")
+        else:
+            cle = prix.tarif_cle("tarifs_apple_devices", x["ligne_id"], x["piece"])
+            marque, type_piece, qualite = "Apple", ("Écran" if x["piece"] == "ecran" else "Batterie"), None
+        texte = normaliser(f"{marque} {n.get('modele') or ''} {type_piece} {qualite or ''}")
+        if mots and not all(m in texte for m in mots):
+            continue
+        num = lambda v: float(v) if v is not None else None
+        out.append({
+            "le": x["le"], "table": x["table_nom"], "id": x["ligne_id"], "cle": cle, "lot_id": x["lot_id"],
+            "marque": marque, "modele": n.get("modele"), "type_piece": type_piece, "qualite": qualite,
+            "source": x["source"], "par": x["par"], "fournisseur": n.get("fournisseur"),
+            "client": {"ancien": num(x["client_ancien"]), "nouveau": num(x["client_nouveau"])},
+            "ht": {"ancien": num(x["ht_ancien"]), "nouveau": num(x["ht_nouveau"])} if admin else None,
+            "vide": x["client_nouveau"] is not None and float(x["client_nouveau"]) <= 0,
+        })
+        if len(out) >= int(limite):
+            tronque = True
+            break
+    return {"jours": int(jours), "admin": admin, "n": len(out), "tronque": tronque, "changements": out}
+
+
+@router.get("/recents")
+def prix_recents_route(
+    request: Request,
+    q: Optional[str] = Query(None, max_length=80),
+    jours: int = Query(7, ge=1, le=90),
+    limite: int = Query(100, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    """Derniers prix appliqués automatiquement (information : rien à valider) — cf. prix_recents. Coût HT pour l'admin."""
+    admin = _est_admin(request, user)
+    with get_cursor() as cur:
+        return prix_recents(cur, q or "", jours, limite, admin)
 
 
 @router.get("/recherche")

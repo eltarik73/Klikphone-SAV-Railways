@@ -30,7 +30,7 @@ vi.mock('../hooks/useAuth', () => ({ useAuth: () => auth }));
 vi.mock('../components/Toast', () => ({ useToast: () => toast, ToastProvider: ({ children }) => children }));
 vi.mock('../lib/api', () => ({ default: apiMock, api: apiMock }));
 
-import RechercheFournisseursPage, { TYPES_RECHERCHE } from '../pages/RechercheFournisseursPage';
+import RechercheFournisseursPage, { TYPES_RECHERCHE, libelleSourcePrix } from '../pages/RechercheFournisseursPage';
 
 const PRIX = {
   Mobilax: { ht: 101, client: 249, calcul: { ht: 101, tva: 1.2, marge: 60, brut: 181.2, arrondi: 249 }, ref: 'MX1', url: null, designation: 'Ecran Tactile Original Google Pixel 6', en_stock: true, vu_le: '2026-11-06T01:26:30', prix_maj_le: '2026-11-06T01:26:30', connu: true },
@@ -77,10 +77,21 @@ const page = (url = '/accueil/tarifs-fournisseurs') => render(
   </MemoryRouter>,
 );
 
+const RECENTS = {
+  jours: 7, admin: true, n: 2, tronque: false,
+  changements: [
+    { le: '2026-11-06T09:00:00', table: 'tarifs', id: 1, cle: 'tarifs:1', lot_id: 'lot-a', marque: 'Google', modele: 'Pixel 6', type_piece: 'Ecran', qualite: 'Original',
+      source: 'import', par: 'Synchro Mobilax', fournisseur: 'Mobilax', client: { ancien: 129, nouveau: 249 }, ht: { ancien: 55, nouveau: 101 }, vide: false },
+    { le: '2026-11-05T08:00:00', table: 'tarifs', id: 2, cle: 'tarifs:2', lot_id: 'lot-c', marque: 'Google', modele: 'Pixel 7', type_piece: 'Ecran', qualite: 'Original',
+      source: 'import', par: 'Synchro Mobilax', fournisseur: null, client: { ancien: 139, nouveau: 0 }, ht: { ancien: 60, nouveau: 0 }, vide: true },
+  ],
+};
+
 beforeEach(() => {
   for (const [k, fn] of Object.entries(apiMock)) {
     if (k !== 'background' && typeof fn?.mockReset === 'function') fn.mockReset().mockResolvedValue([]);
   }
+  apiMock.getPrixRecents.mockResolvedValue({ jours: 7, admin: true, n: 0, tronque: false, changements: [] });
   toast.success.mockReset(); toast.error.mockReset();
 });
 afterEach(() => cleanup());
@@ -169,6 +180,29 @@ describe('Recherche fournisseurs', () => {
     expect(screen.getByTestId('adresse')).toHaveTextContent('/accueil/tarifs-fournisseurs?q=Pixel+6');
     expect(await screen.findByText('Rien dans la grille pour « Pixel 6 »')).toBeInTheDocument();
     expect(screen.queryByText('Essayez :')).not.toBeInTheDocument();
+  });
+
+  it('derniers prix appliqués (information) : ancien → nouveau, HT du gérant, prix vidé, période, filtre par la recherche', async () => {
+    apiMock.getPrixRecents.mockResolvedValue(RECENTS);
+    page();
+    const section = await screen.findByRole('region', { name: 'Derniers prix appliqués automatiquement' });
+    await waitFor(() => expect(apiMock.getPrixRecents).toHaveBeenCalledWith({ q: undefined, jours: 7, limite: 100 }));
+    expect(within(section).getByText(/Rien à valider/)).toBeInTheDocument();
+    expect(await within(section).findByText('Google Pixel 6')).toBeInTheDocument();
+    expect(within(section).getByText('249 €')).toBeInTheDocument();
+    expect(within(section).getByText('129 €')).toHaveClass('line-through');
+    expect(within(section).getByText('HT 55,00 → 101,00 €')).toBeInTheDocument();
+    expect(within(section).getByText(/06\/11\/2026.*Synchro Mobilax.*retenu : Mobilax/)).toBeInTheDocument();
+    expect(within(section).getByText('Prix à renseigner')).toBeInTheDocument();      // Pixel 7 vidé par la purge
+    fireEvent.click(within(section).getByRole('button', { name: '30 jours' }));
+    await waitFor(() => expect(apiMock.getPrixRecents).toHaveBeenLastCalledWith({ q: undefined, jours: 30, limite: 100 }));
+    // Une recherche filtre aussi cette liste
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Modèle, pièce ou référence' }), { target: { value: 'Pixel 6' } });
+    await waitFor(() => expect(apiMock.getPrixRecents).toHaveBeenLastCalledWith({ q: 'Pixel 6', jours: 30, limite: 100 }));
+    expect(screen.getByText(/filtrée sur « Pixel 6 »/)).toBeInTheDocument();
+    expect(libelleSourcePrix({ source: 'import', par: 'Collecte Utopya' })).toBe('Collecte Utopya');
+    expect(libelleSourcePrix({ source: 'commande', par: 'Nour' })).toBe('Commande (Nour)');
+    expect(libelleSourcePrix({ source: 'mobilax', par: '' })).toBe('Synchro Mobilax');
   });
 
   it('erreur de recherche affichée', async () => {

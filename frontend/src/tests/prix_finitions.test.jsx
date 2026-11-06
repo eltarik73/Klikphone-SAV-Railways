@@ -230,48 +230,23 @@ const naviguer = (url = '/accueil') => render(
   </MemoryRouter>,
 );
 
-describe('Navbar : « Prix à revoir » et propositions en attente', () => {
-  it('admin : badge du nombre de propositions, lien vers l’onglet propositions', async () => {
+describe('Navbar : plus de « Prix à revoir » (rien à valider), la santé des prix n’est jamais lue par le menu', () => {
+  it('admin : ni entrée ni badge ; les autres compteurs sont relus', async () => {
     localStorage.setItem('klikphone_admin', 'true');
     naviguer();
-    const entree = await screen.findByRole('button', { name: 'Prix à revoir : 4 propositions de prix en attente' });
-    expect(entree).toHaveTextContent('4');
-    fireEvent.click(entree);
-    expect(screen.getByTestId('adresse')).toHaveTextContent('/accueil/prix-a-revoir?onglet=propositions');
-    expect(apiMock.getSantePrix).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(apiMock.getKPI).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /Prix à revoir/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Reporting/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Configuration/ })).toBeInTheDocument();
+    expect(apiMock.getSantePrix).not.toHaveBeenCalled();
   });
 
-  it('rôle non admin : pas de partie admin (ni « Prix à revoir »), la santé des prix n’est jamais lue', async () => {
+  it('rôle non admin : pas de partie admin, la santé des prix n’est jamais lue', async () => {
     auth.user = { target: 'tech', utilisateur: 'Sophie', role: 'tech' };
     naviguer('/tech');
     await waitFor(() => expect(apiMock.getKPI).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: /^Prix à revoir/ })).toBeNull();
     expect(apiMock.getSantePrix).not.toHaveBeenCalled();
-  });
-
-  it('une lecture par minute au plus (retour sur l’onglet compris), autres compteurs intacts', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    naviguer();
-    await screen.findByRole('button', { name: /Prix à revoir : 4 propositions/ });
-    expect(apiMock.getSantePrix).toHaveBeenCalledTimes(1);
-    const kpi = apiMock.getKPI.mock.calls.length;
-    // Retour sur l'onglet 5 s plus tard : badges relus, pas la santé des prix
-    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); document.dispatchEvent(new Event('visibilitychange')); });
-    await waitFor(() => expect(apiMock.getKPI.mock.calls.length).toBeGreaterThan(kpi));
-    expect(apiMock.getSantePrix).toHaveBeenCalledTimes(1);
-    // Une minute plus tard : relue, le badge suit
-    apiMock.getSantePrix.mockResolvedValue({ ...SANTE, propositions_en_attente: 1 });
-    await act(async () => { await vi.advanceTimersByTimeAsync(61_000); });
-    await waitFor(() => expect(apiMock.getSantePrix).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('button', { name: 'Prix à revoir : 1 proposition de prix en attente' })).toBeInTheDocument();
-  });
-
-  it('santé des prix en échec : pas de badge, le menu reste utilisable', async () => {
-    apiMock.getSantePrix.mockRejectedValue(new Error('Erreur 500'));
-    naviguer();
-    await waitFor(() => expect(apiMock.getSantePrix).toHaveBeenCalled());
-    expect(screen.getByRole('button', { name: 'Prix à revoir' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Reporting/ })).toBeInTheDocument();
   });
 });
 

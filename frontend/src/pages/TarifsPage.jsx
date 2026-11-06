@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   Tag, Search, RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Smartphone, Tablet, Lock, Unlock, FileSpreadsheet,
-  SlidersHorizontal, Calculator, History, AlertTriangle, Clock, CheckCircle2, X, Inbox, PackagePlus, Filter, Loader2,
+  SlidersHorizontal, Calculator, History, AlertTriangle, Clock, CheckCircle2, X, ListChecks, PackagePlus, Filter, Loader2,
   Info, ListPlus, Wrench,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
@@ -215,7 +215,7 @@ function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, o
   if (perimes > 0) details.push(`${perimes} prix de plus de 6 mois`);
   if (aRevoir > 0) details.push(`${aRevoir} à revoir (plus de 3 mois)`);
   if (tousEstimes) details.push('jamais vérifiés depuis');
-  if (sante?.propositions_en_attente > 0) details.push(`${sante.propositions_en_attente} proposition${sante.propositions_en_attente > 1 ? 's' : ''} venant des commandes à valider`);
+  if (sante?.appliques_7j > 0) details.push(`${sante.appliques_7j} prix appliqué${sante.appliques_7j > 1 ? 's' : ''} automatiquement cette semaine`);
   if (sante?.marges_faibles > 0) details.push(`${sante.marges_faibles} marge${sante.marges_faibles > 1 ? 's' : ''} trop faible${sante.marges_faibles > 1 ? 's' : ''}`);
 
   const action = 'btn-secondary btn-sm';
@@ -243,11 +243,11 @@ function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, o
           <button type="button" onClick={onAjouter} className={action}>
             <PackagePlus aria-hidden="true" /> Ajouter une pièce
           </button>
-          {/* Toujours présent (le nombre arrive avec la santé des prix) : aucun bouton ne saute de ligne */}
-          <Link to={`${basePath}/prix-a-revoir?onglet=propositions`} className={`${action} col-span-2`}>
-            <Inbox aria-hidden="true" /> Propositions des commandes{sante?.propositions_en_attente > 0 ? ` (${sante.propositions_en_attente})` : ''}
+          {/* Modèles du catalogue sans tarif et alias de noms (anciennement « Prix à revoir ») */}
+          <Link to={`${basePath}/modeles-sans-prix`} className={`${action} col-span-2`}>
+            <ListChecks aria-hidden="true" /> Modèles sans prix et alias
           </Link>
-          {/* Action principale toujours sur la ligne suivante : stable quel que soit le nombre de propositions */}
+          {/* Action principale toujours sur la ligne suivante */}
           <span className="hidden sm:block basis-full h-0" aria-hidden="true" />
           <button type="button" onClick={onImporter} className={`${actionPrincipale} col-span-2`}>
             <FileSpreadsheet aria-hidden="true" /> Importer une liste de prix

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ExternalLink, KeyRound, Loader2, PackageCheck, PackageX, Search, SearchX, Truck } from 'lucide-react';
+import { ExternalLink, History, KeyRound, Loader2, PackageCheck, PackageX, Search, SearchX, Truck } from 'lucide-react';
 import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { BadgeDatePrix, SEUILS_FRAICHEUR, euros } from '../components/HistoriquePrix';
+import { formatDate } from '../lib/utils';
 import { FOURNISSEURS, fournisseurRetenu, getPieceIcon, prixARenseigner } from '../components/PieceFournisseurRow';
 
 /**
@@ -16,6 +17,11 @@ import { FOURNISSEURS, fournisseurRetenu, getPieceIcon, prixARenseigner } from '
  * chaque fournisseur (tous les produits qui répondent à la recherche : nom tel que le fournisseur l'écrit,
  * qualité lue, prix, stock) — pour vérifier d'un coup d'œil qu'un écran « Original Refurb » n'est pas pris pour
  * l'écran officiel. GET /api/tarifs/fournisseurs/recherche?q=&type=.
+ *
+ * En bas (ou en premier sans recherche) : « Derniers prix appliqués automatiquement » — la synchro, la collecte et
+ * les prix payés sur les commandes écrivent les prix sans validation (décision du gérant, 06/11/2026) ; cette liste
+ * les montre pour information, filtrée par la même recherche, pour repérer une erreur en passant.
+ * GET /api/tarifs/fournisseurs/recents?q=&jours=.
  */
 
 export const TYPES_RECHERCHE = Object.freeze([
@@ -28,6 +34,18 @@ export const TYPES_RECHERCHE = Object.freeze([
 ]);
 const EXEMPLES = ['Pixel 6', 'Galaxy A54', 'iPhone 13', 'iPad 9', 'Redmi Note 12'];
 const DELAI_SAISIE = 350;
+export const PERIODES_RECENTS = Object.freeze([{ jours: 7, label: '7 jours' }, { jours: 30, label: '30 jours' }]);
+const SOURCES_LIBELLES = { mobilax: 'Synchro Mobilax', utopya: 'Collecte Utopya', import: 'Import', commande: 'Commande' };
+
+/** Libellé lisible de la source d'un prix appliqué : fournisseur ou commande, puis l'auteur enregistré. */
+export function libelleSourcePrix(c) {
+  const par = String(c?.par || '').trim();
+  const source = String(c?.source || '').toLowerCase();
+  if (source === 'import' && /mobilax/i.test(par)) return 'Synchro Mobilax';
+  if (source === 'import' && /utopya/i.test(par)) return 'Collecte Utopya';
+  if (source === 'commande') return par ? `Commande (${par})` : 'Commande';
+  return SOURCES_LIBELLES[source] || par || 'Automatique';
+}
 
 const deuxDecimales = (v) => Number(v).toFixed(2).replace('.', ',');
 
@@ -200,6 +218,90 @@ function CatalogueFournisseur({ fournisseur, produits }) {
   );
 }
 
+/** Derniers prix appliqués automatiquement (information) : ancien → nouveau prix client, HT pour le gérant. */
+function DerniersPrixAppliques({ q, jours, onJours }) {
+  const titreId = useId();
+  const [donnees, setDonnees] = useState(null);
+  const [erreur, setErreur] = useState('');
+  const [chargement, setChargement] = useState(false);
+  const requeteRef = useRef(0);
+  useEffect(() => {
+    const num = ++requeteRef.current;
+    let actif = true;
+    setChargement(true);
+    setErreur('');
+    api.getPrixRecents({ q: q || undefined, jours, limite: 100 })
+      .then((d) => { if (actif && num === requeteRef.current) setDonnees(d); })
+      .catch((err) => { if (actif && num === requeteRef.current) setErreur(err?.message || 'Liste indisponible'); })
+      .finally(() => { if (actif && num === requeteRef.current) setChargement(false); });
+    return () => { actif = false; };
+  }, [q, jours]);
+  const changements = donnees?.changements || [];
+  const admin = donnees?.admin === true;
+  return (
+    <section aria-labelledby={titreId} className="card mt-6">
+      <header className="card-header flex flex-wrap items-center gap-2">
+        <History className="w-4 h-4 text-slate-400" aria-hidden="true" />
+        <h2 id={titreId} className="t-h3 text-slate-900">Derniers prix appliqués automatiquement</h2>
+        {donnees && !chargement && <span className="badge badge-sm badge-neutral">{Number(donnees.n) || 0}{donnees.tronque ? '+' : ''}</span>}
+        {chargement && <Loader2 className="w-4 h-4 motion-safe:animate-spin text-slate-400" aria-hidden="true" />}
+        <div className="segmented ml-auto" role="group" aria-label="Période">
+          {PERIODES_RECENTS.map((p) => (
+            <button key={p.jours} type="button" aria-pressed={jours === p.jours} onClick={() => onJours(p.jours)}
+              className={`segmented-item ${jours === p.jours ? 'segmented-item-active' : ''}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </header>
+      <p className="px-4 pt-3 text-xs sm:text-sm text-slate-600">
+        Rien à valider : la synchro Mobilax, la collecte Utopya et les prix payés sur les commandes écrivent les prix eux-mêmes.
+        Cette liste sert seulement à repérer une erreur en passant{q ? ` (filtrée sur « ${q} »)` : ''}.
+      </p>
+      {erreur && <p role="alert" className="px-4 py-3 text-sm text-red-700">{erreur}</p>}
+      {!erreur && donnees && changements.length === 0 && !chargement && (
+        <p className="px-4 py-4 text-sm text-slate-500">Aucun prix appliqué{q ? ` pour « ${q} »` : ''} sur cette période.</p>
+      )}
+      {changements.length > 0 && (
+        <ul className="divide-y divide-slate-100 mt-2">
+          {changements.map((c) => {
+            const ancien = Number(c.client?.ancien);
+            const nouveau = Number(c.client?.nouveau);
+            const hausse = Number.isFinite(ancien) && Number.isFinite(nouveau) && nouveau > ancien;
+            return (
+              <li key={`${c.cle}:${c.lot_id}`} className="px-4 py-2.5 flex flex-wrap items-start gap-x-3 gap-y-1">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-slate-900">
+                    {c.marque} {c.modele} <span className="text-slate-500 font-normal">· {c.type_piece}{c.qualite ? ` ${c.qualite}` : ''}</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {formatDate(c.le)} · {libelleSourcePrix(c)}{c.fournisseur ? ` · retenu : ${c.fournisseur}` : ''}
+                  </p>
+                </div>
+                <div className="text-right shrink-0 tabular-nums">
+                  {c.vide ? (
+                    <span className="badge badge-sm badge-warning">Prix à renseigner</span>
+                  ) : (
+                    <p className="text-sm text-slate-900">
+                      {Number.isFinite(ancien) && ancien > 0 ? <span className="text-slate-400 line-through mr-1">{euros(ancien)}</span> : null}
+                      <span className={`font-semibold ${hausse ? 'text-amber-800' : ''}`}>{Number.isFinite(nouveau) ? euros(nouveau) : '—'}</span>
+                    </p>
+                  )}
+                  {admin && c.ht && (c.ht.nouveau !== null && c.ht.nouveau !== undefined) && (
+                    <p className="text-xs text-slate-500">
+                      HT {c.ht.ancien !== null && c.ht.ancien !== undefined ? `${deuxDecimales(c.ht.ancien)} → ` : ''}{deuxDecimales(c.ht.nouveau)} €
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function RechercheFournisseursPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const q = (searchParams.get('q') || '').trim();
@@ -210,6 +312,7 @@ export default function RechercheFournisseursPage() {
   const [erreur, setErreur] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [vueCatalogue, setVueCatalogue] = useState('tous');
+  const [joursRecents, setJoursRecents] = useState(7);
   const champId = useId();
   const requeteRef = useRef(0);
   const monteRef = useRef(true);
@@ -359,6 +462,8 @@ export default function RechercheFournisseursPage() {
           </div>
         </section>
       )}
+
+      <DerniersPrixAppliques q={q.length >= 2 ? q : ''} jours={joursRecents} onJours={setJoursRecents} />
 
       <AdminLoginModal open={showAdmin} onClose={() => setShowAdmin(false)} onSuccess={() => { setShowAdmin(false); charger(); }} />
     </div>

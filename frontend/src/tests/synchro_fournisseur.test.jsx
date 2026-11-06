@@ -62,7 +62,7 @@ describe('tuile « Synchro Mobilax » de la santé des prix', () => {
 
   it('huit tuiles, la tuile Mobilax après LCD-Phone', () => {
     const cles = tuilesSante({}, '/accueil').map(x => x.cle);
-    expect(cles).toEqual(['estimes', 'a_revoir', 'perimes', 'marges', 'propositions', 'sans_prix', 'lcdphone', 'mobilax']);
+    expect(cles).toEqual(['estimes', 'a_revoir', 'perimes', 'marges', 'appliques', 'sans_prix', 'lcdphone', 'mobilax']);
   });
 });
 

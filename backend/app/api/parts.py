@@ -3,9 +3,10 @@ API Commandes de pièces.
 
 Prix réellement payé : une commande peut porter le HT payé (prix_ht) et la pièce de la
 grille concernée (tarif_cle, « tarifs:123 » : identifiant des suggestions de /api/grille).
-Avec les deux, à la création, quand l'un change ou à la réception, une proposition de
-mise à jour du prix est créée (services/prix.creer_proposition, écart de plus de 1 €),
-à valider par l'admin (/api/tarifs/propositions) : jamais d'écriture directe du prix.
+Avec les deux, à la création, quand l'un change ou à la réception, le prix payé devient le coût de la
+pièce de la grille, tout de suite (services/prix.appliquer_prix_commande, écart de plus de 1 €, lot
+annulable, trace dans tarifs_propositions) : plus rien à valider — décision du gérant (06/11/2026).
+Une pièce verrouillée n'est jamais touchée.
 """
 
 import logging
@@ -86,19 +87,28 @@ class CommandePieceUpdatePrix(CommandePieceUpdate):
         return _valider_tarif_cle(v)
 
 
-def _proposer(cur, commande_id: int, prix_ht, tarif_cle, par: str):
-    """Proposition de prix (dans un SAVEPOINT : un échec n'annule jamais la commande)."""
+def _appliquer_prix(cur, commande_id: int, prix_ht, tarif_cle, par: str):
+    """Le prix payé devient le coût de la pièce (dans un SAVEPOINT : un échec n'annule jamais la commande).
+    → résultat de prix.appliquer_prix_commande, None si rien à faire."""
     if prix_ht is None or not tarif_cle or float(prix_ht) <= 0:
         return None
     cur.execute("SAVEPOINT kp_proposition")
     try:
-        pid = prix_srv.creer_proposition(cur, tarif_cle, prix_ht, "commande", par, commande_id)
+        res = prix_srv.appliquer_prix_commande(cur, tarif_cle, prix_ht, par, commande_id)
         cur.execute("RELEASE SAVEPOINT kp_proposition")
-        return pid
+        return res
     except Exception as e:
         cur.execute("ROLLBACK TO SAVEPOINT kp_proposition")
-        logger.warning("Proposition de prix non créée (commande %s) : %s", commande_id, type(e).__name__)
+        logger.warning("Prix de commande non appliqué (commande %s) : %s", commande_id, type(e).__name__)
         return None
+
+
+def _sortie_prix(res) -> dict:
+    """Champs de réponse : proposition_id (trace, gardé pour les écrans existants) et prix_applique."""
+    if not res:
+        return {"proposition_id": None, "prix_applique": None}
+    return {"proposition_id": res.get("id"), "prix_applique": {k: res.get(k) for k in (
+        "applique", "verrouille", "lot_id", "ancien_ht", "nouveau_ht", "ancien_client", "nouveau_client")}}
 
 
 @router.get("")
@@ -164,7 +174,7 @@ def list_parts(
 
 @router.post("", response_model=dict)
 def create_part(data: CommandePieceCreatePrix, user: dict = Depends(get_current_user)):
-    """Crée une commande de pièce (prix_ht + tarif_cle : proposition de prix, cf. docstring du module)."""
+    """Crée une commande de pièce (prix_ht + tarif_cle : prix de la grille mis à jour, cf. docstring du module)."""
     ticket_id = data.ticket_id
 
     # If ticket_code provided but no ticket_id, resolve it
@@ -194,9 +204,9 @@ def create_part(data: CommandePieceCreatePrix, user: dict = Depends(get_current_
                 "UPDATE tickets SET commande_piece = 1, date_maj = %s WHERE id = %s",
                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ticket_id),
             )
-        proposition = _proposer(cur, row["id"], data.prix_ht, data.tarif_cle, user.get("sub") or "")
+        applique = _appliquer_prix(cur, row["id"], data.prix_ht, data.tarif_cle, user.get("sub") or "")
 
-    return {"id": row["id"], "proposition_id": proposition}
+    return {"id": row["id"], **_sortie_prix(applique)}
 
 
 class CommandeAutoIn(BaseModel):
@@ -292,7 +302,7 @@ def update_part(
     user: dict = Depends(get_current_user),
 ):
     """Met à jour une commande de pièce. prix_ht et tarif_cle acceptent null (effacés) ; un
-    changement de l'un d'eux, ou la réception, crée la proposition de prix (cf. docstring du module)."""
+    changement de l'un d'eux, ou la réception, met le prix de la grille à jour (cf. docstring du module)."""
     envoye = data.model_dump(exclude_unset=True)
     updates = {k: v for k, v in envoye.items() if v is not None or k in ("prix_ht", "tarif_cle")}
     if not updates:
@@ -333,7 +343,7 @@ def update_part(
                      ("tarif_cle" in updates and (updates["tarif_cle"] or None) != (avant["tarif_cle"] or None))
             recue = updates.get("statut") in STATUTS_RECUS and avant["statut"] not in STATUTS_RECUS
             if change or (recue and not _deja_proposee(cur, commande_id)):
-                proposition = _proposer(cur, commande_id, prix_ht, tarif_cle, user.get("sub") or "")
+                proposition = _appliquer_prix(cur, commande_id, prix_ht, tarif_cle, user.get("sub") or "")
 
         # Auto-sync : commande « Reçu » → ticket « Pièce reçue », seulement quand plus
         # aucune autre commande du ticket n'est attendue (sinon une ligne « (1/2) »)
@@ -366,7 +376,7 @@ def update_part(
                     (history_entry, row["ticket_id"]),
                 )
 
-    return {"ok": True, "proposition_id": proposition}
+    return {"ok": True, **_sortie_prix(proposition)}
 
 
 def _differe(a, b) -> bool:
@@ -376,8 +386,8 @@ def _differe(a, b) -> bool:
 
 
 def _deja_proposee(cur, commande_id: int) -> bool:
-    """Une proposition (quel que soit son sort) vient déjà de cette commande : la réception ne
-    la relance pas (une proposition refusée ne revient pas d'elle-même)."""
+    """Le prix de cette commande a déjà été appliqué (ou refusé : pièce verrouillée) : la réception ne
+    le réapplique pas."""
     cur.execute("SAVEPOINT kp_deja")
     try:
         cur.execute("SELECT 1 AS x FROM tarifs_propositions WHERE commande_id = %s LIMIT 1", (commande_id,))

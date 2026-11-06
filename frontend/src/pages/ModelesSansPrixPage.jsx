@@ -1,15 +1,15 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ListChecks, Inbox, Link2, Search, RotateCcw, Plus, Trash2, ExternalLink, Tags, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { ListChecks, Link2, Search, RotateCcw, Plus, Trash2, ExternalLink, Tags, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from '../components/Toast';
 import { formatDateShort } from '../lib/utils';
-import PropositionsPrix from '../components/PropositionsPrix';
 
+// Anciennement « Prix à revoir » avec un onglet « Propositions de prix » : plus rien à valider depuis le 06/11/2026
+// (les prix des fournisseurs et des commandes s'appliquent seuls) ; restent les modèles sans prix et les alias
 export const ONGLETS_PRIX = [
-  { cle: 'propositions', label: 'Propositions de prix', icone: Inbox },
   { cle: 'sans-prix', label: 'Modèles sans prix', icone: ListChecks },
   { cle: 'alias', label: 'Alias de modèles', icone: Tags },
 ];
@@ -390,19 +390,8 @@ export default function ModelesSansPrixPage() {
   const demande = params.get('onglet');
   const onglet = ONGLETS_PRIX.some(o => o.cle === demande) ? demande : 'sans-prix';
   const { sensible, adminPrompt } = useAdminElevation();
-  const [nbPropositions, setNbPropositions] = useState(null);
   const baseId = useId();
   const ongletsRef = useRef([]);
-
-  // Compteur du badge, même si l'onglet des propositions n'est pas ouvert
-  useEffect(() => {
-    if (onglet === 'propositions') return undefined;
-    let annule = false;
-    Promise.resolve().then(() => api.getPropositionsPrix({ statut: 'en_attente' }))
-      .then((d) => { if (!annule) setNbPropositions(liste(d).length); })
-      .catch(() => {});
-    return () => { annule = true; };
-  }, [onglet]);
 
   const choisir = (cle) => {
     const p = new URLSearchParams(params);
@@ -427,9 +416,9 @@ export default function ModelesSansPrixPage() {
     <div className="page max-w-[1280px]">
       <div className="page-header">
         <div>
-          <h1 className="page-header-title">Prix à revoir</h1>
+          <h1 className="page-header-title">Modèles sans prix et alias</h1>
           <p className="page-header-subtitle">
-            Les vrais prix payés, les modèles sans tarif et les correspondances de noms. Rien ne change sans votre validation.
+            Les modèles du catalogue sans tarif et les correspondances de noms. Les prix eux-mêmes s’appliquent seuls (synchro, collecte, commandes) : rien à valider.
           </p>
         </div>
       </div>
@@ -446,11 +435,6 @@ export default function ModelesSansPrixPage() {
                 className={`page-tab ${actif ? 'page-tab-active' : ''}`}>
                 <Icone className="w-4 h-4" aria-hidden="true" />
                 {label}
-                {cle === 'propositions' && nbPropositions > 0 && (
-                  <span className="badge-count badge-count-brand">
-                    {nbPropositions}<span className="sr-only"> en attente</span>
-                  </span>
-                )}
               </button>
             );
           })}
@@ -459,9 +443,6 @@ export default function ModelesSansPrixPage() {
 
       <div role="tabpanel" id={`${baseId}-panel-${onglet}`} aria-labelledby={`${baseId}-tab-${onglet}`} tabIndex={0}
         className="focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded-lg">
-        {onglet === 'propositions' && (
-          <PropositionsPrix basePath={basePath} sensible={sensible} onCompte={setNbPropositions} />
-        )}
         {onglet === 'sans-prix' && <ModelesSansPrix basePath={basePath} sensible={sensible} />}
         {onglet === 'alias' && <AliasModeles sensible={sensible} />}
       </div>

@@ -446,128 +446,65 @@ def _historique(base, tid):
                       "WHERE table_nom = 'tarifs' AND ligne_id = %s ORDER BY id", tid)
 
 
-# ─── Commandes de pièces → propositions ─────────────────────────
+# ─── Commandes de pièces → prix de la grille mis à jour (plus rien à valider, 06/11/2026) ─────
 
-def test_commande_ht_egal_aucune_proposition(base):
+def _trace(base, pid):
+    return _sql(base, "SELECT statut, commande_id, lot_id, source, traite_par FROM tarifs_propositions WHERE id = %s", pid)[0]
+
+
+def test_commande_ht_egal_rien_a_faire(base):
     tid = _piece(base)
     avant = _tarif(base, tid)
     r = _commande(base, prix_ht=100.8, tarif_cle=f"tarifs:{tid}")
-    assert r["proposition_id"] is None
+    assert r["proposition_id"] is None and r["prix_applique"] is None
     assert _sql(base, "SELECT count(*) AS n FROM tarifs_propositions WHERE tarif_cle = %s", f"tarifs:{tid}")[0]["n"] == 0
     row = _sql(base, "SELECT prix_ht, tarif_cle FROM commandes_pieces WHERE id = %s", r["id"])[0]
     assert row == {"prix_ht": Decimal("100.80"), "tarif_cle": f"tarifs:{tid}"}
     assert _tarif(base, tid) == avant
 
 
-def test_commande_ht_different_puis_accepter(base):
+def test_commande_ht_different_applique_tout_de_suite(base):
     c = base["c"]
     tid = _piece(base, modele="Pytest Phone B2")
-    avant = _tarif(base, tid)
     tick = _sql(base, """INSERT INTO tickets (categorie, marque, modele, panne, notes_internes, ticket_code)
                          VALUES ('Smartphone', 'Pytest', 'Pytest Phone B2', 'Écran cassé', %s, 'KP-PRIXB1')
                          RETURNING id""", MARQUEUR)[0]["id"]
-    r = _commande(base, ticket_id=tick, prix_ht=120, tarif_cle=f"tarifs:{tid}")
-    pid = r["proposition_id"]
-    assert pid
-    # Jamais d'écriture directe : la pièce et son historique restent intacts
-    assert _tarif(base, tid) == avant and _historique(base, tid) == []
-
-    assert c.get("/api/tarifs/propositions", headers=H).status_code == 403
-    sans_code = {"Authorization": f"Bearer {create_token('accueil', ADMIN)}"}
-    r = c.get("/api/tarifs/propositions", headers=sans_code)
-    assert r.status_code == 403 and r.json()["detail"]["code"] == "admin_requis"
-    liste = c.get("/api/tarifs/propositions", headers=HA).json()
-    p = next(x for x in liste if x["id"] == pid)
-    attendu_client = prix_srv.prix_client(120, "Ecran", "standard", prix_srv.REGLES_DEFAUT)
-    assert {k: p[k] for k in ("tarif_cle", "ancien_ht", "nouveau_ht", "ancien_client", "nouveau_client",
-                              "commande_id", "ticket_code", "verrou", "statut")} == {
-        "tarif_cle": f"tarifs:{tid}", "ancien_ht": 100.0, "nouveau_ht": 120.0, "ancien_client": 189,
-        "nouveau_client": attendu_client, "commande_id": r_id(base, pid), "ticket_code": "KP-PRIXB1",
-        "verrou": False, "statut": "en_attente"}
-    assert p["label"] == "Pytest Pytest Phone B2 — Ecran Original" and p["le"]
-
-    # Une seule proposition en attente par pièce : une seconde commande l'actualise
-    r2 = _commande(base, prix_ht=130, tarif_cle=f"tarifs:{tid}")
-    assert r2["proposition_id"] == pid
-    assert _sql(base, "SELECT nouveau_ht, commande_id FROM tarifs_propositions WHERE id = %s", pid)[0] == \
-        {"nouveau_ht": Decimal("130.00"), "commande_id": r2["id"]}
-
     debut = grille.maintenant_utc() - timedelta(seconds=5)
-    r = c.post(f"/api/tarifs/propositions/{pid}/accepter", headers=HA)
-    assert r.status_code == 200, r.text
-    res = r.json()
-    nouveau_client = prix_srv.prix_client(130, "Ecran", "standard", prix_srv.REGLES_DEFAUT)
-    assert res["statut"] == "acceptee" and res["nouveau_client"] == nouveau_client and res["lot_id"]
+    r = _commande(base, ticket_id=tick, prix_ht=120, tarif_cle=f"tarifs:{tid}")
+    pid, app = r["proposition_id"], r["prix_applique"]
+    assert pid and app["applique"] is True and app["verrouille"] is False and app["lot_id"]
+    nouveau_client = prix_srv.prix_client(120, "Ecran", "standard", prix_srv.REGLES_DEFAUT)
+    assert (app["ancien_ht"], app["nouveau_ht"], app["nouveau_client"]) == (100.0, 120.0, nouveau_client)
+    # Écrit tout de suite : coût, prix client, source et date ; historique dans un lot annulable
     t = _tarif(base, tid)
-    assert t["prix_fournisseur_ht"] == Decimal("130.00") and t["prix_client"] == nouveau_client
+    assert t["prix_fournisseur_ht"] == Decimal("120.00") and t["prix_client"] == nouveau_client
     assert t["prix_source"] == "commande" and t["prix_maj_le"] >= debut
     hist = _historique(base, tid)
-    assert [(h["colonne"], h["source"], h["lot_id"], h["par"]) for h in hist] == [
-        ("prix_client", "commande", res["lot_id"], ADMIN), ("prix_fournisseur_ht", "commande", res["lot_id"], ADMIN)]
-    assert {h["colonne"]: (h["ancien"], h["nouveau"]) for h in hist} == {
-        "prix_fournisseur_ht": (Decimal("100.00"), Decimal("130.00")),
-        "prix_client": (Decimal("189"), Decimal(nouveau_client))}
-    prop = _sql(base, "SELECT statut, traite_par, traite_le FROM tarifs_propositions WHERE id = %s", pid)[0]
-    assert prop["statut"] == "acceptee" and prop["traite_par"] == ADMIN and prop["traite_le"]
-    r = c.post(f"/api/tarifs/propositions/{pid}/accepter", headers=HA)
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "deja_traitee"
-
+    assert sorted((h["colonne"], h["source"], h["lot_id"]) for h in hist) == [
+        ("prix_client", "commande", app["lot_id"]), ("prix_fournisseur_ht", "commande", app["lot_id"])]
+    # Trace (plus de file d'attente) : acceptée d'office, visible dans la liste des acceptées
+    assert _trace(base, pid)["statut"] == "acceptee" and _trace(base, pid)["commande_id"] == r["id"]
+    assert not _sql(base, "SELECT 1 FROM tarifs_propositions WHERE statut = 'en_attente' AND tarif_cle = %s", f"tarifs:{tid}")
+    listees = c.get("/api/tarifs/propositions", params={"statut": "acceptee"}, headers=HA).json()
+    assert any(x["id"] == pid and x["ticket_code"] == "KP-PRIXB1" for x in listees)
+    # Une seconde commande à un autre prix : appliquée aussi, nouvelle trace
+    r2 = _commande(base, prix_ht=130, tarif_cle=f"tarifs:{tid}")
+    assert r2["proposition_id"] and r2["proposition_id"] != pid
+    assert _tarif(base, tid)["prix_fournisseur_ht"] == Decimal("130.00")
     # La suggestion suivante montre le nouveau prix, daté du jour, ni estimé ni périmé
     s = c.get("/api/grille/suggestions", params={"marque": "Pytest", "modele": "Pytest Phone B2"}, headers=H).json()
     ligne = next(x for x in s["suggestions"] if x["id"] == f"tarifs:{tid}")
-    assert ligne["prix"] == nouveau_client and ligne["fraicheur"] == "ok" and ligne["estime"] is False
-    assert ligne["prix_source"] == "commande" and ligne["age_jours"] == 0
+    assert ligne["prix"] == prix_srv.prix_client(130, "Ecran", "standard", prix_srv.REGLES_DEFAUT)
+    assert ligne["fraicheur"] == "ok" and ligne["estime"] is False and ligne["prix_source"] == "commande"
 
 
-def r_id(base, pid):
-    return _sql(base, "SELECT commande_id FROM tarifs_propositions WHERE id = %s", pid)[0]["commande_id"]
-
-
-def test_refuser_ne_change_rien(base):
-    c = base["c"]
-    tid = _piece(base, modele="Pytest Phone B3")
-    avant = _tarif(base, tid)
-    pid = _commande(base, prix_ht=150, tarif_cle=f"tarifs:{tid}")["proposition_id"]
-    assert c.post(f"/api/tarifs/propositions/{pid}/refuser", headers=H).status_code == 403
-    r = c.post(f"/api/tarifs/propositions/{pid}/refuser", headers=HA)
-    assert r.status_code == 200 and r.json() == {"id": pid, "statut": "refusee"}
-    assert _tarif(base, tid) == avant and _historique(base, tid) == []
-    assert c.post(f"/api/tarifs/propositions/{pid}/refuser", headers=HA).status_code == 409
-    assert c.post("/api/tarifs/propositions/999999999/refuser", headers=HA).status_code == 404
-    refusees = c.get("/api/tarifs/propositions", params={"statut": "refusee"}, headers=HA).json()
-    assert pid in {x["id"] for x in refusees}
-
-
-def test_verrou_signale_jamais_ecrit(base):
-    c = base["c"]
+def test_verrou_jamais_ecrit(base):
     tid = _piece(base, modele="Pytest Phone B4", verrou=True)
     avant = _tarif(base, tid)
-    pid = _commande(base, prix_ht=160, tarif_cle=f"tarifs:{tid}")["proposition_id"]
-    assert pid   # créée, mais signalée
-    p = next(x for x in c.get("/api/tarifs/propositions", headers=HA).json() if x["id"] == pid)
-    assert p["verrou"] is True
-    r = c.post(f"/api/tarifs/propositions/{pid}/accepter", headers=HA)
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "verrouille"
+    r = _commande(base, prix_ht=160, tarif_cle=f"tarifs:{tid}")
+    assert r["prix_applique"]["verrouille"] is True and r["prix_applique"]["applique"] is False
     assert _tarif(base, tid) == avant and _historique(base, tid) == []
-    assert _sql(base, "SELECT statut FROM tarifs_propositions WHERE id = %s", pid)[0]["statut"] == "en_attente"
-    r = c.post("/api/tarifs/propositions/accepter", json={"ids": [pid, 999999999]}, headers=HA)
-    assert r.status_code == 200
-    assert {k: r.json()[k] for k in ("acceptees", "verrouillees", "ignorees")} == {
-        "acceptees": [], "verrouillees": [pid], "ignorees": [999999999]}
-
-
-def test_accepter_plusieurs_un_seul_lot(base):
-    c = base["c"]
-    t1, t2 = _piece(base, modele="Pytest Phone B5"), _piece(base, modele="Pytest Phone B6", type_piece="Batterie",
-                                                             qualite=None, ht=20)
-    p1 = _commande(base, prix_ht=110, tarif_cle=f"tarifs:{t1}")["proposition_id"]
-    p2 = _commande(base, prix_ht=25, tarif_cle=f"tarifs:{t2}")["proposition_id"]
-    r = c.post("/api/tarifs/propositions/accepter", json={"ids": [p1, p2, p1]}, headers=HA).json()
-    assert r["acceptees"] == [p1, p2] and r["modifies"] == 2
-    lots = {h["lot_id"] for t in (t1, t2) for h in _historique(base, t)}
-    assert lots == {r["lot_id"]}
-    assert _tarif(base, t2)["prix_client"] == prix_srv.prix_client(25, "Batterie", "standard", prix_srv.REGLES_DEFAUT)
-    assert c.post("/api/tarifs/propositions/accepter", json={"ids": []}, headers=HA).status_code == 422
+    assert _trace(base, r["proposition_id"])["statut"] == "refusee"
 
 
 def test_commande_sans_tarif_cle(base):
@@ -575,11 +512,11 @@ def test_commande_sans_tarif_cle(base):
     r = _commande(base, prix_ht=55)
     assert r["proposition_id"] is None
     assert c.patch(f"/api/parts/{r['id']}", json={"statut": "Reçu"}, headers=H).json() == \
-        {"ok": True, "proposition_id": None}
+        {"ok": True, "proposition_id": None, "prix_applique": None}
     r = _commande(base)   # ni HT ni pièce : comme avant
     assert r["proposition_id"] is None
     assert c.post("/api/parts", json={"description": "x", "tarif_cle": "tarifs:abc"}, headers=H).status_code == 422
-    # Pièce inconnue : la commande passe, sans proposition
+    # Pièce inconnue : la commande passe, aucun prix écrit
     r = _commande(base, prix_ht=40, tarif_cle="tarifs:999999999")
     assert r["proposition_id"] is None and r["id"]
     liste = c.get("/api/parts", params={"search": "Écran pytest"}, headers=H).json()
@@ -592,29 +529,29 @@ def test_patch_et_reception(base):
     cle = f"tarifs:{tid}"
     r = _commande(base)
     cid = r["id"]
-    # HT et pièce ajoutés ensuite : proposition
+    # HT et pièce ajoutés ensuite : prix appliqué
     r = c.patch(f"/api/parts/{cid}", json={"prix_ht": 140, "tarif_cle": cle}, headers=H).json()
     pid = r["proposition_id"]
-    assert pid
-    c.post(f"/api/tarifs/propositions/{pid}/refuser", headers=HA)
-    # Réception : une proposition déjà venue de cette commande (même refusée) ne revient pas
+    assert pid and _tarif(base, tid)["prix_fournisseur_ht"] == Decimal("140.00")
+    # Réception : le prix de cette commande a déjà été appliqué, rien de plus
     r = c.patch(f"/api/parts/{cid}", json={"statut": "Reçu"}, headers=H).json()
     assert r["proposition_id"] is None
-    # HT corrigé : nouvelle proposition
+    # HT corrigé : appliqué de nouveau
     r = c.patch(f"/api/parts/{cid}", json={"prix_ht": 145}, headers=H).json()
-    assert r["proposition_id"] and r["proposition_id"] != pid
+    assert r["proposition_id"] and r["proposition_id"] != pid and _tarif(base, tid)["prix_fournisseur_ht"] == Decimal("145.00")
     # Effacement du HT (null) accepté
     assert c.patch(f"/api/parts/{cid}", json={"prix_ht": None}, headers=H).status_code == 200
     assert _sql(base, "SELECT prix_ht FROM commandes_pieces WHERE id = %s", cid)[0]["prix_ht"] is None
 
-    # Commande créée sans proposition (HT égal), puis reçue : toujours rien
-    r = _commande(base, prix_ht=100, tarif_cle=cle)
+    # Commande au même HT que la grille, puis reçue : rien
+    r = _commande(base, prix_ht=145, tarif_cle=cle)
     assert c.patch(f"/api/parts/{r['id']}", json={"statut": "Reçu"}, headers=H).json()["proposition_id"] is None
-    # Créée avec un HT nouveau mais sans pièce, la pièce choisie à la réception
-    r = _commande(base, prix_ht=99)
+    # Créée avec un HT à moins de 1 € de la grille mais sans pièce, la pièce choisie à la réception : rien
+    r = _commande(base, prix_ht=144.5)
     assert c.patch(f"/api/parts/{r['id']}", json={"statut": "Reçu", "tarif_cle": cle}, headers=H).json()["proposition_id"] is None
     r = _commande(base, prix_ht=135)
     assert c.patch(f"/api/parts/{r['id']}", json={"tarif_cle": cle, "statut": "Reçu"}, headers=H).json()["proposition_id"]
+    assert _tarif(base, tid)["prix_fournisseur_ht"] == Decimal("135.00")
 
 
 # ─── Grille : fraîcheur, groupes, obsolètes, alias, modèles sans prix ─

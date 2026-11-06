@@ -11,7 +11,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
   RefreshCw, Tag, Star, Megaphone, ChevronDown,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, Tv, Inbox, CalendarClock,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, Tv, CalendarClock,
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
@@ -22,8 +22,6 @@ const BADGES_POLL_MS = 60_000;
 const DEMANDES_EVERY_MS = 2 * 60_000;
 const COMMANDES_EVERY_MS = 2 * 60_000;
 const AVIS_EVERY_MS = 5 * 60_000;
-// Propositions de prix en attente (santé des prix) : une fois par minute au plus, rôle admin seulement
-const SANTE_PRIX_EVERY_MS = 60_000;
 
 // Design V2 : une seule couleur d'accent (brand) dans la barre latérale ; les rubriques ne sont plus
 // colorées, la hiérarchie vient du poids et de l'espace. Texte slate-300, secondaire slate-400 (AA).
@@ -132,7 +130,6 @@ export default function Navbar() {
   const [avisNonRepondus, setAvisNonRepondus] = useState(0);
   const [interactionCount, setInteractionCount] = useState(0);
   const [demandesCmdNew, setDemandesCmdNew] = useState(0);
-  const [propositionsPrix, setPropositionsPrix] = useState(0);
   const [moduleDevis, setModuleDevis] = useState(false);
   const [moduleDevisFlash, setModuleDevisFlash] = useState(false);
   const [devisOpen, setDevisOpen] = useState(() => localStorage.getItem('kp_devis_open') !== '0');
@@ -154,7 +151,7 @@ export default function Navbar() {
   }, []);
 
   // Pause onglet masqué, rafraîchissement immédiat au retour (usePolling)
-  const lastSlowRef = useRef({ demandes: 0, commandes: 0, avis: 0, santePrix: 0 });
+  const lastSlowRef = useRef({ demandes: 0, commandes: 0, avis: 0 });
   const isRoleAdmin = user?.role === 'admin';
   usePolling(() => {
     const now = Date.now();
@@ -163,12 +160,9 @@ export default function Navbar() {
     const commandes = now - last.commandes >= COMMANDES_EVERY_MS;
     const avis = isRoleAdmin && isAdminMode && !avisRefusRef.current
       && now - last.avis >= AVIS_EVERY_MS;
-    // Retour sur l'onglet (appel immédiat) : pas de relecture si la dernière a moins d'une minute
-    const santePrix = isRoleAdmin && typeof api.getSantePrix === 'function' && now - last.santePrix >= SANTE_PRIX_EVERY_MS;
     if (demandes) last.demandes = now;
     if (commandes) last.commandes = now;
     if (avis) last.avis = now;
-    if (santePrix) last.santePrix = now;
     return api.background(() => Promise.all([
       api.getKPI().then(kpi => setPendingCount(kpi?.total_actifs || 0)).catch(() => {}),
       api.getInteractions().then(d => setInteractionCount(d?.total_actions ?? 0)).catch(() => {}),
@@ -179,10 +173,6 @@ export default function Navbar() {
       avis && api.getAvisGoogleStats().then(s => setAvisNonRepondus(s?.non_repondus || 0)).catch((err) => {
         if (err?.status === 403) { avisRefusRef.current = true; setAvisNonRepondus(0); }
       }),
-      // Appel synchrone (en-tête « de fond » posé par api.background) ; une exception devient un rejet
-      santePrix && new Promise((resolve) => resolve(api.getSantePrix()))
-        .then(s => setPropositionsPrix(Math.max(0, Math.round(Number(s?.propositions_en_attente)) || 0)))
-        .catch(() => {}),
     ]));
   }, BADGES_POLL_MS, { enabled: Boolean(user?.utilisateur) });
 
@@ -244,20 +234,12 @@ export default function Navbar() {
     { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
   ];
 
-  // Badge des propositions de prix : jamais pour un membre qui n'a pas le rôle admin
-  const nbPropositionsPrix = isRoleAdmin ? propositionsPrix : 0;
+  // Plus de rubrique « Prix à revoir » (06/11/2026) : les prix s'appliquent sans validation ; les modèles sans
+  // prix et les alias se rejoignent depuis la grille (Réparation smartphones) et la santé des prix
   const adminItems = [
     { path: `${basePath}/admin`, label: 'Reporting', icon: BarChart3 },
     // Réservée au rôle admin : aucun autre membre ne voit l'entrée dans le menu
     ...(isRoleAdmin ? [{ path: `${basePath}/activite`, label: 'Activité de l’équipe', icon: CalendarClock }] : []),
-    {
-      // Même page que les tuiles « Santé des prix » (PropositionsPrix.cheminPrixARevoir), onglet propositions
-      path: `${basePath}/prix-a-revoir`, to: `${basePath}/prix-a-revoir?onglet=propositions`,
-      label: 'Prix à revoir', icon: Inbox, badge: nbPropositionsPrix,
-      aria: nbPropositionsPrix > 0
-        ? `Prix à revoir : ${nbPropositionsPrix} proposition${nbPropositionsPrix > 1 ? 's' : ''} de prix en attente`
-        : 'Prix à revoir',
-    },
     { path: `${basePath}/avis-google`, label: 'Avis Google', icon: Star, badge: avisNonRepondus },
     { path: `${basePath}/community`, label: 'Community Manager', icon: Megaphone },
     { path: `${basePath}/config`, label: 'Configuration', icon: Settings },
@@ -266,7 +248,7 @@ export default function Navbar() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/prix-a-revoir', '/activite'];
+  const adminPages = ['/admin', '/avis-google', '/community', '/config', '/modeles-sans-prix', '/activite'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));
 
   const handleNav = (path) => {

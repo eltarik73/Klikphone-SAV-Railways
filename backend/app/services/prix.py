@@ -1457,6 +1457,46 @@ def creer_proposition(cur, tarif_cle_brute: str, nouveau_ht, source: str, par: s
     return cur.fetchone()["id"]
 
 
+def appliquer_prix_commande(cur, tarif_cle_brute: str, nouveau_ht, par: str, commande_id: int = None, r=None):
+    """Le prix HT payé sur une commande devient le coût de la pièce, tout de suite (plus rien à valider :
+    décision du gérant du 06/11/2026). None si la clé est invalide ou inconnue, le HT invalide, ou l'écart avec
+    le coût actuel d'au plus 1 €. Sinon écrit coût HT et prix client (source 'commande', lot annulable) et
+    garde une trace dans tarifs_propositions (statut 'acceptee', ou 'refusee' pour une pièce verrouillée :
+    son prix n'est jamais touché). → {id, applique, verrouille, lot_id, ancien_ht, nouveau_ht, ancien_client,
+    nouveau_client}"""
+    try:
+        table, ligne_id, col = parse_tarif_cle(tarif_cle_brute)
+        col_ht, _ = colonnes_ht(table, col)
+        ht = normaliser_valeur("numeric", nouveau_ht)
+    except ValueError:
+        return None
+    if ht is None or ht <= 0:
+        return None
+    cle = tarif_cle(table, ligne_id, col)
+    cur.execute(f"SELECT {col_ht} AS ht FROM {table} WHERE id = %s", (ligne_id,))
+    row = cur.fetchone()
+    if row is None:
+        return None
+    ancien = row["ht"]
+    if ancien is not None and abs(Decimal(ancien) - ht) <= 1:
+        return None
+    lot = nouveau_lot()
+    res = appliquer_ht(cur, cle, ht, "commande", par, lot, r)
+    if res.get("absent"):
+        return None
+    verrouille = bool(res.get("verrouille"))
+    cur.execute("""
+        INSERT INTO tarifs_propositions (tarif_cle, ancien_ht, nouveau_ht, source, commande_id, statut, par, le,
+                                         traite_le, traite_par, lot_id)
+        VALUES (%s, %s, %s, 'commande', %s, %s, %s, NOW(), NOW(), %s, %s)
+        RETURNING id
+    """, (cle, ancien, ht, commande_id, "refusee" if verrouille else "acceptee", par, par, None if verrouille else lot))
+    pid = cur.fetchone()["id"]
+    return {"id": pid, "applique": not verrouille, "verrouille": verrouille, "lot_id": None if verrouille else lot,
+            "ancien_ht": res.get("ancien_ht"), "nouveau_ht": res.get("nouveau_ht"),
+            "ancien_client": res.get("ancien_client"), "nouveau_client": res.get("nouveau_client")}
+
+
 # ─── Annulation d'un lot ────────────────────────────────────────
 
 def lot_annulation(lot_id: str) -> str:
@@ -1728,6 +1768,14 @@ def sante(cur, r=None) -> dict:
     out = {k: int(v or 0) for k, v in dict(cur.fetchone()).items()}
     cur.execute("SELECT count(*) AS n FROM tarifs_propositions WHERE statut = 'en_attente'")
     out["propositions_en_attente"] = int(cur.fetchone()["n"] or 0)
+    # Prix appliqués sans validation (synchro Mobilax, collecte Utopya, prix payé sur une commande) : 7 derniers jours
+    cur.execute("""
+        SELECT count(DISTINCT (table_nom, ligne_id, lot_id, split_part(colonne, '_', 1))) AS n
+        FROM tarifs_historique
+        WHERE le >= NOW() - make_interval(days => 7) AND source IN ('import', 'mobilax', 'utopya', 'commande')
+          AND colonne IN ('prix_fournisseur_ht', 'ecran_prix_ht', 'batterie_prix_ht')
+    """)
+    out["appliques_7j"] = int(cur.fetchone()["n"] or 0)
     p = params_cache.get_params(
         ["VEILLE_PRIX_RESUME", "VEILLE_PRIX_DERNIERE", "LCDPHONE_DERNIERE_SYNCHRO", "LCDPHONE_SYNCHRO_OK"], cur=cur)
     modeles_sans_prix = None

@@ -24,7 +24,7 @@ const STATUTS_TERMINAUX = ['Donné au client', 'Clôturé'];
 const SOURCES_PIECES = new Set(['tarifs', 'tarifs_apple_devices']);
 // Écart au-delà duquel le serveur crée une proposition (services/prix.creer_proposition)
 export const ECART_PROPOSITION = 1;
-export const MESSAGE_PROPOSITION = 'Proposition de mise à jour envoyée au gérant';
+export const MESSAGE_PROPOSITION = 'Prix de la grille mis à jour avec ce prix payé';
 
 /** Nombre saisi (virgule acceptée) ou null. */
 export function montantSaisi(v) {
@@ -60,7 +60,7 @@ export function piecePressentie(description, pieces) {
   return meilleur && !egalite ? meilleur.p : null;
 }
 
-/** Le serveur signale-t-il une proposition créée ? true / false, ou null s'il ne le dit pas. */
+/** Le serveur signale-t-il un prix de la grille mis à jour (champ proposition_id : trace du changement) ? true / false, ou null s'il ne le dit pas. */
 export function propositionSignalee(res) {
   if (!res || typeof res !== 'object') return null;
   for (const k of ['proposition_id', 'proposition', 'proposition_creee']) {
@@ -195,9 +195,9 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
         <p id={`${id}-ht-aide`} className="input-help min-h-[2.5em]" aria-live="polite">
           {valeurs.prix_ht && ht === null ? <span className="text-red-700 font-medium">Montant invalide</span>
             : ecart !== null && Math.abs(ecart) > ECART_PROPOSITION
-              ? <span className="text-amber-900 font-medium">Écart de {ecart > 0 ? '+' : ''}{formatPrix(ecart)} avec la grille : proposition au gérant.</span>
+              ? <span className="text-amber-900 font-medium">Écart de {ecart > 0 ? '+' : ''}{formatPrix(ecart)} avec la grille : son prix sera mis à jour.</span>
               : ecart !== null ? 'Conforme à la grille.'
-                : choisie ? 'Plus de 1 € d’écart avec la grille : le gérant reçoit une proposition.' : 'HT de la facture, hors livraison.'}
+                : choisie ? 'Plus de 1 € d’écart avec la grille : son prix est mis à jour.' : 'HT de la facture, hors livraison.'}
         </p>
       </div>
     </>
@@ -364,7 +364,7 @@ export default function CommandesPage() {
     setShowForm(false);
   };
 
-  // Proposition créée par le serveur (ou, s'il ne le dit pas, écart > 1 € connu de l'admin)
+  // Prix de la grille mis à jour par le serveur (ou, s'il ne le dit pas, écart > 1 € connu de l'admin)
   const propositionEnvoyee = (res, valeurs, pieces) => {
     const signal = propositionSignalee(res);
     if (signal !== null) return signal;
@@ -454,7 +454,7 @@ export default function CommandesPage() {
       // Une commande pièce peut auto-changer le statut du ticket lié
       // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
       invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
-      // Réception d'une commande qui porte déjà son prix payé : le serveur peut en tirer une proposition
+      // Réception d'une commande qui porte déjà son prix payé : le serveur met le prix de la grille à jour
       setToast(propositionSignalee(res) === true
         ? { type: 'success', msg: `Statut → ${newStatut} — ${MESSAGE_PROPOSITION.toLowerCase()}`, duree: 6000 }
         : { type: 'success', msg: `Statut → ${newStatut}` });

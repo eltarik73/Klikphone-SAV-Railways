@@ -49,7 +49,7 @@ const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
 const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
 const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage'));
 const ConfidentialitePage = lazy(() => import('./pages/ConfidentialitePage'));
-// Prix à revoir (admin) : propositions issues des commandes, modèles sans prix, alias
+// Modèles sans prix et alias (admin) — anciennement « Prix à revoir » (plus de propositions à valider)
 const ModelesSansPrixPage = lazy(() => import('./pages/ModelesSansPrixPage'));
 const ActiviteEquipePage = lazy(() => import('./pages/ActiviteEquipePage'));
 
@@ -385,8 +385,10 @@ function AppRoutes() {
         <Route path="/tech/tarifs-smartphones" element={<P targets={['tech']}><OngletsTarifs><AdminTarifsSmartphonesPage /></OngletsTarifs></P>} />
         <Route path="/accueil/demandes-commandes" element={<P targets={['accueil']}><DemandesCommandesPage /></P>} />
         <Route path="/tech/demandes-commandes" element={<P targets={['tech']}><DemandesCommandesPage /></P>} />
-        <Route path="/accueil/prix-a-revoir" element={<AG targets={['accueil']}><ModelesSansPrixPage /></AG>} />
-        <Route path="/tech/prix-a-revoir" element={<AG targets={['tech']}><ModelesSansPrixPage /></AG>} />
+        <Route path="/accueil/modeles-sans-prix" element={<AG targets={['accueil']}><ModelesSansPrixPage /></AG>} />
+        <Route path="/tech/modeles-sans-prix" element={<AG targets={['tech']}><ModelesSansPrixPage /></AG>} />
+        <Route path="/accueil/prix-a-revoir" element={<Navigate to="/accueil/modeles-sans-prix" replace />} />
+        <Route path="/tech/prix-a-revoir" element={<Navigate to="/tech/modeles-sans-prix" replace />} />
         <Route path="/accueil/activite" element={<AG targets={['accueil']}><ActiviteEquipePage /></AG>} />
         <Route path="/tech/activite" element={<AG targets={['tech']}><ActiviteEquipePage /></AG>} />
 

@@ -148,6 +148,85 @@ def _accepter(cur, proposition_id: int, par: str, lot_id: str, r) -> dict:
     }
 
 
+def valider_en_attente(cur, par: str = "Validation automatique") -> dict:
+    """Règle toutes les propositions en attente, sans le gérant (décision du 06/11/2026 : plus rien à valider).
+    Prix payé sur une commande → appliqué (source 'commande'). Prix d'un fournisseur (mobilax, utopya) → appliqué
+    s'il vient du fournisseur retenu pour la pièce (fournisseurs.fournisseur_choisi) ou si le coût actuel n'est pas
+    une référence (remplacable) ; sinon fermé ('annulee' : l'autre fournisseur est retenu, le passage suivant écrit le
+    bon prix). Pièce verrouillée : 'refusee' (jamais touchée) ; pièce disparue : 'annulee'. Un seul lot (annulable).
+    → {en_attente, acceptees, fermees, verrouillees, introuvables, lot_id}"""
+    from app.services import fournisseurs
+    from app.services.prestations import normaliser
+    r = prix_srv.regles(cur)
+    prefere = fournisseurs.preference(cur)
+    cur.execute("SELECT id, tarif_cle, nouveau_ht, source FROM tarifs_propositions WHERE statut = 'en_attente' ORDER BY id")
+    rows = [dict(x) for x in cur.fetchall() or []]
+    out = {"en_attente": len(rows), "acceptees": 0, "fermees": 0, "verrouillees": 0, "introuvables": 0, "lot_id": None}
+    if not rows:
+        return out
+    descs = prix_srv.decrire_tarifs(cur, sorted({p["tarif_cle"] for p in rows}), r)
+    lot = prix_srv.nouveau_lot()
+
+    def clore(pid, statut, lot_id=None):
+        cur.execute("UPDATE tarifs_propositions SET statut = %s, traite_le = NOW(), traite_par = %s, "
+                    "lot_id = COALESCE(%s, lot_id) WHERE id = %s", (statut, par, lot_id, pid))
+
+    for p in rows:
+        d = descs.get(p["tarif_cle"])
+        if d is None or d.get("obsolete"):
+            clore(p["id"], "annulee")
+            out["introuvables"] += 1
+            continue
+        src = str(p.get("source") or "commande").lower()
+        if src in ("mobilax", "utopya"):
+            retenu = normaliser(fournisseurs.fournisseur_choisi(d, prefere))
+            if retenu != src and not fournisseurs.remplacable(d, r):
+                clore(p["id"], "annulee")
+                out["fermees"] += 1
+                continue
+        else:
+            src = "commande"
+        if d.get("verrou"):
+            clore(p["id"], "refusee")
+            out["verrouillees"] += 1
+            continue
+        res = prix_srv.appliquer_ht(cur, p["tarif_cle"], p["nouveau_ht"], src, par, lot, r)
+        if res.get("absent"):
+            clore(p["id"], "annulee")
+            out["introuvables"] += 1
+        elif res.get("verrouille"):
+            clore(p["id"], "refusee")
+            out["verrouillees"] += 1
+        else:
+            clore(p["id"], "acceptee", lot)
+            out["acceptees"] += 1
+            out["lot_id"] = lot
+    return out
+
+
+MARQUEUR_VALIDATION = "PROPOSITIONS_VALIDEES_2026_11_06"
+
+
+def valider_en_attente_au_demarrage(par: str = "Validation automatique"):
+    """Au démarrage, une seule fois (marqueur dans params, posé dans la même transaction) : toutes les
+    propositions en attente sont réglées (valider_en_attente). Jamais bloquant. → résumé ou None."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("INSERT INTO params (cle, valeur) VALUES (%s, NOW()::text) ON CONFLICT (cle) DO NOTHING RETURNING cle",
+                        (MARQUEUR_VALIDATION,))
+            if not cur.fetchone():
+                return None
+            res = valider_en_attente(cur, par)
+    except Exception as e:
+        logger.warning("Validation automatique des propositions : échec (%s)", type(e).__name__)
+        return None
+    logger.info("Propositions de prix réglées au démarrage : %s en attente, %s appliquées, %s fermées (autre fournisseur "
+                "retenu), %s verrouillées, %s introuvables", res["en_attente"], res["acceptees"], res["fermees"],
+                res["verrouillees"], res["introuvables"])
+    _invalider_caches()
+    return res
+
+
 class IdsIn(BaseModel):
     ids: List[int] = Field(..., min_length=1, max_length=_MAX_LOT)
 

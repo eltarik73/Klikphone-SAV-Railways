@@ -28,7 +28,6 @@ import TarifPicker, { fraicheurPrix, grouperSuggestions, moisAnnee, cleCommandeD
 import CommandesPage, {
   montantSaisi, piecesCommandables, piecePressentie, propositionSignalee, MESSAGE_PROPOSITION,
 } from '../pages/CommandesPage';
-import PropositionsPrix, { ecartProposition, selectionParDefaut, cheminPrixARevoir } from '../components/PropositionsPrix';
 import SantePrixWidget, { SynchroLcdPhone, lireStatutSynchro, analyserProbe, tuilesSante } from '../components/SantePrixWidget';
 import ModelesSansPrixPage, { trierSansPrix, lienSaisiePrix } from '../pages/ModelesSansPrixPage';
 import DashboardPage from '../pages/DashboardPage';
@@ -241,7 +240,7 @@ describe('commandes : prix HT payé', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
     await waitFor(() => expect(apiMock.createPart).toHaveBeenCalled());
     expect(apiMock.createPart.mock.calls[0][0]).toMatchObject({ description: 'Écran iPhone 13 OLED', ticket_code: 'KP-000042', prix_ht: 52.4, tarif_cle: 'tarifs:12' });
-    expect(await screen.findByText(/proposition de mise à jour envoyée au gérant/)).toBeInTheDocument();
+    expect(await screen.findByText(/prix de la grille mis à jour avec ce prix payé/)).toBeInTheDocument();
   });
 
   it('admin : HT de la grille prérempli, écart affiché avant l’envoi', async () => {
@@ -254,11 +253,11 @@ describe('commandes : prix HT payé', () => {
     await waitFor(() => expect(ht).toHaveValue('48.5'));
     expect(screen.getByText('Conforme à la grille.')).toBeInTheDocument();
     fireEvent.change(ht, { target: { value: '55' } });
-    expect(screen.getByText(/Écart de \+6\.50 € avec la grille/)).toBeInTheDocument();
+    expect(screen.getByText(/Écart de \+6\.50 € avec la grille : son prix sera mis à jour\./)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
     await waitFor(() => expect(apiMock.createPart).toHaveBeenCalled());
     // Le serveur ne dit rien : l'écart connu de l'admin suffit pour le message
-    expect(await screen.findByText(/proposition de mise à jour envoyée au gérant/)).toBeInTheDocument();
+    expect(await screen.findByText(/prix de la grille mis à jour avec ce prix payé/)).toBeInTheDocument();
   });
 
   it('écart d’au plus 1 € (admin) : pas de message de proposition', async () => {
@@ -272,7 +271,7 @@ describe('commandes : prix HT payé', () => {
     fireEvent.change(ht, { target: { value: '49' } });
     fireEvent.click(screen.getByRole('button', { name: 'Créer' }));
     expect(await screen.findByText('Commande créée')).toBeInTheDocument();
-    expect(screen.queryByText(/proposition de mise à jour/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/prix de la grille mis à jour/i)).not.toBeInTheDocument();
   });
 
   it('ticket effacé après le choix d’une pièce : la pièce ne part pas avec la commande', async () => {
@@ -293,13 +292,13 @@ describe('commandes : prix HT payé', () => {
     expect(await screen.findByText('Commande créée')).toBeInTheDocument();
   });
 
-  it('réception d’une commande qui porte déjà son prix : proposition signalée par le serveur', async () => {
+  it('réception d’une commande qui porte déjà son prix : prix de la grille mis à jour, signalé par le serveur', async () => {
     const part = { id: 12, description: 'Écran', statut: 'Commandée', prix_ht: 52, tarif_cle: 'tarifs:12', client_tel: '' };
     apiMock.getParts.mockResolvedValue([part]);
     apiMock.updatePart.mockResolvedValue({ ok: true, proposition_id: 4 });
     renderCommandes();
     fireEvent.change(await screen.findByRole('combobox', { name: 'Statut de la commande Écran' }), { target: { value: 'Reçu' } });
-    expect(await screen.findByText(/Statut → Reçu — proposition de mise à jour envoyée au gérant/)).toBeInTheDocument();
+    expect(await screen.findByText(/Statut → Reçu — prix de la grille mis à jour avec ce prix payé/)).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -436,142 +435,6 @@ describe('fiche ticket : commande de pièce', () => {
 });
 
 // ─── Propositions de prix ────────────────────────────────────────
-const PROPOSITIONS = [
-  { id: 1, tarif_cle: 'tarifs:12', label: 'Apple iPhone 13 — Écran OLED', ancien_ht: 48.5, nouveau_ht: 52.4, ancien_client: 129, nouveau_client: 129, commande_id: 5, ticket_code: 'KP-000042', le: '2026-10-15T10:00:00', verrou: false },
-  { id: 2, tarif_cle: 'tarifs:30', label: 'Samsung Galaxy A52 — Écran', ancien_ht: 40, nouveau_ht: 80, ancien_client: 109, nouveau_client: 159, commande_id: 6, ticket_code: 'KP-000050', le: '2026-10-14T10:00:00', verrou: false },
-  { id: 3, tarif_cle: 'tarifs:31', label: 'Xiaomi Redmi Note 12 — Batterie', ancien_ht: 12, nouveau_ht: 14, ancien_client: 79, nouveau_client: 79, commande_id: 7, verrou: true },
-];
-
-describe('propositions de prix', () => {
-  it('écart et alerte : plus de 25 % ou de 30 €, alerte du serveur prioritaire ; sélection par défaut', () => {
-    expect(ecartProposition(PROPOSITIONS[0])).toEqual({ eur: 3.9, pct: 8, alerte: false });
-    expect(ecartProposition(PROPOSITIONS[1])).toMatchObject({ eur: 40, pct: 100, alerte: true });
-    expect(ecartProposition({ ancien_ht: 200, nouveau_ht: 235 }).alerte).toBe(true); // +35 €
-    expect(ecartProposition({ ancien_ht: 10, nouveau_ht: 13, alerte: false }).alerte).toBe(false);
-    expect([...selectionParDefaut(PROPOSITIONS)]).toEqual([1]);
-    expect(cheminPrixARevoir('/tech', 'propositions')).toBe('/tech/prix-a-revoir?onglet=propositions');
-  });
-
-  function renderPropositions(props = {}) {
-    return render(
-      <MemoryRouter><ToastProvider><PropositionsPrix basePath="/accueil" {...props} /></ToastProvider></MemoryRouter>,
-    );
-  }
-
-  it('avant/après HT et prix client, grosse variation non cochée, verrou signalé ; lot et une à une', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValue(PROPOSITIONS);
-    apiMock.accepterPropositionsPrix.mockResolvedValue({ acceptees: [1] });
-    apiMock.refuserPropositionPrix.mockResolvedValue({ ok: true });
-    const onCompte = vi.fn();
-    renderPropositions({ onCompte });
-    const titre = await screen.findByRole('heading', { name: /Propositions de prix/ });
-    expect(titre).toHaveTextContent('3');
-    expect(apiMock.getPropositionsPrix).toHaveBeenCalledWith({ statut: 'en_attente' });
-    expect(onCompte).toHaveBeenLastCalledWith(3);
-
-    expect(screen.getByRole('checkbox', { name: /Apple iPhone 13/ })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /Samsung Galaxy A52/ })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /Redmi Note 12 — Batterie \(prix verrouillé\)/ })).toBeDisabled();
-    expect(screen.getByText(/1 grosse variation/)).toBeInTheDocument();
-    expect(screen.getAllByText('Prix verrouillé').length).toBeGreaterThan(0);
-    expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === '+40.00 € (+100 %)')).toBeInTheDocument();
-    expect(screen.getByText('159.00 €')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Accepter la sélection (1)' }));
-    await waitFor(() => expect(apiMock.accepterPropositionsPrix).toHaveBeenCalledWith([1]));
-    expect(await screen.findByText('1 prix mis à jour')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByRole('checkbox', { name: /Apple iPhone 13/ })).not.toBeInTheDocument());
-    expect(onCompte).toHaveBeenLastCalledWith(2);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Refuser la proposition pour Samsung Galaxy A52 — Écran' }));
-    await waitFor(() => expect(apiMock.refuserPropositionPrix).toHaveBeenCalledWith(2));
-    await waitFor(() => expect(onCompte).toHaveBeenLastCalledWith(1));
-  });
-
-  it('réponse du serveur : alertes, pièce introuvable, lot partiellement appliqué puis liste relue', async () => {
-    const liste = [
-      { ...PROPOSITIONS[0], alertes: [] },
-      { ...PROPOSITIONS[1], alertes: ['variation'] },
-      { id: 4, tarif_cle: 'tarifs:99', label: 'tarifs:99', ancien_ht: 20, nouveau_ht: 22, ancien_client: null, nouveau_client: null, introuvable: true, alertes: [], verrou: false },
-      { id: 5, tarif_cle: 'tarifs:40', label: 'Google Pixel 7 — Batterie', ancien_ht: 15, nouveau_ht: 17, ancien_client: 79, nouveau_client: 79, alertes: [], verrou: false },
-    ];
-    // Seuils du gérant : une petite variation peut être signalée par le serveur
-    expect(ecartProposition({ ancien_ht: 10, nouveau_ht: 11, alertes: ['variation'] }).alerte).toBe(true);
-    expect([...selectionParDefaut(liste)]).toEqual([1, 5]);
-    apiMock.getPropositionsPrix.mockResolvedValueOnce(liste).mockResolvedValue([liste[1], liste[2], liste[3]]);
-    apiMock.accepterPropositionsPrix.mockResolvedValue({ lot_id: 'x', acceptees: [1], verrouillees: [5], ignorees: [], modifies: 1 });
-    renderPropositions();
-    expect(await screen.findByRole('checkbox', { name: /tarifs:99 \(pièce introuvable\)/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Accepter le nouveau prix pour tarifs:99' })).toBeDisabled();
-    expect(screen.getByText('Pièce introuvable')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Accepter la sélection (2)' }));
-    await waitFor(() => expect(apiMock.accepterPropositionsPrix).toHaveBeenCalledWith([1, 5]));
-    expect(await screen.findByText('1 prix mis à jour · 1 non appliqué (dont 1 verrouillé)')).toBeInTheDocument();
-    await waitFor(() => expect(apiMock.getPropositionsPrix).toHaveBeenCalledTimes(2));
-  });
-
-  it('proposition déjà traitée ailleurs : elle quitte la liste', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValue([PROPOSITIONS[0]]);
-    apiMock.accepterPropositionPrix.mockRejectedValue(Object.assign(new Error('Cette proposition a déjà été traitée.'), { status: 409, code: 'deja_traitee' }));
-    renderPropositions();
-    fireEvent.click(await screen.findByRole('button', { name: /Accepter le nouveau prix pour Apple iPhone 13/ }));
-    expect(await screen.findByText('Cette proposition a déjà été traitée.')).toBeInTheDocument();
-    expect(await screen.findByText('Aucune proposition en attente')).toBeInTheDocument();
-  });
-
-  it('prix verrouillé : « Accepter » désactivé avec l’explication ; refus du serveur en toast, ligne gardée', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValue([PROPOSITIONS[2], { ...PROPOSITIONS[0], id: 9 }]);
-    // Verrouillé depuis le chargement de la liste : le serveur refuse (409)
-    apiMock.accepterPropositionPrix.mockRejectedValue(Object.assign(new Error('Prix verrouillé : déverrouillez la pièce'), { status: 409, code: 'verrouille' }));
-    renderPropositions();
-    const verrouille = await screen.findByRole('button', { name: /Accepter le nouveau prix pour Xiaomi/ });
-    expect(verrouille).toBeDisabled();
-    expect(verrouille).toHaveAccessibleDescription(/Prix fixé à la main/);
-    fireEvent.click(verrouille);
-    expect(apiMock.accepterPropositionPrix).not.toHaveBeenCalled();
-    // Refuser reste possible
-    expect(screen.getByRole('button', { name: /Refuser la proposition pour Xiaomi/ })).toBeEnabled();
-
-    fireEvent.click(screen.getByRole('button', { name: /Accepter le nouveau prix pour Apple iPhone 13/ }));
-    expect(await screen.findByText('Prix verrouillé : déverrouillez la pièce', { selector: 'p' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Accepter le nouveau prix pour Apple iPhone 13/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Annuler ce changement' })).not.toBeInTheDocument();
-  });
-
-  it('acceptation annulable : « Annuler ce changement » rétablit le lot puis relit la liste', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValueOnce([PROPOSITIONS[0], PROPOSITIONS[1]]).mockResolvedValue([PROPOSITIONS[1]]);
-    apiMock.accepterPropositionPrix.mockResolvedValue({ id: 1, resultat: 'acceptee', ecrit: true, lot_id: 'lot-prop-1' });
-    apiMock.accepterPropositionsPrix.mockResolvedValue({ lot_id: 'lot-prop-2', acceptees: [2], verrouillees: [], ignorees: [], modifies: 1 });
-    apiMock.annulerLotPrix.mockResolvedValue({ restaures: 2, conflits: [] });
-    renderPropositions();
-    fireEvent.click(await screen.findByRole('button', { name: /Accepter le nouveau prix pour Apple iPhone 13/ }));
-    expect(await screen.findByText('1 prix mis à jour : Apple iPhone 13 — Écran OLED.')).toBeInTheDocument();
-
-    // Un lot ensuite : le bandeau porte le dernier lot
-    fireEvent.click(screen.getByRole('checkbox', { name: /Samsung Galaxy A52/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Accepter la sélection (1)' }));
-    expect(await screen.findByText('1 prix mis à jour.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Annuler ce changement' }));
-    await waitFor(() => expect(apiMock.annulerLotPrix).toHaveBeenCalledWith('lot-prop-2'));
-    expect(apiMock.annulerLotPrix).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('Changement annulé : les prix sont revenus à leur valeur d’avant.', { selector: 'p.font-semibold' })).toBeInTheDocument();
-    await waitFor(() => expect(apiMock.getPropositionsPrix).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('button', { name: 'Masquer ce message' }));
-    expect(screen.queryByText(/Changement annulé/, { selector: 'p.font-semibold' })).not.toBeInTheDocument();
-  });
-
-  it('liste vide et erreur de droits', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValueOnce([]);
-    const { unmount } = renderPropositions();
-    expect(await screen.findByText('Aucune proposition en attente')).toBeInTheDocument();
-    unmount();
-    apiMock.getPropositionsPrix.mockRejectedValueOnce(Object.assign(new Error('Admin requis'), { status: 403 }));
-    renderPropositions();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Réservé au gérant');
-  });
-});
-
-// ─── Modèles sans prix et alias ──────────────────────────────────
 const SANS_PRIX = [
   { categorie: 'Smartphone', marque: 'Samsung', modele: 'Galaxy A16', annee: 2024, tickets_12_mois: 2 },
   { categorie: 'Smartphone', marque: 'Apple', modele: 'iPhone Air', annee: 2025, tickets_12_mois: 1 },
@@ -590,7 +453,7 @@ describe('modèles sans prix', () => {
     return render(
       <MemoryRouter initialEntries={[url]}>
         <ToastProvider>
-          <Routes><Route path="/accueil/prix-a-revoir" element={<ModelesSansPrixPage />} /></Routes>
+          <Routes><Route path="/accueil/modeles-sans-prix" element={<ModelesSansPrixPage />} /></Routes>
         </ToastProvider>
       </MemoryRouter>,
     );
@@ -598,13 +461,14 @@ describe('modèles sans prix', () => {
 
   it('liste triée, filtre par catégorie, alias ajouté depuis une ligne puis liste relue', async () => {
     apiMock.getModelesSansPrix.mockResolvedValue(SANS_PRIX);
-    apiMock.getPropositionsPrix.mockResolvedValue(PROPOSITIONS);
     apiMock.ajouterAliasModele.mockResolvedValue({ id: 4 });
-    renderPage('/accueil/prix-a-revoir?onglet=sans-prix');
+    renderPage('/accueil/modeles-sans-prix?onglet=sans-prix');
     expect(await screen.findByText('Apple iPad Air 13 M3')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Modèles sans prix et alias' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Modèles sans prix/ })).toHaveAttribute('aria-selected', 'true');
-    // Badge des propositions en attente, même onglet fermé
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Propositions de prix/ })).toHaveTextContent('3'));
+    // Plus d'onglet « Propositions de prix » : rien à valider
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Modèles sans prix', 'Alias de modèles']);
+    expect(apiMock.getPropositionsPrix).not.toHaveBeenCalled();
     const lignes = screen.getAllByRole('listitem').map(li => li.textContent);
     expect(lignes[0]).toMatch(/iPad Air 13 M3/);
     expect(screen.getByText('4 tickets sur 12 mois')).toBeInTheDocument();
@@ -631,7 +495,7 @@ describe('modèles sans prix', () => {
     apiMock.getAliasModeles.mockResolvedValue([{ id: 1, alias: 'iPhone Air', modele_canonique: 'iPhone 17 Air', categorie: 'Smartphone', le: '2026-10-16T08:00:00' }]);
     apiMock.supprimerAliasModele.mockResolvedValue({ ok: true });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    renderPage('/accueil/prix-a-revoir');
+    renderPage('/accueil/modeles-sans-prix');
     expect(await screen.findByText('Tous les modèles du catalogue ont un prix.')).toBeInTheDocument();
     const onglet = screen.getByRole('tab', { name: /Modèles sans prix/ });
     // Seul l'onglet actif pointe vers un panneau, qui existe dans le DOM
@@ -648,29 +512,31 @@ describe('modèles sans prix', () => {
     expect(await screen.findByText('Aucun alias pour le moment.')).toBeInTheDocument();
   });
 
-  it('onglet des propositions depuis le lien du widget', async () => {
-    apiMock.getPropositionsPrix.mockResolvedValue([PROPOSITIONS[0]]);
-    renderPage('/accueil/prix-a-revoir?onglet=propositions');
-    expect(await screen.findByRole('checkbox', { name: /Apple iPhone 13/ })).toBeInTheDocument();
-    expect(apiMock.getModelesSansPrix).not.toHaveBeenCalled();
+  it('ancienne adresse « onglet=propositions » : retombe sur les modèles sans prix', async () => {
+    apiMock.getModelesSansPrix.mockResolvedValue([]);
+    renderPage('/accueil/modeles-sans-prix?onglet=propositions');
+    expect(await screen.findByText('Tous les modèles du catalogue ont un prix.')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Modèles sans prix/ })).toHaveAttribute('aria-selected', 'true');
   });
 });
 
 // ─── Santé des prix ──────────────────────────────────────────────
 const SANTE = {
-  total: 1251, estimes: 1251, a_revoir: 0, perimes: 1251, propositions_en_attente: 2, marges_faibles: 3,
+  total: 1251, estimes: 1251, a_revoir: 0, perimes: 1251, propositions_en_attente: 0, appliques_7j: 12, marges_faibles: 3,
   modeles_sans_prix: 41, derniere_veille: '2026-10-12T03:00:00',
   lcdphone: { derniere_synchro: '2026-10-10T09:00:00', ok: true },
 };
 
 describe('santé des prix', () => {
-  it('tuiles : tons, liens vers les propositions, les modèles sans prix et les téléphones', () => {
+  it('tuiles : tons, liens vers les prix appliqués, les modèles sans prix et les téléphones', () => {
     const t = Object.fromEntries(tuilesSante(SANTE, '/accueil', MAINTENANT).map(x => [x.cle, x]));
     expect(t.estimes).toMatchObject({ valeur: (1251).toLocaleString('fr-FR'), ton: 'orange' });
     expect(t.perimes.ton).toBe('rouge');
     expect(t.a_revoir.ton).toBe('neutre');
-    expect(t.propositions).toMatchObject({ lien: '/accueil/prix-a-revoir?onglet=propositions', badge: true, ton: 'marque' });
-    expect(t.sans_prix.lien).toBe('/accueil/prix-a-revoir?onglet=sans-prix');
+    // Plus de propositions à valider : la tuile dit combien de prix se sont appliqués seuls cette semaine
+    expect(t.propositions).toBeUndefined();
+    expect(t.appliques).toMatchObject({ valeur: '12', lien: '/accueil/tarifs-fournisseurs', ton: 'neutre', detail: '7 derniers jours, sans validation' });
+    expect(t.sans_prix.lien).toBe('/accueil/modeles-sans-prix?onglet=sans-prix');
     expect(t.lcdphone).toMatchObject({ lien: '/accueil/tarifs-telephones', valeur: '6 j', ton: 'neutre' });
     // Liens de la grille avec leur filtre dans l'URL (à appliquer par TarifsPage)
     expect(t.estimes.lien).toBe('/accueil/tarifs?source=estimation');
@@ -690,9 +556,10 @@ describe('santé des prix', () => {
     apiMock.getSantePrix.mockRejectedValueOnce(new Error('Erreur 500')).mockResolvedValueOnce(SANTE);
     render(<MemoryRouter><SantePrixWidget basePath="/accueil" /></MemoryRouter>);
     fireEvent.click(await screen.findByRole('button', { name: 'Réessayer' }));
-    const lien = await screen.findByRole('link', { name: '2 propositions de prix en attente, à valider' });
-    expect(lien).toHaveAttribute('href', '/accueil/prix-a-revoir?onglet=propositions');
-    expect(screen.getByRole('link', { name: /41 modèles du catalogue sans prix/ })).toHaveAttribute('href', '/accueil/prix-a-revoir?onglet=sans-prix');
+    const lien = await screen.findByRole('link', { name: '12 prix appliqués automatiquement ces 7 derniers jours, voir la recherche fournisseurs' });
+    expect(lien).toHaveAttribute('href', '/accueil/tarifs-fournisseurs');
+    expect(screen.queryByRole('link', { name: /à valider/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /41 modèles du catalogue sans prix/ })).toHaveAttribute('href', '/accueil/modeles-sans-prix?onglet=sans-prix');
     expect(screen.getByText('Veille hebdomadaire du 12/10/2026')).toBeInTheDocument();
     // Synchro enregistrée : pas de repli sur le catalogue
     expect(apiMock.getTelephoneStats).not.toHaveBeenCalled();

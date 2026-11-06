@@ -1390,6 +1390,12 @@ class ApiClient {
   rechercherFournisseurs({ q, type } = {}) {
     return this.request(`/api/tarifs/fournisseurs/recherche${buildQuery({ q, type })}`, { cache: 'no-store' }, 20_000);
   }
+  // Derniers prix appliqués automatiquement (synchro, collecte, commandes) : information, rien à valider
+  // → { jours, admin, n, tronque, changements: [{ le, marque, modele, type_piece, qualite, source, par, fournisseur,
+  //     client: { ancien, nouveau }, ht: { ancien, nouveau } (admin), vide }] }
+  getPrixRecents({ q, jours, limite } = {}) {
+    return this.request(`/api/tarifs/fournisseurs/recents${buildQuery({ q, jours, limite })}`, { cache: 'no-store' }, 20_000);
+  }
   // Nouveau prix d'achat HT d'une pièce fournisseur : { prix_fournisseur_ht, source: 'manuel' | 'utopya' | 'mobilax',
   // ref_fournisseur?, url_fournisseur? } (ou { prix_client } : pièce verrouillée) → ligne relue avec sa fraîcheur.
   // Le prix client est toujours recalculé par le serveur (règles de marge), jamais ici.
