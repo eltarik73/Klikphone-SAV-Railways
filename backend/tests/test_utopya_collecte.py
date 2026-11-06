@@ -121,6 +121,11 @@ def test_ligne_collecte_pieces_modeles_et_ecarts():
     assert l == {"reference": "973876", "designation": "Ecran Complet Blanc Galaxy A54 5G (A546B)", "marque": "Samsung",
                  "modele": "Galaxy A54 5G", "type_piece": "Ecran", "qualite": "Original", "prix_ht": Decimal("12.50"),
                  "en_stock": None, "url": None}
+    # Favori version 3 : la tuile dit son stock (« Prévenez-moi quand il sera disponible. » = rupture)
+    assert U.ligne_collecte({**_tuile("Batterie iPhone 13 (Ti)", "A2633-BAT", IPHONE), "stock": "rupture"}, "Apple")["en_stock"] is False
+    assert U.ligne_collecte({**_tuile("Batterie iPhone 13 (Ti)", "A2633-BAT", IPHONE), "stock": "ok"}, "Apple")["en_stock"] is True
+    assert U.en_stock_tuile({"stock": "rupture"}) is False and U.en_stock_tuile({"stock": "ok"}) is True and U.en_stock_tuile({}) is None
+    assert U.VERSION == "3" and "Pr[ée]venez-moi quand il sera disponible" in U.SCRIPT and "stock:rupture?'rupture':'ok'" in U.SCRIPT
     cas = {
         "Connecteur de Charge Lumière Stellaire iPhone 13 (ReLife)": ("iPhone 13", "Connecteur de charge", ""),
         "Haut-Parleur iPhone 13": ("iPhone 13", "Haut-parleur", ""),
@@ -179,12 +184,15 @@ def test_traiter_importe_tarifs_et_apple_et_note_le_resume(monkeypatch):
     base = _Base({}, [("Apple", "iPhone 13"), ("Apple", 'MacBook Air 13" A2179 (2020 Intel)')])
     imports = []
 
-    def faux_import(cur, cible, contenu, nom, r, fournisseur="Mobilax", auteur="x", source="mobilax", infos=None):
-        imports.append((cible, nom, fournisseur, auteur, source, contenu.decode("utf-8-sig").count("\n") - 1))
+    def faux_import(cur, cible, contenu, nom, r, fournisseur="Mobilax", auteur="x", source="mobilax", infos=None, lignes=None):
+        imports.append((cible, nom, fournisseur, auteur, source, contenu.decode("utf-8-sig").count("\n") - 1, len(lignes or [])))
         return {"cible": cible, "import_id": len(imports), "lot_id": f"lot-{cible}", "erreur": None,
                 "_cles": {f"tarifs:{len(imports)}"}, **{k: 1 for k in F._COMPTES}}
 
     monkeypatch.setattr(F, "_importer", faux_import)
+    purges, nettoyages = [], []
+    monkeypatch.setattr(F, "purger_prix_incoherents", lambda cur, par, r=None: purges.append(par) or {"examines": 3, "supprimes": 1, "reassignees": 1, "videes": 0, "lot_id": "lot-p"})
+    monkeypatch.setattr(U.prix, "purger_catalogue", lambda cur, f, age: nettoyages.append((f, age)) or 7)
     monkeypatch.setattr(U.prix, "regles", lambda cur: {"tva": 1.2})
     monkeypatch.setattr(F, "_pieces_grille", lambda cur: [
         {"cle": "tarifs:1", "marque": "Apple", "modele": "iPhone 13", "type_piece": "Batterie", "qualite": None},
@@ -199,11 +207,14 @@ def test_traiter_importe_tarifs_et_apple_et_note_le_resume(monkeypatch):
     with _base_utopya(base, monkeypatch):
         r = U.traiter(collecte)
     assert r["ok"] is True and r["erreur"] is None, r
-    assert [(c, f, a, s, n) for c, _, f, a, s, n in imports] == [
-        ("tarifs", "Utopya", "Collecte Utopya", "utopya", 2), ("tarifs_apple_devices", "Utopya", "Collecte Utopya", "utopya", 1)]
+    assert [(c, f, a, s, n, nl) for c, _, f, a, s, n, nl in imports] == [
+        ("tarifs", "Utopya", "Collecte Utopya", "utopya", 2, 2), ("tarifs_apple_devices", "Utopya", "Collecte Utopya", "utopya", 1, 1)]
     assert imports[0][1].startswith("utopya-") and r["produits"] == 3 and r["produits_prix"] == 2
     assert r["lignes_envoyees"] == 2 and r["lignes"] == 2
-    assert r["modifies"] == 2 and r["propositions"] == 2 and r["plus_cher_ailleurs"] == 2
+    assert r["modifies"] == 2 and r["propositions"] == 2 and r["complements"] == 2
+    # Purge des qualités incohérentes après chaque collecte ; catalogue nettoyé seulement après une collecte complète
+    assert purges == ["Collecte Utopya"] and r["purge"]["supprimes"] == 1
+    assert nettoyages and nettoyages[0][0] == "Utopya" and r["catalogue_retires"] == 7
     assert r["lots"] == ["lot-tarifs", "lot-tarifs_apple_devices"] and r["pages_lues"] == 2
     # Diagnostic : l'écran iPhone 13 (sans prix lu) reste sans prix Utopya, la batterie est reconnue
     diag = json.loads(base.params[U.P_DIAG])
@@ -245,13 +256,14 @@ def _params(monkeypatch, valeurs: dict):
 
 
 def test_etat_sante_et_phrase_suivi(monkeypatch):
-    resume = {"ok": True, "modifies": 40, "propositions": 2, "plus_cher_ailleurs": 15, "sans_prix": 120, "produits": 9000,
-              "erreur": None}
+    resume = {"ok": True, "modifies": 40, "propositions": 2, "complements": 15, "purge": {"supprimes": 3}, "sans_prix": 120,
+              "produits": 9000, "erreur": None}
     _params(monkeypatch, {U.P_CLE: CLE, U.P_DERNIERE: "2026-11-04T18:00:00", U.P_OK: "1", U.P_RESUME: json.dumps(resume)})
     e = U.etat()
     assert e["disponible"] and e["configure"] and e["ok"] is True and e["derniere_collecte"] == "2026-11-04T18:00:00"
     assert e["resume"]["modifies"] == 40 and e["erreur"] is None and CLE not in json.dumps(e)
-    assert U.phrase_suivi(e) == ("Terminé : 40 prix mis à jour, 2 à valider dans Klikphone, 15 restés chez Mobilax (moins cher), "
+    assert U.phrase_suivi(e) == ("Terminé : 40 prix mis à jour, 2 à valider dans Klikphone, 15 pièces que Mobilax n'a pas "
+                                 "(complétées par Utopya), 3 prix retirés (qualité d'écran incohérente), "
                                  "120 pièces de la grille sans prix Utopya (9000 produits lus).")
     assert U.phrase_suivi({**e, "en_cours": True}) == "Klikphone met les prix à jour…"
     assert U.sante() == {"configure": True, "derniere_collecte": "2026-11-04T18:00:00", "ok": True, "en_cours": False,

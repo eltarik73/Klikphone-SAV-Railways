@@ -1377,10 +1377,18 @@ class ApiClient {
   creerPiecesCourantesTous({ types } = {}) {
     return this._ecriturePrix('/api/tarifs/reparation-smartphones/pieces-courantes/tous', types ? { types } : {}, 30_000);
   }
-  // Fournisseur préféré pour TOUTE la grille ('Mobilax' | 'Utopya' | null = le moins cher disponible) : enregistré,
-  // puis les coûts retenus sont alignés en tâche de fond (etat.preference_en_cours) → { preference, lance, etat }
+  // Fournisseur retenu pour TOUTE la grille ('Mobilax' | 'Utopya' ; Mobilax tant que rien n'est réglé — jamais « le moins
+  // cher ») : enregistré, puis les coûts retenus sont alignés en tâche de fond (etat.preference_en_cours)
+  // → { preference, lance, etat }
   setPreferenceFournisseur(fournisseur) {
     return this._ecriturePrix('/api/tarifs/fournisseurs/preference', { fournisseur }, 20_000, 'PUT');
+  }
+  // Recherche de tarifs pro, Mobilax et Utopya côte à côte (derniers passages, aucune requête aux sites) :
+  // → { q, admin, preference, modeles: [{ marque, modele, categorie_apple, pieces: [{ …pièce, prix_fournisseurs }] }],
+  //     produits: { Mobilax: [{ ref, nom, prix_ht, client, en_stock, url, type_piece, qualite, tarif_cle, vu_le }], Utopya: […] } (admin),
+  //     nb_produits, tronque }
+  rechercherFournisseurs({ q, type } = {}) {
+    return this.request(`/api/tarifs/fournisseurs/recherche${buildQuery({ q, type })}`, { cache: 'no-store' }, 20_000);
   }
   // Nouveau prix d'achat HT d'une pièce fournisseur : { prix_fournisseur_ht, source: 'manuel' | 'utopya' | 'mobilax',
   // ref_fournisseur?, url_fournisseur? } (ou { prix_client } : pièce verrouillée) → ligne relue avec sa fraîcheur.

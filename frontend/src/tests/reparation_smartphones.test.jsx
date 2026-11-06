@@ -253,7 +253,7 @@ describe('Navbar et onglets : une seule entrée « Tarifs »', () => {
     expect(await screen.findByRole('button', { name: /^Tarifs$/ })).not.toHaveAttribute('aria-current');
   });
 
-  it('onglets : les cinq grilles, l’onglet de la page courante en aria-current, adresses inchangées', () => {
+  it('onglets : les cinq grilles et la recherche fournisseurs, l’onglet de la page courante en aria-current, adresses inchangées', () => {
     render(
       <MemoryRouter initialEntries={['/tech/tarifs-iphone']}>
         <Routes><Route path="*" element={<OngletsTarifs><p>contenu de la grille</p><Adresse /></OngletsTarifs>} /></Routes>
@@ -261,8 +261,8 @@ describe('Navbar et onglets : une seule entrée « Tarifs »', () => {
     );
     const nav = screen.getByRole('navigation', { name: 'Grilles de tarifs' });
     const liens = within(nav).getAllByRole('link');
-    expect(liens.map((l) => l.textContent)).toEqual(['Réparation smartphones', 'Réparation iPhone', 'Vente iPhones', 'Vente smartphones', 'Catalogue téléphones']);
-    expect(liens.map((l) => l.getAttribute('href'))).toEqual(['/tech/tarifs', '/tech/tarifs-reparation', '/tech/tarifs-iphone', '/tech/tarifs-smartphones', '/tech/tarifs-telephones']);
+    expect(liens.map((l) => l.textContent)).toEqual(['Réparation smartphones', 'Réparation iPhone', 'Vente iPhones', 'Vente smartphones', 'Catalogue téléphones', 'Recherche fournisseurs']);
+    expect(liens.map((l) => l.getAttribute('href'))).toEqual(['/tech/tarifs', '/tech/tarifs-reparation', '/tech/tarifs-iphone', '/tech/tarifs-smartphones', '/tech/tarifs-telephones', '/tech/tarifs-fournisseurs']);
     expect(within(nav).getByRole('link', { name: 'Vente iPhones' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'Réparation iPhone' })).not.toHaveAttribute('aria-current');
     expect(screen.getByText('contenu de la grille')).toBeInTheDocument();
@@ -683,6 +683,7 @@ describe('Réparation smartphones : grilles Mobilax et Utopya', () => {
     expect(within(table).getByText('42,00 € HT')).toBeInTheDocument();
     expect(within(table).getByText('42,00 × 1,2 + 60 = 110,40 → 119 €')).toBeInTheDocument();
     expect(within(table).getAllByText('retenu')).toHaveLength(2);        // coût en vigueur importé de Mobilax
+    expect(within(table).getAllByText('En stock')).toHaveLength(2);      // Mobilax a les deux pièces en stock
     expect(within(table).getByText(/réf\. M-1/)).toBeInTheDocument();
     expect(within(table).queryByRole('button', { name: /Mettre à jour le HT/ })).not.toBeInTheDocument();
     expect(within(table).queryByRole('button', { name: /Retenir/ })).not.toBeInTheDocument();
@@ -691,7 +692,8 @@ describe('Réparation smartphones : grilles Mobilax et Utopya', () => {
     await waitFor(() => expect(within(screen.getByRole('table')).getAllByRole('columnheader').map((c) => c.textContent)).toEqual(['Pièce', 'Prix Utopya HT', 'Calcul', 'Prix client avec Utopya']));
     const t2 = screen.getByRole('table');
     expect(within(t2).getByText('39,90 € HT')).toBeInTheDocument();
-    expect(within(t2).getByText('Rupture')).toBeInTheDocument();
+    expect(within(t2).getByText('Rupture')).toBeInTheDocument();           // Utopya n'a plus l'écran
+    expect(within(t2).queryByText('En stock')).not.toBeInTheDocument();
     expect(within(t2).getByText('109 €')).toBeInTheDocument();
     expect(within(t2).queryByText('retenu')).not.toBeInTheDocument();
     expect(within(t2).getByText('pas de prix Utopya')).toBeInTheDocument();

@@ -324,6 +324,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
   const connu = !!d && (d.connu || (d.ht !== null && d.ht !== undefined) || (d.client !== null && d.client !== undefined));
   const retenu = fournisseurRetenu(piece) === grille;
   const rupture = d?.en_stock === false;
+  const stockDit = d?.en_stock === true || d?.en_stock === false;
   const ligneDate = d ? { prix_maj_le: d.prix_maj_le || d.vu_le, prix_source: 'import' } : null;
   const badgeDate = ligneDate?.prix_maj_le ? <BadgeDatePrix row={ligneDate} seuils={seuils} court /> : null;
   return (
@@ -338,7 +339,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
             </div>
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
               {retenu && <span className="badge badge-sm badge-success">retenu</span>}
-              {rupture && <span className="badge badge-sm badge-danger">Rupture</span>}
+              {stockDit && <span className={`badge badge-sm ${rupture ? 'badge-danger' : 'badge-success'}`}>{rupture ? 'Rupture' : 'En stock'}</span>}
               {!connu && <span className="badge badge-sm badge-neutral">pas de prix {grille}</span>}
             </div>
           </div>
@@ -409,6 +410,9 @@ export default function PieceFournisseurRow({
   const liens = piece.liens?.utopya || piece.liens?.mobilax ? piece.liens : liensFournisseur({ marque, modele, typePiece: piece.type_piece });
   const htConnu = piece.prix_fournisseur_ht !== null && piece.prix_fournisseur_ht !== undefined;
   const classeLigne = `table-row ${!enStock ? 'opacity-80' : ''}`;
+  // Le fournisseur dont vient le coût retenu annonce-t-il une rupture ? (grille comparative, dernier passage)
+  const retenu = fournisseurRetenu(piece);
+  const ruptureFournisseur = !!retenu && piece.prix_fournisseurs?.[retenu]?.en_stock === false;
 
   if (grille && grille !== 'retenue') {
     return <LigneGrilleFournisseur piece={piece} marque={marque} modele={modele} grille={grille} htVisible={htVisible} seuils={seuils} />;
@@ -453,6 +457,7 @@ export default function PieceFournisseurRow({
                 ) : (
                   <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
                 )}
+                {ruptureFournisseur && <span className="badge badge-sm badge-danger">Rupture chez {retenu}</span>}
                 {isAdmin && onVerrou
                   ? <BoutonVerrou verrouille={verrou} onClick={() => onVerrou(piece)} disabled={occupe || envoi} nom={`le prix de ${nom}`} />
                   : <BoutonVerrou verrouille={verrou} lectureSeule nom={nom} />}

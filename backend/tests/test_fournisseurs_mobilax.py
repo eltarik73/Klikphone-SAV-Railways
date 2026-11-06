@@ -220,8 +220,8 @@ def test_planifier_applique_propose_et_laisse():
     assert plan["propositions"] == [{"cle": "tarifs:2", "ht": "20.0", "label": "tarifs:2"}]
     assert (plan["verrouillees"], plan["obsoletes"], plan["variantes"], plan["a_valider"]) == (1, 1, 2, 1)
     assert F.planifier({"reconnues": []}) == {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0,
-                                               "variantes": 0, "a_valider": 0, "remplaces": 0, "plus_cher_ailleurs": 0,
-                                               "autre_fournisseur_choisi": 0, "variations_appliquees": 0}
+                                               "variantes": 0, "a_valider": 0, "remplaces": 0,
+                                               "autre_fournisseur_choisi": 0, "complements": 0, "variations_appliquees": 0}
     # Synchro et collecte : rien à valider, la grosse variation est appliquée
     plan = F.planifier(ap, proposer=False)
     assert plan["lignes"] == [2, 3, 5, 9, 10] and plan["propositions"] == [] and plan["a_valider"] == 0
@@ -1019,22 +1019,32 @@ def test_lignes_structurees_reconnues_par_le_moteur_d_import():
         assert [e["cle"] for e in trouves] == attendu, (p["name"], raison)
 
 
-def test_planifier_moins_disant_entre_fournisseurs():
+def test_planifier_fournisseur_retenu_jamais_le_moins_cher():
     desc = lambda f, ht, source="import": {"fournisseur": f, "ht": ht, "prix_source": source, "prix_maj_le": datetime.now()}
-    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 12, "Utopya") is True          # Mobilax moins cher : laissé
-    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 10, "Utopya") is True          # égal : laissé
-    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 9, "Utopya") is False          # Utopya moins cher : appliqué
-    assert F.moins_cher_ailleurs(desc("Utopya", 10), 12, "Utopya") is False          # même fournisseur
-    assert F.moins_cher_ailleurs(desc("Mobilax", 10, "estimation_2026_02"), 12, "Utopya") is False   # estimé : remplacé
-    assert F.moins_cher_ailleurs(desc(None, 10), 12, "Utopya") is False and F.moins_cher_ailleurs(None, 12, "Utopya") is False
-    assert F.moins_cher_ailleurs(desc("Mobilax", 10), 12, None) is False
+    # Grille retenue chez Mobilax (défaut) : un prix Utopya ne touche pas une pièce dont le coût vient de Mobilax,
+    # qu'il soit moins cher (9) ou plus cher (12) — le prix ne décide jamais
+    assert F.autre_fournisseur_retenu(desc("Mobilax", 10), "Utopya") is True
+    assert F.autre_fournisseur_retenu(desc("Utopya", 10), "Utopya") is False                              # même fournisseur
+    assert F.autre_fournisseur_retenu(desc("Mobilax", 10, "estimation_2026_02"), "Utopya") is False       # estimé : complété
+    assert F.autre_fournisseur_retenu(desc(None, 10), "Utopya") is False                                   # coût d'ailleurs : remplacé
+    assert F.autre_fournisseur_retenu(None, "Utopya") is False and F.autre_fournisseur_retenu(desc("Mobilax", 10), None) is False
+    assert F.autre_fournisseur_retenu(desc("Mobilax", 10), "Utopya", prefere="Utopya") is False            # Utopya retenu : appliqué
+    assert F.autre_fournisseur_retenu(desc("Utopya", 10), "Mobilax") is False                             # Mobilax retenu : appliqué
+    assert F.autre_fournisseur_retenu(desc("Utopya", 10), "Mobilax", prefere="Utopya") is True
     ap = {"reconnues": [_rec(1, "tarifs:1", 12.0), _rec(2, "tarifs:2", 9.0), _rec(3, "tarifs:3", 30.0, ["variation"])]}
     descs = {"tarifs:1": desc("Mobilax", 10), "tarifs:2": desc("Mobilax", 10), "tarifs:3": desc("Mobilax", 10)}
     plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Utopya")
-    assert plan["lignes"] == [2] and plan["plus_cher_ailleurs"] == 2 and plan["propositions"] == []
-    # Même fournisseur : logique habituelle (variation → proposition)
+    assert plan["lignes"] == [] and plan["autre_fournisseur_choisi"] == 3 and plan["complements"] == 0 and plan["propositions"] == []
+    # Utopya retenu pour la grille : tout s'applique (variation → proposition, logique habituelle)
+    plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Utopya", prefere="Utopya")
+    assert plan["lignes"] == [1, 2] and plan["autre_fournisseur_choisi"] == 0 and [p["cle"] for p in plan["propositions"]] == ["tarifs:3"]
     plan = F.planifier(ap, descs, {"jours_perime": 180}, fournisseur="Mobilax")
-    assert plan["lignes"] == [1, 2] and plan["plus_cher_ailleurs"] == 0 and [p["cle"] for p in plan["propositions"]] == ["tarifs:3"]
+    assert plan["lignes"] == [1, 2] and plan["autre_fournisseur_choisi"] == 0 and plan["complements"] == 0
+    # Complément : Mobilax retenu mais n'a pas la pièce (coût estimé, ou d'Utopya) → Utopya l'applique et le compte
+    descs2 = {"tarifs:1": desc("Mobilax", 10, "estimation_2026_02"), "tarifs:2": desc("Utopya", 10), "tarifs:3": desc(None, 10)}
+    plan = F.planifier(ap, descs2, {"jours_perime": 180}, fournisseur="Utopya")
+    assert plan["lignes"] == [1, 2] and plan["complements"] == 3 and plan["remplaces"] == 0 and plan["autre_fournisseur_choisi"] == 0
+    assert [p["cle"] for p in plan["propositions"]] == ["tarifs:3"]      # coût réel d'ailleurs + grosse variation : proposé
 
 
 # ─── Nappe power, produits sans prix, requêtes iPad et par famille, fournisseur choisi ──
@@ -1110,16 +1120,16 @@ def test_planifier_respecte_le_fournisseur_choisi():
         "tarifs:1": {"ht": 20, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": "Mobilax"},
         # Le gérant a choisi Utopya : jamais touché par Mobilax
         "tarifs:2": {"ht": 50, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": "Utopya"},
-        # Sans choix : moins-disant (Utopya à 20 < 30 → laissé)
+        # Sans choix : la grille est retenue chez Mobilax par défaut → Mobilax l'applique, même plus cher (30 > 20)
         "tarifs:3": {"ht": 20, "fournisseur": "Utopya", "prix_source": "import", "prix_maj_le": recent, "fournisseur_choisi": None},
     }
     plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax")
-    assert plan["lignes"] == [1] and plan["autre_fournisseur_choisi"] == 1 and plan["plus_cher_ailleurs"] == 1
-    assert F.fournisseur_choisi(descs["tarifs:1"]) == "Mobilax" and F.fournisseur_choisi({}) is None
+    assert plan["lignes"] == [1, 3] and plan["autre_fournisseur_choisi"] == 1 and plan["complements"] == 0
+    assert F.fournisseur_choisi(descs["tarifs:1"]) == "Mobilax" and F.fournisseur_choisi({}) == F.PREFERENCE_DEFAUT == "Mobilax"
     # Préférence pour toute la grille : vaut pour les pièces sans choix propre
     assert F.fournisseur_choisi({}, "Utopya") == "Utopya" and F.fournisseur_choisi(descs["tarifs:1"], "Utopya") == "Mobilax"
     plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax", prefere="Mobilax")
-    assert plan["lignes"] == [1, 3] and plan["autre_fournisseur_choisi"] == 1 and plan["plus_cher_ailleurs"] == 0
+    assert plan["lignes"] == [1, 3] and plan["autre_fournisseur_choisi"] == 1 and plan["complements"] == 0
     plan = F.planifier(ap, descs, {"jours_perime": 180}, maintenant=maintenant, fournisseur="Mobilax", prefere="Utopya")
     assert plan["lignes"] == [1] and plan["autre_fournisseur_choisi"] == 2
 
@@ -1150,8 +1160,13 @@ def test_importer_memorise_le_prix_du_fournisseur(monkeypatch):
     monkeypatch.setattr(F, "_fermer_propositions", lambda cur, lot, auteur: 0)
     notes = []
     monkeypatch.setattr(F.prix, "enregistrer_prix_fournisseur", lambda cur, f, s, recs, infos: notes.append((f, s, recs, infos)) or 1)
-    monkeypatch.setattr(F, "preference", lambda cur=None: None)
+    monkeypatch.setattr(F, "preference", lambda cur=None: "Mobilax")
+    catalogue = []
+    monkeypatch.setattr(F.prix, "enregistrer_catalogue", lambda cur, f, s, lignes, recs: catalogue.append((f, s, lignes, recs)) or len(lignes))
     base = _Base()
+    lignes = [{"reference": "R1", "designation": "x", "prix_ht": 12}]
     res = F._importer(base, "tarifs", b"", "x.csv", {}, fournisseur="Utopya", source="utopya",
-                      infos={"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}})
+                      infos={"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}}, lignes=lignes)
     assert res["modifies"] == 1 and notes == [("Utopya", "utopya", ap["reconnues"], {"R1": {"url": "https://www.utopya.fr/x", "en_stock": None}})]
+    # Les lignes du passage vont au catalogue fournisseur (recherche de tarifs pro), avec la ligne de la grille reçue
+    assert catalogue == [("Utopya", "utopya", lignes, ap["reconnues"])] and res["complements"] == 1

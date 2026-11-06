@@ -291,28 +291,53 @@ le numéro de téléphone complet reste accepté sans limite de temps.
 
 - Le menu n'a qu'une entrée **Tarifs** (`Navbar.jsx`, `match: cheminsTarifs(basePath)` : allumée sur toutes les grilles).
   La page porte les onglets Réparation smartphones (`/tarifs`), Réparation iPhone (`/tarifs-reparation`), Vente iPhones
-  (`/tarifs-iphone`), Vente smartphones (`/tarifs-smartphones`), Catalogue téléphones (`/tarifs-telephones`) — chaque
-  route de `App.jsx` enveloppe sa page dans `<OngletsTarifs>` ; adresses inchangées (liens, favoris, tuiles).
+  (`/tarifs-iphone`), Vente smartphones (`/tarifs-smartphones`), Catalogue téléphones (`/tarifs-telephones`), Recherche
+  fournisseurs (`/tarifs-fournisseurs`, cf. section suivante) — chaque route de `App.jsx` enveloppe sa page dans
+  `<OngletsTarifs>` ; adresses inchangées (liens, favoris, tuiles).
 - Plus de rubrique « Tarifs » dépliable ni de sous-groupe « Beta » ; `/telephones-vente` (« Mes téléphones », doublon du
   catalogue) redirige vers `/tarifs-telephones`. « Prix à revoir » et « Site Tarifs iPhone » restent dans Administration.
 
-## Grille comparative des fournisseurs (`tarifs_fournisseurs_prix`, `prix.choisir_fournisseur`)
+## Grille comparative des fournisseurs (`tarifs_fournisseurs_prix`, `prix.cible_fournisseur`)
 
 - **Un prix par fournisseur et par pièce** : chaque import fournisseur (synchro Mobilax, collecte Utopya) note le prix de
   CE fournisseur dans `tarifs_fournisseurs_prix` (`prix.enregistrer_prix_fournisseur` : clé de pièce, fournisseur, HT de la
   variante la moins chère, référence, désignation, page, `en_stock`, `vu_le`, `prix_maj_le`), retenu ou non. Le coût retenu
-  reste `prix_fournisseur_ht` / `*_prix_ht` (colonne `fournisseur` = d'où il vient) : moins-disant par défaut.
+  reste `prix_fournisseur_ht` / `*_prix_ht` (colonne `fournisseur` = d'où il vient).
 - **Rien à valider** : la synchro et la collecte appliquent les prix du fournisseur, grosses variations comprises
   (`planifier(proposer=False)`, compteur `variations_appliquees`) ; les propositions ne servent plus qu'aux commandes.
-- **Préférence pour toute la grille** : param `FOURNISSEUR_PREFERE` (`Mobilax`, `Utopya`, vide = le moins cher disponible),
-  `PUT /api/tarifs/fournisseurs/preference {fournisseur}` (admin) → `prix.appliquer_preference` aligne les coûts retenus de
-  toutes les pièces en tâche de fond (`lancer_preference`, un lot, `etat().preference_en_cours / preference_resultat`) ;
-  `planifier` la respecte (`fournisseur_choisi(desc, prefere)`). Bloc « Prix retenus dans la grille » de SynchroFournisseur.
-  Un choix par pièce reste possible (`fournisseur_choisi`, `PATCH …/{id}/fournisseur`, `prix.choisir_fournisseur`), sans UI.
+- **Fournisseur retenu pour toute la grille — jamais « le moins cher »** (décision du gérant, 06/11/2026) : param
+  `FOURNISSEUR_PREFERE` (`Mobilax` | `Utopya` ; vide = `fournisseurs.PREFERENCE_DEFAUT` = Mobilax, `etat().preference_defaut`),
+  `PUT /api/tarifs/fournisseurs/preference {fournisseur}` (admin, obligatoire) → `prix.appliquer_preference` aligne les coûts
+  retenus en tâche de fond (`lancer_preference`, un lot, `etat().preference_en_cours / preference_resultat`).
+  `prix.cible_fournisseur(dispo, desc, prefere)` : choix à la pièce (`fournisseur_choisi`), sinon le préféré, sinon l'autre
+  quand le préféré n'a pas la pièce (complément) — le prix ne décide jamais. `planifier` : une pièce retenue chez l'autre
+  fournisseur dont le coût en vigueur vient bien de lui et reste une référence est laissée (`autre_fournisseur_retenu`,
+  compteur `autre_fournisseur_choisi`) ; sinon le prix est appliqué (`complements`). Bloc « Fournisseur retenu pour la
+  grille : Mobilax | Utopya » de SynchroFournisseur. Choix par pièce possible (`PATCH …/{id}/fournisseur`), sans UI.
+- **Cohérence qualité ↔ produit** (`fournisseurs.qualite_coherente`, `purger_prix_incoherents`) : vérifié sur le Pixel 6
+  (Mobilax « Ecran Tactile Original … G949-00175-01 » = officiel, « Original Refurb (PIEC) » = reconditionné, « Oled » =
+  compatible ; Utopya « Ecran Complet Google Pixel 6 » réf. 420921, 97 € = officiel, « (ReLife) » 54,91 € = compatible).
+  Un produit reconditionné (Pulled, Refurb, Assembled, Grade…) ou compatible (ReLife, BOLT, SPARK, OLED, Incell…, ou Utopya
+  sans étiquette à réf. alphanumérique) ne tient jamais la ligne « Original » ; la ligne « Reconditionné » exige un
+  marqueur de reconditionné ; une ligne compatible refuse l'officiel. La purge (après chaque passage et au démarrage,
+  `_boucle` → `purger_qualites`) retire ces prix de la grille comparative et corrige la pièce dont le coût venait d'un tel
+  produit : prix cohérent du fournisseur retenu ou de l'autre, sinon « prix à renseigner » (`prix.vider_prix` : HT 0,
+  client 0, `prix_source` a_renseigner) — jamais un prix faux gardé. Résumé `purge {examines, supprimes, reassignees, videes}`.
+- **Catalogue fournisseur et recherche de tarifs pro** : `fournisseurs_catalogue` (`prix.enregistrer_catalogue`, appelé par
+  `_importer(lignes=)` : un produit par (fournisseur, ref) tel que le fournisseur le nomme, HT, `en_stock`, fiche, marque /
+  modèle / pièce / qualité lus, `tarif_cle` reçue, texte `recherche` normalisé ; `purger_catalogue` après un passage complet).
+  `GET /api/tarifs/fournisseurs/recherche?q=&type=` → modèles de la grille dont le nom porte chaque mot (jetons d'un chiffre
+  gardés : « Pixel 6 »), pièces avec `prix_fournisseurs` des deux fournisseurs, et pour l'admin les produits du catalogue
+  (`prix.rechercher_catalogue`, prix client qu'ils donneraient). Page `RechercheFournisseursPage.jsx` (onglet « Recherche
+  fournisseurs ») : Pièce | Mobilax | Utopya | Retenu (HT admin, prix client, En stock / Rupture, réf., fiche, « retenu »),
+  filtre par type, `?q=&type=`, catalogues Mobilax / Utopya côte à côte (admin), code admin proposé au personnel.
+- **Stock** : Mobilax `quantity` / `is_availibility_alert` (`en_stock_produit`) ; Utopya, favori **version 3** : la tuile en
+  rupture porte « Prévenez-moi quand il sera disponible. » (`stock: 'rupture' | 'ok'`, `utopya.en_stock_tuile`). Affiché
+  dans les grilles fournisseur (« En stock » / « Rupture »), « Rupture chez X » sur le coût retenu, et dans la recherche.
 - **Trois grilles** : `GET /reparation-smartphones/modele` → pièce `prix_fournisseurs {Mobilax: {ht (admin), client, calcul
   (admin), ref, url, en_stock, vu_le, connu}, Utopya: …}` ; dans Réparation smartphones, « Prix retenus | Grille Mobilax |
   Grille Utopya » (`?grille=mobilax|utopya`, `TableauPieces grille=`, `LigneGrilleFournisseur` en lecture seule : prix
-  relevé, calcul, prix client qu'il donnerait, « retenu », « Rupture »).
+  relevé, calcul, prix client qu'il donnerait, « retenu », « En stock » / « Rupture »).
 - **Qualités d'écran** : « Original » = l'officiel seulement (Service Pack, « Ecran Tactile Original », « Ecran Original
   Google ») ; « Original Pulled / Refurb / Assembled » (Mobilax) et « Pulled » (Utopya) = Reconditionnee, jamais la ligne
   Original (`REPLI_ECRAN` sans Original ← Reconditionnee). Utopya : sans étiquette, SKU numérique = origine
@@ -331,8 +356,9 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   `PIECES_COURANTES` = écran, batterie, connecteur, vitre arrière, bouton power ;
   `POST /reparation-smartphones/pieces-courantes/tous {types}` (admin) les crée sur tous les modèles de la grille (bouton
   « Compléter tous les modèles »). Une nappe est un accessoire pour toute autre pièce (« Nappe LCD » ≠ écran).
-- **Tests** : `tests/test_grille_fournisseurs.py`, `test_prix_moteur.py` (iPad, nappe power), `test_fournisseurs_mobilax.py`
-  (familles, débordement, choix), vitest `reparation_smartphones.test.jsx` (« grille comparative »).
+- **Tests** : `tests/test_grille_fournisseurs.py`, `test_recherche_fournisseurs.py` (cohérence, purge, catalogue, route),
+  `test_prix_moteur.py` (iPad, nappe power), `test_fournisseurs_mobilax.py` (familles, débordement, fournisseur retenu),
+  vitest `reparation_smartphones.test.jsx` (« grille comparative »), `recherche_fournisseurs.test.jsx`, `synchro_fournisseur.test.jsx`.
 
 ## Batterie changée « par l'écran » (`app/services/par_ecran.py`)
 

@@ -731,8 +731,9 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
 # ─── Prix par fournisseur (grille comparative Mobilax / Utopya) ──
 # tarifs_fournisseurs_prix garde, pour chaque pièce et chaque fournisseur, le dernier prix HT relevé
 # (synchro Mobilax, collecte Utopya, saisie admin), qu'il soit retenu ou non comme coût de la pièce.
-# Le coût retenu reste prix_fournisseur_ht / *_prix_ht (colonne `fournisseur` = d'où il vient) :
-# le moins-disant, sauf fournisseur_choisi posé par le gérant (choisir_fournisseur).
+# Le coût retenu reste prix_fournisseur_ht / *_prix_ht (colonne `fournisseur` = d'où il vient) : celui du
+# fournisseur retenu par le gérant (fournisseur_choisi à la pièce, sinon la préférence de la grille, Mobilax
+# par défaut), ou de l'autre quand le retenu n'a pas la pièce (cible_fournisseur). Jamais « le moins cher ».
 
 FOURNISSEURS_CONNUS = ("Mobilax", "Utopya")
 
@@ -826,11 +827,63 @@ def prix_fournisseurs(cur, cles) -> dict:
     return out
 
 
-def choisir_fournisseur(cur, cle: str, fournisseur, par: str, r=None) -> dict:
-    """Le gérant choisit le fournisseur d'une pièce (None = moins-disant) : colonne fournisseur_choisi,
-    et le coût HT retenu devient le prix connu de ce fournisseur (en « auto » : le moins cher disponible),
-    sauf pièce verrouillée. La synchro et la collecte respectent ensuite ce choix (fournisseurs.planifier).
-    → {cle, fournisseur_choisi, applique: {…appliquer_ht, fournisseur} | None, verrouille, disponibles}"""
+def cible_fournisseur(dispo: dict, desc, prefere) -> Optional[dict]:
+    """Le prix de fournisseur à retenir pour une pièce parmi `dispo` ({fournisseur: {ht | prix_ht, ref |
+    ref_fournisseur, url, en_stock…}}, cf. prix_fournisseurs / tarifs_fournisseurs_prix) : celui du fournisseur
+    choisi pour la pièce (fournisseur_choisi), sinon du préféré de la grille (`prefere`, jamais vide : Mobilax par
+    défaut), sinon — s'il n'a pas la pièce — de l'autre fournisseur qui l'a (complément). Le prix lui-même ne
+    décide jamais (le moins cher n'est pas un critère). → {fournisseur, ht (Decimal), ref, url, en_stock} | None"""
+    choix = " ".join(str((desc or {}).get("fournisseur_choisi") or "").split()) if isinstance(desc, dict) else ""
+    choix = fournisseur_propre(choix or prefere or FOURNISSEURS_CONNUS[0])
+    for f in [choix] + [x for x in FOURNISSEURS_CONNUS if x != choix]:
+        d = (dispo or {}).get(f)
+        if not d:
+            continue
+        ht = d.get("ht", d.get("prix_ht"))
+        try:
+            ht = Decimal(str(ht)) if ht is not None else None
+        except InvalidOperation:
+            ht = None
+        if ht is not None and ht > 0:
+            return {"fournisseur": f, "ht": ht, "ref": d.get("ref", d.get("ref_fournisseur")), "url": d.get("url"),
+                    "en_stock": d.get("en_stock")}
+    return None
+
+
+def noter_fournisseur_retenu(cur, cle: str, cible: dict) -> None:
+    """Colonnes fournisseur / ref_fournisseur / url_fournisseur de la pièce d'après le prix retenu (cible_fournisseur)."""
+    table, ligne_id, _ = parse_tarif_cle(cle)
+    if table == "tarifs":
+        cur.execute("UPDATE tarifs SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur), "
+                    "url_fournisseur = COALESCE(%s, url_fournisseur) WHERE id = %s",
+                    (cible["fournisseur"], cible.get("ref"), cible.get("url"), ligne_id))
+    else:
+        cur.execute("UPDATE tarifs_apple_devices SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur) "
+                    "WHERE id = %s", (cible["fournisseur"], cible.get("ref"), ligne_id))
+
+
+def vider_prix(cur, cle: str, par: str, lot_id: str = None) -> dict:
+    """Ramène une pièce fournisseur (table tarifs) à « prix à renseigner » : coût 0, prix client 0, sans date, sans
+    source datée ni fournisseur — l'état d'une pièce courante pré-créée, remplie par le passage suivant. Historique
+    dans le lot (annulable). Les batteries « changées par l'écran » du modèle sont recalculées (sans cet écran).
+    → résultat d'ecrire_prix_lot"""
+    table, ligne_id, _ = parse_tarif_cle(cle)
+    if table != "tarifs":
+        raise ValueError("Seule une pièce de la grille des pièces peut être vidée")
+    res = ecrire_prix_lot(cur, "tarifs", [(ligne_id, "prix_fournisseur_ht", 0), (ligne_id, "prix_client", 0)],
+                          "import", par, lot_id)
+    if not res["verrouilles"]:
+        cur.execute("UPDATE tarifs SET prix_source = 'a_renseigner', prix_maj_le = NULL, fournisseur = NULL, "
+                    "ref_fournisseur = NULL, url_fournisseur = NULL WHERE id = %s", (ligne_id,))
+    return res
+
+
+def choisir_fournisseur(cur, cle: str, fournisseur, par: str, r=None, prefere=None) -> dict:
+    """Le gérant choisit le fournisseur d'une pièce (None = suivre la préférence de la grille) : colonne
+    fournisseur_choisi, et le coût HT retenu devient le prix connu de ce fournisseur (cible_fournisseur : l'autre
+    s'il n'a pas la pièce), sauf pièce verrouillée. La synchro et la collecte respectent ensuite ce choix
+    (fournisseurs.planifier). → {cle, fournisseur_choisi, applique: {…appliquer_ht, fournisseur} | None,
+    verrouille, disponibles}"""
     r = r or regles(cur)
     table, ligne_id, col = parse_tarif_cle(cle)
     if table not in ("tarifs", "tarifs_apple_devices"):
@@ -844,35 +897,26 @@ def choisir_fournisseur(cur, cle: str, fournisseur, par: str, r=None) -> dict:
     cle = tarif_cle(table, ligne_id, col)
     desc = decrire_tarifs(cur, [cle], r).get(cle)
     dispo = prix_fournisseurs(cur, [cle]).get(cle, {})
-    candidats = [(nom, d) for nom, d in dispo.items() if d["ht"] and (f is None or nom == f)]
-    if f is None:
-        candidats = [c for c in candidats if c[1]["en_stock"] is not False] or candidats
-    candidats.sort(key=lambda c: c[1]["ht"])
+    cible = cible_fournisseur(dispo, {"fournisseur_choisi": f}, prefere) if desc else None
     applique, verrouille = None, False
-    if candidats and desc:
-        nom, d = candidats[0]
+    if cible is not None:
         if desc["verrou"]:
             verrouille = True
         else:
-            applique = appliquer_ht(cur, cle, d["ht"], nom.lower(), par, nouveau_lot(), r)
-            applique["fournisseur"] = nom
-            if table == "tarifs":
-                cur.execute("UPDATE tarifs SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur), "
-                            "url_fournisseur = COALESCE(%s, url_fournisseur) WHERE id = %s",
-                            (nom, d.get("ref"), d.get("url"), ligne_id))
-            else:
-                cur.execute("UPDATE tarifs_apple_devices SET fournisseur = %s, "
-                            "ref_fournisseur = COALESCE(%s, ref_fournisseur) WHERE id = %s", (nom, d.get("ref"), ligne_id))
+            applique = appliquer_ht(cur, cle, cible["ht"], cible["fournisseur"].lower(), par, nouveau_lot(), r)
+            applique["fournisseur"] = cible["fournisseur"]
+            noter_fournisseur_retenu(cur, cle, cible)
     return {"cle": cle, "fournisseur_choisi": f, "applique": applique, "verrouille": verrouille,
             "disponibles": sorted(dispo)}
 
 
 def appliquer_preference(cur, prefere, par: str, r=None) -> dict:
-    """Aligne le coût retenu de chaque pièce sur la préférence : prix connu du fournisseur préféré (ou, sans
-    préférence, le moins cher disponible), sauf pièce verrouillée ; un fournisseur choisi à la pièce prime.
-    Un seul lot (annulable). → {examinees, modifies, verrouillees, inchangees, sans_prix, lot_id}"""
+    """Aligne le coût retenu de chaque pièce sur le fournisseur retenu : prix connu du fournisseur préféré de la
+    grille (`prefere`, Mobilax par défaut) — un fournisseur choisi à la pièce prime —, ou de l'autre quand le
+    retenu n'a pas la pièce (cible_fournisseur : jamais le moins cher) ; pièce verrouillée laissée. Un seul lot
+    (annulable). → {examinees, modifies, verrouillees, inchangees, sans_prix, lot_id}"""
     r = r or regles(cur)
-    f = fournisseur_propre(prefere) if prefere else None
+    f = fournisseur_propre(prefere or FOURNISSEURS_CONNUS[0])
     cur.execute("SELECT tarif_cle, fournisseur, prix_ht, ref_fournisseur, url, en_stock "
                 "FROM tarifs_fournisseurs_prix WHERE prix_ht IS NOT NULL")
     par_cle = {}
@@ -887,34 +931,135 @@ def appliquer_preference(cur, prefere, par: str, r=None) -> dict:
         desc = descs.get(cle)
         if desc is None or desc.get("obsolete"):
             continue
-        choix = " ".join(str(desc.get("fournisseur_choisi") or "").split()) or f
-        if choix:
-            cible = dispo.get(choix)
-        else:
-            cands = [d for d in dispo.values() if d.get("en_stock") is not False] or list(dispo.values())
-            cible = min(cands, key=lambda d: Decimal(str(d["prix_ht"]))) if cands else None
+        cible = cible_fournisseur(dispo, desc, f)
         if cible is None:
             out["sans_prix"] += 1
             continue
         if desc.get("verrou"):
             out["verrouillees"] += 1
             continue
-        ht = Decimal(str(cible["prix_ht"]))
-        meme = str(desc.get("fournisseur") or "").lower() == str(cible["fournisseur"]).lower()
-        if meme and desc.get("ht") is not None and Decimal(str(desc["ht"])) == ht:
+        meme = str(desc.get("fournisseur") or "").lower() == cible["fournisseur"].lower()
+        if meme and desc.get("ht") is not None and Decimal(str(desc["ht"])) == cible["ht"]:
             out["inchangees"] += 1
             continue
-        appliquer_ht(cur, cle, ht, str(cible["fournisseur"]).lower(), par, lot, r)
-        table, ligne_id, _ = parse_tarif_cle(cle)
-        if table == "tarifs":
-            cur.execute("UPDATE tarifs SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur), "
-                        "url_fournisseur = COALESCE(%s, url_fournisseur) WHERE id = %s",
-                        (cible["fournisseur"], cible.get("ref_fournisseur"), cible.get("url"), ligne_id))
-        else:
-            cur.execute("UPDATE tarifs_apple_devices SET fournisseur = %s, ref_fournisseur = COALESCE(%s, ref_fournisseur) "
-                        "WHERE id = %s", (cible["fournisseur"], cible.get("ref_fournisseur"), ligne_id))
+        appliquer_ht(cur, cle, cible["ht"], cible["fournisseur"].lower(), par, lot, r)
+        noter_fournisseur_retenu(cur, cle, cible)
         out["modifies"] += 1
         out["lot_id"] = lot
+    return out
+
+
+# ─── Catalogue fournisseur (recherche de tarifs pro) ─────────────
+# fournisseurs_catalogue garde chaque produit vu chez un fournisseur (synchro Mobilax, collecte Utopya) tel
+# que le fournisseur le nomme, avec son prix HT, son stock, sa fiche, et la lecture qu'en fait Klikphone
+# (marque, modèle, pièce, qualité, ligne de la grille reçue) : la page « Recherche fournisseurs » cherche dedans,
+# Mobilax et Utopya côte à côte, sans rien demander aux sites.
+
+def _texte_recherche(*parties) -> str:
+    return " ".join(_norm(" ".join(str(p or "") for p in parties)).split())[:400]
+
+
+def enregistrer_catalogue(cur, fournisseur: str, source: str, lignes, reconnues=None) -> int:
+    """Produits d'un passage → fournisseurs_catalogue (un par référence et fournisseur) : prix, stock, fiche, lecture
+    (marque, modèle, pièce, qualité) et ligne de la grille reçue (reconnues : import_prix.apercu, par référence).
+    prix_maj_le renouvelé quand le prix change ; un produit sans prix (rupture) garde son dernier prix connu."""
+    f = fournisseur_propre(fournisseur)
+    if not f:
+        return 0
+    cles = {}
+    for rec in reconnues or []:
+        ref = str(rec.get("ref") or "").strip()
+        if ref and rec.get("cle"):
+            cles.setdefault(ref, rec["cle"])
+    vus, valeurs = set(), []
+    for l in lignes or []:
+        if not isinstance(l, dict):
+            continue
+        ref = str(l.get("reference") or "").strip()[:120]
+        nom = " ".join(str(l.get("designation") or "").split())[:250]
+        if not ref or not nom or ref in vus:
+            continue
+        vus.add(ref)
+        ht = l.get("prix_ht")
+        try:
+            ht = Decimal(str(ht)).quantize(Decimal("0.01")) if ht not in (None, "") else None
+        except InvalidOperation:
+            ht = None
+        en_stock = l.get("en_stock")
+        marque = (str(l.get("marque") or "").strip()[:40]) or None
+        modele = (str(l.get("modele") or "").strip()[:250]) or None
+        piece = (str(l.get("type_piece") or "").strip()[:60]) or None
+        qualite = (str(l.get("qualite") or "").strip()[:40]) or None
+        valeurs.append((f, ref, nom, ht, None if en_stock is None else bool(en_stock), (l.get("url") or None),
+                        marque, modele, piece, qualite, cles.get(ref), _texte_recherche(marque, modele, nom, piece, qualite),
+                        source, ht))
+    if not valeurs:
+        return 0
+    execute_values(cur, """
+        INSERT INTO fournisseurs_catalogue
+            (fournisseur, ref, nom, prix_ht, en_stock, url, marque, modele, type_piece, qualite, tarif_cle, recherche,
+             source, vu_le, prix_maj_le)
+        VALUES %s
+        ON CONFLICT (fournisseur, ref) DO UPDATE SET
+            prix_maj_le = CASE WHEN EXCLUDED.prix_ht IS NOT NULL
+                                    AND fournisseurs_catalogue.prix_ht IS DISTINCT FROM EXCLUDED.prix_ht
+                               THEN NOW() ELSE fournisseurs_catalogue.prix_maj_le END,
+            prix_ht = COALESCE(EXCLUDED.prix_ht, fournisseurs_catalogue.prix_ht),
+            nom = EXCLUDED.nom, en_stock = EXCLUDED.en_stock,
+            url = COALESCE(EXCLUDED.url, fournisseurs_catalogue.url),
+            marque = COALESCE(EXCLUDED.marque, fournisseurs_catalogue.marque),
+            modele = COALESCE(EXCLUDED.modele, fournisseurs_catalogue.modele),
+            type_piece = COALESCE(EXCLUDED.type_piece, fournisseurs_catalogue.type_piece),
+            qualite = COALESCE(EXCLUDED.qualite, fournisseurs_catalogue.qualite),
+            tarif_cle = COALESCE(EXCLUDED.tarif_cle, fournisseurs_catalogue.tarif_cle),
+            recherche = EXCLUDED.recherche, source = EXCLUDED.source, vu_le = NOW()
+    """, valeurs, template="(%s, %s, %s, %s::numeric, %s::boolean, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), "
+                           "CASE WHEN %s::numeric IS NULL THEN NULL ELSE NOW() END)", page_size=300)
+    return len(valeurs)
+
+
+def purger_catalogue(cur, fournisseur: str, age_secondes: float) -> int:
+    """Après un passage COMPLET : oublie les produits de ce fournisseur qu'il n'a pas montrés (vus il y a plus
+    d'`age_secondes`, soit avant le début du passage). → nombre retiré"""
+    f = fournisseur_propre(fournisseur)
+    if not f:
+        return 0
+    cur.execute("DELETE FROM fournisseurs_catalogue WHERE fournisseur = %s AND vu_le < NOW() - make_interval(secs => %s)",
+                (f, float(max(age_secondes, 0))))
+    return max(int(cur.rowcount or 0), 0)
+
+
+def rechercher_catalogue(cur, q: str, fournisseurs=None, type_piece: str = None, limite: int = 200) -> list:
+    """Produits du catalogue dont le texte de recherche porte chaque mot de `q` (sans accents ni casse), par
+    fournisseur puis prix. → [{fournisseur, ref, nom, prix_ht, en_stock, url, marque, modele, type_piece, qualite,
+    tarif_cle, vu_le, prix_maj_le}]"""
+    mots = [m for m in _norm(q or "").split() if len(m) >= 2 or m.isdigit()][:8]
+    if not mots:
+        return []
+    cond, params = ["TRUE"], []
+    for m in mots:
+        cond.append("recherche LIKE %s")
+        params.append("%" + m.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+    if fournisseurs:
+        cond.append("fournisseur = ANY(%s)")
+        params.append([fournisseur_propre(f) for f in fournisseurs])
+    sql = f"""
+        SELECT fournisseur, ref, nom, prix_ht, en_stock, url, marque, modele, type_piece, qualite, tarif_cle, vu_le, prix_maj_le
+        FROM fournisseurs_catalogue WHERE {" AND ".join(cond)}
+        ORDER BY fournisseur, prix_ht IS NULL, prix_ht, nom
+        LIMIT %s
+    """
+    params.append(int(max(1, min(limite, 500))))
+    cur.execute(sql, params)
+    out = []
+    tp = _norm(type_piece or "")
+    for r in cur.fetchall() or []:
+        if tp and tp not in _norm(r.get("type_piece") or ""):
+            continue
+        out.append({"fournisseur": r["fournisseur"], "ref": r["ref"], "nom": r["nom"],
+                    "prix_ht": float(r["prix_ht"]) if r["prix_ht"] is not None else None, "en_stock": r["en_stock"],
+                    "url": r["url"], "marque": r["marque"], "modele": r["modele"], "type_piece": r["type_piece"],
+                    "qualite": r["qualite"], "tarif_cle": r["tarif_cle"], "vu_le": r["vu_le"], "prix_maj_le": r["prix_maj_le"]})
     return out
 
 

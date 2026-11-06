@@ -38,6 +38,7 @@ const DepotPage = lazy(() => import('./pages/DepotPage'));
 const AvisGooglePage = lazy(() => import('./pages/AvisGoogle'));
 const CommunityManagerPage = lazy(() => import('./pages/CommunityManager'));
 const TarifsTelephonesPage = lazy(() => import('./pages/TarifsTelephonesPage'));
+const RechercheFournisseursPage = lazy(() => import('./pages/RechercheFournisseursPage'));
 const DevisPage = lazy(() => import('./pages/DevisPage'));
 const DevisFlashPage = lazy(() => import('./pages/DevisFlashPage'));
 const DeposerPage = lazy(() => import('./pages/DeposerPage'));
@@ -352,6 +353,7 @@ function AppRoutes() {
         <Route path="/accueil/attestation" element={<P targets={['accueil']}><AttestationPage /></P>} />
         <Route path="/accueil/tarifs" element={<P targets={['accueil']}><OngletsTarifs><TarifsPage /></OngletsTarifs></P>} />
         <Route path="/accueil/tarifs-telephones" element={<P targets={['accueil']}><OngletsTarifs><TarifsTelephonesPage /></OngletsTarifs></P>} />
+        <Route path="/accueil/tarifs-fournisseurs" element={<P targets={['accueil']}><OngletsTarifs><RechercheFournisseursPage /></OngletsTarifs></P>} />
         <Route path="/accueil/devis" element={<P targets={['accueil']}><DevisPage /></P>} />
         <Route path="/accueil/devis-flash" element={<P targets={['accueil']}><DevisFlashPage /></P>} />
         <Route path="/accueil/telephones-vente" element={<Navigate to="/accueil/tarifs-telephones" replace />} />
@@ -370,6 +372,7 @@ function AppRoutes() {
         <Route path="/tech/attestation" element={<P targets={['tech']}><AttestationPage /></P>} />
         <Route path="/tech/tarifs" element={<P targets={['tech']}><OngletsTarifs><TarifsPage /></OngletsTarifs></P>} />
         <Route path="/tech/tarifs-telephones" element={<P targets={['tech']}><OngletsTarifs><TarifsTelephonesPage /></OngletsTarifs></P>} />
+        <Route path="/tech/tarifs-fournisseurs" element={<P targets={['tech']}><OngletsTarifs><RechercheFournisseursPage /></OngletsTarifs></P>} />
         <Route path="/tech/devis" element={<P targets={['tech']}><DevisPage /></P>} />
         <Route path="/tech/devis-flash" element={<P targets={['tech']}><DevisFlashPage /></P>} />
         <Route path="/tech/telephones-vente" element={<Navigate to="/tech/tarifs-telephones" replace />} />

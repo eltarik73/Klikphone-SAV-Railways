@@ -806,65 +806,73 @@ def remplacable(desc, regles=None, maintenant=None) -> bool:
     return ((maintenant or _maintenant()) - maj).days > jours
 
 
-def fournisseur_choisi(desc, prefere: str = None) -> Optional[str]:
-    """Fournisseur imposé pour la pièce : colonne fournisseur_choisi, sinon la préférence de toute la grille
-    (`prefere`, param FOURNISSEUR_PREFERE) ; None = moins-disant."""
+PREFERENCE_DEFAUT = "Mobilax"    # fournisseur retenu pour la grille tant que le gérant n'a rien choisi
+
+
+def fournisseur_choisi(desc, prefere: str = None) -> str:
+    """Fournisseur retenu pour la pièce : colonne fournisseur_choisi, sinon la préférence de toute la grille
+    (`prefere`, param FOURNISSEUR_PREFERE, Mobilax par défaut). Jamais « le moins cher »."""
     f = " ".join(str(desc.get("fournisseur_choisi") or "").split()) if isinstance(desc, dict) else ""
-    return f or (" ".join(str(prefere or "").split()) or None)
+    return f or " ".join(str(prefere or "").split()) or PREFERENCE_DEFAUT
 
 
-def preference(cur=None) -> Optional[str]:
-    """Fournisseur préféré pour toute la grille (param FOURNISSEUR_PREFERE), None = le moins cher."""
+def preference_reglee(cur=None) -> Optional[str]:
+    """La préférence telle que réglée par le gérant (param FOURNISSEUR_PREFERE) ; None : réglage par défaut."""
     f = prix.fournisseur_propre(params_cache.get_params([P_PREFERE], cur=cur)[P_PREFERE])
     return f if f in prix.FOURNISSEURS_CONNUS else None
 
 
-def regler_preference(fournisseur) -> Optional[str]:
-    """Enregistre la préférence ('Mobilax', 'Utopya' ou None) ; les coûts retenus sont alignés par
+def preference(cur=None) -> str:
+    """Fournisseur retenu pour toute la grille : le réglage du gérant, sinon Mobilax (PREFERENCE_DEFAUT).
+    Une pièce que ce fournisseur n'a pas garde le prix de l'autre (complément) ; le moins cher n'est jamais
+    pris pour cette raison."""
+    return preference_reglee(cur) or PREFERENCE_DEFAUT
+
+
+def regler_preference(fournisseur) -> str:
+    """Enregistre la préférence ('Mobilax' ou 'Utopya') ; les coûts retenus sont alignés par
     lancer_preference (tâche de fond)."""
     f = prix.fournisseur_propre(fournisseur) if fournisseur else ""
-    if f and f not in prix.FOURNISSEURS_CONNUS:
+    if f not in prix.FOURNISSEURS_CONNUS:
         raise ValueError("Fournisseur inconnu")
     with get_cursor() as cur:
         _ecrire(cur, P_PREFERE, f)
     params_cache.invalidate()
-    return f or None
+    return f
 
 
-def moins_cher_ailleurs(desc, ht, fournisseur, regles=None, maintenant=None, prefere: str = None) -> bool:
-    """Le prix de référence de la pièce vient d'un AUTRE fournisseur et n'est pas plus cher que `ht` :
-    la pièce reste chez le moins-disant (un prix remplaçable — estimé, périmé — ne protège rien).
-    Jamais quand le gérant a choisi ce fournisseur (pour la pièce, ou pour toute la grille)."""
-    if not fournisseur or not isinstance(desc, dict) or not desc.get("fournisseur"):
+def autre_fournisseur_retenu(desc, fournisseur, regles=None, maintenant=None, prefere: str = None) -> bool:
+    """La pièce est retenue chez l'AUTRE fournisseur (choix à la pièce, sinon préférence de la grille) et son
+    coût en vigueur vient bien de lui et reste une référence (réel, récent) : un prix de celui-ci ne la touche
+    pas. Un coût absent, estimé, périmé ou venu d'ailleurs est remplacé : le fournisseur non retenu complète
+    la grille là où le retenu n'a pas la pièce. Le prix lui-même (plus ou moins cher) n'entre jamais en jeu."""
+    if not fournisseur or not isinstance(desc, dict):
         return False
     choisi = fournisseur_choisi(desc, prefere)
-    if choisi and normaliser(choisi) == normaliser(fournisseur):
+    if normaliser(choisi) == normaliser(fournisseur):
         return False
-    if normaliser(desc["fournisseur"]) == normaliser(fournisseur) or remplacable(desc, regles, maintenant):
+    if remplacable(desc, regles, maintenant):
         return False
-    try:
-        return Decimal(str(desc.get("ht"))) <= Decimal(str(ht))
-    except (InvalidOperation, TypeError):
-        return False
+    return normaliser(str(desc.get("fournisseur") or "")) == normaliser(choisi)
 
 
 def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None, fournisseur: str = None,
               proposer: bool = True, prefere: str = None) -> dict:
     """Parmi les lignes reconnues de l'aperçu (import_prix.apercu) : lignes à appliquer,
     propositions à créer (grosse variation d'un prix de référence), pièces laissées (verrou,
-    obsolète, variante plus chère, autre fournisseur moins cher). descs : prix.decrire_tarifs des
+    obsolète, variante plus chère, pièce retenue chez l'autre fournisseur). descs : prix.decrire_tarifs des
     pièces reconnues — une pièce au prix absent, estimé ou périmé (`remplacable`) est appliquée
     même avec une grosse variation (comptée dans `remplaces`). fournisseur : celui des lignes
-    (« Mobilax », « Utopya ») — une pièce dont le prix de référence vient d'un autre fournisseur
-    moins cher ou égal est laissée (`plus_cher_ailleurs`) ; moins cher ici → appliqué (ou proposé).
-
-    Une pièce dont le gérant a choisi l'autre fournisseur (fournisseur_choisi, ou `prefere` pour toute la
-    grille) n'est jamais touchée (`autre_fournisseur_choisi`) ; celle où il a choisi celui-ci est appliquée
-    même plus chère. proposer=False (synchro, collecte) : une grosse variation est appliquée aussi, comptée
-    dans `variations_appliquees` — le gérant ne valide rien.
+    (« Mobilax », « Utopya ») — une pièce retenue chez l'autre fournisseur (fournisseur_choisi, sinon
+    `prefere` pour toute la grille, Mobilax par défaut) dont le coût en vigueur vient bien de lui et reste
+    une référence est laissée (`autre_fournisseur_choisi`, cf. autre_fournisseur_retenu) ; sans coût de
+    référence du fournisseur retenu, le prix de celui-ci est appliqué quand même (`complements` : le
+    fournisseur retenu n'a pas la pièce). Le prix (plus ou moins cher) ne décide jamais. proposer=False
+    (synchro, collecte) : une grosse variation est appliquée aussi, comptée dans `variations_appliquees` —
+    le gérant ne valide rien.
 
     → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces,
-       plus_cher_ailleurs, autre_fournisseur_choisi, variations_appliquees}
+       autre_fournisseur_choisi, complements, variations_appliquees}
     """
     par_n = {}
     for rec in ap.get("reconnues") or []:
@@ -872,7 +880,7 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     vise = {}   # cle → HT retenu
     descs = descs or {}
     out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0,
-           "remplaces": 0, "plus_cher_ailleurs": 0, "autre_fournisseur_choisi": 0, "variations_appliquees": 0}
+           "remplaces": 0, "autre_fournisseur_choisi": 0, "complements": 0, "variations_appliquees": 0}
     # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère
     for n, recs in sorted(par_n.items(), key=lambda kv: (Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
         hts = {r["cle"]: Decimal(str(r["nouveau_ht"])) for r in recs}
@@ -890,15 +898,13 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
         if any(r["obsolete"] for r in recs):
             out["obsoletes"] += 1
             continue
-        if fournisseur and any(fournisseur_choisi(descs.get(r["cle"]), prefere)
-                               and normaliser(fournisseur_choisi(descs.get(r["cle"]), prefere)) != normaliser(fournisseur)
+        if fournisseur and any(autre_fournisseur_retenu(descs.get(r["cle"]), fournisseur, regles, maintenant, prefere)
                                for r in recs):
             out["autre_fournisseur_choisi"] += 1
             continue
-        if any(moins_cher_ailleurs(descs.get(r["cle"]), hts[r["cle"]], fournisseur, regles, maintenant, prefere)
-               for r in recs):
-            out["plus_cher_ailleurs"] += 1
-            continue
+        if fournisseur and any(normaliser(fournisseur_choisi(descs.get(r["cle"]), prefere)) != normaliser(fournisseur)
+                               for r in recs):
+            out["complements"] += 1
         alertes = set()
         for r in recs:
             alertes |= set(r.get("alertes") or [])
@@ -920,7 +926,7 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
 
 
 _COMPTES = ("lignes", "reconnues", "non_reconnues", "inconnues", "verrouillees", "obsoletes", "variantes",
-            "a_valider", "remplaces", "plus_cher_ailleurs", "autre_fournisseur_choisi", "variations_appliquees",
+            "a_valider", "remplaces", "autre_fournisseur_choisi", "complements", "variations_appliquees",
             "modifies", "confirmes", "propositions", "propositions_fermees")
 
 
@@ -952,11 +958,13 @@ def infos_lignes(lignes) -> dict:
 
 
 def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict, fournisseur: str = FOURNISSEUR,
-              auteur: str = AUTEUR, source: str = "mobilax", infos: dict = None) -> dict:
+              auteur: str = AUTEUR, source: str = "mobilax", infos: dict = None, lignes: list = None) -> dict:
     """Aperçu puis application automatique sur une cible ; propositions pour les grosses variations.
     fournisseur / auteur / source : Mobilax par défaut, « Utopya » pour la collecte (services/utopya).
     Chaque pièce reconnue garde le prix de CE fournisseur dans tarifs_fournisseurs_prix (grille
-    comparative), qu'il soit retenu ou non ; infos : {référence: {url, en_stock}} (infos_lignes)."""
+    comparative), qu'il soit retenu ou non ; infos : {référence: {url, en_stock}} (infos_lignes) ;
+    lignes : les lignes du fichier, gardées telles quelles dans le catalogue fournisseur
+    (prix.enregistrer_catalogue : recherche de tarifs pro, Mobilax et Utopya côte à côte)."""
     res = {"cible": cible, "import_id": None, "lot_id": None, "erreur": None, **{k: 0 for k in _COMPTES}}
     try:
         ap = import_prix.apercu(cur, nom_fichier, contenu, fournisseur, cible, r=r, par=auteur)
@@ -967,13 +975,15 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict, fourni
     descs = prix.decrire_tarifs(cur, cles, r) if cles else {}
     if cles:
         prix.enregistrer_prix_fournisseur(cur, fournisseur, source, ap.get("reconnues") or [], infos or {})
+    if lignes:
+        prix.enregistrer_catalogue(cur, fournisseur, source, lignes, ap.get("reconnues") or [])
     # Les prix du fournisseur sont appliqués, grosses variations comprises : rien à valider
     plan = planifier(ap, descs, r, fournisseur=fournisseur, proposer=False, prefere=preference(cur))
     resume = ap["resume"]
     res.update(import_id=ap["import_id"], lignes=resume["lignes"], reconnues=resume["pieces_reconnues"],
                non_reconnues=resume["non_reconnues"], inconnues=resume["nouvelles"],
                **{k: plan[k] for k in ("verrouillees", "obsoletes", "variantes", "a_valider", "remplaces",
-                                       "plus_cher_ailleurs", "autre_fournisseur_choisi", "variations_appliquees")})
+                                       "autre_fournisseur_choisi", "complements", "variations_appliquees")})
     res["_cles"] = cles   # pour le diagnostic du passage (retiré du résumé enregistré)
     if plan["lignes"]:
         app = import_prix.appliquer(cur, ap["import_id"], {"lignes": plan["lignes"], "ignorer_invalides": True},
@@ -990,6 +1000,105 @@ def _importer(cur, cible: str, contenu: bytes, nom_fichier: str, r: dict, fourni
     # d'annulation du lot restent
     cur.execute("UPDATE tarifs_imports SET resume = resume - 'donnees' WHERE id = %s", (ap["import_id"],))
     return res
+
+
+# ─── Cohérence qualité d'écran ↔ produit (« Original » = l'officiel seulement) ──
+# Un écran « Original Pulled / Refurb / Assembled » (Mobilax) ou « (Pulled) » (Utopya) est un écran
+# reconditionné ; « (ReLife) », « (BOLT) », « (SPARK) », « OLED », « Incell »… sont des écrans compatibles :
+# aucun d'eux ne vaut pour la ligne « Original » de la grille, qui n'est que l'écran officiel (Service Pack,
+# « Ecran Tactile Original », « Ecran Complet Google Pixel 6 » à référence numérique chez Utopya). Vérifié sur
+# le Pixel 6 : l'officiel coûte un peu moins de 100 € HT, le ReLife 55 €, le Refurb bien moins — mélanger les
+# deux donnait un prix client faux. Les règles d'import l'interdisent désormais (import_prix.REPLI_ECRAN,
+# QUALITES_CATEGORIE, utopya.qualite_nom) ; purger_prix_incoherents corrige ce qui a été écrit avant.
+_MARQUEURS_RECONDITIONNE = ("pulled", "refurb", "refurbished", "reconditionne", "reconditionnee", "assembled",
+                            "occasion", "grade a", "grade b", "grade c", "grade d")
+_MARQUEURS_COMPATIBLE = ("relife", "bolt", "spark", "prime", "alcalian", "compatible", "oem", "aftermarket", "premium",
+                         "incell", "in cell", "ltps", "tft", "lcd", "oled", "amoled", "copie")
+_MARQUEURS_OFFICIEL = ("service pack", "original", "originale", "origine", "genuine")
+
+
+def _a_marqueur(texte: str, marqueurs) -> bool:
+    return any(re.search(rf"(?<![a-z0-9]){re.escape(m)}(?![a-z0-9])", texte) for m in marqueurs)
+
+
+def qualite_coherente(qualite, designation, ref=None, fournisseur=None) -> bool:
+    """Le produit désigné peut-il tenir la ligne d'écran de cette qualité ?
+    - « Original » : ni marqueur de reconditionné (Pulled, Refurb, Assembled, Grade…) ni de compatible (ReLife,
+      BOLT, OLED, Incell…) ; chez Utopya, un produit sans étiquette à référence alphanumérique est un compatible ;
+    - « Reconditionné » : un marqueur de reconditionné ;
+    - Compatible, Incell, LCD, OLED, Soft OLED : ni reconditionné, ni officiel (Service Pack, « Original » seul,
+      produit Utopya d'origine à référence numérique).
+    Qualité ou désignation vide : True (rien à juger)."""
+    q = normaliser(qualite or "")
+    d = normaliser(designation or "")
+    if not q or not d:
+        return True
+    utopya = bool(fournisseur) and normaliser(fournisseur) == "utopya"
+    ref = str(ref or "").strip()
+    recond = _a_marqueur(d, _MARQUEURS_RECONDITIONNE)
+    compat = _a_marqueur(d, _MARQUEURS_COMPATIBLE)
+    officiel = _a_marqueur(d, _MARQUEURS_OFFICIEL) or (utopya and bool(ref) and ref.isdigit() and not compat and not recond)
+    if q.startswith("original"):
+        if recond or compat:
+            return False
+        return not (utopya and ref and not ref.isdigit() and not _a_marqueur(d, _MARQUEURS_OFFICIEL))
+    if q.startswith("reconditionn"):
+        return recond
+    return not recond and not officiel
+
+
+def purger_prix_incoherents(cur, par: str = AUTEUR, r: dict = None) -> dict:
+    """Retire de la grille comparative (tarifs_fournisseurs_prix) les prix d'écran dont le produit ne tient pas
+    la qualité de sa ligne (qualite_coherente), puis corrige chaque pièce dont le coût retenu venait d'un tel
+    produit : prix cohérent du fournisseur retenu (sinon de l'autre : prix.cible_fournisseur), ou « prix à
+    renseigner » (prix.vider_prix) s'il n'en reste aucun — jamais un prix faux gardé. Pièce verrouillée laissée.
+    → {examines, supprimes, reassignees, videes, lot_id}"""
+    r = r or prix.regles(cur)
+    cur.execute("SELECT tarif_cle, fournisseur, prix_ht, ref_fournisseur, designation FROM tarifs_fournisseurs_prix "
+                "WHERE tarif_cle LIKE 'tarifs:%%' AND designation IS NOT NULL")
+    rows = cur.fetchall() or []
+    out = {"examines": len(rows), "supprimes": 0, "reassignees": 0, "videes": 0, "lot_id": None}
+    if not rows:
+        return out
+    descs = prix.decrire_tarifs(cur, sorted({x["tarif_cle"] for x in rows}), r)
+    faux = []
+    for x in rows:
+        d = descs.get(x["tarif_cle"])
+        if d and prix.est_ecran(d.get("type_piece")) and not qualite_coherente(d.get("qualite"), x["designation"],
+                                                                                x["ref_fournisseur"], x["fournisseur"]):
+            faux.append(x)
+    if not faux:
+        return out
+    prefere = preference(cur)
+    lot = prix.nouveau_lot()
+    for x in faux:
+        cur.execute("DELETE FROM tarifs_fournisseurs_prix WHERE tarif_cle = %s AND fournisseur = %s",
+                    (x["tarif_cle"], x["fournisseur"]))
+        out["supprimes"] += 1
+    for cle in sorted({x["tarif_cle"] for x in faux}):
+        d = descs[cle]
+        retires = [x for x in faux if x["tarif_cle"] == cle]
+        if d.get("verrou") or d.get("obsolete"):
+            continue
+        # Le coût retenu vient-il d'un produit retiré ? (même fournisseur, même HT)
+        venu_de_faux = any(
+            normaliser(str(d.get("fournisseur") or "")) == normaliser(x["fournisseur"])
+            and d.get("ht") is not None and x["prix_ht"] is not None
+            and Decimal(str(d["ht"])) == Decimal(str(x["prix_ht"]))
+            for x in retires)
+        if not venu_de_faux:
+            continue
+        dispo = prix.prix_fournisseurs(cur, [cle]).get(cle, {})
+        cible = prix.cible_fournisseur(dispo, d, prefere)
+        if cible is not None:
+            prix.appliquer_ht(cur, cle, cible["ht"], str(cible["fournisseur"]).lower(), par, lot, r)
+            prix.noter_fournisseur_retenu(cur, cle, cible)
+            out["reassignees"] += 1
+        else:
+            prix.vider_prix(cur, cle, par, lot)
+            out["videes"] += 1
+        out["lot_id"] = lot
+    return out
 
 
 # ─── Diagnostic : pièces de la grille sans prix Mobilax ─────────
@@ -1270,7 +1379,7 @@ def _noter(resume: dict):
 def _resume_vide() -> dict:
     return {"debut": _utc(), "fin": None, "ok": False, "erreur": None, "code": None, "requetes": 0, "modeles": 0,
             "recherches": 0, "erreurs_reseau": 0, "produits": 0, "produits_prix": 0, "produits_sans_prix": 0,
-            "debordements": 0, "incomplet": False,
+            "debordements": 0, "incomplet": False, "purge": None, "catalogue_retires": 0,
             "prix_masques": False, "lots": [], "imports": [], "champs": [], "sans_prix": None,
             **{k: 0 for k in _COMPTES}}
 
@@ -1346,10 +1455,11 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
             infos = infos_lignes(lignes)
             with get_cursor() as cur:
                 r = prix.regles(cur)
-                resultats = [_importer(cur, "tarifs", csv_lignes(lignes), f"mobilax-{jour}.csv", r, infos=infos)]
+                resultats = [_importer(cur, "tarifs", csv_lignes(lignes), f"mobilax-{jour}.csv", r, infos=infos,
+                                       lignes=toutes)]
                 if apple:
                     resultats.append(_importer(cur, "tarifs_apple_devices", csv_lignes(apple), f"mobilax-{jour}-apple.csv", r,
-                                               infos=infos))
+                                               infos=infos, lignes=apple))
             cles_reconnues = set()
             for res in resultats:
                 cles_reconnues |= set(res.pop("_cles", None) or ())
@@ -1365,6 +1475,11 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
                 diag = diagnostic_pieces(_pieces_grille(cur), produits, cles_reconnues, modeles, client.palier,
                                          cherchees, sans_prix=vus_sans_prix)
                 _ecrire(cur, P_DIAG, json.dumps(diag, ensure_ascii=False, default=str))
+                # Un reconditionné ou un compatible rangé sur une ligne « Original » (ou l'inverse) ne tient pas :
+                # retiré de la grille comparative, pièce corrigée ; le catalogue oublie les produits plus revus
+                resume["purge"] = purger_prix_incoherents(cur, AUTEUR, r)
+                if not resume["incomplet"]:
+                    resume["catalogue_retires"] = prix.purger_catalogue(cur, FOURNISSEUR, time.monotonic() - t0 + 120)
             resume["sans_prix"] = diag["n"]
         resume["ok"] = True
         if resume["modifies"] or resume["propositions"]:
@@ -1453,8 +1568,25 @@ def lancer_en_arriere_plan(transport=None) -> bool:
 _tache = {"thread": None}
 
 
+def purger_qualites(par: str = AUTEUR) -> Optional[dict]:
+    """Purge des prix incohérents (purger_prix_incoherents) dans sa propre transaction ; None en cas d'échec
+    (jamais bloquant : journal seulement)."""
+    try:
+        with get_cursor() as cur:
+            res = purger_prix_incoherents(cur, par)
+    except Exception as e:
+        logger.warning("Purge des qualités d'écran : échec (%s)", type(e).__name__)
+        return None
+    if res.get("supprimes"):
+        logger.info("Purge des qualités d'écran : %s prix retirés, %s pièces réaffectées, %s vidées",
+                    res["supprimes"], res["reassignees"], res["videes"])
+    params_cache.invalidate()
+    return res
+
+
 def _boucle(delai_initial: float, periode: float):
     time.sleep(delai_initial)
+    purger_qualites()
     while True:
         try:
             synchro_quotidienne()
@@ -1509,8 +1641,9 @@ def etat(cur=None) -> dict:
             "compte": bool(p[P_ID_CLIENT]), "palier": _palier_lu(p[P_PALIER]).get("nom") or None,
         },
         "utopya": _etat_utopya(cur),
-        # Fournisseur préféré pour toute la grille (None : le moins cher) et alignement en cours
-        "preference": preference(cur), "preference_en_cours": en_cours_preference(),
+        # Fournisseur retenu pour toute la grille (Mobilax par défaut tant que rien n'est réglé) et alignement en cours
+        "preference": preference(cur), "preference_defaut": preference_reglee(cur) is None,
+        "preference_en_cours": en_cours_preference(),
         "preference_resultat": _etat_pref.get("resultat"),
     }
 

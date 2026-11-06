@@ -81,7 +81,7 @@ describe('decrireMobilax', () => {
     const riche = decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 250, propositions_fermees: 300, sans_prix: 412 } });
     expect(riche.detail).toBe('12 prix mis à jour · 300 confirmés · dont 250 prix estimés ou périmés remplacés sans validation · 3 à valider (Propositions) · 300 propositions réglées · 2 verrouillés · 412 pièces de la grille sans prix Mobilax — 1450 produits lus pour 210 modèles.');
     expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, remplaces: 1, sans_prix: 1, propositions_fermees: 1 } }).detail).toContain('dont 1 prix estimé ou périmé remplacé sans validation · 3 à valider (Propositions) · 1 proposition réglée · 2 verrouillés · 1 pièce de la grille sans prix Mobilax');
-    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, autre_fournisseur_choisi: 2 } }).detail).toContain('2 laissées à l’autre fournisseur (votre choix)');
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, autre_fournisseur_choisi: 2 } }).detail).toContain('2 laissées à Utopya (fournisseur retenu)');
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null })).toMatchObject({ ton: 'neutre', titre: 'Mobilax connecté' });
     expect(decrireMobilax({ ...CONNECTE, ok: null, derniere_synchro: null, resume: null, active: false }).detail).toBe('Synchro quotidienne coupée.');
   });
@@ -242,32 +242,37 @@ describe('bloc SynchroFournisseur', () => {
   });
 });
 
-describe('préférence fournisseur : prix retenus dans la grille', () => {
-  it('admin : le moins cher par défaut ; « Toujours Utopya » enregistre et aligne les prix (tâche de fond)', async () => {
-    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: null, preference_en_cours: false, preference_resultat: null });
-    apiMock.setPreferenceFournisseur.mockResolvedValue({ preference: 'Utopya', lance: true, etat: { mobilax: CONNECTE, utopya: UTOPYA, preference: 'Utopya', preference_en_cours: true, preference_resultat: null } });
+describe('fournisseur retenu pour la grille (jamais « le moins cher »)', () => {
+  it('admin : Mobilax par défaut ; « Utopya » enregistre et aligne les prix (tâche de fond)', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: 'Mobilax', preference_defaut: true, preference_en_cours: false, preference_resultat: null });
+    apiMock.setPreferenceFournisseur.mockResolvedValue({ preference: 'Utopya', lance: true, etat: { mobilax: CONNECTE, utopya: UTOPYA, preference: 'Utopya', preference_defaut: false, preference_en_cours: true, preference_resultat: null } });
     rendre({ estAdmin: true });
-    expect(await screen.findByText('Prix retenus dans la grille : le moins cher disponible')).toBeInTheDocument();
-    const groupe = screen.getByRole('group', { name: 'Prix retenus dans la grille' });
-    expect(within(groupe).getByRole('button', { name: 'Le moins cher' })).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(within(groupe).getByRole('button', { name: 'Toujours Utopya' }));
+    expect(await screen.findByText('Fournisseur retenu pour la grille : Mobilax (par défaut)')).toBeInTheDocument();
+    expect(screen.getByText('Ses prix deviennent les coûts retenus, sans validation ni comparaison de prix ; une pièce qu’il n’a pas garde l’autre fournisseur.')).toBeInTheDocument();
+    const groupe = screen.getByRole('group', { name: 'Fournisseur retenu pour la grille' });
+    expect(within(groupe).getAllByRole('button').map((b) => b.textContent)).toEqual(['Mobilax', 'Utopya']);
+    expect(within(groupe).getByRole('button', { name: 'Mobilax' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(groupe).queryByRole('button', { name: /moins cher/i })).not.toBeInTheDocument();
+    // Après le clic, le suivi relit l'état : l'alignement est en cours (sinon la relecture effacerait le message aussitôt)
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: 'Utopya', preference_defaut: false, preference_en_cours: true, preference_resultat: null });
+    fireEvent.click(within(groupe).getByRole('button', { name: 'Utopya' }));
     await waitFor(() => expect(apiMock.setPreferenceFournisseur).toHaveBeenCalledWith('Utopya'));
-    expect(await screen.findByText('Prix retenus dans la grille : toujours Utopya')).toBeInTheDocument();
+    expect(await screen.findByText('Fournisseur retenu pour la grille : Utopya')).toBeInTheDocument();
     expect(screen.getByText('Alignement des prix en cours…')).toBeInTheDocument();
-    expect(within(groupe).getByRole('button', { name: 'Toujours Utopya' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(groupe).getByRole('button', { name: 'Toujours Mobilax' })).toBeDisabled();
+    expect(within(groupe).getByRole('button', { name: 'Utopya' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(groupe).getByRole('button', { name: 'Mobilax' })).toBeDisabled();
   });
 
   it('résultat du dernier alignement ; personnel : rien', async () => {
-    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: 'Mobilax', preference_en_cours: false,
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTOPYA, preference: 'Mobilax', preference_defaut: false, preference_en_cours: false,
       preference_resultat: { modifies: 40, inchangees: 700, verrouillees: 2, sans_prix: 10 } });
     rendre({ estAdmin: true });
-    expect(await screen.findByText('Prix retenus dans la grille : toujours Mobilax')).toBeInTheDocument();
+    expect(await screen.findByText('Fournisseur retenu pour la grille : Mobilax')).toBeInTheDocument();
     expect(screen.getByText('Dernier alignement : 40 prix changés, 700 inchangés, 2 verrouillés.')).toBeInTheDocument();
     cleanup();
     rendre({ estAdmin: false });
     await screen.findByText(/Dernière synchro Mobilax/);
-    expect(screen.queryByText(/Prix retenus dans la grille/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Fournisseur retenu pour la grille/)).not.toBeInTheDocument();
   });
 
   it('phrases : grosses variations appliquées sans validation', () => {
@@ -278,7 +283,7 @@ describe('préférence fournisseur : prix retenus dans la grille', () => {
 describe('collecte Utopya (favori dans le navigateur du gérant)', () => {
   const UTO_OK = {
     disponible: true, configure: true, en_cours: false, debut: null, derniere_collecte: '2026-11-04T18:00:00', ok: true, erreur: null, message: null,
-    resume: { modifies: 40, remplaces: 30, propositions: 2, plus_cher_ailleurs: 15, sans_prix: 120, produits: 9000, pages_lues: 260, pages_total: 266, erreurs_pages: 0, interrompu: false },
+    resume: { modifies: 40, remplaces: 30, propositions: 2, complements: 15, autre_fournisseur_choisi: 4, purge: { supprimes: 3 }, sans_prix: 120, produits: 9000, pages_lues: 260, pages_total: 266, erreurs_pages: 0, interrompu: false },
   };
   const UTO_VIDE = { disponible: true, configure: false, en_cours: false, debut: null, derniere_collecte: null, ok: null, resume: null, erreur: null, message: null };
 
@@ -294,13 +299,17 @@ describe('collecte Utopya (favori dans le navigateur du gérant)', () => {
     expect(ok.detail).toContain('40 prix mis à jour');
     expect(ok.detail).toContain('dont 30 prix estimés ou périmés remplacés');
     expect(ok.detail).toContain('2 à valider (Propositions)');
-    expect(ok.detail).toContain('15 restés chez Mobilax (moins cher)');
+    expect(ok.detail).toContain('15 pièces que Mobilax n’a pas (complétées par Utopya)');
+    expect(ok.detail).toContain('4 laissées à Mobilax (fournisseur retenu)');
+    expect(ok.detail).toContain('3 prix retirés (reconditionné ou compatible pris pour un original)');
+    expect(ok.detail).not.toMatch(/moins cher/);
     expect(ok.detail).toContain('120 pièces de la grille sans prix Utopya');
     expect(ok.detail).toContain('9000 produits lus sur 260 pages');
     expect(decrireUtopya({ ...UTO_OK, resume: { ...UTO_OK.resume, interrompu: true } }).detail).toContain('collecte arrêtée avant la fin');
     expect(decrireUtopya({ ...UTO_OK, ok: false, erreur: 'connectez-vous' })).toMatchObject({ ton: 'danger', detail: 'connectez-vous' });
-    // Mobilax : pièces restées chez Utopya (moins cher)
-    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, plus_cher_ailleurs: 3 } }).detail).toContain('3 restés chez Utopya (moins cher)');
+    // Mobilax : pièces qu'Utopya n'a pas, complétées par Mobilax ; jamais de « moins cher »
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, complements: 3 } }).detail).toContain('3 pièces qu’Utopya n’a pas (complétées par Mobilax)');
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, purge: { supprimes: 1 } } }).detail).toContain('1 prix retiré (reconditionné ou compatible pris pour un original)');
   });
 
   it('personnel : état de la collecte, diagnostic Utopya, aucun bouton', async () => {

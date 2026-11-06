@@ -57,8 +57,9 @@ export function decrireMobilax(m) {
     if (n(r.variations_appliquees)) morceaux.push(`dont ${n(r.variations_appliquees)} grosse${n(r.variations_appliquees) > 1 ? 's' : ''} variation${n(r.variations_appliquees) > 1 ? 's' : ''} appliquée${n(r.variations_appliquees) > 1 ? 's' : ''}`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
     if (n(r.propositions_fermees)) morceaux.push(`${n(r.propositions_fermees)} proposition${n(r.propositions_fermees) > 1 ? 's' : ''} réglée${n(r.propositions_fermees) > 1 ? 's' : ''}`);
-    if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Utopya (moins cher)`);
-    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à l’autre fournisseur (votre choix)`);
+    if (n(r.complements)) morceaux.push(`${n(r.complements)} pièce${n(r.complements) > 1 ? 's' : ''} qu’Utopya n’a pas (complétée${n(r.complements) > 1 ? 's' : ''} par Mobilax)`);
+    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à Utopya (fournisseur retenu)`);
+    if (n(r.purge?.supprimes)) morceaux.push(`${n(r.purge.supprimes)} prix retiré${n(r.purge.supprimes) > 1 ? 's' : ''} (reconditionné ou compatible pris pour un original)`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Mobilax`);
     if (r.incomplet) morceaux.push('passage incomplet (temps écoulé)');
@@ -101,8 +102,9 @@ export function decrireUtopya(u) {
     if (n(r.remplaces)) morceaux.push(`dont ${n(r.remplaces)} prix estimé${n(r.remplaces) > 1 ? 's' : ''} ou périmé${n(r.remplaces) > 1 ? 's' : ''} remplacé${n(r.remplaces) > 1 ? 's' : ''}`);
     if (n(r.variations_appliquees)) morceaux.push(`dont ${n(r.variations_appliquees)} grosse${n(r.variations_appliquees) > 1 ? 's' : ''} variation${n(r.variations_appliquees) > 1 ? 's' : ''} appliquée${n(r.variations_appliquees) > 1 ? 's' : ''}`);
     if (n(r.propositions)) morceaux.push(`${n(r.propositions)} à valider (Propositions)`);
-    if (n(r.plus_cher_ailleurs)) morceaux.push(`${n(r.plus_cher_ailleurs)} resté${n(r.plus_cher_ailleurs) > 1 ? 's' : ''} chez Mobilax (moins cher)`);
-    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à l’autre fournisseur (votre choix)`);
+    if (n(r.complements)) morceaux.push(`${n(r.complements)} pièce${n(r.complements) > 1 ? 's' : ''} que Mobilax n’a pas (complétée${n(r.complements) > 1 ? 's' : ''} par Utopya)`);
+    if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à Mobilax (fournisseur retenu)`);
+    if (n(r.purge?.supprimes)) morceaux.push(`${n(r.purge.supprimes)} prix retiré${n(r.purge.supprimes) > 1 ? 's' : ''} (reconditionné ou compatible pris pour un original)`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Utopya`);
     if (r.interrompu) morceaux.push('collecte arrêtée avant la fin');
@@ -431,21 +433,22 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
   const tonUtopya = TONS[descriptionUtopya.ton] || TONS.neutre;
   const IconeUtopya = tonUtopya.Icone;
   const utopyaDisponible = Boolean(u && u.disponible !== false);
-  const preference = etat?.preference || null;
+  const preference = etat?.preference || 'Mobilax';
+  const preferenceDefaut = Boolean(etat?.preference_defaut);
   const preferenceEnCours = Boolean(etat?.preference_en_cours) || occupe === 'preference';
   const preferenceResultat = etat?.preference_resultat || null;
 
-  // Fournisseur préféré pour toute la grille : le serveur aligne les coûts retenus (tâche de fond), puis la
-  // synchro et la collecte respectent ce choix — rien à valider pièce par pièce
+  // Fournisseur retenu pour toute la grille (Mobilax tant que rien n'est réglé, jamais « le moins cher ») : le serveur
+  // aligne les coûts retenus (tâche de fond), puis la synchro et la collecte respectent ce choix — rien à valider
   const choisirPreference = async (f) => {
-    if (preferenceEnCours || f === preference) return;
+    if (preferenceEnCours || (f === preference && !preferenceDefaut)) return;
     setOccupe('preference');
     try {
       const r = await sensible(() => api.setPreferenceFournisseur(f));
       if (!monteRef.current) return;
       if (r?.etat) setEtat(r.etat);
-      else setEtat((e) => ({ ...(e || {}), preference: f, preference_en_cours: true }));
-      toast.success(f ? `Grille alignée sur ${f} : les prix ${f} deviennent les prix retenus.` : 'Grille alignée sur le moins cher disponible.');
+      else setEtat((e) => ({ ...(e || {}), preference: f, preference_defaut: false, preference_en_cours: true }));
+      toast.success(`Grille alignée sur ${f} : ses prix deviennent les prix retenus ; une pièce qu’il n’a pas garde l’autre fournisseur.`);
       suivre(false);
     } catch (err) {
       const msg = messageErreur(err, 'Préférence non enregistrée');
@@ -592,7 +595,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
       {estAdmin && (
         <section aria-labelledby={titrePreferenceId} className="callout callout-info flex-wrap items-center">
           <div className="min-w-[240px] flex-1">
-            <p id={titrePreferenceId} className="font-semibold">Prix retenus dans la grille : {preference ? `toujours ${preference}` : 'le moins cher disponible'}</p>
+            <p id={titrePreferenceId} className="font-semibold">Fournisseur retenu pour la grille : {preference}{preferenceDefaut ? ' (par défaut)' : ''}</p>
             <p className="text-xs sm:text-sm">
               {preferenceEnCours
                 ? 'Alignement des prix en cours…'
@@ -600,14 +603,14 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
                   ? `Dernier alignement : ${preferenceResultat.erreur}`
                   : preferenceResultat
                     ? `Dernier alignement : ${n(preferenceResultat.modifies)} prix changé${n(preferenceResultat.modifies) > 1 ? 's' : ''}, ${n(preferenceResultat.inchangees)} inchangé${n(preferenceResultat.inchangees) > 1 ? 's' : ''}${n(preferenceResultat.verrouillees) ? `, ${n(preferenceResultat.verrouillees)} verrouillé${n(preferenceResultat.verrouillees) > 1 ? 's' : ''}` : ''}.`
-                    : 'Les prix du fournisseur choisi deviennent les coûts retenus, sans validation ; une pièce qu’il n’a pas garde l’autre.'}
+                    : 'Ses prix deviennent les coûts retenus, sans validation ni comparaison de prix ; une pièce qu’il n’a pas garde l’autre fournisseur.'}
             </p>
           </div>
-          <div className="segmented" role="group" aria-label="Prix retenus dans la grille">
-            {[{ cle: null, libelle: 'Le moins cher' }, { cle: 'Mobilax', libelle: 'Toujours Mobilax' }, { cle: 'Utopya', libelle: 'Toujours Utopya' }].map((c) => (
-              <button key={c.libelle} type="button" aria-pressed={preference === c.cle} disabled={preferenceEnCours}
-                onClick={() => choisirPreference(c.cle)} className={`segmented-item ${preference === c.cle ? 'segmented-item-active' : ''}`}>
-                {c.libelle}
+          <div className="segmented" role="group" aria-label="Fournisseur retenu pour la grille">
+            {['Mobilax', 'Utopya'].map((f) => (
+              <button key={f} type="button" aria-pressed={preference === f} disabled={preferenceEnCours}
+                onClick={() => choisirPreference(f)} className={`segmented-item ${preference === f ? 'segmented-item-active' : ''}`}>
+                {f}
               </button>
             ))}
           </div>

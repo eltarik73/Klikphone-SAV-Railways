@@ -26,12 +26,14 @@ import logging
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.api.auth import exiger_role_admin, get_current_user
 from app.api.public_documents import _base_publique
-from app.services import fournisseurs, utopya
+from app.database import get_cursor
+from app.services import fournisseurs, prix, utopya
+from app.services.prestations import normaliser
 
 router = APIRouter(prefix="/api/tarifs/fournisseurs", tags=["tarifs"])
 logger = logging.getLogger(__name__)
@@ -50,15 +52,15 @@ class ActiveIn(BaseModel):
 
 
 class PreferenceIn(BaseModel):
-    # None : le moins cher (automatique)
-    fournisseur: Optional[str] = Field(None, pattern="^(Mobilax|Utopya)$")
+    # Le fournisseur retenu pour toute la grille — jamais « le moins cher »
+    fournisseur: str = Field(..., pattern="^(Mobilax|Utopya)$")
 
 
 @router.put("/preference")
 def regler_preference_fournisseur(body: PreferenceIn, user: dict = Depends(_admin)):
-    """Fournisseur préféré pour TOUTE la grille (Mobilax, Utopya, ou aucun = le moins cher disponible) :
-    enregistré, puis les coûts retenus de toutes les pièces sont alignés en tâche de fond
-    (prix.appliquer_preference, un lot annulable). → {preference, lance, etat}"""
+    """Fournisseur retenu pour TOUTE la grille (Mobilax ou Utopya ; Mobilax tant que rien n'est réglé) : enregistré,
+    puis les coûts retenus de toutes les pièces sont alignés en tâche de fond (prix.appliquer_preference, un lot
+    annulable) — une pièce que le fournisseur retenu n'a pas garde l'autre. → {preference, lance, etat}"""
     try:
         f = fournisseurs.regler_preference(body.fournisseur)
     except ValueError as e:
@@ -71,6 +73,68 @@ def regler_preference_fournisseur(body: PreferenceIn, user: dict = Depends(_admi
 def etat_fournisseurs(user: dict = Depends(get_current_user)):
     """État des synchros (Mobilax : connexion, dernier passage, compteurs ; Utopya : indisponible)."""
     return fournisseurs.etat()
+
+
+_TYPES_RECHERCHE = ("ecran", "batterie", "connecteur", "vitre arriere", "bouton power", "camera")
+
+
+@router.get("/recherche")
+def rechercher_fournisseurs(
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=80),
+    type: Optional[str] = Query(None, max_length=30),
+    user: dict = Depends(get_current_user),
+):
+    """Recherche de tarifs pro, Mobilax et Utopya côte à côte, d'après les derniers passages (aucune requête aux
+    sites) : les modèles de la grille dont le nom porte chaque mot de `q`, leurs pièces (type optionnel : ecran,
+    batterie, connecteur, vitre arriere, bouton power, camera) avec le coût retenu et le prix de CHAQUE fournisseur
+    (HT pour l'admin, prix client qu'il donnerait, stock, référence, fiche, relevé le), puis les produits du
+    catalogue de chaque fournisseur qui répondent à `q` (admin seulement : noms, prix HT, stock, fiches, ligne de
+    la grille reçue). → {q, admin, preference, modeles: [{marque, modele, categorie_apple, pieces: [...]}],
+    produits: {Mobilax: [...], Utopya: [...]}, nb_produits, tronque}"""
+    from app.api import tarifs as api_tarifs     # import différé : api/tarifs est un gros module
+    from app.api import grille
+    admin = _est_admin(request, user)
+    mots = [m for m in normaliser(q).split() if len(m) >= 2 or m.isdigit()][:8]
+    if not mots:
+        raise HTTPException(400, "Recherche trop courte")
+    tp = normaliser(type or "")
+    if tp and not any(tp.startswith(t.split()[0]) for t in _TYPES_RECHERCHE):
+        raise HTTPException(400, f"Type attendu parmi : {', '.join(_TYPES_RECHERCHE)}")
+    with get_cursor() as cur:
+        r = prix.regles(cur)
+        seuils = grille._seuils(cur)
+        groupes = [g for g in api_tarifs._groupes_pieces(cur, None)
+                   if all(m in normaliser(f"{g['marque']} {g['modele']}") for m in mots)]
+        groupes = groupes[:40]
+        pieces = [p for g in groupes for p in g["pieces"]
+                  if not tp or tp.split()[0] in normaliser(p.get("type_piece") or "")]
+        pf = prix.prix_fournisseurs(cur, [p["cle"] for p in pieces]) if pieces else {}
+        produits = prix.rechercher_catalogue(cur, q, type_piece=tp or None, limite=300) if admin else []
+        prefere = fournisseurs.preference(cur)
+    maintenant = grille.maintenant_utc()
+    modeles = []
+    for g in groupes:
+        ps = [p for p in g["pieces"] if not tp or tp.split()[0] in normaliser(p.get("type_piece") or "")]
+        if not ps:
+            continue
+        ps.sort(key=lambda p: (api_tarifs._rang_type(p["type_piece"]), normaliser(p["type_piece"]),
+                               normaliser(p["qualite"]), p["table"], p["id"] or 0))
+        cat_apple = api_tarifs._categorie_apple(g["modele"], g.get("categorie")) if g["marque_c"] == "apple" else None
+        modeles.append({
+            "marque": g["marque"], "modele": g["modele"], "categorie_apple": cat_apple,
+            "pieces": [api_tarifs._piece_out(p, admin, r, seuils, maintenant, cat_apple, None, pf.get(p["cle"]))
+                       for p in ps],
+        })
+    par_f = {f: [] for f in prix.FOURNISSEURS_CONNUS}
+    for p in produits:
+        if p.get("type_piece") and p.get("prix_ht"):
+            p["client"] = prix.prix_client(p["prix_ht"], p["type_piece"], "standard", r)
+        else:
+            p["client"] = None
+        par_f.setdefault(p["fournisseur"], []).append(p)
+    return {"q": " ".join(q.split()), "admin": admin, "preference": prefere, "modeles": modeles, "produits": par_f,
+            "nb_produits": len(produits), "tronque": len(produits) >= 300}
 
 
 @router.get("/mobilax/diagnostic")

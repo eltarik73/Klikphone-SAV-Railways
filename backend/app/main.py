@@ -565,12 +565,33 @@ _DDL_ALTERS = [
         prix_maj_le TIMESTAMP,
         PRIMARY KEY (tarif_cle, fournisseur)
     )""",
+    # Catalogue fournisseur (services/prix.enregistrer_catalogue) : chaque produit vu chez Mobilax / Utopya tel que le
+    # fournisseur le nomme, avec prix, stock, fiche et la lecture qu'en fait Klikphone — page « Recherche fournisseurs »
+    """CREATE TABLE IF NOT EXISTS fournisseurs_catalogue (
+        fournisseur TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        nom TEXT NOT NULL,
+        prix_ht NUMERIC(10,2),
+        en_stock BOOLEAN,
+        url TEXT,
+        marque TEXT,
+        modele TEXT,
+        type_piece TEXT,
+        qualite TEXT,
+        tarif_cle TEXT,
+        recherche TEXT NOT NULL DEFAULT '',
+        source TEXT,
+        vu_le TIMESTAMP NOT NULL DEFAULT NOW(),
+        prix_maj_le TIMESTAMP,
+        PRIMARY KEY (fournisseur, ref)
+    )""",
 ]
 
 # Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
 # le ShareLock de la table avant de tester le nom)
 _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_tickets_client_id ON tickets(client_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fournisseurs_catalogue_cle ON fournisseurs_catalogue(tarif_cle)",
     "CREATE INDEX IF NOT EXISTS idx_tickets_statut ON tickets(statut)",
     "CREATE INDEX IF NOT EXISTS idx_tickets_date_depot ON tickets(date_depot DESC)",
     "CREATE INDEX IF NOT EXISTS idx_clients_telephone ON clients(telephone)",

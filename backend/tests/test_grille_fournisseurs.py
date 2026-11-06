@@ -139,21 +139,29 @@ def test_appliquer_preference_aligne_toute_la_grille(monkeypatch):
     monkeypatch.setattr(P, "decrire_tarifs", lambda c, cles, r=None: {k: v for k, v in descs.items() if k in cles})
     appliques = []
     monkeypatch.setattr(P, "appliquer_ht", lambda c, cle, ht, source, par, lot=None, r=None: appliques.append((cle, ht, source, lot)) or {"ok": True})
-    # Préférence Mobilax : tarifs:1 passe de Utopya 21 à Mobilax 25 ; tarifs:2 n'a pas de prix Mobilax ;
-    # tarifs:3 déjà à Mobilax 9 ; la fiche iPad passe à 80
+    # Préférence Mobilax : tarifs:1 passe de Utopya 21 à Mobilax 25 (plus cher : le prix ne décide pas) ; tarifs:2 n'a pas
+    # de prix Mobilax → Utopya le complète, mais la pièce est verrouillée ; tarifs:3 déjà à Mobilax 9 ; la fiche iPad passe à 80
     res = P.appliquer_preference(cur, "Mobilax", "admin")
-    assert res["examinees"] == 4 and res["modifies"] == 2 and res["inchangees"] == 1 and res["sans_prix"] == 1
+    assert res["examinees"] == 4 and res["modifies"] == 2 and res["inchangees"] == 1 and res["verrouillees"] == 1 and res["sans_prix"] == 0
     assert [a[:3] for a in appliques] == [("tarifs:1", Decimal("25"), "mobilax"), ("tarifs_apple_devices:4:ecran", Decimal("80"), "mobilax")]
     assert len({a[3] for a in appliques}) == 1 and res["lot_id"] == appliques[0][3]
     assert any(sql.startswith("UPDATE tarifs SET fournisseur = %s") and p[0] == "Mobilax" and p[-1] == 1 for sql, p in cur.sql)
     assert any(sql.startswith("UPDATE tarifs_apple_devices SET fournisseur = %s") for sql, _ in cur.sql)
-    # Sans préférence : le moins cher disponible ; la pièce verrouillée est laissée ; un choix à la pièce prime
+    # Sans préférence réglée : Mobilax par défaut, jamais le moins cher (Utopya à 21 < 25 n'est pas repris) ; un choix à
+    # la pièce prime ; Utopya retenu → tarifs:1 passe à Utopya 21, tarifs:3 (choix Mobilax) et la fiche iPad (Utopya ne l'a pas) restent
     appliques.clear()
     descs["tarifs:1"].update(ht=Decimal("25"), fournisseur="Mobilax")
     descs["tarifs_apple_devices:4:ecran"].update(ht=Decimal("80"), fournisseur="Mobilax")
     res = P.appliquer_preference(cur, None, "admin")
-    assert [a[:3] for a in appliques] == [("tarifs:1", Decimal("21"), "utopya")] and res["verrouillees"] == 1
-    assert res["modifies"] == 1 and res["inchangees"] == 2
+    assert appliques == [] and res["modifies"] == 0 and res["inchangees"] == 3 and res["verrouillees"] == 1
+    res = P.appliquer_preference(cur, "Utopya", "admin")
+    assert [a[:3] for a in appliques] == [("tarifs:1", Decimal("21"), "utopya")] and res["modifies"] == 1 and res["inchangees"] == 2
+    # cible_fournisseur : choix de la pièce, puis préférence, puis l'autre (complément) ; jamais le moins cher
+    dispo = {"Mobilax": {"ht": 25.0, "ref": "M1", "url": None, "en_stock": False}, "Utopya": {"ht": 21.0, "ref": "U1", "url": None, "en_stock": True}}
+    assert P.cible_fournisseur(dispo, {}, "Mobilax")["fournisseur"] == "Mobilax"
+    assert P.cible_fournisseur(dispo, {"fournisseur_choisi": "Utopya"}, "Mobilax")["fournisseur"] == "Utopya"
+    assert P.cible_fournisseur({"Utopya": dispo["Utopya"]}, {}, "Mobilax") == {"fournisseur": "Utopya", "ht": Decimal("21.0"), "ref": "U1", "url": None, "en_stock": True}
+    assert P.cible_fournisseur({"Utopya": {"ht": None}}, {}, "Mobilax") is None and P.cible_fournisseur({}, None, None) is None
 
 
 def test_route_preference_fournisseur(client, monkeypatch):
@@ -169,7 +177,7 @@ def test_route_preference_fournisseur(client, monkeypatch):
     with patch("app.api.auth.get_cursor", gc_admin):
         r = client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": "Utopya"}, headers=_headers())
         assert r.status_code == 200 and r.json()["preference"] == "Utopya" and r.json()["lance"] is True
-        r = client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": None}, headers=_headers())
-        assert r.status_code == 200 and r.json()["preference"] is None
+        # Plus de « le moins cher » : un fournisseur est obligatoire
+        assert client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": None}, headers=_headers()).status_code == 422
         assert client.put("/api/tarifs/fournisseurs/preference", json={"fournisseur": "Autre"}, headers=_headers()).status_code == 422
-    assert regles == ["Utopya", None] and len(lances) == 2
+    assert regles == ["Utopya"] and len(lances) == 1

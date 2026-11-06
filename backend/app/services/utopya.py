@@ -32,7 +32,7 @@ import re
 import secrets
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 FOURNISSEUR = "Utopya"
 AUTEUR = "Collecte Utopya"
 SOURCE = "utopya"
-VERSION = "2"
+VERSION = "3"
 SITE = "https://www.utopya.fr/"
 
 P_CLE = "UTOPYA_COLLECTE_TOKEN"           # clé du collecteur (masquée par api/config : *_TOKEN)
@@ -310,10 +310,21 @@ def modele_nom(nom: str, motif_piece: str, piece: str = None) -> str:
     return " ".join(garde)
 
 
+def en_stock_tuile(p: dict):
+    """True / False d'après le champ `stock` de la tuile ('ok' | 'rupture', favori version 3 : une tuile en
+    rupture porte « Prévenez-moi quand il sera disponible. ») ; None si le favori ne l'a pas envoyé."""
+    v = str((p or {}).get("stock") or "").strip().lower()
+    if v in ("rupture", "indisponible", "unavailable", "0", "false"):
+        return False
+    if v in ("ok", "stock", "en_stock", "disponible", "available", "1", "true"):
+        return True
+    return None
+
+
 def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
-    """Ligne d'import d'une tuile Utopya {nom, sku, prix_texte, prix_montant} :
-    {reference, designation, marque, modele, type_piece, qualite, prix_ht} ; None si ce n'est pas
-    une pièce suivie, une pièce secondaire ou un produit sans prix."""
+    """Ligne d'import d'une tuile Utopya {nom, sku, prix_texte, prix_montant, stock} :
+    {reference, designation, marque, modele, type_piece, qualite, prix_ht, en_stock, url} ; None si ce n'est
+    pas une pièce suivie, une pièce secondaire ou un produit sans prix."""
     nom = " ".join(str(p.get("nom") or "").split())
     if not nom:
         return None
@@ -344,7 +355,7 @@ def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
     if href.startswith("/"):
         href = SITE.rstrip("/") + href
     return {"reference": ref, "designation": nom[:250], "marque": str(marque_page or "")[:40], "modele": modele[:250],
-            "type_piece": type_piece, "qualite": qualite or "", "prix_ht": ht, "en_stock": None,
+            "type_piece": type_piece, "qualite": qualite or "", "prix_ht": ht, "en_stock": en_stock_tuile(p),
             "url": href[:300] if href.startswith("https://") else None}
 
 
@@ -391,7 +402,19 @@ def _utc() -> str:
 def _resume_vide() -> dict:
     return {"ok": False, "erreur": None, "debut": _utc(), "fin": None, "pages_lues": 0, "pages_total": 0,
             "erreurs_pages": 0, "interrompu": False, "produits": 0, "produits_prix": 0, "lignes_envoyees": 0,
-            "lots": [], "imports": [], "sans_prix": None, **{k: 0 for k in fournisseurs._COMPTES}}
+            "lots": [], "imports": [], "sans_prix": None, "purge": None, "catalogue_retires": 0,
+            **{k: 0 for k in fournisseurs._COMPTES}}
+
+
+def _age_secondes(debut_utc: str) -> float:
+    """Secondes écoulées depuis un horodatage _utc() (0 s'il est illisible)."""
+    try:
+        d = datetime.fromisoformat(str(debut_utc).replace("Z", ""))
+    except (TypeError, ValueError):
+        return 0.0
+    if d.tzinfo is not None:
+        d = d.astimezone(timezone.utc).replace(tzinfo=None)
+    return max((datetime.now(timezone.utc).replace(tzinfo=None) - d).total_seconds(), 0.0)
 
 
 def _noter(cur, resume: dict):
@@ -430,11 +453,12 @@ def traiter(collecte: dict) -> dict:
             with get_cursor() as cur:
                 infos = fournisseurs.infos_lignes(lignes)
                 resultats = [fournisseurs._importer(cur, "tarifs", fournisseurs.csv_lignes(lignes), f"utopya-{jour}.csv",
-                                                    r, fournisseur=FOURNISSEUR, auteur=AUTEUR, source=SOURCE, infos=infos)]
+                                                    r, fournisseur=FOURNISSEUR, auteur=AUTEUR, source=SOURCE, infos=infos,
+                                                    lignes=lignes)]
                 if apple:
                     resultats.append(fournisseurs._importer(cur, "tarifs_apple_devices", fournisseurs.csv_lignes(apple),
                                                             f"utopya-{jour}-apple.csv", r, fournisseur=FOURNISSEUR,
-                                                            auteur=AUTEUR, source=SOURCE, infos=infos))
+                                                            auteur=AUTEUR, source=SOURCE, infos=infos, lignes=apple))
             for res in resultats:
                 cles_reconnues |= set(res.pop("_cles", None) or ())
                 for k in fournisseurs._COMPTES:
@@ -442,9 +466,16 @@ def traiter(collecte: dict) -> dict:
                 if res["lot_id"]:
                     resume["lots"].append(res["lot_id"])
                 resume["imports"].append({k: res[k] for k in ("cible", "import_id", "lot_id", "erreur")})
+        complete = (not resume["interrompu"] and not resume["erreurs_pages"] and resume["pages_total"] > 0
+                    and resume["pages_lues"] >= resume["pages_total"])
         with get_cursor() as cur:
             d = fournisseurs.diagnostic_pieces(fournisseurs._pieces_grille(cur), diag, cles_reconnues, modeles)
             fournisseurs._ecrire(cur, P_DIAG, json.dumps(d, ensure_ascii=False, default=str))
+            # Reconditionné / compatible sur une ligne « Original » (ou l'inverse) : retiré et corrigé ; après une
+            # collecte complète, le catalogue oublie les produits qu'Utopya ne montre plus
+            resume["purge"] = fournisseurs.purger_prix_incoherents(cur, AUTEUR, r)
+            if complete:
+                resume["catalogue_retires"] = prix.purger_catalogue(cur, FOURNISSEUR, _age_secondes(resume["debut"]) + 120)
         resume["sans_prix"] = d["n"]
         resume["ok"] = True
         logger.info("Collecte Utopya : %s prix mis à jour, %s proposition(s), %s produits lus",
@@ -514,8 +545,10 @@ def phrase_suivi(e: dict) -> str:
         morceaux = [f"{int(r.get('modifies') or 0)} prix mis à jour"]
         if r.get("propositions"):
             morceaux.append(f"{int(r['propositions'])} à valider dans Klikphone")
-        if r.get("plus_cher_ailleurs"):
-            morceaux.append(f"{int(r['plus_cher_ailleurs'])} restés chez Mobilax (moins cher)")
+        if r.get("complements"):
+            morceaux.append(f"{int(r['complements'])} pièces que Mobilax n'a pas (complétées par Utopya)")
+        if (r.get("purge") or {}).get("supprimes"):
+            morceaux.append(f"{int(r['purge']['supprimes'])} prix retirés (qualité d'écran incohérente)")
         if r.get("sans_prix"):
             morceaux.append(f"{int(r['sans_prix'])} pièces de la grille sans prix Utopya")
         return "Terminé : " + ", ".join(morceaux) + f" ({int(r.get('produits') or 0)} produits lus)."
@@ -565,7 +598,7 @@ const plan=await post('plan',{liens,version:VER});
 const pages=plan.pages||[];if(!pages.length)throw new Error('aucune page à lire (grille vide ?).');
 const produits=[],erreurs=[];let lues=0;
 const lirePage=async(url,p)=>{const u=url+(url.includes('?')?'&':'?')+'product_list_limit=200'+(p>1?'&p='+p:'');const r=await fetch(u,{credentials:'include'});if(!r.ok)throw new Error('HTTP '+r.status);return new DOMParser().parseFromString(await r.text(),'text/html');};
-const tuiles=(doc,pg)=>{let n=0;for(const li of doc.querySelectorAll('.product-item')){const lien=li.querySelector('.product-item-link');const nom=((lien&&lien.textContent)||'').replace(/\s+/g,' ').trim();if(!nom)continue;const pb=li.querySelector('.price-box')||li.querySelector('.price')||li.querySelector('.log-to-see-price');const am=li.querySelector('[data-price-amount]');produits.push({nom:nom.slice(0,200),sku:(li.dataset.sku||'').slice(0,60),href:((lien&&lien.getAttribute('href'))||'').slice(0,200),prix_montant:am?am.getAttribute('data-price-amount'):null,prix_type:am?am.getAttribute('data-price-type'):null,prix_texte:((pb&&pb.textContent)||'').replace(/\s+/g,' ').trim().slice(0,80),page:pg.url});n++;}return n;};
+const tuiles=(doc,pg)=>{let n=0;for(const li of doc.querySelectorAll('.product-item')){const lien=li.querySelector('.product-item-link');const nom=((lien&&lien.textContent)||'').replace(/\s+/g,' ').trim();if(!nom)continue;const pb=li.querySelector('.price-box')||li.querySelector('.price')||li.querySelector('.log-to-see-price');const am=li.querySelector('[data-price-amount]');const rupture=!!li.querySelector('.stock.unavailable')||/Pr[ée]venez-moi quand il sera disponible/i.test(li.textContent||'');produits.push({nom:nom.slice(0,200),sku:(li.dataset.sku||'').slice(0,60),href:((lien&&lien.getAttribute('href'))||'').slice(0,200),prix_montant:am?am.getAttribute('data-price-amount'):null,prix_type:am?am.getAttribute('data-price-type'):null,prix_texte:((pb&&pb.textContent)||'').replace(/\s+/g,' ').trim().slice(0,80),stock:rupture?'rupture':'ok',page:pg.url});n++;}return n;};
 for(let i=0;i<pages.length&&!stop;i++){const pg=pages[i];dire('lecture '+(i+1)+'/'+pages.length+' : '+(pg.libelle||pg.url)+' — '+produits.length+' produits');
 try{const doc=await lirePage(pg.url,1);if(i===0&&doc.querySelector('.log-to-see-price')&&!doc.querySelector('[data-price-amount]'))throw new Error('non_connecte');tuiles(doc,pg);const m=((doc.querySelector('.toolbar-amount')||{}).textContent||'').match(/(\d+)\s*produit/);const total=m?parseInt(m[1],10):0;const np=Math.min(Math.ceil(total/200),6);for(let p=2;p<=np&&!stop;p++){await dormir(400);tuiles(await lirePage(pg.url,p),pg);}lues++;}
 catch(e){if(e.message==='non_connecte')throw new Error("connectez-vous à votre compte utopya.fr (les prix sont masqués aux visiteurs), puis recliquez.");erreurs.push({url:pg.url,erreur:String(e.message||e).slice(0,120)});}
