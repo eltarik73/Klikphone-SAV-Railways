@@ -136,4 +136,24 @@ describe('Community Manager — publication Instagram', () => {
     rendre();
     expect(await screen.findByText('Connexion Instagram non aboutie : access_denied')).toBeTruthy();
   });
+
+  it('calendrier : les rendez-vous de l’API (date_evenement) s’affichent au bon jour, triés par heure', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-11-10T00:30:00')); // juste après minuit : le jour UTC serait la veille
+    apiMock.getCalendrierMarketing.mockResolvedValue([
+      { id: 2, titre: 'Reel · Écran explosé', date_evenement: '2026-11-10', heure: '18:00', type: 'post', couleur: '#7C3AED' },
+      { id: 1, titre: 'Story du matin', date_evenement: '2026-11-10', heure: '09:00', type: 'story' },
+      { id: 3, titre: 'Carrousel · Klikphone', date_evenement: '2026-11-12', heure: '12:30', type: 'post' },
+    ]);
+    rendre();
+    fireEvent.click(await screen.findByRole('tab', { name: /Calendrier/ }));
+    await waitFor(() => expect(apiMock.getCalendrierMarketing).toHaveBeenCalledWith({ date_debut: '2026-11-09', date_fin: '2026-11-15' }));
+    const titres = await screen.findAllByText('Reel · Écran explosé');
+    expect(titres.length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Carrousel · Klikphone').length).toBeGreaterThan(0);
+    // Même jour : 09:00 avant 18:00
+    const colonne = titres[0].closest('div.rounded-lg')?.parentElement;
+    const ordre = [...(colonne?.querySelectorAll('.font-semibold') || [])].map((n) => n.textContent);
+    expect(ordre.indexOf('Story du matin')).toBeLessThan(ordre.indexOf('Reel · Écran explosé'));
+  });
 });

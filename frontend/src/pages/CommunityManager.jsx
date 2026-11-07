@@ -53,6 +53,15 @@ function getWeekDays(startDate) {
   return days;
 }
 
+// Jour local AAAA-MM-JJ (toISOString donne le jour UTC : décalé d'un jour autour de minuit à Paris)
+function jourLocal(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+// Jour d'un événement du calendrier marketing (l'API renvoie date_evenement)
+const jourEvenement = (e) => String(e.date_evenement || e.date_heure || e.date || '').slice(0, 10);
+
 function formatDateFr(d) {
   if (!d) return '';
   const date = new Date(d);
@@ -195,13 +204,13 @@ export default function CommunityManager() {
 
   useEffect(() => () => { generationRef.current = null; }, []);
 
-  const calKey = activeTab === 'calendrier' ? `cm:cal:${calendarWeekStart.toISOString().split('T')[0]}` : null;
+  const calKey = activeTab === 'calendrier' ? `cm:cal:${jourLocal(calendarWeekStart)}` : null;
   const { data: calData, error: calError, loading: calLoading } = useApi(
     calKey,
     async () => {
       const days = getWeekDays(calendarWeekStart);
-      const date_debut = days[0].toISOString().split('T')[0];
-      const date_fin = days[6].toISOString().split('T')[0];
+      const date_debut = jourLocal(days[0]);
+      const date_fin = jourLocal(days[6]);
       return sensible(() => api.getCalendrierMarketing({ date_debut, date_fin }));
     },
     { tags: ['marketing-calendar'], ttl: 120_000 }
@@ -1240,12 +1249,11 @@ export default function CommunityManager() {
                 {/* Desktop: 7 columns grid */}
                 <div className="hidden md:grid grid-cols-7 gap-2">
                   {weekDays.map((day, idx) => {
-                    const dayStr = day.toISOString().split('T')[0];
-                    const isToday = new Date().toISOString().split('T')[0] === dayStr;
-                    const dayEvents = events.filter((e) => {
-                      const eDate = (e.date_heure || e.date || '').split('T')[0];
-                      return eDate === dayStr;
-                    });
+                    const dayStr = jourLocal(day);
+                    const isToday = jourLocal(new Date()) === dayStr;
+                    const dayEvents = events
+                      .filter((e) => jourEvenement(e) === dayStr)
+                      .sort((a, b) => String(a.heure || '').localeCompare(String(b.heure || '')));
 
                     return (
                       <div
@@ -1300,12 +1308,11 @@ export default function CommunityManager() {
                 {/* Mobile: list view */}
                 <div className="md:hidden space-y-2">
                   {weekDays.map((day, idx) => {
-                    const dayStr = day.toISOString().split('T')[0];
-                    const isToday = new Date().toISOString().split('T')[0] === dayStr;
-                    const dayEvents = events.filter((e) => {
-                      const eDate = (e.date_heure || e.date || '').split('T')[0];
-                      return eDate === dayStr;
-                    });
+                    const dayStr = jourLocal(day);
+                    const isToday = jourLocal(new Date()) === dayStr;
+                    const dayEvents = events
+                      .filter((e) => jourEvenement(e) === dayStr)
+                      .sort((a, b) => String(a.heure || '').localeCompare(String(b.heure || '')));
 
                     return (
                       <div
