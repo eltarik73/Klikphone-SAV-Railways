@@ -313,9 +313,27 @@ export function fournisseurRetenu(piece) {
 }
 
 /**
+ * Écran vendu avec ou sans châssis (prix_fournisseurs[f].chassis : true / false / null). Le magasin répare avec
+ * châssis : un prix relevé sur la variante « sans châssis » (seule connue chez ce fournisseur) est signalé en
+ * orange, car il ne vaut pas la réparation faite.
+ */
+export function BadgeChassis({ chassis, fournisseur = '', className = '' }) {
+  if (chassis !== true && chassis !== false) return null;
+  const suffixe = fournisseur ? ` chez ${fournisseur}` : '';
+  return chassis ? (
+    <span className={`badge badge-sm badge-info ${className}`}>Avec châssis<span className="sr-only">{suffixe}</span></span>
+  ) : (
+    <span className={`badge badge-sm badge-warning ${className}`}
+      title="Écran vendu sans châssis : le prix ne vaut pas la réparation avec châssis">
+      Sans châssis<span className="sr-only">{suffixe} : le prix ne vaut pas la réparation avec châssis</span>
+    </span>
+  );
+}
+
+/**
  * Ligne d'une grille fournisseur (Mobilax ou Utopya) : le dernier prix relevé chez ce fournisseur pour la
  * pièce, son calcul et le prix client qu'il donnerait, en lecture seule ; « retenu » quand c'est le coût
- * en vigueur, « rupture » quand le fournisseur n'a plus la pièce.
+ * en vigueur, « rupture » quand le fournisseur n'a plus la pièce, « avec / sans châssis » pour un écran.
  */
 function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seuils }) {
   const d = piece.prix_fournisseurs?.[grille] || null;
@@ -340,6 +358,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
               {retenu && <span className="badge badge-sm badge-success">retenu</span>}
               {stockDit && <span className={`badge badge-sm ${rupture ? 'badge-danger' : 'badge-success'}`}>{rupture ? 'Rupture' : 'En stock'}</span>}
+              {connu && <BadgeChassis chassis={d.chassis} />}
               {!connu && <span className="badge badge-sm badge-neutral">pas de prix {grille}</span>}
             </div>
           </div>
@@ -410,9 +429,11 @@ export default function PieceFournisseurRow({
   const liens = piece.liens?.utopya || piece.liens?.mobilax ? piece.liens : liensFournisseur({ marque, modele, typePiece: piece.type_piece });
   const htConnu = piece.prix_fournisseur_ht !== null && piece.prix_fournisseur_ht !== undefined;
   const classeLigne = `table-row ${!enStock ? 'opacity-80' : ''}`;
-  // Le fournisseur dont vient le coût retenu annonce-t-il une rupture ? (grille comparative, dernier passage)
+  // Le fournisseur dont vient le coût retenu annonce-t-il une rupture ? Son écran est-il vendu avec ou sans
+  // châssis ? (grille comparative, dernier passage)
   const retenu = fournisseurRetenu(piece);
   const ruptureFournisseur = !!retenu && piece.prix_fournisseurs?.[retenu]?.en_stock === false;
+  const chassisRetenu = retenu ? piece.prix_fournisseurs?.[retenu]?.chassis : null;
 
   if (grille && grille !== 'retenue') {
     return <LigneGrilleFournisseur piece={piece} marque={marque} modele={modele} grille={grille} htVisible={htVisible} seuils={seuils} />;
@@ -458,6 +479,7 @@ export default function PieceFournisseurRow({
                   <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
                 )}
                 {ruptureFournisseur && <span className="badge badge-sm badge-danger">Rupture chez {retenu}</span>}
+                <BadgeChassis chassis={chassisRetenu} fournisseur={retenu || ''} />
                 {isAdmin && onVerrou
                   ? <BoutonVerrou verrouille={verrou} onClick={() => onVerrou(piece)} disabled={occupe || envoi} nom={`le prix de ${nom}`} />
                   : <BoutonVerrou verrouille={verrou} lectureSeule nom={nom} />}

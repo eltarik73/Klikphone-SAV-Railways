@@ -175,7 +175,7 @@ def test_lignes_et_csv_relus_par_le_moteur_d_import():
     # Pièce et qualité lues dans la catégorie Mobilax, modèle dans le nom (marque comprise)
     assert lignes[2] == {"reference": "3000000355123", "designation": "Ecran Tactile OEM Honor 200 5G",
                          "modele": "Honor 200 5G", "type_piece": "Ecran", "qualite": "Compatible",
-                         "prix_ht": Decimal("54.90"), "en_stock": True, "url": None}
+                         "prix_ht": Decimal("54.90"), "en_stock": True, "url": None, "chassis": None}
     assert lignes[3]["designation"] == "Batterie Originale Honor 200 5G"
     assert (lignes[3]["modele"], lignes[3]["type_piece"], lignes[3]["qualite"]) == ("Honor 200 5G", "Batterie", "Original")
     assert lignes[0]["type_piece"] == "Ecran" and lignes[0]["qualite"] == "Original"   # bloc écran complet
@@ -226,6 +226,43 @@ def test_planifier_applique_propose_et_laisse():
     plan = F.planifier(ap, proposer=False)
     assert plan["lignes"] == [2, 3, 5, 9, 10] and plan["propositions"] == [] and plan["a_valider"] == 0
     assert plan["variations_appliquees"] == 1
+
+
+def test_planifier_prefere_l_ecran_avec_chassis_au_moins_cher():
+    """Galaxy S25 chez Mobilax : « Ecran Tactile Original » (94 €, châssis compris) et « Ecran Tactile Original sans
+    Châssis » (67 €) visent la même ligne Original. Le magasin répare avec châssis : l'écran complet l'emporte, le
+    sans châssis est une variante laissée ; seul, le sans châssis passe quand même (signalé dans les grilles)."""
+    ap = {"reconnues": [
+        {**_rec(1, "tarifs:1", 67.0, ["conflit"]), "designation": "Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931"},
+        {**_rec(2, "tarifs:1", 94.0, ["conflit"]), "designation": "Ecran Tactile Original Samsung Galaxy S25 S931"},
+        {**_rec(3, "tarifs:1", 96.0, ["conflit"]), "designation": "Ecran Tactile Original Samsung Galaxy S25 S931"},
+        {**_rec(4, "tarifs:2", 67.09), "designation": "Ecran Complet Galaxy S25 Plus (S936B) (Sans Châssis)"},   # seul : gardé
+        {**_rec(5, "tarifs:3", 89.95, ["conflit"]), "designation": "Ecran Complet Noir Galaxy S25 (S931B) (Avec Châssis) (Relife)"},
+        {**_rec(6, "tarifs:3", 85.0, ["conflit"]), "designation": "Ecran Complet Or Rose Galaxy S25 (S931B) (Avec Châssis) (Relife)"},
+        {**_rec(7, "tarifs:4", 9.0, ["conflit"]), "designation": "Batterie Samsung Galaxy S25"},                   # pas un écran
+        {**_rec(8, "tarifs:4", 8.5, ["conflit"]), "designation": "Batterie Premium Samsung Galaxy S25"},
+    ]}
+    plan = F.planifier(ap)
+    assert plan["lignes"] == [2, 4, 6, 8] and plan["variantes"] == 4
+    # Même chose en synchro (rien à valider) et avec un fournisseur retenu
+    assert F.planifier(ap, proposer=False, fournisseur="Mobilax", prefere="Mobilax")["lignes"] == [2, 4, 6, 8]
+
+
+def test_lignes_produit_lisent_le_chassis_des_noms_mobilax():
+    """Noms réels (07/11/2026) : la catégorie dit « sans Châssis » ; l'écran officiel sans mention est l'écran
+    complet ; « Original Assembled avec Châssis Compatible » reste un reconditionné."""
+    sans = F.lignes_produit({"id": 1, "price": 67, "name": "Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931 GH82-36327A Noir",
+                             "category_name": "Ecran Tactile Original sans Châssis"})
+    avec = F.lignes_produit({"id": 2, "price": 94, "name": "Ecran Tactile Original Samsung Galaxy S25 S931 GH82-36329A Gris",
+                             "category_name": "Ecran Tactile Original"})
+    assembled = F.lignes_produit({"id": 3, "price": 60, "category_name": "Ecran Tactile Original Assembled avec Châssis Compatible",
+                                  "name": "Ecran Tactile Original Assembled avec Châssis Compatible Samsung Galaxy S25 S931 GH82-36329A Gris"})
+    assert (sans[0]["qualite"], sans[0]["chassis"], sans[0]["modele"]) == ("Original", False, "Samsung Galaxy S25")
+    assert sans[0]["designation"] == "Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931"
+    assert (avec[0]["qualite"], avec[0]["chassis"], avec[0]["modele"]) == ("Original", None, "Samsung Galaxy S25")
+    assert (assembled[0]["qualite"], assembled[0]["chassis"]) == ("Reconditionnee", True)
+    # La désignation (lue par le moteur d'import) garde la mention : planifier et la grille comparative s'y fient
+    assert F.csv_lignes(sans).decode("utf-8-sig").count("sans Châssis") == 1
 
 
 # ─── Prix sans valeur de référence : remplacés sans validation ──

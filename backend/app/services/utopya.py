@@ -323,7 +323,7 @@ def en_stock_tuile(p: dict):
 
 def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
     """Ligne d'import d'une tuile Utopya {nom, sku, prix_texte, prix_montant, stock} :
-    {reference, designation, marque, modele, type_piece, qualite, prix_ht, en_stock, url} ; None si ce n'est
+    {reference, designation, marque, modele, type_piece, qualite, prix_ht, en_stock, url, chassis} ; None si ce n'est
     pas une pièce suivie, une pièce secondaire ou un produit sans prix."""
     nom = " ".join(str(p.get("nom") or "").split())
     if not nom:
@@ -356,7 +356,7 @@ def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
         href = SITE.rstrip("/") + href
     return {"reference": ref, "designation": nom[:250], "marque": str(marque_page or "")[:40], "modele": modele[:250],
             "type_piece": type_piece, "qualite": qualite or "", "prix_ht": ht, "en_stock": en_stock_tuile(p),
-            "url": href[:300] if href.startswith("https://") else None}
+            "url": href[:300] if href.startswith("https://") else None, "chassis": prix.chassis_designation(nom)}
 
 
 def lignes_collecte(produits, pages, tva=None) -> tuple:
@@ -402,7 +402,7 @@ def _utc() -> str:
 def _resume_vide() -> dict:
     return {"ok": False, "erreur": None, "debut": _utc(), "fin": None, "pages_lues": 0, "pages_total": 0,
             "erreurs_pages": 0, "interrompu": False, "produits": 0, "produits_prix": 0, "lignes_envoyees": 0,
-            "lots": [], "imports": [], "sans_prix": None, "purge": None, "catalogue_retires": 0,
+            "lots": [], "imports": [], "sans_prix": None, "purge": None, "chassis": None, "catalogue_retires": 0,
             **{k: 0 for k in fournisseurs._COMPTES}}
 
 
@@ -471,9 +471,11 @@ def traiter(collecte: dict) -> dict:
         with get_cursor() as cur:
             d = fournisseurs.diagnostic_pieces(fournisseurs._pieces_grille(cur), diag, cles_reconnues, modeles)
             fournisseurs._ecrire(cur, P_DIAG, json.dumps(d, ensure_ascii=False, default=str))
-            # Reconditionné / compatible sur une ligne « Original » (ou l'inverse) : retiré et corrigé ; après une
-            # collecte complète, le catalogue oublie les produits qu'Utopya ne montre plus
+            # Reconditionné / compatible sur une ligne « Original » (ou l'inverse) : retiré et corrigé ; un écran relevé
+            # « sans châssis » passe sur l'écran avec châssis du catalogue ; après une collecte complète, le catalogue
+            # oublie les produits qu'Utopya ne montre plus
             resume["purge"] = fournisseurs.purger_prix_incoherents(cur, AUTEUR, r)
+            resume["chassis"] = fournisseurs.corriger_sans_chassis(cur, AUTEUR, r)
             if complete:
                 resume["catalogue_retires"] = prix.purger_catalogue(cur, FOURNISSEUR, _age_secondes(resume["debut"]) + 120)
         resume["sans_prix"] = d["n"]
@@ -549,6 +551,8 @@ def phrase_suivi(e: dict) -> str:
             morceaux.append(f"{int(r['complements'])} pièces que Mobilax n'a pas (complétées par Utopya)")
         if (r.get("purge") or {}).get("supprimes"):
             morceaux.append(f"{int(r['purge']['supprimes'])} prix retirés (qualité d'écran incohérente)")
+        if (r.get("chassis") or {}).get("corriges"):
+            morceaux.append(f"{int(r['chassis']['corriges'])} écrans passés sur la variante avec châssis")
         if r.get("sans_prix"):
             morceaux.append(f"{int(r['sans_prix'])} pièces de la grille sans prix Utopya")
         return "Terminé : " + ", ".join(morceaux) + f" ({int(r.get('produits') or 0)} produits lus)."

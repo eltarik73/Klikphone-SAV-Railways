@@ -356,6 +356,18 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   Google ») ; « Original Pulled / Refurb / Assembled » (Mobilax) et « Pulled » (Utopya) = Reconditionnee, jamais la ligne
   Original (`REPLI_ECRAN` sans Original ← Reconditionnee). Utopya : sans étiquette, SKU numérique = origine
   (« Ecran Complet Noir Galaxy A54 5G (A546B) »), SKU alphanumérique (« A546-OLED@ », « IP11-BOLT ») = compatible.
+- **Écran avec châssis d'abord** (gérant, 07/11/2026 : « nous réparons avec châssis ») : Mobilax (catégorie « Ecran Tactile
+  Original sans Châssis ») et Utopya (« Ecran Complet Galaxy S25 (S931B) (Sans Châssis) ») vendent l'écran officiel des
+  Samsung en deux variantes : l'écran complet (un peu moins de 100 € HT sur un S25, nom sans mention ou « avec Châssis »)
+  et la dalle seule « sans châssis » (un peu moins de 70 €). `prix.chassis_designation(nom)` → True / False / None (écran
+  seulement) ; `prix.rang_chassis` fait passer un « sans châssis » après toutes les autres variantes dans
+  `fournisseurs.planifier` et `prix.enregistrer_prix_fournisseur` (il ne l'emporte que seul). Lignes Mobilax / Utopya
+  portent `chassis` ; `prix_fournisseurs`, `_prix_fournisseurs_out` et `rechercher_catalogue` le renvoient (lu dans la
+  désignation, aucune colonne) ; badge « Avec châssis » / « Sans châssis » (orange, `BadgeChassis`) sur le coût retenu,
+  les grilles Mobilax / Utopya, les cellules et catalogues de Recherche fournisseurs. `fournisseurs.corriger_sans_chassis`
+  (après chaque passage et au démarrage, `purger_qualites`) remplace un prix relevé « sans châssis » par l'écran avec châssis
+  du catalogue du même fournisseur (qualité cohérente, le moins cher), et le coût retenu s'il en venait ; résumé `chassis
+  {examines, corriges, reassignees}` (« N écrans passés sur la variante avec châssis »).
 - **Produit vu sans prix** (rupture, prix masqué) : la synchro Mobilax rattache aussi les produits sans prix
   (`lignes_produit(sans_prix=True)`, `rattacher_sans_prix`) → ligne notée `en_stock = FALSE` (prix connu gardé) et raison
   `sans_prix_fournisseur` dans le diagnostic, au lieu d'un faux « non reconnu ».

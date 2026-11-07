@@ -60,6 +60,7 @@ export function decrireMobilax(m) {
     if (n(r.complements)) morceaux.push(`${n(r.complements)} pièce${n(r.complements) > 1 ? 's' : ''} qu’Utopya n’a pas (complétée${n(r.complements) > 1 ? 's' : ''} par Mobilax)`);
     if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à Utopya (fournisseur retenu)`);
     if (n(r.purge?.supprimes)) morceaux.push(`${n(r.purge.supprimes)} prix retiré${n(r.purge.supprimes) > 1 ? 's' : ''} (reconditionné ou compatible pris pour un original)`);
+    if (n(r.chassis?.corriges)) morceaux.push(`${n(r.chassis.corriges)} écran${n(r.chassis.corriges) > 1 ? 's' : ''} passé${n(r.chassis.corriges) > 1 ? 's' : ''} sur la variante avec châssis`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Mobilax`);
     if (r.incomplet) morceaux.push('passage incomplet (temps écoulé)');
@@ -105,6 +106,7 @@ export function decrireUtopya(u) {
     if (n(r.complements)) morceaux.push(`${n(r.complements)} pièce${n(r.complements) > 1 ? 's' : ''} que Mobilax n’a pas (complétée${n(r.complements) > 1 ? 's' : ''} par Utopya)`);
     if (n(r.autre_fournisseur_choisi)) morceaux.push(`${n(r.autre_fournisseur_choisi)} laissée${n(r.autre_fournisseur_choisi) > 1 ? 's' : ''} à Mobilax (fournisseur retenu)`);
     if (n(r.purge?.supprimes)) morceaux.push(`${n(r.purge.supprimes)} prix retiré${n(r.purge.supprimes) > 1 ? 's' : ''} (reconditionné ou compatible pris pour un original)`);
+    if (n(r.chassis?.corriges)) morceaux.push(`${n(r.chassis.corriges)} écran${n(r.chassis.corriges) > 1 ? 's' : ''} passé${n(r.chassis.corriges) > 1 ? 's' : ''} sur la variante avec châssis`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Utopya`);
     if (r.interrompu) morceaux.push('collecte arrêtée avant la fin');

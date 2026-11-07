@@ -1697,8 +1697,9 @@ def _cat_apple_entree(e: dict) -> Optional[str]:
 
 
 def _prix_fournisseurs_out(pf: Optional[dict], admin: bool, p: Optional[dict] = None, r: Optional[dict] = None) -> dict:
-    """{fournisseur: {ht (admin), client, calcul (admin), ref, url, designation, en_stock, vu_le, prix_maj_le, connu}}
-    d'une pièce : la grille de chaque fournisseur, prix client calculé avec les règles comme pour le coût retenu."""
+    """{fournisseur: {ht (admin), client, calcul (admin), ref, url, designation, chassis, en_stock, vu_le, prix_maj_le,
+    connu}} d'une pièce : la grille de chaque fournisseur, prix client calculé avec les règles comme pour le coût
+    retenu ; chassis : True / False / None (écran vendu avec / sans châssis, ou sans précision)."""
     out = {}
     for nom, d in (pf or {}).items():
         calcul = None
@@ -1707,7 +1708,7 @@ def _prix_fournisseurs_out(pf: Optional[dict], admin: bool, p: Optional[dict] = 
                       else prix.calcul_detail(d["ht"], p.get("type_piece"), p.get("categorie"), r))
         out[nom] = {"ht": d["ht"] if admin else None, "client": calcul["arrondi"] if calcul else None,
                     "calcul": calcul if admin else None, "ref": d.get("ref"), "url": d.get("url"),
-                    "designation": d.get("designation"), "en_stock": d.get("en_stock"),
+                    "designation": d.get("designation"), "chassis": d.get("chassis"), "en_stock": d.get("en_stock"),
                     "vu_le": d.get("vu_le"), "prix_maj_le": d.get("prix_maj_le"), "connu": d["ht"] is not None}
     return out
 

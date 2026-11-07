@@ -703,6 +703,26 @@ describe('Réparation smartphones : grilles Mobilax et Utopya', () => {
     expect(await within(screen.getByRole('table')).findByRole('button', { name: /Mettre à jour le HT.*Ecran Soft OLED/ })).toBeInTheDocument();
   });
 
+  it('écran relevé « sans châssis » : signalé sur le coût retenu et dans les grilles fournisseur', async () => {
+    // Galaxy S25 : Utopya retenu sur la dalle seule (67 €), Mobilax a l'écran complet « avec châssis »
+    etat.modeles['Samsung::Galaxy A54'] = modele({ pieces: [piece({ qualite: 'Original', fournisseur: 'Utopya', prix_source: 'utopya', prix_fournisseurs: {
+      Mobilax: { ...PRIX_FOURNISSEURS.Mobilax, chassis: true },
+      Utopya: { ...PRIX_FOURNISSEURS.Utopya, en_stock: true, chassis: false },
+    } })] });
+    page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
+    const table = await screen.findByRole('table');
+    const sans = within(table).getByText('Sans châssis');
+    expect(sans).toHaveAttribute('title', 'Écran vendu sans châssis : le prix ne vaut pas la réparation avec châssis');
+    expect(sans).toHaveTextContent('chez Utopya');                      // lecteur d'écran : d'où vient le prix
+    expect(within(table).queryByText('Avec châssis')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Grille Mobilax' }));
+    await waitFor(() => expect(within(screen.getByRole('table')).getByText('Avec châssis')).toBeInTheDocument());
+    expect(within(screen.getByRole('table')).queryByText('Sans châssis')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Grille Utopya' }));
+    await waitFor(() => expect(within(screen.getByRole('table')).getByText('Sans châssis')).toBeInTheDocument());
+    expect(within(screen.getByRole('table')).getByText('retenu')).toBeInTheDocument();
+  });
+
   it('personnel : la grille Utopya montre le prix client qu’elle donnerait, jamais le HT', async () => {
     localStorage.removeItem('klikphone_admin');
     etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: [piece({ prix_fournisseur_ht: null, calcul: null,

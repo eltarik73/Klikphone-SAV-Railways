@@ -28,6 +28,7 @@ Garde-fous :
 """
 
 import copy
+import re
 import json
 import uuid
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -738,6 +739,36 @@ def decrire_tarifs(cur, cles, r=None) -> dict:
 
 FOURNISSEURS_CONNUS = ("Mobilax", "Utopya")
 
+# ─── Écran avec ou sans châssis : l'écran complet d'abord ────────
+# Mobilax (catégorie « Ecran Tactile Original sans Châssis ») et Utopya (« Ecran Complet Galaxy S25 (S931B) (Sans
+# Châssis) ») vendent l'écran officiel de bien des Samsung en deux variantes : l'écran complet avec châssis — celui
+# que le magasin pose, un peu moins de 100 € HT sur un Galaxy S25 — et la dalle seule « sans châssis », un peu moins
+# de 70 €. Prendre « la variante la moins chère » mettait le prix sans châssis sur la ligne (gérant, 07/11/2026 :
+# « il faut prioriser avec châssis… nous réparons avec châssis ») : un écran dit « sans châssis » passe toujours
+# après les autres (rang_chassis), et le prix retenu dit laquelle des deux variantes il désigne (chassis_designation).
+_ECRAN_NOMME = re.compile(r"(?<![a-z0-9])(?:ecran|lcd|oled|amoled|dalle|display)(?![a-z0-9])")
+_SANS_CHASSIS = re.compile(r"(?<![a-z0-9])sans\s+chassis(?![a-z0-9])")
+_AVEC_CHASSIS = re.compile(r"(?<![a-z0-9])avec\s+chassis(?![a-z0-9])")
+
+
+def chassis_designation(designation) -> Optional[bool]:
+    """Pour un écran : False s'il est vendu « sans châssis », True s'il est dit « avec châssis », None quand le nom
+    ne le précise pas (l'écran ordinaire, vendu avec son châssis chez Samsung) ou que ce n'est pas un écran."""
+    d = _norm(designation or "")
+    if not d or not _ECRAN_NOMME.search(d):
+        return None
+    if _SANS_CHASSIS.search(d):
+        return False
+    if _AVEC_CHASSIS.search(d):
+        return True
+    return None
+
+
+def rang_chassis(designation) -> int:
+    """0 pour un écran avec châssis ou qui ne le dit pas, 1 pour un écran « sans châssis » : la variante sans
+    châssis ne l'emporte que si elle est seule (fournisseurs.planifier, enregistrer_prix_fournisseur)."""
+    return 1 if chassis_designation(designation) is False else 0
+
 
 def fournisseur_propre(f) -> str:
     f = " ".join(str(f or "").split())
@@ -749,8 +780,9 @@ def fournisseur_propre(f) -> str:
 
 def enregistrer_prix_fournisseur(cur, fournisseur: str, source: str, reconnues, infos: dict = None) -> int:
     """Prix de CE fournisseur pour chaque pièce reconnue d'un aperçu (import_prix.apercu : la variante la
-    moins chère) → tarifs_fournisseurs_prix ; prix_maj_le renouvelé seulement quand le prix change.
-    infos : {référence: {url, en_stock}}. → nombre de pièces notées."""
+    moins chère, un écran « sans châssis » seulement s'il est seul — rang_chassis) → tarifs_fournisseurs_prix ;
+    prix_maj_le renouvelé seulement quand le prix change. infos : {référence: {url, en_stock}}.
+    → nombre de pièces notées."""
     f = fournisseur_propre(fournisseur)
     meilleurs = {}
     for rec in reconnues or []:
@@ -760,13 +792,14 @@ def enregistrer_prix_fournisseur(cur, fournisseur: str, source: str, reconnues, 
             continue
         if ht <= 0 or not rec.get("cle"):
             continue
-        if rec["cle"] not in meilleurs or ht < meilleurs[rec["cle"]][0]:
-            meilleurs[rec["cle"]] = (ht, rec)
+        rang = (rang_chassis(rec.get("designation")), ht)
+        if rec["cle"] not in meilleurs or rang < meilleurs[rec["cle"]][0]:
+            meilleurs[rec["cle"]] = (rang, rec)
     if not meilleurs or not f:
         return 0
     infos = infos or {}
     lignes = []
-    for cle, (ht, rec) in meilleurs.items():
+    for cle, ((_, ht), rec) in meilleurs.items():
         ref = (str(rec.get("ref") or "").strip()[:120]) or None
         info = infos.get(ref or "") or {}
         en_stock = info.get("en_stock")
@@ -810,7 +843,8 @@ def noter_vus_sans_prix(cur, fournisseur: str, par_cle: dict) -> int:
 
 
 def prix_fournisseurs(cur, cles) -> dict:
-    """{cle: {fournisseur: {ht, ref, designation, url, en_stock, vu_le, prix_maj_le, source}}}."""
+    """{cle: {fournisseur: {ht, ref, designation, chassis, url, en_stock, vu_le, prix_maj_le, source}}} —
+    chassis : True / False / None d'après la désignation (chassis_designation)."""
     cles = [c for c in (cles or []) if c]
     if not cles:
         return {}
@@ -822,8 +856,8 @@ def prix_fournisseurs(cur, cles) -> dict:
     for r in cur.fetchall() or []:
         out.setdefault(r["tarif_cle"], {})[r["fournisseur"]] = {
             "ht": float(r["prix_ht"]) if r["prix_ht"] is not None else None, "ref": r["ref_fournisseur"],
-            "designation": r["designation"], "url": r["url"], "en_stock": r["en_stock"], "vu_le": r["vu_le"],
-            "prix_maj_le": r["prix_maj_le"], "source": r["source"],
+            "designation": r["designation"], "chassis": chassis_designation(r["designation"]), "url": r["url"],
+            "en_stock": r["en_stock"], "vu_le": r["vu_le"], "prix_maj_le": r["prix_maj_le"], "source": r["source"],
         }
     return out
 
@@ -1033,7 +1067,7 @@ def purger_catalogue(cur, fournisseur: str, age_secondes: float) -> int:
 def rechercher_catalogue(cur, q: str, fournisseurs=None, type_piece: str = None, limite: int = 200) -> list:
     """Produits du catalogue dont le texte de recherche porte chaque mot de `q` (sans accents ni casse), par
     fournisseur puis prix. → [{fournisseur, ref, nom, prix_ht, en_stock, url, marque, modele, type_piece, qualite,
-    tarif_cle, vu_le, prix_maj_le}]"""
+    chassis, tarif_cle, vu_le, prix_maj_le}]"""
     mots = [m for m in _norm(q or "").split() if len(m) >= 2 or m.isdigit()][:8]
     if not mots:
         return []
@@ -1060,7 +1094,8 @@ def rechercher_catalogue(cur, q: str, fournisseurs=None, type_piece: str = None,
         out.append({"fournisseur": r["fournisseur"], "ref": r["ref"], "nom": r["nom"],
                     "prix_ht": float(r["prix_ht"]) if r["prix_ht"] is not None else None, "en_stock": r["en_stock"],
                     "url": r["url"], "marque": r["marque"], "modele": r["modele"], "type_piece": r["type_piece"],
-                    "qualite": r["qualite"], "tarif_cle": r["tarif_cle"], "vu_le": r["vu_le"], "prix_maj_le": r["prix_maj_le"]})
+                    "qualite": r["qualite"], "chassis": chassis_designation(r["nom"]), "tarif_cle": r["tarif_cle"],
+                    "vu_le": r["vu_le"], "prix_maj_le": r["prix_maj_le"]})
     return out
 
 

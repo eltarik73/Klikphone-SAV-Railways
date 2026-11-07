@@ -310,6 +310,10 @@ describe('collecte Utopya (favori dans le navigateur du gérant)', () => {
     // Mobilax : pièces qu'Utopya n'a pas, complétées par Mobilax ; jamais de « moins cher »
     expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, complements: 3 } }).detail).toContain('3 pièces qu’Utopya n’a pas (complétées par Mobilax)');
     expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, purge: { supprimes: 1 } } }).detail).toContain('1 prix retiré (reconditionné ou compatible pris pour un original)');
+    // Écrans relevés « sans châssis » passés sur l'écran complet du catalogue
+    expect(decrireMobilax({ ...CONNECTE, resume: { ...RESUME_OK, chassis: { corriges: 2 } } }).detail).toContain('2 écrans passés sur la variante avec châssis');
+    expect(decrireUtopya({ ...UTO_OK, resume: { ...UTO_OK.resume, chassis: { corriges: 1 } } }).detail).toContain('1 écran passé sur la variante avec châssis');
+    expect(ok.detail).not.toMatch(/châssis/);
   });
 
   it('personnel : état de la collecte, diagnostic Utopya, aucun bouton', async () => {

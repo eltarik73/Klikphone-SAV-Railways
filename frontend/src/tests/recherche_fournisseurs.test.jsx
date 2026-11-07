@@ -137,6 +137,20 @@ describe('Recherche fournisseurs', () => {
     expect(screen.getByRole('region', { name: 'Catalogue Utopya' })).toBeInTheDocument();
   });
 
+  it('écran « sans châssis » : signalé dans la cellule du fournisseur, sur le coût retenu et dans le catalogue', async () => {
+    const rep = REPONSE();
+    rep.modeles[0].pieces[0].prix_fournisseurs = { Mobilax: { ...PRIX.Mobilax, chassis: false }, Utopya: { ...PRIX.Utopya, chassis: true } };
+    rep.produits.Mobilax[1].chassis = false;
+    apiMock.rechercherFournisseurs.mockResolvedValue(rep);
+    page('/accueil/tarifs-fournisseurs?q=pixel%206');
+    await screen.findByRole('heading', { name: 'Google Pixel 6' });
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByText('Sans châssis')).toHaveLength(2);    // cellule Mobilax + coût retenu (Mobilax)
+    expect(within(table).getByText('Avec châssis')).toBeInTheDocument();     // cellule Utopya
+    expect(within(table).getAllByText('Sans châssis')[0]).toHaveAttribute('title', 'Écran vendu sans châssis : le prix ne vaut pas la réparation avec châssis');
+    expect(screen.getAllByText('Sans châssis')).toHaveLength(3);             // + le produit du catalogue Mobilax
+  });
+
   it('filtre par type : ?type=ecran dans l’adresse, nouvelle requête', async () => {
     apiMock.rechercherFournisseurs.mockResolvedValue(REPONSE());
     page('/accueil/tarifs-fournisseurs?q=pixel%206');

@@ -5,7 +5,7 @@ import api from '../lib/api';
 import AdminLoginModal from '../components/AdminLoginModal';
 import { BadgeDatePrix, SEUILS_FRAICHEUR, euros } from '../components/HistoriquePrix';
 import { formatDate } from '../lib/utils';
-import { FOURNISSEURS, fournisseurRetenu, getPieceIcon, prixARenseigner } from '../components/PieceFournisseurRow';
+import { BadgeChassis, FOURNISSEURS, fournisseurRetenu, getPieceIcon, prixARenseigner } from '../components/PieceFournisseurRow';
 
 /**
  * « Recherche fournisseurs » (onglet de la rubrique Tarifs) : une recherche de tarifs pro, Mobilax et Utopya
@@ -89,6 +89,7 @@ function CelluleFournisseur({ d, fournisseur, admin, retenu }) {
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <BadgeStock enStock={d.en_stock} fournisseur={fournisseur} />
+        <BadgeChassis chassis={d.chassis} fournisseur={fournisseur} />
         {retenu && <span className="badge badge-sm badge-brand">retenu</span>}
         {ligneDate.prix_maj_le && <BadgeDatePrix row={ligneDate} seuils={SEUILS_FRAICHEUR} court />}
       </div>
@@ -132,6 +133,7 @@ function CarteModele({ m, admin }) {
               const retenu = fournisseurRetenu(p);
               const aRenseigner = prixARenseigner(p);
               const stockRetenu = retenu ? p.prix_fournisseurs?.[retenu]?.en_stock : undefined;
+              const chassisRetenu = retenu ? p.prix_fournisseurs?.[retenu]?.chassis : null;
               return (
                 <tr key={p.cle} className="table-row align-top">
                   <td className="table-sticky-col">
@@ -157,6 +159,7 @@ function CarteModele({ m, admin }) {
                         <div className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-slate-500">
                           {retenu ? <span className="inline-flex items-center gap-1"><Truck className="w-3 h-3" aria-hidden="true" />{retenu}</span> : <span>{p.prix_source === 'manuel' ? 'saisie manuelle' : 'prix estimé'}</span>}
                           {stockRetenu === false && <BadgeStock enStock={false} fournisseur={retenu} />}
+                          <BadgeChassis chassis={chassisRetenu} fournisseur={retenu || ''} />
                           {admin && p.prix_fournisseur_ht !== null && p.prix_fournisseur_ht !== undefined && (
                             <span className="tabular-nums">{deuxDecimales(p.prix_fournisseur_ht)} € HT</span>
                           )}
@@ -196,6 +199,7 @@ function CatalogueFournisseur({ fournisseur, produits }) {
                   {p.type_piece && <span className="badge badge-sm badge-neutral">{p.type_piece}</span>}
                   {p.qualite && <span className={`badge badge-sm ${/original/i.test(p.qualite) ? 'badge-info' : 'badge-neutral'}`}>{p.qualite}</span>}
                   <BadgeStock enStock={p.en_stock} fournisseur={fournisseur} />
+                  <BadgeChassis chassis={p.chassis} fournisseur={fournisseur} />
                   {p.tarif_cle ? <span className="badge badge-sm badge-success">dans la grille</span> : <span className="badge badge-sm badge-warning">hors grille</span>}
                   {p.ref && <span>réf. {p.ref}</span>}
                   {p.url && (

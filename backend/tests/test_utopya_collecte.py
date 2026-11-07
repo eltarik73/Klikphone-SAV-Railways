@@ -120,7 +120,14 @@ def test_ligne_collecte_pieces_modeles_et_ecarts():
     l = U.ligne_collecte(_tuile("Ecran Complet Blanc Galaxy A54 5G (A546B)", "973876", A54), "Samsung", 1.2)
     assert l == {"reference": "973876", "designation": "Ecran Complet Blanc Galaxy A54 5G (A546B)", "marque": "Samsung",
                  "modele": "Galaxy A54 5G", "type_piece": "Ecran", "qualite": "Original", "prix_ht": Decimal("12.50"),
-                 "en_stock": None, "url": None}
+                 "en_stock": None, "url": None, "chassis": None}
+    # Galaxy S25 (07/11/2026) : « (Sans Châssis) » = la dalle seule (67 €), l'écran complet (PA) n'en dit rien (94 €),
+    # le ReLife précise « (Avec Châssis) » — lu dans le nom, jamais dans le modèle
+    sans = U.ligne_collecte(_tuile("Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", "420000", A54), "Samsung", 1.2)
+    assert (sans["qualite"], sans["chassis"], sans["modele"]) == ("Original", False, "Galaxy S25")
+    avec = U.ligne_collecte(_tuile("Ecran Complet Noir Galaxy S25 (S931B) (Avec Châssis) (Relife)", "GS25-EC", A54), "Samsung")
+    assert (avec["qualite"], avec["chassis"], avec["modele"]) == ("Compatible", True, "Galaxy S25")
+    assert U.ligne_collecte(_tuile("Ecran Complet Noir Absolu Galaxy S25 (S931B) (PA)", "420001", A54), "Samsung")["chassis"] is None
     # Favori version 3 : la tuile dit son stock (« Prévenez-moi quand il sera disponible. » = rupture)
     assert U.ligne_collecte({**_tuile("Batterie iPhone 13 (Ti)", "A2633-BAT", IPHONE), "stock": "rupture"}, "Apple")["en_stock"] is False
     assert U.ligne_collecte({**_tuile("Batterie iPhone 13 (Ti)", "A2633-BAT", IPHONE), "stock": "ok"}, "Apple")["en_stock"] is True
@@ -192,6 +199,7 @@ def test_traiter_importe_tarifs_et_apple_et_note_le_resume(monkeypatch):
     monkeypatch.setattr(F, "_importer", faux_import)
     purges, nettoyages = [], []
     monkeypatch.setattr(F, "purger_prix_incoherents", lambda cur, par, r=None: purges.append(par) or {"examines": 3, "supprimes": 1, "reassignees": 1, "videes": 0, "lot_id": "lot-p"})
+    monkeypatch.setattr(F, "corriger_sans_chassis", lambda cur, par, r=None: purges.append(("chassis", par)) or {"examines": 2, "corriges": 1, "reassignees": 1, "lot_id": "lot-c"})
     monkeypatch.setattr(U.prix, "purger_catalogue", lambda cur, f, age: nettoyages.append((f, age)) or 7)
     monkeypatch.setattr(U.prix, "regles", lambda cur: {"tva": 1.2})
     monkeypatch.setattr(F, "_pieces_grille", lambda cur: [
@@ -213,7 +221,8 @@ def test_traiter_importe_tarifs_et_apple_et_note_le_resume(monkeypatch):
     assert r["lignes_envoyees"] == 2 and r["lignes"] == 2
     assert r["modifies"] == 2 and r["propositions"] == 2 and r["complements"] == 2
     # Purge des qualités incohérentes après chaque collecte ; catalogue nettoyé seulement après une collecte complète
-    assert purges == ["Collecte Utopya"] and r["purge"]["supprimes"] == 1
+    assert purges == ["Collecte Utopya", ("chassis", "Collecte Utopya")] and r["purge"]["supprimes"] == 1
+    assert r["chassis"] == {"examines": 2, "corriges": 1, "reassignees": 1, "lot_id": "lot-c"}
     assert nettoyages and nettoyages[0][0] == "Utopya" and r["catalogue_retires"] == 7
     assert r["lots"] == ["lot-tarifs", "lot-tarifs_apple_devices"] and r["pages_lues"] == 2
     # Diagnostic : l'écran iPhone 13 (sans prix lu) reste sans prix Utopya, la batterie est reconnue
@@ -256,14 +265,15 @@ def _params(monkeypatch, valeurs: dict):
 
 
 def test_etat_sante_et_phrase_suivi(monkeypatch):
-    resume = {"ok": True, "modifies": 40, "propositions": 2, "complements": 15, "purge": {"supprimes": 3}, "sans_prix": 120,
-              "produits": 9000, "erreur": None}
+    resume = {"ok": True, "modifies": 40, "propositions": 2, "complements": 15, "purge": {"supprimes": 3},
+              "chassis": {"corriges": 2}, "sans_prix": 120, "produits": 9000, "erreur": None}
     _params(monkeypatch, {U.P_CLE: CLE, U.P_DERNIERE: "2026-11-04T18:00:00", U.P_OK: "1", U.P_RESUME: json.dumps(resume)})
     e = U.etat()
     assert e["disponible"] and e["configure"] and e["ok"] is True and e["derniere_collecte"] == "2026-11-04T18:00:00"
     assert e["resume"]["modifies"] == 40 and e["erreur"] is None and CLE not in json.dumps(e)
     assert U.phrase_suivi(e) == ("Terminé : 40 prix mis à jour, 2 à valider dans Klikphone, 15 pièces que Mobilax n'a pas "
                                  "(complétées par Utopya), 3 prix retirés (qualité d'écran incohérente), "
+                                 "2 écrans passés sur la variante avec châssis, "
                                  "120 pièces de la grille sans prix Utopya (9000 produits lus).")
     assert U.phrase_suivi({**e, "en_cours": True}) == "Klikphone met les prix à jour…"
     assert U.sante() == {"configure": True, "derniere_collecte": "2026-11-04T18:00:00", "ok": True, "en_cours": False,

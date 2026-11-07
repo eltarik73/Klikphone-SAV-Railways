@@ -25,19 +25,24 @@ class _Cur:
         return None
 
 
-def test_enregistrer_prix_fournisseur_garde_la_variante_la_moins_chere(monkeypatch):
+def test_enregistrer_prix_fournisseur_garde_la_variante_la_moins_chere_avec_chassis(monkeypatch):
     appels = []
     monkeypatch.setattr(P, "execute_values", lambda cur, sql, lignes, **kw: appels.append((" ".join(sql.split()), lignes)))
-    recs = [{"cle": "tarifs:1", "nouveau_ht": 12.0, "ref": "A", "designation": "x"},
-            {"cle": "tarifs:1", "nouveau_ht": 9.5, "ref": "B", "designation": "y"},
+    recs = [{"cle": "tarifs:1", "nouveau_ht": 12.0, "ref": "A", "designation": "Ecran x"},
+            {"cle": "tarifs:1", "nouveau_ht": 9.5, "ref": "B", "designation": "Ecran y"},
+            # Moins cher mais « sans châssis » : jamais devant un écran complet (le magasin répare avec châssis)
+            {"cle": "tarifs:1", "nouveau_ht": 7.0, "ref": "S", "designation": "Ecran Tactile Original sans Châssis y"},
             {"cle": "tarifs:2", "nouveau_ht": 0, "ref": "C", "designation": "z"},
-            {"cle": "tarifs_apple_devices:3:ecran", "nouveau_ht": "80", "ref": "", "designation": "w"}]
+            {"cle": "tarifs_apple_devices:3:ecran", "nouveau_ht": "80", "ref": "", "designation": "w"},
+            # Seule variante connue : gardée, la grille la signale « Sans châssis »
+            {"cle": "tarifs:4", "nouveau_ht": 67.09, "ref": "U4", "designation": "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)"}]
     n = P.enregistrer_prix_fournisseur(None, "mobilax", "mobilax", recs, {"B": {"url": "https://www.mobilax.fr/b", "en_stock": False}})
-    assert n == 2
+    assert n == 3
     sql, lignes = appels[0]
     assert "ON CONFLICT (tarif_cle, fournisseur) DO UPDATE" in sql and "IS DISTINCT FROM EXCLUDED.prix_ht" in sql
-    assert lignes == [("tarifs:1", "Mobilax", Decimal("9.5"), "B", "y", "https://www.mobilax.fr/b", False, "mobilax"),
-                      ("tarifs_apple_devices:3:ecran", "Mobilax", Decimal("80"), None, "w", None, True, "mobilax")]
+    assert lignes == [("tarifs:1", "Mobilax", Decimal("9.5"), "B", "Ecran y", "https://www.mobilax.fr/b", False, "mobilax"),
+                      ("tarifs_apple_devices:3:ecran", "Mobilax", Decimal("80"), None, "w", None, True, "mobilax"),
+                      ("tarifs:4", "Mobilax", Decimal("67.09"), "U4", "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", None, True, "mobilax")]
     assert P.enregistrer_prix_fournisseur(None, "", "x", recs) == 0 and P.enregistrer_prix_fournisseur(None, "Utopya", "x", []) == 0
     appels.clear()
     assert P.noter_vus_sans_prix(None, "Utopya", {"tarifs:9": [{"reference": "U9", "designation": "Nappe", "url": None}]}) == 1

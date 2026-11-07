@@ -15,7 +15,8 @@ MOBILAX_ID_CLIENT) dans les variables Railway. Ensuite, chaque jour :
    Mobilax ») ; prix inchangé → confirmé du jour ; grosse variation (règles de prix) →
    proposition à valider (tarifs_propositions, tuile « Propositions ») ; pièce verrouillée ou
    obsolète → jamais touchée ; produit inconnu → ignoré (aucune pièce créée) ; pièce vendue en
-   plusieurs variantes (coloris…) → la moins chère ; prix de vente des grilles boutique jamais écrits ;
+   plusieurs variantes (coloris…) → la moins chère, un écran « sans châssis » seulement s'il est seul
+   (prix.rang_chassis) ; prix de vente des grilles boutique jamais écrits ;
 4. l'état (date, réussite, compteurs, erreur) est écrit dans params et affiché dans « Santé des
    prix » ; un jeton refusé par Mobilax passe la connexion à « expirée » (à refaire), sans plantage.
 
@@ -640,7 +641,7 @@ def _url_produit(p: dict):
 
 def lignes_produit(p: dict, palier: dict = None, sans_prix: bool = False) -> list:
     """Lignes d'import d'un produit au prix du palier du compte : [{reference, designation, modele,
-    type_piece, qualite, prix_ht, en_stock, url}] — une ligne par marque citée dans le nom (même
+    type_piece, qualite, prix_ht, en_stock, url, chassis}] — une ligne par marque citée dans le nom (même
     référence et même prix), aucune pour une catégorie qui n'est pas une pièce suivie (nappe, protection…).
     Sans prix : rien, sauf sans_prix=True (ligne à prix_ht None : produit vu mais sans prix, rupture…).
     Pièce et qualité viennent de la catégorie Mobilax, le modèle du nom ; sans catégorie connue, les
@@ -658,7 +659,7 @@ def lignes_produit(p: dict, palier: dict = None, sans_prix: bool = False) -> lis
         ref = f"MX{p['id']}"
     base = {"reference": ref[:60], "designation": designation_import(nom)[:250],
             "type_piece": pq[0] if pq else "", "qualite": (pq[1] or "") if pq else "", "prix_ht": ht,
-            "en_stock": en_stock_produit(p), "url": _url_produit(p)}
+            "en_stock": en_stock_produit(p), "url": _url_produit(p), "chassis": prix.chassis_designation(nom)}
     modeles = segments_marques(modele_produit(p)) if pq else [""]
     return [{**base, "modele": m[:250]} for m in modeles]
 
@@ -869,7 +870,8 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     référence du fournisseur retenu, le prix de celui-ci est appliqué quand même (`complements` : le
     fournisseur retenu n'a pas la pièce). Le prix (plus ou moins cher) ne décide jamais. proposer=False
     (synchro, collecte) : une grosse variation est appliquée aussi, comptée dans `variations_appliquees` —
-    le gérant ne valide rien.
+    le gérant ne valide rien. Entre variantes d'une même pièce, la moins chère — sauf un écran « sans châssis »,
+    qui ne passe que s'il est seul (prix.rang_chassis : le magasin répare avec châssis).
 
     → {lignes: [n], propositions: [{cle, ht, label}], verrouillees, obsoletes, variantes, a_valider, remplaces,
        autre_fournisseur_choisi, complements, variations_appliquees}
@@ -881,8 +883,10 @@ def planifier(ap: dict, descs: dict = None, regles: dict = None, maintenant=None
     descs = descs or {}
     out = {"lignes": [], "propositions": [], "verrouillees": 0, "obsoletes": 0, "variantes": 0, "a_valider": 0,
            "remplaces": 0, "autre_fournisseur_choisi": 0, "complements": 0, "variations_appliquees": 0}
-    # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère
-    for n, recs in sorted(par_n.items(), key=lambda kv: (Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
+    # Prix croissant : pour une pièce vendue en plusieurs variantes (coloris…), la moins chère ; un écran
+    # « sans châssis » passe après tous les autres (il ne l'emporte que seul)
+    for n, recs in sorted(par_n.items(), key=lambda kv: (prix.rang_chassis(kv[1][0].get("designation")),
+                                                          Decimal(str(kv[1][0]["nouveau_ht"])), kv[0])):
         hts = {r["cle"]: Decimal(str(r["nouveau_ht"])) for r in recs}
         if all(c in vise for c in hts):
             if any(vise[c] != ht for c, ht in hts.items()):
@@ -1097,6 +1101,65 @@ def purger_prix_incoherents(cur, par: str = AUTEUR, r: dict = None) -> dict:
         else:
             prix.vider_prix(cur, cle, par, lot)
             out["videes"] += 1
+        out["lot_id"] = lot
+    return out
+
+
+def corriger_sans_chassis(cur, par: str = AUTEUR, r: dict = None) -> dict:
+    """Grille comparative : un prix d'écran relevé sur la variante « sans châssis » (prix.chassis_designation) alors
+    que le catalogue du même fournisseur a, pour la même ligne, un écran avec châssis (ou qui ne le dit pas) au prix
+    connu et de qualité cohérente → la ligne passe sur cet écran (le moins cher d'entre eux) ; si le coût retenu de
+    la pièce venait du prix sans châssis, il est remplacé (même fournisseur, lot annulable). Sans écran avec châssis
+    connu, le prix sans châssis reste, signalé comme tel dans les grilles. Pièce verrouillée laissée.
+    → {examines, corriges, reassignees, lot_id}"""
+    r = r or prix.regles(cur)
+    cur.execute("SELECT tarif_cle, fournisseur, prix_ht, ref_fournisseur, designation FROM tarifs_fournisseurs_prix "
+                "WHERE tarif_cle LIKE 'tarifs:%%' AND designation IS NOT NULL")
+    rows = [x for x in (cur.fetchall() or []) if prix.chassis_designation(x["designation"]) is False]
+    out = {"examines": len(rows), "corriges": 0, "reassignees": 0, "lot_id": None}
+    if not rows:
+        return out
+    descs = prix.decrire_tarifs(cur, sorted({x["tarif_cle"] for x in rows}), r)
+    lot = None
+    for x in rows:
+        d = descs.get(x["tarif_cle"])
+        if not d:
+            continue
+        cur.execute("""
+            SELECT ref, nom, prix_ht, url, en_stock FROM fournisseurs_catalogue
+            WHERE fournisseur = %s AND tarif_cle = %s AND prix_ht IS NOT NULL AND prix_ht > 0
+            ORDER BY prix_ht, ref
+        """, (x["fournisseur"], x["tarif_cle"]))
+        cands = [c for c in (cur.fetchall() or [])
+                 if prix.chassis_designation(c["nom"]) is not False
+                 and (not prix.est_ecran(d.get("type_piece"))
+                      or qualite_coherente(d.get("qualite"), c["nom"], c["ref"], x["fournisseur"]))]
+        if not cands:
+            continue
+        c = cands[0]
+        ht = Decimal(str(c["prix_ht"]))
+        cur.execute("""
+            UPDATE tarifs_fournisseurs_prix
+               SET prix_maj_le = CASE WHEN prix_ht IS DISTINCT FROM %s::numeric THEN NOW() ELSE prix_maj_le END,
+                   prix_ht = %s, ref_fournisseur = %s, designation = %s, url = COALESCE(%s, url),
+                   en_stock = %s, vu_le = NOW()
+             WHERE tarif_cle = %s AND fournisseur = %s
+        """, (ht, ht, (str(c["ref"] or "").strip()[:120]) or None, (str(c["nom"] or "").strip()[:250]) or None,
+              c.get("url"), True if c.get("en_stock") is None else bool(c["en_stock"]), x["tarif_cle"], x["fournisseur"]))
+        out["corriges"] += 1
+        if d.get("verrou") or d.get("obsolete"):
+            continue
+        # Le coût retenu venait-il de ce prix sans châssis ? (même fournisseur, même HT)
+        venu = (normaliser(str(d.get("fournisseur") or "")) == normaliser(x["fournisseur"])
+                and d.get("ht") is not None and x["prix_ht"] is not None
+                and Decimal(str(d["ht"])) == Decimal(str(x["prix_ht"])))
+        if not venu:
+            continue
+        lot = lot or prix.nouveau_lot()
+        prix.appliquer_ht(cur, x["tarif_cle"], ht, str(x["fournisseur"]).lower(), par, lot, r)
+        prix.noter_fournisseur_retenu(cur, x["tarif_cle"], {"fournisseur": x["fournisseur"], "ht": ht, "ref": c.get("ref"),
+                                                             "url": c.get("url"), "en_stock": c.get("en_stock")})
+        out["reassignees"] += 1
         out["lot_id"] = lot
     return out
 
@@ -1379,7 +1442,7 @@ def _noter(resume: dict):
 def _resume_vide() -> dict:
     return {"debut": _utc(), "fin": None, "ok": False, "erreur": None, "code": None, "requetes": 0, "modeles": 0,
             "recherches": 0, "erreurs_reseau": 0, "produits": 0, "produits_prix": 0, "produits_sans_prix": 0,
-            "debordements": 0, "incomplet": False, "purge": None, "catalogue_retires": 0,
+            "debordements": 0, "incomplet": False, "purge": None, "chassis": None, "catalogue_retires": 0,
             "prix_masques": False, "lots": [], "imports": [], "champs": [], "sans_prix": None,
             **{k: 0 for k in _COMPTES}}
 
@@ -1476,8 +1539,10 @@ def synchroniser(transport=None, dormir=time.sleep) -> dict:
                                          cherchees, sans_prix=vus_sans_prix)
                 _ecrire(cur, P_DIAG, json.dumps(diag, ensure_ascii=False, default=str))
                 # Un reconditionné ou un compatible rangé sur une ligne « Original » (ou l'inverse) ne tient pas :
-                # retiré de la grille comparative, pièce corrigée ; le catalogue oublie les produits plus revus
+                # retiré de la grille comparative, pièce corrigée ; un écran relevé « sans châssis » passe sur l'écran
+                # avec châssis du catalogue ; le catalogue oublie les produits plus revus
                 resume["purge"] = purger_prix_incoherents(cur, AUTEUR, r)
+                resume["chassis"] = corriger_sans_chassis(cur, AUTEUR, r)
                 if not resume["incomplet"]:
                     resume["catalogue_retires"] = prix.purger_catalogue(cur, FOURNISSEUR, time.monotonic() - t0 + 120)
             resume["sans_prix"] = diag["n"]
@@ -1569,17 +1634,22 @@ _tache = {"thread": None}
 
 
 def purger_qualites(par: str = AUTEUR) -> Optional[dict]:
-    """Purge des prix incohérents (purger_prix_incoherents) dans sa propre transaction ; None en cas d'échec
-    (jamais bloquant : journal seulement)."""
+    """Purge des prix incohérents (purger_prix_incoherents) puis écrans « sans châssis » remplacés par l'écran avec
+    châssis du catalogue (corriger_sans_chassis), dans sa propre transaction ; None en cas d'échec (jamais
+    bloquant : journal seulement). → résultat de la purge, avec `chassis`."""
     try:
         with get_cursor() as cur:
             res = purger_prix_incoherents(cur, par)
+            res["chassis"] = corriger_sans_chassis(cur, par)
     except Exception as e:
         logger.warning("Purge des qualités d'écran : échec (%s)", type(e).__name__)
         return None
     if res.get("supprimes"):
         logger.info("Purge des qualités d'écran : %s prix retirés, %s pièces réaffectées, %s vidées",
                     res["supprimes"], res["reassignees"], res["videes"])
+    if (res.get("chassis") or {}).get("corriges"):
+        logger.info("Écrans sans châssis : %s prix passés sur l'écran avec châssis, %s coûts retenus remplacés",
+                    res["chassis"]["corriges"], res["chassis"]["reassignees"])
     params_cache.invalidate()
     return res
 

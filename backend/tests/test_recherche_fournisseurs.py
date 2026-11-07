@@ -189,6 +189,126 @@ def test_enregistrer_catalogue_et_recherche(monkeypatch):
     assert P.purger_catalogue(cur, "", 10) == 0
 
 
+# ─── Écran avec châssis d'abord (gérant, 07/11/2026 : « nous réparons avec châssis ») ───
+
+@pytest.mark.parametrize("designation, attendu", [
+    # Mobilax, Galaxy S25 : la catégorie dit « sans Châssis » ; l'officiel sans mention est l'écran complet
+    ("Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931 GH82-36327A Noir", False),
+    ("Ecran Tactile Original Samsung Galaxy S25 S931 GH82-36329A Gris", None),
+    ("Ecran Tactile Original Assembled avec Châssis Compatible Samsung Galaxy S25 S931", True),
+    ("Ecran Tactile Soft Oled avec Châssis Samsung Galaxy S25 Plus S936 Bleu Nuit", True),
+    ("Bloc Écran Complet avec Châssis et Batterie Original Honor 200 5G", True),
+    # Utopya, Galaxy S25 : « (Sans Châssis) » 67 €, l'écran complet (PA) 94 €, le ReLife « (Avec Châssis) »
+    ("Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", False),
+    ("Ecran Complet Noir Absolu Galaxy S25 (S931B) (PA)", None),
+    ("Ecran Complet Argent Sombre Galaxy S25 (S931B) (Avec Châssis) (Relife)", True),
+    # Pas un écran : rien à dire, même si le nom parle de châssis
+    ("Châssis Central Corail Galaxy S25 (S931B)", None), ("Batterie Samsung Galaxy S25", None), ("", None), (None, None),
+])
+def test_chassis_designation(designation, attendu):
+    assert P.chassis_designation(designation) is attendu
+    assert P.rang_chassis(designation) == (1 if attendu is False else 0)
+
+
+class _CurChassis(_Cur):
+    """Grille comparative + catalogue par (fournisseur, pièce)."""
+    def __init__(self, rows, catalogue):
+        super().__init__({"FROM tarifs_fournisseurs_prix WHERE tarif_cle LIKE": rows})
+        self.catalogue = catalogue
+
+    def fetchall(self):
+        s, p = self.sql[-1]
+        if "FROM fournisseurs_catalogue" in s:
+            return list(self.catalogue.get((p[0], p[1]), []))
+        return super().fetchall()
+
+
+def test_corriger_sans_chassis_passe_sur_l_ecran_avec_chassis_du_catalogue(monkeypatch):
+    rows = [
+        # S25 Original : Mobilax retenu sur le sans châssis (67 €) ; le catalogue a l'écran complet à 94 € (et un Refurb, écarté)
+        {"tarif_cle": "tarifs:1", "fournisseur": "Mobilax", "prix_ht": Decimal("67"), "ref_fournisseur": "MXS",
+         "designation": "Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931"},
+        # Même pièce chez Utopya, non retenue : la grille Utopya passe sur l'écran complet, le coût ne bouge pas
+        {"tarif_cle": "tarifs:1", "fournisseur": "Utopya", "prix_ht": Decimal("67.09"), "ref_fournisseur": "420000",
+         "designation": "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)"},
+        # S25 Plus : Utopya n'a que le sans châssis → laissé (signalé « Sans châssis » dans les grilles)
+        {"tarif_cle": "tarifs:2", "fournisseur": "Utopya", "prix_ht": Decimal("70"), "ref_fournisseur": "420002",
+         "designation": "Ecran Complet Galaxy S25 Plus (S936B) (Sans Châssis)"},
+        # Pièce verrouillée : la grille comparative est corrigée, le coût retenu jamais touché
+        {"tarif_cle": "tarifs:3", "fournisseur": "Mobilax", "prix_ht": Decimal("60"), "ref_fournisseur": "MX3S",
+         "designation": "Ecran Tactile Original sans Châssis Samsung Galaxy S24 S921"},
+        # Écran complet : rien à examiner
+        {"tarif_cle": "tarifs:4", "fournisseur": "Mobilax", "prix_ht": Decimal("80"), "ref_fournisseur": "MX4",
+         "designation": "Ecran Tactile Original Samsung Galaxy A54 5G"},
+    ]
+    catalogue = {
+        ("Mobilax", "tarifs:1"): [
+            {"ref": "MXR", "nom": "Ecran Tactile Original Refurb Samsung Galaxy S25 S931", "prix_ht": Decimal("50"), "url": None, "en_stock": True},
+            {"ref": "MXS", "nom": "Ecran Tactile Original sans Châssis Samsung Galaxy S25 S931", "prix_ht": Decimal("67"), "url": None, "en_stock": True},
+            {"ref": "MX94", "nom": "Ecran Tactile Original Samsung Galaxy S25 S931", "prix_ht": Decimal("94"), "url": "https://www.mobilax.fr/s25", "en_stock": None},
+            {"ref": "MX96", "nom": "Ecran Tactile Original Samsung Galaxy S25 S931", "prix_ht": Decimal("96"), "url": None, "en_stock": True}],
+        ("Utopya", "tarifs:1"): [
+            {"ref": "420000", "nom": "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", "prix_ht": Decimal("67.09"), "url": None, "en_stock": True},
+            {"ref": "420001", "nom": "Ecran Complet Noir Absolu Galaxy S25 (S931B) (PA)", "prix_ht": Decimal("94.63"), "url": None, "en_stock": False}],
+        ("Utopya", "tarifs:2"): [
+            {"ref": "420002", "nom": "Ecran Complet Galaxy S25 Plus (S936B) (Sans Châssis)", "prix_ht": Decimal("70"), "url": None, "en_stock": True}],
+        ("Mobilax", "tarifs:3"): [
+            {"ref": "MX3", "nom": "Ecran Tactile Original Samsung Galaxy S24 S921", "prix_ht": Decimal("88"), "url": None, "en_stock": True}],
+    }
+    cur = _CurChassis(rows, catalogue)
+    descs = {
+        "tarifs:1": {"cle": "tarifs:1", "table": "tarifs", "id": 1, "type_piece": "Ecran", "qualite": "Original", "ht": Decimal("67"),
+                     "fournisseur": "Mobilax", "fournisseur_choisi": None, "verrou": False, "obsolete": False},
+        "tarifs:2": {"cle": "tarifs:2", "table": "tarifs", "id": 2, "type_piece": "Ecran", "qualite": "Original", "ht": Decimal("70"),
+                     "fournisseur": "Utopya", "fournisseur_choisi": None, "verrou": False, "obsolete": False},
+        "tarifs:3": {"cle": "tarifs:3", "table": "tarifs", "id": 3, "type_piece": "Ecran", "qualite": "Original", "ht": Decimal("60"),
+                     "fournisseur": "Mobilax", "fournisseur_choisi": None, "verrou": True, "obsolete": False},
+    }
+    monkeypatch.setattr(P, "regles", lambda c=None: {"tva": 1.2})
+    monkeypatch.setattr(P, "decrire_tarifs", lambda c, cles, r=None: {k: v for k, v in descs.items() if k in cles})
+    appliques, notes = [], []
+    monkeypatch.setattr(P, "appliquer_ht", lambda c, cle, ht, source, par, lot=None, r=None: appliques.append((cle, ht, source, par, lot)) or {"ok": True})
+    monkeypatch.setattr(P, "noter_fournisseur_retenu", lambda c, cle, cible: notes.append((cle, cible["fournisseur"], cible["ref"], cible["ht"])))
+    res = F.corriger_sans_chassis(cur, "Synchro Mobilax")
+    assert res["examines"] == 4 and res["corriges"] == 3 and res["reassignees"] == 1 and res["lot_id"]
+    maj = [p for s, p in cur.sql if s.startswith("UPDATE tarifs_fournisseurs_prix")]
+    # (ht pour prix_maj_le, ht, ref, désignation, url, en_stock, pièce, fournisseur)
+    assert [(p[1], p[2], p[3], p[5], p[6], p[7]) for p in maj] == [
+        (Decimal("94"), "MX94", "Ecran Tactile Original Samsung Galaxy S25 S931", True, "tarifs:1", "Mobilax"),
+        (Decimal("94.63"), "420001", "Ecran Complet Noir Absolu Galaxy S25 (S931B) (PA)", False, "tarifs:1", "Utopya"),
+        (Decimal("88"), "MX3", "Ecran Tactile Original Samsung Galaxy S24 S921", True, "tarifs:3", "Mobilax")]
+    assert maj[0][4] == "https://www.mobilax.fr/s25"
+    # Seul le coût retenu venu du sans châssis Mobilax est remplacé (94 €, même fournisseur) ; verrou et Utopya non retenu laissés
+    assert appliques == [("tarifs:1", Decimal("94"), "mobilax", "Synchro Mobilax", res["lot_id"])]
+    assert notes == [("tarifs:1", "Mobilax", "MX94", Decimal("94"))]
+    # Rien de « sans châssis » : rien ne bouge
+    assert F.corriger_sans_chassis(_CurChassis([rows[4]], {}), "x") == {"examines": 0, "corriges": 0, "reassignees": 0, "lot_id": None}
+
+
+def test_prix_fournisseurs_et_sortie_api_disent_le_chassis(monkeypatch):
+    rows = [{"tarif_cle": "tarifs:1", "fournisseur": "Utopya", "prix_ht": Decimal("67.09"), "ref_fournisseur": "420000",
+             "designation": "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", "url": None, "en_stock": True,
+             "vu_le": None, "prix_maj_le": None, "source": "utopya"},
+            {"tarif_cle": "tarifs:1", "fournisseur": "Mobilax", "prix_ht": Decimal("94"), "ref_fournisseur": "MX94",
+             "designation": "Ecran Tactile Original Samsung Galaxy S25 S931", "url": None, "en_stock": True,
+             "vu_le": None, "prix_maj_le": None, "source": "mobilax"}]
+    pf = P.prix_fournisseurs(_Cur({"FROM tarifs_fournisseurs_prix WHERE tarif_cle = ANY": rows}), ["tarifs:1"])
+    assert pf["tarifs:1"]["Utopya"]["chassis"] is False and pf["tarifs:1"]["Mobilax"]["chassis"] is None
+    p = {"table": "tarifs", "type_piece": "Ecran", "categorie": "standard"}
+    out = T._prix_fournisseurs_out(pf["tarifs:1"], True, p, P.REGLES_DEFAUT)
+    assert out["Utopya"]["chassis"] is False and out["Mobilax"]["chassis"] is None and out["Utopya"]["ht"] == 67.09
+    assert T._prix_fournisseurs_out(pf["tarifs:1"], False, p, P.REGLES_DEFAUT)["Utopya"]["chassis"] is False
+    # Catalogue : chaque produit dit s'il est vendu avec ou sans châssis
+    cat = [{"fournisseur": "Utopya", "ref": "420000", "nom": "Ecran Complet Galaxy S25 (S931B) (Sans Châssis)", "prix_ht": Decimal("67.09"),
+            "en_stock": True, "url": None, "marque": "Samsung", "modele": "Galaxy S25", "type_piece": "Ecran", "qualite": "Original",
+            "tarif_cle": "tarifs:1", "vu_le": None, "prix_maj_le": None},
+           {"fournisseur": "Utopya", "ref": "420001", "nom": "Ecran Complet Noir Absolu Galaxy S25 (S931B) (PA)", "prix_ht": Decimal("94.63"),
+            "en_stock": False, "url": None, "marque": "Samsung", "modele": "Galaxy S25", "type_piece": "Ecran", "qualite": "Original",
+            "tarif_cle": "tarifs:1", "vu_le": None, "prix_maj_le": None}]
+    out = P.rechercher_catalogue(_Cur({"FROM fournisseurs_catalogue WHERE": cat}), "galaxy s25")
+    assert [(o["ref"], o["chassis"]) for o in out] == [("420000", False), ("420001", None)]
+
+
 # ─── Route de recherche ──────────────────────────────────────────
 
 def _row(id_, marque, modele, type_piece, qualite, ht, client, fournisseur="Mobilax", source="import"):
