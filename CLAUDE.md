@@ -386,6 +386,42 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   `test_prix_moteur.py` (iPad, nappe power), `test_fournisseurs_mobilax.py` (familles, débordement, fournisseur retenu),
   vitest `reparation_smartphones.test.jsx` (« grille comparative »), `recherche_fournisseurs.test.jsx`, `synchro_fournisseur.test.jsx`.
 
+## Community Manager : publication Instagram via Late / Zernio (`app/services/reseaux_sociaux.py`)
+
+- **Late a été rebaptisé Zernio** (même service, même clé `LATE_API_KEY`, ou `ZERNIO_API_KEY`). `reseaux_sociaux.requete`
+  essaie `https://getlate.dev/api/v1` puis `https://zernio.com/api/v1` (domaine suivant sur 3xx / 404 / erreur réseau ;
+  un délai dépassé n'est jamais rejoué) ; `LATE_API_BASE` force une base. Comptes connectés (07/11/2026) :
+  Instagram @klikphone, LinkedIn KLIKPHONE.
+- **Un post part sur le compte de SA plateforme, jamais ailleurs** (`corps_publication`) : avant, un post Instagram sans
+  photo partait en silence sur LinkedIn. Instagram sans photo → 400 « Instagram exige une photo » ; réseau non connecté →
+  400 avec la liste des comptes connectés. Légende Instagram ≤ 2 200 caractères, 30 hashtags au plus, hashtag déjà
+  dans le texte non répété.
+- **Réponse Late** (`lire_publication`) : 201 / 200 / **207** (partiel ou échec : `platformResults`, `error`), identifiant
+  `post._id` (gardé dans `external_post_id`). Erreurs traduites (`erreur_reponse`) : `ACCOUNT_DISCONNECTED` → « Reconnecter »,
+  409 doublon, 401 clé refusée, 429.
+- **Programmer** (`POST /posts/{id}/programmer`) envoie le post à Late avec `scheduledFor` + `timezone: Europe/Paris`
+  (avant : statut changé, rien publié). `POST /posts/actualiser` relit chez Late les posts programmés échus (publié /
+  erreur), appelé par l'écran à l'ouverture.
+- **Connecter / reconnecter un réseau** : `GET /api/marketing/late/connect/{plateforme}?retour=/tech|accueil/community`
+  → `authUrl` Zernio (profil des comptes déjà connectés, sinon `GET /v1/profiles`) ; retour sur la page avec
+  `?connexion=late&connected=…&username=…` (ou `error`). Bloc « Comptes connectés » de l'onglet Posts.
+- **Photos** : table `marketing_images` (BYTEA, créée par `marketing._ensure_tables`) ; `POST /api/marketing/images`
+  (admin, champ `fichier`, 15 Mo) et images IA passent par `reseaux_sociaux.preparer_image` → JPEG, orientation EXIF,
+  fond blanc, recadrage au centre dans 4:5 – 1,91:1, 1 440 px de large au plus. Servies **sans jeton** (Late / Instagram
+  les téléchargent) par `GET /api/marketing/images/{id}.jpg`, URL bâtie sur `BACKEND_URL` / `RAILWAY_PUBLIC_DOMAIN`.
+  Avant : en mémoire, perdues à chaque redéploiement — une ancienne URL absente donne « remettez une photo ».
+- **Image IA en tâche de fond** : `POST /posts/generer-image` → `{job_id}`, suivi `GET /posts/generer-image/{job_id}`
+  (l'écran interroge toutes les 4 s, 8 min au plus). Together AI d'abord si `TOGETHER_API_KEY` (modèle
+  `TOGETHER_IMAGE_MODEL`, défaut FLUX.1-schnell payant — **crédit épuisé au 07/11/2026 : 402**), sinon AI Horde
+  (gratuit, plusieurs modèles photo, jusqu'à 6 min). Constaté en prod le 07/11/2026 : Horde > 3 min puis échec, d'où la
+  photo envoyée comme voie principale.
+- **Écran** (`CommunityManager.jsx`) : Instagram par défaut, « Ajouter une photo » (générateur et brouillons),
+  « Publier sur <réseau> » désactivé pour un brouillon Instagram sans photo, « Voir » / « Modifier » le texte d'un
+  brouillon, échec de publication d'un post généré → gardé en brouillon.
+- **Claude Code ↔ Instagram** : serveur MCP Zernio `claude mcp add --scope user --transport http zernio
+  https://mcp.zernio.com/mcp`, puis `/mcp` → zernio → Authenticate (compte Zernio du gérant).
+- **Tests** : `tests/test_reseaux_sociaux.py` (httpx.MockTransport, base simulée), vitest `community_manager.test.jsx`.
+
 ## Batterie changée « par l'écran » (`app/services/par_ecran.py`)
 
 - **Règle** : sur les appareils où la batterie n'est accessible qu'en décollant l'écran (iPad, Google Pixel…), le

@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   FileText, Sparkles, Calendar, LayoutGrid, BarChart3,
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
   Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
   TrendingUp, Users, MousePointerClick,
-  Copy, Check, Share2, X, Loader2, ImagePlus, Trash, Smartphone
+  Copy, Check, Share2, X, Loader2, ImagePlus, Trash, Smartphone,
+  Camera, Link2, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
@@ -65,6 +66,24 @@ function formatDateLabel(d) {
 
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+const RESEAUX = {
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  linkedin: 'LinkedIn',
+  google: 'Google Business',
+};
+const libelleReseau = (p) => RESEAUX[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : 'le réseau');
+// Réseaux proposés à la connexion dans « Comptes connectés »
+const RESEAUX_CONNECTABLES = ['instagram', 'facebook', 'linkedin'];
+
+function formatDateHeure(d) {
+  if (!d) return '';
+  const date = new Date(d);
+  return date.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+const sansDiese = (tag) => String(tag || '').replace(/^#+/, '');
+
 const TYPE_LABELS = {
   promo: 'Promo',
   actualite: 'Actualité',
@@ -91,7 +110,7 @@ export default function CommunityManager() {
   const [filterStatut, setFilterStatut] = useState('');
 
   // Generator
-  const [genPlateforme, setGenPlateforme] = useState('google');
+  const [genPlateforme, setGenPlateforme] = useState('instagram');
   const [genType, setGenType] = useState('promo');
   const [genContexte, setGenContexte] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -100,6 +119,10 @@ export default function CommunityManager() {
   const [generatingImage, setGeneratingImage] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [genImagePrompt, setGenImagePrompt] = useState('');
+  const [iaSecondes, setIaSecondes] = useState(0);
+  const generationRef = useRef(null); // génération IA suivie (annulée au démontage)
+  const [envoiPhoto, setEnvoiPhoto] = useState(null); // 'gen' ou id du post dont la photo part
+  const [connexionEnCours, setConnexionEnCours] = useState(null);
 
   // Calendar
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => new Date());
@@ -113,6 +136,10 @@ export default function CommunityManager() {
   const [copiedId, setCopiedId] = useState(null);
   const [publishResult, setPublishResult] = useState(null); // {success, message, platforms}
   const [publishing, setPublishing] = useState(null); // post id being published
+  const [expandedId, setExpandedId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editTexte, setEditTexte] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // ─── Data hooks ────────────────────────────────────────────
 
@@ -128,6 +155,45 @@ export default function CommunityManager() {
     { tags: ['marketing-posts'], ttl: 120_000 }
   );
   const posts = Array.isArray(postsData) ? postsData : [];
+
+  // Réseaux connectés chez Late (Zernio) : affichés à côté du générateur
+  const comptesKey = activeTab === 'posts' ? 'cm:comptes' : null;
+  const { data: comptesData, error: comptesError, loading: comptesLoading } = useApi(
+    comptesKey,
+    () => sensible(() => api.getComptesReseaux()),
+    { tags: ['marketing-comptes'], ttl: 300_000 }
+  );
+  const comptes = Array.isArray(comptesData) ? comptesData : [];
+  const connectes = new Set(comptes.filter((c) => c.isActive).map((c) => c.plateforme));
+
+  // Retour de Zernio après une connexion (?connexion=late&connected=instagram&username=…)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connexion') !== 'late') return;
+    const reseau = params.get('connected') || params.get('platform');
+    if (params.get('error')) {
+      toast.error(`Connexion ${libelleReseau(reseau)} non aboutie : ${params.get('error')}`);
+    } else {
+      const nom = params.get('username');
+      toast.success(`${libelleReseau(reseau)} connecté${nom ? ` (@${nom})` : ''}`);
+    }
+    invalidateCache('marketing-comptes');
+    window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Posts programmés dont l'heure est passée : statut relu chez Late, une fois par visite
+  const aActualiser = posts.some((p) => p.statut === 'programmé' && p.date_programmee
+    && new Date(p.date_programmee) <= new Date());
+  const actualiseRef = useRef(false);
+  useEffect(() => {
+    if (!aActualiser || actualiseRef.current) return;
+    actualiseRef.current = true;
+    api.actualiserPostsProgrammes()
+      .then((r) => { if (r?.mis_a_jour) invalidateCache('marketing-posts'); })
+      .catch(() => {});
+  }, [aActualiser]);
+
+  useEffect(() => () => { generationRef.current = null; }, []);
 
   const calKey = activeTab === 'calendrier' ? `cm:cal:${calendarWeekStart.toISOString().split('T')[0]}` : null;
   const { data: calData, error: calError, loading: calLoading } = useApi(
@@ -193,21 +259,132 @@ export default function CommunityManager() {
   const handleGenerateImage = async () => {
     const prompt = genImagePrompt.trim();
     if (!prompt) return;
+    const jeton = {};
+    generationRef.current = jeton;
     setGeneratingImage(true);
-    setImageLoading(true);
-    setGenImageUrl('');
+    setIaSecondes(0);
     try {
-      const data = await sensible(() => api.genererImage({ prompt }));
-      if (data.image_url) {
-        setGenImageUrl(data.image_url);
-      } else {
-        setImageLoading(false);
+      const { job_id: jobId } = await sensible(() => api.genererImage({ prompt }));
+      const debut = Date.now();
+      let echecs = 0;
+      while (generationRef.current === jeton) {
+        await new Promise((r) => setTimeout(r, 4000));
+        if (generationRef.current !== jeton) return;
+        setIaSecondes(Math.round((Date.now() - debut) / 1000));
+        let suivi;
+        try {
+          suivi = await api.suiviGenerationImage(jobId);
+          echecs = 0;
+        } catch (err) {
+          echecs += 1;
+          if (echecs >= 3) throw err;
+          continue;
+        }
+        if (suivi.statut === 'termine' && suivi.image_url) {
+          setImageLoading(true);
+          setGenImageUrl(suivi.image_url);
+          return;
+        }
+        if (suivi.statut === 'erreur') {
+          toast.error(suivi.erreur || 'Génération de l’image impossible');
+          return;
+        }
+        if (Date.now() - debut > 8 * 60_000) {
+          toast.error('Génération trop longue : réessayez plus tard ou ajoutez votre propre photo.');
+          return;
+        }
       }
     } catch (err) {
       signalerErreur(err, 'Génération de l’image impossible');
-      setImageLoading(false);
     } finally {
-      setGeneratingImage(false);
+      if (generationRef.current === jeton) {
+        generationRef.current = null;
+        setGeneratingImage(false);
+      }
+    }
+  };
+
+  const annulerGeneration = () => {
+    generationRef.current = null;
+    setGeneratingImage(false);
+  };
+
+  // Photo choisie sur l'ordinateur ou le téléphone → JPEG prêt pour Instagram (URL publique)
+  const televerserPhoto = async (fichier) => {
+    if (!fichier) return null;
+    if (fichier.type && !fichier.type.startsWith('image/')) {
+      toast.error('Choisissez une image (JPEG, PNG ou WebP).');
+      return null;
+    }
+    const data = await sensible(() => api.envoyerPhotoMarketing(fichier));
+    return data?.image_url || null;
+  };
+
+  const handlePhotoGenerateur = async (e) => {
+    const fichier = e.target.files?.[0];
+    e.target.value = '';
+    if (!fichier) return;
+    setEnvoiPhoto('gen');
+    try {
+      const url = await televerserPhoto(fichier);
+      if (url) {
+        setImageLoading(true);
+        setGenImageUrl(url);
+      }
+    } catch (err) {
+      signalerErreur(err, 'Envoi de la photo impossible');
+    } finally {
+      setEnvoiPhoto(null);
+    }
+  };
+
+  const handlePhotoPost = async (post, e) => {
+    const fichier = e.target.files?.[0];
+    e.target.value = '';
+    if (!fichier) return;
+    setEnvoiPhoto(post.id);
+    try {
+      const url = await televerserPhoto(fichier);
+      if (url) {
+        await sensible(() => api.updateMarketingPost(post.id, { image_url: url }));
+        invalidateCache('marketing-posts');
+        toast.success('Photo ajoutée au post');
+      }
+    } catch (err) {
+      signalerErreur(err, 'Envoi de la photo impossible');
+    } finally {
+      setEnvoiPhoto(null);
+    }
+  };
+
+  const handleConnecter = async (plateforme) => {
+    setConnexionEnCours(plateforme);
+    try {
+      const retour = window.location.pathname.startsWith('/accueil') ? '/accueil/community' : '/tech/community';
+      const { url } = await sensible(() => api.getLienConnexionReseau(plateforme, retour));
+      window.location.assign(url);
+    } catch (err) {
+      signalerErreur(err, `Connexion ${libelleReseau(plateforme)} impossible`);
+      setConnexionEnCours(null);
+    }
+  };
+
+  const commencerEdition = (post) => {
+    setEditingId(post.id);
+    setEditTexte(post.contenu || '');
+  };
+
+  const handleSaveEdit = async (post) => {
+    if (!editTexte.trim()) return;
+    setSavingEdit(true);
+    try {
+      await sensible(() => api.updateMarketingPost(post.id, { contenu: editTexte }));
+      setEditingId(null);
+      invalidateCache('marketing-posts');
+    } catch (err) {
+      signalerErreur(err, 'Enregistrement impossible');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -232,17 +409,17 @@ export default function CommunityManager() {
     }
   };
 
+  const messagePublication = (result) => {
+    const reseaux = (result?.platforms_published || []).map(libelleReseau).join(', ') || 'le réseau';
+    return result?.warning ? `Publié sur ${reseaux}. ${result.warning}` : `Publié sur ${reseaux}`;
+  };
+
   const handlePublish = async (id) => {
     setPublishing(id);
     setPublishResult(null);
     try {
       const result = await sensible(() => api.publierPost(id));
-      const platforms = result.platforms_published || [];
-      const warning = result.warning || '';
-      const msg = warning
-        ? `${warning} (${platforms.join(', ')})`
-        : `Publié sur ${platforms.join(', ') || 'les réseaux'}`;
-      setPublishResult({ success: true, message: msg, platforms });
+      setPublishResult({ success: true, message: messagePublication(result), platforms: result.platforms_published || [] });
       invalidateCache('marketing-posts');
     } catch (err) {
       if (err?.code === 'admin_cancelled') return;
@@ -269,13 +446,14 @@ export default function CommunityManager() {
       };
       const created = await sensible(() => api.createMarketingPost(postData));
       if (created && created.id) {
-        const result = await sensible(() => api.publierPost(created.id));
-        const platforms = result.platforms_published || [];
-        const warning = result.warning || '';
-        const msg = warning
-          ? `${warning} (${platforms.join(', ')})`
-          : `Publié sur ${platforms.join(', ') || 'les réseaux'}`;
-        setPublishResult({ success: true, message: msg, platforms });
+        try {
+          const result = await sensible(() => api.publierPost(created.id));
+          setPublishResult({ success: true, message: messagePublication(result), platforms: result.platforms_published || [] });
+        } catch (err) {
+          if (err?.code === 'admin_cancelled') return;
+          // Le post reste en brouillon : on peut corriger (photo, texte) puis republier
+          setPublishResult({ success: false, message: `${err?.message || 'Erreur lors de la publication'} — post gardé en brouillon.` });
+        }
       }
       setGeneratedPost(null);
       setGenContexte('');
@@ -312,6 +490,7 @@ export default function CommunityManager() {
       setProgramDate('');
       setProgramHeure('10:00');
       invalidateCache('marketing-posts');
+      toast.success(`Publication programmée le ${new Date(`${programDate}T${programHeure}:00`).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`);
     } catch (err) {
       signalerErreur(err, 'Programmation impossible');
     }
@@ -376,8 +555,6 @@ export default function CommunityManager() {
     }
     return text;
   }
-
-  // Publication passe par Late API côté backend — plus besoin de window.open
 
   // ─── Calendar navigation ───────────────────────────────
 
@@ -504,7 +681,8 @@ export default function CommunityManager() {
               <div className="callout callout-info">
                 <Share2 aria-hidden="true" />
                 <p>
-                  <span className="font-semibold">Publication :</span> Quand vous publiez un post, le contenu est copié automatiquement et vous pouvez le coller directement sur la plateforme choisie.
+                  <span className="font-semibold">Publication :</span> chaque post part directement sur le compte de sa
+                  plateforme, via Zernio (ex-Late). Instagram exige une photo : ajoutez la vôtre ou générez-en une.
                 </p>
               </div>
 
@@ -521,7 +699,12 @@ export default function CommunityManager() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {posts.map((post) => (
+                  {posts.map((post) => {
+                    const brouillon = post.statut === 'brouillon';
+                    const photoManquante = post.plateforme === 'instagram' && !post.image_url;
+                    const enEdition = editingId === post.id;
+                    const deplie = expandedId === post.id;
+                    return (
                     <div
                       key={post.id}
                       className="card p-4"
@@ -538,19 +721,49 @@ export default function CommunityManager() {
                       {/* Image + Content preview */}
                       {post.image_url && (
                         <div className="mb-2 rounded-lg overflow-hidden border border-slate-100">
-                          <img src={post.image_url} alt="" className="w-full h-28 object-cover" loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
+                          <img src={post.image_url} alt="" className={`w-full object-cover ${deplie ? 'max-h-96' : 'h-28'}`} loading="lazy" onError={(e) => { e.target.style.display = 'none'; }} />
                         </div>
                       )}
-                      {post.contenu && (
-                        <p className="text-sm text-slate-600 line-clamp-2 mb-3">{post.contenu}</p>
+                      {brouillon && photoManquante && (
+                        <p className="flex items-center gap-1.5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                          Photo obligatoire pour Instagram
+                        </p>
+                      )}
+                      {enEdition ? (
+                        <div className="mb-3">
+                          <label htmlFor={`cm-edit-${post.id}`} className="sr-only">Texte du post</label>
+                          <textarea
+                            id={`cm-edit-${post.id}`}
+                            value={editTexte}
+                            onChange={(e) => setEditTexte(e.target.value)}
+                            rows={6}
+                            className="textarea mb-2"
+                          />
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => handleSaveEdit(post)}
+                              disabled={savingEdit || !editTexte.trim()} className="btn-primary btn-sm">
+                              {savingEdit ? <Loader2 className="animate-spin" /> : <Check />} Enregistrer
+                            </button>
+                            <button type="button" onClick={() => setEditingId(null)} className="btn-ghost btn-sm">
+                              Annuler
+                            </button>
+                          </div>
+                        </div>
+                      ) : post.contenu && (
+                        <p className={`text-sm text-slate-600 mb-3 ${deplie ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>{post.contenu}</p>
                       )}
 
                       {/* Bottom row */}
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          {post.date_creation && (
+                          {post.statut === 'programmé' && post.date_programmee ? (
+                            <span className="t-caption shrink-0 inline-flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5" aria-hidden="true" /> {formatDateHeure(post.date_programmee)}
+                            </span>
+                          ) : (post.date_publication || post.created_at) && (
                             <span className="t-caption shrink-0">
-                              {formatDateFr(post.date_creation)}
+                              {formatDateFr(post.date_publication || post.created_at)}
                             </span>
                           )}
                           {post.hashtags && post.hashtags.length > 0 && (
@@ -560,7 +773,7 @@ export default function CommunityManager() {
                                   key={i}
                                   className="badge badge-sm badge-brand font-medium truncate"
                                 >
-                                  #{tag}
+                                  #{sansDiese(tag)}
                                 </span>
                               ))}
                               {Array.isArray(post.hashtags) && post.hashtags.length > 3 && (
@@ -571,9 +784,11 @@ export default function CommunityManager() {
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button
+                            type="button"
                             onClick={() => copyToClipboard(getFullPostText(post), `post-${post.id}`)}
                             className="btn-ghost btn-icon text-slate-500"
-                            title="Copier"
+                            title="Copier le texte"
+                            aria-label="Copier le texte"
                           >
                             {copiedId === `post-${post.id}` ? (
                               <Check className="text-emerald-700" />
@@ -582,22 +797,34 @@ export default function CommunityManager() {
                             )}
                           </button>
                           <button
+                            type="button"
+                            onClick={() => setExpandedId(deplie ? null : post.id)}
                             className="btn-ghost btn-icon text-slate-500"
-                            title="Voir"
+                            title={deplie ? 'Réduire' : 'Voir tout le post'}
+                            aria-label={deplie ? 'Réduire' : 'Voir tout le post'}
+                            aria-expanded={deplie}
                           >
                             <Eye />
                           </button>
-                          <button
-                            className="btn-ghost btn-icon text-slate-500"
-                            title="Modifier"
-                          >
-                            <Edit3 />
-                          </button>
-                          {post.statut === 'brouillon' && (
+                          {brouillon && (
                             <button
+                              type="button"
+                              onClick={() => (enEdition ? setEditingId(null) : commencerEdition(post))}
+                              className="btn-ghost btn-icon text-slate-500"
+                              title="Modifier le texte"
+                              aria-label="Modifier le texte"
+                              aria-pressed={enEdition}
+                            >
+                              <Edit3 />
+                            </button>
+                          )}
+                          {brouillon && (
+                            <button
+                              type="button"
                               onClick={() => handleDelete(post.id)}
                               className="btn-danger-ghost btn-icon text-slate-500 hover:text-red-700"
-                              title="Supprimer"
+                              title="Supprimer le brouillon"
+                              aria-label="Supprimer le brouillon"
                             >
                               <Trash2 />
                             </button>
@@ -606,42 +833,59 @@ export default function CommunityManager() {
                       </div>
 
                       {/* Brouillon actions */}
-                      {post.statut === 'brouillon' && (
+                      {brouillon && (
                         <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-100">
                           <button
+                            type="button"
                             onClick={() => handlePublish(post.id)}
-                            disabled={publishing === post.id}
+                            disabled={publishing === post.id || photoManquante}
+                            title={photoManquante ? 'Ajoutez d’abord une photo' : undefined}
                             className="btn-primary btn-sm"
                           >
                             {publishing === post.id ? (
                               <><Loader2 className="animate-spin" /> Publication...</>
                             ) : (
-                              <><Send /> Publier via Late</>
+                              <><Send /> Publier sur {libelleReseau(post.plateforme)}</>
                             )}
                           </button>
+                          <label className={`btn-sm ${photoManquante ? 'btn-primary' : 'btn-secondary'} cursor-pointer focus-within:ring-2 focus-within:ring-brand-500 ${envoiPhoto === post.id ? 'opacity-60 pointer-events-none' : ''}`}>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(e) => handlePhotoPost(post, e)}
+                              disabled={envoiPhoto === post.id}
+                            />
+                            {envoiPhoto === post.id ? <Loader2 className="animate-spin" /> : <Camera />}
+                            {post.image_url ? 'Changer la photo' : 'Ajouter une photo'}
+                          </label>
                           {programmingId === post.id ? (
                             <div className="flex flex-wrap items-center gap-2 flex-1">
                               <input
                                 type="date"
                                 value={programDate}
+                                min={new Date().toLocaleDateString('sv-SE')}
                                 onChange={(e) => setProgramDate(e.target.value)}
                                 aria-label="Date de publication"
-                                className="input w-auto min-h-[36px] py-1"
+                                className="input w-auto min-h-[44px] py-1"
                               />
                               <input
                                 type="time"
                                 value={programHeure}
                                 onChange={(e) => setProgramHeure(e.target.value)}
                                 aria-label="Heure de publication"
-                                className="input w-auto min-h-[36px] py-1"
+                                className="input w-auto min-h-[44px] py-1"
                               />
                               <button
+                                type="button"
                                 onClick={() => handleProgrammer(post.id)}
+                                disabled={!programDate || photoManquante}
                                 className="btn-primary btn-sm"
                               >
-                                OK
+                                Programmer
                               </button>
                               <button
+                                type="button"
                                 onClick={() => setProgrammingId(null)}
                                 className="btn-ghost btn-sm"
                               >
@@ -650,6 +894,7 @@ export default function CommunityManager() {
                             </div>
                           ) : (
                             <button
+                              type="button"
                               onClick={() => setProgrammingId(post.id)}
                               className="btn-secondary btn-sm"
                             >
@@ -659,13 +904,80 @@ export default function CommunityManager() {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
             {/* Right column — AI Generator */}
             <div className="lg:col-span-2 space-y-4">
+              {/* Comptes connectés (Late / Zernio) */}
+              <section className="card card-body" aria-labelledby="cm-comptes-titre">
+                <div className="flex items-center gap-2 mb-3">
+                  <Link2 className="w-5 h-5 text-brand-600" aria-hidden="true" />
+                  <h2 id="cm-comptes-titre" className="t-h2 flex-1">Comptes connectés</h2>
+                  <button
+                    type="button"
+                    onClick={() => invalidateCache('marketing-comptes')}
+                    className="btn-ghost btn-icon text-slate-500"
+                    title="Actualiser"
+                    aria-label="Actualiser les comptes connectés"
+                  >
+                    <RefreshCw className={comptesLoading ? 'animate-spin motion-reduce:animate-none' : ''} />
+                  </button>
+                </div>
+                {comptesError && !comptesData ? (
+                  <p className="text-sm text-red-700">
+                    {comptesError.code === 'admin_cancelled'
+                      ? 'Code admin requis pour voir les comptes.'
+                      : comptesError.message || 'Comptes indisponibles.'}
+                  </p>
+                ) : comptesLoading && !comptesData ? (
+                  <p className="text-sm text-slate-500" role="status">Chargement…</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {comptes.map((c) => (
+                      <li key={c.id} className="flex items-center gap-2 min-h-[44px]">
+                        <PlatformIcon platform={c.plateforme} size={18} />
+                        <span className="text-sm text-slate-900 flex-1 min-w-0 truncate">
+                          <span className="font-semibold">{libelleReseau(c.plateforme)}</span>
+                          {c.username && <span className="text-slate-600"> · @{c.username}</span>}
+                        </span>
+                        <span className={`badge badge-sm ${c.isActive ? 'badge-success' : 'badge-warning'}`}>
+                          {c.isActive ? 'Connecté' : 'Inactif'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleConnecter(c.plateforme)}
+                          disabled={connexionEnCours === c.plateforme}
+                          className="btn-ghost btn-sm text-slate-600"
+                          title={`Reconnecter ${libelleReseau(c.plateforme)} (si la publication est refusée)`}
+                        >
+                          {connexionEnCours === c.plateforme ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                          <span className="sr-only sm:not-sr-only">Reconnecter</span>
+                        </button>
+                      </li>
+                    ))}
+                    {RESEAUX_CONNECTABLES.filter((p) => !connectes.has(p)).map((p) => (
+                      <li key={p} className="flex items-center gap-2 min-h-[44px]">
+                        <PlatformIcon platform={p} size={18} />
+                        <span className="text-sm text-slate-600 flex-1">{libelleReseau(p)} non connecté</span>
+                        <button
+                          type="button"
+                          onClick={() => handleConnecter(p)}
+                          disabled={connexionEnCours === p}
+                          className="btn-secondary btn-sm"
+                        >
+                          {connexionEnCours === p ? <Loader2 className="animate-spin" /> : <Link2 />}
+                          Connecter
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
               <div className="card card-body">
                 <div className="flex items-center gap-2 mb-4">
                   <Sparkles className="w-5 h-5 text-brand-600" aria-hidden="true" />
@@ -717,79 +1029,77 @@ export default function CommunityManager() {
                 />
 
                 {/* Image */}
-                <label htmlFor="cm-image-prompt" className="input-label">
+                <p id="cm-image-titre" className="input-label">
                   Image <span className="text-slate-500 font-normal">(obligatoire pour Instagram)</span>
-                </label>
-                <div className="mb-4">
+                </p>
+                <div className="mb-4" aria-labelledby="cm-image-titre" role="group">
                   {!genImageUrl ? (
                     <div className="space-y-2">
-                      {/* Prompt image dédié */}
+                      <label className={`btn-secondary btn-block cursor-pointer focus-within:ring-2 focus-within:ring-brand-500 ${envoiPhoto === 'gen' ? 'opacity-60 pointer-events-none' : ''}`}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={handlePhotoGenerateur}
+                          disabled={envoiPhoto === 'gen'}
+                        />
+                        {envoiPhoto === 'gen' ? <Loader2 className="animate-spin" /> : <Camera className="text-brand-600" />}
+                        {envoiPhoto === 'gen' ? 'Envoi de la photo…' : 'Ajouter une photo'}
+                      </label>
+                      <p className="t-caption text-center">ou générez une image avec l'IA</p>
+                      <label htmlFor="cm-image-prompt" className="sr-only">Description de l'image à générer</label>
                       <textarea
                         id="cm-image-prompt"
                         value={genImagePrompt}
                         onChange={(e) => setGenImagePrompt(e.target.value)}
-                        placeholder="Décrivez l'image souhaitée... Ex: iPhone 15 Pro posé sur un bureau en bois avec des outils de réparation"
+                        placeholder="Ex : iPhone 15 Pro posé sur un établi de réparation, outils autour"
                         rows={2}
                         className="textarea min-h-[72px] resize-none"
                       />
-                      <div className="flex flex-wrap items-center gap-2">
+                      {generatingImage ? (
+                        <div className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2" role="status">
+                          <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none text-brand-600 shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-brand-800 flex-1">
+                            Génération IA… {iaSecondes > 0 ? `${iaSecondes} s` : ''} <span className="text-slate-600">(1 à 6 min)</span>
+                          </span>
+                          <button type="button" onClick={annulerGeneration} className="btn-ghost btn-sm">
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
                         <button
+                          type="button"
                           onClick={handleGenerateImage}
-                          disabled={generatingImage || !genImagePrompt.trim()}
-                          className="btn-secondary flex-1"
+                          disabled={!genImagePrompt.trim()}
+                          className="btn-secondary btn-block"
                         >
-                          {generatingImage ? (
-                            <><Loader2 className="animate-spin" /> Génération IA...</>
-                          ) : (
-                            <><ImagePlus className="text-brand-600" /> Générer l'image</>
-                          )}
+                          <ImagePlus className="text-brand-600" /> Générer l'image avec l'IA
                         </button>
-                        <span className="t-caption">ou</span>
-                        <input
-                          type="url"
-                          onChange={(e) => { setGenImageUrl(e.target.value); setImageLoading(true); }}
-                          placeholder="Coller URL Midjourney"
-                          aria-label="URL de l'image"
-                          className="input w-44"
-                        />
-                      </div>
+                      )}
                     </div>
                   ) : (
                     <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
-                      {/* Loading placeholder */}
                       {imageLoading && (
                         <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-brand-50" role="status">
-                          <Loader2 className="w-8 h-8 animate-spin text-brand-600" aria-hidden="true" />
-                          <span className="text-sm text-brand-700 font-medium">Génération en cours...</span>
-                          <span className="t-caption">Peut prendre 10-30 secondes</span>
+                          <Loader2 className="w-8 h-8 animate-spin motion-reduce:animate-none text-brand-600" aria-hidden="true" />
+                          <span className="text-sm text-brand-700 font-medium">Chargement de l'image…</span>
                         </div>
                       )}
                       <img
                         src={genImageUrl}
-                        alt="Aperçu"
+                        alt="Aperçu de l'image du post"
                         className={`w-full h-52 object-cover ${imageLoading ? 'hidden' : ''}`}
                         onLoad={() => setImageLoading(false)}
-                        onError={(e) => { setImageLoading(false); e.target.src = ''; e.target.className = 'hidden'; }}
+                        onError={(e) => { setImageLoading(false); e.target.className = 'hidden'; }}
                       />
                       {!imageLoading && (
                         <div className="absolute bottom-0 inset-x-0 flex gap-1.5 p-2 bg-white/90 border-t border-slate-200">
                           <button
-                            onClick={handleGenerateImage}
-                            disabled={generatingImage || !genImagePrompt.trim()}
-                            className="btn-secondary btn-sm"
-                          >
-                            {generatingImage ? (
-                              <Loader2 className="animate-spin" />
-                            ) : (
-                              <Sparkles />
-                            )}
-                            Régénérer
-                          </button>
-                          <button
+                            type="button"
                             onClick={() => { setGenImageUrl(''); setImageLoading(false); }}
                             className="btn-danger-ghost btn-sm"
                           >
-                            <Trash /> Changer
+                            <Trash /> Changer d'image
                           </button>
                         </div>
                       )}
@@ -855,7 +1165,7 @@ export default function CommunityManager() {
                           key={i}
                           className="badge badge-sm badge-brand font-medium"
                         >
-                          #{tag}
+                          #{sansDiese(tag)}
                         </span>
                       ))}
                     </div>
@@ -1206,7 +1516,7 @@ export default function CommunityManager() {
                               key={i}
                               className="badge badge-sm badge-brand font-medium"
                             >
-                              #{tag}
+                              #{sansDiese(tag)}
                             </span>
                           ))}
                         </div>

@@ -1447,7 +1447,22 @@ class ApiClient {
   publierPost(id) { return this.post(`/api/marketing/posts/${id}/publier`, {}); }
   programmerPost(id, data) { return this.post(`/api/marketing/posts/${id}/programmer`, data); }
   genererPost(data) { return this.request('/api/marketing/posts/generer', { method: 'POST', body: JSON.stringify(data) }, 60000); }
-  genererImage(data) { return this.request('/api/marketing/posts/generer-image', { method: 'POST', body: JSON.stringify(data) }, 180000); }
+  // Génération IA en tâche de fond → { job_id } ; suivi : { statut: en_cours|termine|erreur, image_url, erreur, secondes }
+  genererImage(data) { return this.request('/api/marketing/posts/generer-image', { method: 'POST', body: JSON.stringify(data) }, 30000); }
+  suiviGenerationImage(jobId) { return this.get(`/api/marketing/posts/generer-image/${encodeURIComponent(jobId)}`); }
+  // Photo du comptoir / du téléphone → JPEG prêt pour Instagram { image_url, largeur, hauteur }
+  envoyerPhotoMarketing(fichier) {
+    const form = new FormData();
+    form.append('fichier', fichier);
+    return this.request('/api/marketing/images', { method: 'POST', body: form }, 60_000);
+  }
+  // Réseaux connectés chez Late (Zernio) et lien d'autorisation pour (re)connecter un réseau
+  getComptesReseaux() { return this.get('/api/marketing/late/accounts'); }
+  getLienConnexionReseau(plateforme, retour) {
+    return this.get(`/api/marketing/late/connect/${encodeURIComponent(plateforme)}?retour=${encodeURIComponent(retour)}`);
+  }
+  // Posts programmés dont l'heure est passée : statut relu chez Late → { verifies, mis_a_jour }
+  actualiserPostsProgrammes() { return this.post('/api/marketing/posts/actualiser', {}); }
 
   getCalendrierMarketing(params = {}) {
     const qs = new URLSearchParams(params).toString();

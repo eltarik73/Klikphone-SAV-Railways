@@ -8,16 +8,18 @@ Marketing module — Klikphone SAV.
 """
 
 import os
+import re
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import AliasChoices, BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.database import get_cursor
 from app.api.auth import exiger_role_admin, get_current_user
+from app.services import reseaux_sociaux
 
 
 def _require_admin_marketing(request: Request, user: dict = Depends(get_current_user)):
@@ -110,6 +112,21 @@ def _ensure_tables():
                     couleur VARCHAR(7) DEFAULT '#7C3AED',
                     icone VARCHAR(10) DEFAULT '📝',
                     actif BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+        with get_cursor() as cur:
+            # Photos des posts (envoyées ou générées) : gardées en base, servies publiquement
+            # à Late / Instagram (avant : en mémoire, perdues à chaque redéploiement)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS marketing_images (
+                    id VARCHAR(40) PRIMARY KEY,
+                    data BYTEA NOT NULL,
+                    mime VARCHAR(30) NOT NULL DEFAULT 'image/jpeg',
+                    largeur INTEGER,
+                    hauteur INTEGER,
+                    source VARCHAR(20),
+                    created_by VARCHAR(100),
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """)
@@ -782,51 +799,68 @@ def delete_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
     return {"status": "ok", "deleted": post_id}
 
 
+def _http_late(e: "reseaux_sociaux.LateErreur") -> HTTPException:
+    return HTTPException(e.status, e.message)
+
+
 @router.get("/late/accounts")
 async def list_late_accounts(user: dict = Depends(_require_admin_marketing)):
-    """Liste les comptes sociaux connectés sur Late."""
-    late_key = os.getenv("LATE_API_KEY")
-    if not late_key:
-        raise HTTPException(400, "LATE_API_KEY non configurée")
-
-    import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(
-            "https://getlate.dev/api/v1/accounts",
-            headers={"Authorization": f"Bearer {late_key}"},
-        )
-    if resp.status_code != 200:
-        raise HTTPException(502, f"Late API erreur: {resp.status_code} — {resp.text[:300]}")
-    data = resp.json()
-    accounts = data.get("accounts", [])
-    return [
-        {
-            "id": a["_id"],
-            "platform": a.get("platform"),
-            "username": a.get("username"),
-            "displayName": a.get("displayName"),
-            "isActive": a.get("isActive"),
-            "profilePicture": a.get("profilePicture"),
-        }
-        for a in accounts
-    ]
+    """Comptes sociaux connectés chez Late (Zernio)."""
+    try:
+        liste = await reseaux_sociaux.comptes()
+    except reseaux_sociaux.LateErreur as e:
+        raise _http_late(e)
+    return [{k: c[k] for k in ("id", "platform", "plateforme", "username", "displayName",
+                               "isActive", "profilePicture")} for c in liste]
 
 
-# Mapping plateforme interne → nom Late
-_PLATFORM_MAP = {
-    "instagram": "instagram",
-    "linkedin": "linkedin",
-    "facebook": "facebook",
-    "google": "google-business",
-    "twitter": "twitter",
-    "tiktok": "tiktok",
-}
+# Pages du Community Manager où Late peut renvoyer le gérant après une connexion
+_RETOURS_CONNEXION = re.compile(r"^/(tech|accueil)/community$")
 
 
-@router.post("/posts/{post_id}/publier")
-async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
-    """Publie un post via Late API sur les réseaux sociaux connectés."""
-    # 1. Récupérer le post depuis la BDD
+@router.get("/late/connect/{plateforme}")
+async def lien_connexion_late(
+    plateforme: str,
+    request: Request,
+    retour: str = Query("/tech/community"),
+    user: dict = Depends(_require_admin_marketing),
+):
+    """Adresse d'autorisation pour connecter (ou reconnecter) un réseau chez Late."""
+    from app.api.public_documents import _base_publique
+
+    if not _RETOURS_CONNEXION.match(retour or ""):
+        retour = "/tech/community"
+    redirection = f"{_base_publique(request)}{retour}?connexion=late"
+    try:
+        liste = await reseaux_sociaux.comptes()
+        url = await reseaux_sociaux.lien_connexion(plateforme, redirection, liste)
+    except reseaux_sociaux.LateErreur as e:
+        raise _http_late(e)
+    return {"url": url}
+
+
+# Ancien mapping, gardé pour les imports existants
+_PLATFORM_MAP = {k: v[0] for k, v in reseaux_sociaux.PLATEFORMES.items()}
+
+_IMAGE_ID_RE = re.compile(r"^[0-9a-f-]{12,40}$")
+
+
+def _id_image_locale(url: str) -> Optional[str]:
+    """Identifiant d'une image servie par cette app (…/api/marketing/images/<id>.jpg), sinon None."""
+    m = re.search(r"/api/marketing/images/([0-9a-f-]{12,40})(?:\.[a-z]{3,4})?(?:[?#].*)?$", url or "")
+    return m.group(1) if m else None
+
+
+def _image_disponible(image_id: str) -> bool:
+    if image_id in _generated_images:
+        return True
+    with get_cursor() as cur:
+        cur.execute("SELECT 1 FROM marketing_images WHERE id = %s", (image_id,))
+        return cur.fetchone() is not None
+
+
+async def _envoyer_late(post_id: int, programme_le: Optional[datetime] = None) -> dict:
+    """Publie (ou programme chez Late) un post de l'app et met à jour sa ligne."""
     def _lire_post():
         _ensure_tables()
         with get_cursor() as cur:
@@ -836,383 +870,394 @@ async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketi
     post = await run_in_threadpool(_lire_post)
     if not post:
         raise HTTPException(404, "Post non trouvé")
-
     post_dict = _row_to_dict(post)
-    contenu = post_dict.get("contenu", "")
-    hashtags = post_dict.get("hashtags") or []
-    plateforme = post_dict.get("plateforme", "instagram")
+    if post_dict.get("statut") == "publié":
+        raise HTTPException(400, "Ce post est déjà publié.")
 
-    # Construire le texte complet avec hashtags
-    full_text = contenu
-    if hashtags:
-        tags_str = " ".join(t if t.startswith("#") else f"#{t}" for t in hashtags)
-        full_text += "\n\n" + tags_str
-
-    # 2. Appeler Late API
-    late_key = os.getenv("LATE_API_KEY")
-    if not late_key:
-        raise HTTPException(400, "LATE_API_KEY non configurée. Ajoutez-la dans les variables Railway.")
-
-    import httpx
-    late_headers = {"Authorization": f"Bearer {late_key}"}
-
-    # Récupérer les comptes sociaux connectés via GET /api/v1/accounts
-    async with httpx.AsyncClient(timeout=15) as client:
-        accounts_resp = await client.get(
-            "https://getlate.dev/api/v1/accounts",
-            headers=late_headers,
-        )
-    if accounts_resp.status_code != 200:
-        raise HTTPException(502, f"Impossible de récupérer les comptes Late: {accounts_resp.text[:300]}")
-
-    accounts = accounts_resp.json().get("accounts", [])
-
-    # Mapper la plateforme du post vers les comptes Late connectés
-    target_platform = _PLATFORM_MAP.get(plateforme, plateforme)
-    platforms_payload = []
-
-    for acc in accounts:
-        if acc.get("platform") == target_platform and acc.get("isActive"):
-            platforms_payload.append({
-                "platform": acc["platform"],
-                "accountId": acc["_id"],
-            })
-
-    # Si pas trouvé pour la plateforme ciblée, publier sur TOUS les comptes actifs
-    if not platforms_payload:
-        for acc in accounts:
-            if acc.get("isActive") and acc.get("platform") in _PLATFORM_MAP.values():
-                platforms_payload.append({
-                    "platform": acc["platform"],
-                    "accountId": acc["_id"],
-                })
-
-    if not platforms_payload:
-        found = [f"{a.get('platform')}:{a.get('username')}" for a in accounts]
+    image_id = _id_image_locale(post_dict.get("image_url") or "")
+    if image_id and not await run_in_threadpool(_image_disponible, image_id):
         raise HTTPException(
-            400,
-            f"Aucun compte actif '{plateforme}' trouvé. Comptes détectés: {found}"
-        )
+            400, "La photo de ce post n'existe plus (image créée avant la mise à jour) : "
+                 "remettez une photo au post puis republiez.")
 
-    # 3. Construire le body Late
-    image_url = post_dict.get("image_url")
+    try:
+        resultat = await reseaux_sociaux.publier(post_dict, programme_le=programme_le)
+    except reseaux_sociaux.LateErreur as e:
+        raise _http_late(e)
 
-    # Instagram exige au moins une image
-    has_instagram = any(p["platform"] == "instagram" for p in platforms_payload)
-    skipped_instagram = False
-    if has_instagram and not image_url:
-        non_ig = [p for p in platforms_payload if p["platform"] != "instagram"]
-        if non_ig:
-            platforms_payload = non_ig
-            skipped_instagram = True
-        else:
-            # Pas d'image et seul Instagram ciblé → fallback sur tous les autres comptes actifs
-            for acc in accounts:
-                if acc.get("isActive") and acc.get("platform") != "instagram" and acc.get("platform") in _PLATFORM_MAP.values():
-                    platforms_payload.append({
-                        "platform": acc["platform"],
-                        "accountId": acc["_id"],
-                    })
-            # Retirer Instagram du payload
-            platforms_payload = [p for p in platforms_payload if p["platform"] != "instagram"]
-            skipped_instagram = True
-
-        if not platforms_payload:
-            raise HTTPException(
-                400,
-                "Instagram exige une image et aucun autre réseau n'est connecté. "
-                "Ajoutez une image_url au post ou connectez LinkedIn/Facebook sur https://app.getlate.dev"
-            )
-
-    late_body = {
-        "content": full_text,
-        "platforms": platforms_payload,
-        "publishNow": True,
-    }
-
-    if image_url:
-        late_body["mediaItems"] = [{"type": "image", "url": image_url}]
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        late_resp = await client.post(
-            "https://getlate.dev/api/v1/posts",
-            headers={
-                "Authorization": f"Bearer {late_key}",
-                "Content-Type": "application/json",
-            },
-            json=late_body,
-        )
-
-    if late_resp.status_code not in (200, 201):
-        raise HTTPException(
-            502,
-            f"Erreur Late API ({late_resp.status_code}): {late_resp.text[:500]}"
-        )
-
-    late_result = late_resp.json()
-    external_id = late_result.get("id", late_result.get("postId", ""))
-
-    # 4. Mettre à jour le statut en BDD
-    def _marquer_publie():
+    def _marquer():
         with get_cursor() as cur:
-            cur.execute("""
-                UPDATE posts_marketing
-                SET statut = 'publié',
-                    date_publication = NOW(),
-                    external_post_id = %s,
-                    updated_at = NOW()
-                WHERE id = %s
-                RETURNING *
-            """, (str(external_id), post_id))
+            if programme_le is not None:
+                cur.execute("""
+                    UPDATE posts_marketing
+                    SET statut = 'programmé', date_programmee = %s,
+                        external_post_id = %s, updated_at = NOW()
+                    WHERE id = %s RETURNING *
+                """, (programme_le.replace(tzinfo=None), resultat["external_id"], post_id))
+            else:
+                cur.execute("""
+                    UPDATE posts_marketing
+                    SET statut = 'publié', date_publication = NOW(),
+                        external_post_id = %s, updated_at = NOW()
+                    WHERE id = %s RETURNING *
+                """, (resultat["external_id"], post_id))
             return cur.fetchone()
 
-    row = await run_in_threadpool(_marquer_publie)
-
+    row = await run_in_threadpool(_marquer)
     result = _row_to_dict(row)
-    result["late_response"] = late_result
-    result["platforms_published"] = [p["platform"] for p in platforms_payload]
-    if skipped_instagram:
-        result["warning"] = "Instagram ignoré (image requise). Publié sur les autres réseaux."
+    result["platforms_published"] = resultat["publies"] or [post_dict.get("plateforme")]
+    if resultat["avertissements"]:
+        result["warning"] = " ".join(resultat["avertissements"])
     return result
 
 
+@router.post("/posts/{post_id}/publier")
+async def publier_post(post_id: int, user: dict = Depends(_require_admin_marketing)):
+    """Publie tout de suite un post sur le compte de SA plateforme, via Late."""
+    return await _envoyer_late(post_id)
+
+
+def _maintenant_paris() -> datetime:
+    from app.api.tickets import heure_paris
+    return heure_paris()
+
+
 @router.post("/posts/{post_id}/programmer")
-def programmer_post(
+async def programmer_post(
     post_id: int,
     body: PostProgrammer,
     user: dict = Depends(_require_admin_marketing),
 ):
-    """Programme la publication d'un post à une date donnée."""
-    _ensure_tables()
+    """Programme la publication chez Late (qui publie à l'heure dite, heure de Paris)."""
+    quand = body.date_programmee
+    if quand.tzinfo is not None:  # heure avec fuseau → heure de Paris (Late la lit dans ce fuseau)
+        from app.api.tickets import heure_paris
+        quand = heure_paris(quand)
+    if quand <= _maintenant_paris() + timedelta(minutes=2):
+        raise HTTPException(400, "Choisissez une date et une heure à venir.")
+    return await _envoyer_late(post_id, programme_le=quand)
 
-    with get_cursor() as cur:
-        cur.execute("SELECT id FROM posts_marketing WHERE id = %s", (post_id,))
-        if not cur.fetchone():
-            raise HTTPException(404, "Post non trouvé")
 
-        cur.execute("""
-            UPDATE posts_marketing
-            SET statut = 'programmé',
-                date_programmee = %s,
-                updated_at = NOW()
-            WHERE id = %s
-            RETURNING *
-        """, (body.date_programmee, post_id))
-        row = cur.fetchone()
+@router.post("/posts/actualiser")
+async def actualiser_posts_programmes(user: dict = Depends(_require_admin_marketing)):
+    """Posts programmés dont l'heure est passée : statut relu chez Late (publié / erreur)."""
+    def _a_verifier():
+        _ensure_tables()
+        with get_cursor() as cur:
+            cur.execute("""
+                SELECT id, external_post_id FROM posts_marketing
+                WHERE statut = 'programmé' AND date_programmee <= %s
+                  AND COALESCE(external_post_id, '') <> ''
+                ORDER BY date_programmee LIMIT 10
+            """, (_maintenant_paris(),))
+            return cur.fetchall()
 
-    return _row_to_dict(row)
+    lignes = await run_in_threadpool(_a_verifier)
+    changes = []
+    for ligne in lignes:
+        try:
+            resp = await reseaux_sociaux.requete("GET", f"/posts/{ligne['external_post_id']}", timeout=15)
+        except reseaux_sociaux.LateErreur:
+            break
+        if resp.status_code != 200:
+            continue
+        data = resp.json() if resp.content else {}
+        late_post = data.get("post") if isinstance(data.get("post"), dict) else data
+        statut_late = (late_post or {}).get("status")
+        nouveau = {"published": "publié", "partial": "publié", "failed": "erreur"}.get(statut_late)
+        if nouveau:
+            changes.append((nouveau, ligne["id"]))
+
+    def _ecrire():
+        with get_cursor() as cur:
+            for statut, pid in changes:
+                cur.execute("""
+                    UPDATE posts_marketing
+                    SET statut = %s,
+                        date_publication = CASE WHEN %s = 'publié' THEN COALESCE(date_programmee, NOW())
+                                                ELSE date_publication END,
+                        updated_at = NOW()
+                    WHERE id = %s AND statut = 'programmé'
+                """, (statut, statut, pid))
+
+    if changes:
+        await run_in_threadpool(_ecrire)
+    return {"verifies": len(lignes), "mis_a_jour": len(changes)}
 
 
 class ImageGenerer(BaseModel):
-    prompt: str  # Description de l'image souhaitée
+    prompt: str = Field(..., max_length=1000)  # Description de l'image souhaitée
 
 
-# Stockage en mémoire des images générées (id → bytes JPEG/PNG)
+# Ancien stockage en mémoire (images d'avant le passage en base) : lu en secours seulement
 _generated_images: dict = {}
 
 
-def _store_image(img_bytes: bytes) -> str:
-    """Stocke une image en mémoire et retourne l'URL publique."""
+def _base_images() -> str:
+    """Origine publique des images : Late / Instagram viennent les chercher à cette adresse."""
+    for valeur in (os.getenv("BACKEND_URL", ""), os.getenv("RAILWAY_PUBLIC_DOMAIN", "")):
+        valeur = (valeur or "").strip().rstrip("/")
+        if valeur:
+            return valeur if valeur.startswith("http") else f"https://{valeur}"
+    return "https://klikphone-sav-v2-production.up.railway.app"
+
+
+def _stocker_image(contenu: bytes, source: str, auteur: str = "") -> dict:
+    """Image → JPEG compatible Instagram enregistré en base. ValueError si illisible."""
     import uuid
-    image_id = str(uuid.uuid4())[:12]
-    _generated_images[image_id] = img_bytes
-    # Garder max 50 images en mémoire
-    if len(_generated_images) > 50:
-        oldest = list(_generated_images.keys())[0]
-        del _generated_images[oldest]
-    base_url = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
-    if base_url and not base_url.startswith("http"):
-        base_url = f"https://{base_url}"
-    if not base_url:
-        base_url = "https://klikphone-sav-v2-production.up.railway.app"
-    # Extension selon le format
-    ext = "webp" if img_bytes[:4] == b"RIFF" else "png" if img_bytes[:8] == b"\x89PNG\r\n\x1a\n" else "jpg"
-    return f"{base_url}/api/marketing/images/{image_id}.{ext}"
+
+    jpeg, largeur, hauteur = reseaux_sociaux.preparer_image(contenu)
+    image_id = uuid.uuid4().hex
+    _ensure_tables()
+    with get_cursor() as cur:
+        cur.execute("""
+            INSERT INTO marketing_images (id, data, mime, largeur, hauteur, source, created_by)
+            VALUES (%s, %s, 'image/jpeg', %s, %s, %s, %s)
+        """, (image_id, jpeg, largeur, hauteur, source, (auteur or "")[:100]))
+    return {
+        "image_url": f"{_base_images()}/api/marketing/images/{image_id}.jpg",
+        "largeur": largeur,
+        "hauteur": hauteur,
+    }
+
+
+def _type_image(donnees: bytes) -> str:
+    if donnees[:4] == b"RIFF":
+        return "image/webp"
+    if donnees[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    return "image/jpeg"
 
 
 @router.get("/images/{image_id}")
 def serve_generated_image(image_id: str):
-    """Sert une image générée stockée en mémoire."""
+    """Image d'un post, publique (Late et Instagram la téléchargent sans jeton)."""
     from fastapi.responses import Response
-    # Accepte image_id avec ou sans extension
-    clean_id = image_id.rsplit(".", 1)[0] if "." in image_id else image_id
-    img_data = _generated_images.get(clean_id)
-    if not img_data:
-        raise HTTPException(404, "Image non trouvée ou expirée")
-    # Détecter le format
-    if img_data[:4] == b"RIFF":
-        media = "image/webp"
-    elif img_data[:8] == b"\x89PNG\r\n\x1a\n":
-        media = "image/png"
-    else:
-        media = "image/jpeg"
-    return Response(content=img_data, media_type=media)
+
+    clean_id = image_id.rsplit(".", 1)[0].lower()
+    if not _IMAGE_ID_RE.match(clean_id):
+        raise HTTPException(404, "Image non trouvée")
+    donnees = _generated_images.get(clean_id)
+    mime = _type_image(donnees) if donnees else None
+    if donnees is None:
+        _ensure_tables()
+        with get_cursor() as cur:
+            cur.execute("SELECT data, mime FROM marketing_images WHERE id = %s", (clean_id,))
+            row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Image non trouvée ou expirée")
+        donnees, mime = bytes(row["data"]), row["mime"] or "image/jpeg"
+    return Response(content=donnees, media_type=mime,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@router.post("/images")
+async def envoyer_image(
+    fichier: UploadFile = File(...),
+    user: dict = Depends(_require_admin_marketing),
+):
+    """Photo envoyée depuis le comptoir ou le téléphone → JPEG prêt pour Instagram."""
+    contenu = await fichier.read(reseaux_sociaux.TAILLE_MAX_ENTREE + 1)
+    if len(contenu) > reseaux_sociaux.TAILLE_MAX_ENTREE:
+        raise HTTPException(413, "Photo trop lourde (15 Mo au plus).")
+    try:
+        return await run_in_threadpool(_stocker_image, contenu, "photo", user.get("sub", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ─── Génération d'image IA (tâche de fond, suivie par l'écran) ─────────
+
+# Modèles photo-réalistes d'AI Horde : plusieurs = plus de serveurs bénévoles disponibles
+_MODELES_HORDE = ["Juggernaut XL", "AlbedoBase XL 3.1", "AlbedoBase XL (SDXL)", "ICBINP XL"]
+_ATTENTE_HORDE_S = 360
+_GENERATIONS: dict = {}  # job_id → {statut, image_url, erreur, provider, debut, fin}
+_TACHES: set = set()
 
 
 async def _generate_with_together(prompt: str) -> bytes:
-    """Génère une image via Together AI (FLUX.1-schnell-Free)."""
+    """Image via Together AI (FLUX.1 schnell, payant : quelques millièmes d'euro par image)."""
     import httpx
     import base64
+
     together_key = os.getenv("TOGETHER_API_KEY")
     if not together_key:
         raise ValueError("TOGETHER_API_KEY non configurée")
+    modele = os.getenv("TOGETHER_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             "https://api.together.xyz/v1/images/generations",
             headers={"Authorization": f"Bearer {together_key}"},
-            json={
-                "model": "black-forest-labs/FLUX.1-schnell-Free",
-                "prompt": prompt,
-                "width": 1024,
-                "height": 1024,
-                "steps": 4,
-                "n": 1,
-                "response_format": "b64_json",
-            },
+            json={"model": modele, "prompt": prompt, "width": 1024, "height": 1024,
+                  "steps": 4, "n": 1, "response_format": "b64_json"},
         )
-        resp.raise_for_status()
-        data = resp.json()
-        b64 = data["data"][0]["b64_json"]
-        return base64.b64decode(b64)
+    if resp.status_code == 402:
+        raise ValueError("crédit épuisé — ajoutez du crédit sur api.together.ai (environ 0,003 $ par image)")
+    if resp.status_code in (401, 403):
+        raise ValueError("clé TOGETHER_API_KEY refusée")
+    if resp.status_code != 200:
+        raise ValueError(f"erreur {resp.status_code} : {resp.text[:200]}")
+    return base64.b64decode(resp.json()["data"][0]["b64_json"])
 
 
 async def _generate_with_horde(prompt: str) -> bytes:
-    """Génère une image via AI Horde (gratuit, pas de clé API)."""
+    """Image via AI Horde (gratuit, sans clé, file d'attente de serveurs bénévoles : 1 à 6 min)."""
     import httpx
     import base64
     import asyncio
-    headers = {"apikey": "0000000000", "Content-Type": "application/json"}
+
+    headers = {"apikey": "0000000000", "Content-Type": "application/json", "Client-Agent": "klikphone-sav:2:contact"}
     payload = {
-        "prompt": prompt,
-        "params": {
-            "width": 1024,
-            "height": 1024,
-            "steps": 25,
-            "cfg_scale": 7,
-            "sampler_name": "k_euler",
-        },
-        "models": ["AlbedoBase XL (SDXL)"],
+        "prompt": prompt + " ### blurry, lowres, watermark, text, logo, deformed",
+        "params": {"width": 1024, "height": 1024, "steps": 25, "cfg_scale": 6,
+                   "sampler_name": "k_euler", "karras": True},
+        "models": _MODELES_HORDE,
         "nsfw": False,
+        "censor_nsfw": True,
         "r2": True,
     }
-    async with httpx.AsyncClient(timeout=180) as client:
-        # Soumettre le job
-        resp = await client.post(
-            "https://aihorde.net/api/v2/generate/async",
-            headers=headers,
-            json=payload,
-        )
-        resp.raise_for_status()
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post("https://aihorde.net/api/v2/generate/async", headers=headers, json=payload)
+        if resp.status_code not in (200, 202):
+            raise ValueError(f"refus {resp.status_code} : {resp.text[:200]}")
         job_id = resp.json()["id"]
 
-        # Polling (max 120s)
-        for _ in range(60):
-            await asyncio.sleep(3)
-            check = await client.get(
-                f"https://aihorde.net/api/v2/generate/check/{job_id}",
-                headers=headers,
-            )
-            check_data = check.json()
-            if check_data.get("done"):
+        for _ in range(_ATTENTE_HORDE_S // 5):
+            await asyncio.sleep(5)
+            check = await client.get(f"https://aihorde.net/api/v2/generate/check/{job_id}", headers=headers)
+            data = check.json() if check.status_code == 200 else {}
+            if data.get("faulted"):
+                raise ValueError("la génération a échoué chez AI Horde")
+            if data.get("is_possible") is False:
+                raise ValueError("aucun serveur AI Horde disponible pour l'instant")
+            if data.get("done"):
                 break
         else:
-            raise TimeoutError("AI Horde: timeout après 180s")
+            raise TimeoutError(f"pas d'image après {_ATTENTE_HORDE_S // 60} min (file d'attente saturée)")
 
-        # Récupérer le résultat
-        status = await client.get(
-            f"https://aihorde.net/api/v2/generate/status/{job_id}",
-            headers=headers,
-        )
-        status_data = status.json()
-        generations = status_data.get("generations", [])
+        status = await client.get(f"https://aihorde.net/api/v2/generate/status/{job_id}", headers=headers)
+        generations = status.json().get("generations", [])
         if not generations:
-            raise ValueError("AI Horde: aucune image générée")
-
-        gen = generations[0]
-        # L'image peut être une URL (R2) ou du base64
-        if gen.get("img", "").startswith("http"):
-            img_resp = await client.get(gen["img"])
+            raise ValueError("aucune image renvoyée")
+        img = generations[0].get("img", "")
+        if img.startswith("http"):
+            img_resp = await client.get(img)
             img_resp.raise_for_status()
             return img_resp.content
+        return base64.b64decode(img)
+
+
+async def _prompt_anglais(user_prompt: str) -> str:
+    """Description française → prompt anglais détaillé (Claude) ; la description telle quelle sinon."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return user_prompt
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = await run_in_threadpool(
+            client.messages.create,
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=300,
+            messages=[{"role": "user", "content": user_prompt}],
+            system=(
+                "You are an expert image prompt engineer for AI image generation (Flux/SDXL). "
+                "The user describes an image they want in French. Generate a detailed English prompt "
+                "that will produce a stunning, professional, photorealistic image. "
+                "The image is for Instagram/LinkedIn social media (1080x1080 square). "
+                "Context: Klikphone is a smartphone repair shop in Chambéry, France. "
+                "Rules:\n"
+                "- Output ONLY the English prompt, nothing else\n"
+                "- Be very descriptive: lighting, composition, colors, style\n"
+                "- Make it photorealistic and professional\n"
+                "- Include 'professional product photography', 'studio lighting', '4K' when relevant\n"
+                "- If the user mentions phones/iPhones/Samsung, describe them realistically\n"
+                "- No text, letters or logos in the image\n"
+                "- Keep the prompt under 150 words"
+            ),
+        )
+        return resp.content[0].text.strip() or user_prompt
+    except Exception:
+        return user_prompt
+
+
+async def _travail_generation(job_id: str, prompt: str, auteur: str):
+    import time
+
+    job = _GENERATIONS[job_id]
+    try:
+        en_prompt = await _prompt_anglais(prompt)
+        job["prompt_used"] = en_prompt
+        image, provider, erreurs = None, None, []
+        if os.getenv("TOGETHER_API_KEY"):  # rapide quand le compte a du crédit
+            try:
+                image, provider = await _generate_with_together(en_prompt), "together"
+            except Exception as e:
+                erreurs.append(f"Together AI : {e}")
+        if image is None:
+            try:
+                image, provider = await _generate_with_horde(en_prompt), "horde"
+            except Exception as e:
+                erreurs.append(f"AI Horde : {e}")
+        if image is None:
+            job.update(statut="erreur", erreur="Génération impossible. " + " ; ".join(erreurs)
+                       + ". Vous pouvez toujours ajouter votre propre photo.")
         else:
-            return base64.b64decode(gen["img"])
+            stockee = await run_in_threadpool(_stocker_image, image, "ia", auteur)
+            job.update(statut="termine", image_url=stockee["image_url"], provider=provider)
+    except Exception as e:
+        job.update(statut="erreur", erreur=f"Génération impossible : {e}")
+    finally:
+        job["fin"] = time.time()
+
+
+def _purger_generations():
+    import time
+
+    limite = time.time() - 3600
+    for cle_job in [k for k, j in _GENERATIONS.items() if (j.get("fin") or j["debut"]) < limite]:
+        _GENERATIONS.pop(cle_job, None)
 
 
 @router.post("/posts/generer-image")
 async def generer_image(body: ImageGenerer, user: dict = Depends(_require_admin_marketing)):
-    """Génère une image IA à partir d'une description.
+    """Lance la génération d'une image IA en tâche de fond → {job_id} ; suivi par
+    GET /posts/generer-image/{job_id}. Together AI d'abord (si crédit), sinon AI Horde (gratuit)."""
+    import asyncio
+    import time
+    import uuid
 
-    1. Claude optimise le prompt FR → EN pour la génération d'image
-    2. Together AI (FLUX.1, si clé configurée) ou AI Horde (gratuit, fallback)
-    3. Stocke l'image et retourne l'URL publique
-    """
-    user_prompt = body.prompt.strip()
-    if not user_prompt:
-        raise HTTPException(400, "Prompt requis")
+    prompt = body.prompt.strip()
+    if not prompt:
+        raise HTTPException(400, "Décrivez l'image souhaitée.")
+    _purger_generations()
+    if sum(1 for j in _GENERATIONS.values() if j["statut"] == "en_cours") >= 3:
+        raise HTTPException(429, "Trois images sont déjà en cours de génération : patientez.")
+    job_id = uuid.uuid4().hex
+    _GENERATIONS[job_id] = {"statut": "en_cours", "image_url": None, "erreur": None,
+                            "provider": None, "debut": time.time(), "fin": None}
+    tache = asyncio.create_task(_travail_generation(job_id, prompt, user.get("sub", "")))
+    _TACHES.add(tache)
+    tache.add_done_callback(_TACHES.discard)
+    return {"job_id": job_id, "statut": "en_cours"}
 
-    # Étape 1 : Optimiser le prompt avec Claude
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    en_prompt = user_prompt  # fallback
-    if api_key:
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=api_key)
-            # Client HTTP synchrone : hors de la boucle d'événements
-            resp = await run_in_threadpool(
-                client.messages.create,
-                model="claude-sonnet-4-20250514",
-                max_tokens=300,
-                messages=[{"role": "user", "content": user_prompt}],
-                system=(
-                    "You are an expert image prompt engineer for AI image generation (Flux/SDXL). "
-                    "The user describes an image they want in French. Generate a detailed English prompt "
-                    "that will produce a stunning, professional, photorealistic image. "
-                    "The image is for Instagram/LinkedIn social media (1080x1080 square). "
-                    "Context: Klikphone is a smartphone repair shop in Chambéry, France. "
-                    "Rules:\n"
-                    "- Output ONLY the English prompt, nothing else\n"
-                    "- Be very descriptive: lighting, composition, colors, style\n"
-                    "- Make it photorealistic and professional\n"
-                    "- Include 'professional product photography', 'studio lighting', '4K' when relevant\n"
-                    "- If the user mentions phones/iPhones/Samsung, describe them realistically\n"
-                    "- Keep the prompt under 150 words"
-                ),
-            )
-            en_prompt = resp.content[0].text.strip()
-        except Exception:
-            pass
 
-    # Étape 2 : Générer l'image (AI Horde gratuit → Together AI si dispo)
-    img_bytes = None
-    provider = None
-    errors = []
+@router.get("/posts/generer-image/{job_id}")
+def suivi_generation_image(job_id: str, user: dict = Depends(_require_admin_marketing)):
+    import time
 
-    # Essayer AI Horde d'abord (gratuit, fiable)
-    try:
-        img_bytes = await _generate_with_horde(en_prompt)
-        provider = "horde"
-    except Exception as e:
-        errors.append(f"AI Horde: {e}")
-
-    # Fallback Together AI si clé configurée
-    if not img_bytes:
-        try:
-            img_bytes = await _generate_with_together(en_prompt)
-            provider = "together"
-        except Exception as e:
-            errors.append(f"Together AI: {e}")
-
-    if not img_bytes:
-        raise HTTPException(
-            500,
-            f"Impossible de générer l'image. Erreurs: {'; '.join(errors)}. "
-            "Astuce: ajoutez TOGETHER_API_KEY (gratuit sur together.ai) pour de meilleurs résultats."
-        )
-
-    # Étape 3 : Stocker et retourner l'URL
-    image_url = _store_image(img_bytes)
-
-    return {"image_url": image_url, "prompt_used": en_prompt, "provider": provider}
+    job = _GENERATIONS.get(job_id)
+    if not job:
+        raise HTTPException(404, "Génération introuvable (serveur redémarré ?) : relancez-la.")
+    fin = job.get("fin") or time.time()
+    return {
+        "job_id": job_id,
+        "statut": job["statut"],
+        "image_url": job.get("image_url"),
+        "erreur": job.get("erreur"),
+        "provider": job.get("provider"),
+        "secondes": int(fin - job["debut"]),
+    }
 
 
 @router.post("/posts/generer")
