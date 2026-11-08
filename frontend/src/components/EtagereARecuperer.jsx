@@ -275,7 +275,7 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
 
   return (
     <section id={id} aria-labelledby={titreId} aria-busy={loading || isRevalidating}
-      className="card mb-6 overflow-hidden motion-safe:animate-in">
+      className="card mb-6 overflow-hidden">
       <div className="border-b border-slate-100 px-4 sm:px-5 py-3 sm:py-4">
         <div className="flex items-center gap-3">
           <div className="kpi-icon bg-emerald-50 text-emerald-700" aria-hidden="true">

@@ -26,15 +26,16 @@ export default function OngletsTarifs({ children }) {
   const basePath = basePathDe(pathname);
   return (
     <div className="min-w-0">
-      <nav aria-label="Grilles de tarifs" className="px-4 sm:px-6 pt-3 border-b border-slate-200 bg-white">
-        <ul className="flex gap-1 overflow-x-auto pb-2">
+      {/* Onglets à soulignement (page-tabs) : l'onglet courant est souligné, jamais un bloc violet plein */}
+      <nav aria-label="Grilles de tarifs" className="px-4 sm:px-6 bg-white">
+        <ul className="page-tabs">
           {ONGLETS_TARIFS.map(({ suffixe, label, icon: Icon }) => {
             const to = `${basePath}/${suffixe}`;
             const actif = actifSur(pathname, to);
             return (
               <li key={suffixe} className="shrink-0">
                 <Link to={to} aria-current={actif ? 'page' : undefined}
-                  className={`inline-flex items-center gap-2 min-h-[44px] px-3 rounded-lg text-sm font-medium whitespace-nowrap transition-colors motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${actif ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}>
+                  className={`page-tab ${actif ? 'page-tab-active' : ''}`}>
                   <Icon className="w-4 h-4" aria-hidden="true" />
                   {label}
                 </Link>

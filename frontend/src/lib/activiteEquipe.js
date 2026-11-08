@@ -76,7 +76,7 @@ export function libelleAppareil(a) {
 // `point` : pastille colorée (contraste ≥ 3:1 sur blanc pour les statuts parlants)
 export const STATUTS_PRESENCE = {
   en_boutique: { label: 'En boutique', point: 'bg-emerald-600' },
-  hors_boutique: { label: 'Hors boutique', point: 'bg-orange-600' },
+  hors_boutique: { label: 'Hors boutique', point: 'bg-amber-600' },
   imprecise: { label: 'Position imprécise', point: 'bg-blue-600' },
   refusee: { label: 'Position refusée', point: 'bg-white ring-2 ring-inset ring-slate-500' },
   indisponible: { label: 'Position indisponible', point: 'bg-white ring-2 ring-inset ring-slate-400' },

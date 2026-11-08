@@ -10,8 +10,11 @@
    bleu = information · tout le reste est slate.
 
    Les pages n'utilisent QUE les classes ci-dessous + les utilitaires Tailwind.
-   Rayons : rounded-lg (contrôles, badges) · rounded-xl (cartes, modales, toasts) · rounded-full.
-   Ombres : shadow-xs (cartes, boutons) · shadow-lg (modales, menus, toasts, FAB).
+   Rayons : rounded-md 6 px (contrôles, badges, callouts) · rounded-lg 8 px (cartes, tableaux) ·
+   rounded-xl 12 px (modales, drawers, toasts) · rounded-full (compteurs, pastilles, FAB).
+   Ombres : aucune sur les cartes (bordure seule) · shadow-xs (boutons secondaires, segment actif) ·
+   shadow-md (menus, popovers) · shadow-lg (modales, drawers, toasts, FAB).
+   Mouvement : transition-colors 150 ms ; rien n'anime à l'apparition d'une carte ; modales/drawers/toasts seulement.
    Texte : jamais < 12 px ; texte secondaire = slate-500 minimum sur fond clair.
    Contraste : slate-500 (.t-small, .t-caption, .input-help) ne se pose que sur blanc (4,6:1) ou
    slate-50 (4,55:1) ; sur slate-100 (fond des .segmented, pastilles, lignes alternées) il passe
@@ -20,7 +23,7 @@
 
 @layer base {
   * { -webkit-tap-highlight-color: transparent; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; font-optical-sizing: auto; }
   body { @apply bg-slate-50 text-slate-900 antialiased; }
   ::-webkit-scrollbar { @apply w-1.5; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
@@ -30,16 +33,16 @@
 }
 
 @layer components {
-  /* ─── 1. Échelle typographique (Plus Jakarta Sans) ─────────────────────── */
+  /* ─── 1. Échelle typographique (Inter variable, taille optique automatique) ── */
   .t-display { @apply text-3xl font-bold leading-[1.15] tracking-tight text-slate-900; }
-  .t-h1 { @apply text-2xl font-bold leading-tight tracking-tight text-slate-900; }
+  .t-h1 { @apply text-2xl font-semibold leading-tight tracking-tight text-slate-900; }
   .t-h2 { @apply text-base font-semibold leading-snug text-slate-900; }
-  .t-h3 { @apply text-[13px] font-semibold leading-snug text-slate-600; }
+  .t-h3 { @apply text-sm font-semibold leading-snug text-slate-600; }
   .t-body { @apply text-sm leading-relaxed text-slate-700; }
   .t-body-lg { @apply text-base leading-relaxed text-slate-700; }
-  .t-small { @apply text-[13px] font-medium leading-snug text-slate-500; }
+  .t-small { @apply text-[13px] leading-snug text-slate-500; }
   .t-caption { @apply text-xs font-medium leading-snug text-slate-500; }
-  .t-label { @apply text-[13px] font-semibold leading-snug text-slate-700; }
+  .t-label { @apply text-sm font-medium leading-snug text-slate-700; }
   .t-overline { @apply text-xs font-semibold uppercase tracking-[0.06em] text-slate-500; }
   .t-num { @apply tabular-nums font-semibold text-slate-900; }
   .t-mono { @apply font-mono text-[13px] tabular-nums; }
@@ -70,7 +73,7 @@
     @apply inline-flex p-1 rounded-lg bg-slate-100 gap-0.5 max-w-full overflow-x-auto scrollbar-none;
   }
   .segmented-item {
-    @apply inline-flex items-center justify-center gap-1.5 min-h-9 px-3 rounded-md text-sm font-medium
+    @apply inline-flex items-center justify-center gap-1.5 min-h-9 px-3 rounded text-sm font-medium
            text-slate-600 whitespace-nowrap transition-colors duration-150 hover:text-slate-900
            focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500;
   }
@@ -93,23 +96,23 @@
 
   /* ─── 3. Cartes ────────────────────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-xl border border-slate-200 shadow-xs;
+    @apply bg-white rounded-lg border border-slate-200;
   }
   .card-body { @apply p-4 sm:p-5; }
   .card-header {
     @apply flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 sm:pt-5 pb-3;
   }
   .card-footer {
-    @apply flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-xl;
+    @apply flex items-center justify-end gap-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/60 rounded-b-lg;
   }
-  .card-section { @apply rounded-lg bg-slate-50 p-4; }
+  .card-section { @apply rounded-md bg-slate-50 p-4; }
   .card-interactive {
     @apply card cursor-pointer transition-colors duration-150 hover:border-slate-300
            focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2;
   }
   .card-selected { @apply border-brand-300 bg-brand-50/40; }
 
-  .callout { @apply flex gap-3 rounded-lg border px-4 py-3 text-sm leading-relaxed; }
+  .callout { @apply flex gap-3 rounded-md border px-4 py-3 text-sm leading-relaxed; }
   .callout > svg { @apply w-5 h-5 shrink-0 mt-0.5; }
   .callout-info { @apply bg-blue-50 border-blue-200 text-blue-800; }
   .callout-success { @apply bg-emerald-50 border-emerald-200 text-emerald-800; }
@@ -118,7 +121,7 @@
 
   /* ─── 4. Boutons ───────────────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-lg
+    @apply inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-md
            text-sm font-semibold leading-5 whitespace-nowrap select-none cursor-pointer
            transition-colors duration-150 active:scale-[0.98]
            focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
@@ -127,7 +130,7 @@
   .btn > svg { @apply w-4 h-4 shrink-0; }
   /* Désactivé : fond neutre + texte slate-500 (4,3–4,6:1, lisible au comptoir ; slate-400 ferait 2,4:1) */
   .btn-primary {
-    @apply btn bg-brand-600 text-white shadow-xs hover:bg-brand-700 active:bg-brand-800
+    @apply btn bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800
            disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
            disabled:hover:bg-slate-100;
   }
@@ -140,12 +143,12 @@
            disabled:text-slate-500 disabled:hover:bg-transparent;
   }
   .btn-success {
-    @apply btn bg-emerald-700 text-white shadow-xs hover:bg-emerald-800
+    @apply btn bg-emerald-700 text-white hover:bg-emerald-800
            disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
            disabled:hover:bg-slate-100;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white shadow-xs hover:bg-red-700
+    @apply btn bg-red-600 text-white hover:bg-red-700
            disabled:bg-slate-100 disabled:text-slate-500 disabled:border disabled:border-slate-200 disabled:shadow-none
            disabled:hover:bg-slate-100;
   }
@@ -153,10 +156,10 @@
     @apply btn bg-transparent text-red-700 hover:bg-red-50 disabled:text-slate-500 disabled:hover:bg-transparent;
   }
   .btn-whatsapp {
-    @apply btn bg-[#25D366] text-slate-950 shadow-xs hover:bg-[#1fb956]
+    @apply btn bg-[#25D366] text-slate-950 hover:bg-[#1fb956]
            disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none;
   }
-  .btn-sm { @apply min-h-[36px] px-3 py-1.5 text-[13px] gap-1.5; }
+  .btn-sm { @apply min-h-[36px] px-3 py-1.5 text-sm gap-1.5; }
   .btn-lg { @apply min-h-[48px] px-5 py-2.5 text-base; }
   .btn-lg > svg { @apply w-5 h-5; }
   .btn-icon { @apply w-10 h-10 min-w-[40px] p-0; }
@@ -166,7 +169,7 @@
 
   /* ─── 5. Formulaires ───────────────────────────────────────────────────── */
   .input {
-    @apply w-full min-h-[40px] px-3 py-2 rounded-lg border border-slate-200 bg-white text-base lg:text-sm text-slate-900
+    @apply w-full min-h-[40px] px-3 py-2 rounded-md border border-slate-300 bg-white text-base lg:text-sm text-slate-900
            placeholder:text-slate-500 hover:border-slate-300
            focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40
            transition-colors duration-150
@@ -176,6 +179,8 @@
   .textarea { @apply input min-h-[96px] py-2.5 leading-relaxed; }
   /* Compatibilité : <textarea className="input"> garde une hauteur libre */
   textarea.input { @apply min-h-[96px] py-2.5 leading-relaxed; }
+  /* Zone de texte compacte (une ou deux lignes : réception, notes courtes) : 36 px souris, 44 px au doigt via pointer: coarse */
+  textarea.textarea-sm { @apply min-h-9 py-1.5 leading-snug; }
   .select {
     @apply input pr-9 appearance-none bg-no-repeat;
     background-position: right 0.75rem center;
@@ -193,10 +198,13 @@
   .radio { @apply rounded-full; }
 
   .choice {
-    @apply inline-flex items-center justify-center gap-1.5 min-h-11 px-3.5 rounded-lg border border-slate-200 bg-white
+    @apply inline-flex items-center justify-center gap-1.5 min-h-11 px-3.5 rounded-md border border-slate-300 bg-white
            text-sm font-medium text-slate-700 cursor-pointer transition-colors duration-150 hover:bg-slate-50
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
            peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2;
   }
+  /* Bornes : tuile de choix 56 px / 16 px (Depot, ClientForm) */
+  .choice-lg { @apply min-h-14 px-4 py-3 text-base font-semibold leading-snug; }
   .choice-on { @apply bg-brand-600 border-brand-600 text-white hover:bg-brand-700; }
   .choice-ok { @apply bg-emerald-700 border-emerald-700 text-white hover:bg-emerald-800; }
   .choice-ko { @apply bg-red-600 border-red-600 text-white hover:bg-red-700; }
@@ -204,7 +212,7 @@
 
   /* Bornes (/depot, /client…) : saisies 56 px / 16 px, jamais de zoom iOS */
   .depot-form .input {
-    @apply min-h-14 px-5 py-4 rounded-xl;
+    @apply min-h-14 px-5 py-4 rounded-lg;
     font-size: 16px;
   }
   .depot-form .textarea, .depot-form textarea.input { @apply min-h-[120px] py-4; }
@@ -216,7 +224,7 @@
 
   /* ─── 6. Badges ────────────────────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-xs font-semibold whitespace-nowrap leading-none;
+    @apply inline-flex items-center gap-1.5 h-6 px-2 rounded-md text-xs font-medium whitespace-nowrap leading-none;
   }
   .badge-dot { @apply w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0; }
   .badge-neutral { @apply bg-slate-100 text-slate-700; }
@@ -226,8 +234,8 @@
   .badge-danger { @apply bg-red-50 text-red-700; }
   .badge-danger-solid { @apply bg-red-600 text-white; }
   .badge-info { @apply bg-blue-50 text-blue-700; }
-  .badge-lg { @apply h-8 px-3 text-sm; }
-  .badge-sm { @apply h-5 px-2 text-xs; }
+  .badge-lg { @apply h-7 px-2.5 text-sm; }
+  .badge-sm { @apply h-5 px-1.5 text-xs; }
   .badge-count {
     @apply inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full
            text-xs font-bold tabular-nums leading-none bg-slate-700 text-white;
@@ -236,7 +244,7 @@
   .badge-count-brand { @apply bg-brand-600 text-white; }
 
   /* ─── 7. Tableaux et listes ────────────────────────────────────────────── */
-  .table-wrap { @apply w-full min-w-0 overflow-x-auto rounded-xl border border-slate-200 bg-white; }
+  .table-wrap { @apply w-full min-w-0 overflow-x-auto rounded-lg border border-slate-200 bg-white; }
   .table { @apply w-full text-sm text-slate-700; }
   .table td { @apply px-3 py-3 align-middle; }
   .table td:first-child { @apply pl-4; }
@@ -244,14 +252,14 @@
   .table th { @apply px-3 py-2.5 text-left align-middle; }
   .table th:first-child { @apply pl-4; }
   .table th:last-child { @apply pr-4; }
-  .table-header { @apply text-xs font-semibold text-slate-500 uppercase tracking-wide; }
+  .table-header { @apply text-xs font-medium text-slate-500 uppercase tracking-wide; }
   .table-header-sortable {
     @apply min-h-11 inline-flex items-center gap-1 cursor-pointer transition-colors duration-150 hover:text-slate-900
            focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded;
   }
-  .table-row { @apply border-b border-slate-100 min-h-14 transition-colors duration-150 hover:bg-slate-50; }
+  .table-row { @apply border-b border-slate-100 min-h-12 transition-colors duration-150 hover:bg-slate-50; }
   .table-row-selected { @apply bg-brand-50/60; }
-  .table-dense .table-row { @apply min-h-12; }
+  .table-dense .table-row { @apply min-h-10; }
   .table-cell-num { @apply text-right tabular-nums font-semibold text-slate-900; }
   .table-cell-muted { @apply text-[13px] text-slate-500; }
   .table-sticky-col { @apply sticky left-0 z-10 bg-white shadow-[inset_-1px_0_0_#E2E8F0]; }
@@ -260,13 +268,14 @@
   /* ─── 8. KPI ───────────────────────────────────────────────────────────── */
   .kpi-card { @apply card p-4 flex items-start gap-3 min-h-[96px]; }
   .kpi-card-sm { @apply card p-3 flex items-start gap-3 min-w-[140px] min-h-[72px]; }
+  /* Icône nue (plus de tuile colorée : signal « template ») ; les couleurs posées en plus restent inertes sur le fond */
   .kpi-icon {
-    @apply w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0;
+    @apply w-5 h-5 text-slate-500 flex items-center justify-center shrink-0;
   }
-  .kpi-icon > svg { @apply w-4 h-4; }
+  .kpi-icon > svg { @apply w-5 h-5; }
   .kpi-value { @apply text-2xl font-semibold text-slate-900 tabular-nums leading-none; }
   .kpi-card-sm .kpi-value { @apply text-xl; }
-  .kpi-label { @apply t-caption mt-1; }
+  .kpi-label { @apply text-sm text-slate-600 mt-1; }
   .kpi-delta { @apply badge badge-sm; }
 
   /* ─── 9. États ─────────────────────────────────────────────────────────── */
@@ -274,19 +283,15 @@
     @apply flex flex-col items-center justify-center text-center gap-3 py-10 px-6 min-h-[200px] max-h-[260px];
   }
   .empty-state-icon {
-    @apply w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center shrink-0;
+    @apply w-10 h-10 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center shrink-0;
   }
-  .empty-state-icon > svg { @apply w-8 h-8; }
+  .empty-state-icon > svg { @apply w-5 h-5; }
   .error-state { @apply callout callout-danger; }
   .loading-inline { @apply inline-flex items-center gap-2 text-sm text-slate-500; }
   .loading-inline > svg { @apply w-4 h-4 animate-spin; }
 
-  .skeleton {
-    @apply rounded-lg;
-    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s ease-in-out infinite;
-  }
+  /* Squelette statique à pulsation lente (pas de reflet qui balaie) */
+  .skeleton { @apply rounded-md bg-slate-100 motion-safe:animate-pulse; }
   .skeleton-line { @apply skeleton h-4; }
   .skeleton-row { @apply skeleton h-14; }
   .skeleton-card { @apply skeleton h-24; }
@@ -349,10 +354,6 @@
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
 
 /* ─── Route transition progress bar ─── */
 @keyframes progressBar {
@@ -367,20 +368,8 @@
 }
 
 .animate-in { animation: fadeIn 0.2s ease-out forwards; }
-/* Apparition d'un bloc (remplace framer-motion) : `backwards` ne laisse aucun transform
-   après l'animation, donc pas de containing block parasite pour les descendants fixed. */
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .animate-slide-in { animation: slideInLeft 0.2s ease-out forwards; }
 .animate-scale-in { animation: scaleIn 0.15s ease-out forwards; }
-.animate-shimmer {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
 
 /* ─── No-animations mode ─── */
 .no-animations *,
@@ -403,7 +392,7 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .animate-shimmer, .skeleton { animation: none; background: #f1f5f9; }
+  .skeleton { animation: none; }
 }
 
 @media print {
@@ -439,7 +428,7 @@
   pointer-events: none;
 }
 .font-editorial {
-  font-family: 'Instrument Serif', 'Playfair Display', Georgia, serif;
+  font-family: Georgia, 'Times New Roman', serif;
   font-style: italic;
   font-weight: 400;
 }

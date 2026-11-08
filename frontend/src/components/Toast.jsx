@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, createContext, useContext } from 'react';
-import { CheckCircle2, AlertTriangle, X, Info, Sparkles } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, X, Info } from 'lucide-react';
 
 const ToastContext = createContext(null);
 
@@ -54,7 +54,7 @@ const ICONS = {
   error: AlertTriangle,
   info: Info,
   warning: AlertTriangle,
-  important: Sparkles,
+  important: Info,
 };
 
 // Design V2 : toast blanc, bordure gauche 4 px sémantique, icône -700 (AA), texte slate-800.

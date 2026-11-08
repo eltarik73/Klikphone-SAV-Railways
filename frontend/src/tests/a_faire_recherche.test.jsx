@@ -99,7 +99,14 @@ describe('DashboardPage : « À faire » pour la technicienne', () => {
     await screen.findByText('KP-000001');
     expect(codesAffiches()).toEqual(['KP-000004', 'KP-000003', 'KP-000002', 'KP-000001']);
 
+    // Priorité, technicien et dates sont repliés derrière « Filtres » (replié par défaut)
+    expect(screen.queryByRole('combobox', { name: 'Filtrer par technicien' })).not.toBeInTheDocument();
+    const filtres = screen.getByRole('button', { name: 'Filtres' });
+    expect(filtres).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(filtres);
+    expect(filtres).toHaveAttribute('aria-expanded', 'true');
     fireEvent.change(screen.getByRole('combobox', { name: 'Filtrer par technicien' }), { target: { value: 'Marina' } });
+    expect(screen.getByRole('button', { name: 'Filtres · 1' })).toBeInTheDocument();
     await waitFor(() => expect(codesAffiches()).toEqual(['KP-000002', 'KP-000001']));
 
     const bouton = screen.getByRole('button', { name: /À faire/ });

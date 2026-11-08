@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { ArrowLeft, ShieldCheck, RefreshCw, X, ExternalLink, AlertCircle } from 'lucide-react';
+import LogoK from '../components/LogoK';
 
 export const RETENTION_MOIS_DEFAUT = 36;
 export const PURGE_JOURS_DEFAUT = 30;
@@ -245,10 +246,8 @@ export default function ConfidentialitePage() {
             className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-lg text-slate-200 hover:bg-white/10 hover:text-white transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70">
             <ArrowLeft className="w-5 h-5" aria-hidden="true" />
           </Link>
-          <div className="w-10 h-10 rounded-lg bg-white p-1 overflow-hidden shrink-0">
-            <img src="/logo_k.png" alt="" width="40" height="40" className="w-full h-full object-contain" />
-          </div>
-          <p className="font-display font-bold tracking-tight">KLIKPHONE</p>
+          <LogoK className="w-10 h-10" />
+          <p className="font-semibold tracking-tight">KLIKPHONE</p>
         </div>
       </header>
       <main className="max-w-[720px] mx-auto px-4 py-6 sm:py-10">

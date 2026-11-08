@@ -11,8 +11,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // KP_API_PROXY=https://… pour prévisualiser le frontend local sur une API distante (lecture : pages publiques)
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.KP_API_PROXY || 'http://localhost:8000',
         changeOrigin: true,
       },
     },

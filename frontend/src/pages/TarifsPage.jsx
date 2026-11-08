@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useId, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   Tag, Search, RefreshCw, ChevronDown, ChevronRight, ChevronLeft, Smartphone, Tablet, Lock, Unlock, FileSpreadsheet,
-  SlidersHorizontal, Calculator, History, AlertTriangle, Clock, CheckCircle2, X, ListChecks, PackagePlus, Filter, Loader2,
+  SlidersHorizontal, Calculator, History, AlertTriangle, Clock, CircleCheck, X, ListChecks, PackagePlus, Filter, Loader2,
   Info, ListPlus, Wrench,
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
@@ -194,7 +194,35 @@ function resumeFraicheur(lignes, seuils, sante) {
   return { total, estimes, aRevoir, perimes, dateEstimation, plusRecent };
 }
 
-function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, onRegles, onRecalculer, onHistorique, onAjouter, onDevenirAdmin, basePath }) {
+// Résumé d'une ligne de la section repliée : « 1 592 prix à jour · 248 estimés · Mobilax 08/11 02:06 · Utopya 07/11 13:47 »
+const fr = (n) => Number(n || 0).toLocaleString('fr-FR');
+const FORMAT_JOUR_HEURE = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+function jourHeure(valeur) {
+  const d = valeur instanceof Date ? valeur : new Date(valeur);
+  return Number.isNaN(d.getTime()) ? '' : FORMAT_JOUR_HEURE.format(d).replace(',', '');
+}
+export function ligneResume(resume, etat, chargement = false) {
+  const { total, estimes, aRevoir, perimes } = resume || {};
+  const morceaux = [];
+  if (total > 0) {
+    morceaux.push(`${fr(Math.max(0, total - estimes))} prix à jour`);
+    if (estimes > 0) morceaux.push(`${fr(estimes)} estimé${estimes > 1 ? 's' : ''}`);
+    if (perimes > 0) morceaux.push(`${fr(perimes)} périmé${perimes > 1 ? 's' : ''}`);
+    if (aRevoir > 0) morceaux.push(`${fr(aRevoir)} à revoir`);
+  } else {
+    morceaux.push(chargement ? 'lecture de l’état des prix…' : 'aucun prix enregistré');
+  }
+  const m = etat?.mobilax;
+  const u = etat?.utopya;
+  if (m?.en_cours) morceaux.push('Mobilax en cours…');
+  else if (m?.derniere_synchro && jourHeure(m.derniere_synchro)) morceaux.push(`Mobilax ${jourHeure(m.derniere_synchro)}`);
+  else if (m && !m.configure) morceaux.push('Mobilax à connecter');
+  if (u?.en_cours) morceaux.push('Utopya en cours…');
+  else if (u?.derniere_collecte && jourHeure(u.derniere_collecte)) morceaux.push(`Utopya ${jourHeure(u.derniere_collecte)}`);
+  return morceaux.join(' · ');
+}
+
+function BandeauPrix({ resume, sante, chargement = false, isAdmin, onRegles, onRecalculer, onHistorique, onAjouter, basePath }) {
   const { total, estimes, aRevoir, perimes, dateEstimation, plusRecent } = resume;
   const tousEstimes = total > 0 && estimes >= total;
   let titre;
@@ -204,12 +232,12 @@ function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, o
   else if (estimes > 0) titre = `Prix du fournisseur : ${total - estimes} mis à jour, ${estimes} encore estimés${dateEstimation ? ` (${dateFr(dateEstimation)})` : ''}`;
   else titre = `Prix du fournisseur : mis à jour${plusRecent ? ` le ${dateFr(plusRecent)}` : ''}`;
 
-  // Prix périmés ou à revoir = attention (ambre) ; grille à jour = succès. Jamais de rouge pour un simple rappel.
+  // Prix périmés ou à revoir = attention (ambre, sur l'icône seulement) ; grille à jour = coche émeraude. Jamais de rouge.
   const ton = perimes > 0
-    ? { boite: 'callout-warning', icone: AlertTriangle }
+    ? { couleur: 'text-amber-700', icone: AlertTriangle }
     : aRevoir > 0
-      ? { boite: 'callout-warning', icone: Clock }
-      : { boite: 'callout-success', icone: CheckCircle2 };
+      ? { couleur: 'text-amber-700', icone: Clock }
+      : { couleur: 'text-emerald-600', icone: CircleCheck };
   const Icone = ton.icone;
   const details = [];
   if (perimes > 0) details.push(`${perimes} prix de plus de 6 mois`);
@@ -219,16 +247,15 @@ function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, o
   if (sante?.marges_faibles > 0) details.push(`${sante.marges_faibles} marge${sante.marges_faibles > 1 ? 's' : ''} trop faible${sante.marges_faibles > 1 ? 's' : ''}`);
 
   const action = 'btn-secondary btn-sm';
-  const actionPrincipale = 'btn-primary btn-sm';
   return (
-    <section aria-label="État des prix" className={`callout ${ton.boite} flex-wrap items-center`}>
-      <Icone aria-hidden="true" />
+    <section aria-label="État des prix" className="card-section flex flex-wrap items-center gap-3">
+      <Icone aria-hidden="true" className={`w-4 h-4 shrink-0 self-start mt-0.5 ${ton.couleur}`} />
       <div className="min-w-[240px] flex-1">
-        <p className="font-semibold">{titre}</p>
+        <p className="text-sm font-medium text-slate-900">{titre}</p>
         {/* Ligne réservée pendant la lecture : l'arrivée des détails ne décale pas la page (CLS) */}
-        {(details.length > 0 || chargement) && <p className="text-xs sm:text-sm min-h-4 sm:min-h-5">{details.join(' · ')}</p>}
+        {(details.length > 0 || chargement) && <p className="text-sm text-slate-600 min-h-5">{details.join(' · ')}</p>}
       </div>
-      {isAdmin ? (
+      {isAdmin && (
         // Actions sur leur propre ligne : la longueur du texte (arrivé après coup) ne les déplace pas
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
           <button type="button" onClick={onRegles} className={action}>
@@ -247,16 +274,7 @@ function BandeauPrix({ resume, sante, chargement = false, isAdmin, onImporter, o
           <Link to={`${basePath}/modeles-sans-prix`} className={`${action} col-span-2`}>
             <ListChecks aria-hidden="true" /> Modèles sans prix et alias
           </Link>
-          {/* Action principale toujours sur la ligne suivante */}
-          <span className="hidden sm:block basis-full h-0" aria-hidden="true" />
-          <button type="button" onClick={onImporter} className={`${actionPrincipale} col-span-2`}>
-            <FileSpreadsheet aria-hidden="true" /> Importer une liste de prix
-          </button>
         </div>
-      ) : (
-        <button type="button" onClick={onDevenirAdmin} className={action}>
-          <Lock aria-hidden="true" /> Mettre à jour les prix (admin)
-        </button>
       )}
     </section>
   );
@@ -270,8 +288,8 @@ function MethodeCalcul({ regles, methode, isAdmin, onModifier }) {
   const texte = regles ? phraseMethode(regles) : methode?.texte || '';
   const exemple = regles ? detailCalcul(42, 'Ecran', 'standard', regles) : methode?.exemple || null;
   return (
-    <section aria-labelledby="methode-calcul-titre" className="card card-body flex flex-wrap items-start gap-3">
-      <Calculator className="w-5 h-5 shrink-0 text-brand-600 mt-0.5" aria-hidden="true" />
+    <section aria-labelledby="methode-calcul-titre" className="card-section flex flex-wrap items-start gap-3">
+      <Calculator className="w-4 h-4 shrink-0 text-slate-500 mt-0.5" aria-hidden="true" />
       <div className="flex-1 min-w-[240px]">
         <h2 id="methode-calcul-titre" className="t-h3">Méthode de calcul</h2>
         {texte
@@ -339,6 +357,14 @@ export default function TarifsPage() {
   const [regles, setReglesEtat] = useState(null);
   const [methode, setMethode] = useState(null);
   const [santeLue, setSanteLue] = useState(false);
+  // Section « Prix fournisseurs et synchronisations » repliée par défaut : une ligne de résumé suffit au quotidien
+  const [synchroOuverte, setSynchroOuverte] = useState(false);
+  const synchroId = useId();
+  const [etatFournisseurs, setEtatFournisseurs] = useState(null);
+  const chargerEtatFournisseurs = useCallback(() => {
+    if (typeof api.getEtatFournisseurs !== 'function') return;
+    Promise.resolve().then(() => api.getEtatFournisseurs()).then((e) => setEtatFournisseurs(e && typeof e === 'object' ? e : null)).catch(() => {});
+  }, []);
   const isAdminRef = useRef(isAdmin);
   isAdminRef.current = isAdmin;
   const methodeAdminRef = useRef(false);
@@ -439,7 +465,7 @@ export default function TarifsPage() {
     if (!isAdminRef.current && api.hasAdminToken?.() !== true) return;
     Promise.resolve().then(() => api.getReglesPrix()).then(setRegles).catch(() => {});
   }, [setRegles]);
-  useEffect(() => { chargerSante(); chargerMethode(); chargerRegles(); }, [chargerSante, chargerMethode, chargerRegles]);
+  useEffect(() => { chargerSante(); chargerMethode(); chargerRegles(); chargerEtatFournisseurs(); }, [chargerSante, chargerMethode, chargerRegles, chargerEtatFournisseurs]);
   useEffect(() => { if (rechercheLien) setSearch(rechercheLien); }, [rechercheLien]);
 
   // Recherche différée (300 ms)
@@ -466,7 +492,8 @@ export default function TarifsPage() {
     chargerSante();
     chargerMethode();
     chargerRegles();
-  }, [chargerSante, chargerMethode, chargerRegles]);
+    chargerEtatFournisseurs();
+  }, [chargerSante, chargerMethode, chargerRegles, chargerEtatFournisseurs]);
 
   // ─── Navigation marque → modèle (dans l'URL : retour arrière, lien partageable) ───
   const resultatsRecherche = useMemo(() => (mots(debouncedSearch).length ? chercherModeles(marques, debouncedSearch) : null), [marques, debouncedSearch]);
@@ -869,7 +896,7 @@ export default function TarifsPage() {
             <div className="empty-state-icon"><Search aria-hidden="true" /></div>
             <p className="t-body text-slate-500 max-w-sm">{vide}</p>
             {resultatsRecherche && (isAdmin ? (
-              <button type="button" onClick={() => ouvrirAjout(debouncedSearch)} className="btn-primary">
+              <button type="button" onClick={() => ouvrirAjout(debouncedSearch)} className="btn-secondary">
                 <PackagePlus aria-hidden="true" /> Ajouter une pièce pour ce modèle
               </button>
             ) : (
@@ -958,7 +985,7 @@ export default function TarifsPage() {
               </a>
             )}
             {isAdmin && (
-              <button type="button" onClick={() => ouvrirAjout({ marque: marqueUrl, modele: modeleUrl })} className="btn-primary btn-sm">
+              <button type="button" onClick={() => ouvrirAjout({ marque: marqueUrl, modele: modeleUrl })} className="btn-secondary btn-sm">
                 <PackagePlus aria-hidden="true" /> Ajouter une pièce
               </button>
             )}
@@ -975,13 +1002,13 @@ export default function TarifsPage() {
         {modeleData?.batterie_par_ecran && pieces.length > 0 && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mx-4 sm:mx-5 mb-3 text-sm">
             {isAdmin ? (
-              <label className="inline-flex items-center gap-2 min-h-[44px] cursor-pointer select-none">
+              <label className="inline-flex items-center gap-2 min-h-11 cursor-pointer select-none">
                 <input type="checkbox" className="accent-brand-600 w-4 h-4" checked={Boolean(modeleData.batterie_par_ecran.actif)}
                   disabled={enCours === 'par_ecran'} onChange={(e) => basculerParEcran(e.target.checked)} />
                 <span>Batterie changée par l’écran : prix client de la batterie = (écran + batterie) HT × TVA + {modeleData.batterie_par_ecran.marge ?? r?.batterie_par_ecran ?? 70} €</span>
               </label>
             ) : modeleData.batterie_par_ecran.actif ? (
-              <span className="inline-flex items-center gap-2 min-h-[44px]"><Info aria-hidden="true" className="w-4 h-4 text-brand-600" /> Batterie changée par l’écran : le prix de la batterie comprend l’écran (risque de casse).</span>
+              <span className="inline-flex items-center gap-2 min-h-11"><Info aria-hidden="true" className="w-4 h-4 text-slate-500" /> Batterie changée par l’écran : le prix de la batterie comprend l’écran (risque de casse).</span>
             ) : null}
             {modeleData.batterie_par_ecran.actif && modeleData.batterie_par_ecran.ecran?.qualite && (
               <span className="t-caption">écran retenu : {modeleData.batterie_par_ecran.ecran.qualite}</span>
@@ -996,7 +1023,7 @@ export default function TarifsPage() {
           <div role="status" className="callout callout-warning items-center flex-wrap mx-4 sm:mx-5 mb-3">
             <Lock aria-hidden="true" />
             <span className="flex-1 min-w-[220px]">Prix d’achat HT masqués tant que le code administrateur n’est pas saisi sur ce poste.</span>
-            <button type="button" onClick={afficherPrixAchat} disabled={lectureHt} className="btn-primary btn-sm">
+            <button type="button" onClick={afficherPrixAchat} disabled={lectureHt} className="btn-secondary btn-sm">
               <Unlock aria-hidden="true" /> {lectureHt ? 'Lecture…' : 'Afficher les prix d’achat (code admin)'}
             </button>
           </div>
@@ -1016,7 +1043,7 @@ export default function TarifsPage() {
             <p className="t-body text-slate-500 max-w-sm">Aucune pièce enregistrée pour {marqueUrl} {modeleUrl}.</p>
             {isAdmin ? (
               <div className="flex flex-wrap justify-center gap-2">
-                <button type="button" onClick={ajouterPiecesCourantes} disabled={enCours === 'courantes'} className="btn-primary">
+                <button type="button" onClick={ajouterPiecesCourantes} disabled={enCours === 'courantes'} className="btn-secondary">
                   {enCours === 'courantes' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <ListPlus aria-hidden="true" />}
                   Ajouter les pièces courantes
                 </button>
@@ -1167,51 +1194,74 @@ export default function TarifsPage() {
       </div>
 
       <div className="space-y-4">
-        {/* Où sont les prix ? Une phrase, lisible en 5 secondes */}
-        <div className="callout callout-info items-center flex-wrap">
-          <Info aria-hidden="true" />
-          <p className="flex-1 min-w-[240px]">
-            <strong>Où sont les prix ?</strong> iPhone → grille boutique{' '}
-            {/* Cible tactile de 44 px dans la phrase : marges négatives pour ne pas écarter la ligne */}
-            <Link to={`${basePath}/tarifs-reparation`}
-              className="font-semibold underline underline-offset-2 inline-flex items-center gap-1 min-h-[44px] -my-[10px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-              <Wrench className="w-3.5 h-3.5" aria-hidden="true" /> Réparation iPhone
-            </Link>
-            {' '}; autres marques et iPad / Mac → ici : prix fournisseur Mobilax / Utopya + méthode de calcul.
-          </p>
-        </div>
+        {/* Où sont les prix ? Une ligne, lisible en 5 secondes — sans encadré */}
+        <p className="t-small">
+          <span className="font-semibold text-slate-700">Où sont les prix ?</span> iPhone → grille boutique{' '}
+          {/* Cible tactile de 44 px dans la phrase : marges négatives pour ne pas écarter la ligne */}
+          <Link to={`${basePath}/tarifs-reparation`}
+            className="font-semibold text-brand-700 underline underline-offset-2 inline-flex items-center gap-1 min-h-11 -my-3 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+            <Wrench className="w-3.5 h-3.5" aria-hidden="true" /> Réparation iPhone
+          </Link>
+          {' '}; autres marques et iPad / Mac → ici (prix fournisseur Mobilax / Utopya, méthode de calcul).
+        </p>
 
-        <BandeauPrix
-          resume={resume}
-          sante={sante}
-          chargement={!santeLue && !modeFiltre}
-          isAdmin={isAdmin}
-          basePath={basePath}
-          onImporter={() => setFenetre('import')}
-          onRegles={() => setFenetre('regles')}
-          onRecalculer={() => setFenetre('recalcul')}
-          onHistorique={() => setFenetre('historique')}
-          onAjouter={() => ouvrirAjout(modeleChoisi ? { marque: marqueUrl, modele: modeleUrl } : search)}
-          onDevenirAdmin={() => setShowAdminLogin(true)}
-        />
-
-        {/* Tarifs Mobilax mis à jour chaque jour (une connexion à coller une fois) ; Utopya : favori dans le navigateur */}
-        <SynchroFournisseur estAdmin={isAdmin} />
-
-        {isAdmin && (
-          <div className="card-section flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-slate-900">Compléter la grille : vitre arrière et bouton power</p>
-              <p className="t-caption">Crée ces deux pièces (prix à renseigner) sur chaque modèle qui ne les a pas ; la synchro Mobilax et la collecte Utopya les remplissent ensuite.</p>
-            </div>
-            <button type="button" onClick={completerGrille} disabled={enCours === 'completer'} className="btn-secondary btn-sm">
-              {enCours === 'completer' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <ListPlus aria-hidden="true" />}
-              Compléter tous les modèles
+        {/* Une seule section pour l'état des prix, les synchros et les réglages : repliée, elle tient en une ligne ;
+            l'unique action primaire de la page (« Importer une liste de prix ») reste visible à droite */}
+        <section aria-label="Prix fournisseurs et synchronisations" className="card">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 sm:px-4 py-2 min-h-12">
+            <button type="button" onClick={() => setSynchroOuverte((o) => !o)} aria-expanded={synchroOuverte} aria-controls={synchroId}
+              className="btn-ghost btn-sm -ml-1">
+              <ChevronRight className={`transition-transform duration-150 motion-reduce:transition-none ${synchroOuverte ? 'rotate-90' : ''}`} aria-hidden="true" />
+              Prix fournisseurs et synchronisations
             </button>
+            <p className="t-small tabular-nums flex-1 min-w-[200px]" role="status" aria-live="polite">
+              {ligneResume(resume, etatFournisseurs, !santeLue && !modeFiltre)}
+            </p>
+            {isAdmin ? (
+              <button type="button" onClick={() => setFenetre('import')} className="btn-primary btn-sm">
+                <FileSpreadsheet aria-hidden="true" /> Importer une liste de prix
+              </button>
+            ) : (
+              <button type="button" onClick={() => setShowAdminLogin(true)} className="btn-secondary btn-sm">
+                <Lock aria-hidden="true" /> Mettre à jour les prix (admin)
+              </button>
+            )}
           </div>
-        )}
 
-        <MethodeCalcul regles={regles} methode={methode} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
+          {synchroOuverte && (
+            <div id={synchroId} className="border-t border-slate-100 p-3 sm:p-4 space-y-3">
+              <BandeauPrix
+                resume={resume}
+                sante={sante}
+                chargement={!santeLue && !modeFiltre}
+                isAdmin={isAdmin}
+                basePath={basePath}
+                onRegles={() => setFenetre('regles')}
+                onRecalculer={() => setFenetre('recalcul')}
+                onHistorique={() => setFenetre('historique')}
+                onAjouter={() => ouvrirAjout(modeleChoisi ? { marque: marqueUrl, modele: modeleUrl } : search)}
+              />
+
+              {/* Tarifs Mobilax mis à jour chaque jour (une connexion à coller une fois) ; Utopya : favori dans le navigateur */}
+              <SynchroFournisseur estAdmin={isAdmin} />
+
+              {isAdmin && (
+                <div className="card-section flex flex-wrap items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-900">Compléter la grille : vitre arrière et bouton power</p>
+                    <p className="t-caption">Crée ces deux pièces (prix à renseigner) sur chaque modèle qui ne les a pas ; la synchro Mobilax et la collecte Utopya les remplissent ensuite.</p>
+                  </div>
+                  <button type="button" onClick={completerGrille} disabled={enCours === 'completer'} className="btn-secondary btn-sm">
+                    {enCours === 'completer' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <ListPlus aria-hidden="true" />}
+                    Compléter tous les modèles
+                  </button>
+                </div>
+              )}
+
+              <MethodeCalcul regles={regles} methode={methode} isAdmin={isAdmin} onModifier={() => setFenetre('regles')} />
+            </div>
+          )}
+        </section>
 
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1 sm:min-w-[220px]">
@@ -1234,7 +1284,7 @@ export default function TarifsPage() {
             {filtresActifs.map((f) => (
               <button key={f.cle} type="button" onClick={() => retirerFiltresUrl([f.cle])}
                 aria-label={`Retirer le filtre ${f.libelle}`}
-                className="min-h-[44px] pl-3 pr-2 rounded-full bg-brand-50 text-brand-700 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-brand-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="min-h-11 pl-3 pr-2 rounded-full bg-brand-50 text-brand-700 text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-brand-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 {f.libelle}
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -1257,7 +1307,7 @@ export default function TarifsPage() {
             <span className="flex-1 min-w-[220px]">
               Les marges se calculent avec les prix d’achat HT, masqués tant que le code administrateur n’est pas saisi sur ce poste.
             </span>
-            <button type="button" onClick={afficherMarges} disabled={lectureMarges} className="btn-primary btn-sm">
+            <button type="button" onClick={afficherMarges} disabled={lectureMarges} className="btn-secondary btn-sm">
               <Unlock aria-hidden="true" />
               {lectureMarges ? 'Lecture des marges…' : 'Afficher les marges (code admin)'}
             </button>
@@ -1281,16 +1331,16 @@ export default function TarifsPage() {
                 <select id="tarifs-marque" value={marqueActive} onChange={(e) => choisirMarque(e.target.value)} className="select sm:hidden">
                   {marques.map((m) => <option key={m.marque} value={m.marque}>{libelleMarque(m.marque)} ({m.modeles.length})</option>)}
                 </select>
-                <div className="hidden sm:flex flex-wrap gap-2" role="group" aria-label="Marques">
+                {/* Segments neutres : la marque active est blanche, jamais un bloc violet plein */}
+                <div className="segmented hidden sm:inline-flex flex-wrap" role="group" aria-label="Marques">
                   {marques.map((m) => {
                     const actif = m.marque === marqueActive;
                     return (
                       <button key={m.marque} type="button" aria-pressed={actif} onClick={() => choisirMarque(m.marque)}
-                        className={`btn-sm rounded-full border transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${actif ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}>
-                        {m.marque === 'Apple' && <Tablet className="w-4 h-4" aria-hidden="true" />}
+                        className={`segmented-item ${actif ? 'segmented-item-active' : ''}`}>
+                        {m.marque === 'Apple' && <Tablet className="w-4 h-4 text-slate-500" aria-hidden="true" />}
                         {libelleMarque(m.marque)}
-                        {/* Contraste AA : blanc sur brand-600, slate-500 sur blanc */}
-                        <span className={`text-xs ${actif ? 'text-white' : 'text-slate-500'}`}>{m.modeles.length}</span>
+                        <span className="text-xs text-slate-500 tabular-nums">{m.modeles.length}</span>
                       </button>
                     );
                   })}

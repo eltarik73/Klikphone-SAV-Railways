@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle, X, Send, Bot, Users, Lock, ArrowLeft,
-  Loader2, Trash2, Sparkles, Megaphone, VolumeX, Volume2,
+  Loader2, Trash2, Megaphone, VolumeX, Volume2,
   BarChart3, Search, Wrench, Coins, Smartphone, Briefcase, ClipboardList,
 } from 'lucide-react';
 import api from '../lib/api';
@@ -208,11 +208,9 @@ function TabAssistant() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && (
           <div className="text-center py-2">
-            <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center mx-auto mb-3" aria-hidden="true">
-              <Sparkles className="w-6 h-6 text-brand-600" />
-            </div>
+            <Bot className="w-6 h-6 text-slate-500 mx-auto mb-2" aria-hidden="true" />
             <h3 className="t-h2">Assistant Klikphone</h3>
-            <p className="text-sm text-slate-500 mt-1 mb-4">Pose-moi une question technique ou sur la base !</p>
+            <p className="text-sm text-slate-500 mt-1 mb-4">Posez votre question technique ou sur la base.</p>
             <div className="space-y-2">
               {SUGGESTIONS.map((s, i) => {
                 const Icone = s.icon;
@@ -221,9 +219,9 @@ function TabAssistant() {
                     type="button"
                     key={i}
                     onClick={() => sendMessage(s.text)}
-                    className="flex items-center gap-2.5 w-full min-h-11 text-left text-sm font-medium px-3 py-2 rounded-lg bg-brand-50 text-brand-700 hover:bg-brand-100 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    className="flex items-center gap-2.5 w-full min-h-11 text-left text-sm font-medium px-3 py-2 rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
-                    <Icone className="w-4 h-4 shrink-0 text-brand-600" aria-hidden="true" />
+                    <Icone className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />
                     <span>{s.text}</span>
                   </button>
                 );
@@ -235,9 +233,7 @@ function TabAssistant() {
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'assistant' && (
-              <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
-                <Bot className="w-4 h-4 text-brand-600" />
-              </div>
+              <Bot className="w-5 h-5 text-slate-500 mr-2 mt-2 shrink-0" aria-hidden="true" />
             )}
             <div className={bulle(msg.role === 'user')}>
               {msg.role === 'user' ? msg.content : <ChatMessageContent content={msg.content} />}
@@ -247,15 +243,9 @@ function TabAssistant() {
 
         {loading && (
           <div className="flex justify-start" role="status" aria-label="L'assistant rédige sa réponse">
-            <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center mr-2 mt-1 shrink-0" aria-hidden="true">
-              <Bot className="w-4 h-4 text-brand-600" />
-            </div>
+            <Bot className="w-5 h-5 text-slate-500 mr-2 mt-2 shrink-0" aria-hidden="true" />
             <div className="bg-slate-100 rounded-xl px-4 py-3 rounded-bl-md">
-              <div className="flex gap-1.5">
-                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-slate-500 rounded-full motion-safe:animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
+              <Loader2 className="w-4 h-4 text-slate-500 motion-safe:animate-spin" aria-hidden="true" />
             </div>
           </div>
         )}

@@ -77,7 +77,11 @@ describe('getStatusConfig', () => {
     expect(config).toHaveProperty('text');
     expect(config).toHaveProperty('dot');
     expect(config).toHaveProperty('color');
-    expect(config.bg).toContain('amber');
+    expect(config).toHaveProperty('icon');
+    expect(config).toHaveProperty('groupe');
+    // Décision 6 : « à nous, pas commencé » = neutre, cercle vide
+    expect(config.bg).toBe('bg-white');
+    expect(config.dot).toContain('border-slate-400');
   });
 
   it('returns default config for unknown status', () => {
@@ -109,9 +113,11 @@ describe('STATUTS', () => {
 });
 
 describe('getStatusConfig - all statuses', () => {
-  it('returns indigo config for Pré-enregistré', () => {
+  it('Pré-enregistré : même teinte que le diagnostic, cercle vide en pointillé', () => {
     const config = getStatusConfig('Pré-enregistré');
-    expect(config.bg).toContain('indigo');
+    expect(config.bg).toBe('bg-white');
+    expect(config.dot).toContain('border-dashed');
+    expect(config.groupe).toBe('attente');
   });
 
   it('returns config with all required keys for every status', () => {
@@ -121,8 +127,12 @@ describe('getStatusConfig - all statuses', () => {
       expect(config).toHaveProperty('text');
       expect(config).toHaveProperty('dot');
       expect(config).toHaveProperty('color');
-      // Should not be the default slate config
-      expect(config.color).not.toBe('#94A3B8');
+      expect(typeof config.icon).toBe('string');
+      expect(['attente', 'en_cours', 'accord', 'pret', 'rendu', 'clos']).toContain(config.groupe);
+      // Should not be the default (unknown status) config
+      expect(config).not.toBe(getStatusConfig('Statut Inconnu'));
+      // 4 teintes sémantiques : jamais rouge, indigo, violet, cyan, orange ou gray
+      expect(`${config.bg} ${config.text} ${config.ring} ${config.dot}`).not.toMatch(/red-|indigo-|violet-|cyan-|orange-|gray-/);
     });
   });
 });
@@ -130,8 +140,8 @@ describe('getStatusConfig - all statuses', () => {
 describe('getStatusStyle', () => {
   it('returns a string with bg and text classes', () => {
     const style = getStatusStyle('En attente de diagnostic');
-    expect(style).toContain('bg-amber-50');
-    expect(style).toContain('text-amber-700');
+    expect(style).toContain('bg-white');
+    expect(style).toContain('text-slate-700');
     expect(style).toContain('ring-1');
   });
 });

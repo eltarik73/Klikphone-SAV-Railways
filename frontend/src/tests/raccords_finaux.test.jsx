@@ -105,15 +105,17 @@ const changerStatut = async (statut) => {
 // ═══ Fiche : emplacement ═════════════════════════════════════════
 
 describe('Fiche : emplacement sur l’étagère', () => {
-  it('« Réparation terminée » sans emplacement : invitation à ranger, bouton rapide enregistré, étiquette en en-tête', async () => {
+  it('« Réparation terminée » sans emplacement : invitation à ranger, bouton rapide enregistré, valeur affichée dans la carte Statut', async () => {
     courant = ticket({ statut: 'Réparation terminée' });
     renderFiche();
     const groupe = await screen.findByRole('group', { name: 'Emplacement' });
     expect(screen.getByText(/Appareil prêt : notez où il est rangé/)).toBeInTheDocument();
-    expect(screen.queryByTitle('Emplacement sur l’étagère')).not.toBeInTheDocument();
+    // Design épuré : plus d'étiquette d'emplacement dans l'en-tête, la carte Statut porte la valeur
+    expect(screen.queryByRole('button', { name: /^Retirer l’emplacement/ })).not.toBeInTheDocument();
     fireEvent.click(await within(groupe).findByRole('button', { name: 'B2' }));
     await waitFor(() => expect(apiMock.setEmplacement).toHaveBeenCalledWith('42', 'B2'));
-    expect(await screen.findByTitle('Emplacement sur l’étagère')).toHaveTextContent('B2');
+    expect(await within(groupe).findByRole('button', { name: 'Retirer l’emplacement B2' })).toBeInTheDocument();
+    expect(within(groupe).getByRole('textbox', { name: 'Emplacement' })).toHaveValue('B2');
     expect(within(groupe).getByRole('button', { name: 'B2' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByText(/Appareil prêt : notez où il est rangé/)).not.toBeInTheDocument();
     expect(apiMock.updateTicket).not.toHaveBeenCalled();
@@ -128,31 +130,33 @@ describe('Fiche : emplacement sur l’étagère', () => {
     fireEvent.change(champ, { target: { value: 'c 4' } });
     fireEvent.keyDown(champ, { key: 'Enter' });
     await waitFor(() => expect(apiMock.setEmplacement).toHaveBeenCalledWith('42', 'C 4'));
-    expect(await screen.findByTitle('Emplacement sur l’étagère')).toHaveTextContent('C 4');
+    expect(await screen.findByRole('button', { name: 'Retirer l’emplacement C 4' })).toBeInTheDocument();
+    expect(champ).toHaveValue('C 4');
   });
 
-  it('appareil rendu : ni champ ni étiquette', async () => {
+  it('appareil rendu : ni champ ni valeur d’emplacement', async () => {
     courant = ticket({ statut: 'Rendu au client', emplacement: 'B2' });
     renderFiche();
     await screen.findByRole('combobox', { name: 'Changer le statut' });
     expect(screen.queryByRole('group', { name: 'Emplacement' })).not.toBeInTheDocument();
-    expect(screen.queryByTitle('Emplacement sur l’étagère')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Retirer l’emplacement/ })).not.toBeInTheDocument();
   });
 });
 
 // ═══ Fiche : notes ═══════════════════════════════════════════════
 
 describe('Fiche : badge « Relance »', () => {
-  it('note de relance (appel) : badge violet à côté des badges de canal', async () => {
+  it('note de relance (appel) : badge neutre à côté des badges de canal', async () => {
     notes = [
       { id: 7, type_note: 'relance', auteur: 'Sophie', contenu: 'Appel téléphonique : pas de réponse', date_creation: '2026-10-16 09:00:00' },
       { id: 8, type_note: 'sms_echec', auteur: 'Sophie', contenu: 'SMS non envoyé — crédits épuisés', date_creation: '2026-10-16 08:00:00' },
     ];
     renderFiche();
     const badge = await screen.findByText('Relance');
-    expect(badge).toHaveClass('bg-violet-100', 'text-violet-800');
+    // Design épuré : la relance est une information neutre, seul le SMS non parti porte le rouge
+    expect(badge).toHaveClass('badge', 'badge-neutral');
     expect(badge.parentElement).toHaveTextContent('Appel téléphonique : pas de réponse');
-    expect(screen.getByText('SMS non envoyé')).toHaveClass('bg-red-100');
+    expect(screen.getByText('SMS non envoyé')).toHaveClass('badge-danger');
   });
 });
 
@@ -255,7 +259,10 @@ describe('Fiche : « Réparation terminée » → carte « Prévenir »', () => 
     await waitFor(() => expect(apiMock.setEmplacement).toHaveBeenCalledWith('42', 'B2'));
     await waitFor(() => expect(within(ranger).getByRole('button', { name: 'B2' })).toHaveAttribute('aria-pressed', 'true'));
     expect(within(modale).getByRole('group', { name: 'Rangé où ?' })).toBe(ranger);
-    expect(await screen.findByTitle('Emplacement sur l’étagère')).toHaveTextContent('B2');
+    // La carte Statut (derrière la modale) reflète l'emplacement enregistré ; plus d'étiquette dans l'en-tête
+    const carteStatut = screen.getByRole('heading', { name: 'Changer le statut' }).closest('section');
+    expect(await within(carteStatut).findByRole('button', { name: 'Retirer l’emplacement B2' })).toBeInTheDocument();
+    expect(within(carteStatut).getByRole('textbox', { name: 'Emplacement' })).toHaveValue('B2');
     // Carte toujours là : on range puis on prévient, dans la même modale
     expect(within(modale).getByRole('button', { name: 'SMS' })).toBeEnabled();
     fireEvent.keyDown(document, { key: 'Escape' });

@@ -181,7 +181,7 @@ export default function EmplacementInput({
             aria-invalid={erreur ? true : undefined}
             onChange={(e) => { setBrouillon(e.target.value.toUpperCase()); setErreur(null); }}
             onKeyDown={surTouche}
-            className="input min-h-11 pl-9 font-mono text-base font-bold uppercase tracking-wide placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
+            className="input min-h-11 pl-9 font-mono text-base font-semibold tracking-wide placeholder:font-sans placeholder:font-normal placeholder:tracking-normal"
           />
         </div>
         {compact && (
@@ -248,7 +248,7 @@ export default function EmplacementInput({
         title={actuel && actuel.length > 8 ? actuel : undefined}
         className={`flex h-12 w-full min-w-[4.5rem] items-center justify-center gap-1 rounded-lg px-2 transition-colors duration-150 ${FOCUS_RING} focus-visible:ring-offset-2 ${
           actuel
-            ? `bg-slate-900 font-mono font-black tracking-wide text-white hover:bg-slate-800 ${taille}`
+            ? `bg-slate-900 font-mono font-semibold tracking-wide text-white hover:bg-slate-800 ${taille}`
             : 'border-2 border-dashed border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:border-brand-500 hover:text-brand-700'
         }`}>
         {enCours && !ouvert

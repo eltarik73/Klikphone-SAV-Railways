@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellRing, Check, CheckCheck, ExternalLink, X, Inbox } from 'lucide-react';
+import { Bell, BellRing, Check, CheckCheck, ExternalLink, X, Inbox, TriangleAlert } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { usePolling } from '../hooks/usePolling';
@@ -267,8 +267,8 @@ export default function NotificationCenter({ collapsed = false }) {
 
             {/* Banner debug si erreur (dev/troubleshooting) */}
             {debugLastError && (
-              <div className="px-4 py-2 bg-red-50 border-b border-red-100 text-xs font-medium text-red-700">
-                ⚠ Erreur de chargement : {debugLastError}
+              <div className="flex items-center gap-1.5 px-4 py-2 bg-red-50 border-b border-red-100 text-xs font-medium text-red-700">
+                <TriangleAlert className="w-4 h-4 shrink-0" aria-hidden="true" /> Erreur de chargement : {debugLastError}
               </div>
             )}
 
@@ -281,8 +281,8 @@ export default function NotificationCenter({ collapsed = false }) {
                   </div>
                   <p className="t-h2">Aucune notification</p>
                   <p className="t-body text-slate-500 max-w-sm">
-                    Tu seras prévenu ici quand un client valide un devis,
-                    envoie un message, ou laisse un avis.
+                    Vous serez prévenu ici quand un client valide un devis,
+                    envoie un message ou laisse un avis.
                   </p>
                 </div>
               ) : (
@@ -296,13 +296,9 @@ export default function NotificationCenter({ collapsed = false }) {
                           ${!n.is_read ? 'bg-brand-50/40' : ''}
                         `}
                       >
-                        <div className={`shrink-0 w-10 h-10 rounded-lg flex items-center justify-center text-lg
-                          ${n.important
-                            ? 'bg-brand-50 text-brand-700'
-                            : 'bg-slate-100 text-slate-600'}
-                        `}>
-                          <span aria-hidden="true">{n.icon || '🔔'}</span>
-                        </div>
+                        <span className="shrink-0 w-5 h-5 mt-px flex items-center justify-center text-slate-500" aria-hidden="true">
+                          {n.icon ? <span className="text-base leading-none">{n.icon}</span> : <Bell className="w-4 h-4" />}
+                        </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <p className={`text-sm leading-snug ${!n.is_read ? 'font-semibold text-slate-900' : 'font-medium text-slate-700'}`}>

@@ -68,18 +68,19 @@ export function analyserProbe(res) {
 
 const attendre = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Boutons du système (.btn-*) ; sur fond sombre, le principal est blanc (jamais d'ambre plein)
+// Boutons du système seulement (plus de bouton stylé à la main) : les deux actions en secondaire compact,
+// « Synchroniser » restant désactivé tant que le test de connexion n'a pas réussi
 const STYLES_SYNCHRO = {
   sombre: {
     texte: 'text-slate-300', faible: 'text-slate-400',
-    secondaire: 'btn border border-slate-600 bg-slate-800 text-slate-100 hover:bg-slate-700 focus-visible:ring-white disabled:text-slate-500 disabled:hover:bg-slate-800',
-    principal: 'btn bg-white text-slate-900 hover:bg-slate-100 focus-visible:ring-white disabled:bg-slate-700 disabled:text-slate-400 disabled:hover:bg-slate-700',
+    secondaire: 'btn-secondary btn-sm',
+    principal: 'btn-secondary btn-sm',
     ok: 'text-emerald-300', ko: 'text-red-300',
   },
   clair: {
     texte: 'text-slate-700', faible: 'text-slate-600',
-    secondaire: 'btn-secondary',
-    principal: 'btn-primary',
+    secondaire: 'btn-secondary btn-sm',
+    principal: 'btn-secondary btn-sm',
     ok: 'text-emerald-700', ko: 'text-red-700',
   },
 };
@@ -223,12 +224,13 @@ const entier = (v) => {
 };
 const fr = (n) => (n === null ? '—' : n.toLocaleString('fr-FR'));
 
-// Tuiles blanches, valeur slate-900 : la couleur (attention / danger / marque) ne porte que sur l'icône
-const TONS = {
-  neutre: 'bg-slate-100 text-slate-600',
-  orange: 'bg-amber-50 text-amber-800',
-  rouge: 'bg-red-50 text-red-700',
-  marque: 'bg-brand-50 text-brand-700',
+// Une seule carte, des cellules « libellé · valeur · détail » : la couleur ne porte que sur la valeur,
+// et seulement pour une alerte (ambre = à surveiller, rouge = à traiter) ; icône 16 px grise ou rien
+const TON_VALEUR = {
+  neutre: 'text-slate-900',
+  orange: 'text-amber-700',
+  rouge: 'text-red-700',
+  marque: 'text-slate-900',
 };
 
 /** Réponse de GET /api/tarifs/sante → tuiles affichées (exportée pour les tests). */
@@ -364,8 +366,8 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
         )}
       </div>
       {statut === 'chargement' ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-4 gap-3" aria-hidden="true">
-          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-[88px]" />)}
+        <div className="card overflow-hidden grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="bg-white p-3 sm:p-4"><div className="skeleton h-14" /></div>)}
         </div>
       ) : statut === 'erreur' ? (
         <div className="card flex flex-wrap items-center gap-3 px-4 py-3">
@@ -375,22 +377,18 @@ export default function SantePrixWidget({ basePath = '/accueil' }) {
           </button>
         </div>
       ) : (
-        <ul className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-4 gap-3">
-          {tuiles.map(({ cle, icone: Icone, valeur, titre, detail, lien, ton, aria, badge }) => (
-            <li key={cle}>
+        /* gap-px sur fond slate-100 : un filet entre toutes les cellules, quel que soit le retour à la ligne */
+        <ul className="card overflow-hidden grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100">
+          {tuiles.map(({ cle, icone: Icone, valeur, titre, detail, lien, ton, aria }) => (
+            <li key={cle} className="bg-white">
               <Link to={lien} aria-label={aria}
-                className="card relative flex flex-col h-full min-h-[88px] p-3 transition-colors duration-150 hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">
-                <span className="flex items-center gap-2 text-xs font-semibold leading-tight text-slate-700">
-                  <span className={`flex w-7 h-7 shrink-0 items-center justify-center rounded-lg ${TONS[ton] || TONS.neutre}`} aria-hidden="true">
-                    <Icone className="w-4 h-4" />
-                  </span>
+                className="flex flex-col h-full min-h-[88px] p-3 sm:p-4 transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500">
+                <span className="flex items-center gap-1.5 t-small text-slate-600 leading-tight">
+                  {Icone && <Icone className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />}
                   <span className="min-w-0">{titre}</span>
                 </span>
-                <span className="mt-1.5 kpi-value text-xl">{valeur}</span>
-                <span className="mt-1 t-caption truncate">{detail}</span>
-                {badge && (
-                  <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-brand-600 ring-2 ring-white" aria-hidden="true" />
-                )}
+                <span className={`mt-1.5 text-xl font-semibold leading-none tabular-nums ${TON_VALEUR[ton] || TON_VALEUR.neutre}`}>{valeur}</span>
+                <span className="mt-1.5 t-caption truncate">{detail}</span>
               </Link>
             </li>
           ))}

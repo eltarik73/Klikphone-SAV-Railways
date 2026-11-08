@@ -1205,7 +1205,7 @@ export default function CommunityManager() {
                       className="btn-ghost"
                     >
                       {copiedId === 'gen-copy' ? (
-                        <><Check className="text-emerald-700" /> Copié !</>
+                        <><Check className="text-emerald-700" /> Copié</>
                       ) : (
                         <><Copy /> Copier</>
                       )}
@@ -1492,7 +1492,7 @@ export default function CommunityManager() {
                     <div className="p-4 sm:p-5">
                       {/* Icon + name */}
                       <div className="flex items-start gap-3 mb-3">
-                        <span className="text-2xl" aria-hidden="true">{template.icone || '📝'}</span>
+                        {template.icone && <span className="text-xl leading-none mt-0.5" aria-hidden="true">{template.icone}</span>}
                         <div className="min-w-0 flex-1">
                           <h3 className="t-h2 truncate">{template.nom}</h3>
                           {template.description && (

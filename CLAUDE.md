@@ -68,18 +68,27 @@ klikphone-sav/
 │   │   ├── pages/               # ~20 pages (DashboardPage, TicketDetailPage, ClientFormPage...)
 │   │   └── components/          # Navbar, StatusBadge, PatternGrid, Toast...
 │   ├── vite.config.js           # Proxy /api → localhost:8000, port 5173
-│   ├── tailwind.config.js       # Palette brand (violet), fonts Plus Jakarta Sans
+│   ├── tailwind.config.js       # Palette brand (violet), police Inter variable
 │   └── package.json
 └── CLAUDE.md
 ```
 
 ## Design & UI
 
-- **Palette** : Violet/Indigo (`#7C3AED` primary), défini dans `tailwind.config.js` comme `brand`
-- **Sidebar** : Dark theme (`#0F172A`), défini comme `sidebar`
-- **Fonts** : Plus Jakarta Sans (titres + corps) + Inter (fallback)
-- **Composants UI** : Tailwind natif (pas de librairie UI externe)
-- **Icons** : lucide-react exclusivement
+- **Skill `design-epure`** (`.claude/skills/design-epure/`, nov. 2026) : à charger avant toute modification
+  d'interface — dix décisions (un point focal et un seul `btn-primary` par écran, violet = action seulement,
+  statuts en 4 teintes, cartes sans ombre, rayons 6/8/12, aucune animation décorative, ton et formats
+  français), checklist anti-« look IA », gabarits de page, audit chiffré du code et restes à traiter (§ 8).
+- **Palette** : violet `#7C3AED` (`brand`) réservé à l'action, l'état actif et le focus ; neutres slate ;
+  sémantiques success/warning/danger/info (emerald/amber/red/blue). Jamais de dégradé ni de tuile d'icône colorée.
+- **Statuts** : 4 teintes (`lib/utils.js` → `getStatusConfig`, clés `bg/text/ring/dot/color/icon/groupe`) ;
+  `StatusBadge` variante `dot` (listes) ou `solid` / `size="lg"` (en-tête de fiche). Aucun statut en rouge.
+- **Sidebar** : sombre (`#0F172A`, `sidebar`), version « muette » (texte slate-300, actif `bg-white/10`) — décision du gérant.
+- **Police** : Inter variable seule (Google Fonts `opsz,wght@14..32,400..700`, `font-optical-sizing: auto`) ;
+  plus de Plus Jakarta Sans ni d'Instrument Serif. Logo « K » en aplat : `components/LogoK.jsx`.
+- **Confirmations** : `components/ConfirmDialog.jsx` (`useConfirmDialog`), jamais `confirm()` / `prompt()` natifs.
+- **Composants UI** : Tailwind natif (pas de librairie UI externe), classes partagées d'`index.css`
+- **Icons** : lucide-react exclusivement, nues (16–20 px, slate-500), jamais d'emoji
 
 ## Statuts des tickets (8)
 

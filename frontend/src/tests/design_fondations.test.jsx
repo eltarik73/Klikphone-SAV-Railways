@@ -4,7 +4,7 @@
  *   modales, toasts, échelle typographique) avec les contraintes AA (plus de 11 px, plus de slate-400
  *   pour du texte, vert plein = emerald-700, focus visible au clavier) ;
  * - tailwind.config.js garde la marque (brand-600 #7C3AED, sidebar #0F172A) et ajoute les ombres xs/lg ;
- * - StatusBadge / PrioriteBadge : pastilles rondes sans bordure (ring) ;
+ * - StatusBadge : pastille + texte en liste, badge plein cerclé en fiche ; PrioriteBadge : pastilles rondes sans ring ;
  * - Navbar : toutes les entrées rendues, focus visible, boutons icône nommés en mode replié ;
  * - Toast / ProgressTracker / ErrorBoundary : classes du système, plus de styles inline colorés.
  */
@@ -135,7 +135,8 @@ describe('index.css : classes partagées du design V2', () => {
 
   it('aucune taille de texte sous 12 px, carte xl sans bordure translucide, saisies 16 px sous lg', () => {
     expect(css).not.toMatch(/text-\[(?:8|9|10|10\.5|11)px\]/);
-    expect(regle('card')).toMatch(/rounded-xl/);
+    expect(regle('card')).toMatch(/rounded-lg/);
+    expect(regle('card')).not.toMatch(/shadow/); // carte = bordure seule (design épuré, nov. 2026)
     expect(regle('card')).toMatch(/border-slate-200\b/);
     expect(regle('card')).not.toMatch(/slate-200\/60/);
     expect(regle('input')).toMatch(/text-base lg:text-sm/);
@@ -143,8 +144,9 @@ describe('index.css : classes partagées du design V2', () => {
     expect(regle('input-label')).not.toMatch(/uppercase/);
   });
 
-  it('badges : 24 px ronds, texte 12 px ; compteur 18 px ; danger plein unique', () => {
-    expect(regle('badge')).toMatch(/rounded-full/);
+  it('badges : 24 px, coins 6 px, texte 12 px ; compteur 18 px rond ; danger plein unique', () => {
+    expect(regle('badge')).toMatch(/rounded-md/);
+    expect(regle('badge-count')).toMatch(/rounded-full/);
     expect(regle('badge')).toMatch(/text-xs/);
     expect(regle('badge-count')).toMatch(/min-w-\[18px\] h-\[18px\]/);
     expect(regle('badge-danger-solid')).toMatch(/bg-red-600 text-white/);
@@ -161,11 +163,12 @@ describe('index.css : classes partagées du design V2', () => {
 // ─── tailwind.config.js ───────────────────────────────────
 describe('tailwind.config.js : marque intacte, tokens ajoutés', () => {
   const t = tailwindConfig.theme.extend;
-  it('garde brand-600 #7C3AED, sidebar #0F172A et Plus Jakarta Sans', () => {
+  it('garde brand-600 #7C3AED, sidebar #0F172A ; police Inter (variable, taille optique)', () => {
     expect(t.colors.brand[600]).toBe('#7C3AED');
     expect(t.colors.brand[700]).toBe('#6D28D9');
     expect(t.colors.sidebar.DEFAULT).toBe('#0F172A');
-    expect(t.fontFamily.sans[0]).toMatch(/Plus Jakarta Sans/);
+    expect(t.fontFamily.sans[0]).toBe('Inter');
+    expect(t.fontFamily.display[0]).toBe('Inter');
   });
   it('ajoute boxShadow.xs / boxShadow.lg et les alias success/warning/danger/info', () => {
     expect(t.boxShadow.xs).toMatch(/^0 1px 2px/);
@@ -183,35 +186,40 @@ describe('tailwind.config.js : marque intacte, tokens ajoutés', () => {
   });
 });
 
-// ─── Pieds de page publics ────────────────────────────────
+// ─── Pages publiques et connexion (design épuré, nov. 2026) ────────────────────────────────
 describe('LoginPage / HomePage : logotype et mise en avant', () => {
   const login = readFileSync(resolve(ici, '../pages/LoginPage.jsx'), 'utf-8');
   const home = readFileSync(resolve(ici, '../pages/HomePage.jsx'), 'utf-8');
-  it('le « ∞ » du pied de page clair est en pink-700 (5,6:1 sur slate-50 ; pink-600 faisait 4,39:1)', () => {
-    expect(login).toMatch(/text-pink-700">∞</);
-    expect(login).not.toMatch(/text-pink-600/);
+  it('connexion : plus de signature « Propulsé par TkS∞26 », de serif italique, de carte rounded-2xl ombrée ni d’animation d’entrée', () => {
+    expect(login).not.toMatch(/Propulsé par|text-pink-|font-editorial|font-display|rounded-2xl|shadow-lg|animate-fade-up|font-extrabold/);
+    expect(login).toMatch(/className="card p-6 sm:p-8"/);
+    expect(login).toMatch(/<h1 className="t-h1 text-center/);
   });
-  it('même « ∞ » pink-700 sur les pieds de page publics /suivi et /deposer', () => {
+  it('pages publiques /suivi et /deposer : plus de signature ni de « ∞ » rose, plus d’animation d’entrée', () => {
     for (const page of ['SuiviPage.jsx', 'DeposerPage.jsx']) {
       const src = readFileSync(resolve(ici, `../pages/${page}`), 'utf-8');
-      expect(src).toMatch(/text-pink-700">∞</);
-      expect(src).not.toMatch(/text-pink-600/);
+      expect(src, page).not.toMatch(/Propulsé par|text-pink-|font-extrabold|animate-in|hover:scale/);
     }
   });
-  it('accueil public : la carte « tarifs téléphones » garde un liseré brand, sans dégradé ni seconde action pleine', () => {
-    expect(home).toMatch(/const ctaHighlight = [^\n]*border-brand-400\/50/);
-    expect(home).not.toMatch(/ctaHighlight = [^\n]*(gradient|bg-brand-600)/);
-    expect((home.match(/className=\{ctaPrimary\}/g) || []).length).toBe(1);
+  it('accueil public : fond uni, logo en aplat, une seule action pleine et les autres en secondaire', () => {
+    expect(home).not.toMatch(/bg-gradient|drop-shadow|linearGradient|font-editorial|font-display|font-extrabold|uppercase|shadow-lg|animate-/);
+    expect(home).toMatch(/bg-slate-50 text-slate-900/);
+    expect((home.match(/btn-primary/g) || []).length).toBe(1);
+    expect((home.match(/btn-secondary/g) || []).length).toBe(3);
   });
 });
 
 // ─── Badges ───────────────────────────────────────────────
-describe('StatusBadge / PrioriteBadge : pastilles rondes sans bordure', () => {
-  it('StatusBadge : rounded-full, fond -50 conservé, sans ring, 24 px / 32 px en lg', () => {
+describe('StatusBadge / PrioriteBadge', () => {
+  it('StatusBadge : pastille + texte slate-700 sans fond en liste ; badge -50/-700 cerclé, 28 px / 32 px en lg, en fiche', () => {
     const { container, rerender } = render(<StatusBadge statut="En attente de diagnostic" />);
     const b = container.querySelector('span');
-    expect(b).toHaveClass('rounded-full', 'bg-amber-50', 'text-amber-700', 'h-6', 'text-xs', 'whitespace-nowrap');
-    expect(b.className).not.toMatch(/ring-1/);
+    expect(b).toHaveClass('text-slate-700', 'text-xs', 'whitespace-nowrap');
+    expect(b.className).not.toMatch(/bg-|ring-|rounded-full|shadow/);
+    expect(b.querySelector('span[aria-hidden="true"]')).toHaveClass('w-2', 'h-2', 'rounded-full', 'border-slate-400');
+    rerender(<StatusBadge statut="Réparation terminée" variant="solid" />);
+    expect(container.querySelector('span')).toHaveClass('h-7', 'text-sm', 'rounded-md', 'bg-emerald-50', 'text-emerald-700', 'ring-1');
+    expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     rerender(<StatusBadge statut="Réparation terminée" size="lg" />);
     expect(container.querySelector('span')).toHaveClass('h-8', 'text-sm', 'bg-emerald-50');
   });
@@ -270,7 +278,9 @@ describe('Navbar : entrées, états et focus', () => {
     }
     const clients = screen.getByRole('button', { name: /^Clients/ });
     expect(clients).toHaveAttribute('aria-current', 'page');
-    expect(clients.className).toMatch(/bg-brand-600\/20/);
+    // Entrée active muette : fond blanc/10 + texte blanc (la barre gauche brand-500 est la seule trace de violet)
+    expect(clients.className).toMatch(/bg-white\/10 text-white/);
+    expect(clients.className).not.toMatch(/bg-brand-600\/20/);
     expect(screen.getByRole('button', { name: /^Commandes/ })).not.toHaveAttribute('aria-current');
     // Rubriques : un seul style, plus de couleur par rubrique (« Tarifs » est une entrée simple, sans rubrique)
     const devis = screen.getAllByRole('button', { name: /^Devis$/ })[0];
@@ -370,7 +380,8 @@ describe('Navbar : entrées, états et focus', () => {
     // Écran bas : « Changer » / « Déconnexion » passent en icônes 44 px, libellé conservé pour les lecteurs d'écran
     expect(screen.getByText('Changer', { selector: 'span' })).toHaveClass('short:sr-only');
     expect(screen.getByRole('button', { name: /^Déconnexion/ }).className).toMatch(/short:w-11/);
-    expect(screen.getByText(/Propulsé par/).className).toMatch(/short:hidden/);
+    // La signature « Propulsé par TkS∞26 » a disparu de la barre (design épuré)
+    expect(screen.queryByText(/Propulsé par/)).toBeNull();
   });
 });
 

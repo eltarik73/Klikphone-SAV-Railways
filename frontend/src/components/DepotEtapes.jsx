@@ -60,22 +60,18 @@ export const estTelephoneFictif = (tel) => {
 };
 export const isValidEmail = (email) => !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// Tuile de choix (catégorie, panne, type d'achat) : 56 px, bordure 2 px, sélection = marque
-export const tuile = (actif) => `min-h-14 px-4 py-3 rounded-lg border-2 text-base font-semibold text-left leading-snug
-  transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
-  ${actif ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`;
+// Tuile de choix (catégorie, panne, type d'achat) : classes `choice` / `choice-on` du système, 56 px au doigt,
+// texte 16 px ; l'anneau de focus est posé directement (le bouton n'a pas d'input « peer »)
+export const tuile = (actif) => `choice ${actif ? 'choice-on' : ''} min-h-14 px-4 py-3 text-base font-semibold leading-snug
+  focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2`;
 
-// En-tête d'étape : pastille marque 40 px + titre + sous-titre (span : `.depot-form p` forcerait 16 px)
-export function EnTete({ icone: Icone, titre, sousTitre }) {
+// En-tête d'étape : titre t-h2 + sous-titre t-small (span : `.depot-form p` forcerait 16 px).
+// L'icône de l'étape (prop `icone`) n'est plus affichée : plus de tuile colorée.
+export function EnTete({ titre, sousTitre }) {
   return (
-    <div className="flex items-center gap-3 mb-1">
-      <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
-        <Icone className="w-5 h-5" />
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold leading-snug text-slate-900">{titre}</h2>
-        {sousTitre && <span className="block text-sm text-slate-600">{sousTitre}</span>}
-      </div>
+    <div className="mb-1">
+      <h2 className="t-h2">{titre}</h2>
+      {sousTitre && <span className="block t-small mt-0.5">{sousTitre}</span>}
     </div>
   );
 }
@@ -89,7 +85,7 @@ export function BarreEtapes({ etapes, courante }) {
         const enCours = i === courante;
         return (
           <li key={e.id} aria-current={enCours ? 'step' : undefined} className="min-w-0">
-            <div className={`h-2 rounded-full transition-colors duration-300 ${faite || enCours ? 'bg-brand-600' : 'bg-slate-200'}`} />
+            <div className={`h-2 rounded-full transition-colors duration-150 ${faite || enCours ? 'bg-brand-600' : 'bg-slate-200'}`} />
             <span lang="fr" className={`block text-sm mt-1.5 text-center leading-tight tracking-tight break-words hyphens-auto ${
               enCours ? 'font-semibold text-brand-700' : faite ? 'font-medium text-brand-700' : 'font-medium text-slate-500'
             }`}>
@@ -222,7 +218,7 @@ export function ChampsAppareil({
       </fieldset>
 
       {form.categorie && !sansModele && (
-        <div className="space-y-5 animate-in">
+        <div className="space-y-5">
           <div>
             <label htmlFor={`${prefix}-marque`} className="input-label">Marque *</label>
             <select id={`${prefix}-marque`} value={form.marque} onChange={(e) => onChange('marque', e.target.value)}
@@ -275,8 +271,8 @@ export function TuilesPannes({ pannes, valeur, onChoisir }) {
         const actif = valeur === p;
         return (
           <button key={p} type="button" aria-pressed={actif} onClick={() => onChoisir(p)}
-            className={`${tuile(actif)} flex items-center gap-2.5`}>
-            {Icone && <Icone className={`w-5 h-5 shrink-0 ${actif ? 'text-brand-600' : 'text-slate-500'}`} aria-hidden="true" />}
+            className={`${tuile(actif)} justify-start text-left gap-2.5`}>
+            {Icone && <Icone className={`w-5 h-5 shrink-0 ${actif ? 'text-white' : 'text-slate-500'}`} aria-hidden="true" />}
             <span className="min-w-0">{p}</span>
           </button>
         );

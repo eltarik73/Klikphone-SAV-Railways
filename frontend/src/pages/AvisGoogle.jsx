@@ -374,9 +374,7 @@ export default function AvisGoogle() {
                             disabled={generatingId === item.id}
                             className="btn-secondary"
                           >
-                            <Sparkles
-                              className={`text-brand-600 ${generatingId === item.id ? 'motion-safe:animate-pulse' : ''}`}
-                            />
+                            <Sparkles className="text-slate-500" aria-hidden="true" />
                             {generatingId === item.id
                               ? 'Génération en cours...'
                               : 'Générer réponse IA'}
@@ -407,7 +405,7 @@ export default function AvisGoogle() {
                                 className="btn-primary btn-sm"
                               >
                                 {copiedId === `approve-${item.id}` ? (
-                                  <><Check /> Copié ! Ouvrir Google...</>
+                                  <><Check /> Copié, ouverture de Google…</>
                                 ) : (
                                   <><Send /> Approuver & Publier</>
                                 )}
@@ -434,7 +432,7 @@ export default function AvisGoogle() {
                                 className="btn-ghost btn-sm"
                               >
                                 {copiedId === `copy-${item.id}` ? (
-                                  <><Check className="text-emerald-700" /> Copié !</>
+                                  <><Check className="text-emerald-700" /> Copié</>
                                 ) : (
                                   <><Copy /> Copier</>
                                 )}

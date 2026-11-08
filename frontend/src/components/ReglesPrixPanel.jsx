@@ -194,14 +194,14 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
   // variation_moy / min / max : en euros de prix client ; variation_moy_pct : en %
   const tuiles = surAchat
     ? [
-      { label: 'Prix client qui changent', valeur: client.exact ? client.n : `${client.n} ou plus`, ton: client.n ? 'text-violet-800' : 'text-slate-800',
+      { label: 'Prix client qui changent', valeur: client.exact ? client.n : `${client.n} ou plus`, ton: client.n ? 'text-slate-900' : 'text-slate-800',
         detail: `sur ${modifies} prix d’achat mis à jour` },
       { label: 'Prix d’achat mis à jour', valeur: modifies, ton: 'text-slate-800', detail: detailAlertes },
       { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'text-amber-800' },
       { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'text-slate-800', detail: detailIgnores },
     ]
     : [
-      { label: 'Prix qui changeraient', valeur: modifies, ton: modifies ? 'text-violet-800' : 'text-slate-800', detail: detailAlertes },
+      { label: 'Prix qui changeraient', valeur: modifies, ton: modifies ? 'text-slate-900' : 'text-slate-800', detail: detailAlertes },
       { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'text-slate-800', detail: detailIgnores },
       { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'text-amber-800' },
       { label: 'Variation moyenne', valeur: modifies ? ecartEuros(resultat.variation_moy) : '—', ton: 'text-slate-800',

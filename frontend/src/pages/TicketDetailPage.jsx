@@ -26,7 +26,7 @@ import PrevenirClient from '../components/PrevenirClient';
 import ContactClient from '../components/ContactClient';
 import { normaliserEmplacement } from '../lib/etagere';
 import { estAutreNumero, formatTel, telJoignable } from '../lib/contact';
-import { PrioriteBadge, PrioriteSelecteur, normaliserPriorite } from '../components/PrioriteBadge';
+import { PrioriteSelecteur, normaliserPriorite } from '../components/PrioriteBadge';
 import { useCatalog } from '../hooks/useCatalog';
 import { MARQUE_AUTRE } from '../lib/catalog';
 import {
@@ -42,13 +42,12 @@ import {
   ArrowLeft, Phone, Mail, MessageCircle, Send, Trash2,
   ChevronDown, Plus, User, Wrench, Package,
   FileText, Printer, Lock, Eye, Copy, Check,
-  AlertTriangle, Smartphone, Shield, Calendar, Clock,
-  Zap, Edit3, X, CheckCircle2, Sparkles,
+  AlertTriangle, Smartphone, Shield, Calendar,
+  Edit3, X, CheckCircle2, Sparkles,
   Flag, PhoneCall, PhoneForwarded, Percent, RotateCcw, Globe, Star, ExternalLink, History, PackageCheck, Tag, ClipboardCheck,
-  MapPin, CreditCard, FileSignature, Ticket, Gift, Coins, CalendarClock,
+  CreditCard, FileSignature, Ticket, Gift, Coins, CalendarClock, GripVertical,
 } from 'lucide-react';
 
-const ANIM_ENTREE = 'motion-safe:animate-[fadeIn_0.3s_ease-out_forwards]';
 const STATUTS_REMISE = new Set(['Rendu au client', 'Clôturé']);
 // Appareil prêt, en attente du client : message « prêt » en 1 clic (carte PrevenirClient)
 const STATUT_TERMINE = 'Réparation terminée';
@@ -248,6 +247,14 @@ function aujourdhuiIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// « 7 nov. à 14:30 » (Intl fr-FR) : date de la décision du client sur le devis
+function dateHeureCourte(valeur) {
+  if (!valeur) return null;
+  const d = new Date(valeur);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} à ${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
 // ─── Auto-save status indicator ────────────────────────────────
 /** « 06 00 00 01 09 » pour un numéro français à 10 chiffres ; sinon la valeur telle quelle (affichage seulement). */
 function telAffiche(tel) {
@@ -265,7 +272,7 @@ function AutoSaveIndicator({ etat }) {
       {(status === 'dirty' || status === 'saving') && (
         <><span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /><span className="text-slate-500">Enregistrement…</span></>
       )}
-      {status === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
+      {status === 'saved' && <span className="text-emerald-700">Enregistré</span>}
       {status === 'error' && (
         <>
           <AlertTriangle className="w-4 h-4 text-red-600" aria-hidden="true" />
@@ -288,7 +295,8 @@ function afficherIndicateur(editing, etat) {
 }
 
 // ─── Editable Section Component ────────────────────────────────
-function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children, viewContent, autoSave, onEntree }) {
+// `badges` : marqueurs neutres à côté du titre (retour SAV, dépôt à distance…), jamais dans l'en-tête de page
+function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children, viewContent, autoSave, onEntree, badges = null }) {
   const titreId = useId();
   return (
     <section className="card p-4 sm:p-5" aria-labelledby={titreId}>
@@ -296,6 +304,7 @@ function EditableSection({ title, icon: Icon, editing, onEdit, onClose, children
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           {Icon && <Icon className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
           <h2 id={titreId} className="t-h2">{title}</h2>
+          {badges}
           {afficherIndicateur(editing, autoSave) && <AutoSaveIndicator etat={autoSave} />}
         </div>
         {editing ? (
@@ -409,7 +418,7 @@ function TelContactLigne({ valeur, onEnregistrer }) {
               aria-describedby={erreur ? `${idErreur} ${idAide}` : idAide}
               disabled={enCours}
             />
-            <button type="submit" className="btn-primary min-h-11 shrink-0" disabled={enCours}>
+            <button type="submit" className="btn-secondary min-h-11 shrink-0" disabled={enCours}>
               Enregistrer
             </button>
             <button
@@ -488,6 +497,54 @@ function Modal({ labelledBy, onClose, busy = false, panelClassName = 'max-w-md p
         </div>
       </div>
     </>
+  );
+}
+
+// Tête de modale : titre t-h2, icône 20 px en ligne (aucune tuile colorée), sous-titre, « Fermer »
+function TeteModale({ id, titre, sousTitre, icone: Icone, onClose, disabled = false, className = 'mb-5' }) {
+  return (
+    <div className={`flex items-start gap-3 ${className}`}>
+      {Icone && <Icone className="w-5 h-5 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />}
+      <div className="min-w-0 flex-1">
+        <h3 id={id} className="t-h2">{titre}</h3>
+        {sousTitre && <p className="t-small">{sousTitre}</p>}
+      </div>
+      {onClose && (
+        <button type="button" onClick={onClose} disabled={disabled} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
+          <X aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Confirmation accessible (à la place de confirm() / prompt()) : le titre nomme l'objet, une phrase
+ * dit la conséquence, les boutons disent le résultat. Aucun bouton n'a le focus par défaut (le
+ * panneau le prend, ou le champ d'un prompt), Échap = annuler, l'action est à droite.
+ */
+function ConfirmationModal({
+  titre, children, onClose, onConfirmer, libelleConfirmer, libelleAnnuler = 'Annuler',
+  classeConfirmer = 'btn-primary', classeAnnuler = 'btn-ghost', desactive = false, busy = false,
+}) {
+  const titreId = useId();
+  return (
+    <Modal labelledBy={titreId} onClose={onClose} busy={busy} panelClassName="max-w-md p-5 sm:p-6">
+      <h3 id={titreId} className="t-h2">{titre}</h3>
+      <div className="mt-2 t-body">{children}</div>
+      <div className="flex justify-end gap-2 mt-6">
+        <button type="button" onClick={onClose} disabled={busy} className={classeAnnuler}>{libelleAnnuler}</button>
+        <button
+          type="button"
+          onClick={onConfirmer}
+          disabled={desactive || busy}
+          aria-busy={busy || undefined}
+          className={classeConfirmer}
+        >
+          {libelleConfirmer}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -591,20 +648,14 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
 
   return (
     <Modal labelledBy={titreId} onClose={onClose} busy={envoi} panelClassName="max-w-lg p-5 sm:p-6">
-      <div className="flex items-start gap-3 mb-5">
-        <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-          <PackageCheck className="w-5 h-5 text-emerald-700" aria-hidden="true" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 id={titreId} className="t-h2">Rendre au client</h3>
-          <p className="t-small truncate">
-            <span className="font-mono font-semibold text-slate-700">{ticket.ticket_code}</span> — {ticket.client_prenom || ''} {ticket.client_nom || ''}
-          </p>
-        </div>
-        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
-          <X aria-hidden="true" />
-        </button>
-      </div>
+      <TeteModale
+        id={titreId}
+        titre="Rendre au client"
+        icone={PackageCheck}
+        onClose={onClose}
+        disabled={envoi}
+        sousTitre={<><span className="font-mono font-semibold text-slate-700">{ticket.ticket_code}</span> — {ticket.client_prenom || ''} {ticket.client_nom || ''}</>}
+      />
 
       <div className="space-y-4">
         {nonTermine && (
@@ -643,7 +694,7 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
         {resteAvant > 0 ? (
           <fieldset className="space-y-2">
             <legend className="text-sm font-semibold text-slate-900 mb-2">
-              Reste à payer : <span className="text-red-700 text-base font-bold tabular-nums">{formatPrix(resteAvant)}</span>
+              Reste à payer : <span className="text-red-700 text-base font-semibold tabular-nums">{formatPrix(resteAvant)}</span>
             </legend>
             {optionPaiement('encaisser', 'Encaisser maintenant', reduction > 0
               ? `${formatPrix(montant)} à encaisser après ${formatPrix(reduction)} d'avantages`
@@ -657,9 +708,9 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
                   </select>
                 </div>
                 {(bonMontant > 0 || fidelite?.bon_grattage === 'film' || fideliteDispo) && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
-                    <p className="t-h3 text-amber-800 flex items-center gap-1.5">
-                      <Star className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" aria-hidden="true" /> Avantages client
+                  <div className="card-section p-3 space-y-1">
+                    <p className="t-label flex items-center gap-1.5">
+                      <Star className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Avantages client
                     </p>
                     {bonMontant > 0 && (
                       <label className="flex items-center gap-3 min-h-11 cursor-pointer">
@@ -668,7 +719,7 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
                       </label>
                     )}
                     {fidelite?.bon_grattage === 'film' && (
-                      <p className="text-sm text-slate-800 flex items-center gap-2 min-h-11"><Check className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Film verre trempé offert à remettre</p>
+                      <p className="text-sm text-slate-800 flex items-center gap-2 min-h-11"><Check className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Film verre trempé offert à remettre</p>
                     )}
                     {fideliteDispo && (
                       <label className="flex items-center gap-3 min-h-11 cursor-pointer">
@@ -703,14 +754,14 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
         )}
       </div>
 
-      <div className="flex gap-2 mt-6">
-        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost btn-lg flex-1">Annuler</button>
+      <div className="flex justify-end gap-2 mt-6">
+        <button type="button" onClick={onClose} disabled={envoi} className="btn-ghost">Annuler</button>
         <button
           type="button"
           onClick={confirmer}
           disabled={bloque}
           aria-busy={envoi || undefined}
-          className="btn-success btn-lg flex-[2]"
+          className="btn-success"
         >
           {envoi
             ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
@@ -758,8 +809,8 @@ function TicketDetail({ id }) {
   const { user } = useAuth();
   const toast = useToast();
   const { actif: smsServeur } = useSmsServeur();
-  // Pas de bibliothèque d'animation sur cette page (122 ko évités) : l'en-tête arrive en CSS (.animate-in,
-  // coupée par prefers-reduced-motion) et le défilement vers la réception suit le même réglage
+  // Pas de bibliothèque d'animation sur cette page (122 ko évités) : rien ne s'anime au montage ; le défilement
+  // vers la réception ou les messages du client suit prefers-reduced-motion
   const reduireAnimations = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uid = useId();
@@ -869,6 +920,15 @@ function TicketDetail({ id }) {
   const [showRetourSAVModal, setShowRetourSAVModal] = useState(false);
   const [retourSAVForm, setRetourSAVForm] = useState({ panne: '', panne_detail: '' });
   const [creatingSAV, setCreatingSAV] = useState(false);
+
+  // Confirmations et saisies courtes (à la place des confirm() / prompt() du navigateur)
+  const [noteASupprimer, setNoteASupprimer] = useState(null); // { id } (note en base) | { raw } (ligne notes_internes)
+  const [confirmerNonPaye, setConfirmerNonPaye] = useState(false);
+  const [renvoiCaisse, setRenvoiCaisse] = useState(null); // { quand } : vente déjà envoyée, renvoyer ?
+  const [saisieAttention, setSaisieAttention] = useState(null); // { texte } : message de la note importante
+  const [refusDepot, setRefusDepot] = useState(null); // { motif } : refus d'un dépôt à distance
+  const [envoiAttention, setEnvoiAttention] = useState(false);
+  const [envoiRefusDepot, setEnvoiRefusDepot] = useState(false);
 
   // Dernières valeurs connues, lues par les gestionnaires d'événements (pas de closure périmée)
   const mountedRef = useRef(true);
@@ -1775,9 +1835,15 @@ function TicketDetail({ id }) {
     }
   };
 
-  const demarquerPaiement = async () => {
-    if (verrousRef.current.has('paiement') || !confirm('Démarquer comme non payé ?')) return;
+  // « Payé » → demande de confirmation (modale) ; confirmerNonPaye() fait le travail
+  const demarquerPaiement = () => {
+    if (verrousRef.current.has('paiement')) return;
+    setConfirmerNonPaye(true);
+  };
+
+  const marquerNonPaye = async () => {
     if (!verrouiller('paiement')) return;
+    setConfirmerNonPaye(false);
     setPaying(true);
     try {
       await api.setPaye(id, false);
@@ -1867,17 +1933,63 @@ function TicketDetail({ id }) {
     } catch { toast.error('Erreur'); }
   };
 
+  // Le message est saisi dans une modale (saisieAttention), plus dans un prompt() du navigateur
   const handleAddAttention = async () => {
-    const message = prompt('Message de la note importante :');
-    if (!message || !message.trim()) return;
+    const message = String(saisieAttention?.texte || '').trim();
+    if (!message || envoiAttention) return;
+    setEnvoiAttention(true);
     try {
-      await api.addPrivateNote(id, user?.utilisateur || 'Accueil', message.trim(), true);
-      await api.updateTicket(id, { attention: message.trim() });
+      await api.addPrivateNote(id, user?.utilisateur || 'Accueil', message, true);
+      await api.updateTicket(id, { attention: message });
       await loadTicket(false);
+      setSaisieAttention(null);
       toast.success('Note importante ajoutée');
     } catch (err) {
       toast.error('Erreur ajout attention');
+    } finally {
+      if (mountedRef.current) setEnvoiAttention(false);
     }
+  };
+
+  // Suppression d'une note confirmée dans une modale (noteASupprimer)
+  const confirmerSuppressionNote = async () => {
+    const cible = noteASupprimer;
+    setNoteASupprimer(null);
+    if (!cible) return;
+    if (cible.raw != null) await handleDeleteInternalNote(cible.raw);
+    else await handleDeleteNote(cible.id);
+  };
+
+  // Dépôt à distance (bandeau d'état) : validation, puis refus avec motif saisi dans une modale
+  const validerDepot = async () => {
+    try {
+      await api.validerDepot(ticketRef.current?.id ?? id);
+      toast.success('Dépôt validé : passage en diagnostic');
+      loadTicket(false);
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const confirmerRefusDepot = async () => {
+    if (envoiRefusDepot) return;
+    setEnvoiRefusDepot(true);
+    try {
+      await api.refuserDepot(ticketRef.current?.id ?? id, String(refusDepot?.motif || '').trim() || 'Non précisé');
+      setRefusDepot(null);
+      toast.success('Dépôt refusé');
+      loadTicket(false);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      if (mountedRef.current) setEnvoiRefusDepot(false);
+    }
+  };
+
+  // Bandeau « N messages du client » → section « Du client » de la carte Messages
+  const voirMessagesClient = () => {
+    const el = document.getElementById(`${uid}-du-client-bloc`);
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: reduireAnimations ? 'auto' : 'smooth', block: 'start' });
+    el.focus?.({ preventScroll: true });
   };
 
   const handleCopyCode = () => {
@@ -1919,9 +2031,11 @@ function TicketDetail({ id }) {
   const lignesAffichees = lignesComptees(repairLines);
   const indexEcran = indexLigneEcran(lignesAffichees, prestations);
 
-  const handleSendCaisse = async () => {
+  // force : renvoi confirmé dans la modale « Renvoyer la vente en caisse ? » (vente déjà envoyée)
+  const handleSendCaisse = async (force = false) => {
     const tk = ticketRef.current;
     if (!tk || !verrouiller('caisse')) return;
+    setRenvoiCaisse(null);
     setEnvoiCaisse(true);
     try {
       try {
@@ -1931,18 +2045,19 @@ function TicketDetail({ id }) {
         return;
       }
       // Montant, libellé et client sont recalculés par le serveur depuis le ticket
-      const envoyer = async (force) => {
+      const envoyer = async (forcer) => {
         try {
-          return await api.envoyerCaisse(force ? { ticket_id: tk.id, force: true } : { ticket_id: tk.id });
+          return await api.envoyerCaisse(forcer ? { ticket_id: tk.id, force: true } : { ticket_id: tk.id });
         } catch (err) {
           const code = err?.data?.code;
-          if (code === 'deja_envoye' && !force) {
+          if (code === 'deja_envoye' && !forcer) {
             const date = err.data.date ? new Date(err.data.date) : null;
             const quand = date && !Number.isNaN(date.getTime())
               ? ` le ${date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
               : '';
-            if (!confirm(`Vente déjà envoyée en caisse${quand}.\nRenvoyer créera une seconde vente (si la première a été annulée sur la caisse).\n\nRenvoyer quand même ?`)) return null;
-            return envoyer(true);
+            // La question est posée dans une modale ; « Renvoyer en caisse » rappelle handleSendCaisse(true)
+            if (mountedRef.current) setRenvoiCaisse({ quand });
+            return null;
           }
           if (code === 'envoi_en_cours') {
             toast.info('Envoi en caisse déjà en cours pour ce ticket : patientez quelques secondes');
@@ -1957,7 +2072,7 @@ function TicketDetail({ id }) {
           throw err;
         }
       };
-      const res = await envoyer(false);
+      const res = await envoyer(force === true);
       if (!res) return;
       if (res.result === 'OK') {
         const montant = Number(res.montant);
@@ -2025,7 +2140,7 @@ function TicketDetail({ id }) {
       if (!mountedRef.current) return;
       const montant = getAccordMontant();
       if (montant === 0) {
-        toast.error("Renseigne un tarif avant d'envoyer la demande d'accord");
+        toast.error("Renseignez un tarif avant d'envoyer la demande d'accord");
         return;
       }
       let modele = accordTemplateMsg;
@@ -2126,7 +2241,7 @@ function TicketDetail({ id }) {
   // ─── Retour SAV ─────────────────────────────────────────────
   const handleCreateRetourSAV = async () => {
     if (!retourSAVForm.panne.trim()) {
-      toast.error('Veuillez décrire la panne');
+      toast.error('Décrivez la panne du retour SAV');
       return;
     }
     const tk = ticketRef.current;
@@ -2160,13 +2275,12 @@ function TicketDetail({ id }) {
   if (loading) {
     return (
       <div className="page max-w-7xl" aria-busy="true" aria-label="Chargement du ticket">
-        {/* Header skeleton (mêmes dimensions que l'en-tête sombre : zéro saut de mise en page) */}
-        <div className="rounded-xl bg-slate-900 p-4 sm:p-5 mb-4 min-h-[132px]">
-          <div className="h-4 w-16 rounded bg-white/10 mb-4" />
-          <div className="h-7 w-44 rounded bg-white/15 mb-3" />
-          <div className="h-4 w-2/3 rounded bg-white/10" />
+        {/* Header skeleton (mêmes dimensions que l'en-tête clair : zéro saut de mise en page) */}
+        <div className="card shadow-none p-4 sm:p-5 mb-4 min-h-[128px]">
+          <div className="skeleton-title w-44 mb-3" />
+          <div className="skeleton-line w-2/3 mb-4" />
+          <div className="skeleton-line w-1/3" />
         </div>
-        <div className="skeleton-card mb-4" />
         {/* Info cards skeleton */}
         <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-4">
           {[1, 2].map(i => (
@@ -2213,6 +2327,20 @@ function TicketDetail({ id }) {
   const peutRendre = !remis && t.statut !== 'Pré-enregistré';
   const proposerRemise = peutRendre && (t.statut === 'Réparation terminée' || devisRefuse);
   const aujourdHui = aujourdhuiIso();
+
+  // Bandeau d'état et action primaire de l'en-tête : un seul de chaque, choisis par priorité
+  const depotAValider = t.statut === 'Pré-enregistré' && t.source === 'distance';
+  const devisValide = !devisRefuse && !!decisionDevis && String(decisionDevis.contenu || '').trim().startsWith('✅');
+  const enAttenteAccord = t.statut === "En attente d'accord client" && !devisRefuse;
+  const nouveauxClient = notesClient.filter(n => nouveauxRef.current?.has(n.id)).length;
+  const importantNotes = privateNotes.filter(n => n.important);
+  const dateDevisValide = devisValide ? dateHeureCourte(decisionDevis.date_creation) : null;
+  const encaisserSolde = t.statut === 'Rendu au client' && !t.paye;
+  const actionPrimaire = depotAValider ? null
+    : proposerRemise ? 'rendre'
+    : encaisserSolde ? 'encaisser'
+    : enAttenteAccord ? 'accord'
+    : null;
 
   // Parse notes into timeline entries
   const timelineEntries = [];
@@ -2265,16 +2393,120 @@ function TicketDetail({ id }) {
   const ligneAChiffrer = (line) => prixNombre(line?.prix) <= 0 && aChiffrer(clePanne(line?.label, prestations), prestations);
   const mentionAChiffrer = prestations?.mentionAChiffrer || MENTION_A_CHIFFRER;
 
-  // Vert plein réservé à la restitution ; « grand » = pleine largeur dans la carte Statut
-  const boutonRendre = (taille = 'normal') => (
-    <button
-      type="button"
-      onClick={() => ouvrirRestitution('Rendu au client')}
-      className={`btn-success btn-lg ${taille === 'grand' ? 'btn-block' : ''}`}
-    >
+  // Une seule action pleine, dans l'en-tête, jamais dupliquée dans les cartes ;
+  // le vert est réservé à la remise et à l'encaissement
+  const boutonPrimaire = actionPrimaire === 'rendre' ? (
+    <button type="button" onClick={() => ouvrirRestitution('Rendu au client')} className="btn-success">
       <PackageCheck aria-hidden="true" /> Rendre au client
     </button>
-  );
+  ) : actionPrimaire === 'encaisser' ? (
+    <button type="button" onClick={() => ouvrirPaiement({ cloturer: true })} className="btn-success">
+      <CreditCard aria-hidden="true" /> Encaisser le solde
+    </button>
+  ) : actionPrimaire === 'accord' ? (
+    <button type="button" onClick={openAccordModal} className="btn-primary">
+      <FileSignature aria-hidden="true" /> Accord client
+    </button>
+  ) : null;
+
+  // Un seul bandeau d'état sous l'en-tête, choisi par priorité ; ce qui n'est pas retenu reste en texte
+  // dans la carte concernée (Messages, Réparation & Tarifs, Appareil, Notes internes)
+  const bandeau = (() => {
+    if (depotAValider) {
+      return (
+        <div role="status" className="callout callout-info items-center flex-wrap mb-4">
+          <Globe aria-hidden="true" />
+          <p className="flex-1 min-w-0">
+            <span className="font-semibold">Dépôt à distance à valider</span> — le client a pré-enregistré cet appareil en ligne.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={validerDepot} className="btn-primary btn-sm">
+              <Check aria-hidden="true" /> Valider le dépôt
+            </button>
+            <button type="button" onClick={() => setRefusDepot({ motif: '' })} className="btn-ghost btn-sm">
+              Refuser
+            </button>
+          </div>
+        </div>
+      );
+    }
+    if (showAttention || importantNotes.length > 0) {
+      return (
+        <div role="status" className="callout callout-danger items-start mb-4">
+          <AlertTriangle aria-hidden="true" />
+          <div className="flex-1 min-w-0 space-y-1">
+            <p className="font-semibold">Note importante</p>
+            {importantNotes.map(note => (
+              <p key={note.id}>{note.contenu.replace(/^\[ATTENTION\]\s*⚠?\s*/i, '')}</p>
+            ))}
+            {importantNotes.length === 0 && t.attention && <p>{t.attention}</p>}
+          </div>
+          <button type="button" onClick={() => setShowAttention(false)} className="btn-ghost btn-icon shrink-0 -my-2 -mr-2 text-red-700 hover:bg-red-100 hover:text-red-800" aria-label="Masquer la note importante">
+            <X aria-hidden="true" />
+          </button>
+        </div>
+      );
+    }
+    if (devisRefuse) {
+      return (
+        <div role="status" aria-live="polite" className="callout callout-danger items-center mb-4">
+          <X aria-hidden="true" />
+          <p className="flex-1 min-w-0">
+            <span className="font-semibold">Devis refusé par le client</span> — l'appareil est à rendre en l'état.
+            {t.montants?.refus_devis && ` Seuls les frais (diagnostic…) sont dus : ${formatPrix(Number(t.montants.total) || 0)}.`}
+          </p>
+        </div>
+      );
+    }
+    if (devisValide) {
+      return (
+        <div role="status" aria-live="polite" className="callout callout-success items-center mb-4">
+          <CheckCircle2 aria-hidden="true" />
+          <p className="flex-1 min-w-0 font-semibold">Devis validé{dateDevisValide ? ` le ${dateDevisValide}` : ''}</p>
+        </div>
+      );
+    }
+    if (nouveauxClient > 0) {
+      return (
+        <div role="status" className="callout callout-info items-center mb-4">
+          <MessageCircle aria-hidden="true" />
+          <p className="flex-1 min-w-0 font-semibold">{nouveauxClient} message{nouveauxClient > 1 ? 's' : ''} du client</p>
+          <button type="button" onClick={voirMessagesClient} className="btn-secondary btn-sm shrink-0">Voir</button>
+        </div>
+      );
+    }
+    if (t.est_retour_sav) {
+      return (
+        <div className="callout callout-warning items-center flex-wrap mb-4">
+          <RotateCcw aria-hidden="true" />
+          <p className="flex-1 min-w-0">
+            <span className="font-semibold">Retour SAV</span> — prise en charge garantie ({formatPrix(0)}).
+          </p>
+          {t.ticket_original && (
+            <button type="button" onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="btn-secondary btn-sm shrink-0 font-mono">
+              <span className="sr-only">Ticket original </span>{t.ticket_original.ticket_code} <span className="font-sans font-normal">({t.ticket_original.statut})</span>
+            </button>
+          )}
+        </div>
+      );
+    }
+    if (Array.isArray(t.retours_sav) && t.retours_sav.length > 0) {
+      return (
+        <div className="callout callout-warning items-center flex-wrap mb-4">
+          <AlertTriangle aria-hidden="true" />
+          <p className="font-semibold shrink-0">{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {t.retours_sav.map(r => (
+              <button key={r.id} type="button" onClick={() => navigate(`${basePath}/ticket/${r.id}`)} className="btn-secondary btn-sm font-mono">
+                {r.ticket_code} <span className="font-sans font-normal">({r.statut})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  })();
 
   // ─── Block rendering ──────────────────────────────────────────
 
@@ -2291,16 +2523,11 @@ function TicketDetail({ id }) {
             onClose={() => { flushSilencieux(clientSave)(); setEditingClient(false); }}
             viewContent={
               <>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-11 h-11 rounded-full bg-brand-100 flex items-center justify-center shrink-0">
-                    <span className="text-brand-700 font-bold text-sm">
-                      {(t.client_prenom?.[0] || '').toUpperCase()}{(t.client_nom?.[0] || '').toUpperCase()}
-                    </span>
-                  </div>
+                <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold text-slate-900 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
+                    <p className="t-h2 truncate">{t.client_prenom || ''} {t.client_nom || ''}</p>
                     {t.client_societe && <p className="t-small">{t.client_societe}</p>}
-                    {t.client_carte_camby ? <span className="badge badge-brand mt-1"><Ticket className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Camby</span> : null}
+                    {t.client_carte_camby ? <span className="badge badge-neutral mt-1"><Ticket className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Camby</span> : null}
                   </div>
                   {t.client_id && (
                     <button
@@ -2318,6 +2545,15 @@ function TicketDetail({ id }) {
                       <Phone className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
                       <span className="font-medium tabular-nums">{telAffiche(t.client_tel)}</span>
                     </a>
+                  )}
+                  {/* Second numéro différent du principal : c'est là que partent SMS et WhatsApp */}
+                  {estAutreNumero(t) && (
+                    <p className="flex items-center gap-3 min-h-11 px-2 text-sm">
+                      <PhoneForwarded className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                      <span className="badge badge-neutral tabular-nums" title="Numéro pour joindre le client pendant la réparation">
+                        Joignable au {formatTel(t.tel_contact)}
+                      </span>
+                    </p>
                   )}
                   {t.client_email && (
                     <a href={`mailto:${t.client_email}`} className="flex items-center gap-3 min-h-11 px-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 hover:text-brand-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
@@ -2362,7 +2598,7 @@ function TicketDetail({ id }) {
                       })}
                     </ul>
                     {autresTickets.length > 5 && (
-                      <button type="button" onClick={() => navigate(`${basePath}/clients?client=${t.client_id}`)} className="btn-ghost btn-sm mt-1 -ml-3 text-brand-700 hover:text-brand-800 hover:bg-brand-50">
+                      <button type="button" onClick={() => navigate(`${basePath}/clients?client=${t.client_id}`)} className="btn-ghost btn-sm mt-1 -ml-3">
                         Voir les {autresTickets.length} réparations sur la fiche client
                       </button>
                     )}
@@ -2375,13 +2611,12 @@ function TicketDetail({ id }) {
                     <button
                       type="button"
                       onClick={() => { setRetourSAVForm({ panne: '', panne_detail: '' }); setShowRetourSAVModal(true); }}
-                      className="btn-secondary btn-block"
+                      className="btn-secondary btn-sm"
                     >
                       <RotateCcw aria-hidden="true" /> Retour SAV
                     </button>
                   </div>
                 )}
-                <p className="mt-3 t-caption text-center">Messages dans le bloc Messages ci-dessous</p>
               </>
             }
           >
@@ -2416,6 +2651,12 @@ function TicketDetail({ id }) {
         return (
           <EditableSection
             title="Appareil" icon={Smartphone}
+            badges={(t.est_retour_sav || t.source === 'distance') ? (
+              <>
+                {t.est_retour_sav ? <span className="badge badge-neutral">Retour SAV</span> : null}
+                {t.source === 'distance' ? <span className="badge badge-neutral">Dépôt à distance</span> : null}
+              </>
+            ) : null}
             editing={editingDevice}
             autoSave={deviceSave}
             onEntree={entreeEnregistre(deviceSave)}
@@ -2454,7 +2695,7 @@ function TicketDetail({ id }) {
                     {t.pin && (
                       <div>
                         <p className="t-caption mb-1 flex items-center gap-1"><Lock className="w-3.5 h-3.5" aria-hidden="true" /> Code PIN</p>
-                        <p className="text-lg font-bold font-mono tabular-nums text-slate-900 tracking-widest">{t.pin}</p>
+                        <p className="font-mono text-base text-slate-900 tracking-wider tabular-nums">{t.pin}</p>
                       </div>
                     )}
                     {t.pattern && (
@@ -2468,6 +2709,34 @@ function TicketDetail({ id }) {
                 {t.notes_client && (
                   <div className="mt-4 card-section text-sm text-slate-700">
                     <span className="font-semibold text-slate-900">Note client :</span> {t.notes_client}
+                  </div>
+                )}
+                {/* Retour SAV (ticket original) et retours SAV liés : en texte ici, le bandeau d'état n'en garde qu'un */}
+                {(t.est_retour_sav || (Array.isArray(t.retours_sav) && t.retours_sav.length > 0)) && (
+                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-sm text-slate-700">
+                    {t.est_retour_sav && (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span>Retour SAV : prise en charge garantie ({formatPrix(0)}).</span>
+                        {t.ticket_original && (
+                          <>
+                            <span>Ticket original :</span>
+                            <button type="button" onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="btn-secondary btn-sm font-mono">
+                              {t.ticket_original.ticket_code} <span className="font-sans font-normal">({t.ticket_original.statut})</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    {Array.isArray(t.retours_sav) && t.retours_sav.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''} :</span>
+                        {t.retours_sav.map(r => (
+                          <button key={r.id} type="button" onClick={() => navigate(`${basePath}/ticket/${r.id}`)} className="btn-secondary btn-sm font-mono">
+                            {r.ticket_code} <span className="font-sans font-normal">({r.statut})</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -2616,12 +2885,12 @@ function TicketDetail({ id }) {
             {!remis && (
               <button type="button" onClick={ouvrirFermerDelai}
                 aria-expanded={editionDelai} aria-controls={`${uid}-delai-choix`}
-                className="btn-secondary btn-sm w-full mt-4">
+                className="btn-secondary btn-sm mt-4">
                 <CalendarClock aria-hidden="true" /> {t.date_recuperation ? 'Changer le délai' : 'Fixer le délai'}
               </button>
             )}
             {!remis && editionDelai && (
-              <div id={`${uid}-delai-choix`} className="mt-3 card-section p-3 space-y-3 animate-in">
+              <div id={`${uid}-delai-choix`} className="mt-3 card-section p-3 space-y-3">
                 <DelaiReparation
                   idPrefix={`${uid}-delai`}
                   legende="Nouveau délai"
@@ -2637,7 +2906,7 @@ function TicketDetail({ id }) {
                   {delaiAutre && (
                     <button type="button" onClick={() => enregistrerDelai(brouillonDelai)}
                       disabled={!dateDelai(brouillonDelai) || dateDelai(brouillonDelai).getTime() < Date.now() - 60_000}
-                      className="btn-primary btn-sm">
+                      className="btn-secondary btn-sm">
                       <Check aria-hidden="true" /> Valider
                     </button>
                   )}
@@ -2649,10 +2918,70 @@ function TicketDetail({ id }) {
 
       case 'messages':
         return (
-          <MessageComposer
-            ticket={t}
-            onMessageSent={messageEnvoye}
-          />
+          <section className="card p-4 sm:p-5" aria-labelledby="kp-messages-titre">
+            <div className="flex items-center gap-2 mb-4">
+              <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" />
+              <h2 id="kp-messages-titre" className="t-h2">Messages</h2>
+            </div>
+            {/* Messages et avis laissés par le client (page de suivi), du plus récent au plus ancien : section
+                neutre de la carte Messages. « Nouveau » = non lu à l'ouverture de la fiche (la fiche marque lu). */}
+            {notesClient.length > 0 && (() => {
+              const tel = telJoignable(t);
+              return (
+                <section
+                  id={`${uid}-du-client-bloc`}
+                  tabIndex={-1}
+                  aria-labelledby={`${uid}-du-client`}
+                  className="mb-4 pb-4 border-b border-slate-100 focus:outline-none"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-2">
+                    <h3 id={`${uid}-du-client`} className="t-h2">Du client</h3>
+                    {nouveauxClient > 0 && (
+                      <span className="badge-count" aria-label={`${nouveauxClient} nouveau${nouveauxClient > 1 ? 'x' : ''}`}>{nouveauxClient}</span>
+                    )}
+                    <span className="t-small">depuis sa page de suivi</span>
+                    {tel && (
+                      <div className="ml-auto flex items-center gap-1">
+                        <a href={waLink(tel, `Bonjour, concernant votre ticket ${t.ticket_code} : `)} target="_blank" rel="noopener noreferrer"
+                          className="btn-secondary btn-sm">
+                          <MessageCircle className="text-emerald-600" aria-hidden="true" /> Répondre WhatsApp
+                        </a>
+                        <a href={smsLink(tel, `Klikphone : concernant votre ticket ${t.ticket_code}, `)} className="btn-secondary btn-sm">
+                          <Send aria-hidden="true" /> SMS
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  <ul className="space-y-1.5 text-sm">
+                    {notesClient.slice(0, 3).map(n => {
+                      const avis = n.type_note === 'avis_client';
+                      const Icone = avis ? Star : MessageCircle;
+                      const nouveau = nouveauxRef.current?.has(n.id);
+                      return (
+                        <li key={n.id} className="flex items-start gap-2">
+                          <Icone className="w-4 h-4 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
+                          <span className="sr-only">{avis ? 'Avis' : 'Message'} : </span>
+                          <p className={`flex-1 min-w-0 break-words text-slate-900 ${nouveau ? 'font-semibold' : ''}`}>{n.contenu}</p>
+                          {nouveau && <span className="badge badge-sm badge-info shrink-0">Nouveau</span>}
+                          <span className="t-caption whitespace-nowrap shrink-0 mt-0.5 tabular-nums">
+                            {n.date_creation ? new Date(n.date_creation).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                          </span>
+                        </li>
+                      );
+                    })}
+                    {notesClient.length > 3 && (
+                      <li className="t-caption">+ {notesClient.length - 3} plus ancien{notesClient.length - 3 > 1 ? 's' : ''} dans les notes</li>
+                    )}
+                  </ul>
+                </section>
+              );
+            })()}
+            <MessageComposer
+              ticket={t}
+              onMessageSent={messageEnvoye}
+              integre
+            />
+          </section>
         );
 
       case 'notes':
@@ -2668,11 +2997,11 @@ function TicketDetail({ id }) {
                       ...privateNotes,
                       ...timelineEntries.filter(e => e.type === 'internal' || e.type === 'client' || e.type === 'attention'),
                     ];
-                    return `${allNotes.length} note(s)`;
+                    return `${allNotes.length} note${allNotes.length > 1 ? 's' : ''}`;
                   })()}
                 </span>
               </div>
-              <button type="button" onClick={handleAddAttention} className="btn-danger-ghost btn-sm shrink-0" title="Ajouter flag attention">
+              <button type="button" onClick={() => setSaisieAttention({ texte: '' })} className="btn-danger-ghost btn-sm shrink-0" title="Ajouter une note importante">
                 <Flag aria-hidden="true" /> Attention
               </button>
             </div>
@@ -2693,7 +3022,7 @@ function TicketDetail({ id }) {
                 placeholder={notePrivate ? 'Note interne...' : 'Note visible par le client...'}
                 aria-label={notePrivate ? 'Nouvelle note interne' : 'Nouvelle note visible par le client'}
                 className="input flex-1 min-w-0" />
-              <button type="button" onClick={handleAddNote} className="btn-primary btn-icon shrink-0" aria-label="Ajouter la note"><Plus aria-hidden="true" /></button>
+              <button type="button" onClick={handleAddNote} className="btn-secondary btn-icon shrink-0" aria-label="Ajouter la note"><Plus aria-hidden="true" /></button>
             </div>
 
             {/* Compact notes list with type badges */}
@@ -2705,24 +3034,24 @@ function TicketDetail({ id }) {
                 // 'message_client' (compat anciennes notes / data legacy).
                 const isClientMsg = tn === 'message_client'
                   || (note.auteur || '').trim().toLowerCase() === 'client';
-                // Badge selon le type de note : on identifie visuellement
-                // CLIENT (message via /suivi), ACCORD (validation devis), AVIS,
-                // et les canaux d'envoi staff (WhatsApp/SMS/Email).
-                const badge = isClientMsg ? { bg: 'bg-violet-100 text-violet-800', icon: MessageCircle, label: 'CLIENT' }
-                  : tn === 'whatsapp' ? { bg: 'bg-emerald-50 text-emerald-700', label: 'WhatsApp' }
-                  : tn === 'sms' ? { bg: 'bg-blue-50 text-blue-700', label: 'SMS' }
-                  : tn === 'sms_echec' ? { bg: 'bg-red-100 text-red-700', label: 'SMS non envoyé' }
-                  : tn === 'email' ? { bg: 'bg-slate-100 text-slate-700', label: 'Email' }
+                // Badge selon le type de note (casse de phrase, teintes sémantiques) : Client (message via
+                // /suivi), Accord (validation devis), Avis, et les canaux d'envoi staff (WhatsApp / SMS / Email).
+                // La couleur ne porte qu'un sens : succès = accord, alerte = avis, danger = SMS non parti.
+                const badge = isClientMsg ? { bg: 'badge-neutral', icon: MessageCircle, label: 'Client' }
+                  : tn === 'whatsapp' ? { bg: 'badge-neutral', label: 'WhatsApp' }
+                  : tn === 'sms' ? { bg: 'badge-info', label: 'SMS' }
+                  : tn === 'sms_echec' ? { bg: 'badge-danger', label: 'SMS non envoyé' }
+                  : tn === 'email' ? { bg: 'badge-neutral', label: 'Email' }
                   // Relance hors message (appel au client) notée depuis l'étagère « À récupérer »
-                  : tn === 'relance' ? { bg: 'bg-violet-100 text-violet-800', label: 'Relance' }
-                  : tn === 'validation_devis' ? { bg: 'bg-emerald-50 text-emerald-700', icon: CheckCircle2, label: 'ACCORD' }
-                  : tn === 'avis_client' ? { bg: 'bg-amber-50 text-amber-800', icon: Star, label: 'AVIS' }
+                  : tn === 'relance' ? { bg: 'badge-neutral', label: 'Relance' }
+                  : tn === 'validation_devis' ? { bg: 'badge-success', icon: CheckCircle2, label: 'Accord' }
+                  : tn === 'avis_client' ? { bg: 'badge-warning', icon: Star, label: 'Avis' }
                   : null;
                 const textColor = note.important ? 'text-red-700 font-semibold'
-                  : isClientMsg ? 'text-brand-800 font-medium'
+                  : isClientMsg ? 'text-slate-900 font-medium'
                   : 'text-slate-700';
                 return (
-                  <div key={`db-${note.id}`} className={`flex items-start gap-2 py-2 ${isClientMsg ? 'bg-brand-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
+                  <div key={`db-${note.id}`} className={`flex items-start gap-2 py-2 ${isClientMsg ? 'bg-slate-50 -mx-2 px-2 rounded-lg' : ''}`}>
                     {badge && (
                       <span className={`badge badge-sm shrink-0 mt-0.5 ${badge.bg}`}>
                         {badge.icon && <badge.icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />}
@@ -2738,7 +3067,7 @@ function TicketDetail({ id }) {
                     <span className="t-caption whitespace-nowrap shrink-0 mt-1 tabular-nums">
                       {note.date_creation ? new Date(note.date_creation).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''}
                     </span>
-                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteNote(note.id); }} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette note">
+                    <button type="button" onClick={() => setNoteASupprimer({ id: note.id })} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette note">
                       <Trash2 aria-hidden="true" />
                     </button>
                   </div>
@@ -2750,7 +3079,7 @@ function TicketDetail({ id }) {
                   <div key={`tl-${entry.raw}`} className="flex items-start gap-2 py-2">
                     <span className={`text-sm flex-1 min-w-0 break-words ${textColor}`}>{entry.text}</span>
                     {entry.timestamp && <span className="t-caption whitespace-nowrap shrink-0 mt-1 tabular-nums">{entry.timestamp}</span>}
-                    <button type="button" onClick={() => { if (confirm('Supprimer cette note ?')) handleDeleteInternalNote(entry.raw); }} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette entrée">
+                    <button type="button" onClick={() => setNoteASupprimer({ raw: entry.raw })} className="btn-ghost btn-icon -my-2 -mr-2 shrink-0 text-slate-500 hover:text-red-700 hover:bg-red-50" title="Supprimer" aria-label="Supprimer cette entrée">
                       <Trash2 aria-hidden="true" />
                     </button>
                   </div>
@@ -2770,9 +3099,9 @@ function TicketDetail({ id }) {
                   <div className="space-y-0.5">
                     {timelineEntries.filter(e => e.type === 'history').map((entry, i) => (
                       <div key={`hist-${entry.timestamp || ''}-${i}`} className="relative flex items-start gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors duration-150">
-                        <div className="absolute -left-4 top-3 w-2 h-2 rounded-full bg-brand-300 ring-2 ring-white z-10" aria-hidden="true" />
+                        <div className="absolute -left-4 top-3 w-2 h-2 rounded-full bg-slate-300 ring-2 ring-white z-10" aria-hidden="true" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-600 break-words">{entry.text}</p>
+                          <p className="t-small break-words">{entry.text}</p>
                           {entry.timestamp && <span className="t-caption tabular-nums">{entry.timestamp}</span>}
                         </div>
                       </div>
@@ -2821,7 +3150,7 @@ function TicketDetail({ id }) {
                       toast.error('Erreur assignation');
                     });
                 }}
-                className={`select min-h-11 font-semibold cursor-pointer ${t.technicien_assigne ? 'text-brand-700 bg-brand-50 border-brand-200' : ''}`}
+                className="select"
               >
                 <option value="">— Non assigné —</option>
                 {Array.isArray(teamMembers) && teamMembers.map(m => (
@@ -3024,33 +3353,42 @@ function TicketDetail({ id }) {
                       <>
                         <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-medium text-slate-900">{formatPrix(ht)}</span></div>
                         <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
-                        <div className="flex justify-between gap-3 text-sm font-bold border-t border-slate-200 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm font-semibold border-t border-slate-200 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
                     );
                   })()}
                   {effectiveReduction > 0 && <div className="flex justify-between gap-3 text-sm text-emerald-700"><span>Réduction{reductionMode === 'pct' && reductionPct > 0 ? ` (${reductionPct}%)` : ''}</span><span className="font-medium">- {formatPrix(effectiveReduction)}</span></div>}
-                  <div className="flex justify-between gap-3 text-sm font-bold"><span className="text-slate-900">{(pricingForm.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
+                  <div className="flex justify-between gap-3 text-sm font-semibold"><span className="text-slate-900">{(pricingForm.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
                   {montants.acompte > 0 && <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
-                  <div className="flex justify-between items-baseline gap-3 border-t border-slate-200 pt-2 mt-1"><span className="text-sm font-bold text-slate-900">RESTE À PAYER</span><span className={`text-lg font-bold ${reste > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPrix(Math.max(0, reste))}</span></div>
+                  <div className="flex justify-between items-baseline gap-3 border-t border-slate-200 pt-2 mt-1"><span className="t-label">Reste à payer</span><span className={`text-base font-semibold tabular-nums ${reste > 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPrix(Math.max(0, reste))}</span></div>
                 </div>
 
-                {/* 8. Bouton payé */}
-                <button type="button"
-                  disabled={paying}
-                  aria-busy={paying || undefined}
-                  onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
-                  className={t.paye ? 'btn-success btn-lg btn-block' : 'btn-secondary btn-lg btn-block'}>
-                  <CheckCircle2 className={t.paye ? '' : 'text-emerald-700'} aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
-                </button>
+                {/* 8. Bouton payé (absent quand l'en-tête propose « Encaisser le solde » : même modale) */}
+                {actionPrimaire !== 'encaisser' && (
+                  <button type="button"
+                    disabled={paying}
+                    aria-busy={paying || undefined}
+                    onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
+                    title={t.paye ? 'Marquer comme non payé' : undefined}
+                    aria-label={t.paye ? 'Payé : marquer comme non payé' : undefined}
+                    className="btn-secondary">
+                    <CheckCircle2 className="text-emerald-700" aria-hidden="true" />{t.paye ? 'Payé' : 'Marquer comme payé'}
+                  </button>
+                )}
               </div>
             ) : (
               /* ─── View mode ─── */
               <>
-                {/* Type de document */}
-                <div className="flex items-center gap-3 mb-1">
-                  <span className={`badge ${(t.type_document || 'devis') === 'facture' ? 'badge-brand' : 'badge-neutral'}`}>
+                {/* Type de document, puis l'état du devis en texte (le bandeau d'état n'en garde qu'un) */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
+                  <span className="badge badge-neutral">
                     <FileText className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />{(t.type_document || 'devis') === 'facture' ? 'Facture' : 'Devis'}
                   </span>
+                  {devisValide && (
+                    <span className="text-sm text-emerald-700">Devis validé{dateDevisValide ? ` le ${dateDevisValide}` : ''}</span>
+                  )}
+                  {devisRefuse && <span className="text-sm text-red-700">Devis refusé par le client</span>}
+                  {enAttenteAccord && <span className="text-sm text-amber-800">Devis envoyé, en attente de l'accord du client · À relancer</span>}
                 </div>
 
                 {/* Repair lines */}
@@ -3123,7 +3461,7 @@ function TicketDetail({ id }) {
                       <>
                         <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">{htLabel}</span><span className="font-medium text-slate-900">{formatPrix(ht)}</span></div>
                         <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">TVA ({tvaRate || 0}%)</span><span className="font-medium text-slate-700">{formatPrix(tva)}</span></div>
-                        <div className="flex justify-between gap-3 text-sm font-bold border-t border-slate-100 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
+                        <div className="flex justify-between gap-3 text-sm font-semibold border-t border-slate-100 pt-1.5"><span className="text-slate-900">Total TTC</span><span className="text-slate-900">{formatPrix(totalRepairs)}</span></div>
                       </>
                     );
                   })()}
@@ -3133,47 +3471,50 @@ function TicketDetail({ id }) {
                       <span className="font-medium">- {formatPrix(effectiveReduction)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between gap-3 text-sm font-bold"><span className="text-slate-900">{(t.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
+                  <div className="flex justify-between gap-3 text-sm font-semibold"><span className="text-slate-900">{(t.type_document || 'devis') === 'devis' ? 'Montant du devis' : 'Tarif final'}</span><span className="text-slate-900">{formatPrix(totalNet)}</span></div>
                   {montants.acompte > 0 && <div className="flex justify-between gap-3 text-sm"><span className="text-slate-600">Acompte versé</span><span className="font-medium text-blue-700">- {formatPrix(montants.acompte)}</span></div>}
                 </div>
 
-                {/* Reste à payer / Payé : dernière ligne du récapitulatif, plus d'encart coloré */}
+                {/* Reste à payer / Payé : dernière ligne du récapitulatif, en texte */}
                 {t.paye ? (
-                  <div className="callout callout-success items-center mt-3 py-2.5">
-                    <CheckCircle2 aria-hidden="true" />
-                    <div className="flex-1 min-w-0">
-                      <span className="font-bold">PAYÉ</span>
-                      <span className="block text-xs">Reste à payer : 0,00 €</span>
-                    </div>
-                  </div>
+                  <p className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200 text-sm">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
+                    <span className="font-semibold text-emerald-700">Payé</span>
+                  </p>
                 ) : reste > 0 ? (
                   <div className="flex justify-between items-baseline gap-3 mt-2 pt-2 border-t border-slate-200">
-                    <span className="text-sm font-bold text-slate-900">RESTE À PAYER</span>
-                    <span className="text-lg font-bold text-red-700 tabular-nums">{formatPrix(reste)}</span>
+                    <span className="t-label">Reste à payer</span>
+                    <span className="text-base font-semibold text-red-700 tabular-nums">{formatPrix(reste)}</span>
                   </div>
                 ) : null}
 
-                {/* Action buttons : trois secondaires identiques, l'icône porte le sens */}
+                {/* Actions secondaires ; celles que l'en-tête porte déjà (Encaisser, Accord client) ne sont pas répétées */}
                 <div className="flex flex-wrap gap-2 mt-4">
-                  <button type="button"
-                    disabled={paying}
-                    aria-busy={paying || undefined}
-                    onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
-                    className={`flex-1 ${t.paye ? 'btn-success' : 'btn-secondary'}`}>
-                    <CheckCircle2 className={t.paye ? '' : 'text-emerald-700'} aria-hidden="true" />{t.paye ? 'Payé ✓' : 'Marquer comme payé'}
-                  </button>
+                  {actionPrimaire !== 'encaisser' && (
+                    <button type="button"
+                      disabled={paying}
+                      aria-busy={paying || undefined}
+                      onClick={() => (t.paye ? demarquerPaiement() : ouvrirPaiement())}
+                      title={t.paye ? 'Marquer comme non payé' : undefined}
+                      aria-label={t.paye ? 'Payé : marquer comme non payé' : undefined}
+                      className="btn-secondary btn-sm">
+                      <CheckCircle2 className="text-emerald-700" aria-hidden="true" />{t.paye ? 'Payé' : 'Marquer comme payé'}
+                    </button>
+                  )}
                   {caisseEnabled && (
                     <button type="button" onClick={handleSendCaisse} disabled={envoiCaisse} aria-busy={envoiCaisse || undefined}
-                      className="btn-secondary">
+                      className="btn-secondary btn-sm">
                       {envoiCaisse
                         ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin shrink-0" aria-hidden="true" />
                         : <CreditCard className="text-slate-600" aria-hidden="true" />}
                       Caisse
                     </button>
                   )}
-                  <button type="button" onClick={openAccordModal} className="btn-secondary">
-                    <FileSignature className="text-slate-600" aria-hidden="true" />Accord
-                  </button>
+                  {actionPrimaire !== 'accord' && (
+                    <button type="button" onClick={openAccordModal} className="btn-secondary btn-sm">
+                      <FileSignature className="text-slate-600" aria-hidden="true" />Accord
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -3196,7 +3537,7 @@ function TicketDetail({ id }) {
                 disabled={statutEnCours}
                 aria-busy={statutEnCours || undefined}
                 onChange={e => handleStatusChange(e.target.value)}
-                className="select min-h-12 pl-9 font-semibold text-base lg:text-base text-slate-900 cursor-pointer"
+                className="select pl-9"
               >
                 {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -3216,13 +3557,7 @@ function TicketDetail({ id }) {
                 />
               </div>
             )}
-            {proposerRemise && <div className="mt-3">{boutonRendre('grand')}</div>}
-            {t.statut === 'Rendu au client' && !t.paye && (
-              <button type="button" onClick={() => ouvrirPaiement({ cloturer: true })}
-                className="btn-success btn-lg btn-block mt-3">
-                Encaisser le solde {resteDu > 0 ? `(${formatPrix(resteDu)})` : ''}
-              </button>
-            )}
+            {/* « Rendre au client » et « Encaisser le solde » vivent dans l'en-tête (une seule fois à l'écran) */}
             {/* Accord client — quick response buttons */}
             {t.statut === "En attente d'accord client" && !devisRefuse && (
               <div className="mt-3 card-section space-y-2">
@@ -3274,307 +3609,86 @@ function TicketDetail({ id }) {
 
   return (
     <div className="page max-w-7xl">
-      {/* En-tête sombre (identité comptoir) : ≤ 140 px, sans dégradé ni marge négative */}
-      <header className="rounded-xl bg-slate-900 text-white px-4 py-4 sm:px-5 mb-4 motion-safe:animate-in">
-        {/* Ligne 1 : retour, code, copier, badges, statut */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <button type="button" onClick={() => navigate(-1)}
-            className="btn btn-sm -ml-2 px-2 text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 focus-visible:ring-offset-0">
-            <ArrowLeft aria-hidden="true" />
-            <span>Retour</span>
-          </button>
-          <div className="flex items-center gap-1 min-w-0">
-            <h1 className="text-2xl font-bold font-mono tabular-nums tracking-tight leading-tight text-white">{t.ticket_code}</h1>
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              className="btn btn-icon text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 focus-visible:ring-offset-0"
-              title="Copier le code"
-              aria-label={copied ? 'Code copié' : 'Copier le code du ticket'}
-            >
-              {copied ? <Check className="text-emerald-300" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+      {/* En-tête clair : retour, numéro, statut, l'action suivante et « Imprimer » ; dessous client · appareil ·
+          panne · téléphone et le montant. Priorité, délai, emplacement, SAV, distance, second numéro vivent
+          dans leurs cartes. */}
+      <header className="card shadow-none mb-4">
+        <div className="px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <button type="button" onClick={() => navigate(-1)} className="btn-ghost btn-sm -ml-2">
+              <ArrowLeft aria-hidden="true" />
+              <span>Retour</span>
             </button>
-          </div>
-          <PrioriteBadge priorite={t.priorite} taille="md" />
-          {/* Délai promis, lisible d'un coup d'œil (rien une fois la réparation terminée) */}
-          <PastilleDelai ticket={t} taille="md" sombre />
-          {!remis && normaliserEmplacement(t.emplacement) && (
-            <span className="badge bg-white/10 text-white" title="Emplacement sur l’étagère">
-              <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-              <span className="sr-only">Emplacement</span>
-              <span className="font-mono tracking-wide">{normaliserEmplacement(t.emplacement)}</span>
-            </span>
-          )}
-          {t.est_retour_sav && (
-            <span className="badge bg-red-500/20 text-red-200">
-              <RotateCcw className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> SAV
-            </span>
-          )}
-          {t.source === 'distance' && (
-            <span className="badge bg-blue-500/20 text-blue-200">
-              <Globe className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> <span>Distance</span>
-            </span>
-          )}
-          <div className="ml-auto shrink-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <h1 className="t-h1 font-mono tabular-nums">{t.ticket_code}</h1>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="btn-ghost btn-icon btn-sm"
+                title="Copier le code"
+                aria-label={copied ? 'Code copié' : 'Copier le code du ticket'}
+              >
+                {copied ? <Check className="text-emerald-700" aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              </button>
+            </div>
             <StatusBadge statut={t.statut} size="lg" />
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {boutonPrimaire}
+              <button type="button" onClick={() => setShowPrintDrawer(true)} className="btn-secondary">
+                <Printer aria-hidden="true" /> Imprimer
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Ligne 2 : client · appareil · panne · téléphone, puis montant et actions */}
-        <div className="mt-3 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
-          <div className="min-w-0 text-sm text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="flex items-center gap-1.5"><User className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> {t.client_prenom || ''} {t.client_nom || ''}</span>
-            <span className="text-slate-600" aria-hidden="true">•</span>
-            <span className="flex items-center gap-1.5"><Smartphone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> {appareil || '—'}</span>
-            <span className="text-slate-600" aria-hidden="true">•</span>
-            <span className="flex items-center gap-1.5">
-              <Wrench className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
-              {lignesAffichees.length > 0
-                ? lignesAffichees.map(l => l.label).join(' + ')
-                : (t.panne || '—')}
-            </span>
-            {t.client_tel && (
-              <>
-                <span className="text-slate-600" aria-hidden="true">•</span>
-                <a href={`tel:${t.client_tel}`} className="inline-flex items-center gap-1.5 min-h-10 font-medium tabular-nums text-slate-200 hover:text-white rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60">
-                  <Phone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />{telAffiche(t.client_tel)}
-                </a>
-              </>
-            )}
-            {estAutreNumero(t) && (
-              <span className="badge bg-white/10 text-white tabular-nums" title="Numéro pour joindre le client pendant la réparation">
-                <PhoneForwarded className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                <span>Joignable au {formatTel(t.tel_contact)}</span>
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-x-6 gap-y-2">
+            <p className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
+              <span className="font-medium text-slate-700">{t.client_prenom || ''} {t.client_nom || ''}</span>
+              <span className="text-slate-400" aria-hidden="true">·</span>
+              <span>{appareil || '—'}</span>
+              <span className="text-slate-400" aria-hidden="true">·</span>
+              <span className="min-w-0">
+                {lignesAffichees.length > 0
+                  ? lignesAffichees.map(l => l.label).join(' + ')
+                  : (t.panne || '—')}
               </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 lg:justify-end shrink-0">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold tabular-nums leading-none text-white">{surDevisSansPrix ? 'Sur devis' : garantieSav ? `Garantie · ${formatPrix(0)}` : formatPrix(totalTTC || 0)}</span>
+              {t.client_tel && (
+                <>
+                  <span className="text-slate-400" aria-hidden="true">·</span>
+                  <a href={`tel:${t.client_tel}`} className="inline-flex items-center min-h-11 font-medium tabular-nums text-slate-700 hover:text-slate-900 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                    {telAffiche(t.client_tel)}
+                  </a>
+                </>
+              )}
+            </p>
+            <p className="flex items-baseline gap-2 shrink-0 tabular-nums">
+              <span className="t-h2">{surDevisSansPrix ? 'Sur devis' : garantieSav ? `Garantie · ${formatPrix(0)}` : formatPrix(totalTTC || 0)}</span>
               {t.paye ? (
-                <span className="badge badge-success">
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> <span>Payé</span>
-                </span>
-              ) : (reste > 0 && <span className="badge badge-danger-solid">Reste {formatPrix(reste)}</span>)}
-            </div>
-            {proposerRemise && <div className="hidden lg:block">{boutonRendre()}</div>}
-            <button type="button" onClick={() => setShowPrintDrawer(true)} className="btn-secondary focus-visible:ring-white/60 focus-visible:ring-offset-0">
-              <Printer aria-hidden="true" /> Imprimer
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard, le scan et
-          l'étagère) : une ligne sous l'en-tête, là où l'accueil regarde d'abord. ContactClient fait 44 px au doigt. */}
-      <ContactClient ticket={t} taille="carte" auteur={user?.utilisateur || 'Accueil'} onContacte={clientContacte} className="mb-4" />
-
-      {/* Messages et avis laissés par le client (page de suivi) : lisibles dès l'ouverture, pas enfouis
-          dans les notes internes. « Nouveau » = non lu à l'ouverture de la fiche (la fiche marque lu). */}
-      {notesClient.length > 0 && (() => {
-        const nouveaux = notesClient.filter(n => nouveauxRef.current?.has(n.id)).length;
-        const tel = telJoignable(t);
-        return (
-          <section aria-labelledby={`${uid}-du-client`} className="callout callout-info flex-col gap-2 mb-4 motion-safe:animate-in">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <MessageCircle className="w-5 h-5 shrink-0 text-blue-700" aria-hidden="true" />
-              <h2 id={`${uid}-du-client`} className="font-bold text-blue-900">Du client</h2>
-              {nouveaux > 0 && (
-                <span className="badge badge-sm bg-blue-600 text-white">{nouveaux} nouveau{nouveaux > 1 ? 'x' : ''}</span>
-              )}
-              <span className="text-xs text-blue-800">depuis sa page de suivi</span>
-              {tel && (
-                <div className="ml-auto flex items-center gap-1">
-                  <a href={waLink(tel, `Bonjour, concernant votre ticket ${t.ticket_code} : `)} target="_blank" rel="noopener noreferrer"
-                    className="btn-secondary btn-sm">
-                    <MessageCircle className="text-emerald-600" aria-hidden="true" /> Répondre WhatsApp
-                  </a>
-                  <a href={smsLink(tel, `Klikphone : concernant votre ticket ${t.ticket_code}, `)} className="btn-secondary btn-sm">
-                    <Send aria-hidden="true" /> SMS
-                  </a>
-                </div>
-              )}
-            </div>
-            <ul className="space-y-1.5">
-              {notesClient.slice(0, 3).map(n => {
-                const avis = n.type_note === 'avis_client';
-                const Icone = avis ? Star : MessageCircle;
-                return (
-                  <li key={n.id} className="flex items-start gap-2">
-                    <Icone className={`w-4 h-4 mt-0.5 shrink-0 ${avis ? 'text-amber-600' : 'text-blue-600'}`} aria-hidden="true" />
-                    <span className="sr-only">{avis ? 'Avis' : 'Message'} : </span>
-                    <p className={`flex-1 min-w-0 break-words text-slate-900 ${nouveauxRef.current?.has(n.id) ? 'font-semibold' : ''}`}>{n.contenu}</p>
-                    {nouveauxRef.current?.has(n.id) && <span className="badge badge-sm bg-blue-600 text-white shrink-0">Nouveau</span>}
-                    <span className="t-caption whitespace-nowrap shrink-0 mt-0.5 tabular-nums text-blue-800">
-                      {n.date_creation ? new Date(n.date_creation).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
-                    </span>
-                  </li>
-                );
-              })}
-              {notesClient.length > 3 && (
-                <li className="t-caption text-blue-800">+ {notesClient.length - 3} plus ancien{notesClient.length - 3 > 1 ? 's' : ''} dans les notes</li>
-              )}
-            </ul>
-          </section>
-        );
-      })()}
-
-      {/* Bannière statut devis — verte si validé, rouge si refusé, orange si en attente */}
-      {(() => {
-        if (!devisRefuse && decisionDevis && String(decisionDevis.contenu || '').trim().startsWith('✅')) {
-          const dateStr = decisionDevis.date_creation
-            ? new Date(decisionDevis.date_creation).toLocaleString('fr-FR', {
-                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-              })
-            : null;
-          return (
-            <div
-              role="status"
-              aria-live="polite"
-              className="callout callout-success items-center mb-4"
-            >
-              <CheckCircle2 aria-hidden="true" />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold">Client a validé le devis</p>
-                {dateStr && <p className="text-xs">Validé le {dateStr}</p>}
-              </div>
-              <span className="hidden sm:inline-flex badge badge-success shrink-0">
-                <span className="badge-dot bg-emerald-500 opacity-100 motion-safe:animate-pulse" aria-hidden="true" />
-                Confirmé
-              </span>
-            </div>
-          );
-        }
-
-        if (devisRefuse) {
-          return (
-            <div role="status" aria-live="polite" className="callout callout-danger items-center mb-4">
-              <X aria-hidden="true" />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold">Devis refusé par le client</p>
-                <p className="text-xs">
-                  L'appareil est à rendre en l'état (bouton « Rendre au client »).
-                  {t.montants?.refus_devis && ` Seuls les frais (diagnostic…) sont dus : ${formatPrix(Number(t.montants.total) || 0)}.`}
-                </p>
-              </div>
-            </div>
-          );
-        }
-
-        if (t.statut === "En attente d'accord client") {
-          return (
-            <div
-              role="status"
-              aria-live="polite"
-              className="callout callout-warning items-center mb-4"
-            >
-              <Clock aria-hidden="true" />
-              <div className="flex-1 min-w-0">
-                <p className="font-bold">En attente de l'accord client</p>
-                <p className="text-xs">Le devis a été envoyé, le client n'a pas encore validé. Pense à le relancer.</p>
-              </div>
-              <span className="hidden sm:inline-flex badge badge-warning shrink-0">
-                <span className="badge-dot bg-amber-500 opacity-100 motion-safe:animate-pulse" aria-hidden="true" />
-                À relancer
-              </span>
-            </div>
-          );
-        }
-
-        return null;
-      })()}
-
-      {/* Retour SAV banner */}
-      {t.est_retour_sav && (
-        <div className="callout callout-warning items-center mb-4">
-          <RotateCcw aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            <p className="font-bold">RETOUR SAV</p>
-            <p className="text-xs">
-              Prise en charge garantie — Montant : 0,00 €
-              {t.ticket_original && (
-                <> — Ticket original : <button type="button" onClick={() => navigate(`${basePath}/ticket/${t.ticket_original.id}`)} className="font-mono font-bold underline hover:text-amber-900 min-h-11 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">{t.ticket_original.ticket_code}</button> ({t.ticket_original.statut})</>
-              )}
+                <span className="text-sm text-emerald-700">Payé</span>
+              ) : (reste > 0 && <span className="text-sm font-medium text-red-700">Reste {formatPrix(reste)}</span>)}
             </p>
           </div>
         </div>
-      )}
 
-      {/* Warning: retours SAV sur ce ticket */}
-      {t.retours_sav && t.retours_sav.length > 0 && (
-        <div className="callout callout-warning mb-4">
-          <AlertTriangle aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            <p className="font-bold">{t.retours_sav.length} retour{t.retours_sav.length > 1 ? 's' : ''} SAV lié{t.retours_sav.length > 1 ? 's' : ''}</p>
-            <div className="flex flex-wrap gap-2 mt-1.5">
-              {t.retours_sav.map(r => (
-                <button key={r.id} type="button" onClick={() => navigate(`${basePath}/ticket/${r.id}`)}
-                  className="btn-secondary btn-sm font-mono text-amber-900">
-                  {r.ticket_code} <span className="font-normal">({r.statut})</span>
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Client contacté depuis le dernier changement de statut (même vérité que le dashboard, le scan et
+            l'étagère) : dernière ligne de l'en-tête, là où l'accueil regarde d'abord. ContactClient fait 44 px au doigt. */}
+        <div className="border-t border-slate-100 px-4 sm:px-5 py-2">
+          <ContactClient ticket={t} taille="ligne" auteur={user?.utilisateur || 'Accueil'} onContacte={clientContacte} />
         </div>
-      )}
+      </header>
 
-      {/* Dépôt à distance — validation banner */}
-      {t.statut === 'Pré-enregistré' && t.source === 'distance' && (
-        <div className="callout callout-info items-center flex-wrap mb-4">
-          <Globe aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            <p className="font-bold">Dépôt à distance — En attente de validation</p>
-            <p className="text-xs">Le client a pré-enregistré cet appareil en ligne</p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await api.validerDepot(t.id);
-                  toast.success('Dépôt validé — passage en diagnostic');
-                  loadTicket(false);
-                } catch (err) { toast.error(err.message); }
-              }}
-              className="btn-primary btn-sm"
-            >
-              <Check aria-hidden="true" /> Valider
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const motif = prompt('Motif du refus :');
-                if (motif === null) return;
-                api.refuserDepot(t.id, motif || 'Non précisé')
-                  .then(() => { toast.success('Dépôt refusé'); loadTicket(false); })
-                  .catch(err => toast.error(err.message));
-              }}
-              className="btn-danger-ghost btn-sm"
-            >
-              <X aria-hidden="true" /> Refuser
-            </button>
-          </div>
-        </div>
-      )}
+      {bandeau}
 
       {/* Accord client modal */}
       {showAccordModal && (
         <Modal labelledBy={`${uid}-accord-titre`} onClose={() => setShowAccordModal(false)} busy={accordLoading} panelClassName="max-w-lg p-5 sm:p-6">
-          <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-              <FileSignature className="w-5 h-5 text-amber-700" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 id={`${uid}-accord-titre`} className="t-h2">Demande d'accord client</h3>
-              <p className="t-small">
-                {t.ticket_code} — {t.client_prenom} {t.client_nom}
-              </p>
-            </div>
-            <button type="button" onClick={() => setShowAccordModal(false)} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
-              <X aria-hidden="true" />
-            </button>
-          </div>
+          <TeteModale
+            id={`${uid}-accord-titre`}
+            titre="Demande d'accord client"
+            icone={FileSignature}
+            sousTitre={`${t.ticket_code} — ${t.client_prenom || ''} ${t.client_nom || ''}`}
+            onClose={() => setShowAccordModal(false)}
+            disabled={accordLoading}
+          />
 
           {/* Recap réparations */}
           <div className="card-section mb-4">
@@ -3591,8 +3705,8 @@ function TicketDetail({ id }) {
               </div>
             ))}
             <div className="flex justify-between gap-3 pt-2 mt-1 border-t border-slate-300">
-              <span className="text-sm font-bold text-slate-900">Montant du devis</span>
-              <span className="text-sm font-bold text-slate-900 tabular-nums">{formatPrix(totalNet)}</span>
+              <span className="text-sm font-semibold text-slate-900">Montant du devis</span>
+              <span className="text-sm font-semibold text-slate-900 tabular-nums">{formatPrix(totalNet)}</span>
             </div>
           </div>
 
@@ -3608,13 +3722,13 @@ function TicketDetail({ id }) {
             />
           </div>
 
-          {/* Boutons d'envoi */}
+          {/* Boutons d'envoi : un seul plein — WhatsApp, canal principal du comptoir ; SMS (serveur Brevo) et e-mail en secondaire */}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => handleSendAccord('whatsapp')}
               disabled={accordLoading}
-              className="btn-whatsapp flex-1"
+              className="btn-primary flex-1"
             >
               <MessageCircle aria-hidden="true" /> WhatsApp
             </button>
@@ -3623,7 +3737,7 @@ function TicketDetail({ id }) {
               onClick={() => handleSendAccord('sms')}
               disabled={accordLoading}
               title={smsServeur ? 'Envoyer le SMS depuis le serveur (Brevo)' : "Ouvrir l'app Messages de l'appareil"}
-              className="btn-primary flex-1"
+              className="btn-secondary flex-1"
             >
               <Send aria-hidden="true" /> SMS
             </button>
@@ -3675,19 +3789,13 @@ function TicketDetail({ id }) {
       )}
       {propositionMessage && propositionMessage.statut !== STATUT_TERMINE && (
         <Modal labelledBy={`${uid}-message-titre`} onClose={() => setPropositionMessage(null)} panelClassName="max-w-lg p-5 sm:p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
-              <MessageCircle className="w-5 h-5 text-emerald-700" />
-            </div>
-            <div className="min-w-0">
-              <h3 id={`${uid}-message-titre`} className="t-h2">
-                Prévenir {t.client_prenom || 'le client'} ?
-              </h3>
-              <p className="t-small">
-                {t.ticket_code} est « {propositionMessage.statut} ». Message pré-rempli : rien n’est envoyé sans votre clic.
-              </p>
-            </div>
-          </div>
+          <TeteModale
+            id={`${uid}-message-titre`}
+            titre={`Prévenir ${t.client_prenom || 'le client'} ?`}
+            icone={MessageCircle}
+            sousTitre={`${t.ticket_code} est « ${propositionMessage.statut} ». Message pré-rempli : rien n’est envoyé sans votre clic.`}
+            className="mb-4"
+          />
           <MessageComposer
             ticket={t}
             statutPropose={propositionMessage.statut}
@@ -3718,15 +3826,12 @@ function TicketDetail({ id }) {
       {/* Confirmation paiement modal */}
       {paiement && (
         <Modal labelledBy={`${uid}-paye-titre`} onClose={fermerPaiement} busy={paying} panelClassName="max-w-sm p-5 sm:p-6">
-          <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h3 id={`${uid}-paye-titre`} className="t-h2">Confirmer le paiement</h3>
-              <p className="t-small">{paiement.cloturer ? 'Le ticket sera ensuite clôturé.' : 'Le client a-t-il bien réglé ?'}</p>
-            </div>
-          </div>
+          <TeteModale
+            id={`${uid}-paye-titre`}
+            titre="Confirmer le paiement"
+            icone={CheckCircle2}
+            sousTitre={paiement.cloturer ? 'Le ticket sera ensuite clôturé.' : 'Le client a-t-il bien réglé ?'}
+          />
 
           {(() => {
             const dispo = avantagesDisponibles(clientFidelite);
@@ -3745,7 +3850,7 @@ function TicketDetail({ id }) {
                     {reduction > 0 && (
                       <p className="text-sm text-slate-500 line-through tabular-nums">{formatPrix(resteAvant)}</p>
                     )}
-                    <p className="text-2xl font-bold tabular-nums text-slate-900 leading-none">{formatPrix(resteApresRed)}</p>
+                    <p className="text-2xl font-semibold tabular-nums text-slate-900 leading-none">{formatPrix(resteApresRed)}</p>
                     {reduction > 0 && (
                       <p className="text-xs text-emerald-700 font-semibold mt-1.5 tabular-nums">
                         −{formatPrix(reduction)} de réduction appliquée
@@ -3756,38 +3861,38 @@ function TicketDetail({ id }) {
 
                 {/* Avantages client disponibles (bon grattage + fidelite) */}
                 {(clientFidelite?.bon_grattage || fideliteDispo) && (
-                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
-                    <p className="t-h3 text-amber-800 flex items-center gap-1.5">
-                      <Star className="w-4 h-4 fill-amber-500 text-amber-500 shrink-0" aria-hidden="true" /> Avantages client disponibles
+                  <div className="mb-4 card-section p-3 space-y-1">
+                    <p className="t-label flex items-center gap-1.5">
+                      <Star className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Avantages client disponibles
                     </p>
 
                     {clientFidelite?.bon_grattage === 'reduction' && (
-                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors duration-150">
+                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors duration-150">
                         <input type="checkbox" checked={applyBonGrattage}
                           onChange={e => setApplyBonGrattage(e.target.checked)}
                           className="checkbox mt-0.5 accent-brand-600" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Coins className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Bon de grattage : −10€</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Coins className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Bon de grattage : −{formatPrix(BON_REDUCTION)}</p>
                           <p className="text-xs text-slate-500">Gagné lors d'un précédent ticket</p>
                         </div>
                       </label>
                     )}
                     {bonFilmDispo && (
-                      <div className="flex items-start gap-3 p-2 rounded-lg bg-white/80">
-                        <Check className="mt-0.5 w-5 h-5 text-amber-700 shrink-0" aria-hidden="true" />
+                      <div className="flex items-start gap-3 p-2 rounded-lg bg-white border border-slate-200">
+                        <Check className="mt-0.5 w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Gift className="w-4 h-4 text-amber-700 shrink-0" aria-hidden="true" /> Film verre trempé offert</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Gift className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Film verre trempé offert</p>
                           <p className="text-xs text-slate-500">À remettre au client en main propre</p>
                         </div>
                       </div>
                     )}
                     {fideliteDispo && (
-                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white/80 hover:bg-white cursor-pointer transition-colors duration-150">
+                      <label className="flex items-start gap-3 p-2 min-h-11 rounded-lg bg-white border border-slate-200 cursor-pointer hover:border-slate-300 transition-colors duration-150">
                         <input type="checkbox" checked={applyFidelite}
                           onChange={e => setApplyFidelite(e.target.checked)}
                           className="checkbox mt-0.5 accent-brand-600" />
                         <div className="flex-1 text-sm">
-                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Star className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" aria-hidden="true" /> Fidélité : −{formatPrix(fideliteMontant)}</p>
+                          <p className="font-semibold text-slate-900 flex items-center gap-1.5"><Star className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Fidélité : −{formatPrix(fideliteMontant)}</p>
                           <p className="text-xs text-slate-500">{clientFidelite.points} points ({clientFidelite.palier_reduction} requis)</p>
                         </div>
                       </label>
@@ -3795,16 +3900,15 @@ function TicketDetail({ id }) {
                   </div>
                 )}
 
-                <div className="space-y-2">
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={fermerPaiement} disabled={paying} className="btn-ghost">
+                    Annuler
+                  </button>
                   <button type="button" onClick={confirmerPaiement} disabled={paying} aria-busy={paying || undefined}
-                    className="btn-success btn-lg btn-block">
+                    className="btn-success">
                     {paying
                       ? <><span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…</>
-                      : <><CheckCircle2 aria-hidden="true" /> Oui, confirmer le paiement</>}
-                  </button>
-                  <button type="button" onClick={fermerPaiement} disabled={paying}
-                    className="btn-ghost btn-block">
-                    <ArrowLeft aria-hidden="true" /> Annuler
+                      : <><CheckCircle2 aria-hidden="true" /> Marquer comme payé</>}
                   </button>
                 </div>
               </>
@@ -3816,17 +3920,9 @@ function TicketDetail({ id }) {
       {/* Delete ticket modal */}
       {showDeleteModal && (
         <Modal labelledBy={`${uid}-suppr-titre`} onClose={() => setShowDeleteModal(false)} busy={deleting} panelClassName="max-w-sm p-5 sm:p-6">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
-              <Trash2 className="w-5 h-5 text-red-700" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <h3 id={`${uid}-suppr-titre`} className="t-h2">Supprimer le ticket</h3>
-              <p className="t-small t-mono">{t.ticket_code}</p>
-            </div>
-          </div>
+          <h3 id={`${uid}-suppr-titre`} className="t-h2 mb-2">Supprimer le ticket {t.ticket_code} ?</h3>
           <p className="t-body mb-4">
-            Cette action est irréversible. Toutes les données liées (notes, commandes, historique) seront supprimées.
+            Les notes, les commandes et l'historique du ticket seront supprimés avec lui. Cette action est définitive.
           </p>
           <div className="mb-4">
             <label htmlFor={`${uid}-suppr-code`} className="input-label">Code administrateur</label>
@@ -3846,16 +3942,16 @@ function TicketDetail({ id }) {
               <p id={`${uid}-suppr-err`} role="alert" className="input-error">{deleteError}</p>
             )}
           </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowDeleteModal(false)} className="btn-ghost flex-1">Annuler</button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowDeleteModal(false)} disabled={deleting} className="btn-secondary">Conserver</button>
             <button
               type="button"
               onClick={handleDeleteTicket}
               disabled={deleting || !deleteCode}
               aria-busy={deleting || undefined}
-              className="btn-danger flex-1"
+              className="btn-danger"
             >
-              {deleting ? 'Suppression...' : 'Supprimer'}
+              {deleting ? 'Suppression…' : 'Supprimer le ticket'}
             </button>
           </div>
         </Modal>
@@ -3864,18 +3960,14 @@ function TicketDetail({ id }) {
       {/* Retour SAV modal */}
       {showRetourSAVModal && (
         <Modal labelledBy={`${uid}-sav-titre`} onClose={() => setShowRetourSAVModal(false)} busy={creatingSAV} panelClassName="max-w-lg p-5 sm:p-6">
-          <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-              <RotateCcw className="w-5 h-5 text-amber-700" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h3 id={`${uid}-sav-titre`} className="t-h2">Retour SAV</h3>
-              <p className="t-small">Créer un ticket lié à {t.ticket_code}</p>
-            </div>
-            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="btn-ghost btn-icon shrink-0 -mr-2 -mt-1" aria-label="Fermer">
-              <X aria-hidden="true" />
-            </button>
-          </div>
+          <TeteModale
+            id={`${uid}-sav-titre`}
+            titre="Retour SAV"
+            icone={RotateCcw}
+            sousTitre={`Créer un ticket lié à ${t.ticket_code}`}
+            onClose={() => setShowRetourSAVModal(false)}
+            disabled={creatingSAV}
+          />
 
           {/* Recap ticket original */}
           <div className="card-section mb-4">
@@ -3886,7 +3978,7 @@ function TicketDetail({ id }) {
 
           <div className="space-y-4 mb-5">
             <div>
-              <label htmlFor={`${uid}-sav-motif`} className="input-label">Motif du retour SAV *</label>
+              <label htmlFor={`${uid}-sav-motif`} className="input-label">Motif du retour SAV</label>
               <input
                 id={`${uid}-sav-motif`}
                 value={retourSAVForm.panne}
@@ -3915,19 +4007,110 @@ function TicketDetail({ id }) {
             <span>Ce ticket sera marqué comme retour SAV et lié au ticket {t.ticket_code}. Le montant sera de 0,00 € (prise en charge garantie).</span>
           </p>
 
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowRetourSAVModal(false)} className="btn-ghost flex-1">Annuler</button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowRetourSAVModal(false)} disabled={creatingSAV} className="btn-ghost">Annuler</button>
             <button
               type="button"
               onClick={handleCreateRetourSAV}
               disabled={creatingSAV || !retourSAVForm.panne.trim()}
               aria-busy={creatingSAV || undefined}
-              className="btn-primary flex-1"
+              className="btn-primary"
             >
-              {creatingSAV ? 'Création...' : <><RotateCcw aria-hidden="true" /> Créer le retour SAV</>}
+              {creatingSAV ? 'Création…' : <><RotateCcw aria-hidden="true" /> Créer le retour SAV</>}
             </button>
           </div>
         </Modal>
+      )}
+
+      {/* Confirmations et saisies courtes : la Modal accessible remplace confirm() et prompt() */}
+      {noteASupprimer && (
+        <ConfirmationModal
+          titre="Supprimer cette note ?"
+          onClose={() => setNoteASupprimer(null)}
+          onConfirmer={confirmerSuppressionNote}
+          libelleConfirmer="Supprimer la note"
+          libelleAnnuler="Conserver"
+          classeConfirmer="btn-danger"
+          classeAnnuler="btn-secondary"
+        >
+          <p>La note sera retirée du ticket {t.ticket_code}. Cette action est définitive.</p>
+        </ConfirmationModal>
+      )}
+      {confirmerNonPaye && (
+        <ConfirmationModal
+          titre={`Marquer le ticket ${t.ticket_code} comme non payé ?`}
+          onClose={() => setConfirmerNonPaye(false)}
+          onConfirmer={marquerNonPaye}
+          libelleConfirmer="Marquer non payé"
+          libelleAnnuler="Conserver payé"
+          classeAnnuler="btn-secondary"
+          busy={paying}
+        >
+          <p>Le ticket ne comptera plus comme réglé et le reste à payer réapparaît sur la fiche.</p>
+        </ConfirmationModal>
+      )}
+      {renvoiCaisse && (
+        <ConfirmationModal
+          titre="Renvoyer la vente en caisse ?"
+          onClose={() => setRenvoiCaisse(null)}
+          onConfirmer={() => handleSendCaisse(true)}
+          libelleConfirmer="Renvoyer en caisse"
+          libelleAnnuler="Ne pas renvoyer"
+          classeAnnuler="btn-secondary"
+          busy={envoiCaisse}
+        >
+          <p>
+            Cette vente a déjà été envoyée en caisse{renvoiCaisse.quand}. Renvoyer créera une seconde vente :
+            à faire seulement si la première a été annulée sur la caisse.
+          </p>
+        </ConfirmationModal>
+      )}
+      {saisieAttention && (
+        <ConfirmationModal
+          titre="Ajouter une note importante"
+          onClose={() => setSaisieAttention(null)}
+          onConfirmer={handleAddAttention}
+          libelleConfirmer="Ajouter la note importante"
+          desactive={!saisieAttention.texte.trim()}
+          busy={envoiAttention}
+        >
+          <p className="mb-3">Elle s'affiche en rouge dans les notes internes et en bandeau sur la fiche.</p>
+          <label htmlFor={`${uid}-attention-texte`} className="input-label">Message de la note importante</label>
+          <input
+            id={`${uid}-attention-texte`}
+            type="text"
+            value={saisieAttention.texte}
+            onChange={e => setSaisieAttention({ texte: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter' && saisieAttention.texte.trim()) handleAddAttention(); }}
+            className="input"
+            autoComplete="off"
+            autoFocus
+          />
+        </ConfirmationModal>
+      )}
+      {refusDepot && (
+        <ConfirmationModal
+          titre="Refuser ce dépôt à distance ?"
+          onClose={() => setRefusDepot(null)}
+          onConfirmer={confirmerRefusDepot}
+          libelleConfirmer="Refuser le dépôt"
+          classeConfirmer="btn-danger"
+          busy={envoiRefusDepot}
+        >
+          <p className="mb-3">Le dossier passe en « Clôturé » et le motif est noté dans l'historique du ticket.</p>
+          <label htmlFor={`${uid}-refus-motif`} className="input-label">Motif du refus (optionnel)</label>
+          <input
+            id={`${uid}-refus-motif`}
+            type="text"
+            value={refusDepot.motif}
+            onChange={e => setRefusDepot({ motif: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter') confirmerRefusDepot(); }}
+            className="input"
+            placeholder="Non précisé"
+            autoComplete="off"
+            autoFocus
+          />
+        </ConfirmationModal>
       )}
 
       {/* Priorité atelier + état de la réception + personnalisation (une seule rangée) */}
@@ -3953,46 +4136,20 @@ function TicketDetail({ id }) {
         </div>
       </div>
 
-      {/* Attention card — shows when important private notes exist */}
-      {(() => {
-        const importantNotes = privateNotes.filter(n => n.important);
-        if (!showAttention && importantNotes.length === 0) return null;
-        return (
-          <div className={`callout callout-danger items-start mb-4 ${ANIM_ENTREE}`}>
-            <AlertTriangle aria-hidden="true" />
-            <div className="flex-1 min-w-0 space-y-1">
-              <p className="font-bold">Note importante</p>
-              {importantNotes.map(note => (
-                <p key={note.id}>{note.contenu.replace(/^\[ATTENTION\]\s*⚠?\s*/i, '')}</p>
-              ))}
-              {importantNotes.length === 0 && t.attention && (
-                <p>{t.attention}</p>
-              )}
-            </div>
-            <button type="button" onClick={() => setShowAttention(false)} className="btn-ghost btn-icon shrink-0 -my-2 -mr-2 text-red-700 hover:bg-red-100 hover:text-red-800" aria-label="Masquer la note importante">
-              <X aria-hidden="true" />
-            </button>
-          </div>
-        );
-      })()}
-
       {/* Progress tracker */}
       <div className="card p-4 sm:p-5 mb-4">
         <ProgressTracker statut={t.statut} hasPiece={t.commande_piece === 1} />
       </div>
 
-      {/* Edit mode banner */}
+      {/* Mode édition de la grille : une ligne */}
       {editMode && (
-        <div className="callout callout-info items-center mb-4 border-dashed">
-          <Edit3 aria-hidden="true" />
-          <div className="flex-1 min-w-0">
-            <span className="font-bold">Mode édition activé</span>
-            <span className="text-xs"> — Glisse les widgets par ⠿</span>
-          </div>
+        <div className="callout callout-info items-center mb-4">
+          <GripVertical aria-hidden="true" />
+          <p className="flex-1 min-w-0"><span className="font-semibold">Mode édition</span> — déplacez les blocs avec la poignée.</p>
           <button
             type="button"
             onClick={() => setEditMode(false)}
-            className="btn-primary btn-sm shrink-0"
+            className="btn-secondary btn-sm shrink-0"
           >
             Terminer
           </button>
@@ -4011,7 +4168,7 @@ function TicketDetail({ id }) {
                   className={`space-y-4 min-w-0 min-h-[200px] rounded-xl p-1 transition-colors duration-150 ${
                     colId === 'right' ? 'order-first lg:order-none' : ''
                   } ${
-                    snapshot.isDraggingOver ? 'bg-brand-50/40 outline-dashed outline-2 outline-brand-300' : ''
+                    snapshot.isDraggingOver ? 'bg-slate-50 outline-dashed outline-2 outline-slate-300' : ''
                   }`}
                 >
                   {layout[colId].map((widgetId, index) => {
@@ -4025,19 +4182,18 @@ function TicketDetail({ id }) {
                             ref={dragProvided.innerRef}
                             {...dragProvided.draggableProps}
                             className={`relative min-w-0 ${
-                              dragSnapshot.isDragging
-                                ? 'shadow-lg motion-safe:rotate-[1.5deg] z-50 opacity-90'
-                                : ''
+                              dragSnapshot.isDragging ? 'shadow-md z-50' : ''
                             } ${editMode && !dragSnapshot.isDragging ? 'outline-dashed outline-2 outline-slate-300 outline-offset-2' : ''} rounded-xl`}
                           >
-                            {/* Drag handle — only in edit mode */}
+                            {/* Poignée de déplacement (mode édition seulement) : icône nue, sans animation */}
                             {editMode && (
                               <div
                                 {...dragProvided.dragHandleProps}
-                                className="absolute -top-3 right-3 z-10"
+                                aria-label="Déplacer le bloc"
+                                className="absolute -top-3 right-3 z-10 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
                               >
-                                <span className="flex items-center justify-center w-10 h-10 rounded-lg bg-brand-600 text-white text-base cursor-grab active:cursor-grabbing shadow-lg motion-safe:animate-wiggle select-none">
-                                  ⠿
+                                <span className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white text-slate-400 cursor-grab active:cursor-grabbing select-none">
+                                  <GripVertical className="w-5 h-5" aria-hidden="true" />
                                 </span>
                               </div>
                             )}

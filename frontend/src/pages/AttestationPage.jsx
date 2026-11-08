@@ -296,9 +296,7 @@ export default function AttestationPage() {
                     onClick={() => handleReload(att)}
                     className="w-full flex items-center gap-3 px-3 min-h-14 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <FileText className="w-4 h-4 text-slate-500" />
-                    </div>
+                    <FileText className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800 truncate">
                         {att.marque} {att.modele} — {att.prenom} {att.nom}
@@ -328,9 +326,7 @@ export default function AttestationPage() {
           {/* Client mode toggle */}
           <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
-                <Users className="w-4 h-4 text-slate-500" />
-              </div>
+              <Users className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
               <h2 className="t-h2">Client</h2>
             </div>
 
@@ -389,11 +385,6 @@ export default function AttestationPage() {
                         onClick={() => handleSelectClient(c)}
                         className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:bg-brand-50"
                       >
-                        <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                          <span className="text-brand-700 font-bold text-xs">
-                            {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
-                          </span>
-                        </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
                           {c.telephone && <p className="t-caption tabular-nums">{c.telephone}</p>}
@@ -456,9 +447,7 @@ export default function AttestationPage() {
           {/* Device info */}
           <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
-                <Smartphone className="w-4 h-4 text-slate-500" />
-              </div>
+              <Smartphone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
               <h2 className="t-h2">Appareil</h2>
             </div>
 
@@ -519,7 +508,7 @@ export default function AttestationPage() {
                   >
                     <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
                     {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
-                    <option value="__autre__">✏️ Autre (saisie manuelle)</option>
+                    <option value="__autre__">Autre (saisie manuelle)</option>
                   </select>
                 )}
               </div>
@@ -563,9 +552,7 @@ export default function AttestationPage() {
           {/* Motif & Compte-rendu */}
           <div className="card card-body">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center" aria-hidden="true">
-                <AlertTriangle className="w-4 h-4 text-slate-500" />
-              </div>
+              <AlertTriangle className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
               <h2 className="t-h2">Diagnostic</h2>
             </div>
             <div className="mb-4">

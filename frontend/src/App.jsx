@@ -45,7 +45,6 @@ const DeposerPage = lazy(() => import('./pages/DeposerPage'));
 const TarifsReparationPage = lazy(() => import('./pages/TarifsReparationPage'));
 const AdminTarifsIphonePage = lazy(() => import('./pages/AdminTarifsIphonePage'));
 const AdminTarifsSmartphonesPage = lazy(() => import('./pages/AdminTarifsSmartphonesPage'));
-const DemoDesignPage = lazy(() => import('./pages/DemoDesignPage'));
 const AdminSiteTarifsPage = lazy(() => import('./pages/AdminSiteTarifsPage'));
 const DemandesCommandesPage = lazy(() => import('./pages/DemandesCommandesPage'));
 const ConfidentialitePage = lazy(() => import('./pages/ConfidentialitePage'));
@@ -186,7 +185,7 @@ function FloatingBackButton() {
         }
       }}
       type="button"
-      className={`fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 w-11 h-11 rounded-full bg-slate-900/70 backdrop-blur-sm text-white shadow-md
+      className={`fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 z-30 w-11 h-11 rounded-full bg-slate-900 text-white shadow-lg
         flex items-center justify-center transition-colors duration-150 hover:bg-slate-900
         focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${isWebapp ? '' : 'lg:hidden'}`}
       aria-label="Retour"
@@ -343,7 +342,6 @@ function AppRoutes() {
         <Route path="/suivi" element={<SuiviPage />} />
         <Route path="/deposer" element={<DeposerPage />} />
         <Route path="/confidentialite" element={<ConfidentialitePage />} />
-        <Route path="/demo-design" element={<DemoDesignPage />} />
         <Route path="/site-tarifs-iphone" element={<AdminSiteTarifsPage />} />
 
         <Route path="/accueil" element={<P targets={['accueil']}><DashboardPage /></P>} />

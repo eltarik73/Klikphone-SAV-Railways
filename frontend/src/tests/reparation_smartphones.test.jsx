@@ -128,6 +128,9 @@ const page = (url = '/accueil/tarifs') => render(
     <Routes><Route path="*" element={<><TarifsPage /><Adresse /></>} /></Routes>
   </MemoryRouter>,
 );
+// Section « Prix fournisseurs et synchronisations » repliée par défaut (une ligne de résumé) : l'ouvrir pour voir
+// l'état des prix, les synchros et la méthode de calcul
+const ouvrirSynchro = async () => fireEvent.click(await screen.findByRole('button', { name: 'Prix fournisseurs et synchronisations' }));
 const texteExact = (texte) => (_, el) => el.textContent === texte && !['SCRIPT', 'STYLE'].includes(el.tagName)
   && [...el.children].every((c) => c.textContent !== texte);
 
@@ -283,6 +286,7 @@ describe('Réparation smartphones : lecture', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Réparation smartphones' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Réparation iPhone/ })).toHaveAttribute('href', '/accueil/tarifs-reparation');
     // Hors admin : phrase du serveur, sans montant de marge (le coût HT masqué s'en déduirait), ni règles lues
+    await ouvrirSynchro();
     expect(await screen.findByText(METHODE_PERSONNEL.texte)).toBeInTheDocument();
     expect(screen.queryByText(/marge \d+ €/)).not.toBeInTheDocument();
     expect(screen.queryByText(/valeurs par défaut/)).not.toBeInTheDocument();
@@ -381,6 +385,7 @@ describe('Réparation smartphones : méthode, règles et code admin (check-up)',
     etat.modeles['Samsung::Galaxy A54'] = modele({ admin: false, pieces: modele().pieces.map((p) => ({ ...p, prix_fournisseur_ht: null, calcul: null })) });
     page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
     const titre = await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy A54' });
+    await ouvrirSynchro();
     await screen.findByText(METHODE_PERSONNEL.texte);
     expect(titre.parentElement).toHaveTextContent('Écran standard');
     expect(titre.parentElement.textContent).not.toMatch(/marge/);
@@ -393,6 +398,7 @@ describe('Réparation smartphones : méthode, règles et code admin (check-up)',
     apiMock.getReglesPrix.mockResolvedValue({ ...REGLES_DEFAUT, ecran: { standard: 65, haut_de_gamme: 75, pliant: 100 } });
     page('/accueil/tarifs?marque=Samsung&modele=Galaxy%20A54');
     const titre = await screen.findByRole('heading', { level: 2, name: 'Samsung Galaxy A54' });
+    await ouvrirSynchro();
     expect(await screen.findByText(/marge 65 € \(écran standard\), 75 € \(écran haut de gamme\), 100 € \(pliant\), 60 € \(autres pièces\)/)).toBeInTheDocument();
     expect(screen.getByText(/Exemple, écran standard acheté 42,00 € HT : 42,00 × 1,2 \+ 65 = 115,40 → 119 €/)).toBeInTheDocument();
     await waitFor(() => expect(titre.parentElement).toHaveTextContent('Écran standard : marge 65 €'));
@@ -420,12 +426,15 @@ describe('Réparation smartphones : méthode, règles et code admin (check-up)',
     expect(localStorage.getItem('klikphone_admin')).toBe('true');
   });
 
-  it('puces de marque : compteurs contrastés (AA), en-tête réservé pour les compteurs (pas de décalage)', async () => {
+  it('puces de marque : segments neutres (marque active blanche, compteurs slate-600 par index.css), en-tête réservé pour les compteurs (pas de décalage)', async () => {
     page();
     const marques = await screen.findByRole('group', { name: 'Marques' });
+    expect(marques).toHaveClass('segmented');
     const [active, inactive] = within(marques).getAllByRole('button');
-    expect(active.querySelector('span:last-child')).toHaveClass('text-white');
-    expect(active.querySelector('span:last-child').className).not.toMatch(/white\/80/);
+    expect(active).toHaveClass('segmented-item-active');
+    expect(active.className).not.toMatch(/bg-brand-600/);
+    // Compteur « (12) » : slate-500 dans le JSX, remonté en slate-600 par `.segmented .text-slate-500` (AA sur slate-100)
+    expect(active.querySelector('span:last-child')).toHaveClass('text-slate-500');
     expect(inactive.querySelector('span:last-child')).toHaveClass('text-slate-500');
     const sousTitre = screen.getByText('Prix fournisseur Mobilax / Utopya et méthode de calcul', { exact: false });
     expect(sousTitre.querySelector('span')).toHaveClass('block', 'min-h-5');
@@ -453,6 +462,7 @@ describe('Réparation smartphones : administrateur', () => {
     expect(within(table).getByText('42,00 × 1,2 + 60 = 110,40 → 119 €')).toBeInTheDocument();
     expect(within(table).getByText('11,00 × 1,2 + 60 = 73,20 → 79 €')).toBeInTheDocument();
     expect(within(table).getByText('Prix client fixé à la main')).toBeInTheDocument(); // batterie verrouillée
+    await ouvrirSynchro();
     expect(screen.getByRole('button', { name: 'Modifier les règles' })).toBeInTheDocument();
     expect(screen.getByText(/Écran standard : marge 60 €/)).toBeInTheDocument();
 
@@ -737,6 +747,7 @@ describe('Réparation smartphones : grilles Mobilax et Utopya', () => {
   it('« Compléter tous les modèles » : vitre arrière et bouton power créés sur toute la grille', async () => {
     apiMock.creerPiecesCourantesTous.mockResolvedValue({ modeles: 180, crees: 350, par_type: { 'Vitre arriere': 170, 'Bouton power': 180 } });
     page('/accueil/tarifs');
+    await ouvrirSynchro();
     const bouton = await screen.findByRole('button', { name: 'Compléter tous les modèles' });
     fireEvent.click(bouton);
     await waitFor(() => expect(apiMock.creerPiecesCourantesTous).toHaveBeenCalledWith({ types: ['Vitre arriere', 'Bouton power'] }));
@@ -819,8 +830,8 @@ describe('Réparation iPhone : bandeau d’aide', () => {
     expect(screen.getByText(/autres marques et iPad \/ Mac/)).toBeInTheDocument();
   });
 
-  it('le lien « Réparation iPhone » du bandeau de « Réparation smartphones » est aussi une cible de 44 px', async () => {
+  it('le lien « Réparation iPhone » de la ligne « Où sont les prix ? » de « Réparation smartphones » est aussi une cible de 44 px', async () => {
     page();
-    expect(await screen.findByRole('link', { name: /Réparation iPhone/ })).toHaveClass('min-h-[44px]');
+    expect(await screen.findByRole('link', { name: /Réparation iPhone/ })).toHaveClass('min-h-11');
   });
 });

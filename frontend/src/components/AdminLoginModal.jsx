@@ -86,16 +86,9 @@ export default function AdminLoginModal({ open, onClose, onSuccess }) {
         onSubmit={handleSubmit}
         className={`modal sm:max-w-[400px] rounded-xl p-6 sm:p-8 ${shake ? 'animate-shake' : ''}`}
       >
-        {/* Icon */}
-        <div className="flex justify-center mb-4">
-          <div className="w-14 h-14 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
-            <Lock className="w-7 h-7" aria-hidden="true" />
-          </div>
-        </div>
-
-        {/* Title */}
-        <h2 id="admin-login-titre" className="t-h2 text-center mb-1">
-          Accès Administrateur
+        {/* Titre seul, cadenas 20 px en ligne (plus de tuile d'icône) */}
+        <h2 id="admin-login-titre" className="t-h2 flex items-center justify-center gap-2 mb-1">
+          <Lock className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" /> Accès Administrateur
         </h2>
         <p id="admin-login-texte" className="text-sm text-slate-500 text-center mb-5">
           Zone protégée — Identifiez-vous

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../lib/api';
-import { Loader2, Star, Sparkles } from 'lucide-react';
+import { Loader2, Star } from 'lucide-react';
 
 // Suivi public (ticketCode) : `preuve` = { t } jeton du lien ou { tel } numéro complet, exigée par le serveur
 export default function FideliteCard({ clientId, ticketCode, preuve = null, compact = false }) {
@@ -57,7 +57,7 @@ export default function FideliteCard({ clientId, ticketCode, preuve = null, comp
   // Barre de progression : monochrome brand sur slate-100, hauteur 8 px
   const barre = (pourcent) => (
     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden" aria-hidden="true">
-      <div className="h-full bg-brand-600 rounded-full transition-[width] duration-500 motion-reduce:transition-none"
+      <div className="h-full bg-brand-600 rounded-full transition-[width] duration-150 motion-reduce:transition-none"
         style={{ width: `${pourcent}%` }} />
     </div>
   );
@@ -92,7 +92,7 @@ export default function FideliteCard({ clientId, ticketCode, preuve = null, comp
         )}
         {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
           <p className="mt-3 callout bg-brand-50 border-brand-200 text-brand-800 py-2 text-xs font-semibold">
-            <Sparkles aria-hidden="true" />
+            <Star aria-hidden="true" />
             <span>Valable pour votre <strong>prochaine réparation</strong></span>
           </p>
         )}
@@ -154,7 +154,7 @@ export default function FideliteCard({ clientId, ticketCode, preuve = null, comp
       {/* Rappel : les recompenses sont appliquees a la prochaine reparation */}
       {(recompenses_disponibles?.film || recompenses_disponibles?.reduction) && (
         <p className="mt-3 callout bg-brand-50 border-brand-200 text-brand-800 font-semibold">
-          <Sparkles aria-hidden="true" />
+          <Star aria-hidden="true" />
           <span>À utiliser lors de la <strong>prochaine réparation</strong></span>
         </p>
       )}

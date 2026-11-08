@@ -137,7 +137,7 @@ function Indicateur({ etat }) {
     <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-xs font-medium shrink-0">
       {/* Retour immédiat : dès la modification, « Enregistrement… » (l'envoi suit aussitôt ou sous 250 ms) */}
       {(s === 'dirty' || s === 'saving') && <span className="text-amber-800">Enregistrement…</span>}
-      {s === 'saved' && <span className="text-emerald-700">Enregistré ✓</span>}
+      {s === 'saved' && <span className="text-emerald-700">Enregistré</span>}
       {s === 'error' && (
         <>
           <AlertTriangle className="w-3.5 h-3.5 text-red-600" aria-hidden="true" />
@@ -157,26 +157,26 @@ function Indicateur({ etat }) {
 
 // En-tête « carte large » : variantes `[@container(min-width:34rem)]:` écrites en toutes lettres dans le JSX
 // (Tailwind ne voit que les classes littérales) ; sans prise en charge des requêtes de conteneur : disposition étroite.
-// Puces = `.choice` partagée, resserrée : 36 px à la souris, 44 px au doigt (pointer: coarse, index.css).
+// Puces = `.choice` partagée (14 px / 500), resserrée : 36 px à la souris, 44 px au doigt (pointer: coarse, index.css).
 // Ce sont de vrais <button> (pas de peer) : l'anneau de focus est posé ici, pas par `.choice`.
-const PUCE = 'choice min-h-9 px-2.5 text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
+const PUCE = 'choice min-h-9 px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1';
 // Ligne « libellé + puces » : colonne de libellé (5,5 rem) quand la CARTE fait ≥ 30 rem (colonne de la fiche en 1440),
 // libellé au-dessus des puces sinon (en 1024 la carte ne fait que 370 px : la colonne ferait plier chaque ligne)
 const LIGNE = 'flex flex-wrap items-center gap-x-3 gap-y-1';
-const ETIQUETTE = 'basis-full [@container(min-width:30rem)]:basis-auto [@container(min-width:30rem)]:w-[5.5rem] shrink-0 text-[13px] font-semibold leading-tight text-slate-700';
+const ETIQUETTE = 'basis-full [@container(min-width:30rem)]:basis-auto [@container(min-width:30rem)]:w-[5.5rem] shrink-0 text-sm font-medium leading-tight text-slate-700';
 const PUCES = 'flex flex-1 flex-wrap gap-1.5 min-w-0';
 // En-tête de section : titre + actions, 28 px. Un bouton btn-sm (36 px) y déborde de 4 px par une marge
 // négative : `-my-1` (haut et bas) quand la ligne du dessous ne remplit pas la largeur (état constaté),
 // `-mt-1` seulement (haut) quand la grille du dessous remplit la largeur (tests d'entrée) — sinon les
 // 4 px bas du bouton passeraient sous la première puce, qui les masquerait.
 const TITRE_SECTION = 'flex flex-wrap items-center gap-x-2 gap-y-0.5 min-h-7';
-const TOUT_OK = 'btn-ghost btn-sm text-emerald-800 hover:bg-emerald-50 hover:text-emerald-900';
+const TOUT_OK = 'btn-ghost btn-sm';
 
 // Saisies compactes : 36 px à la souris, 44 px au doigt (comme les puces). Sur un <input class="input">
-// l'utilitaire suffit (même spécificité, déclaré après) ; sur le <textarea class="input">, `textarea.input`
-// (0,1,1 : 96 px) l'emporterait, d'où les formes importantes.
+// l'utilitaire suffit ; sur le <textarea class="input">, `textarea.input` (96 px) l'emporterait : la classe
+// partagée `textarea-sm` d'index.css (même spécificité, déclarée après) règle 36 px / 44 px au doigt.
 const CHAMP = 'min-h-9 [@media(pointer:coarse)]:min-h-11';
-const CHAMP_TEXTAREA = '!min-h-9 [@media(pointer:coarse)]:!min-h-11';
+const CHAMP_TEXTAREA = 'textarea-sm';
 
 // Notes : la zone grandit avec le texte grâce à `field-sizing: content` (Chrome 123+, Safari 26+) ; ailleurs
 // (Firefox, Safari antérieurs) un repli JS ajuste la hauteur au contenu, même plafond que `max-h-24`.
@@ -459,7 +459,7 @@ export default function ReceptionCard({
                           transition-transform duration-150 motion-reduce:transition-none ${ouvert ? 'rotate-180' : ''}`}
               aria-hidden="true"
             />
-            <span id={resumeId} className="basis-full [@container(min-width:34rem)]:basis-auto [@container(min-width:34rem)]:flex-1 min-w-0 truncate text-[13px] font-normal text-slate-600">
+            <span id={resumeId} className="basis-full [@container(min-width:34rem)]:basis-auto [@container(min-width:34rem)]:flex-1 min-w-0 truncate text-sm font-normal text-slate-600">
               <span className="[@container(min-width:34rem)]:hidden">facultatif · </span>{resume}
             </span>
           </button>
@@ -496,7 +496,7 @@ export default function ReceptionCard({
                   <label htmlFor={`${uid}-acc-autre`} className="sr-only">Autre accessoire</label>
                   <input id={`${uid}-acc-autre`} value={items.accessoires_autre} onChange={e => modifier({ accessoires_autre: e.target.value })}
                     onBlur={flushSilencieux} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent?.isComposing) flushSilencieux(); }}
-                    className={`input ${CHAMP} !py-1 text-sm`} placeholder="Précisez l’accessoire" autoComplete="off" />
+                    className={`input ${CHAMP} py-1 text-sm`} placeholder="Précisez l’accessoire" autoComplete="off" />
                 </span>
               )}
             </div>
@@ -553,7 +553,7 @@ export default function ReceptionCard({
                 onChange={e => changerImei(e.target.value)}
                 onBlur={() => { setImeiVu(true); flushSilencieux(); }}
                 aria-invalid={imeiFaux || undefined} aria-describedby={imeiMessage ? `${uid}-imei-aide` : undefined}
-                className={`input flex-1 min-w-[11rem] ${CHAMP} !py-1 font-mono tabular-nums`}
+                className={`input flex-1 min-w-[11rem] ${CHAMP} py-1 font-mono tabular-nums`}
                 placeholder="*#06#, douchette ou n° de série"
                 autoComplete="off"
               />
@@ -581,7 +581,7 @@ export default function ReceptionCard({
             <label htmlFor={`${uid}-notes`} className={ETIQUETTE}>Notes</label>
             <textarea id={`${uid}-notes`} ref={notesRef} value={items.etat.notes} onChange={e => changerEtat('notes', e.target.value, {})}
               onBlur={flushSilencieux} rows={1} placeholder="Oxydation…"
-              className={`input flex-1 min-w-[8rem] resize-none ${CHAMP_TEXTAREA} !py-1.5 text-sm leading-snug [field-sizing:content] max-h-24`} />
+              className={`input flex-1 min-w-[8rem] resize-none ${CHAMP_TEXTAREA} text-sm leading-snug [field-sizing:content] max-h-24`} />
             <Bascule actif={items.appareil_eteint} onClick={() => modifier({ appareil_eteint: !itemsRef.current.appareil_eteint }, { wait: 0 })}>
               <PowerOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> Reçu éteint
             </Bascule>

@@ -64,7 +64,8 @@ export function buildShareMessage(channel, { label, ticketCode, url }) {
 }
 
 const LINKS_IDLE = { status: 'idle', data: null, error: null };
-const ITEM_CLS = 'flex w-full min-h-11 items-center gap-2.5 px-3 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 focus-visible:bg-slate-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-slate-500';
+// Lignes du menu « Envoyer » : variante ghost du système, alignée à gauche, sans rayon ni décalage d'anneau dans la liste
+const ITEM_CLS = 'btn-ghost btn-sm w-full min-h-11 justify-start rounded-none font-medium text-slate-800 focus-visible:ring-inset focus-visible:ring-offset-0';
 
 function ShareMenu({ doc, formatKey, ticketId, ticketCode, clientTel, clientEmail, links, onNeedLinks, notify, escapeRef }) {
   const [open, setOpen] = useState(false);

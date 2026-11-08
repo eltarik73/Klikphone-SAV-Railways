@@ -1,10 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 import colors from 'tailwindcss/colors'
 
-// Design V2 (polish) : la marque (brand, sidebar) ne bouge pas. On AJOUTE des alias
-// sémantiques (success/warning/danger/info) qui pointent sur la palette Tailwind déjà
-// utilisée (emerald/amber/red/blue) et deux ombres : `xs` (cartes, boutons) et `lg`
-// (modales, panneaux, menus, toasts). Tout le reste reste Tailwind natif.
+// Design épuré (nov. 2026, skill `design-epure`) : la marque (brand, sidebar) ne bouge pas. Alias
+// sémantiques (success/warning/danger/info) sur la palette Tailwind (emerald/amber/red/blue) et trois
+// ombres : `xs` (boutons secondaires), `md` (menus), `lg` (modales, drawers, toasts). Aucune animation
+// décorative déclarée ici (wiggle/shimmer retirés). Tout le reste reste Tailwind natif.
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
@@ -34,27 +34,18 @@ export default {
         info: colors.blue,
       },
       fontFamily: {
-        display: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
-        sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        // Inter variable (axe opsz) : les titres se distinguent par la taille, la graisse 600 et l'interlettrage,
+        // pas par une seconde famille — `display` reste un alias de `sans` pour les anciennes classes `font-display`.
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
       boxShadow: {
-        // Cartes, boutons secondaires, segment actif, badge lg
+        // Boutons secondaires, segment actif (les cartes n'ont pas d'ombre : bordure seule)
         xs: '0 1px 2px 0 rgb(15 23 42 / 0.06)',
-        // Modales, drawers, palette, FAB, menus, toasts
+        // Menus, popovers, listes déroulantes
+        md: '0 4px 12px -2px rgb(15 23 42 / 0.10), 0 2px 4px rgb(15 23 42 / 0.06)',
+        // Modales, drawers, palette, FAB, toasts
         lg: '0 12px 32px -8px rgb(15 23 42 / 0.18), 0 2px 6px rgb(15 23 42 / 0.06)',
-      },
-      keyframes: {
-        wiggle: {
-          '0%, 100%': { transform: 'rotate(-1.5deg)' },
-          '50%': { transform: 'rotate(1.5deg)' },
-        },
-        shimmer: {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(400%)' },
-        },
-      },
-      animation: {
-        wiggle: 'wiggle 2s ease-in-out infinite',
       },
     },
   },

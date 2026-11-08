@@ -514,12 +514,12 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
     });
   });
 
-  const pastille = (texte) => screen.getByText(texte).closest('[data-delai]');
+  const pastille = (texte) => screen.getAllByText(texte)[0].closest('[data-delai]');
 
   it.each([
     ['accueil', '/accueil'],
     ['tech', '/tech'],
-  ])('vue %s : « dans … », « En retard », « Délai à fixer », orange sous 30 min', async (target, chemin) => {
+  ])('vue %s : le délai promis est visible sur chaque ligne (tenu, bientôt, retard, à fixer)', async (target, chemin) => {
     auth.user = { target, utilisateur: target === 'tech' ? 'Karim' : 'Sophie' };
     render(
       <MemoryRouter initialEntries={[chemin]}>
@@ -527,17 +527,25 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
       </MemoryRouter>,
     );
     await screen.findByText('KP-000001');
+    // Le délai promis figure sur la ligne, visible, quel que soit son état (décision du gérant, 8 nov. 2026) :
+    // tenu en pastille neutre, proche en ambre, dépassé en rouge — rendu deux fois (colonne ≥ lg et sous le client < lg)
     expect(pastille('15:30 · dans 1 h 20')).toHaveAttribute('data-delai', 'ok');
-    expect(pastille('15:30 · dans 1 h 20')).toHaveClass('bg-slate-100');
+    expect(pastille('15:30 · dans 1 h 20')).toHaveAttribute('title', expect.stringMatching(/Prêt vers 15:30 aujourd'hui \(dans 1 h 20\)/));
+    expect(pastille('demain 11:00')).toHaveAttribute('data-delai', 'ok');
     expect(pastille('En retard de 25 min')).toHaveAttribute('data-delai', 'retard');
     expect(pastille('En retard de 25 min')).toHaveClass('text-red-700');
-    expect(pastille('demain 11:00')).toHaveAttribute('data-delai', 'ok');
-    expect(pastille('14:30 · dans 20 min')).toHaveClass('bg-orange-100');
-    // Un seul « Délai à fixer » : ni le ticket terminé, ni la commande de pièce
-    expect(screen.getAllByText('Délai à fixer')).toHaveLength(1);
-    expect(pastille('Délai à fixer')).toHaveClass('border-dashed');
-    expect(pastille('Délai à fixer')).toHaveTextContent('Délai de réparation : Délai à fixer');
-    expect(pastille('Délai à fixer').closest('[class*="cursor-pointer"]')).toHaveTextContent('Client3');
+    expect(pastille('14:30 · dans 20 min')).toHaveAttribute('data-delai', 'bientot');
+    expect(pastille('14:30 · dans 20 min')).toHaveClass('bg-amber-100');
+    // Un ticket en boutique sans délai promis se voit (décision du gérant, 8 nov. 2026) : pastille neutre en pointillé ;
+    // rien pour une réparation terminée (ticket 4) ni une commande de pièce (ticket 5)
+    const aFixer = screen.getAllByText('Délai à fixer').map((e) => e.closest('[data-delai]'));
+    expect(aFixer).toHaveLength(2); // une fois par point de rupture (colonne ≥ lg, sous le client < lg), même ticket
+    expect(aFixer[0]).toHaveAttribute('data-delai', 'aucun');
+    expect(aFixer[0]).toHaveClass('border-dashed', 'text-slate-600');
+    expect(aFixer[0].className).not.toMatch(/amber/);
+    aFixer.forEach((el) => expect(screen.getByText('Client3').closest('[class*="cursor-pointer"]')).toContainElement(el));
+    // La ligne entière ouvre le ticket : le nom du client est dans la zone cliquable
+    expect(screen.getByText('Client3').closest('[class*="cursor-pointer"]')).toHaveTextContent('KP-000003');
   });
 
   it('« Nouveau ticket » ouvre /client?staff=1 ; tri « Récupération » robuste au texte libre', async () => {
@@ -552,8 +560,8 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
       </MemoryRouter>,
     );
     await screen.findByText('KP-000001');
-    // Un clic : délai le plus proche d'abord (sens croissant par défaut pour ce tri)
-    fireEvent.click(screen.getByRole('button', { name: 'Récupération' }));
+    // Tri « Récupération » : délai le plus proche d'abord (sens croissant par défaut pour ce tri)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Trier par' }), { target: { value: 'date_recuperation' } });
     const codes = [...document.querySelectorAll('[data-ticket-link]')].map((a) => a.textContent);
     expect(codes.slice(0, 4)).toEqual(['KP-000002', 'KP-000007', 'KP-000001', 'KP-000006']);
     fireEvent.click(screen.getAllByRole('button', { name: /Nouveau ticket/ })[0]);

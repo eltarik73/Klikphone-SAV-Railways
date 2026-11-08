@@ -219,7 +219,7 @@ function ligne(id, extra = {}) {
   };
 }
 
-describe('Dashboard : colonne CONTACT', () => {
+describe('Dashboard : contact depuis la ligne (un bouton, un menu)', () => {
   beforeEach(() => {
     apiMock.getDashboard.mockResolvedValue({
       kpi: {}, total: 2,
@@ -234,32 +234,63 @@ describe('Dashboard : colonne CONTACT', () => {
     apiMock.getParts.mockResolvedValue([]);
   });
 
-  it('les liens d’envoi s’allument selon contact.canaux (date, heure, auteur en info-bulle)', async () => {
+  it('le bouton s’allume quand un contact est parti ; dans le menu, chaque canal selon contact.canaux (date, heure, auteur)', async () => {
     render(wrap(<DashboardPage />));
     await screen.findByText('KP-000001');
-    const sms1 = screen.getByRole('link', { name: `SMS à Léa Martin (SMS envoyé le ${H_SMS} par Léa)` });
+    const bouton1 = screen.getByRole('button', { name: `Contacter Léa Martin (Contacté par SMS le ${H_SMS})` });
+    expect(bouton1).toHaveAttribute('aria-haspopup', 'menu');
+    expect(bouton1).toHaveAttribute('aria-expanded', 'false');
+    expect(bouton1.querySelector('svg')).toHaveClass('text-emerald-600');
+    const bouton2 = screen.getByRole('button', { name: 'Contacter Hugo Bernard' });
+    expect(bouton2).toHaveAttribute('title', 'Contacter le client');
+    expect(bouton2.querySelector('svg')).toHaveClass('text-slate-500');
+    // Aucun lien de contact dans la ligne tant que le menu est fermé
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    fireEvent.click(bouton1);
+    const menu1 = screen.getByRole('menu', { name: 'Contacter Léa Martin' });
+    expect(bouton1).toHaveAttribute('aria-expanded', 'true');
+    expect(bouton1.getAttribute('aria-controls')).toBe(menu1.id);
+    const sms1 = within(menu1).getByRole('menuitem', { name: `SMS à Léa Martin (SMS envoyé le ${H_SMS} par Léa)` });
     expect(sms1).toHaveAttribute('title', `SMS envoyé le ${H_SMS} par Léa`);
     expect(sms1.querySelector('svg')).toHaveClass('text-emerald-600');
     expect(sms1).toHaveAttribute('href', expect.stringMatching(/^sms:0612345678\?/));
-    const wa1 = screen.getByRole('link', { name: 'WhatsApp à Léa Martin' });
+    const wa1 = within(menu1).getByRole('menuitem', { name: 'WhatsApp à Léa Martin' });
     expect(wa1).toHaveAttribute('title', 'WhatsApp');
     expect(wa1.querySelector('svg')).toHaveClass('text-slate-500');
-    expect(screen.getByRole('link', { name: 'SMS à Hugo Bernard' }).querySelector('svg')).toHaveClass('text-slate-500');
-    expect(screen.getByRole('button', { name: 'Contacté par téléphone : Hugo Bernard' })).toHaveAttribute('title', 'Contacté par tél.');
+    expect(within(menu1).getAllByRole('menuitem').map((m) => m.getAttribute('aria-label')))
+      .toEqual([
+        'WhatsApp à Léa Martin', `SMS à Léa Martin (SMS envoyé le ${H_SMS} par Léa)`, 'Email à Léa Martin',
+        'Contacté par téléphone : Léa Martin',
+      ]);
+    // Échap referme le menu et rend le focus au bouton
+    fireEvent.keyDown(menu1, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(bouton1).toHaveFocus();
+
+    fireEvent.click(bouton2);
+    const menu2 = screen.getByRole('menu', { name: 'Contacter Hugo Bernard' });
+    expect(within(menu2).getByRole('menuitem', { name: 'SMS à Hugo Bernard' }).querySelector('svg')).toHaveClass('text-slate-500');
+    expect(within(menu2).getByRole('menuitem', { name: 'Contacté par téléphone : Hugo Bernard' })).toHaveAttribute('title', 'Contacté par tél.');
   });
 
-  it('téléphone : confirmation légère sous la rangée, puis appel noté et icône allumée sans recharger', async () => {
+  it('téléphone : confirmation légère sous la rangée, puis appel noté et bouton allumé sans recharger', async () => {
     render(wrap(<DashboardPage />));
     await screen.findByText('KP-000002');
     const lectures = apiMock.getDashboard.mock.calls.length; // liste + compteur d'archives
-    fireEvent.click(screen.getByRole('button', { name: 'Contacté par téléphone : Hugo Bernard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Contacter Hugo Bernard' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Contacté par téléphone : Hugo Bernard' }));
     const groupe = screen.getByRole('group', { name: 'Noter un appel téléphonique à Hugo Bernard' });
     expect(groupe).toHaveTextContent('Hugo Bernard (KP-000002) a été appelé ?');
-    expect(screen.getByRole('button', { name: 'Contacté par téléphone : Hugo Bernard' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 
     fireEvent.click(within(groupe).getByRole('button', { name: "Oui, noter l'appel" }));
     await waitFor(() => expect(apiMock.contacterClient).toHaveBeenCalledWith(2));
-    const tel = await screen.findByRole('button', { name: `Contacté par téléphone : Hugo Bernard (Appel passé le ${H_APPEL} par Sophie)` });
+    const bouton = await screen.findByRole('button', { name: `Contacter Hugo Bernard (Contacté par téléphone le ${H_APPEL})` });
+    expect(bouton.querySelector('svg')).toHaveClass('text-emerald-600');
+    expect(bouton).toHaveAttribute('title', `Contacté par téléphone le ${H_APPEL}`);
+    fireEvent.click(bouton);
+    const tel = screen.getByRole('menuitem', { name: `Contacté par téléphone : Hugo Bernard (Appel passé le ${H_APPEL} par Sophie)` });
     expect(tel.querySelector('svg')).toHaveClass('text-emerald-600');
     expect(tel).toHaveAttribute('title', `Appel passé le ${H_APPEL} par Sophie`);
     expect(screen.queryByRole('group', { name: /Noter un appel/ })).not.toBeInTheDocument();
@@ -267,17 +298,19 @@ describe('Dashboard : colonne CONTACT', () => {
     expect(apiMock.getDashboard).toHaveBeenCalledTimes(lectures); // mise à jour locale, pas de relecture
   });
 
-  it('« Non » ou Échap referment la confirmation sans rien noter', async () => {
+  it('« Non » ou Échap referment la confirmation sans rien noter, le focus revient au bouton de contact', async () => {
     render(wrap(<DashboardPage />));
     await screen.findByText('KP-000001');
-    const tel = screen.getByRole('button', { name: /^Contacté par téléphone : Léa Martin/ });
-    fireEvent.click(tel);
+    const bouton = screen.getByRole('button', { name: /^Contacter Léa Martin/ });
+    fireEvent.click(bouton);
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Contacté par téléphone : Léa Martin/ }));
     expect(screen.getByRole('button', { name: "Oui, noter l'appel" })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Non' }));
     expect(screen.queryByRole('group', { name: /Noter un appel/ })).not.toBeInTheDocument();
-    // Le focus revient sur l'icône téléphone de la ligne
-    await waitFor(() => expect(tel).toHaveFocus());
-    fireEvent.click(tel);
+    // Le menu étant refermé, le focus revient sur le bouton de contact de la ligne
+    await waitFor(() => expect(bouton).toHaveFocus());
+    fireEvent.click(bouton);
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Contacté par téléphone : Léa Martin/ }));
     fireEvent.keyDown(screen.getByRole('group', { name: /Noter un appel/ }), { key: 'Escape' });
     expect(screen.queryByRole('group', { name: /Noter un appel/ })).not.toBeInTheDocument();
     expect(apiMock.contacterClient).not.toHaveBeenCalled();

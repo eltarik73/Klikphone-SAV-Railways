@@ -383,7 +383,7 @@ describe('commandes : prix HT payé', () => {
     fireEvent.click(enregistrer);
     await waitFor(() => expect(apiMock.updatePart).toHaveBeenLastCalledWith(5, { prix_ht: 51, tarif_cle: 'tarifs:12' }));
     expect(await screen.findByText(MESSAGE_PROPOSITION)).toBeInTheDocument();
-    expect(await screen.findByRole('dialog', { name: /Pièce reçue !/ })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Pièce reçue' })).toBeInTheDocument();
   });
 
   it('réception : « Passer » n’envoie aucun prix', async () => {
@@ -589,7 +589,7 @@ describe('santé des prix', () => {
     auth.user = { ...auth.user, role: '' };
     apiMock.getSantePrix.mockClear();
     renderDashboard();
-    await screen.findByText(/Statistiques du jour/);
+    await screen.findByText('Aucun ticket en attente');
     expect(screen.queryByRole('heading', { name: 'Santé des prix' })).not.toBeInTheDocument();
     expect(apiMock.getSantePrix).not.toHaveBeenCalled();
   });

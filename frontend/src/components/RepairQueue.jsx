@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Play, Wrench, ChevronDown, Loader2 } from 'lucide-react';
+import { X, Wrench, ChevronDown, Loader2 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi } from '../hooks/useApi';
 import StatusBadge from './StatusBadge';
 import { PrioriteBadge, comparerPriorite } from './PrioriteBadge';
 import { IconesContact } from './ContactClient';
 import { libelleContact, normaliserContact } from '../lib/contact';
-import { PastilleDelai, useMaintenant } from './DelaiReparation';
+import { useMaintenant } from './DelaiReparation';
+import { delaiTicket } from '../lib/delai';
 
 // Le serveur trie déjà (priorité, heure promise, statut, dépôt) ; tri stable de secours sur la
 // seule priorité, qui garde l'ordre serveur à priorité égale.
@@ -15,14 +16,27 @@ export function trierFile(tickets) {
   return [...(tickets || [])].sort((a, b) => comparerPriorite(a?.priorite, b?.priorite));
 }
 
+// Délai promis en texte : rouge seulement pour un retard (le rouge est un calque réservé au retard), ambre
+// pour « bientôt » et « Délai à fixer », gris sinon. Mêmes règles que la pastille (lib/delai.delaiTicket).
+const TON_DELAI = { retard: 'text-red-700', bientot: 'text-amber-800', aucun: 'text-amber-800' };
+function DelaiLigne({ ticket, maintenant }) {
+  const info = delaiTicket(ticket, maintenant);
+  if (!info) return null;
+  return (
+    <span title={info.titre} data-delai={info.etat}
+      className={`text-xs font-medium tabular-nums shrink-0 ${TON_DELAI[info.etat] || 'text-slate-600'}`}>
+      <span className="sr-only">Délai de réparation : </span>{info.libelle}
+    </span>
+  );
+}
+
 function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate }) {
-  // Une seule horloge pour toute la file (pastilles de délai)
+  // Une seule horloge pour toute la file (délais)
   const maintenant = useMaintenant();
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {queue.map((t, i) => {
         const isCurrent = t.id === currentTicketId;
-        const isInProgress = t.statut === 'En cours de réparation';
         // Client contacté depuis le dernier changement de statut (t.contact, serveur) : seulement s'il l'a été
         const contact = t.contact ? normaliserContact(t.contact) : null;
 
@@ -31,27 +45,19 @@ function QueueList({ queue, currentTicketId, basePath, isTech, onClose, navigate
             key={t.id}
             type="button"
             onClick={() => { onClose(); navigate(`${basePath}/ticket/${t.id}`); }}
-            className={`w-full text-left p-3 rounded-lg border transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+            className={`w-full text-left px-3 py-2 min-h-11 rounded-lg border transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
               isCurrent
                 ? 'border-brand-300 bg-brand-50/60'
                 : 'border-transparent hover:bg-slate-50'
             }`}
           >
             <div className="flex items-start gap-2.5">
-              {/* Rang dans la file : en cours (brand), prochain (rouge), suivants (neutre) */}
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold tabular-nums ${
-                isInProgress
-                  ? 'bg-brand-600 text-white'
-                  : i === 0
-                    ? 'bg-red-600 text-white'
-                    : 'bg-slate-200 text-slate-700'
-              }`} aria-hidden="true">
-                {isInProgress ? <Play className="w-3 h-3 fill-current" /> : i + 1}
-              </div>
+              {/* Rang dans la file : un simple numéro (le statut dit déjà ce qui est en main) */}
+              <span className="w-5 shrink-0 pt-0.5 text-right t-small tabular-nums text-slate-500" aria-hidden="true">{i + 1}</span>
               <div className="flex-1 min-w-0">
                 {/* En tête de ligne pour le technicien : le délai promis (« 15:30 · dans 1 h 20 », « En retard… ») */}
                 <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
-                  <PastilleDelai ticket={t} maintenant={maintenant} />
+                  <DelaiLigne ticket={t} maintenant={maintenant} />
                   <span className="t-mono text-xs font-semibold text-slate-500 shrink-0">{t.ticket_code}</span>
                   <span className="text-sm font-semibold text-slate-900 truncate">
                     {t.client_prenom} {t.client_nom}
@@ -123,13 +129,10 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
 
   if (!open) return null;
 
-  // En-tête : sombre côté atelier (/tech, identité de la file), blanc côté accueil
+  // En-tête clair partout (titre t-h2 + compteur) : le contenu de la file porte l'information, pas le bandeau
   const titre = isTech ? 'Mes réparations' : "File d'attente";
-  const headerCls = isTech ? 'bg-slate-900 text-white' : 'bg-white text-slate-900';
-  const headerIconCls = isTech ? 'text-slate-300' : 'text-slate-400';
-  const headerFocus = isTech ? 'focus-visible:ring-white/70' : 'focus-visible:ring-brand-500';
   const compteur = queue.length > 0 && (
-    <span className="badge-count badge-count-brand">{queue.length}</span>
+    <span className="badge-count">{queue.length}</span>
   );
 
   // ─── Inline widget mode ─────────────────────────────────────
@@ -141,18 +144,18 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
           type="button"
           onClick={() => setCollapsed(c => !c)}
           aria-expanded={!collapsed}
-          className={`w-full min-h-14 px-4 sm:px-5 py-3 flex items-center justify-between gap-3 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset ${headerCls} ${headerFocus} ${
+          className={`card-header w-full min-h-14 bg-white text-slate-900 transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${
             collapsed ? '' : 'border-b border-slate-100'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <Wrench className={`w-4 h-4 shrink-0 ${headerIconCls}`} aria-hidden="true" />
-            <span className="t-h2 text-inherit truncate">
+            <Wrench className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />
+            <span className="t-h2 truncate">
               {titre}
             </span>
             {compteur}
           </div>
-          <ChevronDown className={`w-4 h-4 shrink-0 ${headerIconCls} transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
+          <ChevronDown className={`w-4 h-4 shrink-0 text-slate-500 transition-transform duration-150 motion-reduce:transition-none ${collapsed ? '-rotate-90' : ''}`} aria-hidden="true" />
         </button>
 
         {/* Content */}
@@ -190,16 +193,15 @@ export default function RepairQueue({ open, onClose, currentTicketId, basePath, 
     <>
       <div className="fixed inset-0 bg-slate-900/50 z-40" onClick={onClose} aria-hidden="true" />
       <div role="dialog" aria-label={titre} className="drawer sm:w-[400px]">
-        <div className={`min-h-14 px-4 sm:px-5 flex items-center justify-between gap-3 shrink-0 ${headerCls} ${isTech ? '' : 'border-b border-slate-100'}`}>
+        <div className="drawer-header">
           <div className="flex items-center gap-2.5 min-w-0">
-            <Wrench className={`w-4 h-4 shrink-0 ${headerIconCls}`} aria-hidden="true" />
-            <span className="t-h2 text-inherit truncate">
+            <Wrench className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />
+            <span className="t-h2 truncate">
               {titre}
             </span>
             {compteur}
           </div>
-          <button type="button" onClick={onClose} aria-label="Fermer la file d'attente"
-            className={`btn-ghost btn-icon -mr-2 ${isTech ? 'text-slate-300 hover:bg-white/10 hover:text-white focus-visible:ring-white/70' : ''}`}>
+          <button type="button" onClick={onClose} aria-label="Fermer la file d'attente" className="btn-ghost btn-icon -mr-2">
             <X aria-hidden="true" />
           </button>
         </div>

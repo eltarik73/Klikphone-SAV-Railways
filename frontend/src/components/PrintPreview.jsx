@@ -306,7 +306,7 @@ export function PaperFrame({ paper = PAPERS.a4, zoom = 1, marginMm = 0, classNam
   });
 
   return (
-    <div className={`kp-paper relative bg-white shadow-xl ring-1 ring-slate-900/10 ${className}`}
+    <div className={`kp-paper relative bg-white shadow-lg ring-1 ring-slate-900/10 ${className}`}
       style={{ width: wPx * zoom, height: hPx * zoom, ...style }}>
       <div ref={innerRef} className="kp-paper-inner"
         style={{
@@ -800,7 +800,7 @@ const PrintPreview = forwardRef(function PrintPreview({
           <iframe key={entry.id} ref={frameRef} src={entry.url}
             title={`Aperçu : ${doc.label}, ${paperLabel}`}
             onLoad={(e) => handleFrameLoad(e, entry, cacheKey)}
-            className="h-full w-full rounded bg-white shadow-xl" />
+            className="h-full w-full rounded bg-white shadow-lg" />
         </div>
       ) : (
         <div className="w-fit min-w-full px-4 py-5">
@@ -810,7 +810,7 @@ const PrintPreview = forwardRef(function PrintPreview({
                 <span className="h-px flex-1 bg-slate-400" />{paper.w} mm<span className="h-px flex-1 bg-slate-400" />
               </div>
             )}
-            <div className="relative bg-white shadow-xl ring-1 ring-slate-900/10"
+            <div className="relative bg-white shadow-lg ring-1 ring-slate-900/10"
               style={{ width: Math.round(paperPx * zoom), height: Math.round(frameHeight * zoom) }}>
               {entry && (
                 <div style={{ width: paperPx, height: frameHeight, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
@@ -823,13 +823,13 @@ const PrintPreview = forwardRef(function PrintPreview({
                 </div>
               )}
               {paper.roll && ready && (
-                <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 border-x border-dashed border-sky-500/60"
+                <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 border-x border-dashed border-slate-400"
                   style={{ left: mmToPx((paper.w - paper.printable) / 2) * zoom, right: mmToPx((paper.w - paper.printable) / 2) * zoom }} />
               )}
               {!paper.roll && ready && lay?.pages > 1 && Array.from({ length: lay.pages - 1 }, (_, k) => (
-                <div key={k} aria-hidden="true" className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-sky-500/70"
+                <div key={k} aria-hidden="true" className="pointer-events-none absolute inset-x-0 border-t-2 border-dashed border-slate-400"
                   style={{ top: (mmToPx(entry?.margins?.top || 0) + (k + 1) * lay.perPagePx) * zoom }}>
-                  <span className="absolute right-1 -top-5 rounded bg-sky-700 px-1.5 py-0.5 text-xs font-semibold text-white">Page {k + 2} ≈</span>
+                  <span className="absolute right-1 -top-5 rounded bg-slate-700 px-1.5 py-0.5 text-xs font-semibold text-white">Page {k + 2} ≈</span>
                 </div>
               ))}
               {!ready && (
@@ -987,7 +987,7 @@ const PrintPreview = forwardRef(function PrintPreview({
 
   return createPortal(
     <div className="fixed inset-0 z-[110] flex justify-end">
-      <div className="absolute inset-0 bg-slate-900/50 motion-safe:backdrop-blur-sm" aria-hidden="true" onClick={() => onCloseRef.current?.()} />
+      <div className="absolute inset-0 bg-slate-900/50" aria-hidden="true" onClick={() => onCloseRef.current?.()} />
       <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descId}
         onKeyDown={onRootKeyDown}
         className="relative flex h-full w-full flex-col bg-white shadow-lg motion-safe:animate-[ppSlideIn_200ms_ease-out] lg:w-[680px]">
@@ -998,7 +998,7 @@ const PrintPreview = forwardRef(function PrintPreview({
           </div>
           <button type="button" data-pp-close onClick={() => onCloseRef.current?.()} aria-label="Fermer l'aperçu"
             className="btn-ghost btn-icon shrink-0">
-            <X className="!h-5 !w-5" aria-hidden="true" />
+            <X aria-hidden="true" />
           </button>
         </div>
         {toolbar}

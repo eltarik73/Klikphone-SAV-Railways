@@ -9,7 +9,7 @@ import FideliteCard from '../components/FideliteCard';
 import ScratchCard from '../components/ScratchCard';
 import { formatDate, formatPrix } from '../lib/utils';
 import { normalizeTicketCode, normalizePhoneInput } from '../lib/ticketCode';
-import { Search, Smartphone, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, ArrowRight, Loader2, AlertCircle, FileText, QrCode } from 'lucide-react';
+import { Search, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, Loader2, AlertCircle, FileText, QrCode } from 'lucide-react';
 
 const SUIVI_POLL_MS = 30_000;
 // Preuve d'accès mémorisée par code ticket, le temps de l'onglet (survit à un rechargement)
@@ -379,10 +379,7 @@ export default function SuiviPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-[640px] mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
-        <div className="text-center mb-6 animate-in">
-          <div className="w-14 h-14 rounded-xl bg-brand-600 text-white flex items-center justify-center mx-auto mb-4 shadow-xs" aria-hidden="true">
-            <Smartphone className="w-7 h-7" />
-          </div>
+        <div className="text-center mb-6">
           <h1 className="t-display">Suivi de réparation</h1>
           <p className="text-base text-slate-500 mt-1.5">
             {ticket ? 'Suivez l\'avancement de votre réparation' : 'Indiquez le numéro de ticket et le téléphone donnés lors du dépôt'}
@@ -398,7 +395,7 @@ export default function SuiviPage() {
         )}
 
         {error && (
-          <div id="suivi-erreur" role="alert" className="callout callout-danger animate-in mb-4">
+          <div id="suivi-erreur" role="alert" className="callout callout-danger mb-4">
             <AlertCircle aria-hidden="true" />
             <p className="font-medium">{error}</p>
           </div>
@@ -407,7 +404,7 @@ export default function SuiviPage() {
         {/* Accès : numéro de ticket + téléphone (.depot-form : saisie 56 px / 16 px, pas de zoom iOS) */}
         {afficherFormulaire && (
           <form onSubmit={handleSubmit} noValidate aria-busy={loading || undefined} aria-describedby="suivi-aide"
-            className="depot-form card card-body animate-in mb-6">
+            className="depot-form card card-body mb-6">
             <div className="space-y-4">
               <div>
                 <label htmlFor="suivi-code" className="input-label">Numéro de ticket</label>
@@ -445,7 +442,7 @@ export default function SuiviPage() {
         )}
 
         {ticket && (
-          <div className="space-y-4 animate-in">
+          <div className="space-y-4">
             {actionError && (
               <div role="alert" className="callout callout-danger">
                 <AlertCircle aria-hidden="true" />
@@ -611,15 +608,12 @@ export default function SuiviPage() {
               const ht = totalTTC / 1.20;
               const tva = totalTTC - ht;
               return (
-                <div className="card card-body border-amber-200 animate-in">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-lg font-semibold leading-snug text-slate-900">Devis à valider</h3>
-                      <p className="text-sm text-slate-500">Veuillez accepter ou refuser le devis ci-dessous</p>
-                    </div>
+                <div className="card card-body border-amber-200">
+                  <div className="mb-4">
+                    <h3 className="t-h2 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> Devis à valider
+                    </h3>
+                    <p className="text-sm text-slate-500 mt-0.5">Acceptez ou refusez le devis ci-dessous</p>
                   </div>
                   <div className="space-y-2 mb-5">
                     {lines.map((l, i) => (
@@ -657,19 +651,19 @@ export default function SuiviPage() {
             })()}
 
             {devisResult === 'accepted' && (
-              <div className="callout callout-success animate-in" role="status">
+              <div className="callout callout-success" role="status">
                 <CheckCircle2 aria-hidden="true" />
                 <div>
-                  <p className="text-base font-bold">Devis accepté !</p>
+                  <p className="text-base font-semibold">Devis accepté</p>
                   <p className="mt-0.5">La réparation de votre appareil va être lancée.</p>
                 </div>
               </div>
             )}
             {devisResult === 'refused' && (
-              <div className="callout callout-danger animate-in" role="status">
+              <div className="callout callout-danger" role="status">
                 <XCircle aria-hidden="true" />
                 <div>
-                  <p className="text-base font-bold">Devis refusé</p>
+                  <p className="text-base font-semibold">Devis refusé</p>
                   <p className="mt-0.5">Notre équipe va vous contacter pour discuter des alternatives.</p>
                 </div>
               </div>
@@ -682,9 +676,9 @@ export default function SuiviPage() {
               if (isDone) return null;
               return isReceived ? (
                 <div key={cmd.id} className="card card-body">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0" aria-hidden="true"><Package className="w-4 h-4" /></div>
-                    <span className="text-base font-semibold text-slate-900">Pièce reçue</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Package className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
+                    <span className="t-h2">Pièce reçue</span>
                   </div>
                   <div className="text-sm font-medium text-slate-700">{cmd.piece || cmd.description}</div>
                   {cmd.date_reception && <div className="t-caption mt-1">Reçue le {formatDate(cmd.date_reception)}</div>}
@@ -692,9 +686,9 @@ export default function SuiviPage() {
                 </div>
               ) : (
                 <div key={cmd.id} className="card card-body">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0" aria-hidden="true"><Truck className="w-4 h-4" /></div>
-                    <span className="text-base font-semibold text-slate-900">Pièce en cours d'acheminement</span>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Truck className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
+                    <span className="t-h2">Pièce en cours d'acheminement</span>
                   </div>
                   <div className="text-sm font-medium text-slate-700">{cmd.piece || cmd.description}</div>
                   <div className="flex items-center gap-2 mt-2">
@@ -710,12 +704,10 @@ export default function SuiviPage() {
 
             {/* ── BLOC AVIS CLIENT ── */}
             {isTerminal && !hasAvis && !avisSent && (
-              <div className="card card-body animate-in">
+              <div className="card card-body">
                 <div className="text-center mb-4">
-                  <h3 className="text-lg font-semibold leading-snug text-slate-900 inline-flex items-center gap-2">
-                    <Star className="w-5 h-5 text-amber-500 fill-amber-500" aria-hidden="true" /> Notez votre expérience
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-0.5">Votre avis nous aide à nous améliorer</p>
+                  <h3 className="t-h2">Votre avis</h3>
+                  <p className="text-sm text-slate-500 mt-0.5">Comment s'est passée votre réparation ?</p>
                 </div>
                 <div className="flex justify-center gap-1 mb-4">
                   {[1,2,3,4,5].map(n => (
@@ -725,7 +717,7 @@ export default function SuiviPage() {
                       onClick={() => setAvisNote(n)}
                       aria-label={`${n} étoile${n > 1 ? 's' : ''} sur 5`}
                       aria-pressed={avisNote === n}
-                      className="w-11 h-11 flex items-center justify-center rounded-lg transition-transform duration-150 motion-safe:hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                      className="w-11 h-11 flex items-center justify-center rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     >
                       <Star aria-hidden="true" className={`w-8 h-8 transition-colors duration-150 ${(avisHover || avisNote) >= n ? 'text-amber-500 fill-amber-500' : 'text-slate-500'}`} />
                     </button>
@@ -745,10 +737,10 @@ export default function SuiviPage() {
               </div>
             )}
             {(avisSent || (isTerminal && hasAvis)) && (
-              <div className="callout callout-success animate-in" role="status">
+              <div className="callout callout-success" role="status">
                 <Star className="fill-current" aria-hidden="true" />
                 <div>
-                  <p className="text-base font-bold">Merci pour votre avis !</p>
+                  <p className="text-base font-semibold">Merci pour votre avis</p>
                   <p className="mt-0.5">Il a été transmis à notre équipe.</p>
                 </div>
               </div>
@@ -767,7 +759,7 @@ export default function SuiviPage() {
               {msgSent && (
                 <div role="status" className="callout callout-success mb-3">
                   <CheckCircle2 aria-hidden="true" />
-                  <p className="font-medium">Message envoyé ! L'équipe le verra sur votre fiche.</p>
+                  <p className="font-medium">Message envoyé. L'équipe le verra sur votre fiche.</p>
                 </div>
               )}
               <div className="depot-form flex gap-2">
@@ -811,56 +803,24 @@ export default function SuiviPage() {
           </div>
         )}
 
-        {/* CTA — Voir nos tarifs telephones (iPhone + Samsung + Google + Xiaomi) */}
+        {/* Tarifs téléphones (iPhone, Samsung, Google, Xiaomi) : un simple lien secondaire */}
         <a
           href="/site-tarifs-iphone"
           onClick={() => api.trackEvent('tarifs_click', 'suivi', '/site-tarifs-iphone')}
-          className="group card card-interactive border-brand-200 hover:border-brand-300 mt-8 block p-4 sm:p-5"
-          aria-label="Voir nos tarifs téléphones"
+          className="btn-secondary btn-lg btn-block mt-8"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" aria-hidden="true">
-              <Tag className="w-6 h-6" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="t-overline text-brand-700 mb-1">
-                Besoin d'un téléphone ?
-              </p>
-              <p className="text-lg font-bold leading-tight text-slate-900">
-                Jetez un œil à nos tarifs
-              </p>
-              <p className="text-sm text-slate-600 mt-1">
-                iPhone, Samsung, Google, Xiaomi — <strong className="text-slate-800">reconditionnés &amp; neufs</strong>, garantie 12 mois
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center shrink-0 transition-colors duration-150 group-hover:bg-brand-700" aria-hidden="true">
-              <ArrowRight className="w-5 h-5 transition-transform duration-150 motion-safe:group-hover:translate-x-0.5" />
-            </div>
-          </div>
+          <Tag aria-hidden="true" /> Voir nos tarifs
         </a>
 
         {/* Retour : seulement sur la tablette de la boutique (jamais depuis le QR ou un lien) */}
-        <div className="mt-6 text-center">
-          {retour && (
-            <>
-              <button type="button" onClick={quitterVersAccueil} className="btn-ghost min-h-11">
-                <ArrowLeft aria-hidden="true" /> Retour à l'accueil
-              </button>
-              <p className="text-xs text-slate-500 mt-1">Retour automatique après 1 minute sans activité.</p>
-            </>
-          )}
-          <p className="text-center py-3 text-xs text-slate-500">
-            Propulsé par{' '}
-            <span className="font-extrabold">
-              <span className="text-brand-600">Tk</span>
-              <span className="text-slate-900">S</span>
-              <span className="text-pink-700">∞</span>
-              <span className="text-slate-900">26</span>
-            </span>
-            {' '}— une solution{' '}
-            <span className="font-bold text-brand-600">Klik&Dev</span>
-          </p>
-        </div>
+        {retour && (
+          <div className="mt-6 text-center">
+            <button type="button" onClick={quitterVersAccueil} className="btn-ghost min-h-11">
+              <ArrowLeft aria-hidden="true" /> Retour à l'accueil
+            </button>
+            <p className="text-xs text-slate-500 mt-1">Retour automatique après 1 minute sans activité.</p>
+          </div>
+        )}
       </div>
 
     </div>

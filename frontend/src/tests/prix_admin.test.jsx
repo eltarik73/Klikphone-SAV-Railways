@@ -140,9 +140,13 @@ describe('fraîcheur des prix', () => {
 
 // ─── TarifsPage ────────────────────────────────────
 describe('TarifsPage', () => {
+  // Section « Prix fournisseurs et synchronisations » repliée par défaut (une ligne de résumé) : l'ouvrir pour voir le bandeau
+  const ouvrirSynchro = async () => fireEvent.click(await screen.findByRole('button', { name: 'Prix fournisseurs et synchronisations' }));
+
   it('bandeau « Prix du fournisseur : estimés le 15/02/2026 » et les 4 actions pour l’admin', async () => {
     localStorage.setItem('klikphone_admin', 'true');
     pageTarifs();
+    await ouvrirSynchro();
     expect(await screen.findByText('Prix du fournisseur : estimés le 15/02/2026')).toBeInTheDocument();
     expect(screen.getByText(/3 prix de plus de 6 mois/)).toBeInTheDocument();
     for (const nom of ['Importer une liste de prix', 'Règles de prix', 'Recalculer', 'Historique']) {
@@ -154,6 +158,7 @@ describe('TarifsPage', () => {
 
   it('sans le mode admin : bandeau en lecture, bouton pour s’identifier, pas d’actions', async () => {
     pageTarifs();
+    await ouvrirSynchro();
     expect(await screen.findByText('Prix du fournisseur : estimés le 15/02/2026')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Mettre à jour les prix \(admin\)/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Importer une liste de prix/ })).not.toBeInTheDocument();
@@ -198,6 +203,7 @@ describe('TarifsPage', () => {
     apiMock.recalculerTarifs.mockResolvedValueOnce({ modifies: 3, inchanges: 1199, ignores: 1, sans_prix_achat: 0, verrouilles: 1, lot_id: 'lot-r' });
     apiMock.verifyAdmin.mockResolvedValue({ success: true, admin_token: 'jeton' });
     pageTarifs();
+    await ouvrirSynchro();
     fireEvent.click(await screen.findByRole('button', { name: /Recalculer/ }));
     // L'aperçu (simulation {}) est demandé à l'ouverture : élévation admin, puis rejeu
     expect(await screen.findByText('Accès Administrateur')).toBeInTheDocument();
@@ -296,6 +302,7 @@ describe('TarifsPage', () => {
   it('les fenêtres Règles de prix et Importer s’ouvrent depuis le bandeau', async () => {
     localStorage.setItem('klikphone_admin', 'true');
     pageTarifs();
+    await ouvrirSynchro();
     fireEvent.click(await screen.findByRole('button', { name: /Règles de prix/ }));
     expect(await screen.findByRole('dialog', { name: 'Règles de prix' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Fermer' }));

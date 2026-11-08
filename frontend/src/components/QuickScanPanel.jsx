@@ -1991,10 +1991,6 @@ function Rangement({
   ticketId, emplacement, emplacements, edition, modifiable, descId, annonce,
   editeurRef, boutonRef, onOuvrir, onFermer, onSaved,
 }) {
-  // Lisible de loin : plus le nom est long, plus la police est petite (20 caractères au plus)
-  const taille = !emplacement || emplacement.length <= 4 ? 'text-5xl'
-    : emplacement.length <= 8 ? 'text-4xl' : 'text-2xl';
-
   let contenu;
   if (edition) {
     contenu = (
@@ -2016,8 +2012,9 @@ function Rangement({
       <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-2 text-white">
         <MapPin className="h-7 w-7 shrink-0 text-brand-300" aria-hidden="true" />
         <p id={descId} className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold uppercase tracking-wide text-slate-300">Rangé en</span>{' '}
-          <span className={`block break-words font-mono font-black leading-none tracking-wide ${taille}`}>{emplacement}</span>
+          <span className="block text-xs font-semibold text-slate-300">Rangé en</span>{' '}
+          {/* t-display (30 px / 700) : lisible de loin ; texte blanc sur le pavé sombre (t-display pose slate-900) */}
+          <span className="block break-words t-display tabular-nums text-white">{emplacement}</span>
         </p>
         {modifiable && (
           <button ref={boutonRef} type="button" onClick={onOuvrir} aria-label="Modifier l’emplacement"

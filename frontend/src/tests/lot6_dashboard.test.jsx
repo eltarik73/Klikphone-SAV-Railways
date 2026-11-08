@@ -78,7 +78,7 @@ afterEach(() => {
 });
 
 describe('DashboardPage : tri « Récupération »', () => {
-  it('premier clic : le plus en retard d’abord, « Délai à fixer » en dernier ; second clic : inverse, vides toujours en dernier', async () => {
+  it('tri choisi : le plus en retard d’abord, « Délai à fixer » en dernier ; sens inversé : vides toujours en dernier', async () => {
     const tickets = [
       ligne(1, { date_recuperation: '' }),
       ligne(2, { date_recuperation: dans(48) }),
@@ -90,16 +90,17 @@ describe('DashboardPage : tri « Récupération »', () => {
     renderDashboard();
     await screen.findByRole('link', { name: /^Ouvrir le ticket KP-000001/ });
 
-    const bouton = screen.getByRole('button', { name: /^Récupération/ });
-    fireEvent.click(bouton);
-    expect(bouton).toHaveAttribute('aria-pressed', 'true');
-    expect(bouton).toHaveTextContent('↑');
+    // Tri : un sélecteur compact (« Trier : Récupération »), le sens s'inverse par le bouton voisin
+    const tri = screen.getByRole('combobox', { name: 'Trier par' });
+    fireEvent.change(tri, { target: { value: 'date_recuperation' } });
+    expect(tri).toHaveValue('date_recuperation');
+    const inverser = screen.getByRole('button', { name: /^Ordre croissant \(Récupération\), inverser/ });
     const premier = ordre();
     expect(premier.slice(0, 3)).toEqual(['KP-000003', 'KP-000005', 'KP-000002']);
     expect(premier.slice(3).sort()).toEqual(['KP-000001', 'KP-000004']);
 
-    fireEvent.click(bouton);
-    expect(bouton).toHaveTextContent('↓');
+    fireEvent.click(inverser);
+    expect(screen.getByRole('button', { name: /^Ordre décroissant \(Récupération\), inverser/ })).toBeInTheDocument();
     const second = ordre();
     expect(second.slice(0, 3)).toEqual(['KP-000002', 'KP-000005', 'KP-000003']);
     expect(second.slice(3).sort()).toEqual(['KP-000001', 'KP-000004']);

@@ -225,7 +225,7 @@ export default function ScratchCard({ ticketCode, preuve = null }) {
             ) : result.gagnant ? (
               <div className="text-center motion-safe:animate-[bounceIn_0.5s_ease-out]">
                 <PartyPopper className="w-9 h-9 mx-auto mb-1" aria-hidden="true" />
-                <div className="text-lg font-extrabold">GAGNÉ !</div>
+                <div className="text-lg font-bold">GAGNÉ !</div>
                 <div className="inline-flex items-center gap-1.5 text-sm font-semibold text-white/90">
                   <IconeGain gain={result.gain} className="w-4 h-4" /> {result.gain_label}
                 </div>

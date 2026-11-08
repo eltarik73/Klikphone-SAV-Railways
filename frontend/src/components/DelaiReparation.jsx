@@ -125,17 +125,17 @@ export function useMaintenant() {
 // ─── Pastille ────────────────────────────────────────────────────────────────
 const STYLES_CLAIR = {
   ok: 'bg-slate-100 text-slate-700',
-  bientot: 'bg-orange-100 text-orange-800',
+  bientot: 'bg-amber-100 text-amber-800',
   retard: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
-  aucun: 'bg-amber-50 text-amber-800 border border-dashed border-amber-400',
+  aucun: 'bg-white text-slate-600 border border-dashed border-slate-400', // information manquante, à nous : neutre
   texte: 'bg-slate-100 text-slate-700',
 };
 // Sur l'en-tête sombre de la fiche (slate-900)
 const STYLES_SOMBRE = {
   ok: 'bg-white/10 text-white',
-  bientot: 'bg-orange-400/20 text-orange-100',
+  bientot: 'bg-amber-400/20 text-amber-100',
   retard: 'bg-red-500/25 text-red-100 ring-1 ring-inset ring-red-400/40',
-  aucun: 'bg-amber-400/10 text-amber-200 border border-dashed border-amber-300/60',
+  aucun: 'bg-white/5 text-slate-200 border border-dashed border-slate-400/70',
   texte: 'bg-white/10 text-slate-100',
 };
 const TAILLES = { sm: 'badge-sm', md: '', lg: 'badge-lg' };

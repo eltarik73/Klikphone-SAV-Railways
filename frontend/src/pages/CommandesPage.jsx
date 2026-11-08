@@ -13,7 +13,7 @@ import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
   Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
   Truck, Wrench, Archive, ShoppingCart, UserCheck,
-  MessageSquare, Send, Tag,
+  MessageSquare, Send, Tag, PackageCheck,
 } from 'lucide-react';
 
 const PART_STATUTS = ['Panier', 'En attente', 'Commandée', 'Reçu', 'En réparation', 'Donné au client', 'Clôturé'];
@@ -188,7 +188,7 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
         </p>
       </div>
       <div>
-        <label htmlFor={`${id}-ht`} className="input-label">Prix HT payé (&euro;)</label>
+        <label htmlFor={`${id}-ht`} className="input-label">Prix HT payé (€)</label>
         <input id={`${id}-ht`} type="text" inputMode="decimal" autoComplete="off" value={valeurs.prix_ht}
           onChange={e => onChange({ prix_ht: e.target.value })} className="input min-h-[44px]" placeholder="Facture fournisseur"
           aria-describedby={`${id}-ht-aide`} />
@@ -227,9 +227,7 @@ function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
         className="modal">
         <div className="modal-header">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
-              <Tag className="w-5 h-5 text-emerald-700" />
-            </div>
+            <Tag className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
             <div className="min-w-0">
               <h3 id={titreId} className="t-h2">Pièce reçue : prix payé</h3>
               <p className="t-small truncate">{part.description}</p>
@@ -256,15 +254,18 @@ function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
   );
 }
 
-// Pastille de couleur du statut (select neutre, la couleur ne porte que le statut)
+// Pastille du statut (select neutre) : 4 teintes sémantiques comme les statuts de ticket — la couleur
+// dit qui doit agir. Panier = à commander (cercle vide) ; En attente = à commander, à relancer (ambre) ;
+// Commandée / En réparation = en main (bleu) ; Reçu = prêt (émeraude) ; Donné / Clôturé = fini (slate).
+const DOT_NEUTRE = 'bg-transparent border-2 border-slate-400';
 const COMMANDE_STATUS_CONFIG = {
-  'Panier': { dot: 'bg-slate-400', icon: ShoppingCart },
-  'En attente': { dot: 'bg-amber-500', icon: Clock },
-  'Commandée': { dot: 'bg-blue-500', icon: Package },
-  'Reçu': { dot: 'bg-emerald-500', icon: Check },
-  'En réparation': { dot: 'bg-brand-500', icon: Wrench },
-  'Donné au client': { dot: 'bg-emerald-700', icon: UserCheck },
-  'Clôturé': { dot: 'bg-slate-500', icon: Archive },
+  'Panier': { dot: DOT_NEUTRE, icon: ShoppingCart },
+  'En attente': { dot: 'bg-amber-600', icon: Clock },
+  'Commandée': { dot: 'bg-blue-600', icon: Package },
+  'Reçu': { dot: 'bg-emerald-600', icon: PackageCheck },
+  'En réparation': { dot: 'bg-blue-600', icon: Wrench },
+  'Donné au client': { dot: 'bg-slate-700', icon: UserCheck },
+  'Clôturé': { dot: 'bg-slate-300', icon: Archive },
 };
 
 const FILTER_TABS = [
@@ -577,7 +578,7 @@ export default function CommandesPage() {
   };
 
   const getStatusConf = (statut) => {
-    return COMMANDE_STATUS_CONFIG[statut] || { dot: 'bg-slate-400', icon: Package };
+    return COMMANDE_STATUS_CONFIG[statut] || { dot: DOT_NEUTRE, icon: Package };
   };
 
   return (
@@ -606,12 +607,10 @@ export default function CommandesPage() {
           <div role="dialog" aria-modal="true" aria-labelledby="notif-piece-titre" className="modal sm:max-w-md">
             <div className="modal-header">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0" aria-hidden="true">
-                  <Check className="w-5 h-5 text-emerald-700" />
-                </div>
+                <Check className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
                 <div className="min-w-0">
-                  <h3 id="notif-piece-titre" className="t-h2">Pi&egrave;ce re&ccedil;ue !</h3>
-                  <p className="t-small">Voulez-vous pr&eacute;venir le client ?</p>
+                  <h3 id="notif-piece-titre" className="t-h2">Pièce reçue</h3>
+                  <p className="t-small">Voulez-vous prévenir le client ?</p>
                 </div>
               </div>
             </div>
@@ -640,9 +639,9 @@ export default function CommandesPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-header-title">Commandes de pi&egrave;ces</h1>
+          <h1 className="page-header-title">Commandes de pièces</h1>
           <p className="page-header-subtitle">
-            {allParts.filter(p => !STATUTS_TERMINAUX.includes(p.statut)).length} en cours &mdash; {allParts.filter(p => STATUTS_TERMINAUX.includes(p.statut)).length} cl&ocirc;tur&eacute;e(s)
+            {allParts.filter(p => !STATUTS_TERMINAUX.includes(p.statut)).length} en cours — {allParts.filter(p => STATUTS_TERMINAUX.includes(p.statut)).length} clôturée(s)
           </p>
         </div>
         <div className="page-header-actions">
@@ -704,7 +703,7 @@ export default function CommandesPage() {
           </div>
           <div className="px-4 sm:px-5 pb-4 sm:pb-5 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
             <div className="col-span-2 sm:col-span-1">
-              <label htmlFor={`${formId}-description`} className="input-label">D&eacute;signation *</label>
+              <label htmlFor={`${formId}-description`} className="input-label">Désignation *</label>
               <input id={`${formId}-description`} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="&Eacute;cran iPhone 15..." />
             </div>
             <div>
@@ -712,18 +711,18 @@ export default function CommandesPage() {
               <input id={`${formId}-fournisseur`} value={form.fournisseur} onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} className="input" placeholder="Nom fournisseur" />
             </div>
             <div>
-              <label htmlFor={`${formId}-reference`} className="input-label">R&eacute;f&eacute;rence</label>
+              <label htmlFor={`${formId}-reference`} className="input-label">Référence</label>
               <input id={`${formId}-reference`} value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} className="input t-mono" placeholder="REF-001" />
             </div>
             <div>
-              <label htmlFor={`${formId}-prix`} className="input-label">Prix client TTC (&euro;)</label>
+              <label htmlFor={`${formId}-prix`} className="input-label">Prix client TTC (€)</label>
               <input id={`${formId}-prix`} type="number" step="0.01" min="0" inputMode="decimal" value={form.prix}
                 onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-[44px] tabular-nums"
                 aria-describedby={`${formId}-prix-aide`} />
               <p id={`${formId}-prix-aide`} className="input-help">Prix annoncé au client. La facture du fournisseur va dans « Prix HT payé ».</p>
             </div>
             <div>
-              <label htmlFor={`${formId}-ticket`} className="input-label">Ticket associ&eacute;</label>
+              <label htmlFor={`${formId}-ticket`} className="input-label">Ticket associé</label>
               <input id={`${formId}-ticket`} value={form.ticket_code} onChange={e => setForm(f => ({ ...f, ticket_code: e.target.value }))} className="input t-mono uppercase" placeholder="KP-000001" autoComplete="off" />
             </div>
             <div>
@@ -750,8 +749,8 @@ export default function CommandesPage() {
       {/* Table */}
       <div className="card overflow-hidden">
         <div className="hidden xl:grid xl:grid-cols-[minmax(180px,1fr)_120px_124px_96px_120px_160px_88px] 2xl:grid-cols-[minmax(180px,1fr)_130px_130px_110px_110px_96px_120px_160px_88px] gap-3 items-center px-5 py-2.5 bg-slate-50 border-b border-slate-100">
-          <span className="table-header">D&eacute;signation</span>
-          <span className="table-header">Mod&egrave;le</span>
+          <span className="table-header">Désignation</span>
+          <span className="table-header">Modèle</span>
           <span className="table-header">Client</span>
           <span className="table-header hidden 2xl:block">Fournisseur</span>
           <span className="table-header hidden 2xl:block">Panne</span>
@@ -860,7 +859,7 @@ export default function CommandesPage() {
                       <p className="t-caption tabular-nums">Cmd: {formatDateShort(p.date_commande)}</p>
                     )}
                     {p.date_reception && (
-                      <p className="t-caption tabular-nums text-emerald-700">Re&ccedil;ue: {formatDateShort(p.date_reception)}</p>
+                      <p className="t-caption tabular-nums text-emerald-700">Reçue: {formatDateShort(p.date_reception)}</p>
                     )}
                   </div>
 

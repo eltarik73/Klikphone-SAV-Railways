@@ -385,8 +385,11 @@ describe('ReceptionCard : tout décoché, puces', () => {
       expect(champ).toHaveClass('min-h-9', '[@media(pointer:coarse)]:min-h-11');
       expect(champ.className).not.toMatch(/!min-h-9/);
     }
-    // <textarea class="input"> : `textarea.input` (0,1,1 : 96 px) battrait un utilitaire simple → formes importantes
-    expect(screen.getByLabelText('Notes')).toHaveClass('!min-h-9', '[@media(pointer:coarse)]:!min-h-11');
+    // Textarea : `textarea.input` (0,1,1) impose 96 px ; la classe partagée `textarea-sm` (0,1,1, déclarée après) rend 36 px
+    // et la règle `pointer: coarse` d'index.css (`.input, .textarea, .select`) porte toute saisie à 44 px au doigt
+    expect(screen.getByLabelText('Notes')).toHaveClass('input', 'textarea-sm');
+    expect(screen.getByLabelText('Notes').className).not.toMatch(/!min-h/);
+    expect(screen.getByLabelText('Notes').className).not.toMatch(/!min-h/);
   });
 
   it('« Tout OK » des tests ne déborde que vers le haut (-mt-1) : ses 4 px bas ne passent plus sous la première puce', async () => {

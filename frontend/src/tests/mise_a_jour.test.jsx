@@ -220,7 +220,7 @@ async function deposer() {
   fireEvent.click(screen.getByRole('radio', { name: /^Pas de code/ }));
   suivant();
   fireEvent.click(await screen.findByRole('button', { name: "Déposer l'appareil" }));
-  expect(await screen.findByRole('heading', { name: 'Demande enregistrée !' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Dépôt enregistré' })).toBeInTheDocument();
 }
 
 describe('Borne /depot : retour après un dépôt', () => {
@@ -231,7 +231,7 @@ describe('Borne /depot : retour après un dépôt', () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(f).toHaveBeenCalledWith('/', expect.objectContaining({ cache: 'no-store' }));
     // Pas de remise à zéro visible avant le rechargement (pas d'étape 1 qui clignote)
-    expect(screen.getByRole('heading', { name: 'Demande enregistrée !' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dépôt enregistré' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Nouveau dépôt/ })).toBeDisabled();
   });
 
@@ -239,7 +239,7 @@ describe('Borne /depot : retour après un dépôt', () => {
     await deposer();
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
     fireEvent.click(screen.getByRole('button', { name: /Nouveau dépôt/ }));
-    expect(await screen.findByText('Étape 1 / 4')).toBeInTheDocument();
+    expect(await screen.findByText(/^Étape 1 sur 4/)).toBeInTheDocument();
     expect(screen.getByLabelText('Nom *')).toHaveValue('');
     expect(reload).not.toHaveBeenCalled();
   });
@@ -250,7 +250,7 @@ describe('Borne /depot : retour après un dépôt', () => {
     serveurAnnonce('NOUVEAU2');
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(reload).not.toHaveBeenCalled();
-    expect(screen.getByText(/Retour automatique dans 5s/)).toBeInTheDocument();
+    expect(screen.getByText(/Retour automatique dans 5 s/)).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(6_000); });
     expect(reload).toHaveBeenCalledTimes(1);
   });
@@ -260,7 +260,7 @@ describe('Borne /depot : retour après un dépôt', () => {
     await deposer();
     serveurAnnonce('ANCIEN1');
     await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
-    expect(await screen.findByText('Étape 1 / 4')).toBeInTheDocument();
+    expect(await screen.findByText(/^Étape 1 sur 4/)).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
   });
 });

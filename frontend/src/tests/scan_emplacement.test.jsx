@@ -196,7 +196,7 @@ describe('« Rangé où ? » après « Terminé »', () => {
     const modifier = await within(dialog).findByRole('button', { name: 'Modifier l’emplacement' });
     expect(champRange(dialog)).not.toBeInTheDocument();
     expect(within(dialog).getByText('Rangé en').closest('p')).toHaveTextContent('Rangé en B3');
-    expect(within(dialog).getByText('B3').className).toMatch(/text-5xl/);
+    expect(within(dialog).getByText('B3').className).toMatch(/t-display/);
     // Annonce discrète (polite), focus rendu sur « Modifier », panneau décrit avec l'emplacement
     const annonce = within(dialog).getAllByRole('status').find((s) => s.textContent === 'Rangé en B3');
     expect(annonce).toHaveAttribute('aria-live', 'polite');
@@ -338,7 +338,7 @@ describe('ticket « Réparation terminée » scanné (client qui vient chercher)
     const bloc = within(dialog).getByText('Rangé en').closest('p');
     expect(bloc).toHaveTextContent('Rangé en B3');
     expect(bloc.closest('header')).not.toBeNull();
-    expect(within(bloc).getByText('B3').className).toMatch(/text-5xl/);
+    expect(within(bloc).getByText('B3').className).toMatch(/t-display/);
     expect(dialog).toHaveAccessibleDescription(/Rangé en B3/);
     // Le focus reste sur le code du ticket : rien n'est saisi d'office
     expect(document.activeElement).toBe(titre);

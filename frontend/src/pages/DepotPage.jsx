@@ -12,7 +12,7 @@ import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
 import {
-  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, KeyRound, Plus, RotateCcw, ClipboardCheck,
+  ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, KeyRound, Plus, RotateCcw, ClipboardCheck,
 } from 'lucide-react';
 
 /**
@@ -248,32 +248,24 @@ export default function DepotPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* En-tête borne — pas de barre latérale */}
-      <div className="bg-slate-900 text-white px-4 sm:px-6 py-3 flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-white p-1 overflow-hidden shrink-0">
-            <img src="/logo_k.png" alt="Klikphone" className="w-full h-full object-contain" />
-          </div>
-          <div className="min-w-0">
-            <h1 ref={titreRef} tabIndex={-1} className="text-lg font-display font-bold tracking-tight leading-tight focus:outline-none">KLIKPHONE</h1>
-            <p className="text-xs text-slate-400 truncate">Déposer un appareil en réparation</p>
-          </div>
-        </div>
-        {!termine && (
-          <div className="text-right shrink-0">
-            <p className="text-xs text-slate-400 tabular-nums">Étape {step + 1} / {ETAPES.length}</p>
-            <p className="text-sm font-semibold text-brand-300">{etape.titre}</p>
-          </div>
-        )}
-      </div>
-
       <div className="flex-1 flex flex-col">
         <div className="depot-form w-full max-w-[640px] mx-auto px-4 py-5 sm:py-6 pb-10 flex-1 flex flex-col">
+          {/* En-tête standard (pas de barre latérale sur la borne) : titre + étape en cours.
+              « Retour » reste dans la navigation du bas, une seule fois à l'écran. */}
+          <div className="page-header">
+            <div className="min-w-0">
+              <h1 ref={titreRef} tabIndex={-1} className="page-header-title focus:outline-none">Déposer un appareil</h1>
+              {!termine && (
+                <span className="block text-sm text-slate-600 mt-0.5 tabular-nums">Étape {step + 1} sur {ETAPES.length} — {etape.titre}</span>
+              )}
+            </div>
+          </div>
+
           {!termine && <BarreEtapes etapes={ETAPES} courante={step} />}
 
           {/* Étape 1 : Vous */}
           {!termine && step === 0 && (
-            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <div className="card p-5 sm:p-6 space-y-5">
               <EnTete icone={etape.icone} titre={etape.titre} sousTitre={etape.sousTitre} />
               <ChampsVous prefix={PREFIX} form={form} errors={errors} onChange={updateForm} />
             </div>
@@ -281,7 +273,7 @@ export default function DepotPage() {
 
           {/* Étape 2 : Votre appareil */}
           {!termine && step === 1 && (
-            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <div className="card p-5 sm:p-6 space-y-5">
               <EnTete icone={etape.icone} titre={etape.titre} sousTitre={etape.sousTitre} />
               <ChampsAppareil
                 prefix={PREFIX} form={form} errors={errors} onChange={updateForm}
@@ -292,13 +284,13 @@ export default function DepotPage() {
 
           {/* Étape 3 : Le problème et l'accès */}
           {!termine && step === 2 && (
-            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <div className="card p-5 sm:p-6 space-y-5">
               <EnTete icone={etape.icone} titre={etape.titre} sousTitre={etape.sousTitre} />
               <ChampsPanne prefix={PREFIX} form={form} errors={errors} onChange={updateForm} pannes={pannes} />
 
               <div className="border-t border-slate-100 pt-5">
-                <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-900 mb-3">
-                  <KeyRound className="w-5 h-5 text-brand-600 shrink-0" aria-hidden="true" /> L'accès à votre appareil
+                <h3 className="t-h2 flex items-center gap-2 mb-3">
+                  <KeyRound className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> L'accès à votre appareil
                 </h3>
                 <ChoixCodeAcces
                   idPrefix={`${PREFIX}-acces`}
@@ -316,7 +308,7 @@ export default function DepotPage() {
 
           {/* Étape 4 : Vérification */}
           {!termine && isVerification && (
-            <div className="card p-5 sm:p-6 space-y-5 animate-in">
+            <div className="card p-5 sm:p-6 space-y-5">
               <EnTete icone={etape.icone} titre={etape.titre} sousTitre={etape.sousTitre} />
               <Recapitulatif sections={sectionsRecap} />
               <CaseAttente prefix={PREFIX} checked={form.attente_boutique} onChange={(v) => updateForm('attente_boutique', v)} />
@@ -328,27 +320,22 @@ export default function DepotPage() {
 
           {/* Confirmation */}
           {termine && (
-            <div className="card p-6 sm:p-8 text-center animate-in">
-              <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-5" aria-hidden="true">
-                <Check className="w-10 h-10 text-emerald-700" />
-              </div>
-              <h2 className="t-display text-balance mb-2">Demande enregistrée !</h2>
-              <p className="text-slate-600 mb-5">Votre numéro de ticket :</p>
-              <div className="bg-brand-50 rounded-xl py-4 px-6 mb-5 border border-brand-200">
+            <div className="card p-6 sm:p-8 text-center">
+              {/* Écran de fin sobre : titre, numéro, une action (pas de rond vert ni d'anneau de compte à rebours) */}
+              <h2 className="t-h1 text-balance mb-2 inline-flex items-center justify-center gap-2">
+                <CircleCheck className="w-5 h-5 text-emerald-600 shrink-0" aria-hidden="true" /> Dépôt enregistré
+              </h2>
+              <p className="text-slate-600 mb-4">Votre numéro de ticket :</p>
+              <div className="card-section mb-5">
                 {/* <div> et non <p> : `.depot-form p` ramènerait le code à 16 px slate-700 */}
-                <div className="text-3xl sm:text-4xl font-bold font-mono text-brand-700 tracking-wider tabular-nums">{createdCode}</div>
+                <div className="t-h1 font-mono tabular-nums">{createdCode}</div>
               </div>
               <p className="text-slate-600 mb-6">
                 Conservez ce code pour suivre l'avancement de votre réparation.
               </p>
 
               {countdown !== null && (
-                <div className="mb-6">
-                  <div className="w-16 h-16 mx-auto rounded-full border-4 border-slate-200 flex items-center justify-center" aria-hidden="true">
-                    <span className="text-2xl font-bold text-slate-700 tabular-nums">{countdown}</span>
-                  </div>
-                  <span className="block text-sm text-slate-600 mt-2 tabular-nums">Retour automatique dans {countdown}s</span>
-                </div>
+                <span className="block text-sm text-slate-600 tabular-nums mb-6">Retour automatique dans {countdown} s</span>
               )}
 
               <button

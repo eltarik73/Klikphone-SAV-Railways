@@ -229,7 +229,7 @@ describe('Dépôt comptoir /depot : même voie anonyme', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Pas de code/ }));
     suivant();
     fireEvent.click(await screen.findByRole('button', { name: "Déposer l'appareil" }));
-    expect(await screen.findByRole('heading', { name: 'Demande enregistrée !' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Dépôt enregistré' })).toBeInTheDocument();
 
     // createOrGetClient sans option : la voie anonyme par défaut (jamais la session du poste)
     expect(apiMock.createOrGetClient).toHaveBeenCalledTimes(1);

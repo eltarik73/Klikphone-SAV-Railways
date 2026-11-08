@@ -267,7 +267,7 @@ describe('DashboardPage : carte « À récupérer »', () => {
 
     const impayes = within(etagere).getByRole('region', { name: /Rendus non payés/ });
     expect(within(impayes).getByText('Reste 40.00 €')).toBeInTheDocument();
-    expect(within(impayes).getByText('J+12').parentElement.className).toMatch(/bg-orange-100/);
+    expect(within(impayes).getByText('J+12').parentElement.className).toMatch(/bg-amber-100/);
 
     // Remettre / encaisser : panneau d'action rapide (remise contrôlée par le serveur)
     fireEvent.click(within(enBoutique).getByRole('button', { name: 'Remettre KP-000011' }));

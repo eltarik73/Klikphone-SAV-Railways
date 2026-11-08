@@ -5,6 +5,7 @@ import { invalidateCache } from '../hooks/useApi';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import PrintPreview from '../components/PrintPreview';
 import {
   FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
@@ -66,6 +67,8 @@ export default function DevisPage() {
   const [viewDevis, setViewDevis] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [printDevis, setPrintDevis] = useState(null);
+  // Suppression et conversion : confirmées dans la modale du système (plus de confirm() natif)
+  const confirmation = useConfirmDialog();
 
   // Fenêtres modales : focus piégé, Échap, focus rendu à la fermeture. Le piège du détail se lève
   // pendant l'aperçu d'impression (PrintPreview a le sien, hors de #root, et gère Échap lui-même).
@@ -78,7 +81,7 @@ export default function DevisPage() {
       else if (!saving) setShowModal(false);
     },
   });
-  useFocusTrap(detailModalRef, Boolean(showDetail && viewDevis && !printDevis), { onEscape: () => setShowDetail(false) });
+  useFocusTrap(detailModalRef, Boolean(showDetail && viewDevis && !printDevis && !confirmation.ouvert), { onEscape: () => setShowDetail(false) });
 
   const printDocuments = useMemo(() => (printDevis ? [{
     id: 'devis',
@@ -305,13 +308,24 @@ export default function DevisPage() {
     setSaving(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Supprimer ce devis ?')) return;
+  const supprimerDevis = async (id) => {
     try {
       await api.deleteDevis(id);
       invalidateCache('devis');
       loadData();
-    } catch { /* ignore */ }
+    } catch (e) {
+      toast.error(`Devis non supprimé : ${e?.message || 'erreur inconnue'}`);
+    }
+  };
+
+  const handleDelete = (d) => {
+    confirmation.demander({
+      title: `Supprimer le devis ${d.numero} ?`,
+      description: 'Le devis et ses lignes sont effacés définitivement.',
+      confirmLabel: 'Supprimer le devis',
+      destructive: true,
+      onConfirm: () => supprimerDevis(d.id),
+    });
   };
 
   const handleStatusChange = async (id, statut) => {
@@ -325,18 +339,26 @@ export default function DevisPage() {
     } catch { /* ignore */ }
   };
 
-  const handleConvert = async (id) => {
-    if (!confirm('Convertir ce devis en ticket SAV ?')) return;
+  const convertirDevis = async (id) => {
     try {
       const res = await api.convertDevisToTicket(id);
-      alert(`Ticket créé: ${res.ticket_code}`);
+      toast.success(`Ticket ${res.ticket_code} créé à partir du devis`);
       // 'clients' : la conversion peut créer un nouveau client en base
       invalidateCache('devis', 'tickets', 'clients', 'interactions');
       loadData();
       setShowDetail(false);
     } catch (e) {
-      alert('Erreur: ' + e.message);
+      toast.error(`Devis non converti : ${e?.message || 'erreur inconnue'}`);
     }
+  };
+
+  const handleConvert = (d) => {
+    confirmation.demander({
+      title: `Convertir le devis ${d.numero} en ticket SAV ?`,
+      description: 'Un ticket de réparation est créé avec le client et les lignes du devis ; le devis passe en « Converti ».',
+      confirmLabel: 'Créer le ticket',
+      onConfirm: () => convertirDevis(d.id),
+    });
   };
 
   const handleDuplicate = async (id) => {
@@ -424,9 +446,7 @@ export default function DevisPage() {
             <div key={d.id} className="list-card p-3 sm:p-4" onClick={() => openView(d.id)}>
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                    <FileText className="w-5 h-5 text-slate-500" />
-                  </div>
+                  <FileText className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <button type="button" onClick={(e) => { e.stopPropagation(); openView(d.id); }}
@@ -457,7 +477,7 @@ export default function DevisPage() {
                   <button type="button" onClick={() => handleDuplicate(d.id)} className="btn-ghost btn-icon" title="Dupliquer" aria-label={`Dupliquer le devis ${d.numero}`}>
                     <Copy aria-hidden="true" />
                   </button>
-                  <button type="button" onClick={() => handleDelete(d.id)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer le devis ${d.numero}`}>
+                  <button type="button" onClick={() => handleDelete(d)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer le devis ${d.numero}`}>
                     <Trash2 aria-hidden="true" />
                   </button>
                 </div>
@@ -488,11 +508,6 @@ export default function DevisPage() {
                 {/* Client selected → show info */}
                 {selectedClient ? (
                   <div className="card-section flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <span className="text-sm font-bold text-brand-700">
-                        {(selectedClient.prenom?.[0] || '').toUpperCase()}{(selectedClient.nom?.[0] || '').toUpperCase()}
-                      </span>
-                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm text-slate-900">{selectedClient.prenom} {selectedClient.nom}</p>
                       <div className="flex items-center gap-3 t-small mt-0.5 min-w-0">
@@ -521,11 +536,6 @@ export default function DevisPage() {
                           {clientResults.map(c => (
                             <button key={c.id} type="button" onClick={() => selectClient(c)}
                               className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0 transition-colors duration-150 focus:outline-none focus-visible:bg-brand-50">
-                              <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                                <span className="text-xs font-bold text-brand-700">
-                                  {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
-                                </span>
-                              </div>
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
                                 <p className="t-caption tabular-nums">{c.telephone || ''}</p>
@@ -699,11 +709,6 @@ export default function DevisPage() {
                 <p className="t-h3 mb-2">Client</p>
                 {viewDevis.client ? (
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <span className="text-sm font-bold text-brand-700">
-                        {(viewDevis.client.prenom?.[0] || '').toUpperCase()}{(viewDevis.client.nom?.[0] || '').toUpperCase()}
-                      </span>
-                    </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-slate-900">{viewDevis.client.prenom} {viewDevis.client.nom}</p>
                       <div className="flex items-center gap-3 text-sm text-slate-600 min-w-0">
@@ -784,7 +789,7 @@ export default function DevisPage() {
                 </>
               )}
               {viewDevis.statut === 'Accepté' && (
-                <button type="button" onClick={() => handleConvert(viewDevis.id)}
+                <button type="button" onClick={() => handleConvert(viewDevis)}
                   className="btn-primary">
                   <ArrowRightCircle aria-hidden="true" /> Convertir en ticket
                 </button>
@@ -806,6 +811,7 @@ export default function DevisPage() {
         </div>
       )}
 
+      {confirmation.dialog}
       <PrintPreview
         open={!!printDevis}
         onClose={() => setPrintDevis(null)}

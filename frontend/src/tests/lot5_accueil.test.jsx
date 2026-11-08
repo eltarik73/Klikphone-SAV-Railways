@@ -556,7 +556,7 @@ describe('Dashboard : priorité et réception', () => {
     expect(screen.getByTitle('Priorité : Express')).toBeInTheDocument();
     expect(screen.queryByTitle('Priorité : Normal')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Priorité' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Trier par' }), { target: { value: 'priorite' } });
     expect(codesAffiches()).toEqual(['KP-000002', 'KP-000003', 'KP-000001']);
 
     const chip = screen.getByRole('button', { name: /1 client sur place/ });
@@ -564,9 +564,16 @@ describe('Dashboard : priorité et réception', () => {
     expect(chip).toHaveAttribute('aria-pressed', 'true');
     expect(codesAffiches()).toEqual(['KP-000002']);
 
+    // Le filtre de priorité vit dans le panneau « Filtres », replié par défaut ; replié, le filtre posé reste en puce supprimable
+    // (« 1 client sur place » a déjà posé la priorité « attente » : le bouton affiche « Filtres · 1 »)
+    const filtres = screen.getByRole('button', { name: /^Filtres/ });
+    fireEvent.click(filtres);
     fireEvent.change(screen.getByRole('combobox', { name: 'Filtrer par priorité atelier' }), { target: { value: 'express' } });
     expect(codesAffiches()).toEqual(['KP-000003']);
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrer par priorité atelier' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Filtres · 1' }));
+    expect(screen.queryByRole('combobox', { name: 'Filtrer par priorité atelier' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retirer le filtre Priorité : Express' }));
     expect(codesAffiches()).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Filtres' })).toBeInTheDocument();
   });
 });

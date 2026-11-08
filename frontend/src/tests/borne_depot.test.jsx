@@ -397,7 +397,7 @@ describe('Borne /client en 4 étapes', () => {
 describe('Dépôt comptoir /depot : mêmes 4 étapes, schéma tracé', () => {
   it('schéma envoyé dans pattern (points traversés compris), tel_contact null, carte Camby', async () => {
     render(wrap(<DepotPage />, ['/depot']));
-    expect(screen.getByText('Étape 1 / 4')).toBeInTheDocument();
+    expect(screen.getByText(/^Étape 1 sur 4/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Nom *'), { target: { value: 'Durand' } });
     fireEvent.change(screen.getByLabelText('Votre numéro de téléphone (obligatoire)'), { target: { value: '0612345679' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /carte Camby/ }));
@@ -416,7 +416,7 @@ describe('Dépôt comptoir /depot : mêmes 4 étapes, schéma tracé', () => {
     expect(screen.getByRole('region', { name: "Le problème et l'accès" })).toHaveTextContent('Schéma de 4 points');
     expect(screen.getByRole('region', { name: 'Vous' })).toHaveTextContent(/Carte Camby\s*Oui/);
     fireEvent.click(screen.getByRole('button', { name: "Déposer l'appareil" }));
-    expect(await screen.findByRole('heading', { name: 'Demande enregistrée !' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Dépôt enregistré' })).toBeInTheDocument();
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({ nom: 'Durand', carte_camby: 1 }));
     expect(apiMock.createTicket).toHaveBeenCalledWith({
       client_ref: 'RefClientSignee', categorie: 'Smartphone', marque: 'Autre', modele: '', modele_autre: 'Fairphone 5',
@@ -493,7 +493,9 @@ describe('Écrans staff : le second numéro est celui qu’on appelle', () => {
     await screen.findByText('KP-000001');
     // La ligne dit qu'un autre numéro existe (c'est lui que visent les icônes)
     expect(screen.getByText(/joignable 06 98 76 54 31/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^SMS à/ })).toHaveAttribute('href', expect.stringMatching(/^sms:0698765431\?/));
-    expect(screen.getByRole('link', { name: /^WhatsApp à/ })).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/33698765431\?/));
+    // Un seul bouton de contact par ligne : le menu porte les liens vers le second numéro
+    fireEvent.click(screen.getByRole('button', { name: /^Contacter/ }));
+    expect(screen.getByRole('menuitem', { name: /^SMS à/ })).toHaveAttribute('href', expect.stringMatching(/^sms:0698765431\?/));
+    expect(screen.getByRole('menuitem', { name: /^WhatsApp à/ })).toHaveAttribute('href', expect.stringMatching(/^https:\/\/wa\.me\/33698765431\?/));
   });
 });

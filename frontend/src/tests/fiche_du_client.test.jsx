@@ -77,7 +77,8 @@ describe('Fiche ticket — encart « Du client »', () => {
   it('montre le message et l’avis sous l’en-tête, « Nouveau » sur le non lu, avec de quoi répondre', async () => {
     renderFiche();
     const encart = (await screen.findByRole('heading', { name: 'Du client' })).closest('section');
-    expect(within(encart).getByText('1 nouveau')).toBeInTheDocument();
+    // Compteur de non-lus (badge-count) nommé pour les lecteurs d'écran
+    expect(within(encart).getByLabelText('1 nouveau')).toHaveTextContent('1');
     expect(within(encart).getByText('Bonjour, est-ce que mon téléphone est prêt ?')).toBeInTheDocument();
     expect(within(encart).getByText('⭐⭐⭐⭐⭐ (5/5) — Super service')).toBeInTheDocument();
     expect(within(encart).queryByText('Batterie commandée')).not.toBeInTheDocument();

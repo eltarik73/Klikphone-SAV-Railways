@@ -278,7 +278,7 @@ describe('SuiviPage — formulaire à deux champs', () => {
     fireEvent.click(screen.getByRole('button', { name: '5 étoiles sur 5' }));
     fireEvent.click(screen.getByRole('button', { name: /Envoyer mon avis/ }));
     await waitFor(() => expect(apiMock.suiviLaisserAvis).toHaveBeenCalledWith('KP-000005', 5, '', { tel: TEL }));
-    expect(await screen.findByText('Merci pour votre avis !')).toBeInTheDocument();
+    expect(await screen.findByText('Merci pour votre avis')).toBeInTheDocument();
   });
 });
 

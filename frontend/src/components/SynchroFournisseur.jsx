@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import {
-  AlertTriangle, Bookmark, CheckCircle2, ChevronDown, ClipboardPaste, Copy, Info, KeyRound, Loader2, RefreshCw, SearchX, Truck, Unplug,
+  AlertTriangle, Bookmark, ChevronDown, CircleCheck, ClipboardPaste, Copy, Info, KeyRound, Loader2, RefreshCw, SearchX, Truck, Unplug,
 } from 'lucide-react';
 import api from '../lib/api';
 import { formatDate } from '../lib/utils';
@@ -174,13 +174,13 @@ export function DiagnosticFournisseur({ nombre, estAdmin = false, nom = 'Mobilax
         <ChevronDown aria-hidden="true" className={`transition-transform motion-reduce:transition-none ${ouvert ? 'rotate-180' : ''}`} />
       </button>
       {ouvert && (
-        <div id={id} className="mt-2 rounded-xl border border-slate-200 bg-white p-4 text-slate-800 text-sm">
+        <div id={id} className="mt-2 rounded-lg border border-slate-200 bg-white p-4 text-slate-800 text-sm">
           {chargement && <p className="loading-inline" role="status"><Loader2 aria-hidden="true" /> Lecture du diagnostic…</p>}
           {erreur && <p role="alert" className="text-red-700">{erreur}</p>}
           {diag && !pieces.length && <p>Toutes les pièces de la grille ont reçu un prix au dernier passage.</p>}
           {groupes.map((g) => (
             <section key={g.raison} className="mb-3 last:mb-0">
-              <h3 className="font-semibold">{raisons[g.raison] || g.raison} <span className="font-normal text-slate-500">({g.pieces.length})</span></h3>
+              <h3 className="t-h3">{raisons[g.raison] || g.raison} <span className="font-normal text-slate-500">({g.pieces.length})</span></h3>
               <ul className="mt-1 space-y-1">
                 {(tout ? g.pieces : g.pieces.slice(0, LIMITE)).map((p) => (
                   <li key={p.cle} className="flex flex-wrap gap-x-2">
@@ -210,13 +210,17 @@ export function DiagnosticMobilax({ nombre, estAdmin = false }) {
   return <DiagnosticFournisseur nombre={nombre} estAdmin={estAdmin} nom="Mobilax" charger={() => api.getDiagnosticMobilax()} />;
 }
 
+// Blocs neutres (card-section) : seule l'icône de la ligne d'état porte la couleur (ok = émeraude, attention = ambre,
+// échec = rouge) ; plus de bandeaux colorés empilés
 const TONS = {
-  ok: { boite: 'callout-success', Icone: CheckCircle2 },
-  info: { boite: 'callout-info', Icone: Loader2 },
-  attention: { boite: 'callout-warning', Icone: KeyRound },
-  danger: { boite: 'callout-danger', Icone: AlertTriangle },
-  neutre: { boite: 'callout-info', Icone: Truck },
+  ok: { Icone: CircleCheck, couleur: 'text-emerald-600' },
+  info: { Icone: Loader2, couleur: 'text-slate-500' },
+  attention: { Icone: KeyRound, couleur: 'text-amber-700' },
+  danger: { Icone: AlertTriangle, couleur: 'text-red-700' },
+  neutre: { Icone: Truck, couleur: 'text-slate-500' },
 };
+const BLOC = 'card-section flex flex-wrap items-center gap-3';
+const PANNEAU = 'w-full rounded-lg border border-slate-200 bg-white p-4 text-slate-800';
 
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -233,7 +237,7 @@ function LienFavori({ url, onClick }) {
     if (ref.current) ref.current.setAttribute('href', url || '#');
   }, [url]);
   return (
-    <a ref={ref} draggable="true" onClick={onClick} className="btn-primary btn-sm cursor-grab select-none" title="Glissez ce bouton dans la barre des favoris">
+    <a ref={ref} draggable="true" onClick={onClick} className="btn-secondary btn-sm cursor-grab select-none" title="Glissez ce bouton dans la barre des favoris">
       <Bookmark aria-hidden="true" /> Collecte Utopya
     </a>
   );
@@ -462,11 +466,11 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
 
   return (
     <div className={`space-y-3 ${className}`}>
-      <section aria-labelledby={titreId} className={`callout ${ton.boite} flex-wrap items-center`}>
-        <Icone aria-hidden="true" className={description.ton === 'info' ? 'motion-safe:animate-spin' : ''} />
+      <section aria-labelledby={titreId} className={BLOC}>
+        <Icone aria-hidden="true" className={`w-4 h-4 shrink-0 self-start mt-0.5 ${ton.couleur} ${description.ton === 'info' ? 'motion-safe:animate-spin' : ''}`} />
         <div className="min-w-[240px] flex-1">
-          <p id={titreId} className="font-semibold" role="status" aria-live="polite">{description.titre}</p>
-          {description.detail && <p className="text-xs sm:text-sm">{description.detail}</p>}
+          <p id={titreId} className="text-sm font-medium text-slate-900" role="status" aria-live="polite">{description.titre}</p>
+          {description.detail && <p className="text-sm text-slate-600">{description.detail}</p>}
         </div>
 
         {!enCours && m?.ok === true && <DiagnosticMobilax nombre={m?.resume?.sans_prix} estAdmin={estAdmin} />}
@@ -474,7 +478,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
         {estAdmin && (
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
             <button type="button" onClick={synchroniser} disabled={enCours || !m?.configure || Boolean(occupe)}
-              aria-busy={enCours || undefined} className="btn-primary btn-sm">
+              aria-busy={enCours || undefined} className="btn-secondary btn-sm">
               <RefreshCw className={enCours ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
               {enCours ? 'Synchronisation…' : 'Synchroniser maintenant'}
             </button>
@@ -497,8 +501,8 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
         )}
 
         {estAdmin && panneau && (
-          <div className="w-full rounded-xl border border-slate-200 bg-white p-4 text-slate-800">
-            <p className="font-semibold flex items-center gap-2"><Info aria-hidden="true" className="w-4 h-4" /> Connecter Mobilax en une fois</p>
+          <div className={PANNEAU}>
+            <p className="t-h3 flex items-center gap-2"><Info aria-hidden="true" className="w-4 h-4 text-slate-500" /> Connecter Mobilax en une fois</p>
             <ol className="mt-2 space-y-2 text-sm list-decimal pl-5">
               <li>
                 Ouvrez <a href="https://www.mobilax.fr/" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">mobilax.fr<span className="sr-only"> (nouvel onglet)</span></a> et connectez-vous à votre compte.
@@ -523,21 +527,21 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
               autoComplete="off" className="input font-mono text-xs" placeholder='{"web_mobi_token":"…","web_mobi_refresh_token":"…"}' />
             <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={connecter} disabled={!texte.trim() || Boolean(occupe)} aria-busy={occupe === 'connexion' || undefined}
-                className="btn-primary btn-sm">
+                className="btn-secondary btn-sm">
                 {occupe === 'connexion' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <ClipboardPaste aria-hidden="true" />}
                 {occupe === 'connexion' ? 'Vérification…' : 'Enregistrer la connexion'}
               </button>
-              <button type="button" onClick={() => { setPanneau(false); setTexte(''); }} className="btn-secondary btn-sm">Annuler</button>
+              <button type="button" onClick={() => { setPanneau(false); setTexte(''); }} className="btn-ghost btn-sm">Annuler</button>
             </div>
           </div>
         )}
       </section>
 
-      <section aria-labelledby={titreUtopyaId} className={`callout ${tonUtopya.boite} flex-wrap items-center`}>
-        <IconeUtopya aria-hidden="true" className={descriptionUtopya.ton === 'info' ? 'motion-safe:animate-spin' : ''} />
+      <section aria-labelledby={titreUtopyaId} className={BLOC}>
+        <IconeUtopya aria-hidden="true" className={`w-4 h-4 shrink-0 self-start mt-0.5 ${tonUtopya.couleur} ${descriptionUtopya.ton === 'info' ? 'motion-safe:animate-spin' : ''}`} />
         <div className="min-w-[240px] flex-1">
-          <p id={titreUtopyaId} className="font-semibold" aria-live="polite">{descriptionUtopya.titre}</p>
-          {descriptionUtopya.detail && <p className="text-xs sm:text-sm">{descriptionUtopya.detail}</p>}
+          <p id={titreUtopyaId} className="text-sm font-medium text-slate-900" aria-live="polite">{descriptionUtopya.titre}</p>
+          {descriptionUtopya.detail && <p className="text-sm text-slate-600">{descriptionUtopya.detail}</p>}
         </div>
 
         {utopyaDisponible && !u?.en_cours && u?.ok === true && (
@@ -547,7 +551,7 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
         {estAdmin && utopyaDisponible && (
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
             <button type="button" onClick={ouvrirCollecteur} aria-expanded={panneauUtopya} disabled={occupe === 'collecteur'}
-              aria-busy={occupe === 'collecteur' || undefined} className="btn-primary btn-sm">
+              aria-busy={occupe === 'collecteur' || undefined} className="btn-secondary btn-sm">
               {occupe === 'collecteur' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Bookmark aria-hidden="true" />}
               {u?.configure ? 'Réinstaller le collecteur' : 'Installer le collecteur'}
             </button>
@@ -555,8 +559,8 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
         )}
 
         {estAdmin && panneauUtopya && (
-          <div className="w-full rounded-xl border border-slate-200 bg-white p-4 text-slate-800">
-            <p className="font-semibold flex items-center gap-2"><Info aria-hidden="true" className="w-4 h-4" /> Installer le collecteur Utopya (une fois)</p>
+          <div className={PANNEAU}>
+            <p className="t-h3 flex items-center gap-2"><Info aria-hidden="true" className="w-4 h-4 text-slate-500" /> Installer le collecteur Utopya (une fois)</p>
             {occupe === 'collecteur' && <p className="loading-inline mt-2" role="status"><Loader2 aria-hidden="true" /> Préparation du favori…</p>}
             {collecteur && (
               <ol className="mt-2 space-y-2 text-sm list-decimal pl-5">
@@ -588,17 +592,17 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
                 className="btn-secondary btn-sm">
                 <KeyRound aria-hidden="true" /> Nouvelle clé (l’ancien favori ne marchera plus)
               </button>
-              <button type="button" onClick={() => setPanneauUtopya(false)} className="btn-secondary btn-sm">Fermer</button>
+              <button type="button" onClick={() => setPanneauUtopya(false)} className="btn-ghost btn-sm">Fermer</button>
             </div>
           </div>
         )}
       </section>
 
       {estAdmin && (
-        <section aria-labelledby={titrePreferenceId} className="callout callout-info flex-wrap items-center">
+        <section aria-labelledby={titrePreferenceId} className={BLOC}>
           <div className="min-w-[240px] flex-1">
-            <p id={titrePreferenceId} className="font-semibold">Fournisseur retenu pour la grille : {preference}{preferenceDefaut ? ' (par défaut)' : ''}</p>
-            <p className="text-xs sm:text-sm">
+            <p id={titrePreferenceId} className="text-sm font-medium text-slate-900">Fournisseur retenu pour la grille : {preference}{preferenceDefaut ? ' (par défaut)' : ''}</p>
+            <p className="text-sm text-slate-600">
               {preferenceEnCours
                 ? 'Alignement des prix en cours…'
                 : preferenceResultat?.erreur

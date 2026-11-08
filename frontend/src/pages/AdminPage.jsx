@@ -11,6 +11,7 @@ import {
   Lock, LogOut, TrendingUp, TrendingDown, Minus,
   BarChart3, Users, Clock, Receipt, UserPlus, Target, Wrench,
   Calendar, ChevronUp, ChevronDown, Award, Smartphone, Tag,
+  Home, Search, User,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────
@@ -37,8 +38,6 @@ const KPI_ICONS = {
   taux_conversion: Award,
   nouveaux_clients: UserPlus,
 };
-
-const MEDALS = ['🥇', '🥈', '🥉'];
 
 // Texte de légende des graphiques en slate-600 (recharts le colore sinon avec la couleur de la série)
 const legendeTexte = (value) => <span className="text-slate-600">{value}</span>;
@@ -97,7 +96,7 @@ function computeDateRange(period, customStart, customEnd) {
 function DarkTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="card shadow-lg px-3 py-2 text-xs">
+    <div className="card shadow-md px-3 py-2 text-xs">
       <p className="t-caption mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p key={i} className="font-semibold text-slate-900 tabular-nums">
@@ -219,11 +218,9 @@ function AdminLogin({ onLogin }) {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-[400px]">
-        <div className="card shadow-lg rounded-2xl p-6 sm:p-8">
+        <div className="card p-6 sm:p-8">
           <div className="flex justify-center mb-6">
-            <div className="w-14 h-14 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
-              <Lock className="w-7 h-7" aria-hidden="true" />
-            </div>
+            <Lock className="w-5 h-5 text-slate-500" aria-hidden="true" />
           </div>
           <h1 className="t-h1 text-center mb-1">Administration</h1>
           <p className="text-sm text-slate-500 text-center mb-8">Accès réservé aux administrateurs</p>
@@ -380,8 +377,10 @@ function AdminDashboard({ onLogout }) {
                   <div className="space-y-1">
                     {tracking.by_source.slice(0, 4).map(s => (
                       <div key={s.source} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700 font-medium">
-                          {s.source === 'home' ? '🏠 Accueil' : s.source === 'suivi' ? '🔍 Page suivi' : s.source === 'autre' ? '— Autre' : s.source}
+                        <span className="inline-flex items-center gap-1.5 text-slate-700 font-medium">
+                          {s.source === 'home' ? <><Home className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />Accueil</>
+                            : s.source === 'suivi' ? <><Search className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />Page suivi</>
+                            : s.source === 'autre' ? '— Autre' : s.source}
                         </span>
                         <span className="t-num tabular-nums">{s.n}</span>
                       </div>
@@ -431,13 +430,10 @@ function AdminDashboard({ onLogout }) {
             <h2 className="t-h2 mb-4">Performance Accueil</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {perfAccueil.map((p) => {
-                const initials = p.utilisateur.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
                 return (
                   <div key={p.utilisateur} className="card card-body">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 rounded-lg bg-brand-50 flex items-center justify-center">
-                        <span className="text-sm font-bold text-brand-700">{initials}</span>
-                      </div>
+                      <User className="w-5 h-5 text-slate-500 shrink-0" aria-hidden="true" />
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{p.utilisateur}</p>
                         <p className="t-caption">Accueil</p>
@@ -480,7 +476,7 @@ function AdminDashboard({ onLogout }) {
                     {perfTech.map((t) => (
                       <tr key={t.technicien} className="table-row">
                         <td>
-                          <span className="text-base">{t.rang <= 3 ? MEDALS[t.rang - 1] : t.rang}</span>
+                          <span className="badge badge-neutral tabular-nums">{t.rang}</span>
                         </td>
                         <td>
                           <div className="flex items-center gap-2.5">

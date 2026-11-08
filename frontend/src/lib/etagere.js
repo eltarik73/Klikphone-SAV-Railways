@@ -23,7 +23,7 @@ export const ORDRES = [
 const CLASSES = [
   'bg-slate-100 text-slate-700 ring-slate-200',
   'bg-amber-100 text-amber-900 ring-amber-300',
-  'bg-orange-100 text-orange-900 ring-orange-300',
+  'bg-amber-100 text-amber-900 ring-amber-300',
   'bg-red-100 text-red-800 ring-red-300',
 ];
 

@@ -1,40 +1,40 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useTransition, useId, Fragment, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { useApi, invalidateCache, prefetch } from '../hooks/useApi';
 import { usePolling } from '../hooks/usePolling';
 import { formatPrix, infoReception, waLink, smsLink, STATUTS, getStatusConfig } from '../lib/utils';
-import { telJoignable, estAutreNumero, normaliserContact, appliquerContact, titreCanal } from '../lib/contact';
+import {
+  telJoignable, estAutreNumero, normaliserContact, appliquerContact, titreCanal, libelleContact,
+} from '../lib/contact';
 import { ARCHIVE_STATUTS, detectQueryKind, openSearchPalette } from '../components/SearchPalette';
 import { openQuickScan } from '../components/ScanListener';
 import { useToast } from '../components/Toast';
 import EtagereARecuperer from '../components/EtagereARecuperer';
 import { PrioriteBadge, PRIORITES, comparerPriorite, normaliserPriorite } from '../components/PrioriteBadge';
-import { PastilleDelai } from '../components/DelaiReparation';
-import { delaiTicket, infoDelai, instantDelai, dateHeureCourte } from '../lib/delai';
+import { PastilleDelai, useMaintenant } from '../components/DelaiReparation';
+import { delaiTicket, instantDelai } from '../lib/delai';
 import {
-  Search, Plus, RefreshCw, AlertTriangle,
-  Wrench, CheckCircle2, Package, ChevronRight, ChevronDown, ChevronLeft,
-  Smartphone, MessageCircle, Send, Mail, Phone, PhoneCall, Lock, Shield,
-  SquareCheck, Square, X, ArrowUpDown, Calendar, RotateCcw, Globe, Star,
-  Clock, Euro, Sparkles, Maximize2, Minimize2, Inbox, PackageCheck, ClipboardList, Hourglass, FileCheck,
+  Search, Plus, RefreshCw, AlertTriangle, ChevronRight, ChevronDown, ChevronLeft,
+  MessageCircle, MessageSquare, Send, Mail, Phone, PhoneCall, Lock, Shield,
+  SquareCheck, Square, X, ArrowUpDown, SlidersHorizontal, Inbox, ClipboardList, Info,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 
 // Grille du tableau (≥ lg). Deux paliers pour que tout tienne sans défilement horizontal (mesuré : carte de
 // 670 px utiles à 1024, 926 à 1280, 1 086 à 1440, 1 182 dès 1536 — barre latérale 256 px, marges, page ≤ 1 280 px) :
-// - iPad 1024–1279 : 6 colonnes sur DEUX lignes de grille — ligne 1 = case, code, client, statut (≥ 190 px, ≈ 222 px
-//   réels), prix, chevron ; ligne 2 = bandeau d'actions (tech · contact · date) sous le client. Rien n'est masqué au
-//   comptoir et les commandes gardent 44 px sous le doigt.
-// - ≥ 1280 : 9 colonnes sur une ligne (≈ 920 px) ; la sous-ligne « tél · appareil · panne » peut passer sur 2 lignes
-//   (3 lignes de texte tiennent dans les 56 px). Pas de colonnes Appareil/Panne séparées : avec la page plafonnée à
-//   1 280 px, 11 colonnes laisseraient ≤ 120 px à l'appareil, à la panne et ≤ 206 px au statut (tout coupé), alors
-//   que la sous-ligne affiche la panne en entier dès 1440. Contact : 4 icônes de 36 px (WhatsApp, SMS, e-mail, appel).
-const GRID_COLS = 'lg:grid-cols-[28px_72px_minmax(170px,1fr)_minmax(190px,1fr)_76px_20px]'
-  + ' xl:grid-cols-[28px_72px_minmax(170px,1.4fr)_116px_minmax(170px,1fr)_76px_144px_76px_20px]';
-// Icône de contact : 44 px au doigt, 40 à la souris, 36 dans la colonne de 144 px (≥ xl)
-const CONTACT_ICON = 'btn-ghost btn-icon w-11 h-11 lg:w-10 lg:h-10 xl:w-9 xl:h-9'
-  + ' [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:h-11';
+// - iPad 1024–1279 : 6 colonnes sur DEUX lignes de grille — ligne 1 = case, code, client, statut, prix, chevron ;
+//   ligne 2 = technicien · contact · date sous le client. Rien n'est masqué au comptoir, 44 px sous le doigt.
+// - ≥ 1280 : 9 colonnes sur une ligne de 48 px (40 en mode compact) ; la sous-ligne « tél · appareil · panne »
+//   est tronquée avec son texte complet en info-bulle. Contact : un seul bouton (menu WhatsApp / SMS / e-mail / appel).
+const GRID_COLS = 'lg:grid-cols-[28px_80px_minmax(170px,1fr)_minmax(180px,1fr)_84px_20px]'
+  + ' xl:grid-cols-[28px_80px_minmax(170px,1.4fr)_124px_minmax(170px,1fr)_132px_44px_84px_20px]';
+
+// Nombres à l'écran : séparateur de milliers français (« 2 172 »)
+const NOMBRE = new Intl.NumberFormat('fr-FR');
+const fmt = (n) => NOMBRE.format(Number(n) || 0);
 
 // « 06 00 00 01 23 » (même mise en forme que le panneau de scan), sinon la valeur telle quelle
 const formatTel = (tel) => {
@@ -70,6 +70,30 @@ export const INTERACTION_LIBELLES = {
 function lireAFaire() {
   try { return localStorage.getItem(A_FAIRE_KEY) === '1'; } catch { return false; }
 }
+
+// Onglets de vue : par groupe de statuts (le sens d'abord, les terminés à la fin). Un groupe d'un
+// seul statut filtre par ce statut (le serveur pagine les archives) ; un groupe de plusieurs statuts
+// est filtré ici, sur la liste complète des actifs.
+export const GROUPES_STATUT = [
+  { cle: '', label: 'Tous', statuts: null },
+  { cle: 'diagnostic', label: 'À diagnostiquer', statuts: ['Pré-enregistré', 'En attente de diagnostic'] },
+  { cle: 'attente', label: 'En attente', statuts: ['En attente de pièce', "En attente d'accord client"] },
+  { cle: 'cours', label: 'En cours', statuts: ['Pièce reçue', 'En cours de réparation'] },
+  { cle: 'prets', label: 'Prêts', statuts: ['Réparation terminée'] },
+  { cle: 'rendus', label: 'Rendus', statuts: ['Rendu au client'], archives: true },
+  { cle: 'clotures', label: 'Clôturés', statuts: ['Clôturé'], archives: true },
+];
+const GROUPE_PAR_CLE = Object.fromEntries(GROUPES_STATUT.map(g => [g.cle, g]));
+const groupeDuStatut = (statut) => GROUPES_STATUT.find(g => g.statuts?.includes(statut))?.cle ?? null;
+
+// Tri : champ + sens par défaut (Récupération : le délai le plus proche ou dépassé d'abord)
+const TRIS = [
+  { value: 'date_depot', label: 'Date de dépôt', defaut: 'desc' },
+  { value: 'nom', label: 'Nom du client', defaut: 'asc' },
+  { value: 'date_recuperation', label: 'Récupération', defaut: 'asc' },
+  { value: 'statut', label: 'Statut', defaut: 'desc' },
+  { value: 'priorite', label: 'Priorité', defaut: 'asc' },
+];
 
 // Filtres conservés le temps de l'onglet (retour depuis une fiche ticket)
 const DASH_STATE_KEY = 'kp_dashboard_filters';
@@ -142,7 +166,7 @@ export async function executerStatutGroupe(plan, statut, changeStatus, concurren
   return res;
 }
 
-const pluriel = (n, mot) => `${n} ${mot}${n > 1 ? 's' : ''}`;
+const pluriel = (n, mot) => `${fmt(n)} ${mot}${n > 1 ? 's' : ''}`;
 
 // date_recuperation est du texte libre : seule une valeur AAAA-MM-JJ… est ordonnée (comme texte)
 const heurePromise = (t) => {
@@ -188,23 +212,176 @@ export function resumeStatutGroupe(r) {
   return parts.join(' · ');
 }
 
+/**
+ * Repères secondaires d'une ligne, regroupés en deux indicateurs neutres au plus : ce que le client a
+ * laissé (réponse au devis, message, avis) et les particularités du dossier (attention, retour SAV,
+ * dépôt à distance, carte Camby, réception à compléter). Le détail est dans l'info-bulle et lu par le
+ * lecteur d'écran, élément par élément. Un délai absent n'est pas signalé ici (il l'est sur la fiche,
+ * au panneau de scan et par le tri « Récupération ») : il concernerait la plupart des lignes.
+ */
+export function reperesLigne(t, inter) {
+  const client = [];
+  if (inter?.accord_client_valide) client.push('Devis validé par le client');
+  if (inter?.messages) client.push('Message client non lu');
+  if (inter?.avis) client.push('Avis client non lu');
+  const dossier = [];
+  if (t.attention) dossier.push('Attention');
+  if (t.est_retour_sav) dossier.push('Retour SAV');
+  if (t.source === 'distance') dossier.push('Dépôt à distance');
+  if (t.client_carte_camby) dossier.push('Carte Camby');
+  if (receptionACompleter(t)) dossier.push('Réception à compléter');
+  return { client, dossier };
+}
+
+function Repere({ items, icone: Icone }) {
+  if (!items.length) return null;
+  return (
+    <span className="inline-flex items-center gap-0.5 shrink-0 text-slate-500" title={items.join(' · ')}>
+      <Icone className="w-4 h-4" aria-hidden="true" />
+      {items.length > 1 && <span className="text-xs tabular-nums" aria-hidden="true">{items.length}</span>}
+      <span className="sr-only">
+        {items.map((item, i) => <Fragment key={item}>{i > 0 && ', '}<span>{item}</span></Fragment>)}
+      </span>
+    </span>
+  );
+}
+
+const MENU_ITEM = 'flex w-full min-h-11 items-center gap-2.5 px-3 text-left text-sm font-medium text-slate-800'
+  + ' hover:bg-slate-50 focus-visible:bg-slate-100 focus-visible:outline-none aria-disabled:text-slate-500';
+const MENU_HAUTEUR = 192; // 4 lignes de 44 px + marges
+
+/**
+ * Un seul bouton de contact par ligne, qui ouvre un menu (WhatsApp, SMS, e-mail, appel) vers le second
+ * numéro du ticket s'il existe (lib/contact.js). Icône allumée (emerald) quand un contact est parti
+ * depuis le dernier changement de statut (t.contact, calculé par le serveur) ; dans le menu, chaque
+ * canal porte sa date, son heure et son auteur. Le menu est rendu hors de la carte (qui défile), en
+ * position fixe sous le bouton — au-dessus si la place manque en bas.
+ */
+function MenuContact({ t, clientName, contact, appelOuvert, onAppel }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const menuId = useId();
+  const nom = clientName || 'ce client';
+  const tel = telJoignable(t);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (btnRef.current?.contains(e.target) || menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    const raf = requestAnimationFrame(() => menuRef.current?.querySelector('[role="menuitem"]')?.focus());
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [open]);
+
+  const ouvrir = () => {
+    if (open) { setOpen(false); return; }
+    const r = btnRef.current?.getBoundingClientRect();
+    const right = Math.max(8, window.innerWidth - (r?.right ?? window.innerWidth));
+    const enBas = (r?.bottom ?? 0) + MENU_HAUTEUR <= window.innerHeight;
+    setPos(enBas ? { top: (r?.bottom ?? 0) + 4, right } : { bottom: window.innerHeight - (r?.top ?? 0) + 4, right });
+    setOpen(true);
+  };
+  const fermer = (rendreFocus = true) => {
+    setOpen(false);
+    if (rendreFocus) btnRef.current?.focus();
+  };
+  const onKeyDown = (e) => {
+    if (!open) return;
+    if (e.key === 'Escape') { e.stopPropagation(); fermer(); return; }
+    if (e.key === 'Tab') { e.preventDefault(); fermer(); return; }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const items = [...(menuRef.current?.querySelectorAll('[role="menuitem"]') || [])];
+    if (!items.length) return;
+    e.preventDefault();
+    const idx = items.indexOf(document.activeElement);
+    let next = 0;
+    if (e.key === 'ArrowDown') next = (idx + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = (idx - 1 + items.length) % items.length;
+    else if (e.key === 'End') next = items.length - 1;
+    items[next].focus();
+  };
+
+  const lien = (canal, href, Icone, texte) => {
+    const fait = contact.canaux[canal];
+    return (
+      <a role="menuitem" href={href || '#'} target="_blank" rel="noopener noreferrer"
+        aria-disabled={href ? undefined : true}
+        onClick={(e) => { if (!href) e.preventDefault(); fermer(false); }}
+        aria-label={`${texte} à ${nom}${fait ? ` (${titreCanal(contact, canal)})` : ''}`}
+        title={fait ? titreCanal(contact, canal) : texte}
+        className={MENU_ITEM}>
+        <Icone className={`w-4 h-4 shrink-0 ${fait ? 'text-emerald-600' : 'text-slate-500'}`} aria-hidden="true" />
+        {texte}
+        {!href && <span className="ml-auto text-xs text-slate-500">{canal === 'email' ? 'sans e-mail' : 'sans numéro'}</span>}
+      </a>
+    );
+  };
+
+  return (
+    <div className="relative" onKeyDown={onKeyDown}>
+      <button ref={btnRef} type="button" data-contact-btn={t.id} onClick={ouvrir}
+        aria-haspopup="menu" aria-expanded={open} aria-controls={open ? menuId : undefined}
+        aria-label={`Contacter ${nom}${contact.depuis_statut ? ` (${libelleContact(contact)})` : ''}`}
+        title={contact.depuis_statut ? libelleContact(contact) : 'Contacter le client'}
+        className="btn-ghost btn-icon btn-sm">
+        <MessageSquare className={contact.depuis_statut ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
+      </button>
+      {open && createPortal(
+        <div ref={menuRef} id={menuId} role="menu" aria-label={`Contacter ${nom}`}
+          style={pos || undefined}
+          className="fixed z-50 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-md">
+          {lien('whatsapp', tel ? waLink(tel, `Bonjour, concernant votre ticket ${t.ticket_code}...`) : null, MessageCircle, 'WhatsApp')}
+          {lien('sms', tel ? smsLink(tel, `Klikphone: Votre ticket ${t.ticket_code}...`) : null, Send, 'SMS')}
+          {lien('email', t.client_email ? `mailto:${t.client_email}` : null, Mail, 'Email')}
+          <button type="button" role="menuitem" data-appel-btn={t.id}
+            onClick={() => { fermer(false); onAppel(); }}
+            aria-expanded={appelOuvert}
+            aria-label={`Contacté par téléphone : ${nom}${contact.canaux.appel ? ` (${titreCanal(contact, 'appel')})` : ''}`}
+            title={contact.canaux.appel ? titreCanal(contact, 'appel') : 'Contacté par tél.'}
+            className={MENU_ITEM}>
+            <Phone className={`w-4 h-4 shrink-0 ${contact.canaux.appel ? 'text-emerald-600' : 'text-slate-500'}`} aria-hidden="true" />
+            Contacté par téléphone
+          </button>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
   const basePath = user?.target === 'tech' ? '/tech' : '/accueil';
   const [searchParams, setSearchParams] = useSearchParams();
+  const now = useMaintenant();
 
   // L'URL (?q=, ?statut=, ?vue=archives) prime ; sinon on reprend les filtres de la session.
-  // Dates et technicien ne sont pas dans l'URL : toujours repris de la session.
+  // Dates, technicien et groupe de statuts ne sont pas dans l'URL : toujours repris de la session.
   const [initial] = useState(() => {
     const fromUrl = searchParams.has('q') || searchParams.has('statut') || searchParams.has('vue');
     const saved = readDashState();
     const q = fromUrl ? (searchParams.get('q') || '') : str(saved.q);
     const statut = fromUrl ? (searchParams.get('statut') || '') : str(saved.statut);
     const archives = fromUrl ? searchParams.get('vue') === 'archives' : Boolean(saved.archives);
+    const groupe = fromUrl || statut ? '' : (GROUPE_PAR_CLE[str(saved.groupe)] ? str(saved.groupe) : '');
     return {
-      q, statut, archives: archives || ARCHIVE_STATUTS.includes(statut),
+      q, statut, groupe, archives: archives || ARCHIVE_STATUTS.includes(statut),
       dateFrom: str(saved.dateFrom), dateTo: str(saved.dateTo), tech: str(saved.tech),
     };
   });
@@ -212,13 +389,14 @@ export default function DashboardPage() {
   const [search, setSearch] = useState(initial.q);
   const [debouncedSearch, setDebouncedSearch] = useState(initial.q.trim());
   const [filterStatut, setFilterStatut] = useState(initial.statut);
-  const [activeKpi, setActiveKpi] = useState(null);
-  // Étagère « À récupérer » (carte KPI) : liste filtrée et triée par le serveur, au-dessus du tableau
+  const [filterGroupe, setFilterGroupe] = useState(initial.groupe);
+  // Étagère « À récupérer » (colonne de la carte d'action) : liste filtrée et triée par le serveur
   const [showEtagere, setShowEtagere] = useState(false);
   const [aFaire, setAFaire] = useState(lireAFaire);
   // Ticket dont l'appel téléphonique attend une confirmation (ligne sous la rangée)
   const [appelAConfirmer, setAppelAConfirmer] = useState(null);
   const etagereId = useId();
+  const filtresId = useId();
   const [showArchived, setShowArchived] = useState(initial.archives);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -236,13 +414,17 @@ export default function DashboardPage() {
   const [compactMode, setCompactMode] = useState(() => localStorage.getItem('kp_compact_mode') === '1');
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
+  // Plage de dates derrière un bouton « Dates » : ouverte d'office quand une date est posée
+  // Panneau « Filtres » (priorité, technicien, dates) replié par défaut (décision du gérant, 8 nov. 2026) ;
+  // ouvert d'emblée si un filtre est déjà posé dans l'adresse ou la session.
+  const [filtresOuverts, setFiltresOuverts] = useState(() => Boolean(initial.dateFrom || initial.dateTo || initial.tech));
   const [isPending, startTransition] = useTransition();
   const searchTimer = useRef(null);
   const pendingEnterRef = useRef(false);
 
-  // La page revient à 0 dès qu'un filtre, un onglet, un KPI ou le tri change (sans requête intermédiaire)
+  // La page revient à 0 dès qu'un filtre, un onglet, une colonne ou le tri change (sans requête intermédiaire)
   const filterSig = JSON.stringify([
-    debouncedSearch, filterStatut, showArchived, interactionFilter, activeKpi,
+    debouncedSearch, filterStatut, filterGroupe, showArchived, interactionFilter,
     sortField, sortDir, dateFrom, dateTo, filterTech, filterPriorite, pageSize,
   ]);
   const [pageState, setPageState] = useState({ sig: filterSig, page: 0 });
@@ -273,8 +455,10 @@ export default function DashboardPage() {
   }, [search]);
 
   useEffect(() => {
-    writeDashState({ q: debouncedSearch, statut: filterStatut, archives: showArchived, dateFrom, dateTo, tech: filterTech });
-  }, [debouncedSearch, filterStatut, showArchived, dateFrom, dateTo, filterTech]);
+    writeDashState({
+      q: debouncedSearch, statut: filterStatut, groupe: filterGroupe, archives: showArchived, dateFrom, dateTo, tech: filterTech,
+    });
+  }, [debouncedSearch, filterStatut, filterGroupe, showArchived, dateFrom, dateTo, filterTech]);
 
   // Synchronisation avec l'URL. seenUrlSigRef : dernière URL observée (ne réagir qu'à un vrai
   // changement, y compris au double montage du StrictMode) ; writtenSigRef : dernière valeur écrite,
@@ -295,8 +479,8 @@ export default function DashboardPage() {
     setSearch(q);
     setDebouncedSearch(q.trim());
     setFilterStatut(statut);
+    setFilterGroupe('');
     setShowArchived(arch === '1' || ARCHIVE_STATUTS.includes(statut));
-    setActiveKpi(null);
   }, [urlSig]);
   useEffect(() => {
     if (stateSig === writtenSigRef.current) return;
@@ -322,8 +506,9 @@ export default function DashboardPage() {
     });
   };
 
-  // Filtres envoyés au serveur. Vue actifs : liste complète (≤ 500) paginée ici ;
-  // vue archives : pagination serveur ; recherche : tous statuts, actifs d'abord.
+  // Filtres envoyés au serveur. Vue actifs : liste complète (≤ 500) paginée et filtrée par statut ici
+  // (les compteurs des onglets restent connus, une colonne ne relance aucune requête) ;
+  // vue archives : pagination et statut côté serveur ; recherche : tous statuts, actifs d'abord.
   const searchMode = Boolean(debouncedSearch);
   // Pastille « accords / messages / avis » : liste servie par le serveur, tous statuts confondus
   // (un avis arrive après restitution, un message non lu peut viser un dossier clôturé)
@@ -342,7 +527,7 @@ export default function DashboardPage() {
     if (serverPaged) p.offset = page * pageSize;
     if (debouncedSearch) p.search = debouncedSearch;
     if (interactionFilter) p.interaction = interactionFilter;
-    if (filterStatut && !listeMelangee) p.statut = filterStatut;
+    if (filterStatut && serverPaged) p.statut = filterStatut;
     if (dateFrom) p.date_from = dateFrom;
     if (dateTo) p.date_to = dateTo;
     if (serverTech) p.tech = serverTech;
@@ -371,7 +556,7 @@ export default function DashboardPage() {
   const tickets = viewData?.tickets ?? [];
   const serverTotal = typeof viewData?.total === 'number' ? viewData.total : null;
 
-  // Nombre d'archivés correspondant aux mêmes filtres (bouton « Voir N archivé(s) », état vide)
+  // Nombre d'archivés correspondant aux mêmes filtres (« Voir N archivés », état vide)
   const archCountParams = useMemo(() => {
     if (listeMelangee || showArchived || filterStatut) return null;
     const p = { vue: 'archives', limit: 1 };
@@ -470,8 +655,8 @@ export default function DashboardPage() {
       const choisis = [...selectedIds].map(id => byId.get(id) || { id });
       const res = await executerStatutGroupe(planStatutGroupe(choisis, statut), statut, (id, s) => api.changeStatus(id, s));
       setSelectedIds(new Set());
-      // Invalide aussi 'interactions' pour que les points vert/orange se mettent
-      // à jour immédiatement (sinon ils restent figés ~30s le temps du polling).
+      // Invalide aussi 'interactions' pour que les repères se mettent à jour immédiatement
+      // (sinon ils restent figés ~30s le temps du polling).
       if (res.faits.length) invalidateCache('tickets', 'dashboard', 'interactions');
       if (res.aTraiter.length || res.erreurs.length) setBulkReport(res);
       else toast.success(resumeStatutGroupe(res));
@@ -496,10 +681,9 @@ export default function DashboardPage() {
       mutate(prev => prev ? {
         ...prev, tickets: prev.tickets.map(t => t.id === ticketId ? { ...t, statut: newStatut } : t),
       } : prev);
-      // Force le refetch tickets+dashboard+interactions → les KPI (cartes
-      // Diagnostic/Pièces/etc.), les vues filtrées et les points vert/orange se
-      // resynchronisent avec le nouveau statut (le mutate optimiste ne corrige
-      // que la liste, pas les compteurs KPI du payload dashboard).
+      // Force le refetch tickets+dashboard+interactions → les compteurs de la carte d'action,
+      // les vues filtrées et les repères se resynchronisent avec le nouveau statut (le mutate
+      // optimiste ne corrige que la liste, pas les compteurs KPI du payload dashboard).
       invalidateCache('tickets', 'dashboard', 'interactions');
     } catch (err) {
       const code = ticket.ticket_code || `#${ticketId}`;
@@ -513,13 +697,16 @@ export default function DashboardPage() {
     }
   };
 
-  // Ferme la confirmation et rend le focus à l'icône téléphone de la ligne (la ligne de confirmation disparaît)
+  // Ferme la confirmation et rend le focus au bouton de contact de la ligne (le menu est refermé,
+  // l'entrée « téléphone » n'existe plus dans le DOM)
   const fermerAppel = (ticketId) => {
     setAppelAConfirmer(null);
-    requestAnimationFrame(() => document.querySelector(`[data-appel-btn="${ticketId}"]`)?.focus());
+    requestAnimationFrame(() => {
+      (document.querySelector(`[data-appel-btn="${ticketId}"]`) || document.querySelector(`[data-contact-btn="${ticketId}"]`))?.focus();
+    });
   };
 
-  // « Contacté par tél. » depuis la colonne contact : note 'appel' sur le ticket, icône allumée sans recharger
+  // « Contacté par tél. » depuis le menu de contact : note 'appel' sur le ticket, icône allumée sans recharger
   const noterAppel = async (ticket) => {
     const ticketId = ticket.id;
     fermerAppel(ticketId);
@@ -549,21 +736,30 @@ export default function DashboardPage() {
       });
   };
 
-  const handleKpiClick = (filter, idx, etagere) => {
-    if (etagere) {
-      setShowEtagere(v => !v);
+  // Colonne de la carte d'action ou lien « dépôts à distance » : un statut précis (second clic : retiré)
+  const choisirStatut = (statut) => {
+    setShowEtagere(false);
+    startTransition(() => {
+      if (filterStatut === statut && !filterGroupe) { setFilterStatut(''); return; }
+      setFilterStatut(statut);
+      setFilterGroupe('');
+      setShowArchived(ARCHIVE_STATUTS.includes(statut));
+    });
+  };
+
+  // Onglet de vue : groupe de statuts (filtré ici) ou statut seul (filtré par le serveur pour les archives)
+  const choisirGroupe = (g) => startTransition(() => {
+    if (!g.cle) { setFilterGroupe(''); setFilterStatut(''); setShowArchived(false); return; }
+    if (g.statuts.length === 1) {
+      setFilterGroupe('');
+      setFilterStatut(g.statuts[0]);
+      setShowArchived(Boolean(g.archives));
       return;
     }
-    setShowEtagere(false);
-    if (activeKpi === idx) {
-      setActiveKpi(null);
-      setFilterStatut('');
-      setShowArchived(false);
-    } else {
-      setActiveKpi(idx);
-      if (filter) { setFilterStatut(filter); setShowArchived(false); }
-    }
-  };
+    setFilterGroupe(g.cle);
+    setFilterStatut('');
+    setShowArchived(false);
+  });
 
   // Match tech name: handles both "Marina" and "Marina (Technicien Apple)" formats
   const matchTech = (assigned, name) => {
@@ -586,7 +782,7 @@ export default function DashboardPage() {
 
   // Dates et vue sont filtrées par le serveur ; restent ici le technicien quand il n'est pas
   // envoyé (voir techOnServer), les interactions, « À faire » (hors recherche et archives : on
-  // cherche aussi un ticket terminé) et, en recherche, l'onglet de statut.
+  // cherche aussi un ticket terminé), la priorité, puis l'onglet ou la colonne de statut.
   const aFaireActif = aFaire && !listeMelangee && !showArchived;
   const baseTickets = useMemo(() => {
     let list = tickets;
@@ -615,9 +811,16 @@ export default function DashboardPage() {
     return tickets.filter(t => normaliserPriorite(t.priorite) === 'attente' && !ARCHIVE_STATUTS.includes(t.statut)).length;
   }, [tickets, vue]);
 
+  // Statuts retenus par l'onglet (groupe) ou la colonne (statut seul) ; null = tous. Les archives
+  // paginées sont déjà filtrées par le serveur.
+  const statutsFiltre = useMemo(() => {
+    if (filterGroupe) return new Set(GROUPE_PAR_CLE[filterGroupe]?.statuts || []);
+    if (filterStatut && !serverPaged) return new Set([filterStatut]);
+    return null;
+  }, [filterGroupe, filterStatut, serverPaged]);
   const filteredTickets = useMemo(
-    () => (listeMelangee && filterStatut ? baseTickets.filter(t => t.statut === filterStatut) : baseTickets),
-    [baseTickets, listeMelangee, filterStatut]
+    () => (statutsFiltre ? baseTickets.filter(t => statutsFiltre.has(t.statut)) : baseTickets),
+    [baseTickets, statutsFiltre]
   );
 
   const statutCounts = useMemo(() => {
@@ -625,36 +828,27 @@ export default function DashboardPage() {
     for (const t of baseTickets) counts[t.statut] = (counts[t.statut] || 0) + 1;
     return counts;
   }, [baseTickets]);
+  // Compteur d'un onglet : connu quand la liste reçue est complète (actifs, recherche) ; les archives
+  // n'apparaissent dans la liste qu'en recherche
+  const compteGroupe = (g) => {
+    if (serverPaged) return null;
+    if (g.archives && !listeMelangee) return null;
+    if (!g.statuts) return baseTickets.length;
+    return g.statuts.reduce((n, s) => n + (statutCounts[s] || 0), 0);
+  };
+  const groupeActif = filterGroupe || (filterStatut ? groupeDuStatut(filterStatut) : (showArchived ? null : ''));
 
   const activeTickets = useMemo(() => filteredTickets.filter(t => !ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
   const archivedTickets = useMemo(() => filteredTickets.filter(t => ARCHIVE_STATUTS.includes(t.statut)), [filteredTickets]);
+  // Actifs de la liste avant le filtre de statut (« 336 actifs », indépendant de l'onglet choisi)
+  const nbActifs = useMemo(() => baseTickets.filter(t => !ARCHIVE_STATUTS.includes(t.statut)).length, [baseTickets]);
 
   // Compteurs du bandeau : KPI serveur (toute la base), indépendants de la recherche
-  const hasListFilters = Boolean(listeMelangee || filterStatut || dateFrom || dateTo || filterTech || filterPriorite || aFaireActif);
-  // CA estimé : calculé seulement sur la liste complète des actifs (sans recherche ni filtre serveur),
-  // puis conservé tel quel pendant qu'on filtre.
-  const caActifs = useMemo(() => {
-    if (!dashData || vue !== 'actifs' || filterStatut || dateFrom || dateTo) return null;
-    let ca = 0;
-    for (const t of dashData.tickets || []) {
-      const prix = Number(t.tarif_final || t.devis_estime || 0);
-      if (prix > 0) ca += prix;
-    }
-    return ca;
-  }, [dashData, vue, filterStatut, dateFrom, dateTo]);
-  const [caKnown, setCaKnown] = useState(null);
-  useEffect(() => { if (caActifs !== null) setCaKnown(caActifs); }, [caActifs]);
-  const extraKpis = useMemo(() => {
-    const enAttente = kpi
-      ? (kpi.en_attente_diagnostic || 0) + (kpi.en_attente_accord || 0) + (kpi.en_attente_piece || 0)
-      : 0;
-    return {
-      todayCount: kpi?.nouveaux_aujourdhui ?? 0,
-      enAttente,
-      ca: caActifs ?? caKnown,
-      prets: kpi?.reparation_terminee ?? 0,
-    };
-  }, [kpi, caActifs, caKnown]);
+  const hasListFilters = Boolean(listeMelangee || filterStatut || filterGroupe || dateFrom || dateTo || filterTech || filterPriorite || aFaireActif);
+  const enAttente = kpi
+    ? (kpi.en_attente_diagnostic || 0) + (kpi.en_attente_accord || 0) + (kpi.en_attente_piece || 0)
+    : 0;
+  const nouveauxAujourdhui = kpi?.nouveaux_aujourdhui ?? 0;
 
   // En recherche sans tri choisi, on garde l'ordre de pertinence du serveur. Archives paginées :
   // l'API ne trie que par date de dépôt décroissante, un tri local ne porterait que sur la page reçue.
@@ -723,6 +917,13 @@ export default function DashboardPage() {
     e.preventDefault();
     openTicket(id);
   };
+  // La ligne entière ouvre le ticket ; un clic sur une commande de la ligne (lien, bouton, sélecteur,
+  // menu) ne compte pas
+  const clicLigne = (e, id) => {
+    if (e.defaultPrevented) return;
+    if (e.target.closest('a, button, select, input, label, textarea, [role="menu"]')) return;
+    openTicket(id);
+  };
 
   const onSearchKeyDown = async (e) => {
     if (e.key === 'ArrowDown') {
@@ -763,7 +964,8 @@ export default function DashboardPage() {
   };
   const showArchives = () => {
     setShowArchived(true);
-    if (filterStatut && !ARCHIVE_STATUTS.includes(filterStatut)) { setFilterStatut(''); setActiveKpi(null); }
+    setFilterGroupe('');
+    if (filterStatut && !ARCHIVE_STATUTS.includes(filterStatut)) setFilterStatut('');
   };
 
   const handlePageSizeChange = (size) => {
@@ -780,19 +982,21 @@ export default function DashboardPage() {
 
   // État vide explicite : ne jamais afficher « Aucun ticket » quand des résultats existent ailleurs
   const emptyState = (() => {
-    const resetFilters = () => { setFilterStatut(''); setActiveKpi(null); setInteractionFilter(null); setFilterTech(''); setFilterPriorite(''); if (aFaire) toggleAFaire(); };
+    const libelleStatut = filterStatut || GROUPE_PAR_CLE[filterGroupe]?.label || '';
+    const retirerStatut = () => { setFilterStatut(''); setFilterGroupe(''); setShowArchived(false); };
+    const resetFilters = () => { retirerStatut(); setInteractionFilter(null); setFilterTech(''); setFilterPriorite(''); if (aFaire) toggleAFaire(); };
     if (searchMode) {
-      if (filterStatut && baseTickets.length > 0) {
+      if (libelleStatut && baseTickets.length > 0) {
         return {
-          title: `Aucun ticket « ${filterStatut} » pour « ${debouncedSearch} »`,
-          text: `${baseTickets.length} ticket(s) correspondent avec un autre statut.`,
-          action: { label: 'Afficher tous les statuts', onClick: () => { setFilterStatut(''); setActiveKpi(null); setShowArchived(false); } },
+          title: `Aucun ticket « ${libelleStatut} » pour « ${debouncedSearch} »`,
+          text: `${pluriel(baseTickets.length, 'ticket')} correspondent avec un autre statut.`,
+          action: { label: 'Afficher tous les statuts', onClick: retirerStatut },
         };
       }
       if (tickets.length > 0) {
         return {
           title: 'Résultats masqués par un filtre',
-          text: `${tickets.length} ticket(s) correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien ou priorité.`,
+          text: `${pluriel(tickets.length, 'ticket')} correspondent à « ${debouncedSearch} » mais sont masqués par le filtre technicien ou priorité.`,
           action: { label: 'Retirer ces filtres', onClick: resetFilters },
         };
       }
@@ -814,21 +1018,21 @@ export default function DashboardPage() {
       if (tickets.length > 0) {
         return {
           title: 'Tickets masqués par un filtre',
-          text: `${tickets.length} ticket(s) ont ${libelle} mais sont masqués par le filtre technicien, priorité ou statut.`,
-          action: { label: 'Retirer ces filtres', onClick: () => { setFilterStatut(''); setActiveKpi(null); setFilterTech(''); setFilterPriorite(''); } },
+          text: `${pluriel(tickets.length, 'ticket')} ont ${libelle} mais sont masqués par le filtre technicien, priorité ou statut.`,
+          action: { label: 'Retirer ces filtres', onClick: () => { retirerStatut(); setFilterTech(''); setFilterPriorite(''); } },
         };
       }
       return {
         title: 'Rien de nouveau',
-        text: `Aucun ticket avec ${libelle}. Les pastilles se mettent à jour dans la minute.`,
+        text: `Aucun ticket avec ${libelle}. Les compteurs se mettent à jour dans la minute.`,
         action: { label: 'Retirer le filtre', onClick: () => setInteractionFilter(null) },
       };
     }
     if (!showArchived && archivedTotal > 0 && (dateFrom || dateTo || filterTech)) {
       return {
         title: 'Aucun ticket actif avec ces filtres',
-        text: `${archivedTotal} ticket(s) rendus ou clôturés correspondent à ces filtres.`,
-        action: { label: `Voir les ${archivedTotal} archivé(s)`, onClick: showArchives },
+        text: `${pluriel(archivedTotal, 'ticket')} rendus ou clôturés correspondent à ces filtres.`,
+        action: { label: `Voir les ${fmt(archivedTotal)} archivés`, onClick: showArchives },
       };
     }
     if (aFaireActif && tickets.length > 0 && baseTickets.length === 0) {
@@ -847,35 +1051,94 @@ export default function DashboardPage() {
         action: { label: 'Voir les actifs', onClick: showActives },
       };
     }
+    if (hasListFilters) {
+      return {
+        title: 'Aucun ticket trouvé',
+        text: 'Aucun ticket ne correspond à ces filtres.',
+        action: { label: 'Retirer les filtres', onClick: resetFilters },
+      };
+    }
     return {
-      title: 'Aucun ticket trouvé',
-      text: hasListFilters ? 'Essayez d’ajuster vos filtres pour voir plus de résultats.' : 'C’est le calme ! Créez un nouveau ticket pour démarrer.',
+      title: 'Aucun ticket en attente',
+      text: 'Les prochains dépôts apparaîtront ici.',
       action: null,
     };
   })();
 
-  // Une seule couleur de valeur (slate-900), icône brand ; seule « À récupérer » (étagère) est verte
-  const kpiCards = kpi ? [
-    { label: 'Total actifs', value: kpi.total_actifs, icon: Smartphone },
-    { label: 'Diagnostic', value: kpi.en_attente_diagnostic, icon: Search, filter: 'En attente de diagnostic' },
-    { label: 'Réparation', value: kpi.en_cours, icon: Wrench, filter: 'En cours de réparation' },
-    { label: 'Accord client', value: kpi.en_attente_accord, icon: AlertTriangle, filter: "En attente d'accord client" },
-    { label: 'Pièces', value: kpi.en_attente_piece, icon: Package, filter: 'En attente de pièce' },
-    { label: 'À récupérer', value: kpi.a_recuperer ?? 0, icon: PackageCheck, tone: 'bg-emerald-50 text-emerald-700', etagere: true },
-  ] : [];
+  // Ce qui réclame une action : une seule ligne de texte sous l'en-tête (décision du gérant, 8 nov. 2026 :
+  // plus de carte de compteurs, redondante avec les onglets). « À récupérer » déplie l'étagère (appareils
+  // réparés, rendus non payés) ; « accords client » filtre la liste ; seule « N clients sur place » est en rouge.
+  const alertes = [];
+  if (kpi) {
+    const nRecup = kpi.a_recuperer ?? 0;
+    alertes.push({
+      cle: 'etagere', expanded: showEtagere,
+      texte: <><span className="font-semibold text-slate-900">{fmt(nRecup)}</span> à récupérer</>,
+      label: `À récupérer : ${pluriel(nRecup, 'appareil')} — ${showEtagere ? "masquer l'étagère" : "afficher l'étagère"}`,
+      onClick: () => setShowEtagere(v => !v),
+    });
+    if (kpi.en_attente_accord > 0) {
+      const actif = filterStatut === "En attente d'accord client" && !filterGroupe;
+      alertes.push({
+        cle: 'accord', actif,
+        texte: <><span className="font-semibold text-slate-900">{fmt(kpi.en_attente_accord)}</span> {kpi.en_attente_accord > 1 ? 'accords client en attente' : 'accord client en attente'}</>,
+        label: `${fmt(kpi.en_attente_accord)} accord${kpi.en_attente_accord > 1 ? 's' : ''} client en attente${actif ? ' — filtre actif' : ' — afficher ces tickets'}`,
+        onClick: () => choisirStatut("En attente d'accord client"),
+      });
+    }
+  }
+  if (nbAttenteSurPlace > 0) {
+    alertes.push({
+      cle: 'surplace', rouge: true, actif: filterPriorite === 'attente',
+      texte: `${pluriel(nbAttenteSurPlace, 'client')} sur place`,
+      onClick: () => setFilterPriorite(f => (f === 'attente' ? '' : 'attente')),
+    });
+  }
+  if (commandesEnCours > 0) {
+    alertes.push({
+      cle: 'commandes', texte: `${pluriel(commandesEnCours, 'commande')} de pièces`,
+      onClick: () => navigate(`${basePath}/commandes`),
+    });
+  }
+  if (kpi?.pre_enregistres > 0) {
+    alertes.push({
+      cle: 'distance', actif: filterStatut === 'Pré-enregistré' && !filterGroupe,
+      texte: `${pluriel(kpi.pre_enregistres, 'dépôt')} à distance`,
+      onClick: () => choisirStatut('Pré-enregistré'),
+    });
+  }
+  // Ce que le client a laissé depuis sa page de suivi : réponse au devis, message, avis. Le libellé
+  // complet est dans le nom accessible (« 2 messages client non lus — afficher ces tickets »).
+  for (const { cle, mot } of [
+    { cle: 'accord_client', mot: ['réponse au devis non lue', 'réponses au devis non lues'] },
+    { cle: 'messages', mot: ['message client non lu', 'messages client non lus'] },
+    { cle: 'avis', mot: ['avis non lu', 'avis non lus'] },
+  ]) {
+    const n = interactions?.[cle]?.count || 0;
+    if (!(n > 0)) continue;
+    const actif = interactionFilter === cle;
+    const complet = n > 1 ? mot[1] : mot[0];
+    alertes.push({
+      cle, actif,
+      texte: `${fmt(n)} ${complet.replace(/ non lue?s?$/, '')}`,
+      label: `${fmt(n)} ${complet}${actif ? ' — filtre actif' : ' — afficher ces tickets'}`,
+      onClick: () => setInteractionFilter(actif ? null : cle),
+    });
+  }
 
-  const filterTabs = [
-    { label: 'Tous', value: '' },
-    { label: 'Pré-enregistré', value: 'Pré-enregistré' },
-    { label: 'Diagnostic', value: 'En attente de diagnostic' },
-    { label: 'Réparation', value: 'En cours de réparation' },
-    { label: 'Accord', value: "En attente d'accord client" },
-    { label: 'Pièces', value: 'En attente de pièce' },
-    { label: 'Pièce reçue', value: 'Pièce reçue' },
-    { label: 'Terminés', value: 'Réparation terminée' },
-    { label: 'Rendus', value: 'Rendu au client' },
-    { label: 'Clôturés', value: 'Clôturé' },
-  ];
+  // Filtres du panneau « Filtres » : compteur sur le bouton et puces supprimables quand il est replié
+  const libellePriorite = PRIORITES.find(p => p.valeur === filterPriorite)?.libelle || filterPriorite;
+  const jourMois = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const pucesFiltres = [
+    filterPriorite && { cle: 'priorite', texte: `Priorité : ${libellePriorite}`, retirer: () => setFilterPriorite('') },
+    filterTech && { cle: 'tech', texte: filterTech === '__mine__' ? 'Mes tickets' : `Tech : ${filterTech}`, retirer: () => setFilterTech('') },
+    (dateFrom || dateTo) && { cle: 'dates', texte: `Déposé ${dateFrom ? jourMois(dateFrom) : '…'} → ${dateTo ? jourMois(dateTo) : '…'}`, retirer: () => { setDateFrom(''); setDateTo(''); } },
+  ].filter(Boolean);
+  const nbFiltresPanneau = pucesFiltres.length;
+
+  const triCourant = TRIS.find(x => x.value === sortField) || TRIS[0];
+  const selectCompact = 'select w-auto min-h-9 py-1 text-sm';
+  const inputCompact = 'input w-auto min-h-9 py-1 text-sm';
 
   return (
     <div className="page max-w-[1280px] relative">
@@ -892,26 +1155,26 @@ export default function DashboardPage() {
           <h1 className="page-header-title">
             {user?.target === 'tech' ? 'Espace Technicien' : 'Tableau de bord'}
           </h1>
-          <p className="page-header-subtitle">
+          <p className="page-header-subtitle tabular-nums">
             <span className="first-letter:uppercase">
-              {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+              {now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
             </span>
             {' · '}
-            {user?.target === 'tech'
-              ? <>Bienvenue <span className="font-semibold text-slate-700">{user?.utilisateur || ''}</span> — vos réparations en cours</>
-              : <><span className="font-semibold text-slate-700">{extraKpis.enAttente}</span> ticket{extraKpis.enAttente > 1 ? 's' : ''} en attente · <span className="font-semibold text-slate-700">{extraKpis.todayCount}</span> nouveau{extraKpis.todayCount > 1 ? 'x' : ''} aujourd'hui</>}
+            <span className="font-medium text-slate-700">{fmt(enAttente)}</span> ticket{enAttente > 1 ? 's' : ''} en attente
+            {' · '}
+            <span className="font-medium text-slate-700">{fmt(nouveauxAujourdhui)}</span> nouveau{nouveauxAujourdhui > 1 ? 'x' : ''} aujourd'hui
           </p>
         </div>
         <div className="page-header-actions">
           <button type="button" onClick={toggleCompact}
-            className="btn-secondary btn-icon"
+            className="btn-ghost btn-icon"
             title={compactMode ? 'Mode confortable' : 'Mode compact'}
             aria-label={compactMode ? 'Mode confortable' : 'Mode compact'}
             aria-pressed={compactMode}>
             {compactMode ? <Maximize2 aria-hidden="true" /> : <Minimize2 aria-hidden="true" />}
           </button>
           <button type="button" onClick={() => mutate()}
-            className="btn-secondary btn-icon"
+            className="btn-ghost btn-icon"
             title="Rafraîchir"
             aria-label="Rafraîchir">
             <RefreshCw className={loading ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
@@ -922,119 +1185,44 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI — 6 tuiles cliquables : bande défilable sous lg (le 1er ticket reste visible sur iPad
-          portrait), grille de 6 à partir de lg (icône au-dessus à 1024, à gauche dès 1280) */}
-      <div className="scroll-fade-x lg:[mask-image:none] lg:[-webkit-mask-image:none] -mx-4 sm:-mx-6 lg:mx-0 mb-6">
-        <div className="flex gap-3 overflow-x-auto scrollbar-none snap-x px-4 sm:px-6 lg:px-0 lg:grid lg:grid-cols-6 lg:overflow-visible">
-          {!kpi && loading ? (
-            Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="skeleton shrink-0 lg:shrink min-w-[150px] lg:min-w-0 min-h-[72px] lg:min-h-[96px]" aria-hidden="true" />
-            ))
-          ) : kpiCards.map(({ label, value, icon: Icon, tone, filter, etagere }, i) => {
-            const actif = etagere ? showEtagere : activeKpi === i;
-            return (
-            <button key={label} type="button"
-              onClick={() => handleKpiClick(filter, i, etagere)}
-              {...(etagere
-                ? { 'aria-expanded': showEtagere, 'aria-controls': showEtagere ? etagereId : undefined }
-                : { 'aria-pressed': actif })}
-              className={`card snap-start shrink-0 lg:shrink min-w-[150px] lg:min-w-0 min-h-[72px] lg:min-h-[96px] p-3 lg:p-4
-                flex items-center gap-3 lg:flex-col lg:items-start lg:gap-2 xl:flex-row xl:gap-3 text-left
-                transition-colors duration-150 hover:border-slate-300
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
-                ${actif ? 'border-brand-300 bg-brand-50/40 hover:border-brand-300' : ''}`}
-            >
-              <span className={`kpi-icon ${tone || ''}`} aria-hidden="true">
-                <Icon />
-              </span>
-              <span className="min-w-0">
-                <span className="block kpi-value text-xl lg:text-2xl">{value}</span>
-                <span className="block kpi-label truncate">{label}</span>
-              </span>
+      {alertes.length > 0 || interactionFilter ? (
+        <p className="mb-4 flex flex-wrap items-center gap-x-2 text-sm text-slate-600">
+          {alertes.map((a, i) => (
+            <Fragment key={a.cle}>
+              {i > 0 && <span aria-hidden="true">·</span>}
+              <button type="button" onClick={a.onClick}
+                aria-pressed={a.onClick && 'actif' in a ? a.actif : undefined}
+                {...('expanded' in a ? { 'aria-expanded': a.expanded, 'aria-controls': a.expanded ? etagereId : undefined } : {})}
+                aria-label={a.label}
+                className={`inline-flex items-center min-h-11 px-1 -mx-1 rounded tabular-nums underline-offset-2 hover:underline
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                  ${a.rouge ? 'text-red-700 font-medium hover:text-red-800' : 'hover:text-slate-900'}
+                  ${a.actif ? 'font-semibold text-slate-900 underline' : ''}`}>
+                {/* Un seul nœud dans le bouton inline-flex : sinon l'espace « 744 à récupérer » est avalé */}
+                <span>{a.texte}</span>
+              </button>
+            </Fragment>
+          ))}
+          {interactionFilter && (
+            <button type="button" onClick={() => setInteractionFilter(null)} className="btn-ghost btn-sm ml-auto">
+              <X aria-hidden="true" /> Réinitialiser
             </button>
-            );
-          })}
-        </div>
-      </div>
+          )}
+        </p>
+      ) : <div className="mb-4" />}
 
       {showEtagere && (
         <EtagereARecuperer id={etagereId} basePath={basePath} onOpenTicket={openTicket}
           onRemettre={ouvrirRemise} onClose={() => setShowEtagere(false)} />
       )}
 
-
-      {/* ★ Chips d'alerte — commandes, dépôts distants, interactions (une seule teinte, sauf « sur place ») */}
-      {(commandesEnCours > 0 || (kpi?.pre_enregistres > 0) || (interactions && interactions.total_actions > 0) || nbAttenteSurPlace > 0 || interactionFilter) && (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {nbAttenteSurPlace > 0 && (
-            <button type="button" onClick={() => setFilterPriorite(f => (f === 'attente' ? '' : 'attente'))}
-              aria-pressed={filterPriorite === 'attente'}
-              className={`btn btn-sm rounded-full text-sm font-medium ${
-                filterPriorite === 'attente' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-50 text-red-700 hover:bg-red-100'
-              }`}>
-              <Hourglass aria-hidden="true" />
-              <span><span className="font-bold">{nbAttenteSurPlace}</span> client{nbAttenteSurPlace > 1 ? 's' : ''} sur place</span>
-            </button>
-          )}
-          {commandesEnCours > 0 && (
-            <button type="button" onClick={() => navigate(`${basePath}/commandes`)}
-              className="btn btn-sm rounded-full text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200">
-              <Package className="text-slate-500" aria-hidden="true" />
-              <span className="font-bold text-brand-700">{commandesEnCours}</span>
-              <span>commande{commandesEnCours > 1 ? 's' : ''} pièces</span>
-              <ChevronRight className="text-slate-400" aria-hidden="true" />
-            </button>
-          )}
-          {kpi?.pre_enregistres > 0 && (
-            <button type="button" onClick={() => { setFilterStatut('Pré-enregistré'); setActiveKpi(null); setShowArchived(false); }}
-              className="btn btn-sm rounded-full text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200">
-              <Globe className="text-slate-500" aria-hidden="true" />
-              <span className="font-bold text-brand-700">{kpi.pre_enregistres}</span>
-              <span>dépôt{kpi.pre_enregistres > 1 ? 's' : ''} à distance</span>
-              <ChevronRight className="text-slate-400" aria-hidden="true" />
-            </button>
-          )}
-          {/* Ce que le client a laissé depuis sa page de suivi : une teinte par nature (réponse au devis,
-              message, avis), pleine quand la pastille filtre la liste. Le libellé complet est dans le
-              nom accessible (« 2 messages client non lus »). */}
-          {[
-            { cle: 'accord_client', icone: FileCheck, mot: ['réponse au devis non lue', 'réponses au devis non lues'],
-              clair: 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100', plein: 'bg-emerald-700 text-white hover:bg-emerald-800', icoClair: 'text-emerald-700' },
-            { cle: 'messages', icone: MessageCircle, mot: ['message client non lu', 'messages client non lus'],
-              clair: 'bg-blue-50 text-blue-800 hover:bg-blue-100', plein: 'bg-blue-700 text-white hover:bg-blue-800', icoClair: 'text-blue-700' },
-            { cle: 'avis', icone: Star, mot: ['avis non lu', 'avis non lus'],
-              clair: 'bg-amber-50 text-amber-900 hover:bg-amber-100', plein: 'bg-amber-700 text-white hover:bg-amber-800', icoClair: 'text-amber-700' },
-          ].map(({ cle, icone: Icone, mot, clair, plein, icoClair }) => {
-            const n = interactions?.[cle]?.count || 0;
-            if (!(n > 0)) return null;
-            const actif = interactionFilter === cle;
-            // Pastille courte à l'écran (« 2 messages client »), complète pour le lecteur d'écran
-            const libelle = (n > 1 ? mot[1] : mot[0]).replace(/ non lue?s?$/, '');
-            return (
-              <button key={cle} type="button" onClick={() => setInteractionFilter(actif ? null : cle)}
-                aria-pressed={actif}
-                aria-label={`${n} ${n > 1 ? mot[1] : mot[0]}${actif ? ' — filtre actif' : ' — afficher ces tickets'}`}
-                className={`btn btn-sm rounded-full text-sm font-medium ${actif ? plein : clair}`}>
-                <Icone className={actif ? '' : icoClair} aria-hidden="true" />
-                <span className="font-bold">{n}</span>
-                <span>{libelle}</span>
-                {!actif && <span className="badge-dot bg-current opacity-60" aria-hidden="true" />}
-              </button>
-            );
-          })}
-          {interactionFilter && (
-            <button type="button" onClick={() => setInteractionFilter(null)} className="btn-ghost btn-sm ml-auto">
-              <X aria-hidden="true" /> Réinitialiser
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Search & Filters */}
-      <div className="card mb-6">
-        <div className="p-3 sm:p-4 border-b border-slate-100">
-          <div className="flex flex-wrap gap-2">
-            <div className="relative flex-1 min-w-[220px]">
+      {/* ─── Carte tableau : zone de commande (recherche, filtres, vues, tri) puis les lignes ─── */}
+      <div aria-busy={loading || isPending}
+        className={`card overflow-x-auto motion-safe:transition-opacity duration-150 ${isPending || showingPrevious ? 'opacity-60' : ''}`}>
+        <div className="px-4 pt-3 border-b border-slate-200">
+          {/* Ligne 1 : recherche, priorité, technicien, « À faire », dates */}
+          <div className="flex flex-wrap items-center gap-2 pb-3">
+            <div className="relative w-full sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden="true" />
               <label htmlFor="dashboard-search" className="sr-only">Rechercher un ticket</label>
               <input id="dashboard-search" type="text" placeholder="Nom, téléphone, IMEI, code, modèle, panne… (fautes tolérées)"
@@ -1043,245 +1231,247 @@ export default function DashboardPage() {
                 enterKeyHint="search"
                 autoComplete="off"
                 aria-describedby="dashboard-search-hint"
-                className="input min-h-11 pl-10 pr-11"
+                className="input min-h-9 py-1 pl-9 pr-10"
               />
               <span id="dashboard-search-hint" className="sr-only">Entrée ouvre le premier résultat, flèche bas pour parcourir la liste.</span>
               {search && (
                 <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
-                  className="btn-ghost btn-icon absolute right-0.5 top-1/2 -translate-y-1/2">
+                  className="btn-ghost btn-icon btn-sm absolute right-0 top-1/2 -translate-y-1/2">
                   <X aria-hidden="true" />
                 </button>
               )}
             </div>
-            <div className="inline-flex items-center gap-1.5 min-h-11 px-2.5 rounded-lg border border-slate-200 bg-white transition-colors hover:border-slate-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/40">
-              <Calendar className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
-              {/* Champs 44 px (cible tactile) dans un cadre de 44 px : ils chevauchent d'1 px la bordure du cadre (fond transparent). */}
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} max={dateTo || undefined}
-                className="bg-transparent text-base lg:text-sm text-slate-700 outline-none w-[128px] min-h-11 -my-px" title="Déposé à partir du" aria-label="Déposé à partir du" />
-              <span className="text-slate-500" aria-hidden="true">→</span>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} min={dateFrom || undefined}
-                className="bg-transparent text-base lg:text-sm text-slate-700 outline-none w-[128px] min-h-11 -my-px" title="Déposé jusqu'au" aria-label="Déposé jusqu'au" />
-              {(dateFrom || dateTo) && (
-                <button type="button" onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  className="btn-ghost btn-icon btn-sm -mr-1" title="Réinitialiser dates" aria-label="Effacer les dates">
-                  <X aria-hidden="true" />
-                </button>
-              )}
-            </div>
-            <select value={filterPriorite} onChange={e => setFilterPriorite(e.target.value)} aria-label="Filtrer par priorité atelier"
-              className="select min-h-11 w-auto min-w-[150px]">
-              <option value="">Toutes priorités</option>
-              {PRIORITES.map(p => <option key={p.valeur} value={p.valeur}>{p.libelle}</option>)}
-            </select>
-            {teamList.length > 0 && (
-              <select value={filterTech} onChange={e => setFilterTech(e.target.value)} aria-label="Filtrer par technicien"
-                className="select min-h-11 w-auto min-w-[150px]">
-                <option value="">Tous les techs</option>
-                {isTech && techName && (
-                  <option value="__mine__">Mes tickets</option>
-                )}
-                {teamList.map(m => (
-                  <option key={m.id} value={m.nom}>{m.nom}</option>
-                ))}
-              </select>
-            )}
             <button type="button" onClick={toggleAFaire} aria-pressed={aFaire}
               disabled={listeMelangee || showArchived}
-              title={listeMelangee || showArchived ? 'Sans effet en recherche, dans les archives et sur une pastille' : 'Masquer les réparations terminées, rendues et clôturées'}
-              className={`btn min-h-11 rounded-lg text-sm font-medium disabled:opacity-50 ${
-                aFaire ? 'bg-brand-600 text-white hover:bg-brand-700' : 'btn-secondary'
-              }`}>
+              title={listeMelangee || showArchived ? 'Sans effet en recherche, dans les archives et sur une alerte' : 'Masquer les réparations terminées, rendues et clôturées'}
+              className={`btn-secondary btn-sm ${aFaire ? 'bg-slate-100 border-slate-300 font-semibold hover:bg-slate-100' : ''}`}>
               <ClipboardList aria-hidden="true" />
               À faire{aFaire ? ' seulement' : ''}
             </button>
-          </div>
-        </div>
-        <div className="px-3 sm:px-4 py-2 bg-slate-50/60 rounded-b-xl">
-          <div className="scroll-fade-x xl:[mask-image:none] xl:[-webkit-mask-image:none]">
-            <div className="segmented flex w-full">
-              {filterTabs.map(({ label, value }) => {
-                const count = listeMelangee ? (value ? (statutCounts[value] || 0) : baseTickets.length) : null;
-                return (
-                  <button key={value} type="button" aria-pressed={filterStatut === value}
-                    onClick={() => startTransition(() => { setFilterStatut(value); setActiveKpi(null); setShowArchived(ARCHIVE_STATUTS.includes(value)); })}
-                    className={`segmented-item shrink-0 ${filterStatut === value ? 'segmented-item-active' : ''}`}
-                  >
-                    {label}
-                    {count !== null && <span className="text-slate-500 font-normal">({count})</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Counters */}
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-2">
-        {searchMode && !dashData ? (
-          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
-            {dashError ? 'Recherche indisponible' : `Recherche de « ${debouncedSearch} »…`}
-          </p>
-        ) : searchMode ? (
-          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
-            <span>
-              <strong className="text-slate-900">{filteredTickets.length}</strong> résultat{filteredTickets.length > 1 ? 's' : ''} pour « {debouncedSearch} »
-              {' '}— {activeTickets.length} en cours, {archivedTickets.length} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
-              {truncatedBy ? ` (${tickets.length} premiers sur ${truncatedBy})` : ''}
-            </span>
-          </p>
-        ) : interactionMode ? (
-          <p className="min-h-[44px] flex items-center text-sm text-slate-600" role="status">
-            <span>
-              <strong className="text-slate-900">{filteredTickets.length}</strong> ticket{filteredTickets.length > 1 ? 's' : ''} avec {INTERACTION_LIBELLES[interactionFilter]}
-              {' '}— {activeTickets.length} en cours, {archivedTickets.length} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
-            </span>
-          </p>
-        ) : (
-          <>
-            <button type="button" onClick={showActives} aria-pressed={!showArchived}
-              className={`btn-ghost btn-sm px-2 ${!showArchived ? 'text-brand-700 hover:text-brand-700' : ''}`}>
-              {!showArchived && truncatedBy
-                ? `${activeTickets.length} actif(s) affichés sur ${truncatedBy}`
-                : `${showArchived ? 'Voir les actifs' : `${activeTickets.length} actif(s)`}`}
+            {/* Priorité, technicien et dates sont repliés derrière « Filtres » ; les filtres posés restent visibles en puces */}
+            <button type="button" onClick={() => setFiltresOuverts(v => !v)}
+              aria-expanded={filtresOuverts} aria-controls={filtresOuverts ? filtresId : undefined}
+              className={`btn-secondary btn-sm ${nbFiltresPanneau > 0 ? 'bg-slate-100 border-slate-300 font-semibold hover:bg-slate-100' : ''}`}>
+              <SlidersHorizontal aria-hidden="true" />
+              Filtres{nbFiltresPanneau > 0 ? ` · ${nbFiltresPanneau}` : ''}
             </button>
-            <button type="button" onClick={showArchives} aria-pressed={showArchived}
-              className={`btn-ghost btn-sm px-2 ${showArchived ? 'text-brand-700 hover:text-brand-700' : ''}`}>
-              {showArchived
-                ? (serverTotal !== null ? `${serverTotal} archivé(s)` : (loading ? 'Archivés…' : `${archivedTickets.length} archivé(s)`))
-                : archivedTotal !== null ? `Voir ${archivedTotal} archivé(s)` : 'Voir les archivés'}
-            </button>
-          </>
-        )}
-        {showArchived && !searchMode && filterTech && (
-          <p className="w-full t-caption">
-            Archives : technicien comparé au nom exact{mineOnly ? ', sans les tickets non assignés' : ''}. Les anciens tickets notés « Nom (rôle) » n’y figurent pas.
-          </p>
-        )}
-      </div>
-
-      {/* Sort controls */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3">
-        <span className="t-caption inline-flex items-center gap-1"><ArrowUpDown className="w-3.5 h-3.5" aria-hidden="true" />Trier par :</span>
-        {serverPaged ? (
-          <span className="min-h-8 inline-flex items-center t-caption">
-            date de dépôt, plus récents d’abord (tri fixe des archives paginées)
-          </span>
-        ) : (
-          <div className="segmented max-w-full scroll-fade-x sm:[mask-image:none] sm:[-webkit-mask-image:none]">
-            {[
-              { label: 'Date dépôt', value: 'date_depot' },
-              { label: 'Nom client', value: 'nom' },
-              { label: 'Récupération', value: 'date_recuperation' },
-              { label: 'Statut', value: 'statut' },
-              { label: 'Priorité', value: 'priorite' },
-            ].map(({ label, value }) => (
-              <button key={value} type="button"
-                aria-pressed={sortField === value}
-                onClick={() => {
-                  if (sortField === value) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-                  // Récupération : le délai le plus proche (ou dépassé) d'abord
-                  else { setSortField(value); setSortDir(value === 'nom' || value === 'priorite' || value === 'date_recuperation' ? 'asc' : 'desc'); }
-                }}
-                className={`segmented-item shrink-0 ${sortField === value ? 'segmented-item-active' : ''}`}
-              >
-                {label} {sortField === value && (sortDir === 'asc' ? '↑' : '↓')}
+            {!filtresOuverts && pucesFiltres.map(f => (
+              <button key={f.cle} type="button" onClick={f.retirer} aria-label={`Retirer le filtre ${f.texte}`}
+                className="btn-secondary btn-sm tabular-nums">
+                {f.texte} <X aria-hidden="true" />
               </button>
             ))}
           </div>
-        )}
-      </div>
-
-      {/* Bulk actions bar */}
-      {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 mb-3 px-4 py-2 rounded-xl border border-brand-200 bg-brand-50 motion-safe:animate-in">
-          <span className="text-sm font-semibold text-brand-800">{selectedIds.size} sélectionné(s)</span>
-          <div className="relative ml-auto"
-            onKeyDown={e => {
-              if (e.key !== 'Escape' || !showBulkMenu) return;
-              e.stopPropagation();
-              setShowBulkMenu(false);
-              bulkBtnRef.current?.focus();
-            }}>
-            <button type="button" ref={bulkBtnRef} onClick={() => setShowBulkMenu(!showBulkMenu)} disabled={bulkBusy}
-              aria-expanded={showBulkMenu} aria-controls={showBulkMenu ? bulkMenuId : undefined}
-              className="btn-primary btn-sm">
-              {bulkBusy
-                ? <><RefreshCw className="motion-safe:animate-spin" aria-hidden="true" /> Changement en cours…</>
-                : <>Changer statut <ChevronDown aria-hidden="true" /></>}
-            </button>
-            {showBulkMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowBulkMenu(false)} />
-                <div role="group" id={bulkMenuId} ref={bulkMenuRef} aria-label="Nouveau statut des tickets sélectionnés"
-                  className="absolute right-0 top-full mt-1 w-72 card p-1.5 shadow-lg z-50 motion-safe:animate-scale-in">
-                  {STATUTS.map(s => (
-                    <button type="button" key={s} onClick={() => handleBulkStatus(s)}
-                      className="w-full min-h-11 text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset">
-                      {s}
-                      {STATUTS_REMISE.includes(s) && (
-                        <span className="block t-caption">Tickets déjà rendus et réglés ; remise un par un</span>
-                      )}
-                    </button>
+          {filtresOuverts && (
+            <div id={filtresId} className="flex flex-wrap items-center gap-2 pb-3">
+              <select value={filterPriorite} onChange={e => setFilterPriorite(e.target.value)} aria-label="Filtrer par priorité atelier"
+                className={selectCompact}>
+                <option value="">Toutes priorités</option>
+                {PRIORITES.map(p => <option key={p.valeur} value={p.valeur}>{p.libelle}</option>)}
+              </select>
+              {teamList.length > 0 && (
+                <select value={filterTech} onChange={e => setFilterTech(e.target.value)} aria-label="Filtrer par technicien"
+                  className={selectCompact}>
+                  <option value="">Tous les techs</option>
+                  {isTech && techName && (
+                    <option value="__mine__">Mes tickets</option>
+                  )}
+                  {teamList.map(m => (
+                    <option key={m.id} value={m.nom}>{m.nom}</option>
                   ))}
-                </div>
-              </>
-            )}
-          </div>
-          <button type="button" onClick={() => setSelectedIds(new Set())} className="btn-ghost btn-icon"
-            aria-label="Annuler la sélection">
-            <X aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      {/* Compte rendu du changement groupé : tickets à rendre un par un, échecs */}
-      {bulkReport && (() => {
-        const enAttente = bulkReport.aTraiter.filter(r => {
-          const cur = tickets.find(t => t.id === r.id);
-          return !cur || cur.statut === r.statut;
-        });
-        return (
-          <div role="status" className="callout callout-warning items-start mb-3">
-            <AlertTriangle aria-hidden="true" />
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold">{resumeStatutGroupe(bulkReport)}</p>
-              {enAttente.length > 0 && (
-                <>
-                  <p className="mt-1 text-xs">
-                    Remise au client par le panneau (paiement, téléphone de prêt) — cliquez sur un ticket :
-                  </p>
-                  <ul className="mt-2 flex flex-wrap gap-2">
-                    {enAttente.map(r => (
-                      <li key={r.id}>
-                        <button type="button" onClick={() => ouvrirRemise(r)} title={r.raison}
-                          className="btn-secondary btn-sm t-mono font-semibold text-amber-900 border-amber-300 hover:bg-amber-100">
-                          {r.ticket_code}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
+                </select>
               )}
-              {bulkReport.erreurs.length > 0 && (
-                <ul className="mt-2 space-y-0.5 text-xs">
-                  {bulkReport.erreurs.map(r => (
-                    <li key={r.id}><span className="t-mono font-semibold">{r.ticket_code}</span> : {r.message}</li>
-                  ))}
-                </ul>
+              <label htmlFor="dashboard-date-from" className="t-small">Déposé du</label>
+              <input id="dashboard-date-from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} max={dateTo || undefined}
+                className={inputCompact} aria-label="Déposé à partir du" />
+              <label htmlFor="dashboard-date-to" className="t-small">au</label>
+              <input id="dashboard-date-to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} min={dateFrom || undefined}
+                className={inputCompact} aria-label="Déposé jusqu'au" />
+              {nbFiltresPanneau > 0 && (
+                <button type="button" onClick={() => { setFilterPriorite(''); setFilterTech(''); setDateFrom(''); setDateTo(''); }}
+                  className="btn-ghost btn-sm" aria-label="Effacer les filtres priorité, technicien et dates">
+                  <X aria-hidden="true" /> Effacer
+                </button>
               )}
             </div>
-            <button type="button" onClick={() => setBulkReport(null)} aria-label="Fermer le compte rendu"
-              className="btn-ghost btn-icon -my-1.5 -mr-2 text-amber-900 hover:bg-amber-100 hover:text-amber-950">
+          )}
+
+          {/* Ligne 2 : vues par groupe de statuts, compteur actifs / archivés, tri */}
+          <div className="flex flex-wrap items-end justify-between gap-x-4">
+            {/* Sous xl, les onglets prennent toute la largeur (fondu à droite s'ils débordent) ; compteur et tri passent dessous */}
+            <nav aria-label="Vues des tickets"
+              className="page-tabs border-b-0 w-full xl:w-auto xl:flex-1 min-w-0 scroll-fade-x xl:[mask-image:none] xl:[-webkit-mask-image:none]">
+              {GROUPES_STATUT.map(g => {
+                const count = compteGroupe(g);
+                const actif = groupeActif === g.cle;
+                return (
+                  <button key={g.cle || 'tous'} type="button" aria-pressed={actif}
+                    onClick={() => choisirGroupe(g)}
+                    className={`page-tab shrink-0 ${actif ? 'page-tab-active' : ''}`}>
+                    {g.label}
+                    {count !== null && <span className="text-xs tabular-nums text-slate-500">{fmt(count)}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="flex flex-wrap items-center gap-2 pb-1.5 ml-auto">
+              {!listeMelangee && (
+                <p className="t-small tabular-nums whitespace-nowrap">
+                  {showArchived ? (
+                    <>
+                      {serverTotal !== null ? pluriel(serverTotal, 'archivé') : (loading ? 'Archivés…' : pluriel(archivedTickets.length, 'archivé'))}
+                      {' · '}
+                      <button type="button" onClick={showActives}
+                        className="inline-flex items-center min-h-11 -my-3 rounded text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                        Voir les actifs
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {truncatedBy ? `${fmt(nbActifs)} actifs affichés sur ${fmt(truncatedBy)}` : pluriel(nbActifs, 'actif')}
+                      {' · '}
+                      <button type="button" onClick={showArchives}
+                        className="inline-flex items-center min-h-11 -my-3 rounded text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                        {archivedTotal !== null ? `Voir ${fmt(archivedTotal)} archivés` : 'Voir les archivés'}
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+              <label htmlFor="dashboard-sort" className="sr-only">Trier par</label>
+              <select id="dashboard-sort" value={sortField} disabled={serverPaged}
+                title={serverPaged ? 'Archives : date de dépôt, plus récents d’abord' : undefined}
+                onChange={e => {
+                  const tri = TRIS.find(x => x.value === e.target.value) || TRIS[0];
+                  setSortField(tri.value);
+                  setSortDir(tri.defaut);
+                }}
+                className={selectCompact}>
+                {TRIS.map(tri => <option key={tri.value} value={tri.value}>Trier : {tri.label}</option>)}
+              </select>
+              {!serverPaged && (
+                <button type="button" onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                  aria-label={`Ordre ${sortDir === 'asc' ? 'croissant' : 'décroissant'} (${triCourant.label}), inverser`}
+                  title={sortDir === 'asc' ? 'Croissant — inverser' : 'Décroissant — inverser'}
+                  className="btn-ghost btn-icon btn-sm">
+                  <ArrowUpDown aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Résumé d'une recherche ou d'une alerte */}
+        {searchMode && !dashData ? (
+          <p className="px-4 py-2 border-b border-slate-100 text-sm text-slate-600" role="status">
+            {dashError ? 'Recherche indisponible' : `Recherche de « ${debouncedSearch} »…`}
+          </p>
+        ) : searchMode ? (
+          <p className="px-4 py-2 border-b border-slate-100 text-sm text-slate-600 tabular-nums" role="status">
+            <strong className="font-semibold text-slate-900">{fmt(filteredTickets.length)}</strong> résultat{filteredTickets.length > 1 ? 's' : ''} pour « {debouncedSearch} »
+            {' '}— {fmt(activeTickets.length)} en cours, {fmt(archivedTickets.length)} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
+            {truncatedBy ? ` (${fmt(tickets.length)} premiers sur ${fmt(truncatedBy)})` : ''}
+          </p>
+        ) : interactionMode ? (
+          <p className="px-4 py-2 border-b border-slate-100 text-sm text-slate-600 tabular-nums" role="status">
+            <strong className="font-semibold text-slate-900">{fmt(filteredTickets.length)}</strong> ticket{filteredTickets.length > 1 ? 's' : ''} avec {INTERACTION_LIBELLES[interactionFilter]}
+            {' '}— {fmt(activeTickets.length)} en cours, {fmt(archivedTickets.length)} rendu{archivedTickets.length > 1 ? 's' : ''} ou clôturé{archivedTickets.length > 1 ? 's' : ''}
+          </p>
+        ) : null}
+        {showArchived && !searchMode && filterTech && (
+          <p className="px-4 py-2 border-b border-slate-100 t-caption">
+            Archives : technicien comparé au nom exact{mineOnly ? ', sans les tickets non assignés' : ''}. Les anciens tickets notés « Nom (rôle) » n’y figurent pas.
+          </p>
+        )}
+
+        {/* Sélection groupée */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 border-b border-slate-200">
+            <span className="text-sm font-medium text-slate-900 tabular-nums">{fmt(selectedIds.size)} sélectionné{selectedIds.size > 1 ? 's' : ''}</span>
+            <div className="relative ml-auto"
+              onKeyDown={e => {
+                if (e.key !== 'Escape' || !showBulkMenu) return;
+                e.stopPropagation();
+                setShowBulkMenu(false);
+                bulkBtnRef.current?.focus();
+              }}>
+              <button type="button" ref={bulkBtnRef} onClick={() => setShowBulkMenu(!showBulkMenu)} disabled={bulkBusy}
+                aria-expanded={showBulkMenu} aria-controls={showBulkMenu ? bulkMenuId : undefined}
+                className="btn-secondary btn-sm">
+                {bulkBusy
+                  ? <><RefreshCw className="motion-safe:animate-spin" aria-hidden="true" /> Changement en cours…</>
+                  : <>Changer statut <ChevronDown aria-hidden="true" /></>}
+              </button>
+              {showBulkMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowBulkMenu(false)} />
+                  <div role="group" id={bulkMenuId} ref={bulkMenuRef} aria-label="Nouveau statut des tickets sélectionnés"
+                    className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-slate-200 bg-white p-1.5 shadow-md z-50">
+                    {STATUTS.map(s => (
+                      <button type="button" key={s} onClick={() => handleBulkStatus(s)}
+                        className="w-full min-h-11 text-left px-3 py-2 rounded-md text-sm text-slate-700 hover:bg-slate-50 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset">
+                        {s}
+                        {STATUTS_REMISE.includes(s) && (
+                          <span className="block t-caption">Tickets déjà rendus et réglés ; remise un par un</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <button type="button" onClick={() => setSelectedIds(new Set())} className="btn-ghost btn-icon btn-sm"
+              aria-label="Annuler la sélection">
               <X aria-hidden="true" />
             </button>
           </div>
-        );
-      })()}
+        )}
 
-      {/* Table */}
-      <div aria-busy={loading || isPending}
-        className={`card overflow-x-auto motion-safe:transition-opacity duration-150 ${isPending || showingPrevious ? 'opacity-60' : ''}`}>
+        {/* Compte rendu du changement groupé : tickets à rendre un par un, échecs */}
+        {bulkReport && (() => {
+          const enAttenteRemise = bulkReport.aTraiter.filter(r => {
+            const cur = tickets.find(t => t.id === r.id);
+            return !cur || cur.statut === r.statut;
+          });
+          return (
+            <div role="status" className="callout callout-warning items-start m-4">
+              <AlertTriangle aria-hidden="true" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold">{resumeStatutGroupe(bulkReport)}</p>
+                {enAttenteRemise.length > 0 && (
+                  <>
+                    <p className="mt-1 text-xs">
+                      Remise au client par le panneau (paiement, téléphone de prêt) — cliquez sur un ticket :
+                    </p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {enAttenteRemise.map(r => (
+                        <li key={r.id}>
+                          <button type="button" onClick={() => ouvrirRemise(r)} title={r.raison}
+                            className="btn-secondary btn-sm t-mono">
+                            {r.ticket_code}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {bulkReport.erreurs.length > 0 && (
+                  <ul className="mt-2 space-y-0.5 text-xs">
+                    {bulkReport.erreurs.map(r => (
+                      <li key={r.id}><span className="t-mono font-semibold">{r.ticket_code}</span> : {r.message}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button type="button" onClick={() => setBulkReport(null)} aria-label="Fermer le compte rendu"
+                className="btn-ghost btn-icon btn-sm -my-1.5 -mr-2 text-amber-900 hover:bg-amber-100 hover:text-amber-950">
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* En-tête du tableau */}
         <div className={`hidden lg:grid ${GRID_COLS} gap-x-1.5 items-center px-4 min-h-10 bg-slate-50 border-b border-slate-200`}>
           <button type="button" onClick={toggleSelectAll} className="flex items-center justify-center w-11 h-11 -m-2 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             aria-label="Sélectionner tous les tickets de la page"
@@ -1294,8 +1484,8 @@ export default function DashboardPage() {
           <span className="table-header">Client</span>
           <span className="table-header hidden xl:block">Tech</span>
           <span className="table-header">Statut</span>
-          <span className="table-header hidden xl:block">Reçu le</span>
-          <span className="table-header hidden xl:block">Contact</span>
+          <span className="table-header hidden xl:block">Reçu · Prêt le</span>
+          <span className="hidden xl:block"><span className="sr-only">Contact</span></span>
           <span className="table-header text-right">Prix</span>
           <span></span>
         </div>
@@ -1303,7 +1493,7 @@ export default function DashboardPage() {
         {loading && tickets.length === 0 ? (
           <div className="divide-y divide-slate-100" aria-hidden="true">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="px-4 min-h-14 flex items-center gap-3">
+              <div key={i} className="px-4 min-h-12 flex items-center gap-3">
                 <div className="skeleton h-4 w-16 shrink-0" />
                 <div className="flex-1 space-y-2">
                   <div className="skeleton-line w-40" />
@@ -1328,22 +1518,15 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : displayedTickets.length === 0 ? (
-          <div className="empty-state max-h-none motion-safe:animate-in" role="status">
-            <div className="empty-state-icon" aria-hidden="true">
-              <Inbox />
-            </div>
+          <div className="empty-state max-h-none" role="status">
+            <Inbox className="w-6 h-6 text-slate-400" aria-hidden="true" />
             <p className="t-h2">{emptyState.title}</p>
             <p className="t-body text-slate-500 max-w-md">{emptyState.text}</p>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {emptyState.action && (
-                <button type="button" onClick={emptyState.action.onClick} className="btn-secondary">
-                  {emptyState.action.label}
-                </button>
-              )}
-              <button type="button" onClick={() => navigate('/client?staff=1')} className="btn-primary">
-                <Plus aria-hidden="true" /> Nouveau ticket
+            {emptyState.action && (
+              <button type="button" onClick={emptyState.action.onClick} className="btn-secondary">
+                {emptyState.action.label}
               </button>
-            </div>
+            )}
           </div>
         ) : (
           <div>
@@ -1359,24 +1542,30 @@ export default function DashboardPage() {
               const statusCfg = getStatusConfig(t.statut);
               const techColor = getTechColor(t.technicien_assigne);
               const selected = selectedIds.has(t.id);
+              // Délai de réparation toujours visible sur la ligne (décision du gérant, 8 nov. 2026) : pastille « mar. 10/11 17:55 »,
+              // « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer » — dans la colonne « Reçu · Prêt le »
+              // à partir de lg, sous le nom du client en dessous ; rien une fois la réparation terminée ou rendue.
+              const delai = delaiTicket(t, now);
+              const reperes = reperesLigne(t, ticketInteractions[t.id]);
+              const titreDate = recu ? `Reçu le ${recu.complet}` : '';
               const prix = (t.devis_estime || t.tarif_final) ? (
                 <>
-                  <p className="text-sm font-semibold tabular-nums text-slate-900">
+                  <p className="text-sm font-semibold tabular-nums text-slate-900 leading-5">
                     {formatPrix(t.tarif_final || t.devis_estime)}
                   </p>
                   {t.paye ? (
-                    <span className="badge badge-sm badge-success mt-0.5">PAYÉ</span>
+                    <span className="badge badge-sm badge-neutral">Payé</span>
                   ) : t.acompte > 0 ? (
-                    <span className="badge badge-sm badge-neutral mt-0.5">Ac. {formatPrix(t.acompte)}</span>
+                    <span className="badge badge-sm badge-warning tabular-nums">Acompte {formatPrix(t.acompte)}</span>
                   ) : (
-                    <span className="badge badge-sm badge-warning mt-0.5">Non payé</span>
+                    <span className="block text-xs font-medium text-red-700 leading-5">Non payé</span>
                   )}
                 </>
               ) : t.est_retour_sav ? (
                 /* Retour SAV : prise en charge sous garantie, rien à payer */
                 <>
-                  <p className="text-sm font-semibold tabular-nums text-slate-900">{formatPrix(0)}</p>
-                  <span className="badge badge-sm badge-neutral mt-0.5">Garantie</span>
+                  <p className="text-sm font-semibold tabular-nums text-slate-900 leading-5">{formatPrix(0)}</p>
+                  <span className="badge badge-sm badge-neutral">Garantie</span>
                 </>
               ) : (
                 <p className="text-sm text-slate-500">
@@ -1388,19 +1577,21 @@ export default function DashboardPage() {
               <Fragment key={t.id}>
               {showArchiveSeparator && (
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-700">
-                  Rendus ou clôturés — {archivedTickets.length} résultat{archivedTickets.length > 1 ? 's' : ''} dans les archives (retour garantie, historique)
+                  Rendus ou clôturés — {pluriel(archivedTickets.length, 'résultat')} dans les archives (retour garantie, historique)
                 </div>
               )}
-              {/* Ligne : carte 3 lignes sous lg (titre / méta / statut + contact) ; grille à partir de lg —
-                  deux lignes de grille sur iPad (données / bandeau d'actions), une seule à partir de xl */}
+              {/* Ligne : la ligne entière ouvre le ticket (le lien du code garde l'ouverture dans un nouvel onglet et la
+                  navigation au clavier). Carte 3 lignes sous lg ; grille à partir de lg — deux lignes de grille sur iPad
+                  (données / technicien · contact · date), une seule de 48 px à partir de xl. */}
               <div
-                className={`group relative flex flex-col gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0
+                onClick={(e) => clicLigne(e, t.id)}
+                className={`group relative flex flex-col gap-2 px-4 py-3 border-b border-slate-100 last:border-b-0 cursor-pointer
                   lg:grid ${GRID_COLS} lg:gap-x-1.5 lg:gap-y-1 lg:items-center xl:gap-y-0 xl:py-0
-                  ${compactMode ? 'lg:py-1 xl:min-h-12' : 'lg:py-1.5 xl:min-h-14'}
+                  ${compactMode ? 'lg:py-1 xl:min-h-10' : 'lg:py-1.5 xl:min-h-12'}
                   transition-colors duration-150 hover:bg-slate-50
                   ${selected ? 'bg-brand-50/60 hover:bg-brand-50/60' : listeMelangee && archivedRow ? 'bg-slate-50/60' : ''}`}
               >
-                {/* Checkbox (sur iPad : centrée sur les deux lignes de la grille) */}
+                {/* Case à cocher (sur iPad : centrée sur les deux lignes de la grille) */}
                 <div className="hidden lg:flex items-center justify-center lg:row-span-2 xl:row-span-1">
                   <button type="button" onClick={() => toggleSelect(t.id)}
                     className="w-11 h-11 -m-2 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
@@ -1413,122 +1604,67 @@ export default function DashboardPage() {
 
                 {/* Ligne 1 (mobile) : code · client · prix — cellules de la grille à partir de lg */}
                 <div className="flex items-start gap-3 min-w-0 lg:contents">
-                  {/* Ticket code */}
-                  <div className="shrink-0 cursor-pointer lg:min-w-0 lg:row-span-2 xl:row-span-1" onClick={() => openTicket(t.id)}>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {t.attention && (
-                        <span className="inline-flex shrink-0" title="Attention">
-                          <AlertTriangle className="w-4 h-4 text-red-700" aria-hidden="true" />
-                          <span className="sr-only">Attention</span>
-                        </span>
-                      )}
-                      <a href={`${basePath}/ticket/${t.id}`} data-ticket-link=""
-                        onClick={(e) => openTicketLink(e, t.id)}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-                          const links = [...document.querySelectorAll('[data-ticket-link]')];
-                          const idx = links.indexOf(e.currentTarget);
-                          const next = links[idx + (e.key === 'ArrowDown' ? 1 : -1)];
-                          e.preventDefault();
-                          if (next) next.focus();
-                          else if (e.key === 'ArrowUp') document.getElementById('dashboard-search')?.focus();
-                        }}
-                        aria-label={`Ouvrir le ticket ${t.ticket_code}${clientName ? `, ${clientName}` : ''}, ${t.statut}`}
-                        className="inline-flex items-center min-h-11 -my-1.5 t-mono font-bold text-brand-700 rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
-                        {t.ticket_code}
-                      </a>
-                      {t.est_retour_sav && (
-                        <span className="badge badge-sm badge-danger" title="Retour SAV">
-                          <RotateCcw className="w-3 h-3" aria-hidden="true" /> SAV
-                        </span>
-                      )}
-                      {t.source === 'distance' && (
-                        <span className="badge badge-sm badge-info" title="Dépôt à distance">
-                          <Globe className="w-3 h-3" aria-hidden="true" /> Dist.
-                        </span>
-                      )}
-                      {/* État de la validation devis : validé, en attente, rien sinon */}
-                      {ticketInteractions[t.id]?.accord_client_valide ? (
-                        <span className="inline-flex shrink-0" role="img"
-                          title="Client a validé le devis — tu peux démarrer la réparation"
-                          aria-label="Devis validé par le client">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-700" aria-hidden="true" />
-                        </span>
-                      ) : t.statut === "En attente d'accord client" ? (
-                        <span className="inline-flex shrink-0" role="img"
-                          title="En attente de l'accord client — à relancer"
-                          aria-label="En attente d'accord client">
-                          <Clock className="w-4 h-4 text-amber-700" aria-hidden="true" />
-                        </span>
-                      ) : null}
-                      {/* Même teinte que les pastilles du haut : pastille ronde, pas une icône nue */}
-                      {ticketInteractions[t.id]?.messages && (
-                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 shrink-0" title="Message client non lu">
-                          <MessageCircle className="w-3.5 h-3.5 text-blue-700" aria-hidden="true" />
-                          <span className="sr-only">Message client non lu</span>
-                        </span>
-                      )}
-                      {ticketInteractions[t.id]?.avis && (
-                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-50 shrink-0" title="Avis client non lu">
-                          <Star className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
-                          <span className="sr-only">Avis client non lu</span>
-                        </span>
-                      )}
-                    </div>
+                  {/* Code du ticket : le lien (nouvel onglet, flèches haut / bas) */}
+                  <div className="shrink-0 lg:min-w-0 lg:row-span-2 xl:row-span-1">
+                    <a href={`${basePath}/ticket/${t.id}`} data-ticket-link=""
+                      onClick={(e) => openTicketLink(e, t.id)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                        const links = [...document.querySelectorAll('[data-ticket-link]')];
+                        const idx = links.indexOf(e.currentTarget);
+                        const next = links[idx + (e.key === 'ArrowDown' ? 1 : -1)];
+                        e.preventDefault();
+                        if (next) next.focus();
+                        else if (e.key === 'ArrowUp') document.getElementById('dashboard-search')?.focus();
+                      }}
+                      aria-label={`Ouvrir le ticket ${t.ticket_code}${clientName ? `, ${clientName}` : ''}, ${t.statut}`}
+                      className="inline-flex items-center min-h-11 -my-1.5 font-mono text-xs tabular-nums text-slate-900 rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1">
+                      {t.ticket_code}
+                    </a>
                   </div>
 
-                  {/* Client : nom + priorité + réception sur une ligne, téléphone (· appareil · panne) dessous */}
-                  <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
-                    {/* Les badges passent sous le nom quand la place manque : le nom reste lisible */}
-                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
-                      <p className="truncate max-w-full text-sm font-semibold text-slate-900" title={clientName}>
+                  {/* Client : nom + priorité + délai urgent + repères sur une ligne, téléphone · appareil · panne dessous */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-x-1.5 min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900" title={clientName}>
                         {t.client_prenom || ''} {t.client_nom || ''}
                       </p>
-                      {t.client_carte_camby ? <span className="badge badge-sm badge-brand shrink-0">Camby</span> : null}
                       <PrioriteBadge priorite={t.priorite} court className="shrink-0" />
-                      {/* Délai : « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer » */}
-                      <PastilleDelai ticket={t} taille="md" />
-                      {receptionACompleter(t) && (
-                        /* Pastille ambre (le libellé complet ne tient sur aucune ligne de 56 px sans la faire déborder) */
-                        <span className="badge badge-sm badge-warning shrink-0 px-1.5"
-                          title="Fiche de réception (accessoires, état, tests) à compléter">
-                          <ClipboardList className="w-3.5 h-3.5" aria-hidden="true" />
-                          <span className="sr-only">Réception à compléter</span>
-                        </span>
-                      )}
+                      <Repere items={reperes.client} icone={MessageCircle} />
+                      <Repere items={reperes.dossier} icone={Info} />
                     </div>
-                    {/* ≥ xl : la panne peut passer sur une 2ᵉ ligne (3 lignes de texte tiennent dans les 56 px) */}
-                    <p className="t-small truncate xl:whitespace-normal xl:line-clamp-2 tabular-nums"
+                    <p className="table-cell-muted truncate tabular-nums"
                       title={[t.client_tel, estAutreNumero(t) ? `joignable ${telJoignable(t)}` : '', appareil, panne.texte].filter(Boolean).join(' · ')}>
                       {formatTel(t.client_tel)}
-                      {/* Second numéro du ticket : c'est lui que visent les icônes SMS/WhatsApp, la réceptionniste doit le voir */}
+                      {/* Second numéro du ticket : c'est lui que vise le menu de contact, la réceptionniste doit le voir */}
                       {estAutreNumero(t) && (
-                        <span className="whitespace-nowrap font-medium text-slate-700">{' · '}joignable {formatTel(telJoignable(t))}</span>
+                        <span className="whitespace-nowrap text-slate-700">{' · '}joignable {formatTel(telJoignable(t))}</span>
                       )}
                       {appareil ? ` · ${appareil}` : ''}
                       {panne.aCommander ? ' · Pièce à commander' : panne.texte !== '—' ? ` · ${panne.texte}` : ''}
-                      {/* Côté tech : code et schéma de déverrouillage, comme avant dans la colonne Appareil */}
+                      {/* Côté tech : code et schéma de déverrouillage */}
                       {isTech && t.pin && (
-                        <span className="t-mono text-amber-800 whitespace-nowrap">
+                        <span className="t-mono text-slate-700 whitespace-nowrap">
                           {' · '}<Lock className="inline w-3.5 h-3.5 -mt-0.5" aria-hidden="true" /> {t.pin}
                         </span>
                       )}
                       {isTech && t.pattern && (
-                        <span className="t-mono text-violet-800 whitespace-nowrap">
+                        <span className="t-mono text-slate-700 whitespace-nowrap">
                           {' · '}<Shield className="inline w-3.5 h-3.5 -mt-0.5" aria-hidden="true" /> {t.pattern}
                         </span>
                       )}
                     </p>
                     {/* Mobile / tablette portrait : la colonne « Reçu le » n'existe pas, la date passe sous le client */}
-                    {recu && (
-                      <p className="lg:hidden t-small tabular-nums text-slate-700" title={`Reçu le ${recu.complet}`}>
-                        Reçu le <span className="font-semibold text-slate-900">{recu.jour}</span> à {recu.heure} · {recu.relatif}
+                    {(recu || delai) && (
+                      <p className="lg:hidden table-cell-muted tabular-nums flex flex-wrap items-center gap-x-2 gap-y-1" title={titreDate}>
+                        {recu && <span>Reçu le {recu.jour} · {recu.relatif}</span>}
+                        {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" />}
                       </p>
                     )}
                   </div>
 
                   {/* Prix (mobile, à droite du titre) */}
-                  <div className="lg:hidden shrink-0 text-right cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                  <div className="lg:hidden shrink-0 text-right">
                     {prix}
                   </div>
                 </div>
@@ -1537,33 +1673,34 @@ export default function DashboardPage() {
                     Placement explicite (colonne + ligne) du statut et du tech à partir de xl : les autres cellules
                     se placent automatiquement autour, dans l'ordre du DOM. */}
                 <div className="flex items-center gap-2 lg:contents">
-                  {/* Statut — inline dropdown neutre + pastille de la couleur du statut (44 px sous le doigt) */}
-                  <div className="relative flex-1 min-w-0 xl:col-start-5 xl:row-start-1" onClick={e => e.stopPropagation()}>
+                  {/* Statut — sélecteur neutre + pastille de la couleur du statut (44 px sous le doigt) */}
+                  <div className="relative flex-1 min-w-0 xl:col-start-5 xl:row-start-1">
                     <span className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${statusCfg.dot}`} aria-hidden="true" />
                     <select
                       value={t.statut}
                       aria-label={`Statut du ticket ${t.ticket_code}`}
                       onChange={e => handleInlineStatus(t, e.target.value)}
-                      className="select min-h-11 lg:min-h-9 lg:py-1 [@media(pointer:coarse)]:min-h-11 pl-6 pr-7 text-base lg:text-sm font-medium text-slate-800 truncate"
+                      className="select min-h-11 lg:min-h-9 lg:py-1 pl-6 pr-7 text-base lg:text-sm font-medium text-slate-800 truncate"
                     >
                       {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
 
-                  {/* Bandeau d'actions : tech · contact · date. Mobile : icônes de contact à droite du statut ;
-                      iPad (lg) : 2ᵉ ligne de la grille sous le client ; ≥ xl : chaque bloc retrouve sa colonne. */}
+                  {/* Technicien · contact · date. Mobile : contact à droite du statut ; iPad (lg) : 2ᵉ ligne de la
+                      grille sous le client ; ≥ xl : chaque bloc retrouve sa colonne. */}
                   <div className="flex items-center gap-1 shrink-0 lg:col-start-3 lg:col-span-3 lg:row-start-2 lg:gap-2 lg:min-w-0 xl:contents">
-                    {/* Tech — inline dropdown : neutre, teinté seulement si assigné */}
-                    <div className="hidden lg:block lg:w-40 xl:w-auto xl:col-start-4 xl:row-start-1"
-                      onClick={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}>
-                      {/* Couleur du technicien (équipe) sur le filet gauche : zéro place prise au nom */}
+                    {/* Technicien — sélecteur neutre ; la couleur libre du technicien en pastille de 8 px devant son nom */}
+                    <div className="relative hidden lg:block lg:w-40 xl:w-auto xl:col-start-4 xl:row-start-1">
+                      {techColor && (
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+                          style={{ backgroundColor: techColor }} aria-hidden="true" />
+                      )}
                       <select
                         value={t.technicien_assigne || ''}
                         aria-label={`Technicien du ticket ${t.ticket_code}`}
                         onChange={e => { const val = e.target.value; handleInlineTech(t.id, val); }}
-                        style={techColor ? { borderLeftColor: techColor, borderLeftWidth: '3px' } : undefined}
-                        className={`select min-h-11 lg:min-h-9 lg:py-1 [@media(pointer:coarse)]:min-h-11 pl-2 pr-7 text-sm font-medium truncate ${
-                          t.technicien_assigne ? 'text-brand-700 bg-brand-50 border-brand-200' : 'text-slate-500'}`}
+                        className={`select min-h-11 lg:min-h-9 lg:py-1 ${techColor ? 'pl-6' : 'pl-2.5'} pr-7 text-sm truncate ${
+                          t.technicien_assigne ? 'text-slate-800 font-medium' : 'text-slate-500'}`}
                       >
                         <option value="">— Aucun</option>
                         {teamList.map(m => (
@@ -1572,93 +1709,51 @@ export default function DashboardPage() {
                       </select>
                     </div>
 
-                    {/* Contact — vers le second numéro du ticket s'il existe (lib/contact.js). Icône allumée (emerald)
-                        quand un contact est parti par ce canal DEPUIS LE DERNIER CHANGEMENT DE STATUT (t.contact,
-                        calculé par le serveur) ; l'info-bulle donne la date, l'heure et l'auteur. Le téléphone note
-                        un appel (« Contacté par tél. ») après une confirmation légère sous la rangée. */}
-                    <div className="flex items-center shrink-0 xl:col-start-7 xl:row-start-1">
-                      <a href={telJoignable(t) ? waLink(telJoignable(t), `Bonjour, concernant votre ticket ${t.ticket_code}...`) : '#'}
-                        target="_blank" rel="noopener noreferrer"
-                        onClick={e => { if (!telJoignable(t)) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`WhatsApp à ${clientName || 'ce client'}${contact.canaux.whatsapp ? ` (${titreCanal(contact, 'whatsapp')})` : ''}`}
-                        className={CONTACT_ICON} title={contact.canaux.whatsapp ? titreCanal(contact, 'whatsapp') : 'WhatsApp'}>
-                        <MessageCircle className={contact.canaux.whatsapp ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
-                      </a>
-                      <a href={telJoignable(t) ? smsLink(telJoignable(t), `Klikphone: Votre ticket ${t.ticket_code}...`) : '#'}
-                        onClick={e => { if (!telJoignable(t)) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`SMS à ${clientName || 'ce client'}${contact.canaux.sms ? ` (${titreCanal(contact, 'sms')})` : ''}`}
-                        className={CONTACT_ICON} title={contact.canaux.sms ? titreCanal(contact, 'sms') : 'SMS'}>
-                        <Send className={contact.canaux.sms ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
-                      </a>
-                      <a href={t.client_email ? `mailto:${t.client_email}` : '#'}
-                        onClick={e => { if (!t.client_email) e.preventDefault(); e.stopPropagation(); }}
-                        aria-label={`Email à ${clientName || 'ce client'}${contact.canaux.email ? ` (${titreCanal(contact, 'email')})` : ''}`}
-                        className={CONTACT_ICON} title={contact.canaux.email ? titreCanal(contact, 'email') : 'E-mail'}>
-                        <Mail className={contact.canaux.email ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
-                      </a>
-                      <button type="button" data-appel-btn={t.id}
-                        onClick={e => { e.stopPropagation(); setAppelAConfirmer(v => (v === t.id ? null : t.id)); }}
-                        aria-label={`Contacté par téléphone : ${clientName || 'ce client'}${contact.canaux.appel ? ` (${titreCanal(contact, 'appel')})` : ''}`}
-                        aria-expanded={appelAConfirmer === t.id}
-                        className={`${CONTACT_ICON} ${appelAConfirmer === t.id ? 'bg-brand-50 text-brand-700' : ''}`}
-                        title={contact.canaux.appel ? titreCanal(contact, 'appel') : 'Contacté par tél.'}>
-                        <Phone className={contact.canaux.appel ? 'text-emerald-600' : 'text-slate-500'} aria-hidden="true" />
-                      </button>
+                    {/* Contact : un bouton, un menu (WhatsApp · SMS · e-mail · appel) */}
+                    <div className="flex items-center justify-center shrink-0 xl:col-start-7 xl:row-start-1">
+                      <MenuContact t={t} clientName={clientName} contact={contact}
+                        appelOuvert={appelAConfirmer === t.id}
+                        onAppel={() => setAppelAConfirmer(v => (v === t.id ? null : t.id))} />
                     </div>
 
-                    {/* Date de réception (dépôt) + délai (≥ lg ; à droite du bandeau sur iPad) */}
-                    <div className="hidden lg:block lg:ml-auto xl:ml-0 min-w-0 cursor-pointer xl:col-start-6 xl:row-start-1"
-                      onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                    {/* Date de réception + délai promis (≥ lg ; à droite du bandeau sur iPad) */}
+                    <div className="hidden lg:flex lg:flex-col lg:items-start lg:gap-1 lg:ml-auto xl:ml-0 min-w-0 xl:col-start-6 xl:row-start-1">
                       {recu ? (
-                        <p className="text-sm tabular-nums whitespace-nowrap leading-tight" title={`Reçu le ${recu.complet}`}>
+                        <p className="table-cell-muted tabular-nums truncate max-w-full" title={titreDate}>
                           <span className="sr-only">Reçu le </span>
-                          <span className="font-semibold text-slate-900">{recu.jour}</span>{' '}
-                          <span className="text-slate-700">{recu.heure}</span>
-                          <span className="block t-caption text-slate-600">{recu.relatif}</span>
+                          <span className="text-slate-900">{recu.jour}</span>
+                          {' '}{recu.relatif}
                         </p>
-                      ) : <p className="t-caption text-slate-600">—</p>}
-                      {/* Délai d'un ticket sans pastille (réparation terminée…) : rappel neutre */}
-                      {t.date_recuperation && !delaiTicket(t) && (() => {
-                        const info = infoDelai(t.date_recuperation);
-                        const texte = info.date ? `Délai ${dateHeureCourte(info.date)}` : info.libelle;
-                        return (
-                          <p className="t-caption flex items-center gap-1 mt-0.5 whitespace-nowrap" title={info.titre}>
-                            <Calendar className="w-3 h-3 shrink-0" aria-hidden="true" /> <span className="truncate">{texte}</span>
-                          </p>
-                        );
-                      })()}
+                      ) : <p className="table-cell-muted">—</p>}
+                      {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" className="max-w-full" />}
                     </div>
                   </div>
                 </div>
 
                 {/* Prix (≥ lg) */}
-                <div className="hidden lg:block text-right cursor-pointer" onClick={() => navigate(`${basePath}/ticket/${t.id}`)}>
+                <div className="hidden lg:block text-right">
                   {prix}
                 </div>
 
-                {/* Chevron décoratif : l'ouverture passe par le lien « Ouvrir le ticket » et la cellule cliquable */}
-                <div className="hidden lg:flex items-center justify-end self-stretch cursor-pointer lg:row-span-2 xl:row-span-1" onClick={() => openTicket(t.id)}>
-                  <span aria-hidden="true" className="p-0.5">
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-brand-600 transition-colors duration-150" />
-                  </span>
+                {/* Chevron : rappel discret que la ligne s'ouvre */}
+                <div className="hidden lg:flex items-center justify-end self-stretch lg:row-span-2 xl:row-span-1">
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors duration-150" aria-hidden="true" />
                 </div>
               </div>
-              {/* Confirmation légère de l'appel, dans le flux (la carte défile horizontalement : pas de popover) */}
+              {/* Confirmation légère de l'appel, dans le flux sous la rangée */}
               {appelAConfirmer === t.id && (
                 <div role="group" aria-label={`Noter un appel téléphonique à ${clientName || 'ce client'}`}
                   onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); fermerAppel(t.id); } }}
-                  className="flex flex-wrap items-center gap-2 px-4 py-2 bg-brand-50/70 border-b border-slate-100 text-sm motion-safe:animate-in">
-                  <PhoneCall className="w-4 h-4 text-brand-700 shrink-0" aria-hidden="true" />
-                  <span className="font-medium text-slate-800">
+                  className="flex flex-wrap items-center gap-2 px-4 py-2 bg-slate-50 border-b border-slate-100 text-sm">
+                  <PhoneCall className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
+                  <span className="text-slate-800">
                     {clientName || 'Ce client'} ({t.ticket_code}) a été appelé ? L'appel sera noté sur le ticket.
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <button type="button" autoFocus onClick={() => noterAppel(t)}
-                      className="btn-primary btn-sm [@media(pointer:coarse)]:min-h-11">
+                    <button type="button" autoFocus onClick={() => noterAppel(t)} className="btn-secondary btn-sm">
                       Oui, noter l'appel
                     </button>
-                    <button type="button" onClick={() => fermerAppel(t.id)}
-                      className="btn-ghost btn-sm [@media(pointer:coarse)]:min-h-11">
+                    <button type="button" onClick={() => fermerAppel(t.id)} className="btn-ghost btn-sm">
                       Non
                     </button>
                   </span>
@@ -1676,11 +1771,11 @@ export default function DashboardPage() {
             className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-t border-slate-100 bg-slate-50/60">
             <div className="flex items-center gap-2">
               <span className="t-caption tabular-nums">
-                {safePage * pageSize + 1}–{Math.min((safePage + 1) * pageSize, totalCount)} sur {totalCount}
+                {fmt(safePage * pageSize + 1)}–{fmt(Math.min((safePage + 1) * pageSize, totalCount))} sur {fmt(totalCount)}
               </span>
               <label htmlFor="dashboard-page-size" className="sr-only">Tickets par page</label>
               <select id="dashboard-page-size" value={pageSize} onChange={e => handlePageSizeChange(Number(e.target.value))}
-                className="select w-auto min-h-11 lg:min-h-9 lg:py-1 [@media(pointer:coarse)]:min-h-11 text-base lg:text-sm">
+                className={selectCompact}>
                 {[10, 25, 50, 100].map(n => (
                   <option key={n} value={n}>{n} / page</option>
                 ))}
@@ -1700,7 +1795,7 @@ export default function DashboardPage() {
                       aria-label={`Page ${i + 1}`}
                       aria-current={i === safePage ? 'page' : undefined}
                       className={`btn-ghost btn-icon btn-sm tabular-nums ${
-                        i === safePage ? 'bg-brand-50 text-brand-700 font-bold hover:bg-brand-50 hover:text-brand-700' : ''
+                        i === safePage ? 'bg-slate-100 text-slate-900 font-semibold hover:bg-slate-100' : ''
                       }`}>
                       {i + 1}
                     </button>
@@ -1715,29 +1810,6 @@ export default function DashboardPage() {
           </nav>
         )}
       </div>
-
-      {/* ─── Statistiques du jour (pied de page) ──────── */}
-      <section className="mt-8 pt-6 border-t border-slate-200" aria-label="Statistiques du jour">
-        <h2 className="t-overline mb-3">Statistiques du jour</h2>
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          {[
-            { label: "Tickets aujourd'hui", value: extraKpis.todayCount, icon: Sparkles },
-            { label: 'En attente', value: extraKpis.enAttente, icon: Clock },
-            { label: 'CA estimé (en cours)', value: extraKpis.ca === null ? '—' : formatPrix(extraKpis.ca), icon: Euro },
-            { label: 'Prêts à rendre', value: extraKpis.prets, icon: CheckCircle2 },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="kpi-card-sm items-center">
-              <div className="kpi-icon" aria-hidden="true">
-                <Icon />
-              </div>
-              <div className="min-w-0">
-                <p className="kpi-value text-xl">{value}</p>
-                <p className="kpi-label">{label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* ─── Santé des prix (admin) : prix estimés ou périmés, propositions, modèles sans prix ── */}
       {user?.role === 'admin' && (

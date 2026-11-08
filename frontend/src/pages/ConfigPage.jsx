@@ -4,6 +4,7 @@ import { useApi, invalidateCache, clearCache } from '../hooks/useApi';
 import api from '../lib/api';
 import SmsBrevoConfig from '../components/SmsBrevoConfig';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import { useSettings } from '../hooks/useSettings';
 import { normKey, searchModeles, parseModelesEnMasse, sansPrefixeMarque, MARQUE_AUTRE } from '../lib/catalog';
 import { useAdminElevation } from '../hooks/useAdminElevation';
@@ -20,7 +21,7 @@ import {
 const CATALOG_CATEGORIES = ['Smartphone', 'Tablette', 'PC Portable', 'Console', 'Autre'];
 // Barre « Enregistrer » collée au bas de l'écran sur les onglets longs ; décalée à droite pour ne pas
 // passer sous la bulle du chat (fixe en bas à droite, 48–56 px)
-const BARRE_ENREGISTRER = 'sticky bottom-0 z-10 -mx-4 sm:-mx-6 lg:mx-0 px-4 sm:px-6 lg:px-0 pr-20 sm:pr-24 lg:pr-24 py-3 bg-slate-50/95 backdrop-blur-sm flex justify-end';
+const BARRE_ENREGISTRER = 'sticky bottom-0 z-10 -mx-4 sm:-mx-6 lg:mx-0 px-4 sm:px-6 lg:px-0 pr-20 sm:pr-24 lg:pr-24 py-3 bg-white border-t border-slate-200 flex justify-end';
 // Limite du backend ; pas de découpage : l'ordre (rang dans la liste) repartirait de zéro à chaque envoi
 const BULK_MAX = 500;
 
@@ -912,6 +913,8 @@ export default function ConfigPage() {
   // Élévation admin : une action sensible refusée faute de jeton (valable 10 min) rouvre
   // l'identification admin, puis est rejouée une fois. Plusieurs refus simultanés attendent ensemble.
   const { sensible, adminPrompt } = useAdminElevation();
+  // Suppressions et restauration : confirmées dans la modale du système (plus de confirm() / prompt() natifs)
+  const confirmation = useConfirmDialog();
 
   // Track unsaved config changes
   const initialConfigRef = useRef({});
@@ -1185,8 +1188,7 @@ export default function ConfigPage() {
     setShowTeamForm(true);
   };
 
-  const handleDeleteMember = async (id) => {
-    if (!confirm('Supprimer ce membre ?')) return;
+  const supprimerMembre = async (id) => {
     try {
       await sensible(() => api.deleteTeamMember(id));
       invalidateCache('config', 'team');
@@ -1194,6 +1196,16 @@ export default function ConfigPage() {
     } catch (err) {
       toast.error(err?.message || 'Erreur suppression');
     }
+  };
+
+  const handleDeleteMember = (member) => {
+    confirmation.demander({
+      title: `Retirer ${member.nom} de l’équipe ?`,
+      description: 'Son nom disparaît des listes d’attribution ; les tickets déjà assignés gardent son nom.',
+      confirmLabel: 'Retirer le membre',
+      destructive: true,
+      onConfirm: () => supprimerMembre(member.id),
+    });
   };
 
   // PIN
@@ -1300,8 +1312,17 @@ export default function ConfigPage() {
     }
   };
 
-  const handleDeleteMarque = async (marque, nbModeles) => {
-    if (!confirm(`Supprimer la marque ${marque} et ses ${nbModeles} modèle${nbModeles > 1 ? 's' : ''} (${catalogCategorie}) ?`)) return;
+  const handleDeleteMarque = (marque, nbModeles) => {
+    confirmation.demander({
+      title: `Supprimer la marque ${marque} ?`,
+      description: `Ses ${nbModeles} modèle${nbModeles > 1 ? 's' : ''} (${catalogCategorie}) disparaissent du catalogue ; les tickets existants gardent leur appareil.`,
+      confirmLabel: 'Supprimer la marque',
+      destructive: true,
+      onConfirm: () => supprimerMarque(marque),
+    });
+  };
+
+  const supprimerMarque = async (marque) => {
     setCatalogBusy(true);
     try {
       await api.deleteMarque(catalogCategorie, marque);
@@ -1316,8 +1337,17 @@ export default function ConfigPage() {
     }
   };
 
-  const handleDeleteModele = async (marque, modele) => {
-    if (!confirm(`Supprimer le modèle ${marque} ${modele} ?`)) return;
+  const handleDeleteModele = (marque, modele) => {
+    confirmation.demander({
+      title: `Supprimer le modèle ${marque} ${modele} ?`,
+      description: 'Il disparaît du catalogue ; les tickets existants gardent leur appareil.',
+      confirmLabel: 'Supprimer le modèle',
+      destructive: true,
+      onConfirm: () => supprimerModele(marque, modele),
+    });
+  };
+
+  const supprimerModele = async (marque, modele) => {
     setCatalogBusy(true);
     try {
       await api.deleteModele(catalogCategorie, marque, modele);
@@ -1384,18 +1414,9 @@ export default function ConfigPage() {
     }
   };
 
-  const handleImportBackup = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || importBusy) return;
+  const restaurerBackup = async (data) => {
+    setImportBusy(true);
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!data.tables) {
-        toast.error('Format de backup invalide');
-        return;
-      }
-      if (!confirm(`Restaurer le backup du ${data.backup_date?.slice(0, 10) || '?'} ? Cela remplacera TOUTES les données actuelles.`)) return;
-      setImportBusy(true);
       const result = await sensible(() => api.importBackup(data));
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
       toast.success(`Backup restauré : ${total} enregistrements importés`);
@@ -1407,6 +1428,29 @@ export default function ConfigPage() {
       toast.error(err.message || 'Erreur import backup');
     } finally {
       setImportBusy(false);
+    }
+  };
+
+  const handleImportBackup = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || importBusy) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.tables) {
+        toast.error('Format de backup invalide');
+        return;
+      }
+      confirmation.demander({
+        title: `Restaurer le backup du ${data.backup_date?.slice(0, 10) || '?'} ?`,
+        description: 'Toutes les données actuelles (tickets, clients, réglages) sont remplacées par celles du fichier. Cette action est définitive.',
+        confirmLabel: 'Restaurer le backup',
+        destructive: true,
+        onConfirm: () => restaurerBackup(data),
+      });
+    } catch (err) {
+      toast.error(err.message || 'Erreur import backup');
+    } finally {
       e.target.value = '';
     }
   };
@@ -1441,6 +1485,7 @@ export default function ConfigPage() {
   return (
     <div className="page max-w-[1280px]">
       {adminPrompt}
+      {confirmation.dialog}
       <div className="page-header">
         <div>
           <h1 className="page-header-title">Configuration</h1>
@@ -1530,7 +1575,7 @@ export default function ConfigPage() {
               <div>
                 <label className="input-label" htmlFor="boutique-message-ticket">Message personnalisé (ticket client)</label>
                 <input id="boutique-message-ticket" value={config.message_ticket || ''} onChange={e => updateConfig('message_ticket', e.target.value)}
-                  className="input" placeholder="Merci de votre confiance !" />
+                  className="input" placeholder="Merci de votre confiance" />
               </div>
             </div>
           </div>
@@ -1648,7 +1693,7 @@ export default function ConfigPage() {
                       <button onClick={() => handleEditMember(member)} className="btn-ghost btn-icon" aria-label={`Modifier ${member.nom}`}>
                         <Edit3 />
                       </button>
-                      <button onClick={() => handleDeleteMember(member.id)} className="btn-danger-ghost btn-icon" aria-label={`Supprimer ${member.nom}`}>
+                      <button onClick={() => handleDeleteMember(member)} className="btn-danger-ghost btn-icon" aria-label={`Supprimer ${member.nom}`}>
                         <Trash2 />
                       </button>
                     </div>
@@ -2060,7 +2105,7 @@ export default function ConfigPage() {
                         // Save first to make sure the URL is stored
                         if (!(await handleSaveConfig())) return;
                         await sensible(() => api.testDiscord());
-                        toast.success('Webhook Discord fonctionnel !');
+                        toast.success('Webhook Discord fonctionnel');
                       } catch (err) {
                         toast.error(err.message || 'Erreur webhook');
                       } finally {
@@ -2171,7 +2216,7 @@ export default function ConfigPage() {
                     try {
                       if (!(await handleSaveConfig())) return;
                       const res = await sensible(() => api.testSmtpEmail(smtpTestEmail.trim()));
-                      if (res.status === 'ok') toast.success(res.message || 'Email de test envoyé !');
+                      if (res.status === 'ok') toast.success(res.message || 'Email de test envoyé');
                       else toast.error(res.message || 'Erreur envoi');
                     } catch (err) {
                       toast.error(err.message || 'Erreur test email');
@@ -2349,13 +2394,20 @@ export default function ConfigPage() {
                         const rayons = await sensible(() => api.getCaisseRayons());
                         const list = Array.isArray(rayons) ? rayons : [];
                         if (list.length === 0) { toast.error('Aucun rayon trouvé — vérifiez la config'); return; }
-                        const options = list.map(r => `${r.id || r.ID} — ${r.name || r.nom || r.title || r.label || 'Sans nom'}`).join('\n');
-                        const choix = prompt(`Choisissez un rayon (copiez l'ID) :\n\n${options}`);
-                        if (choix && choix.trim()) {
-                          const id = choix.trim().split(/\s/)[0];
-                          setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: id }));
-                          toast.success(`Rayon ${id} sélectionné`);
-                        }
+                        const options = list.map(r => ({
+                          value: String(r.id || r.ID),
+                          label: `${r.id || r.ID} — ${r.name || r.nom || r.title || r.label || 'Sans nom'}`,
+                        }));
+                        confirmation.demander({
+                          title: 'Choisir le rayon de la caisse',
+                          description: 'Le rayon porte le taux de TVA des réparations (par exemple « Réparations » à 20 %).',
+                          confirmLabel: 'Utiliser ce rayon',
+                          input: { label: 'Rayon', options, placeholder: 'Choisir un rayon…' },
+                          onConfirm: (id) => {
+                            setCaisseConfig(c => ({ ...c, CAISSE_RAYON_ID: id }));
+                            toast.success(`Rayon ${id} sélectionné`);
+                          },
+                        });
                       } catch (err) { toast.error(err.message || 'Erreur chargement rayons'); }
                     }}
                     className="btn-secondary"

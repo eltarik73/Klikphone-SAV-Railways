@@ -375,13 +375,10 @@ function TicketRow({ t, query }) {
 
 function ClientRow({ c, query }) {
   const name = personName(c.prenom, c.nom) || 'Client sans nom';
-  const initials = `${(c.prenom || '')[0] || ''}${(c.nom || '')[0] || ''}`.toUpperCase() || '?';
   const nb = Number(c.nb_tickets || 0);
   return (
     <div className="flex items-start gap-3">
-      <span className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center shrink-0" aria-hidden="true">
-        {initials}
-      </span>
+      <User className="w-4 h-4 mt-0.5 text-slate-500 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900 truncate"><Highlight text={name} query={query} /></p>
         <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-600">
@@ -404,9 +401,7 @@ function ClientRow({ c, query }) {
 function PlainRow({ icon: Icon, title, sub, meta, badge, query }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0" aria-hidden="true">
-        <Icon className="w-4 h-4" />
-      </span>
+      <Icon className="w-4 h-4 mt-0.5 text-slate-500 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900 truncate"><Highlight text={title} query={query} /></p>
         {sub && <p className="text-xs text-slate-600 truncate"><Highlight text={sub} query={query} /></p>}
@@ -446,9 +441,7 @@ function OptionContent({ opt, query }) {
       const Icon = TYPE_ICONS[d.type] || History;
       return (
         <div className="flex items-start gap-3">
-          <span className="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0" aria-hidden="true">
-            <Icon className="w-4 h-4" />
-          </span>
+          <Icon className="w-4 h-4 mt-0.5 text-slate-500 shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-slate-900 truncate">{d.label}</p>
             {d.sub && <p className="text-xs text-slate-600 truncate">{d.sub}</p>}
@@ -851,14 +844,14 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
 
   return (
     <div className="fixed inset-0 z-[120] flex items-start justify-center sm:px-4 sm:pt-[8vh]" onKeyDown={onDialogKeyDown}>
-      <div className="absolute inset-0 bg-slate-900/50 motion-safe:backdrop-blur-sm" aria-hidden="true" onMouseDown={onClose} />
+      <div className="absolute inset-0 bg-slate-900/50" aria-hidden="true" onMouseDown={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         data-search-palette=""
-        className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[80vh] sm:max-w-2xl bg-white sm:rounded-xl shadow-lg overflow-hidden pt-[env(safe-area-inset-top)] sm:pt-0 motion-safe:animate-[scaleIn_120ms_ease-out]"
+        className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[80vh] sm:max-w-2xl bg-white sm:rounded-xl shadow-lg overflow-hidden pt-[env(safe-area-inset-top)] sm:pt-0 motion-safe:animate-[fadeIn_100ms_ease-out]"
       >
         <h2 id={titleId} className="sr-only">Recherche globale</h2>
 
@@ -889,16 +882,16 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
           {busy && <Loader2 className="w-5 h-5 text-brand-600 shrink-0 motion-safe:animate-spin" aria-hidden="true" />}
           {q && (
             <button type="button" onClick={() => { setQ(''); inputRef.current?.focus(); }}
-              className="w-11 h-11 shrink-0 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              className="btn-ghost btn-sm btn-icon shrink-0"
               aria-label="Effacer la recherche">
-              <X className="w-4 h-4" aria-hidden="true" />
+              <X aria-hidden="true" />
             </button>
           )}
           <button type="button" onClick={onClose}
-            className="h-11 min-w-[44px] px-2.5 shrink-0 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            className="btn-ghost btn-sm shrink-0 px-2.5"
             aria-label="Fermer la recherche">
-            <span className="sm:hidden"><X className="w-5 h-5" aria-hidden="true" /></span>
-            <kbd className="hidden sm:inline font-sans">Échap</kbd>
+            <span className="sm:hidden"><X aria-hidden="true" /></span>
+            <kbd className="hidden sm:inline font-sans text-xs">Échap</kbd>
           </button>
         </div>
 
@@ -908,19 +901,18 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
         <div className="sr-only" aria-live="polite" role="status">{statusText}</div>
 
         {notice && (
-          <div role="alert" className="mx-3 mt-3 flex items-start gap-2 rounded-xl bg-amber-50 ring-1 ring-amber-200 px-3 py-2.5 text-sm text-amber-900">
+          <div role="alert" className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2.5 text-sm text-amber-900">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
             <span>{notice}</span>
           </div>
         )}
 
         {error && showResults && (
-          <div role="alert" className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-red-50 ring-1 ring-red-200 px-3 py-2.5 text-sm text-red-800">
+          <div role="alert" className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-red-50 ring-1 ring-red-200 px-3 py-2.5 text-sm text-red-800">
             <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span className="flex-1 min-w-0">La recherche n’a pas abouti : {error}</span>
-            <button type="button" onClick={() => setRetryTick((n) => n + 1)}
-              className="min-h-[44px] px-3 rounded-lg bg-white ring-1 ring-red-200 font-semibold text-red-800 hover:bg-red-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 inline-flex items-center gap-1.5">
-              <RotateCcw className="w-4 h-4" aria-hidden="true" /> Réessayer
+            <button type="button" onClick={() => setRetryTick((n) => n + 1)} className="btn-secondary btn-sm text-red-800">
+              <RotateCcw aria-hidden="true" /> Réessayer
             </button>
           </div>
         )}
@@ -951,7 +943,7 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
                       onMouseMove={() => { if (idx !== activeIndex) { setActive(idx); setUserMoved(true); } }}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={(e) => openOption(opt, e.ctrlKey || e.metaKey)}
-                      className={`mx-2 px-3 py-2.5 min-h-[48px] rounded-xl cursor-pointer transition-colors motion-reduce:transition-none
+                      className={`mx-2 px-3 py-2.5 min-h-[48px] rounded-md cursor-pointer transition-colors duration-150 motion-reduce:transition-none
                         ${isActive ? 'bg-brand-50 ring-1 ring-brand-200' : 'hover:bg-slate-50'}`}>
                       <OptionContent opt={opt} query={resQ || query} />
                     </div>

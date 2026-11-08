@@ -10,28 +10,11 @@ import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
 import {
-  ArrowLeft, ArrowRight, Check, Smartphone, User, AlertTriangle, AlertCircle, KeyRound,
-  Send, MapPin, Phone, Clock, Globe, Copy, Share2, MessageCircle, Loader2,
+  ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, AlertCircle, KeyRound,
+  Send, MapPin, Phone, Clock, Copy, Share2, MessageCircle, Loader2,
 } from 'lucide-react';
 
 const STEPS = ['Coordonnées', 'Appareil', 'Panne'];
-
-// <div> et non <p> : `.depot-form p` imposerait 16 px à cette mention
-function PiedDePage() {
-  return (
-    <div className="text-center py-3 text-xs text-slate-500">
-      Propulsé par{' '}
-      <span className="font-extrabold">
-        <span className="text-brand-600">Tk</span>
-        <span className="text-slate-900">S</span>
-        <span className="text-pink-700">∞</span>
-        <span className="text-slate-900">26</span>
-      </span>
-      {' '}— une solution{' '}
-      <span className="font-bold text-brand-600">Klik&Dev</span>
-    </div>
-  );
-}
 
 export default function DeposerPage() {
   const navigate = useNavigate();
@@ -197,37 +180,35 @@ export default function DeposerPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="max-w-[640px] mx-auto px-4 py-6 sm:py-8">
-          <div className="card p-6 sm:p-8 text-center animate-in">
-            <div className="w-20 h-20 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-5" aria-hidden="true">
-              <Check className="w-10 h-10 text-emerald-700" />
-            </div>
-            <h2 className="t-display text-balance mb-5">
-              Demande enregistrée !
+          <div className="card p-6 sm:p-8 text-center">
+            <h2 className="t-h1 text-balance mb-5 inline-flex items-center justify-center gap-2">
+              <CircleCheck className="w-5 h-5 text-emerald-600 shrink-0" aria-hidden="true" /> Demande enregistrée
             </h2>
 
             {/* Alerte: notez ce numéro */}
             <div className="callout callout-warning items-center text-left mb-5">
               <AlertTriangle aria-hidden="true" />
               <p className="font-medium">
-                Conservez ce numéro ! Il vous permettra de suivre votre réparation.
+                Conservez ce numéro : il vous permettra de suivre votre réparation.
               </p>
             </div>
 
             {/* Code avec bouton copier */}
             <p className="text-slate-500 mb-2">Votre numéro de suivi :</p>
-            <div className="bg-brand-50 rounded-xl py-5 px-6 mb-3 border border-brand-200 relative">
-              <p className="text-4xl font-bold font-mono text-brand-700 tracking-wider tabular-nums select-all">{createdCode}</p>
+            <div className="card-section py-5 px-6 mb-3 relative">
+              <p className="t-h1 font-mono tabular-nums select-all">{createdCode}</p>
               <button
                 type="button"
                 onClick={handleCopy}
-                className="btn-ghost btn-icon absolute top-2 right-2 text-brand-700 hover:bg-brand-100"
+                className="btn-ghost btn-icon absolute top-2 right-2 text-slate-600"
                 title="Copier"
+                aria-label="Copier le numéro"
               >
                 {copied ? <Check className="text-emerald-700" aria-hidden="true" /> : <Copy aria-hidden="true" />}
               </button>
             </div>
             <div role="status" aria-live="polite" className="min-h-5 mb-3">
-              {copied && <p className="text-sm text-emerald-700 font-medium">Copié !</p>}
+              {copied && <p className="text-sm text-emerald-700 font-medium">Copié</p>}
             </div>
 
             {/* Actions: partager / WhatsApp */}
@@ -288,7 +269,6 @@ export default function DeposerPage() {
               <span>04 79 60 89 22</span>
             </a>
           </div>
-          <PiedDePage />
         </div>
       </div>
     );
@@ -298,10 +278,7 @@ export default function DeposerPage() {
     <div className="min-h-screen bg-slate-50">
       <div className="depot-form max-w-[640px] mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
-        <div className="text-center mb-6 animate-in">
-          <div className="w-14 h-14 rounded-xl bg-brand-600 text-white flex items-center justify-center mx-auto mb-4 shadow-xs" aria-hidden="true">
-            <Globe className="w-7 h-7" />
-          </div>
+        <div className="text-center mb-6">
           <h1 className="t-display">Dépôt à distance</h1>
           <span className="block text-base text-slate-500 mt-1.5">Pré-enregistrez votre appareil en ligne</span>
         </div>
@@ -310,7 +287,7 @@ export default function DeposerPage() {
         <div className="flex gap-1.5 mb-6">
           {STEPS.map((s, i) => (
             <div key={i} className="flex-1 min-w-0">
-              <div className={`h-2 rounded-full transition-colors duration-300 ${
+              <div className={`h-2 rounded-full transition-colors duration-150 ${
                 i <= step ? 'bg-brand-600' : 'bg-slate-200'
               }`} />
               <span className={`block text-xs mt-1.5 text-center leading-tight tracking-tight ${
@@ -322,7 +299,7 @@ export default function DeposerPage() {
 
         {/* Step 0: Coordonnées */}
         {step === 0 && (
-          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+          <div className="card p-5 sm:p-6 space-y-5">
             <EnTete icone={User} titre="Vos coordonnées" sousTitre="Pour vous recontacter" />
 
             <ChampsVous prefix="distance" form={form} errors={errors} onChange={updateForm} societe={false}
@@ -335,7 +312,7 @@ export default function DeposerPage() {
 
         {/* Step 1: Appareil */}
         {step === 1 && (
-          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+          <div className="card p-5 sm:p-6 space-y-5">
             <EnTete icone={Smartphone} titre="Votre appareil" sousTitre="Type, marque et modèle" />
 
             <fieldset>
@@ -396,7 +373,7 @@ export default function DeposerPage() {
 
         {/* Step 2: Panne */}
         {step === 2 && (
-          <div className="card p-5 sm:p-6 space-y-5 animate-in">
+          <div className="card p-5 sm:p-6 space-y-5">
             <EnTete icone={AlertTriangle} titre="Le problème" sousTitre="Décrivez la panne" />
 
             <fieldset>
@@ -499,7 +476,6 @@ export default function DeposerPage() {
         </div>
 
         <div className="mt-4">
-          <PiedDePage />
         </div>
       </div>
     </div>

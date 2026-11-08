@@ -6,6 +6,7 @@ import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import { formatDateShort } from '../lib/utils';
 import StatusBadge from '../components/StatusBadge';
 import { ARCHIVE_STATUTS, formatPhone, openSearchPalette } from '../components/SearchPalette';
@@ -70,12 +71,7 @@ function AnonymiserDialog({ client, busy, onCancel, onConfirm }) {
         onSubmit={e => { e.preventDefault(); if (ok && !busy) onConfirm(); }}
         className="modal sm:max-w-md">
         <div className="modal-header">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0" aria-hidden="true">
-              <UserX className="w-5 h-5 text-red-700" />
-            </div>
-            <h2 id="anonymiser-titre" className="t-h2 truncate">Anonymiser {nom} ?</h2>
-          </div>
+          <h2 id="anonymiser-titre" className="t-h2 truncate">Anonymiser {nom} ?</h2>
         </div>
         <div className="modal-body">
           <div id="anonymiser-texte" className="space-y-2 t-body">
@@ -139,6 +135,7 @@ export default function ClientsPage() {
   const [exportBusy, setExportBusy] = useState(false);
   const [anonymiserCible, setAnonymiserCible] = useState(null);
   const [anonymiserBusy, setAnonymiserBusy] = useState(false);
+  const confirmation = useConfirmDialog();
   const [consentBusy, setConsentBusy] = useState(false);
 
   // Debounced search (300ms)
@@ -304,8 +301,7 @@ export default function ClientsPage() {
     }
   };
 
-  const handleDeleteClient = async (id) => {
-    if (!confirm('Supprimer ce client ?')) return;
+  const supprimerClient = async (id) => {
     try {
       await sensible(() => api.deleteClient(id));
       closePanel();
@@ -315,6 +311,18 @@ export default function ClientsPage() {
       if (err?.code === 'admin_cancelled') return;
       toast.error(err?.message || 'Suppression impossible');
     }
+  };
+
+  // Suppression rare et définitive : la modale nomme le client et dit ce qui se passe (jamais « Êtes-vous sûr ? »)
+  const handleDeleteClient = (client) => {
+    const nom = `${client.prenom || ''} ${client.nom || ''}`.trim() || `n° ${client.id}`;
+    confirmation.demander({
+      title: `Supprimer le client ${nom} ?`,
+      description: 'Sa fiche et ses coordonnées sont effacées définitivement. Un client qui a des réparations ne peut pas être supprimé : anonymisez-le plutôt.',
+      confirmLabel: 'Supprimer le client',
+      destructive: true,
+      onConfirm: () => supprimerClient(client.id),
+    });
   };
 
   const handleExportRgpd = async (client) => {
@@ -440,6 +448,7 @@ export default function ClientsPage() {
   return (
     <div className="page max-w-[1280px]">
       {adminPrompt}
+      {confirmation.dialog}
       <AnonymiserDialog key={anonymiserCible?.id ?? 'aucun'} client={anonymiserCible} busy={anonymiserBusy}
         onCancel={() => setAnonymiserCible(null)} onConfirm={handleAnonymiser} />
       {/* Header */}
@@ -504,9 +513,7 @@ export default function ClientsPage() {
               </div>
             ) : sorted.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-state-icon">
-                  <Users aria-hidden="true" />
-                </div>
+                <Users className="w-5 h-5 text-slate-500" aria-hidden="true" />
                 <p className="t-h2">
                   {debouncedSearch ? `Aucun client ne correspond à « ${debouncedSearch} »` : 'Aucun client trouvé'}
                 </p>
@@ -532,11 +539,6 @@ export default function ClientsPage() {
                       ${selectedId === c.id ? 'bg-brand-50/60' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center gap-3 min-h-9">
-                      <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                        <span className="text-brand-700 font-bold text-xs">
-                          {(c.prenom?.[0] || '').toUpperCase()}{(c.nom?.[0] || '').toUpperCase()}
-                        </span>
-                      </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900 truncate">
                           {c.prenom || ''} {c.nom || ''}
@@ -623,11 +625,6 @@ export default function ClientsPage() {
               <div className="card card-body">
                 <div className="flex items-start justify-between gap-2 mb-4">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <span className="text-brand-700 font-bold text-sm">
-                        {(selectedClient.prenom?.[0] || '').toUpperCase()}{(selectedClient.nom?.[0] || '').toUpperCase()}
-                      </span>
-                    </div>
                     <div className="min-w-0">
                       <h2 ref={panelHeadingRef} tabIndex={-1} className="t-h2 truncate focus:outline-none">
                         {selectedClient.prenom} {selectedClient.nom}
@@ -691,17 +688,13 @@ export default function ClientsPage() {
                   <div className="space-y-1">
                     {selectedClient.telephone && (
                       <a href={`tel:${selectedClient.telephone}`} className="flex items-center gap-3 min-h-11 text-sm font-medium text-slate-700 hover:text-brand-700 transition-colors duration-150 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                          <Phone className="w-4 h-4 text-slate-500" />
-                        </div>
+                        <Phone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                         <span className="tabular-nums">{formatPhone(selectedClient.telephone)}</span>
                       </a>
                     )}
                     {selectedClient.email && (
                       <a href={`mailto:${selectedClient.email}`} className="flex items-center gap-3 min-h-11 text-sm text-slate-600 hover:text-brand-700 transition-colors duration-150 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                          <Mail className="w-4 h-4 text-slate-500" />
-                        </div>
+                        <Mail className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                         <span className="truncate">{selectedClient.email}</span>
                       </a>
                     )}
@@ -746,12 +739,10 @@ export default function ClientsPage() {
                             className={`w-full flex items-start gap-3 p-2.5 min-h-11 rounded-lg transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
                               ${archived ? 'hover:bg-slate-50' : 'bg-white border border-slate-200 hover:bg-brand-50/40 hover:border-brand-200'}`}
                           >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${archived ? 'bg-slate-100' : 'bg-brand-50'}`} aria-hidden="true">
-                              <Smartphone className={`w-4 h-4 ${archived ? 'text-slate-500' : 'text-brand-600'}`} />
-                            </div>
+                            <Smartphone className="w-4 h-4 text-slate-500 shrink-0 mt-1" aria-hidden="true" />
                             <div className="flex-1 min-w-0">
                               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <span className="t-mono font-bold text-brand-700">{t.ticket_code}</span>
+                                <span className={`t-mono font-semibold ${archived ? 'text-slate-500' : 'text-slate-900'}`}>{t.ticket_code}</span>
                                 <StatusBadge statut={t.statut} />
                                 {t.statut === 'Réparation terminée' && (
                                   <span className={`badge badge-sm ${t.paye ? 'badge-success' : 'badge-warning'}`}>
@@ -814,7 +805,7 @@ export default function ClientsPage() {
 
               {/* Delete */}
               <button type="button"
-                onClick={() => handleDeleteClient(selectedClient.id)}
+                onClick={() => handleDeleteClient(selectedClient)}
                 className="btn-danger-ghost btn-block"
               >
                 <Trash2 aria-hidden="true" /> Supprimer le client
@@ -826,11 +817,9 @@ export default function ClientsPage() {
             </div>
           ) : (
             <div className="card empty-state hidden lg:flex">
-              <div className="empty-state-icon">
-                <Users aria-hidden="true" />
-              </div>
+              <Users className="w-5 h-5 text-slate-500" aria-hidden="true" />
               <p className="t-h2">Sélectionnez un client</p>
-              <p className="t-body text-slate-500 max-w-sm">Cliquez sur un client pour voir ses réparations</p>
+              <p className="t-body text-slate-500 max-w-sm">Sa fiche et ses réparations s’affichent ici.</p>
             </div>
           )}
           </div>

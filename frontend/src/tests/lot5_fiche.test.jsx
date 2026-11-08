@@ -146,14 +146,15 @@ describe('PrioriteBadge / PrioriteSelecteur', () => {
 });
 
 describe('Fiche : priorité atelier', () => {
-  it('choix enregistré en PATCH partiel { priorite } après un court délai, badge visible dans l’en-tête', async () => {
+  it('choix enregistré en PATCH partiel { priorite } après un court délai, reflété par le sélecteur (plus de badge dans l’en-tête)', async () => {
     renderFiche();
     const attente = await screen.findByRole('radio', { name: 'Client attend sur place' });
     expect(screen.getByRole('radio', { name: 'Normal' })).toBeChecked();
     fireEvent.click(attente);
     await waitFor(() => expect(apiMock.updateTicket).toHaveBeenCalledWith('42', { priorite: 'attente' }));
     expect(attente).toBeChecked();
-    expect(screen.getByText('Client attend sur place', { selector: 'span.rounded-full' })).toBeInTheDocument();
+    // Design épuré : la priorité vit dans sa carte, l'en-tête ne porte plus que le statut
+    expect(screen.queryByText('Client attend sur place', { selector: 'span.rounded-full' })).not.toBeInTheDocument();
   });
 
   it('valeur déjà enregistrée : aucun envoi', async () => {
