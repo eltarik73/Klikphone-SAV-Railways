@@ -44,7 +44,8 @@ function StatusBadge({ statut }) {
 function getWeekDays(startDate) {
   const days = [];
   const start = new Date(startDate);
-  start.setDate(start.getDate() - start.getDay() + 1); // Monday
+  // Lundi de la semaine en cours ; le dimanche (getDay() = 0) appartient à la semaine qui finit, pas à la suivante
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
   for (let i = 0; i < 7; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);

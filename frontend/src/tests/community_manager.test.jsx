@@ -156,4 +156,14 @@ describe('Community Manager — publication Instagram', () => {
     const ordre = [...(colonne?.querySelectorAll('.font-semibold') || [])].map((n) => n.textContent);
     expect(ordre.indexOf('Story du matin')).toBeLessThan(ordre.indexOf('Reel · Écran explosé'));
   });
+
+  it('calendrier ouvert un dimanche : semaine en cours (lundi → dimanche), pas la suivante', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-11-08T15:00:00')); // dimanche 8 novembre 2026
+    apiMock.getCalendrierMarketing.mockResolvedValue([]);
+    rendre();
+    fireEvent.click(await screen.findByRole('tab', { name: /Calendrier/ }));
+    await waitFor(() => expect(apiMock.getCalendrierMarketing).toHaveBeenCalledWith({ date_debut: '2026-11-02', date_fin: '2026-11-08' }));
+    expect(screen.getByText(/Semaine du 2 novembre 2026/)).toBeInTheDocument();
+  });
 });
