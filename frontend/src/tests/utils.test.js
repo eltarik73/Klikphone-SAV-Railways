@@ -79,9 +79,10 @@ describe('getStatusConfig', () => {
     expect(config).toHaveProperty('color');
     expect(config).toHaveProperty('icon');
     expect(config).toHaveProperty('groupe');
-    // Décision 6 : « à nous, pas commencé » = neutre, cercle vide
-    expect(config.bg).toBe('bg-white');
-    expect(config.dot).toContain('border-slate-400');
+    // Couleurs franches (gérant, 09/11/2026) : à diagnostiquer = violet ; sélecteur teinté des listes
+    expect(config.bg).toBe('bg-violet-50');
+    expect(config.dot).toBe('bg-violet-600');
+    expect(config.champ).toContain('bg-violet-50');
   });
 
   it('returns default config for unknown status', () => {
@@ -113,7 +114,7 @@ describe('STATUTS', () => {
 });
 
 describe('getStatusConfig - all statuses', () => {
-  it('Pré-enregistré : même teinte que le diagnostic, cercle vide en pointillé', () => {
+  it('Pré-enregistré : neutre, cercle vide en pointillé', () => {
     const config = getStatusConfig('Pré-enregistré');
     expect(config.bg).toBe('bg-white');
     expect(config.dot).toContain('border-dashed');
@@ -126,13 +127,14 @@ describe('getStatusConfig - all statuses', () => {
       expect(config).toHaveProperty('bg');
       expect(config).toHaveProperty('text');
       expect(config).toHaveProperty('dot');
+      expect(config).toHaveProperty('champ');
       expect(config).toHaveProperty('color');
       expect(typeof config.icon).toBe('string');
       expect(['attente', 'en_cours', 'accord', 'pret', 'rendu', 'clos']).toContain(config.groupe);
       // Should not be the default (unknown status) config
       expect(config).not.toBe(getStatusConfig('Statut Inconnu'));
-      // 4 teintes sémantiques : jamais rouge, indigo, violet, cyan, orange ou gray
-      expect(`${config.bg} ${config.text} ${config.ring} ${config.dot}`).not.toMatch(/red-|indigo-|violet-|cyan-|orange-|gray-/);
+      // Jamais de rouge (retard, refus, impayé), ni d'orange (proche de l'ambre « accord ») ou de gray
+      expect(`${config.bg} ${config.text} ${config.ring} ${config.dot} ${config.champ}`).not.toMatch(/red-|orange-|gray-/);
     });
   });
 });
@@ -140,8 +142,8 @@ describe('getStatusConfig - all statuses', () => {
 describe('getStatusStyle', () => {
   it('returns a string with bg and text classes', () => {
     const style = getStatusStyle('En attente de diagnostic');
-    expect(style).toContain('bg-white');
-    expect(style).toContain('text-slate-700');
+    expect(style).toContain('bg-violet-50');
+    expect(style).toContain('text-violet-800');
     expect(style).toContain('ring-1');
   });
 });

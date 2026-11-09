@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Clock, CalendarClock, CalendarDays, CalendarCheck, AlertTriangle, Check } from 'lucide-react';
 import {
-  delaiTicket, infoDelai, dateDelai, valeurDelai, libelleEcheance, phrasePret,
+  delaiTicket, infoDelai, dateDelai, valeurDelai, libelleEcheance, phrasePret, avancementDelai,
 } from '../lib/delai';
 
 // ─── Heures d'ouverture de la boutique (Chambéry) ─────────────────────────────
@@ -123,13 +123,17 @@ export function useMaintenant() {
 }
 
 // ─── Pastille ────────────────────────────────────────────────────────────────
+// Couleur = urgence (gérant, 09/11/2026 : « mets de la couleur aux délais ») : vert dans les temps, ambre
+// à moins de 30 min, rouge en retard (point qui clignote doucement), pointillé neutre quand il manque.
 const STYLES_CLAIR = {
-  ok: 'bg-slate-100 text-slate-700',
-  bientot: 'bg-amber-100 text-amber-800',
+  ok: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  bientot: 'bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-300',
   retard: 'bg-red-50 text-red-700 ring-1 ring-inset ring-red-200',
-  aucun: 'bg-white text-slate-600 border border-dashed border-slate-400', // information manquante, à nous : neutre
+  aucun: 'bg-white text-slate-700 border border-dashed border-slate-400', // information manquante, à nous : neutre
   texte: 'bg-slate-100 text-slate-700',
 };
+// Remplissage de la jauge, même code couleur que la pastille
+const JAUGE = { ok: 'bg-emerald-500', bientot: 'bg-amber-500', retard: 'bg-red-500' };
 // Sur l'en-tête sombre de la fiche (slate-900)
 const STYLES_SOMBRE = {
   ok: 'bg-white/10 text-white',
@@ -145,7 +149,7 @@ const ICONES_ETAT = { ok: Clock, bientot: Clock, retard: AlertTriangle, aucun: C
  * Pastille de délai : « 15:30 · dans 1 h 20 », « En retard de 25 min », « Délai à fixer »…
  * `ticket` : règles de delaiTicket (rien une fois la réparation terminée) ; sinon `valeur` brute.
  */
-export function PastilleDelai({ ticket, valeur, maintenant, taille = 'sm', sombre = false, className = '' }) {
+export function PastilleDelai({ ticket, valeur, maintenant, taille = 'sm', sombre = false, jauge = false, className = '' }) {
   const horloge = useMaintenant();
   const now = maintenant || horloge;
   const info = ticket !== undefined ? delaiTicket(ticket, now) : infoDelai(valeur, now);
@@ -153,12 +157,33 @@ export function PastilleDelai({ ticket, valeur, maintenant, taille = 'sm', sombr
   const Icone = ICONES_ETAT[info.etat] || Clock;
   const styles = (sombre ? STYLES_SOMBRE : STYLES_CLAIR)[info.etat];
   const icone = taille === 'lg' ? 'w-4 h-4' : 'w-3.5 h-3.5';
-  return (
+  const pastille = (
     <span title={info.titre} data-delai={info.etat}
-      className={`badge ${TAILLES[taille] || ''} ${styles} tabular-nums shrink-0 max-w-full ${className}`}>
-      <Icone className={`${icone} shrink-0`} aria-hidden="true" />
+      className={`badge ${TAILLES[taille] || ''} ${styles} tabular-nums shrink-0 max-w-full ${jauge ? '' : className}`}>
+      {info.etat === 'retard' ? (
+        // Retard : point rouge qui pulse (coupé si l'appareil demande moins d'animations)
+        <span className="relative flex w-2 h-2 shrink-0" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 motion-safe:animate-ping" />
+          <span className="relative inline-flex w-2 h-2 rounded-full bg-red-600" />
+        </span>
+      ) : (
+        <Icone className={`${icone} shrink-0`} aria-hidden="true" />
+      )}
       <span className="sr-only">Délai de réparation : </span>
       <span className={info.etat === 'texte' ? 'truncate max-w-[12rem]' : ''}>{info.libelle}</span>
+    </span>
+  );
+  // Jauge (tableau de bord) : part du délai déjà écoulée depuis le dépôt ; se remplit à l'affichage
+  const part = jauge && ticket !== undefined && JAUGE[info.etat] ? avancementDelai(ticket, now) : null;
+  if (part === null) return jauge ? <span className={`inline-flex max-w-full ${className}`}>{pastille}</span> : pastille;
+  const pourcent = Math.round(part * 100);
+  return (
+    <span className={`inline-flex flex-col gap-1 max-w-full ${className}`}>
+      {pastille}
+      <span className="jauge-delai" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pourcent}
+        aria-label={`Délai écoulé : ${pourcent} %`} data-jauge={info.etat}>
+        <span className={JAUGE[info.etat]} style={{ width: `${Math.max(pourcent, 4)}%` }} />
+      </span>
     </span>
   );
 }

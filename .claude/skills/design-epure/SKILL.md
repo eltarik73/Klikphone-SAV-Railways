@@ -76,7 +76,10 @@ Ce fichier donne les décisions. Les preuves et les valeurs de référence sont 
    jamais empilée sur `slate-50` sans bordure. Trois niveaux de texte par écran, pas plus. Un lien
    d'interface est en `brand-700` + `font-medium` ; dans une phrase, il est souligné (le noir seul ne le
    distingue pas du texte).
-6. **Statuts en 4 teintes sémantiques, pas 9 couleurs** — la couleur dit *qui doit agir* :
+6. **Statuts en couleurs franches mais porteuses de sens** (le gérant a demandé plus de couleur le 9 nov. 2026 :
+   violet à diagnostiquer, cyan attente de pièce, bleu en main, ambre accord, émeraude prêt, neutre rendu/clos ; délais vert /
+   ambre / rouge avec jauge animée — voir `references/audit-2026-11.md` § 11, qui remplace le tableau ci-dessous) — historique,
+   la couleur dit *qui doit agir* :
 
    | Statut | Sens | Liste : pastille + texte `slate-700` | Fiche : badge | Icône lucide |
    |---|---|---|---|---|

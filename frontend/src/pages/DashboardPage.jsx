@@ -20,7 +20,7 @@ import {
   Search, Plus, RefreshCw, AlertTriangle, ChevronRight, ChevronDown, ChevronLeft,
   MessageCircle, MessageSquare, Send, Mail, Phone, PhoneCall, Lock, Shield,
   SquareCheck, Square, X, ArrowUpDown, SlidersHorizontal, Inbox, ClipboardList, Info,
-  Maximize2, Minimize2,
+  Maximize2, Minimize2, PackageCheck, MessageSquareMore, Users, Truck, Globe, FileCheck, Star,
 } from 'lucide-react';
 
 // Grille du tableau (≥ lg). Deux paliers pour que tout tienne sans défilement horizontal (mesuré : carte de
@@ -362,6 +362,16 @@ function MenuContact({ t, clientName, contact, appelOuvert, onAppel }) {
     </div>
   );
 }
+
+// Pastilles de la ligne d'alertes : une teinte par sujet (classes complètes pour Tailwind)
+const TONS_ALERTE = {
+  vert: 'bg-emerald-50 text-emerald-800 ring-emerald-200 group-hover/alerte:bg-emerald-100',
+  ambre: 'bg-amber-50 text-amber-900 ring-amber-200 group-hover/alerte:bg-amber-100',
+  rouge: 'bg-red-50 text-red-700 ring-red-200 group-hover/alerte:bg-red-100',
+  cyan: 'bg-cyan-50 text-cyan-900 ring-cyan-200 group-hover/alerte:bg-cyan-100',
+  bleu: 'bg-blue-50 text-blue-800 ring-blue-200 group-hover/alerte:bg-blue-100',
+  neutre: 'bg-white text-slate-700 ring-slate-300 group-hover/alerte:bg-slate-50',
+};
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -1072,16 +1082,16 @@ export default function DashboardPage() {
   if (kpi) {
     const nRecup = kpi.a_recuperer ?? 0;
     alertes.push({
-      cle: 'etagere', expanded: showEtagere,
-      texte: <><span className="font-semibold text-slate-900">{fmt(nRecup)}</span> à récupérer</>,
+      cle: 'etagere', expanded: showEtagere, ton: 'vert', icone: PackageCheck,
+      texte: <><span className="font-semibold">{fmt(nRecup)}</span> à récupérer</>,
       label: `À récupérer : ${pluriel(nRecup, 'appareil')} — ${showEtagere ? "masquer l'étagère" : "afficher l'étagère"}`,
       onClick: () => setShowEtagere(v => !v),
     });
     if (kpi.en_attente_accord > 0) {
       const actif = filterStatut === "En attente d'accord client" && !filterGroupe;
       alertes.push({
-        cle: 'accord', actif,
-        texte: <><span className="font-semibold text-slate-900">{fmt(kpi.en_attente_accord)}</span> {kpi.en_attente_accord > 1 ? 'accords client en attente' : 'accord client en attente'}</>,
+        cle: 'accord', actif, ton: 'ambre', icone: MessageSquareMore,
+        texte: <><span className="font-semibold">{fmt(kpi.en_attente_accord)}</span> {kpi.en_attente_accord > 1 ? 'accords client en attente' : 'accord client en attente'}</>,
         label: `${fmt(kpi.en_attente_accord)} accord${kpi.en_attente_accord > 1 ? 's' : ''} client en attente${actif ? ' — filtre actif' : ' — afficher ces tickets'}`,
         onClick: () => choisirStatut("En attente d'accord client"),
       });
@@ -1089,37 +1099,37 @@ export default function DashboardPage() {
   }
   if (nbAttenteSurPlace > 0) {
     alertes.push({
-      cle: 'surplace', rouge: true, actif: filterPriorite === 'attente',
+      cle: 'surplace', ton: 'rouge', icone: Users, actif: filterPriorite === 'attente',
       texte: `${pluriel(nbAttenteSurPlace, 'client')} sur place`,
       onClick: () => setFilterPriorite(f => (f === 'attente' ? '' : 'attente')),
     });
   }
   if (commandesEnCours > 0) {
     alertes.push({
-      cle: 'commandes', texte: `${pluriel(commandesEnCours, 'commande')} de pièces`,
+      cle: 'commandes', ton: 'cyan', icone: Truck, texte: `${pluriel(commandesEnCours, 'commande')} de pièces`,
       onClick: () => navigate(`${basePath}/commandes`),
     });
   }
   if (kpi?.pre_enregistres > 0) {
     alertes.push({
-      cle: 'distance', actif: filterStatut === 'Pré-enregistré' && !filterGroupe,
+      cle: 'distance', ton: 'neutre', icone: Globe, actif: filterStatut === 'Pré-enregistré' && !filterGroupe,
       texte: `${pluriel(kpi.pre_enregistres, 'dépôt')} à distance`,
       onClick: () => choisirStatut('Pré-enregistré'),
     });
   }
   // Ce que le client a laissé depuis sa page de suivi : réponse au devis, message, avis. Le libellé
   // complet est dans le nom accessible (« 2 messages client non lus — afficher ces tickets »).
-  for (const { cle, mot } of [
-    { cle: 'accord_client', mot: ['réponse au devis non lue', 'réponses au devis non lues'] },
-    { cle: 'messages', mot: ['message client non lu', 'messages client non lus'] },
-    { cle: 'avis', mot: ['avis non lu', 'avis non lus'] },
+  for (const { cle, mot, ton, icone } of [
+    { cle: 'accord_client', mot: ['réponse au devis non lue', 'réponses au devis non lues'], ton: 'bleu', icone: FileCheck },
+    { cle: 'messages', mot: ['message client non lu', 'messages client non lus'], ton: 'bleu', icone: MessageCircle },
+    { cle: 'avis', mot: ['avis non lu', 'avis non lus'], ton: 'ambre', icone: Star },
   ]) {
     const n = interactions?.[cle]?.count || 0;
     if (!(n > 0)) continue;
     const actif = interactionFilter === cle;
     const complet = n > 1 ? mot[1] : mot[0];
     alertes.push({
-      cle, actif,
+      cle, actif, ton, icone,
       texte: `${fmt(n)} ${complet.replace(/ non lue?s?$/, '')}`,
       label: `${fmt(n)} ${complet}${actif ? ' — filtre actif' : ' — afficher ces tickets'}`,
       onClick: () => setInteractionFilter(actif ? null : cle),
@@ -1186,23 +1196,29 @@ export default function DashboardPage() {
       </div>
 
       {alertes.length > 0 || interactionFilter ? (
-        <p className="mb-4 flex flex-wrap items-center gap-x-2 text-sm text-slate-600">
-          {alertes.map((a, i) => (
-            <Fragment key={a.cle}>
-              {i > 0 && <span aria-hidden="true">·</span>}
-              <button type="button" onClick={a.onClick}
+        // Téléphone : une seule rangée qui défile (les pastilles empilées repoussaient la liste) ; ≥ sm : sur plusieurs lignes
+        <p className="mb-4 -mx-4 px-4 flex items-center gap-x-2 overflow-x-auto scrollbar-none text-sm
+          sm:mx-0 sm:px-0 sm:flex-wrap sm:overflow-visible">
+          {alertes.map((a) => {
+            const Icone = a.icone;
+            const actif = a.actif || a.expanded;
+            return (
+              <button key={a.cle} type="button" onClick={a.onClick}
                 aria-pressed={a.onClick && 'actif' in a ? a.actif : undefined}
                 {...('expanded' in a ? { 'aria-expanded': a.expanded, 'aria-controls': a.expanded ? etagereId : undefined } : {})}
                 aria-label={a.label}
-                className={`inline-flex items-center min-h-11 px-1 -mx-1 rounded tabular-nums underline-offset-2 hover:underline
-                  focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
-                  ${a.rouge ? 'text-red-700 font-medium hover:text-red-800' : 'hover:text-slate-900'}
-                  ${a.actif ? 'font-semibold text-slate-900 underline' : ''}`}>
-                {/* Un seul nœud dans le bouton inline-flex : sinon l'espace « 744 à récupérer » est avalé */}
-                <span>{a.texte}</span>
+                className="group/alerte shrink-0 inline-flex items-center min-h-11 rounded-full whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500">
+                {/* Pastille colorée (gérant, 09/11/2026) : la teinte dit de quoi il s'agit, l'icône aussi.
+                    Un seul nœud texte : sinon l'espace « 744 à récupérer » est avalé dans l'inline-flex */}
+                <span className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full font-medium tabular-nums
+                  transition-colors duration-150 ${TONS_ALERTE[a.ton] || TONS_ALERTE.neutre}
+                  ${actif ? 'ring-2 ring-current' : 'ring-1 ring-inset'}`}>
+                  {Icone && <Icone className="w-4 h-4 shrink-0" aria-hidden="true" />}
+                  <span>{a.texte}</span>
+                </span>
               </button>
-            </Fragment>
-          ))}
+            );
+          })}
           {interactionFilter && (
             <button type="button" onClick={() => setInteractionFilter(null)} className="btn-ghost btn-sm ml-auto">
               <X aria-hidden="true" /> Réinitialiser
@@ -1658,7 +1674,7 @@ export default function DashboardPage() {
                     {(recu || delai) && (
                       <p className="lg:hidden table-cell-muted tabular-nums flex flex-wrap items-center gap-x-2 gap-y-1" title={titreDate}>
                         {recu && <span>Reçu le {recu.jour} · {recu.relatif}</span>}
-                        {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" />}
+                        {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" jauge />}
                       </p>
                     )}
                   </div>
@@ -1673,14 +1689,14 @@ export default function DashboardPage() {
                     Placement explicite (colonne + ligne) du statut et du tech à partir de xl : les autres cellules
                     se placent automatiquement autour, dans l'ordre du DOM. */}
                 <div className="flex items-center gap-2 lg:contents">
-                  {/* Statut — sélecteur neutre + pastille de la couleur du statut (44 px sous le doigt) */}
+                  {/* Statut — sélecteur teinté de la couleur du statut + pastille (44 px sous le doigt) */}
                   <div className="relative flex-1 min-w-0 xl:col-start-5 xl:row-start-1">
                     <span className={`pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ${statusCfg.dot}`} aria-hidden="true" />
                     <select
                       value={t.statut}
                       aria-label={`Statut du ticket ${t.ticket_code}`}
                       onChange={e => handleInlineStatus(t, e.target.value)}
-                      className="select min-h-11 lg:min-h-9 lg:py-1 pl-6 pr-7 text-base lg:text-sm font-medium text-slate-800 truncate"
+                      className={`select min-h-11 lg:min-h-9 lg:py-1 pl-6 pr-7 text-base lg:text-sm font-medium truncate ${statusCfg.champ}`}
                     >
                       {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -1725,7 +1741,7 @@ export default function DashboardPage() {
                           {' '}{recu.relatif}
                         </p>
                       ) : <p className="table-cell-muted">—</p>}
-                      {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" className="max-w-full" />}
+                      {delai && <PastilleDelai ticket={t} maintenant={now} taille="sm" jauge className="max-w-full" />}
                     </div>
                   </div>
                 </div>

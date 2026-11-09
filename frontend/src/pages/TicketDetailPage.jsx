@@ -3528,7 +3528,7 @@ function TicketDetail({ id }) {
               <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
               <h2 id={`${uid}-statut`} className="t-h2">Changer le statut</h2>
             </div>
-            {/* Select neutre : la pastille porte la couleur du statut */}
+            {/* Sélecteur teinté de la couleur du statut, pastille comprise */}
             <div className="relative">
               <span className={`pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full ${getStatusConfig(t.statut).dot}`} aria-hidden="true" />
               <select
@@ -3537,7 +3537,7 @@ function TicketDetail({ id }) {
                 disabled={statutEnCours}
                 aria-busy={statutEnCours || undefined}
                 onChange={e => handleStatusChange(e.target.value)}
-                className="select pl-9"
+                className={`select pl-9 font-medium ${getStatusConfig(t.statut).champ}`}
               >
                 {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
               </select>

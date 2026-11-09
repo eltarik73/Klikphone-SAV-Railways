@@ -237,7 +237,7 @@ describe('StatusBadge / PrioriteBadge', () => {
     const b = container.querySelector('span');
     expect(b).toHaveClass('text-slate-700', 'text-xs', 'whitespace-nowrap');
     expect(b.className).not.toMatch(/bg-|ring-|rounded-full|shadow/);
-    expect(b.querySelector('span[aria-hidden="true"]')).toHaveClass('w-2', 'h-2', 'rounded-full', 'border-slate-400');
+    expect(b.querySelector('span[aria-hidden="true"]')).toHaveClass('w-2', 'h-2', 'rounded-full', 'bg-violet-600');
     rerender(<StatusBadge statut="Réparation terminée" variant="solid" />);
     expect(container.querySelector('span')).toHaveClass('h-7', 'text-sm', 'rounded-md', 'bg-emerald-50', 'text-emerald-700', 'ring-1');
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');

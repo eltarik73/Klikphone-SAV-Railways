@@ -85,7 +85,12 @@ klikphone-sav/
   reste au seul logo (il se confond avec l'ambre des alertes). Neutres slate ; sémantiques success/warning/danger/info
   (emerald/amber/red/blue). Jamais de dégradé ni de tuile d'icône colorée. Documents clients (devis, e-mail de
   dépôt à distance, reçu) alignés sur le noir ; couleurs de données (calendrier marketing, équipe) inchangées.
-- **Statuts** : 4 teintes (`lib/utils.js` → `getStatusConfig`, clés `bg/text/ring/dot/color/icon/groupe`) ;
+- **Statuts** : couleurs franches depuis le 9 nov. 2026 (gérant : « un peu de couleur, lisible facilement ») —
+  violet = à diagnostiquer, cyan = attente de pièce, bleu = pièce reçue / en cours, ambre = accord client, émeraude =
+  terminée, neutre = rendu / clôturé / pré-enregistré (`lib/utils.js` → `getStatusConfig`, clés
+  `bg/text/ring/champ/dot/color/icon/groupe` ; `champ` = sélecteur de statut teinté des listes et de la fiche) ;
+  **délais** : pastille verte / ambre / rouge (point qui pulse en retard, `motion-safe`) + jauge animée du temps écoulé
+  (`PastilleDelai jauge`, `lib/delai.avancementDelai`) ; ligne d'alertes du tableau de bord en pastilles colorées ;
   `StatusBadge` variante `dot` (listes) ou `solid` / `size="lg"` (en-tête de fiche). Aucun statut en rouge.
 - **Navigation** : jetons `nav-*` (`tailwind.config.js`, variables CSS d'`index.css`). Sous 1 024 px (téléphone, iPad en
   portrait) barre du haut et menu sur **fond blanc** (gérant, 09/11/2026) ; au-dessus, barre latérale **sombre** `#0F172A`,

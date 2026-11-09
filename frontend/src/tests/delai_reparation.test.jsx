@@ -46,7 +46,7 @@ import DelaiReparation, {
   TOLERANCE_FERMETURE_MIN,
 } from '../components/DelaiReparation';
 import {
-  infoDelai, delaiTicket, dateDelai, dureeCourte, phrasePret, libelleEcheance, instantDelai,
+  infoDelai, delaiTicket, dateDelai, dureeCourte, phrasePret, libelleEcheance, instantDelai, avancementDelai,
 } from '../lib/delai';
 
 // Lundi 19 octobre 2026, heure locale
@@ -228,6 +228,50 @@ describe('infoDelai / delaiTicket : une seule lecture du délai pour tous les é
 });
 
 // ─── Composant de choix ──────────────────────────────────────────
+describe('Délai en couleur et jauge animée (gérant, 9 nov. 2026)', () => {
+  const ticket = (date_recuperation, date_depot = '2026-10-19 10:10:00') =>
+    ({ statut: 'En cours de réparation', categorie: 'Réparation', date_depot, date_recuperation });
+
+  it('avancementDelai : part écoulée depuis le dépôt, 1 en retard, null sans délai ou sans dépôt lisible', () => {
+    // Déposé à 10:10, promis à 18:10, il est 14:10 : la moitié du délai est passée
+    expect(avancementDelai(ticket('2026-10-19T18:10'), MAINTENANT)).toBeCloseTo(0.5, 5);
+    expect(avancementDelai(ticket('2026-10-19T13:45'), MAINTENANT)).toBe(1);
+    expect(avancementDelai(ticket(''), MAINTENANT)).toBeNull();
+    expect(avancementDelai(ticket('2026-10-19T18:10', 'hier'), MAINTENANT)).toBeNull();
+    expect(avancementDelai({ ...ticket('2026-10-19T18:10'), statut: 'Réparation terminée' }, MAINTENANT)).toBeNull();
+  });
+
+  it('pastille : vert dans les temps, ambre bientôt, rouge en retard avec un point qui pulse (motion-safe)', () => {
+    const { container, rerender } = render(<PastilleDelai ticket={ticket('2026-10-19T18:10')} maintenant={MAINTENANT} />);
+    expect(container.querySelector('[data-delai]')).toHaveClass('bg-emerald-50', 'text-emerald-800');
+    rerender(<PastilleDelai ticket={ticket('2026-10-19T14:30')} maintenant={MAINTENANT} />);
+    expect(container.querySelector('[data-delai]')).toHaveClass('bg-amber-100', 'text-amber-900');
+    rerender(<PastilleDelai ticket={ticket('2026-10-19T13:45')} maintenant={MAINTENANT} />);
+    const retard = container.querySelector('[data-delai]');
+    expect(retard).toHaveClass('bg-red-50', 'text-red-700');
+    expect(retard.querySelector('.motion-safe\\:animate-ping')).not.toBeNull();
+    expect(container.querySelector('.animate-ping')).toBeNull(); // jamais sans motion-safe
+  });
+
+  it('jauge : barre de la couleur du délai, largeur = part écoulée, valeur lue par les lecteurs d’écran', () => {
+    const { container, rerender } = render(<PastilleDelai ticket={ticket('2026-10-19T18:10')} maintenant={MAINTENANT} jauge />);
+    const jauge = screen.getByRole('meter', { name: 'Délai écoulé : 50 %' });
+    expect(jauge).toHaveClass('jauge-delai');
+    expect(jauge).toHaveAttribute('aria-valuenow', '50');
+    expect(jauge.firstChild).toHaveClass('bg-emerald-500');
+    expect(jauge.firstChild).toHaveStyle({ width: '50%' });
+    rerender(<PastilleDelai ticket={ticket('2026-10-19T13:45')} maintenant={MAINTENANT} jauge />);
+    expect(screen.getByRole('meter')).toHaveAttribute('data-jauge', 'retard');
+    expect(screen.getByRole('meter').firstChild).toHaveClass('bg-red-500');
+    // « Délai à fixer » : pas de jauge ; sans l'option, pastille seule
+    rerender(<PastilleDelai ticket={ticket('')} maintenant={MAINTENANT} jauge />);
+    expect(screen.queryByRole('meter')).toBeNull();
+    rerender(<PastilleDelai ticket={ticket('2026-10-19T18:10')} maintenant={MAINTENANT} />);
+    expect(screen.queryByRole('meter')).toBeNull();
+    expect(container.querySelector('[data-delai]')).not.toBeNull();
+  });
+});
+
 describe('DelaiReparation : puces exclusives, heure en clair, « Autre… »', () => {
   it('9 puces (44 px au doigt), choix → valeur « AAAA-MM-JJTHH:MM » et « Prêt vers … » ; flèches = focus seul', () => {
     const onChange = vi.fn();
@@ -528,8 +572,10 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
     );
     await screen.findByText('KP-000001');
     // Le délai promis figure sur la ligne, visible, quel que soit son état (décision du gérant, 8 nov. 2026) :
-    // tenu en pastille neutre, proche en ambre, dépassé en rouge — rendu deux fois (colonne ≥ lg et sous le client < lg)
+    // tenu en vert, proche en ambre, dépassé en rouge (couleurs du gérant, 9 nov.) — rendu deux fois (colonne ≥ lg
+    // et sous le client < lg)
     expect(pastille('15:30 · dans 1 h 20')).toHaveAttribute('data-delai', 'ok');
+    expect(pastille('15:30 · dans 1 h 20')).toHaveClass('bg-emerald-50', 'text-emerald-800');
     expect(pastille('15:30 · dans 1 h 20')).toHaveAttribute('title', expect.stringMatching(/Prêt vers 15:30 aujourd'hui \(dans 1 h 20\)/));
     expect(pastille('demain 11:00')).toHaveAttribute('data-delai', 'ok');
     expect(pastille('En retard de 25 min')).toHaveAttribute('data-delai', 'retard');
@@ -541,7 +587,7 @@ describe('Tableau de bord : délai visible d’un coup d’œil (accueil et tech
     const aFixer = screen.getAllByText('Délai à fixer').map((e) => e.closest('[data-delai]'));
     expect(aFixer).toHaveLength(2); // une fois par point de rupture (colonne ≥ lg, sous le client < lg), même ticket
     expect(aFixer[0]).toHaveAttribute('data-delai', 'aucun');
-    expect(aFixer[0]).toHaveClass('border-dashed', 'text-slate-600');
+    expect(aFixer[0]).toHaveClass('border-dashed', 'text-slate-700');
     expect(aFixer[0].className).not.toMatch(/amber/);
     aFixer.forEach((el) => expect(screen.getByText('Client3').closest('[class*="cursor-pointer"]')).toContainElement(el));
     // La ligne entière ouvre le ticket : le nom du client est dans la zone cliquable

@@ -72,56 +72,66 @@ export const STATUTS = [
   'Clôturé',
 ];
 
-// Statuts en 4 teintes sémantiques (design épuré, décision 6) : la couleur dit QUI doit agir.
-// neutre = à nous pas commencé / au fournisseur / fini ; bleu = à nous, en main ; ambre = au client ;
-// émeraude = prêt à rendre. Jamais de rouge (réservé au retard, au refus, à l'impayé, aux erreurs).
-// Clés : bg / text / ring = badge plein (en-tête de fiche) ; dot = pastille des listes (le consommateur
-// pose `w-2 h-2 rounded-full`, un cercle vide est donc `bg-transparent border-2 …`) ; color = hex des
-// graphiques ; icon = nom lucide-react ; groupe = onglets groupés (attente | en_cours | accord | pret |
-// rendu | clos).
+// Statuts en couleurs franches (gérant, 09/11/2026 : « mets un peu de couleur, que ce soit lisible facilement »).
+// Une teinte par étape, aucune en rouge (réservé au retard, au refus, à l'impayé, aux erreurs) : violet = à
+// diagnostiquer, cyan = pièce attendue chez le fournisseur, bleu = à nous en main (pièce reçue, en cours),
+// ambre = au client (accord), émeraude = prêt à rendre, neutre = rendu / clos / dépôt à distance.
+// Clés : bg / text / ring = badge plein (en-tête de fiche) ; champ = sélecteur de statut teinté des listes ;
+// dot = pastille (le consommateur pose `w-2 h-2 rounded-full`, un cercle vide est donc `bg-transparent border-2 …`) ;
+// color = hex des graphiques ; icon = nom lucide-react ; groupe = onglets groupés
+// (attente | en_cours | accord | pret | rendu | clos).
 const STATUS_CONFIG = {
   'Pré-enregistré': {
     bg: 'bg-white', text: 'text-slate-700', ring: 'ring-slate-300/80',
+    champ: 'bg-white text-slate-800 border-dashed border-slate-400',
     dot: 'bg-transparent border-2 border-dashed border-slate-400', color: '#94A3B8',
     icon: 'Globe', groupe: 'attente',
   },
   'En attente de diagnostic': {
-    bg: 'bg-white', text: 'text-slate-700', ring: 'ring-slate-300/80',
-    dot: 'bg-transparent border-2 border-slate-400', color: '#94A3B8',
+    bg: 'bg-violet-50', text: 'text-violet-800', ring: 'ring-violet-200/80',
+    champ: 'bg-violet-50 text-violet-900 border-violet-200',
+    dot: 'bg-violet-600', color: '#7C3AED',
     icon: 'CircleDashed', groupe: 'attente',
   },
   'En attente de pièce': {
-    bg: 'bg-slate-100', text: 'text-slate-700', ring: 'ring-slate-200/80',
-    dot: 'bg-slate-500', color: '#64748B',
+    bg: 'bg-cyan-50', text: 'text-cyan-800', ring: 'ring-cyan-200/80',
+    champ: 'bg-cyan-50 text-cyan-900 border-cyan-200',
+    dot: 'bg-cyan-600', color: '#0891B2',
     icon: 'Package', groupe: 'attente',
   },
   'Pièce reçue': {
     bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200/80',
+    champ: 'bg-blue-50 text-blue-900 border-blue-200',
     dot: 'bg-blue-600', color: '#60A5FA',
     icon: 'PackageCheck', groupe: 'en_cours',
   },
   "En attente d'accord client": {
     bg: 'bg-amber-50', text: 'text-amber-800', ring: 'ring-amber-200/80',
+    champ: 'bg-amber-50 text-amber-900 border-amber-300',
     dot: 'bg-amber-600', color: '#D97706',
     icon: 'MessageSquareMore', groupe: 'accord',
   },
   'En cours de réparation': {
     bg: 'bg-blue-50', text: 'text-blue-700', ring: 'ring-blue-200/80',
+    champ: 'bg-blue-50 text-blue-900 border-blue-200',
     dot: 'bg-blue-600', color: '#2563EB',
     icon: 'Wrench', groupe: 'en_cours',
   },
   'Réparation terminée': {
     bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200/80',
+    champ: 'bg-emerald-50 text-emerald-900 border-emerald-200',
     dot: 'bg-emerald-600', color: '#059669',
     icon: 'CircleCheck', groupe: 'pret',
   },
   'Rendu au client': {
     bg: 'bg-slate-100', text: 'text-slate-700', ring: 'ring-slate-200/80',
+    champ: 'bg-slate-100 text-slate-800 border-slate-200',
     dot: 'bg-slate-700', color: '#334155',
     icon: 'CheckCheck', groupe: 'rendu',
   },
   'Clôturé': {
     bg: 'bg-white', text: 'text-slate-500', ring: 'ring-slate-200/80',
+    champ: 'bg-white text-slate-600 border-slate-200',
     dot: 'bg-slate-300', color: '#CBD5E1',
     icon: 'Archive', groupe: 'clos',
   },
@@ -130,6 +140,7 @@ const STATUS_CONFIG = {
 // Statut inconnu : neutre, jamais une couleur qui ressemble à un état réel.
 const DEFAULT_STATUS = {
   bg: 'bg-slate-100', text: 'text-slate-600', ring: 'ring-slate-200/80',
+  champ: 'bg-white text-slate-800 border-slate-300',
   dot: 'bg-slate-400', color: '#94A3B8',
   icon: 'Circle', groupe: 'attente',
 };

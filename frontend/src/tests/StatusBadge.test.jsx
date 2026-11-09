@@ -12,13 +12,14 @@ describe('StatusBadge', () => {
     cleanup();
   });
 
-  it('liste (dot) : cercle vide pour le diagnostic, texte slate-700, aucun fond ni anneau', () => {
+  it('liste (dot) : pastille violette pour le diagnostic, texte slate-700, aucun fond ni anneau', () => {
     const { container } = render(<StatusBadge statut="En attente de diagnostic" />);
     const badge = container.querySelector('span');
     expect(badge).toHaveClass('text-slate-700', 'text-xs', 'font-medium', 'whitespace-nowrap');
     expect(badge.className).not.toMatch(/bg-|ring-|shadow/);
     const pastille = badge.querySelector('span[aria-hidden="true"]');
-    expect(pastille).toHaveClass('w-2', 'h-2', 'rounded-full', 'bg-transparent', 'border-2', 'border-slate-400');
+    // Couleurs franches (gérant, 09/11/2026) : diagnostic en violet
+    expect(pastille).toHaveClass('w-2', 'h-2', 'rounded-full', 'bg-violet-600');
     expect(pastille.className).not.toMatch(/border-dashed/);
     cleanup();
   });
@@ -35,7 +36,7 @@ describe('StatusBadge', () => {
     cleanup();
   });
 
-  it('pré-enregistré : même traitement que le diagnostic, cercle vide en pointillé', () => {
+  it('pré-enregistré : cercle vide en pointillé, neutre', () => {
     const { container } = render(<StatusBadge statut="Pré-enregistré" />);
     expect(screen.getByText('Pré-enregistré')).toBeInTheDocument();
     const pastille = container.querySelector('span[aria-hidden="true"]');
@@ -59,11 +60,11 @@ describe('StatusBadge', () => {
     cleanup();
   });
 
-  it('aucun statut en rouge, indigo, violet, cyan, orange ou gray', () => {
+  it('aucun statut en rouge (réservé au retard, au refus, à l’impayé), ni orange ou gray', () => {
     for (const statut of ['Pré-enregistré', 'En attente de diagnostic', 'En attente de pièce', 'Pièce reçue',
       "En attente d'accord client", 'En cours de réparation', 'Réparation terminée', 'Rendu au client', 'Clôturé']) {
       const { container } = render(<StatusBadge statut={statut} variant="solid" />);
-      expect(container.innerHTML, statut).not.toMatch(/red-|indigo-|violet-|cyan-|orange-|gray-/);
+      expect(container.innerHTML, statut).not.toMatch(/red-|orange-|gray-/);
       cleanup();
     }
   });

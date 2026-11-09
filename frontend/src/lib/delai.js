@@ -164,6 +164,22 @@ export function delaiTicket(t, maintenant = new Date()) {
   return info;
 }
 
+/**
+ * Part du délai déjà consommée, de 0 à 1 (jauge du tableau de bord) : temps écoulé depuis le dépôt
+ * rapporté au temps promis. 1 en retard ; null sans délai daté ou sans date de dépôt lisible.
+ */
+export function avancementDelai(t, maintenant = new Date()) {
+  const info = delaiTicket(t, maintenant);
+  if (!info || !info.date) return null;
+  if (info.etat === 'retard') return 1;
+  const depot = dateDelai(t.date_depot);
+  if (!depot) return null;
+  const total = info.date.getTime() - depot.getTime();
+  if (total <= 0) return 1;
+  const ecoule = maintenant.getTime() - depot.getTime();
+  return Math.min(1, Math.max(0, ecoule / total));
+}
+
 /** Clé de tri « Récupération » : instant promis (ms), les valeurs non datables en dernier. */
 export function instantDelai(valeur) {
   const d = dateDelai(valeur);

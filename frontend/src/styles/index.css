@@ -364,6 +364,16 @@
   .input, .textarea, .select { min-height: 44px; font-size: 16px; }
 }
 
+/* ─── Jauge du délai de réparation (tableau de bord) ───
+   Part du délai écoulée depuis le dépôt, couleur de l'urgence. Se remplit une fois à l'affichage
+   (700 ms), puis suit l'horloge (transition de largeur). Coupée par prefers-reduced-motion. */
+.jauge-delai { position: relative; display: block; height: 4px; width: 100%; min-width: 4.5rem; overflow: hidden;
+  border-radius: 9999px; background-color: rgb(226 232 240); }
+.jauge-delai > span { position: absolute; inset: 0 auto 0 0; border-radius: 9999px; transform-origin: left center;
+  transition: width 500ms ease-out; animation: kp-jauge 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes kp-jauge { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .jauge-delai > span { animation: none; transition: none; } }
+
 /* ─── Animations ─── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
