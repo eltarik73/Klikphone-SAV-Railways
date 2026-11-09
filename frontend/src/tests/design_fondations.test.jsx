@@ -4,7 +4,7 @@
  *   modales, toasts, échelle typographique) avec les contraintes AA (plus de 11 px, plus de slate-400
  *   pour du texte, vert plein = emerald-700, focus visible au clavier) ;
  * - tailwind.config.js garde la marque (brand-600 #7C3AED, sidebar #0F172A) et ajoute les ombres xs/lg ;
- * - StatusBadge : pastille + texte en liste, badge plein cerclé en fiche ; PrioriteBadge : pastilles rondes sans ring ;
+ * - StatusBadge : pastille + texte en liste, badge plein cerclé en fiche ; PrioriteBadge : badges du système, sans ring ;
  * - Navbar : toutes les entrées rendues, focus visible, boutons icône nommés en mode replié ;
  * - Toast / ProgressTracker / ErrorBoundary : classes du système, plus de styles inline colorés.
  */
@@ -80,8 +80,12 @@ describe('index.css : classes partagées du design V2', () => {
     'modal-overlay', 'modal', 'modal-header', 'modal-body', 'modal-footer',
     'drawer', 'drawer-header', 'drawer-body', 'drawer-footer', 'toast', 'fab',
     't-display', 't-h1', 't-h2', 't-h3', 't-body', 't-body-lg', 't-small', 't-caption', 't-label', 't-overline', 't-num', 't-mono',
-    'liquid-glass', 'font-editorial',
   ];
+
+  // Verre « liquid glass » et serif « éditoriale » de la vitrine retirés (design épuré, nov. 2026)
+  it.each(['liquid-glass', 'font-editorial'])('ne définit plus .%s', (classe) => {
+    expect(regle(classe)).toBeNull();
+  });
 
   it.each(attendues)('définit .%s', (classe) => {
     expect(regle(classe), `.${classe} absente de index.css`).not.toBeNull();
@@ -224,18 +228,22 @@ describe('StatusBadge / PrioriteBadge', () => {
     expect(container.querySelector('span')).toHaveClass('h-8', 'text-sm', 'bg-emerald-50');
   });
 
-  it('PrioriteBadge : attente = rouge plein rond, express = ambre 50/800, pro = bleu, sans ring, 12 px minimum', () => {
+  it('PrioriteBadge : badges du système — attente = danger teinté (jamais plein), express = warning, pro = neutre, sans ring, 12 px minimum', () => {
     const { rerender } = render(<PrioriteBadge priorite="attente" />);
-    let b = screen.getByText('Client attend sur place', { selector: 'span.rounded-full' });
-    expect(b).toHaveClass('bg-red-600', 'text-white', 'text-xs');
+    let b = screen.getByText('Client attend sur place', { selector: 'span.badge' });
+    expect(b).toHaveClass('badge-danger', 'badge-sm');
+    expect(b.className).not.toMatch(/bg-red-600|text-white|badge-danger-solid|rounded-full/);
     expect(b.className).not.toMatch(/ring-/);
     expect(b.className).not.toMatch(/text-\[11px\]/);
+    expect(b).toHaveAttribute('title', 'Priorité : Client attend sur place');
     rerender(<PrioriteBadge priorite="express" taille="md" />);
-    b = screen.getByText('Express', { selector: 'span.rounded-full' });
-    expect(b).toHaveClass('bg-amber-50', 'text-amber-800', 'h-6');
+    b = screen.getByText('Express', { selector: 'span.badge' });
+    expect(b).toHaveClass('badge-warning');
+    expect(b.className).not.toMatch(/badge-sm|h-8/);
     rerender(<PrioriteBadge priorite="pro" taille="lg" />);
-    b = screen.getByText('Pro', { selector: 'span.rounded-full' });
-    expect(b).toHaveClass('bg-blue-50', 'text-blue-700', 'text-sm');
+    b = screen.getByText('Pro', { selector: 'span.badge' });
+    expect(b).toHaveClass('badge-neutral', 'h-8', 'text-sm');
+    expect(b.className).not.toMatch(/blue/);
   });
 
   it('PrioriteSelecteur : segmented neutre, 4 radios, élément actif blanc, libellé 13 px sans majuscules', () => {
@@ -418,24 +426,30 @@ describe('Toast : blanc, bordure gauche sémantique, croix 40 px', () => {
 });
 
 // ─── ProgressTracker / ErrorBoundary ──────────────────────
-describe('ProgressTracker : stepper monochrome brand', () => {
-  it('étapes faites = coche brand, courante = cerclée (aria-current="step"), à venir = slate, libellés 12 px', () => {
+describe('ProgressTracker : stepper monochrome, seule l’étape courante en violet', () => {
+  it('étapes faites = coche sur slate-700, courante = brand-600 (aria-current="step"), à venir = cerclée slate, libellés 12 px', () => {
     const { container } = render(<ProgressTracker statut="En cours de réparation" hasPiece={false} />);
     expect(container.querySelector('[style]')).toBeNull();
     const courante = container.querySelector('[aria-current="step"]');
-    expect(courante.className).toMatch(/border-brand-600/);
+    expect(courante.className).toMatch(/bg-brand-600 text-white/);
     expect(courante.parentElement).toHaveTextContent('Réparation');
     const cercles = container.querySelectorAll('.rounded-full.w-8');
     expect(cercles).toHaveLength(5);
-    expect(cercles[0].className).toMatch(/bg-brand-600 text-white/);
-    expect(cercles[4].className).toMatch(/bg-slate-100 text-slate-400/);
+    expect(cercles[0].className).toMatch(/bg-slate-700 text-white/);
+    expect(cercles[0].querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(cercles[4].className).toMatch(/border-slate-300 text-slate-500/);
+    expect(container.innerHTML).not.toMatch(/text-slate-400/);
+    // Le violet est réservé à l'étape courante
+    expect([...cercles].filter(c => /brand/.test(c.className))).toHaveLength(1);
+    expect(screen.getByText('Diagnostic').className).toMatch(/text-slate-700/);
     expect(screen.getByText('Diagnostic').className).toMatch(/text-xs/);
     expect(screen.getByText('Rendu').className).toMatch(/text-slate-500/);
   });
 
-  it('pré-enregistré : texte conservé en brand, sans style inline', () => {
+  it('pré-enregistré : texte conservé en brand (étape courante), icône nue sans tuile, sans style inline', () => {
     const { container } = render(<ProgressTracker statut="Pré-enregistré" />);
     expect(container.querySelector('[style]')).toBeNull();
+    expect(container.innerHTML).not.toMatch(/bg-brand-50/);
     expect(screen.getByText('Pré-enregistré').className).toMatch(/text-brand-700/);
     expect(screen.getByText(/En attente de validation/).className).toMatch(/t-caption/);
   });

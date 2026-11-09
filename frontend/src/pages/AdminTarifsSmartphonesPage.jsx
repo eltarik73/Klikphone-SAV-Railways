@@ -2,13 +2,15 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Smartphone, Save, Plus, ArrowLeft, Loader2, Check, X, Trash2,
-  Sparkles, Image as ImageIcon, Search, Filter, AlertCircle,
-  CheckCircle2, Star, RefreshCw, Package, TrendingUp, Tag, FileDown, SlidersHorizontal, History, AlertTriangle,
+  Image as ImageIcon, Search, AlertCircle,
+  CheckCircle2, Star, Package, Tag, FileDown, SlidersHorizontal, History, AlertTriangle,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FenetrePrix, FiltreAnciens, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
@@ -112,7 +114,7 @@ function FenetreQuitter({ garde, nombre, envois = 0, enregistrer }) {
             {seulementEnvois ? 'Quitter sans attendre' : 'Quitter sans enregistrer'}
           </button>
           <button type="button" onClick={enregistrerPuisPartir} disabled={enCours} className="btn-primary">
-            {enCours ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Save aria-hidden="true" />}
+            {enCours ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
             {seulementEnvois ? 'Attendre et quitter' : 'Enregistrer et quitter'}
           </button>
         </div>
@@ -142,6 +144,11 @@ const EMPTY_ROW = {
 };
 
 const POPULAR_BRANDS = ['Samsung', 'Xiaomi', 'Google', 'Honor'];
+
+// Tableau serré (13 colonnes sur 1 280 px) : 8 px de marge par cellule au lieu des 12 px de `.table`,
+// 4 px autour de la case à cocher. Posé une fois sur le <table> (variantes Tailwind, même spécificité que
+// `.table td`, servies après) : plus de `!px-2` cellule par cellule.
+const TABLE_SERREE = '[&_th]:px-2 [&_td]:px-2 [&_th:first-child]:px-1 [&_td:first-child]:px-1 [&_td:first-child]:py-1 [&_th:last-child]:pr-2 [&_td:last-child]:pr-2';
 
 
 function slugify(s) {
@@ -179,6 +186,9 @@ export default function AdminTarifsSmartphonesPage() {
   const { verrouilles, basculer: basculerVerrou, enCours: verrouEnCours } = useVerrousBoutique(TABLE, sensible);
   const [anciensSeuls, setAnciensSeuls] = useState(false);
   const [fenetre, setFenetre] = useState(null); // 'ajuster' | 'historique'
+  const confirmation = useConfirmDialog();
+  const choixPhotoRef = useRef(null);
+  useFocusTrap(choixPhotoRef, Boolean(imagePicker) && !confirmation.ouvert, { onEscape: () => setImagePicker(null) });
 
   function toggleSelect(id) {
     setPdfSelection(prev => {
@@ -291,19 +301,26 @@ export default function AdminTarifsSmartphonesPage() {
     }
   }
 
-  async function removeRow(row) {
+  function removeRow(row) {
     if (verrouilles.has(row.id)) {
       showToast('error', `${row.marque} ${row.modele} est verrouillé : ouvrez le cadenas avant de le supprimer.`);
       return;
     }
-    if (!confirm(`Supprimer ${row.marque} ${row.modele} ?`)) return;
-    try {
-      await sensible(() => api.deleteSmartphoneTarif(row.id));
-      showToast('success', 'Smartphone supprimé');
-      await load();
-    } catch (e) {
-      toastErreur(e, 'Suppression impossible');
-    }
+    confirmation.demander({
+      title: `Supprimer ${row.marque} ${row.modele} ?`,
+      description: 'Le smartphone, ses prix et sa photo sont retirés de la grille de vente.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await sensible(() => api.deleteSmartphoneTarif(row.id));
+          showToast('success', 'Smartphone supprimé');
+          await load();
+        } catch (e) {
+          toastErreur(e, 'Suppression impossible');
+        }
+      },
+    });
   }
 
   async function generateImage(row) {
@@ -375,7 +392,7 @@ export default function AdminTarifsSmartphonesPage() {
             </Link>
             <div className="min-w-0">
               <h1 className="page-header-title">
-                Tarifs Smartphones
+                Tarifs smartphones
               </h1>
               <p className="page-header-subtitle">
                 Samsung, Xiaomi, Google Pixel, Honor — gérez tous vos smartphones non-Apple
@@ -389,7 +406,7 @@ export default function AdminTarifsSmartphonesPage() {
                 try {
                   const sel = Array.from(pdfSelection);
                   if (sel.length === 0) {
-                    showToast('error', 'Coche au moins un smartphone');
+                    showToast('error', 'Cochez au moins un smartphone');
                     return;
                   }
                   await openPdf({ ids: sel });
@@ -398,7 +415,7 @@ export default function AdminTarifsSmartphonesPage() {
                 }
               }}
               disabled={pdfSelection.size === 0}
-              title={pdfSelection.size === 0 ? 'Sélectionne des smartphones via les cases' : `PDF A4 (${pdfSelection.size} modèles)`}
+              title={pdfSelection.size === 0 ? 'Cochez des smartphones dans le tableau' : `PDF A4 (${pdfSelection.size} modèles)`}
               className="btn-secondary"
             >
               <FileDown /> PDF
@@ -422,10 +439,12 @@ export default function AdminTarifsSmartphonesPage() {
             >
               <SlidersHorizontal aria-hidden="true" /> Ajuster en %
             </button>
-            {/* Un seul bouton plein : « Ajouter », sauf quand des modifications attendent d'être enregistrées */}
+            {/* Un seul bouton plein : « Ajouter », sauf quand des modifications attendent d'être enregistrées
+                ou que le formulaire d'ajout (« Créer le smartphone ») est ouvert */}
             <button
               onClick={() => setShowNewForm(s => !s)}
-              className={dirtyCount > 0 ? 'btn-secondary' : 'btn-primary'}
+              aria-expanded={showNewForm}
+              className={dirtyCount > 0 || showNewForm ? 'btn-secondary' : 'btn-primary'}
             >
               <Plus /> Ajouter
             </button>
@@ -492,27 +511,13 @@ export default function AdminTarifsSmartphonesPage() {
               )}
             </div>
             <FiltreAnciens actif={anciensSeuls} onChange={setAnciensSeuls} nombre={nombreAnciens} />
-            <div className="relative">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
-              <select
-                value={brandFilter}
-                aria-label="Filtrer par marque"
-                onChange={(e) => setBrandFilter(e.target.value)}
-                className="select pl-9 min-w-[180px] font-medium"
-              >
-                <option value="all">Toutes marques</option>
-                {Object.keys(brandCounts).sort().map(b => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
-              </select>
-            </div>
           </div>
         )}
         {!loading && rows.length > 0 && <p className="t-caption mb-4">{AIDE_VERROU_BOUTIQUE.note}</p>}
 
         {/* Nouveau form inline */}
         {showNewForm && (
-          <div className="card border-brand-300 mb-6">
+          <div className="card mb-6">
             <div className="card-header">
               <h2 className="t-h2 flex items-center gap-2">
                 <Plus className="w-4 h-4 text-slate-400" aria-hidden="true" />
@@ -534,10 +539,10 @@ export default function AdminTarifsSmartphonesPage() {
                   <Tag className="w-4 h-4 text-slate-400" aria-hidden="true" /> Identité
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Marque *" value={newRow.marque}
+                  <Field label="Marque" value={newRow.marque}
                     onChange={v => setNewRow({ ...newRow, marque: v })}
                     placeholder="Samsung" />
-                  <Field label="Modèle *" value={newRow.modele}
+                  <Field label="Modèle" value={newRow.modele}
                     onChange={v => setNewRow({ ...newRow, modele: v })}
                     placeholder="Galaxy A17" />
                 </div>
@@ -571,7 +576,7 @@ export default function AdminTarifsSmartphonesPage() {
                         className="input"
                       />
                       <p className="input-help">
-                        Laisser vide et utiliser <Sparkles className="w-3 h-3 inline text-brand-600" aria-hidden="true" /> après création
+                        Laissez vide : la photo se cherche depuis le tableau après création
                       </p>
                     </div>
                   </div>
@@ -661,10 +666,10 @@ export default function AdminTarifsSmartphonesPage() {
             </div>
           ) : (
             <div className="overflow-x-auto scroll-fade-x">
-              <table className="table table-dense min-w-[1280px] table-fixed">
+              <table className={`table table-dense min-w-[1280px] table-fixed ${TABLE_SERREE}`}>
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="table-header !px-1 text-center w-14">
+                    <th className="table-header text-center w-14">
                       <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                         <input
                           type="checkbox"
@@ -679,18 +684,18 @@ export default function AdminTarifsSmartphonesPage() {
                         />
                       </label>
                     </th>
-                    <th className="table-header !px-2 w-[72px]">Photo</th>
-                    <th className="table-header !px-2 w-28">Marque</th>
-                    <th className="table-header !px-2 w-[200px]">Modèle</th>
-                    <th className="table-header !px-2 w-28">Prix du</th>
-                    <th className="table-header !px-2 w-48">Condition</th>
-                    <th className="table-header !px-2 w-24">Stockage</th>
-                    <th className="table-header !px-2 w-24">Prix €</th>
-                    <th className="table-header !px-2 text-center w-20">Stock</th>
-                    <th className="table-header !px-2 w-24 hidden xl:table-cell">Stockage 2</th>
-                    <th className="table-header !px-2 w-24 hidden xl:table-cell">Prix 2 €</th>
-                    <th className="table-header !px-2 text-center w-20 hidden xl:table-cell">Stock 2</th>
-                    <th className="table-header !px-2 text-right w-44">Actions</th>
+                    <th className="table-header w-[72px]">Photo</th>
+                    <th className="table-header w-28">Marque</th>
+                    <th className="table-header w-[200px]">Modèle</th>
+                    <th className="table-header w-28">Prix du</th>
+                    <th className="table-header w-48">Condition</th>
+                    <th className="table-header w-24">Stockage</th>
+                    <th className="table-header w-24">Prix €</th>
+                    <th className="table-header text-center w-20">Stock</th>
+                    <th className="table-header w-24 hidden xl:table-cell">Stockage 2</th>
+                    <th className="table-header w-24 hidden xl:table-cell">Prix 2 €</th>
+                    <th className="table-header text-center w-20 hidden xl:table-cell">Stock 2</th>
+                    <th className="table-header text-right w-44">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -704,7 +709,7 @@ export default function AdminTarifsSmartphonesPage() {
                       aria-busy={envois.enCours(r.id) || undefined}
                       className={`table-row ${dirty[r.id] ? 'bg-amber-50/70 hover:bg-amber-50' : ''}`}
                     >
-                      <td className="!px-1 !py-1 text-center">
+                      <td className="text-center">
                         <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                           <input
                             type="checkbox"
@@ -719,28 +724,16 @@ export default function AdminTarifsSmartphonesPage() {
                       <Cell>
                         <div className="flex items-center gap-1">
                           {r.image_url ? (
-                            <div className="relative group/img">
-                              <img src={r.image_url} alt=""
-                                className="w-14 h-14 rounded-lg object-contain bg-white p-1 border border-slate-200" />
-                              <button
-                                onClick={() => generateImage(r)}
-                                disabled={generatingId === r.id}
-                                title="Remplacer l'image"
-                                className="absolute -bottom-1 -right-1 w-7 h-7 inline-flex items-center justify-center rounded-full bg-brand-600 hover:bg-brand-700 text-white shadow-xs opacity-0 group-hover/img:opacity-100 focus-visible:opacity-100 transition-opacity duration-150 disabled:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                              >
-                                {generatingId === r.id ? (
-                                  <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" />
-                                ) : (
-                                  <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-                                )}
-                              </button>
-                            </div>
+                            <img src={r.image_url} alt=""
+                              className="w-14 h-14 rounded-md object-contain bg-white p-1 border border-slate-200" />
                           ) : (
                             <button
+                              type="button"
                               onClick={() => generateImage(r)}
                               disabled={generatingId === r.id}
                               title="Chercher une image"
-                              className="w-14 h-14 rounded-lg bg-slate-50 border-2 border-dashed border-slate-300 hover:border-brand-400 hover:bg-brand-50 flex items-center justify-center text-slate-500 hover:text-brand-600 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                              aria-label={`Chercher une photo pour ${r.marque} ${r.modele}`}
+                              className="w-14 h-14 rounded-md bg-white border border-dashed border-slate-300 hover:border-slate-400 hover:bg-slate-50 flex items-center justify-center text-slate-500 hover:text-slate-700 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               {generatingId === r.id ? (
                                 <Loader2 className="w-5 h-5 motion-safe:animate-spin" aria-hidden="true" />
@@ -751,23 +744,23 @@ export default function AdminTarifsSmartphonesPage() {
                           )}
                         </div>
                       </Cell>
-                      <td className="!px-2">
+                      <td>
                         <input type="text" value={r.marque || ''}
                           onChange={(e) => updateRow(r.id, 'marque', e.target.value)}
                           aria-label="Marque"
                           className="input px-2 font-semibold" />
                       </td>
-                      <td className="!px-2">
+                      <td>
                         <input type="text" value={r.modele || ''}
                           onChange={(e) => updateRow(r.id, 'modele', e.target.value)}
                           aria-label="Modèle"
                           className="input px-2 font-semibold"
-                          placeholder="Ex: Galaxy A17 5G" />
+                          placeholder="Par exemple Galaxy A17 5G" />
                       </td>
-                      <td className="!px-2">
+                      <td>
                         <BadgeDatePrix row={r} court />
                       </td>
-                      <td className="!px-2">
+                      <td>
                         <div className="relative">
                           <select value={r.condition || 'Reconditionné Premium'}
                             aria-label={`Condition de ${r.marque} ${r.modele}`}
@@ -777,18 +770,18 @@ export default function AdminTarifsSmartphonesPage() {
                             <option value="Reconditionné Premium">Recond. Premium</option>
                           </select>
                           <span className={`absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full pointer-events-none ${
-                            r.condition === 'Neuf' ? 'bg-emerald-500' : 'bg-blue-500'
+                            r.condition === 'Neuf' ? 'bg-emerald-600' : 'bg-blue-600'
                           }`} aria-hidden="true" />
                         </div>
                       </td>
-                      <td className="!px-2">
+                      <td>
                         <input type="text" value={r.stockage_1 || ''}
                           aria-label={`Stockage 1 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_1', e.target.value)}
                           placeholder="128 Go"
                           className="input px-2" />
                       </td>
-                      <td className="!px-2">
+                      <td>
                         <input type="number" value={r.prix_1 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_1', e.target.value)}
                           readOnly={verrou}
@@ -796,17 +789,17 @@ export default function AdminTarifsSmartphonesPage() {
                           aria-label={`Prix 1 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
                           className={`input px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} />
                       </td>
-                      <td className="!px-2 text-center">
+                      <td className="text-center">
                         <StockInput value={r.stock_1} onChange={(v) => updateRow(r.id, 'stock_1', v)} label={`Stock 1 de ${r.modele}`} />
                       </td>
-                      <td className="!px-2 hidden xl:table-cell">
+                      <td className="hidden xl:table-cell">
                         <input type="text" value={r.stockage_2 || ''}
                           aria-label={`Stockage 2 de ${r.modele}`}
                           onChange={(e) => updateRow(r.id, 'stockage_2', e.target.value)}
                           placeholder="256 Go"
                           className="input px-2" />
                       </td>
-                      <td className="!px-2 hidden xl:table-cell">
+                      <td className="hidden xl:table-cell">
                         <input type="number" value={r.prix_2 || ''}
                           onChange={(e) => updateRow(r.id, 'prix_2', e.target.value)}
                           readOnly={verrou}
@@ -814,10 +807,10 @@ export default function AdminTarifsSmartphonesPage() {
                           aria-label={`Prix 2 de ${r.modele}, en euros${verrou ? ' (verrouillé)' : ''}`}
                           className={`input px-2 font-semibold tabular-nums ${verrou ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : ''}`} />
                       </td>
-                      <td className="!px-2 text-center hidden xl:table-cell">
+                      <td className="text-center hidden xl:table-cell">
                         <StockInput value={r.stock_2} onChange={(v) => updateRow(r.id, 'stock_2', v)} label={`Stock 2 de ${r.modele}`} />
                       </td>
-                      <td className="!px-2 text-right">
+                      <td className="text-right">
                         <div className="flex items-center gap-1 justify-end">
                           <BoutonVerrou
                             verrouille={verrou}
@@ -827,40 +820,43 @@ export default function AdminTarifsSmartphonesPage() {
                             aide={verrou ? AIDE_VERROU_BOUTIQUE.oui : AIDE_VERROU_BOUTIQUE.non}
                           />
                           <button
+                            type="button"
                             onClick={() => generateImage(r)}
                             disabled={generatingId === r.id}
                             aria-label={`Rechercher une image pour ${r.marque} ${r.modele}`}
-                            title="Rechercher image"
-                            className="btn-ghost btn-icon text-brand-600 hover:text-brand-700 hover:bg-brand-50"
+                            title={r.image_url ? 'Remplacer la photo' : 'Rechercher une photo'}
+                            className="btn-ghost btn-icon btn-sm"
                           >
                             {generatingId === r.id ? (
-                              <Loader2 className="motion-safe:animate-spin" />
+                              <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
                             ) : (
-                              <Sparkles />
+                              <ImageIcon aria-hidden="true" />
                             )}
                           </button>
                           {dirty[r.id] ? (
                             <button
+                              type="button"
                               onClick={() => saveRow(r)}
                               aria-label={`Enregistrer ${r.marque} ${r.modele}`}
                               title="Enregistrer"
-                              className="btn-primary btn-icon"
+                              className="btn-secondary btn-icon btn-sm"
                             >
-                              <Save />
+                              <Save aria-hidden="true" />
                             </button>
                           ) : envois.enCours(r.id) ? (
-                            <span role="status" className="inline-flex items-center justify-center w-11 h-11 text-slate-600" title="Enregistrement…">
+                            <span role="status" className="inline-flex items-center justify-center w-9 h-9 text-slate-600" title="Enregistrement…">
                               <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
                               <span className="sr-only">Enregistrement de {r.marque} {r.modele}…</span>
                             </span>
                           ) : null}
                           <button
+                            type="button"
                             onClick={() => removeRow(r)}
                             aria-label={`Supprimer ${r.marque} ${r.modele}`}
                             title="Supprimer"
-                            className="btn-danger-ghost btn-icon"
+                            className="btn-danger-ghost btn-icon btn-sm"
                           >
-                            <Trash2 />
+                            <Trash2 aria-hidden="true" />
                           </button>
                         </div>
                       </td>
@@ -880,22 +876,21 @@ export default function AdminTarifsSmartphonesPage() {
             onClick={() => setImagePicker(null)}
           >
             <div
+              ref={choixPhotoRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="choix-photo-titre"
               className="modal sm:max-w-5xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="modal-header">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-                    <ImageIcon className="w-5 h-5" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="t-h2">
-                      Choisir la photo
-                    </h3>
-                    <p className="text-sm text-slate-500 truncate">
-                      {imagePicker.row.marque} {imagePicker.row.modele}
-                    </p>
-                  </div>
+                <div className="min-w-0">
+                  <h2 id="choix-photo-titre" className="t-h2">
+                    Choisir la photo
+                  </h2>
+                  <p className="text-sm text-slate-500 truncate">
+                    {imagePicker.row.marque} {imagePicker.row.modele}
+                  </p>
                 </div>
                 <button onClick={() => setImagePicker(null)}
                   aria-label="Fermer le choix de photo"
@@ -916,6 +911,7 @@ export default function AdminTarifsSmartphonesPage() {
                   {imagePicker.candidates.map((url, i) => (
                     <button
                       key={i}
+                      type="button"
                       onClick={() => chooseImage(imagePicker.row, url)}
                       aria-label={`Choisir la photo ${i + 1}`}
                       className="group relative card overflow-hidden aspect-square flex items-center justify-center transition-colors duration-150 hover:border-brand-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
@@ -925,9 +921,9 @@ export default function AdminTarifsSmartphonesPage() {
                         onError={(e) => { e.target.style.opacity = '0.25'; }}
                       />
                       {i === 0 && (
-                        <div className="absolute top-2 left-2 badge badge-brand">
+                        <div className="absolute top-2 left-2 badge badge-neutral">
                           <Star className="w-3 h-3 fill-current" aria-hidden="true" />
-                          RECOMMANDÉ
+                          Recommandée
                         </div>
                       )}
                       <div className="absolute bottom-2 right-2 badge-count">
@@ -948,7 +944,7 @@ export default function AdminTarifsSmartphonesPage() {
         {toast && (
           <div
             role={toast.type === 'error' ? 'alert' : 'status'}
-            className={`toast fixed top-4 right-4 z-[60] items-center animate-in ${
+            className={`toast fixed top-4 right-4 z-[60] items-center ${
               toast.type === 'error' ? 'border-l-red-600' : 'border-l-emerald-600'
             }`}
           >
@@ -992,6 +988,7 @@ export default function AdminTarifsSmartphonesPage() {
         nommer={(l) => { const r = rows.find((x) => x.id === l.ligne_id); return r ? `${r.marque} ${r.modele}` : null; }}
         onAnnule={() => load()}
       />
+      {confirmation.dialog}
       {adminPrompt}
     </div>
   );
@@ -1006,7 +1003,7 @@ function StockInput({ value, onChange, label = 'Stock' }) {
         value={value ?? 0}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
-        className={`w-16 min-h-[40px] text-center font-semibold text-base lg:text-sm tabular-nums rounded-lg px-2 py-1.5 border ${badge.cls} focus:outline-none focus:ring-2 focus:ring-brand-500/40`}
+        className={`input w-16 px-2 text-center font-semibold tabular-nums ${badge.cls}`}
       />
     </div>
   );
@@ -1048,27 +1045,27 @@ function EmptyState({ onAdd, onQuickAdd }) {
       </p>
 
       <div>
-        <div className="t-caption mb-3 flex items-center justify-center gap-2">
-          <TrendingUp className="w-4 h-4 text-slate-400" aria-hidden="true" /> Marques populaires
-        </div>
+        <p className="t-caption mb-3">Marques populaires</p>
         <div className="flex flex-wrap justify-center gap-2">
           {POPULAR_BRANDS.map(b => (
             <button
               key={b}
+              type="button"
               onClick={() => onQuickAdd(b)}
               className="btn-secondary btn-sm"
             >
-              + {b}
+              <Plus aria-hidden="true" /> {b}
             </button>
           ))}
         </div>
       </div>
 
       <button
+        type="button"
         onClick={onAdd}
-        className="btn-primary"
+        className="btn-secondary"
       >
-        <Plus />
+        <Plus aria-hidden="true" />
         Ajouter un smartphone
       </button>
     </div>
@@ -1076,7 +1073,7 @@ function EmptyState({ onAdd, onQuickAdd }) {
 }
 
 function Cell({ children }) {
-  return <td className="!px-2">{children}</td>;
+  return <td>{children}</td>;
 }
 
 function Field({ label, value, onChange, type = 'text', placeholder, compact = false }) {

@@ -398,6 +398,27 @@ describe('commandes : prix HT payé', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(apiMock.updatePart).toHaveBeenCalledTimes(1);
   });
+
+  it('suppression : modale du système nommant la pièce (plus de confirm natif), « Annuler » ne supprime rien', async () => {
+    const natif = vi.spyOn(window, 'confirm');
+    const part = { id: 21, description: 'Écran OLED', ticket_code: 'KP-000042', statut: 'Commandée' };
+    apiMock.getParts.mockResolvedValue([part]);
+    apiMock.deletePart.mockResolvedValue({ ok: true });
+    renderCommandes();
+    fireEvent.click(await screen.findByRole('button', { name: 'Supprimer la commande Écran OLED' }));
+    let dialogue = await screen.findByRole('dialog', { name: 'Supprimer la commande « Écran OLED » ?' });
+    expect(within(dialogue).getByText(/suivi du ticket KP-000042/)).toBeInTheDocument();
+    fireEvent.click(within(dialogue).getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(apiMock.deletePart).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Supprimer la commande Écran OLED' }));
+    dialogue = await screen.findByRole('dialog', { name: 'Supprimer la commande « Écran OLED » ?' });
+    fireEvent.click(within(dialogue).getByRole('button', { name: 'Supprimer la commande' }));
+    await waitFor(() => expect(apiMock.deletePart).toHaveBeenCalledWith(21));
+    expect(await screen.findByText('Commande supprimée')).toBeInTheDocument();
+    expect(natif).not.toHaveBeenCalled();
+  });
 });
 
 // ─── Fiche ticket : commande d'une pièce de la grille ────────────
@@ -494,7 +515,6 @@ describe('modèles sans prix', () => {
     apiMock.getModelesSansPrix.mockResolvedValue([]);
     apiMock.getAliasModeles.mockResolvedValue([{ id: 1, alias: 'iPhone Air', modele_canonique: 'iPhone 17 Air', categorie: 'Smartphone', le: '2026-10-16T08:00:00' }]);
     apiMock.supprimerAliasModele.mockResolvedValue({ ok: true });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage('/accueil/modeles-sans-prix');
     expect(await screen.findByText('Tous les modèles du catalogue ont un prix.')).toBeInTheDocument();
     const onglet = screen.getByRole('tab', { name: /Modèles sans prix/ });
@@ -508,6 +528,10 @@ describe('modèles sans prix', () => {
     expect(await screen.findByText('iPhone 17 Air')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Alias de modèles/ })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Supprimer l’alias iPhone Air' }));
+    // Confirmation par la modale du système (ConfirmDialog), plus par window.confirm
+    const boite = await screen.findByRole('dialog', { name: 'Supprimer l’alias « iPhone Air » → « iPhone 17 Air » ?' });
+    expect(apiMock.supprimerAliasModele).not.toHaveBeenCalled();
+    fireEvent.click(within(boite).getByRole('button', { name: 'Supprimer l’alias' }));
     await waitFor(() => expect(apiMock.supprimerAliasModele).toHaveBeenCalledWith(1));
     expect(await screen.findByText('Aucun alias pour le moment.')).toBeInTheDocument();
   });

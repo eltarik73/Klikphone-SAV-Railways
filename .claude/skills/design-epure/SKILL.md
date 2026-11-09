@@ -49,6 +49,8 @@ Ce fichier donne les décisions. Les preuves et les valeurs de référence sont 
 3. **Le violet porte l'action, pas la décoration.** `brand-600` : bouton primaire, item de menu actif,
    anneau de focus, lien, élément sélectionné. Interdit : fonds `brand-50/100` décoratifs (tuiles
    d'icônes, avatars), codes ou titres en violet, bordure gauche violette, dégradés, ombre violette.
+   **Exception : le logo officiel KlikPhone** (K orange `#FF6600` / gris `#9A9A9A`, `components/LogoK.jsx`)
+   garde ses couleurs partout ; on ne le redessine, n'arrondit, ne recolore ni ne le met en dégradé.
 4. **Texte d'interface 14 px / interligne 20 px**, secondaire 13 px, légende 12 px (plancher absolu),
    saisies 16 px (iPad). Titre de page 24 px / 600 / −0,02 em, titre de carte ou de section 16 px / 600,
    chiffre clé 24–30 px / 600 tabulaire. Graisses 400 / 500 / 600 seulement (700 pour `t-display`
@@ -100,8 +102,8 @@ Ce fichier donne les décisions. Les preuves et les valeurs de référence sont 
     boutons à l'infinitif verbe + objet (« Prévenir le client », « Imprimer le reçu »), phrases courtes à
     la voix active, aucun « ! », aucun emoji ni « ✓ » dans un libellé, pas de « Bienvenue », « Merci pour
     votre confiance », « Jetez un œil », « veuillez », « oups », pas de capitales pour insister (« Reste à
-    payer », pas « RESTE À PAYER »). Champs : « (optionnel) » sur les rares champs facultatifs plutôt que
-    des astérisques partout ; aide en une phrase sans point ; erreur affirmative sous le champ, avec la
+    payer », pas « RESTE À PAYER »). Champs : « (facultatif) » sur les rares champs facultatifs (terme déjà
+    employé dans toute l'application) plutôt que des astérisques partout ; aide en une phrase sans point ; erreur affirmative sous le champ, avec la
     correction (« Le numéro doit avoir 10 chiffres, par exemple 06 12 34 56 78. »). Formats français
     produits par `Intl` (`fr-FR`), jamais à la main : `1 234,50 €`, `20 %`, `8 nov. 2026`, `14 h 30`,
     `n° 1234` (sans séparateur de milliers), guillemets « », capitales accentuées (« À traiter »),

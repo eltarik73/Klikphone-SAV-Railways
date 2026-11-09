@@ -241,6 +241,10 @@ export default function ModelCombobox({
   };
 
   const errorClass = error ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20' : '';
+  // Place de l'icône de recherche et du bouton « Effacer » ; dans une borne, `.depot-form .input` (px-5, plus
+  // spécifique) l'emporterait : la variante [.depot-form_&] la reprend à spécificité égale, sans `!important`
+  const placeIcone = 'pl-10 [.depot-form_&]:pl-10';
+  const placeBouton = 'pr-12 [.depot-form_&]:pr-12';
   const describedBy = [error ? errorId : null, hintId].filter(Boolean).join(' ');
   const labelEl = label ? (
     <label htmlFor={inputId} className="input-label">
@@ -260,10 +264,10 @@ export default function ModelCombobox({
             readOnly
             aria-busy="true"
             placeholder="Chargement des modèles…"
-            className="input text-base !pr-12 bg-slate-50 motion-reduce:transition-none"
+            className={`input text-base ${placeBouton} bg-slate-50 motion-reduce:transition-none`}
           />
           <span className="absolute right-0 inset-y-0 w-11 flex items-center justify-center" aria-hidden="true">
-            <Loader2 className="w-4 h-4 text-brand-600 motion-safe:animate-spin" />
+            <Loader2 className="w-4 h-4 text-slate-500 motion-safe:animate-spin" />
           </span>
         </div>
         <p id={hintId} className="sr-only" aria-live="polite">Chargement des modèles</p>
@@ -308,7 +312,7 @@ export default function ModelCombobox({
             <button
               type="button"
               onClick={revenirALaListe}
-              className="btn-ghost btn-sm -mr-3 text-brand-700 hover:bg-brand-50 hover:text-brand-800"
+              className="btn-ghost btn-sm -mr-3 text-brand-700 hover:bg-slate-100 hover:text-brand-800"
             >
               <List className="w-4 h-4" aria-hidden="true" /> Choisir dans la liste
             </button>
@@ -375,14 +379,14 @@ export default function ModelCombobox({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          className={`input text-base !pl-10 !pr-12 motion-reduce:transition-none disabled:bg-slate-50 disabled:cursor-not-allowed ${errorClass}`}
+          className={`input text-base ${placeIcone} ${placeBouton} motion-reduce:transition-none disabled:bg-slate-50 disabled:cursor-not-allowed ${errorClass}`}
         />
         {(inputValue || texte) && !disabled && (
           <button
             type="button"
             onClick={clear}
             aria-label="Effacer le modèle"
-            className="absolute right-0 inset-y-0 w-11 flex items-center justify-center rounded-r-lg text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            className="absolute right-0 inset-y-0 w-11 flex items-center justify-center rounded-r-md text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -396,7 +400,7 @@ export default function ModelCombobox({
         hidden={!open}
         onMouseDown={(e) => e.preventDefault()}
         style={listMax ? { '--kp-list-max': `${listMax}px` } : undefined}
-        className="absolute z-50 left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 max-h-[min(50vh,var(--kp-list-max,50vh))] sm:max-h-[min(20rem,var(--kp-list-max,20rem))] overflow-y-auto overscroll-contain scroll-pt-9 scroll-pb-12"
+        className="absolute z-50 left-0 right-0 mt-1 bg-white rounded-lg shadow-md border border-slate-200 max-h-[min(50vh,var(--kp-list-max,50vh))] sm:max-h-[min(20rem,var(--kp-list-max,20rem))] overflow-y-auto overscroll-contain scroll-pt-9 scroll-pb-12"
       >
         {open && (
           <>

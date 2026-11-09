@@ -141,15 +141,20 @@ describe('Devis : modification et enregistrement', () => {
     expect(await screen.findByText(/Devis non enregistré : tva : doit être ≤ 30/)).toBeInTheDocument();
   });
 
-  it('les cartes KPI sont là avant les statistiques (pas de saut de la liste)', async () => {
+  it('les chiffres des devis sont là avant les statistiques (pas de saut de la liste), dans une seule carte', async () => {
     let resoudre;
     apiMock.getDevisStats.mockReturnValue(new Promise((r) => { resoudre = r; }));
-    const { container } = render(wrap(<DevisPage />));
-    expect(container.querySelectorAll('.kpi-card')).toHaveLength(4);
-    expect(screen.getByText('CA Accepté')).toBeInTheDocument();
+    render(wrap(<DevisPage />));
+    const carte = screen.getByRole('region', { name: 'Chiffres des devis' });
+    expect(carte).toHaveClass('card');
+    expect(carte).toHaveAttribute('aria-busy', 'true');
+    expect(within(carte).getAllByRole('term')).toHaveLength(4);
+    expect(screen.getByText('CA des devis acceptés')).toBeInTheDocument();
     resoudre({ total: 3, acceptes: 1, envoyes: 1, ca_accepte: 12345.67 });
     expect(await screen.findByText('12345,67 €')).toHaveClass('text-xl');
-    expect(container.querySelectorAll('.kpi-card')).toHaveLength(4);
+    expect(within(carte).getAllByRole('term')).toHaveLength(4);
+    expect(carte).toHaveAttribute('aria-busy', 'false');
+    expect(carte.querySelector('.kpi-icon')).toBeNull();
   });
 });
 
@@ -167,6 +172,26 @@ describe('Téléphones en vente : erreurs affichées', () => {
     const boutons = screen.getAllByRole('button', { name: /^Ajouter$/ });
     fireEvent.click(boutons[boutons.length - 1]);
     expect(await screen.findByText(/Téléphone non enregistré : prix_vente : nombre attendu/)).toBeInTheDocument();
+  });
+
+  it('suppression : modale du système nommant le téléphone (plus de confirm natif)', async () => {
+    const natif = vi.spyOn(window, 'confirm');
+    apiMock.getTelephonesVente.mockResolvedValue([{ id: 7, marque: 'Apple', modele: 'iPhone 12', etat: 'Occasion', prix_vente: 349, en_stock: true }]);
+    apiMock.getTelephonesVenteStats.mockResolvedValue({ total: 1, en_stock: 1, valeur_stock: 349, nb_marques: 1 });
+    apiMock.getTelephonesVenteMarques.mockResolvedValue(['Apple']);
+    apiMock.deleteTelephoneVente.mockResolvedValue({ ok: true });
+    render(wrap(<DevisFlashPage />, ['/accueil/devis-flash']));
+    fireEvent.click(screen.getByRole('button', { name: /Téléphones en vente/ }));
+    // Chiffres clés : une seule carte à colonnes, plus de tuiles d'icône
+    expect(await screen.findByText('Valeur du stock')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Chiffres des téléphones en vente' })).toHaveClass('card');
+    expect(document.querySelectorAll('.kpi-card, .kpi-icon')).toHaveLength(0);
+    fireEvent.click(await screen.findByRole('button', { name: 'Supprimer Apple iPhone 12' }));
+    const dialogue = await screen.findByRole('dialog', { name: 'Supprimer le téléphone Apple iPhone 12 ?' });
+    fireEvent.click(within(dialogue).getByRole('button', { name: 'Supprimer le téléphone' }));
+    await waitFor(() => expect(apiMock.deleteTelephoneVente).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(natif).not.toHaveBeenCalled();
   });
 });
 

@@ -11,6 +11,7 @@ import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
+import { LogoKlikPhone } from '../components/LogoK';
 import {
   ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, KeyRound, Plus, RotateCcw, ClipboardCheck,
 } from 'lucide-react';
@@ -252,6 +253,7 @@ export default function DepotPage() {
         <div className="depot-form w-full max-w-[640px] mx-auto px-4 py-5 sm:py-6 pb-10 flex-1 flex flex-col">
           {/* En-tête standard (pas de barre latérale sur la borne) : titre + étape en cours.
               « Retour » reste dans la navigation du bas, une seule fois à l'écran. */}
+          <LogoKlikPhone taille="sm" className="mb-4" />
           <div className="page-header">
             <div className="min-w-0">
               <h1 ref={titreRef} tabIndex={-1} className="page-header-title focus:outline-none">Déposer un appareil</h1>

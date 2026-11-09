@@ -88,35 +88,41 @@ describe('TarifsReparationPage : saisie d’un prix', () => {
     expect(apiMock.updateTarifReparation).not.toHaveBeenCalled();
   });
 
+  // Confirmation par la modale du système (ConfirmDialog), plus par window.confirm
   it('grosse variation (69 → 6974) : confirmation, rien n’est publié si elle est refusée', async () => {
-    const confirmer = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const champ = await ouvrir();
     fireEvent.change(champ, { target: { value: '6974' } });
     fireEvent.keyDown(champ, { key: 'Enter' });
     fireEvent.blur(champ);
-    expect(confirmer).toHaveBeenCalledTimes(1);
-    expect(confirmer.mock.calls[0][0]).toMatch(/69 € à 6974 €/);
+    const boite = await screen.findByRole('dialog');
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(boite).toHaveTextContent(/69 € à 6974 €/);
+    expect(boite).toHaveTextContent(/publié aussitôt/);
+    fireEvent.click(within(boite).getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(apiMock.updateTarifReparation).not.toHaveBeenCalled();
     expect(await screen.findByRole('button', { name: /Batterie de iPhone X\/XS : 69 euros/ })).toBeInTheDocument();
   });
 
   it('grosse variation confirmée : enregistrée une seule fois', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const champ = await ouvrir();
     fireEvent.change(champ, { target: { value: '149' } });
     fireEvent.keyDown(champ, { key: 'Enter' });
     fireEvent.blur(champ);
+    const boite = await screen.findByRole('dialog');
+    expect(apiMock.updateTarifReparation).not.toHaveBeenCalled();
+    fireEvent.click(within(boite).getByRole('button', { name: 'Publier le prix' }));
     await waitFor(() => expect(apiMock.updateTarifReparation).toHaveBeenCalledWith(4, { batterie: 149 }));
     expect(apiMock.updateTarifReparation).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('petite variation (69 → 74) : pas de confirmation', async () => {
-    const confirmer = vi.spyOn(window, 'confirm');
     const champ = await ouvrir();
     fireEvent.change(champ, { target: { value: '74' } });
     fireEvent.keyDown(champ, { key: 'Enter' });
     await waitFor(() => expect(apiMock.updateTarifReparation).toHaveBeenCalledWith(4, { batterie: 74 }));
-    expect(confirmer).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 
@@ -252,9 +258,9 @@ describe('Tarifs téléphones', () => {
     apiMock.getTelephonesCatalogue.mockResolvedValue(catalogue());
   });
 
-  it('type_produit « neuf » sans grade : badge « NEUF »', async () => {
+  it('type_produit « neuf » sans grade : badge « Neuf » (casse de phrase, plus de capitales)', async () => {
     render(<MemoryRouter><TarifsTelephonesPage /></MemoryRouter>);
-    expect(await screen.findByText('NEUF')).toBeInTheDocument();
+    expect(await screen.findByText('Neuf')).toBeInTheDocument();
   });
 
   it.each([

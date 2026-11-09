@@ -2,7 +2,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Search, ArrowRight, Monitor, Wrench, MapPin, Phone, Globe, Smartphone, Tag } from 'lucide-react';
 import { useRechargementAuRepos } from '../lib/miseAJour';
-import LogoK from '../components/LogoK';
+import { LogoKlikPhone } from '../components/LogoK';
 
 // Page de connexion chargée à la demande : on l'anticipe dès que la souris ou le doigt
 // s'approche d'un bouton « Accès staff » (le clic n'attend alors plus le réseau).
@@ -27,10 +27,10 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 py-10 sm:py-12">
-        {/* Logo : « K » en aplat (le PNG public est un dégradé) */}
-        <LogoK className="w-16 h-16" />
-        <h1 className="t-display text-center mt-4">KLIKPHONE</h1>
-        <p className="text-sm text-slate-600 mt-1 text-center">Spécialiste Apple et multimarque</p>
+        {/* Logo officiel KlikPhone : le « K » au-dessus du mot, puis la signature de la boutique */}
+        <h1 className="flex justify-center">
+          <LogoKlikPhone vertical taille="lg" sousTitre="Spécialiste Apple et multimarque" />
+        </h1>
         <p className="text-sm text-slate-600 leading-relaxed mt-3 text-center max-w-md">
           Réparation smartphones, tablettes, PC portables et consoles.
           Déposez votre appareil ou suivez votre réparation.

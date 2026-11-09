@@ -1104,7 +1104,7 @@ function LookupChip({ label }) {
   return (
     <div role="status" aria-live="polite"
       className="fixed left-1/2 top-3 z-[100] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-lg">
-      <Loader2 className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      <Loader2 className="h-4 w-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
       <span className="truncate font-mono">{label}</span>
       <span className="shrink-0">· recherche…</span>
     </div>
@@ -1553,7 +1553,7 @@ function ScanDialog({
                 <ScanLine className="h-4 w-4" aria-hidden="true" /> Scan comptoir
               </p>
               <h2 id={titleId} ref={titleRef} tabIndex={-1}
-                className="mt-0.5 rounded font-mono text-3xl font-bold tracking-tight tabular-nums text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="mt-0.5 rounded font-mono text-3xl font-semibold tracking-tight tabular-nums text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 {t.ticket_code || `#${view.id}`}
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1582,11 +1582,11 @@ function ScanDialog({
             <div className="flex shrink-0 items-center gap-1">
               <button type="button" onClick={toggleSound} aria-pressed={soundOn}
                 aria-label="Son de la douchette" title={soundOn ? 'Son activé' : 'Son coupé'}
-                className={`flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 ${FOCUS_RING}`}>
+                className={`flex h-11 w-11 items-center justify-center rounded-md text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 ${FOCUS_RING}`}>
                 {soundOn ? <Volume2 className="h-5 w-5" aria-hidden="true" /> : <VolumeX className="h-5 w-5" aria-hidden="true" />}
               </button>
               <button type="button" onClick={onClose} disabled={busy} aria-label="Fermer le panneau"
-                className={`flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 disabled:text-slate-400 disabled:hover:bg-transparent ${FOCUS_RING}`}>
+                className={`flex h-11 w-11 items-center justify-center rounded-md text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 disabled:text-slate-400 disabled:hover:bg-transparent ${FOCUS_RING}`}>
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
@@ -1640,7 +1640,7 @@ function ScanDialog({
           )}
 
           {view.mismatch && (
-            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
               <p className="flex items-start gap-2 text-sm font-semibold text-red-800">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 {view.mismatch.code} scanné pendant la remise de {t.ticket_code} : vérifiez que c’est le bon appareil.
@@ -1657,8 +1657,8 @@ function ScanDialog({
           )}
 
           {done && (
-            <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-              <p className="flex items-center gap-2 text-base font-bold text-emerald-800">
+            <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+              <p className="flex items-center gap-2 text-base font-semibold text-emerald-800">
                 <CircleCheckBig className="h-5 w-5 shrink-0" aria-hidden="true" />
                 {done.deja ? 'Déjà rendu au client' : 'Rendu au client'}
               </p>
@@ -1689,7 +1689,7 @@ function ScanDialog({
 
           {delaiAFixer && (
             <section aria-labelledby={delaiTitreId} aria-busy={delaiSaisi.envoi || undefined}
-              className="rounded-xl border border-dashed border-amber-400 bg-amber-50/60 p-4">
+              className="rounded-lg border border-dashed border-amber-400 bg-amber-50/60 p-4">
               <h3 id={delaiTitreId} className="flex items-center gap-2 t-h2">
                 <CalendarClock className="h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" /> Délai à fixer
               </h3>
@@ -1708,7 +1708,7 @@ function ScanDialog({
                 <button type="button" onClick={() => enregistrerDelai(delaiSaisi.valeur)}
                   disabled={!dateDelai(delaiSaisi.valeur) || delaiSaisi.envoi}
                   className="btn-primary mt-3 w-full sm:w-auto">
-                  {delaiSaisi.envoi && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                  {delaiSaisi.envoi && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
                   Enregistrer ce délai
                 </button>
               )}
@@ -1763,7 +1763,7 @@ function ScanDialog({
                   <span className="block text-sm font-semibold text-emerald-700">
                     {m.paye ? 'Payé' : 'Rien à payer'}
                   </span>
-                  <span className="block text-3xl font-bold tabular-nums leading-none text-emerald-700">
+                  <span className="block text-3xl font-semibold tabular-nums leading-none text-emerald-700">
                     {formatPrix(m.reste)}
                   </span>
                 </div>
@@ -1776,7 +1776,7 @@ function ScanDialog({
               <h3 className="flex items-center gap-1.5 t-h3">
                 <UserRound className="h-4 w-4 text-slate-400" aria-hidden="true" /> Client
               </h3>
-              <p className="mt-1 text-lg font-bold text-slate-900">
+              <p className="mt-1 text-lg font-semibold text-slate-900">
                 {[t.client_prenom, String(t.client_nom ?? '').toUpperCase()].filter(Boolean).join(' ') || '—'}
               </p>
               {t.client_societe && <p className="text-sm text-slate-600">{t.client_societe}</p>}
@@ -1806,7 +1806,7 @@ function ScanDialog({
               <h3 className="flex items-center gap-1.5 t-h3">
                 <Smartphone className="h-4 w-4 text-slate-400" aria-hidden="true" /> Appareil
               </h3>
-              <p className="mt-1 text-lg font-bold text-slate-900">{modeleTicket(t)}</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{modeleTicket(t)}</p>
               <dl className="mt-2 space-y-1.5 text-sm">
                 {(t.panne || t.panne_detail) && (
                   <div>
@@ -1855,7 +1855,7 @@ function ScanDialog({
           </div>
 
           {notes.length > 0 && (
-            <section aria-label="Notes importantes" className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <section aria-label="Notes importantes" className="rounded-lg border border-amber-200 bg-amber-50 p-4">
               <h3 className="flex items-center gap-1.5 t-h3 text-amber-900">
                 <StickyNote className="h-4 w-4" aria-hidden="true" /> Notes importantes
               </h3>
@@ -1883,15 +1883,15 @@ function ScanDialog({
                 Retour
               </button>
               <button type="button" onClick={submitRendre} disabled={wizard.submitting}
-                className="btn-success btn-lg font-bold">
+                className="btn-success btn-lg">
                 {wizard.submitting
-                  ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
                   : <PackageCheck aria-hidden="true" />}
                 {wizard.submitting ? 'Enregistrement…' : 'Confirmer la remise'}
               </button>
             </div>
           ) : confirm ? (
-            <div role="group" aria-label="Confirmation" className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div role="group" aria-label="Confirmation" className="rounded-lg border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm font-semibold text-amber-900">
                 {confirm.action.id === 'encaisser'
                   ? `Encaisser ${formatPrix(m.reste)} et marquer ${t.ticket_code} comme payé ?`
@@ -1905,7 +1905,7 @@ function ScanDialog({
                 </div>
               )}
               {confirm.error && (
-                <p id={`${confirmIds}-err`} role="alert" className="mt-2 flex items-start gap-2 text-sm font-bold text-red-700">
+                <p id={`${confirmIds}-err`} role="alert" className="mt-2 flex items-start gap-2 text-sm font-semibold text-red-700">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {confirm.error.message}
                 </p>
               )}
@@ -1916,14 +1916,14 @@ function ScanDialog({
                 </button>
                 <button type="button" onClick={confirmAction} disabled={confirm.submitting}
                   className={`btn-lg px-3 ${confirm.action.id === 'encaisser' ? 'btn-success' : 'btn-primary'}`}>
-                  {confirm.submitting && <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+                  {confirm.submitting && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
                   {confirm.action.id === 'encaisser' ? 'Confirmer l’encaissement' : confirm.action.warn?.ok || 'Oui, continuer'}
                 </button>
               </div>
             </div>
           ) : view.envoiStatut ? (
             <p role="status" className="flex min-h-[52px] items-center justify-center gap-2 text-sm font-semibold text-slate-700">
-              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Enregistrement…
+              <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> Enregistrement…
             </p>
           ) : primary.length + secondary.length > 2 ? (
             // Action principale sur toute la largeur, les autres en dessous
@@ -1963,15 +1963,15 @@ function ScanDialog({
           {!wizard && (
             <div className="grid grid-cols-3 gap-2">
               <button type="button" onClick={() => onOpenTicket(view.id)} disabled={busy}
-                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
+                className="btn-secondary min-h-12 flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <ExternalLink className="h-4 w-4" aria-hidden="true" /> Ouvrir la fiche
               </button>
               <button type="button" onClick={() => onOpenClient(t.client_id)} disabled={busy || !t.client_id}
-                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
+                className="btn-secondary min-h-12 flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <UserRound className="h-4 w-4" aria-hidden="true" /> Fiche client
               </button>
               <button type="button" onClick={() => onPrint(t)} disabled={busy}
-                className="btn-secondary min-h-[48px] flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
+                className="btn-secondary min-h-12 flex-col gap-0.5 px-2 text-xs sm:flex-row sm:gap-2 sm:text-sm">
                 <Printer className="h-4 w-4" aria-hidden="true" /> {done || estRendu(t) ? 'Imprimer le reçu' : 'Imprimer'}
               </button>
             </div>
@@ -2001,7 +2001,7 @@ function Rangement({
           label="Rangé où ?" onSaved={onSaved} className="min-w-0 flex-1" />
         <button type="button" onClick={onFermer} data-rangement-fermer=""
           aria-label={edition === 'invite' ? 'Ranger l’appareil plus tard' : 'Fermer la saisie de l’emplacement'}
-          className="btn-secondary min-h-[44px] shrink-0">
+          className="btn-secondary min-h-11 shrink-0">
           {edition === 'invite' ? 'Plus tard' : 'Fermer'}
         </button>
       </div>
@@ -2009,7 +2009,7 @@ function Rangement({
   } else if (emplacement) {
     contenu = (
       // Pavé sombre conservé : l'emplacement se lit de loin, c'est le repère pour aller chercher l'appareil
-      <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-2 text-white">
+      <div className="flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2 text-white">
         <MapPin className="h-7 w-7 shrink-0 text-brand-300" aria-hidden="true" />
         <p id={descId} className="min-w-0 flex-1">
           <span className="block text-xs font-semibold text-slate-300">Rangé en</span>{' '}
@@ -2018,7 +2018,7 @@ function Rangement({
         </p>
         {modifiable && (
           <button ref={boutonRef} type="button" onClick={onOuvrir} aria-label="Modifier l’emplacement"
-            className="btn min-h-[44px] shrink-0 border border-white/30 bg-white/10 text-white hover:bg-white/20 focus-visible:ring-white focus-visible:ring-offset-slate-900">
+            className="btn min-h-11 shrink-0 border border-white/30 bg-white/10 text-white hover:bg-white/20 focus-visible:ring-white focus-visible:ring-offset-slate-900">
             Modifier
           </button>
         )}
@@ -2026,12 +2026,12 @@ function Rangement({
     );
   } else {
     contenu = (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-2">
         <MapPin className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
         {/* Téléphone : le bouton passe à la ligne plutôt que d'écraser le texte */}
-        <p id={descId} className="min-w-[12rem] flex-1 text-base font-bold text-slate-800">Pas d’emplacement noté</p>
+        <p id={descId} className="min-w-[12rem] flex-1 text-base font-semibold text-slate-800">Pas d’emplacement noté</p>
         {modifiable && (
-          <button ref={boutonRef} type="button" onClick={onOuvrir} className="btn-secondary min-h-[44px] shrink-0">
+          <button ref={boutonRef} type="button" onClick={onOuvrir} className="btn-secondary min-h-11 shrink-0">
             Noter l’emplacement
           </button>
         )}
@@ -2061,7 +2061,7 @@ const ACTION_COLORS = {
 function ActionButton({ action, onClick, primary = false }) {
   const Icon = ACTION_ICONS[action.icon || action.id] || Play;
   const cls = primary
-    ? `${ACTION_COLORS[action.id] || 'btn-primary'} btn-lg min-h-[56px] text-lg font-bold`
+    ? `${ACTION_COLORS[action.id] || 'btn-primary'} btn-lg min-h-14 text-lg`
     : 'btn-secondary btn-lg';
   return (
     <button type="button" onClick={onClick}
@@ -2071,7 +2071,7 @@ function ActionButton({ action, onClick, primary = false }) {
         // Par où le client sera prévenu, sous le libellé
         <span className="flex min-w-0 flex-col items-start text-left leading-tight">
           <span>{action.label}</span>
-          <span className="break-words text-[13px] font-medium opacity-90">{action.hint}</span>
+          <span className="break-words text-sm font-medium opacity-90">{action.hint}</span>
         </span>
       ) : action.label}
     </button>
@@ -2091,7 +2091,7 @@ function UndoBar({ deferred, onCancel, onCommit }) {
   }, [deferred.until]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-white">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-white">
       <Clock className="h-5 w-5 shrink-0" aria-hidden="true" />
       <p className="min-w-0 flex-1 text-sm font-semibold" role="status">
         {deferred.label} <span aria-hidden="true">dans {left} s</span>
@@ -2109,7 +2109,7 @@ function UndoBar({ deferred, onCancel, onCommit }) {
   );
 }
 
-const CHOICE = 'flex min-h-[48px] cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors duration-150';
+const CHOICE = 'flex min-h-12 cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors duration-150';
 
 function ModesPaiement({ name, value, onChange, errorId, invalid }) {
   return (
@@ -2153,7 +2153,7 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
             onChange={(e) => set({ forceOk: e.target.checked })}
             className="mt-0.5 h-5 w-5 shrink-0 accent-amber-700" />
           <span>
-            <span className="font-bold">Réparation non terminée</span> (statut « {t.statut} »).
+            <span className="font-semibold">Réparation non terminée</span> (statut « {t.statut} »).
             {' '}Je confirme rendre l’appareil en l’état.
           </span>
         </label>
@@ -2165,7 +2165,7 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
             onChange={(e) => set({ pretOk: e.target.checked })}
             className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-700" />
           <span>
-            <span className="font-bold">Téléphone de prêt récupéré</span> : {String(t.telephone_pret).trim()}
+            <span className="font-semibold">Téléphone de prêt récupéré</span> : {String(t.telephone_pret).trim()}
             {imeiCourt(t.telephone_pret_imei) ? ` (IMEI ${imeiCourt(t.telephone_pret_imei)})` : ''}, vérifié.
           </span>
         </label>
@@ -2219,7 +2219,7 @@ function RestitutionForm({ t, m, verifier, state, setState, titleRef }) {
       )}
 
       {err && (
-        <p id={errId} role="alert" className="flex items-start gap-2 text-sm font-bold text-red-700">
+        <p id={errId} role="alert" className="flex items-start gap-2 text-sm font-semibold text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {err.message}
         </p>
       )}

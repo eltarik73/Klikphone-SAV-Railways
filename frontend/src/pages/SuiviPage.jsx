@@ -10,6 +10,7 @@ import ScratchCard from '../components/ScratchCard';
 import { formatDate, formatPrix } from '../lib/utils';
 import { normalizeTicketCode, normalizePhoneInput } from '../lib/ticketCode';
 import { Search, ArrowLeft, MapPin, Phone, Hash, Calendar, Wrench, CreditCard, Package, Truck, Globe, RefreshCw, Send, Star, CheckCircle2, XCircle, MessageCircle, Tag, Loader2, AlertCircle, FileText, QrCode } from 'lucide-react';
+import { LogoKlikPhone } from '../components/LogoK';
 
 const SUIVI_POLL_MS = 30_000;
 // Preuve d'accès mémorisée par code ticket, le temps de l'onglet (survit à un rechargement)
@@ -380,6 +381,7 @@ export default function SuiviPage() {
       <div className="max-w-[640px] mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
         <div className="text-center mb-6">
+          <LogoKlikPhone taille="sm" className="mb-5" />
           <h1 className="t-display">Suivi de réparation</h1>
           <p className="text-base text-slate-500 mt-1.5">
             {ticket ? 'Suivez l\'avancement de votre réparation' : 'Indiquez le numéro de ticket et le téléphone donnés lors du dépôt'}

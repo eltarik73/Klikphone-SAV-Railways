@@ -158,11 +158,11 @@ function ShareMenu({ doc, formatKey, ticketId, ticketCode, clientTel, clientEmai
         <ChevronDown className={`motion-safe:transition-transform duration-150 ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
       {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg animate-in">
+        <div className="absolute bottom-full right-0 z-30 mb-2 w-72 max-w-[calc(100vw-2rem)] origin-bottom-right overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-md motion-safe:animate-scale-in">
           <p aria-hidden="true" className="px-3 pt-1.5 pb-1 t-caption">Envoyer au client : {label}</p>
           <div ref={menuRef} id={menuId} role="menu" aria-label={`Envoyer le ${label} au client`} onKeyDown={onMenuKeyDown}>
             {linkItem(waHref, MessageCircle, 'text-emerald-700', 'WhatsApp')}
-            {linkItem(smsHref, Send, 'text-brand-600', 'SMS')}
+            {linkItem(smsHref, Send, 'text-slate-500', 'SMS')}
             <button type="button" role="menuitem" onClick={handleEmail} disabled={!clientEmail || sending} className={ITEM_CLS}>
               {sending ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4 text-slate-500" aria-hidden="true" />}
               {sending ? 'Envoi…' : doc.pdf ? 'Email (PDF A4)' : 'Email'}

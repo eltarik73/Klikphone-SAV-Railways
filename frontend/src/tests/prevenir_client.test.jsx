@@ -484,7 +484,7 @@ describe('QuickScanPanel : « Terminé + prévenir le client »', () => {
     expect(within(carte).getByText(/Envoyez-le par e-mail ou réessayez/)).toBeInTheDocument();
     const email = within(carte).getByRole('button', { name: 'E-mail' });
     await waitFor(() => expect(document.activeElement).toBe(email));
-    expect(email.className).toMatch(/bg-emerald-700/);
+    expect(email).toHaveClass('btn-success'); // canal recommandé : seul bouton plein (vert du système)
     expect(within(carte).getByText('Texte de l’e-mail')).toBeInTheDocument();
     fireEvent.click(email);
     await waitFor(() => expect(apiMock.envoyerEmail).toHaveBeenCalledTimes(1));
@@ -592,7 +592,7 @@ describe('carte « Prévenir le client » : ticket « Réparation terminée »',
     const bascule = within(carte).getByRole('button', { name: 'Prévenir…' });
     expect(bascule).toHaveAttribute('aria-expanded', 'false');
     expect(within(carte).queryByRole('button', { name: 'SMS' })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Rendre au client' }).className).toMatch(/min-h-\[56px\]/);
+    expect(within(dialog).getByRole('button', { name: 'Rendre au client' })).toHaveClass('min-h-14'); // 56 px
     fireEvent.click(bascule);
     expect(within(carte).getByRole('button', { name: 'SMS' })).toBeEnabled();
   });
@@ -669,7 +669,7 @@ describe('carte « Prévenir le client » : ticket « Réparation terminée »',
     fireEvent.click(within(carte).getByRole('button', { name: 'Prévenir…' }));
     expect(within(carte).getByRole('button', { name: 'Plus tard' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(carte).getByRole('button', { name: 'SMS' })).toBeEnabled();
-    expect(within(carte).getByRole('button', { name: 'E-mail' }).className).toMatch(/bg-emerald-700/);
+    expect(within(carte).getByRole('button', { name: 'E-mail' })).toHaveClass('btn-success');
     expect(within(carte).getByText('Texte de l’e-mail')).toBeInTheDocument();
   });
 

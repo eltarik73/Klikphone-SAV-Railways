@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Sparkles, Send, Edit3, RotateCcw, TrendingUp, Copy, ExternalLink, Check } from 'lucide-react';
+import { Star, MessageSquare, Clock, CheckCircle, RefreshCw, Send, Edit3, RotateCcw, Copy, ExternalLink, Check } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from '../components/Toast';
+import CarteChiffres from '../components/CarteChiffres';
 
 // ─── Helpers ────────────────────────────────────
 
@@ -30,6 +31,10 @@ function formatDate(d) {
     year: 'numeric',
   });
 }
+
+// Taux en pourcentage (l'API envoie 85 pour 85 %) : « 85 % »
+const fmtTaux = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
+const fmtNote = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function getInitiales(nom) {
   if (!nom) return '?';
@@ -180,8 +185,8 @@ export default function AvisGoogle() {
           <h1 className="page-header-title">Avis Google</h1>
           <p className="page-header-subtitle">
             {stats
-              ? `${stats.total || 0} avis · Note moyenne ${stats.note_moyenne?.toFixed(1) || '—'}/5`
-              : 'Chargement...'}
+              ? `${stats.total || 0} avis · Note moyenne ${stats.note_moyenne != null ? fmtNote.format(stats.note_moyenne) : '—'}/5`
+              : 'Chargement…'}
           </p>
         </div>
         <div className="page-header-actions max-w-full">
@@ -192,10 +197,10 @@ export default function AvisGoogle() {
             disabled={syncing}
             aria-label={syncing ? 'Synchronisation en cours' : 'Synchroniser les avis'}
             aria-busy={syncing}
-            className="btn-primary"
+            className="btn-secondary"
           >
             <RefreshCw className={syncing ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
-            <span className="hidden sm:inline" aria-hidden="true">{syncing ? 'Synchronisation...' : 'Synchroniser'}</span>
+            <span className="hidden sm:inline" aria-hidden="true">{syncing ? 'Synchronisation…' : 'Synchroniser'}</span>
           </button>
         </div>
       </div>
@@ -218,68 +223,31 @@ export default function AvisGoogle() {
         {loading ? (
           <div className="loading-inline justify-center w-full py-20" role="status">
             <RefreshCw aria-hidden="true" />
-            <p>Chargement des avis...</p>
+            <p>Chargement des avis…</p>
           </div>
         ) : (
           <>
-            {/* KPI Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-              {/* Note moyenne */}
-              <div className="kpi-card">
-                <div className="kpi-icon bg-amber-50 text-amber-500">
-                  <Star className="fill-current" aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="kpi-value">
-                    {stats?.note_moyenne?.toFixed(1) || '—'}<span className="text-sm font-medium text-slate-500">/5</span>
-                  </p>
-                  <p className="kpi-label">Note moyenne</p>
-                </div>
-              </div>
+            {/* Chiffres clés : une carte, quatre colonnes séparées par un trait (2 × 2 sur téléphone) */}
+            <CarteChiffres label="Chiffres des avis" colonnes={{ base: 2, sm: 4 }} chiffres={[
+              {
+                label: 'Note moyenne',
+                valeur: stats?.note_moyenne != null
+                  ? <>{fmtNote.format(stats.note_moyenne)}<span className="text-sm font-medium text-slate-500">/5</span></>
+                  : '—',
+              },
+              { label: 'Total avis', valeur: stats?.total || 0 },
+              { label: 'Non répondus', valeur: stats?.non_repondus || 0 },
+              {
+                label: 'Taux de réponse',
+                valeur: stats?.taux_reponse != null ? fmtTaux.format(Number(stats.taux_reponse) / 100) : '—',
+              },
+            ]} />
 
-              {/* Total avis */}
-              <div className="kpi-card">
-                <div className="kpi-icon">
-                  <MessageSquare aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="kpi-value">{stats?.total || 0}</p>
-                  <p className="kpi-label">Total avis</p>
-                </div>
-              </div>
-
-              {/* Non répondus */}
-              <div className="kpi-card">
-                <div className={`kpi-icon ${(stats?.non_repondus || 0) > 0 ? 'bg-amber-50 text-amber-700' : ''}`}>
-                  <Clock aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="kpi-value">{stats?.non_repondus || 0}</p>
-                  <p className="kpi-label">Non répondus</p>
-                </div>
-              </div>
-
-              {/* Taux de réponse */}
-              <div className="kpi-card">
-                <div className="kpi-icon bg-emerald-50 text-emerald-700">
-                  <CheckCircle aria-hidden="true" />
-                </div>
-                <div className="min-w-0">
-                  <p className="kpi-value">
-                    {stats?.taux_reponse != null ? `${stats.taux_reponse}%` : '—'}
-                  </p>
-                  <p className="kpi-label">Taux de réponse</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Info banner */}
-            <div className="callout callout-info">
-              <ExternalLink aria-hidden="true" />
-              <p>
-                <span className="font-semibold">Comment ça marche :</span> Générez une réponse IA, modifiez-la si besoin, puis cliquez "Approuver & Publier". La réponse sera copiée et Google ouvert pour la coller.
-              </p>
-            </div>
+            {/* Fonctionnement : une phrase, pas un bandeau */}
+            <p className="t-small text-slate-600">
+              Générez une réponse avec l’IA, modifiez-la si besoin, puis « Approuver et publier » : la réponse est
+              copiée et Google s’ouvre pour la coller.
+            </p>
 
             {/* Filtres */}
             <div className="scroll-fade-x">
@@ -316,13 +284,9 @@ export default function AvisGoogle() {
                   >
                     {/* En-tête de l'avis */}
                     <div className="flex items-start gap-3">
-                      {/* Avatar : neutre pour un bon avis, ambre (attention) sous 4 étoiles */}
+                      {/* Avatar neutre : la note se lit dans les étoiles */}
                       <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                          item.note >= 4
-                            ? 'bg-brand-50 text-brand-700'
-                            : 'bg-amber-50 text-amber-800'
-                        }`}
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 bg-slate-100 text-slate-700"
                         aria-hidden="true"
                       >
                         {getInitiales(item.auteur)}
@@ -359,7 +323,7 @@ export default function AvisGoogle() {
 
                     {/* Texte de l'avis */}
                     {item.texte && (
-                      <p className="mt-3 text-sm text-slate-700 italic leading-relaxed">
+                      <p className="mt-3 text-sm text-slate-700 leading-relaxed">
                         « {item.texte} »
                       </p>
                     )}
@@ -370,26 +334,22 @@ export default function AvisGoogle() {
                         {/* Bouton générer si pas encore de suggestion */}
                         {!item.ia_suggestion && (
                           <button
+                            type="button"
                             onClick={() => handleGenerate(item.id)}
                             disabled={generatingId === item.id}
+                            aria-busy={generatingId === item.id || undefined}
                             className="btn-secondary"
                           >
-                            <Sparkles className="text-slate-500" aria-hidden="true" />
                             {generatingId === item.id
-                              ? 'Génération en cours...'
-                              : 'Générer réponse IA'}
+                              ? 'Génération en cours…'
+                              : 'Générer une réponse IA'}
                           </button>
                         )}
 
                         {/* Bloc suggestion IA */}
                         {item.ia_suggestion && (
-                          <div className="card-section mt-3 border-l-4 border-brand-500">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Sparkles className="w-4 h-4 text-brand-600" aria-hidden="true" />
-                              <span className="t-h3 text-brand-700">
-                                Réponse IA suggérée
-                              </span>
-                            </div>
+                          <div className="card-section mt-3">
+                            <p className="t-h3 mb-2">Réponse IA suggérée</p>
                             <p className="text-sm text-slate-700 leading-relaxed">
                               {item.ia_suggestion}
                             </p>
@@ -397,6 +357,7 @@ export default function AvisGoogle() {
                             {/* Boutons d'action */}
                             <div className="flex flex-wrap gap-2 mt-3">
                               <button
+                                type="button"
                                 onClick={async () => {
                                   await handleCopy(item.ia_suggestion, `approve-${item.id}`);
                                   await handleApprove(item.id, item.ia_suggestion);
@@ -407,10 +368,11 @@ export default function AvisGoogle() {
                                 {copiedId === `approve-${item.id}` ? (
                                   <><Check /> Copié, ouverture de Google…</>
                                 ) : (
-                                  <><Send /> Approuver & Publier</>
+                                  <><Send /> Approuver et publier</>
                                 )}
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleEdit(item.id, item.ia_suggestion)}
                                 className="btn-secondary btn-sm"
                               >
@@ -418,9 +380,11 @@ export default function AvisGoogle() {
                                 Modifier
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleRegenerate(item.id)}
                                 disabled={generatingId === item.id}
-                                className="btn-secondary btn-sm"
+                                aria-busy={generatingId === item.id || undefined}
+                                className="btn-ghost btn-sm"
                               >
                                 <RotateCcw
                                   className={generatingId === item.id ? 'motion-safe:animate-spin' : ''}
@@ -428,6 +392,7 @@ export default function AvisGoogle() {
                                 Régénérer
                               </button>
                               <button
+                                type="button"
                                 onClick={() => handleCopy(item.ia_suggestion, `copy-${item.id}`)}
                                 className="btn-ghost btn-sm"
                               >
@@ -448,7 +413,7 @@ export default function AvisGoogle() {
                       <div className="card-section mt-4">
                         <div className="flex items-center gap-2 mb-2">
                           <CheckCircle className="w-4 h-4 text-emerald-700" aria-hidden="true" />
-                          <span className="t-h3 text-emerald-700">
+                          <span className="t-h3 text-slate-700">
                             Réponse publiée
                           </span>
                         </div>
@@ -465,6 +430,7 @@ export default function AvisGoogle() {
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2 -ml-3">
                           <button
+                            type="button"
                             onClick={() => handleCopy(item.reponse_texte, `pub-${item.id}`)}
                             className="btn-ghost btn-sm"
                           >
@@ -475,6 +441,7 @@ export default function AvisGoogle() {
                             )}
                           </button>
                           <button
+                            type="button"
                             onClick={openGoogleReviews}
                             className="btn-ghost btn-sm text-brand-700 hover:text-brand-800"
                           >
@@ -494,17 +461,18 @@ export default function AvisGoogle() {
                           onChange={e => setEditText(e.target.value)}
                           rows={4}
                           className="textarea resize-none"
-                          placeholder="Modifier la réponse..."
+                          placeholder="Modifier la réponse…"
                         />
                         <div className="flex flex-wrap gap-2">
                           <button
+                            type="button"
                             onClick={() => handleSaveEdit(item.id)}
-                            className="btn-primary"
+                            className="btn-secondary"
                           >
-                            <Send />
-                            Sauvegarder
+                            Enregistrer la réponse
                           </button>
                           <button
+                            type="button"
                             onClick={() => {
                               setEditingId(null);
                               setEditText('');

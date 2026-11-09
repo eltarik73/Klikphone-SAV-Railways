@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '../lib/api';
+import Interrupteur from './Interrupteur';
 import { MessageSquare, Loader2, AlertTriangle, Check } from 'lucide-react';
 
 const formatCredits = (n) => Number(n).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
@@ -51,7 +52,7 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
   return (
     <section className="card card-body" aria-labelledby="cfg-sms-titre">
       <h2 id="cfg-sms-titre" className="t-h2 mb-4 flex items-center gap-2">
-        <MessageSquare className="w-4 h-4 text-slate-400" aria-hidden="true" /> SMS (Brevo)
+        <MessageSquare className="w-4 h-4 text-slate-500" aria-hidden="true" /> SMS (Brevo)
       </h2>
 
       {!etat ? (
@@ -74,27 +75,15 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
         </p>
       )}
 
-      <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-        <div className="min-w-0">
-          <p id="cfg-sms-actif" className="text-sm font-medium text-slate-800">Envoyer les SMS depuis le serveur (Brevo)</p>
-          <p className="t-caption mt-0.5">
-            Sinon, le bouton SMS ouvre l’app Messages de l’appareil, comme avant. Chaque SMS consomme des crédits Brevo.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={basculer}
-          disabled={!etat || (cleAbsente && !actif)}
-          role="switch"
-          aria-checked={actif}
-          aria-labelledby="cfg-sms-actif"
-          className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed"
-        >
-          <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors duration-150 ${actif ? 'bg-brand-600' : 'bg-slate-300'} ${!etat || (cleAbsente && !actif) ? 'opacity-60' : ''}`}>
-            <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 ${actif ? 'translate-x-5' : 'translate-x-0'}`} />
-          </span>
-        </button>
-      </div>
+      <Interrupteur
+        id="cfg-sms-actif"
+        className="py-3 border-t border-slate-100"
+        label="Envoyer les SMS depuis le serveur (Brevo)"
+        description="Sinon, le bouton SMS ouvre l’app Messages de l’appareil, comme avant. Chaque SMS consomme des crédits Brevo."
+        checked={actif}
+        onChange={basculer}
+        disabled={!etat || (cleAbsente && !actif)}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
         <div>
@@ -116,7 +105,7 @@ export default function SmsBrevoConfig({ config, updateConfig, saveParamNow }) {
         </div>
         <div>
           <p className="input-label">Solde de crédits SMS</p>
-          <div className="flex items-center gap-2 min-h-[40px]">
+          <div className="flex items-center gap-2 min-h-10">
             <p className="t-num text-sm min-w-0" aria-live="polite">
               {cleAbsente ? '—'
                 : credits.chargement ? 'Lecture…'

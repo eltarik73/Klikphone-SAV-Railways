@@ -58,7 +58,7 @@ export default function DetailJour({ selection, etat, onFermer, onReessayer }) {
               </p>
             )}
           </div>
-          <button type="button" onClick={onFermer} className="btn-ghost btn-icon w-11 h-11 min-w-[44px]"
+          <button type="button" onClick={onFermer} className="btn-ghost btn-icon w-11 h-11 min-w-11"
             aria-label="Fermer le détail (Échap)">
             <X aria-hidden="true" />
           </button>
@@ -83,7 +83,7 @@ export default function DetailJour({ selection, etat, onFermer, onReessayer }) {
             <ol className="divide-y divide-slate-100" aria-label="Sessions de la journée">
               {sessions.map((s, i) => (
                 <li key={`${s.debut}-${i}`}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-4 py-2 text-[13px] text-slate-700">
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-4 py-2 t-small text-slate-700">
                   <span className="font-semibold tabular-nums text-slate-900 whitespace-nowrap">
                     {heureParis(s.debut)} → {finSession(s)}
                   </span>
@@ -105,7 +105,7 @@ export default function DetailJour({ selection, etat, onFermer, onReessayer }) {
                     <a href={lienCarte(s.geo_lat, s.geo_lng)} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 min-h-11 text-slate-800 font-medium underline decoration-slate-300 underline-offset-2 hover:text-brand-800 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       aria-label={`${s.geo_lieu ? `Près de ${s.geo_lieu}` : 'Position approximative'} à ${s.debut} : voir sur la carte (s’ouvre dans un nouvel onglet)`}>
-                      <MapPin className="w-3.5 h-3.5 text-brand-700 shrink-0" aria-hidden="true" />
+                      <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                       {s.geo_lieu ? `Près de ${s.geo_lieu}` : 'Voir sur la carte'}
                     </a>
                   )}

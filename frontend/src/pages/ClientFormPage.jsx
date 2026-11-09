@@ -16,6 +16,7 @@ import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './Confidential
 import DelaiReparation from '../components/DelaiReparation';
 import { dateDelai, phrasePret } from '../lib/delai';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
+import { LogoKlikPhone } from '../components/LogoK';
 import {
   ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, KeyRound,
   Send, Package, ShoppingBag, ClipboardCheck, Clock,
@@ -530,6 +531,8 @@ export default function ClientFormPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="depot-form w-full max-w-[640px] mx-auto px-4 py-5 sm:py-6 pb-10">
+        {/* Logo officiel en tête de borne (pas sur le formulaire du personnel, déjà dans l'application) */}
+        {!modePersonnel && <LogoKlikPhone taille="sm" className="mb-4" />}
         {/* En-tête */}
         <div className="flex items-center gap-2 mb-5">
           <button

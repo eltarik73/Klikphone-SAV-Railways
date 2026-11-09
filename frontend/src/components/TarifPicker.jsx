@@ -194,7 +194,7 @@ function LigneSuggestion({ s, modele, isAdmin, onChoisir }) {
       <button
         type="button"
         onClick={() => onChoisir(s)}
-        className="w-full min-h-14 flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:border-brand-300 hover:bg-brand-50/40 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
+        className="w-full min-h-14 flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
         aria-label={`Ajouter ${s.label}${autreModele ? ` (${autreModele})` : ''}${s.stock ? `, ${s.stock}` : ''}, ${prix != null ? formatPrix(prix) : 'prix non renseigné'}${fraicheur ? `, ${fraicheur.description}` : ''}`}
       >
         <span className="min-w-0 flex-1">
@@ -202,7 +202,7 @@ function LigneSuggestion({ s, modele, isAdmin, onChoisir }) {
           {autreModele && <span className="block text-xs font-medium text-slate-700">{autreModele}</span>}
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
             {s.type_piece && <span>{s.type_piece}</span>}
-            {s.qualite && <span className="badge badge-sm badge-brand">{s.qualite}</span>}
+            {s.qualite && <span className="badge badge-sm badge-neutral">{s.qualite}</span>}
             {ton && (
               <span className={`badge badge-sm gap-1 ${ton}`}>
                 <Package className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />{s.stock}
@@ -213,7 +213,7 @@ function LigneSuggestion({ s, modele, isAdmin, onChoisir }) {
           </span>
         </span>
         <span className="shrink-0 text-right">
-          <span className="block text-base font-bold tabular-nums text-slate-900">{prix != null ? formatPrix(prix) : '—'}</span>
+          <span className="block text-base font-semibold tabular-nums text-slate-900">{prix != null ? formatPrix(prix) : '—'}</span>
           {cout != null && <span className="block text-xs text-slate-500 tabular-nums">Achat HT {formatPrix(cout)}</span>}
         </span>
       </button>
@@ -316,7 +316,7 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
           aria-modal="true"
           aria-labelledby={titreId}
           tabIndex={-1}
-          className="pointer-events-auto bg-white w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col rounded-t-xl sm:rounded-xl shadow-lg focus:outline-none animate-scale-in"
+          className="modal sm:max-w-2xl sm:max-h-[85vh] pointer-events-auto focus:outline-none"
         >
           <div className="modal-header">
             <div className="min-w-0 flex-1">
@@ -346,7 +346,7 @@ export default function TarifPicker({ open, onClose, onChoisir, marque = '', mod
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {appareil && (
-                <label className="inline-flex items-center gap-2 min-h-11 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
+                <label className="inline-flex items-center gap-2 min-h-11 px-3 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-700 cursor-pointer hover:bg-slate-50 transition-colors duration-150">
                   <input type="checkbox" checked={surAppareil} onChange={e => setSurAppareil(e.target.checked)}
                     className="checkbox" />
                   {appareil} uniquement

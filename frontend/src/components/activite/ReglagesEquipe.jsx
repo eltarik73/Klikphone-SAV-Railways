@@ -3,6 +3,7 @@ import { X, Printer, CheckCircle2, MapPin, Loader2, AlertTriangle, LogOut } from
 import api from '../../lib/api';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import NoteInformation from '../NoteInformation';
+import Interrupteur from '../Interrupteur';
 import {
   CONSERVATION_JOURNAL_JOURS, CONSERVATION_POSITION_JOURS, GEO_OPTIONS, HORAIRES,
   ecrirePoste, lirePoste, POSTE_MAX,
@@ -247,13 +248,14 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2 id="reglages-equipe-titre" className="t-h3">Réglages — activité de l’équipe</h2>
-          <button type="button" onClick={onFermer} className="btn-ghost btn-icon w-11 h-11 min-w-[44px]" aria-label="Fermer les réglages">
+          <h2 id="reglages-equipe-titre" className="t-h2">Réglages — activité de l’équipe</h2>
+          <button type="button" onClick={onFermer} className="btn-ghost btn-icon w-11 h-11 min-w-11" aria-label="Fermer les réglages">
             <X aria-hidden="true" />
           </button>
         </div>
 
-        <div className="modal-body overflow-x-hidden space-y-5">
+        <div className="modal-body overflow-x-hidden">
+          <div className="space-y-5">
           {etat.statut === 'chargement' && (
             <p className="loading-inline" role="status"><Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> Chargement…</p>
           )}
@@ -268,17 +270,17 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
             <>
               {/* 1. Note d'information : imprimer, puis cocher chaque salarié à qui elle a été remise */}
               <section aria-labelledby="reg-note" className="space-y-2">
-                <h3 id="reg-note" className="t-label">1. Note d’information aux salariés</h3>
-                <p className="text-[13px] text-slate-600">
+                <h3 id="reg-note" className="t-h3">1. Note d’information aux salariés</h3>
+                <p className="t-small text-slate-600">
                   À imprimer et remettre à chaque salarié avant toute activation (art. L1222-4 du Code du travail).
                   Cochez chaque salarié à qui la note a été remise.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" className="btn-secondary min-h-[44px]" onClick={() => imprimerNote(r.note || r.texte_note)}>
+                  <button type="button" className="btn-secondary min-h-11" onClick={() => imprimerNote(r.note || r.texte_note)}>
                     <Printer aria-hidden="true" /> Imprimer la note
                   </button>
                   {remises.length > 0 && (manquants.length ? (
-                    <button type="button" className="btn-primary min-h-[44px]" data-tout-confirmer
+                    <button type="button" className="btn-primary min-h-11" data-tout-confirmer
                       onClick={() => { if (!remiseEnCours) confirmerRemise(null); }}
                       aria-busy={remiseEnCours || undefined} aria-disabled={remiseEnCours || undefined}>
                       {occupe === 'remise' ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
@@ -292,7 +294,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                   ))}
                 </div>
                 {perimes.length > 0 && (
-                  <p className="callout callout-warning items-center gap-2 py-2 text-[13px]" role="status">
+                  <p className="callout callout-warning items-center gap-2 py-2" role="status">
                     <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
                     <span>La note a changé (rayon ou coordonnées de la boutique) : réimprimez-la et remettez-la à nouveau.</span>
                   </p>
@@ -305,7 +307,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                       const perime = !x.a_jour && Boolean(x.remise_le);
                       const enCours = enVol.includes(x.utilisateur);
                       return (
-                        <li key={x.utilisateur} className="flex items-center gap-3 px-3 min-h-[44px]">
+                        <li key={x.utilisateur} className="flex items-center gap-3 px-3 min-h-11">
                           <input
                             id={id}
                             type="checkbox"
@@ -317,8 +319,8 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                             aria-label={`Note remise à ${x.utilisateur}`}
                             aria-describedby={`${id}-etat`}
                           />
-                          <label htmlFor={id} className={`flex-1 min-w-0 self-stretch min-h-[44px] flex flex-wrap content-center items-baseline gap-x-2 py-1
-                            text-[13px] leading-snug ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
+                          <label htmlFor={id} className={`flex-1 min-w-0 self-stretch min-h-11 flex flex-wrap content-center items-baseline gap-x-2 py-1
+                            text-sm leading-snug ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
                             <span className="font-medium text-slate-900">{x.utilisateur}</span>
                             <span id={`${id}-etat`} className={perime ? 'text-amber-800' : x.a_jour ? 'text-slate-600' : 'text-slate-500'}>
                               {etatRemise(x)}
@@ -329,10 +331,10 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                     })}
                   </ul>
                 ) : (
-                  <p className="text-[13px] text-slate-500">Aucun salarié actif dans l’équipe.</p>
+                  <p className="t-small">Aucun salarié actif dans l’équipe.</p>
                 )}
                 <details className="group rounded-lg border border-slate-200">
-                  <summary className="cursor-pointer select-none min-h-[44px] flex items-center px-3 text-[13px] font-medium text-slate-700 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <summary className="cursor-pointer select-none min-h-11 flex items-center px-3 text-sm font-medium text-slate-700 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                     Lire la note
                   </summary>
                   <div className="px-3 pb-3 max-h-64 overflow-y-auto">
@@ -343,33 +345,24 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
 
               {/* 2. Pointage de présence */}
               <section aria-labelledby="reg-pointage" className="space-y-3 border-t border-slate-100 pt-4">
-                <h3 id="reg-pointage" className="t-label">2. Pointage de présence</h3>
+                <h3 id="reg-pointage" className="t-h3">2. Pointage de présence</h3>
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p id="reg-pointage-label" className="text-sm font-medium text-slate-900">Vérifier la présence en boutique à la connexion</p>
-                    <p id="reg-pointage-aide" className="text-[13px] text-slate-600">
+                    <p id="reg-pointage-aide" className="t-small text-slate-600">
                       {bloque
                         ? blocage
                         : `Une seule lecture par connexion, de ${HORAIRES.debut} h à ${HORAIRES.fin} h ${HORAIRES.jours}. Seuls le statut et la distance arrondie sont gardés.`}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={actif}
+                  {/* Libellé et aide restent dans le texte voisin (aide dynamique : raison du blocage) */}
+                  <Interrupteur
+                    checked={actif}
+                    onChange={basculer}
                     aria-labelledby="reg-pointage-label"
                     aria-describedby="reg-pointage-aide"
                     disabled={bloque || occupe === 'actif'}
-                    onClick={basculer}
-                    className="shrink-0 min-h-[44px] min-w-[52px] inline-flex items-center justify-center rounded-full
-                      focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed"
-                  >
-                    <span className={`relative inline-flex h-6 w-11 rounded-full transition-colors duration-150 motion-reduce:transition-none
-                      ${actif ? 'bg-brand-600' : bloque ? 'bg-slate-300' : 'bg-slate-500'}`} aria-hidden="true">
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-150 motion-reduce:transition-none
-                        ${actif ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                    </span>
-                  </button>
+                  />
                 </div>
 
                 <form className="flex flex-wrap items-end gap-2" onSubmit={enregistrerRayon}>
@@ -377,12 +370,12 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                     <label htmlFor="reg-rayon" className="input-label">Rayon autour de la boutique</label>
                     <div className="flex items-center gap-2">
                       <input id="reg-rayon" type="number" inputMode="numeric" min={RAYON_MIN} max={RAYON_MAX} step={10}
-                        className="input w-28 min-h-[44px]" value={rayon} onChange={(e) => setRayon(e.target.value)}
+                        className="input w-28 min-h-11" value={rayon} onChange={(e) => setRayon(e.target.value)}
                         aria-invalid={!rayonValide} aria-describedby="reg-rayon-aide" />
                       <span className="text-sm text-slate-600">m</span>
                     </div>
                   </div>
-                  <button type="submit" className="btn-secondary min-h-[44px]" disabled={!rayonValide || occupe === 'rayon'}>Enregistrer</button>
+                  <button type="submit" className="btn-secondary min-h-11" disabled={!rayonValide || occupe === 'rayon'}>Enregistrer</button>
                   <p id="reg-rayon-aide" className="basis-full text-xs text-slate-500">
                     Entre {RAYON_MIN} et {RAYON_MAX} m. Le rayon figure dans la note : le changer la rend à remettre.
                   </p>
@@ -394,7 +387,7 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
                     : r.boutique_position_par_defaut
                       ? <span className="badge badge-success">Adresse de la boutique (79 Place Saint-Léger)</span>
                       : <span className="badge badge-success">Position relevée dans la boutique</span>}
-                  <button type="button" className="btn-secondary min-h-[44px] h-auto whitespace-normal text-left" onClick={enregistrerBoutique} disabled={occupe === 'boutique'}>
+                  <button type="button" className="btn-secondary min-h-11 h-auto whitespace-normal text-left" onClick={enregistrerBoutique} disabled={occupe === 'boutique'}>
                     {occupe === 'boutique' ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <MapPin aria-hidden="true" />}
                     Affiner depuis ce poste (facultatif)
                   </button>
@@ -403,40 +396,40 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
 
               {/* 3. Ce poste */}
               <section aria-labelledby="reg-poste" className="space-y-2 border-t border-slate-100 pt-4">
-                <h3 id="reg-poste" className="t-label">3. Ce poste</h3>
+                <h3 id="reg-poste" className="t-h3">3. Ce poste</h3>
                 <form className="flex flex-wrap items-end gap-2" onSubmit={enregistrerPoste}>
                   <div className="flex-1 min-w-[12rem]">
                     <label htmlFor="reg-poste-nom" className="input-label">Nom de ce poste</label>
-                    <input id="reg-poste-nom" className="input min-h-[44px]" value={poste} maxLength={POSTE_MAX}
+                    <input id="reg-poste-nom" className="input min-h-11" value={poste} maxLength={POSTE_MAX}
                       placeholder="Comptoir, Atelier…" onChange={(e) => setPoste(e.target.value)} />
                   </div>
-                  <button type="submit" className="btn-secondary min-h-[44px]">Enregistrer</button>
+                  <button type="submit" className="btn-secondary min-h-11">Enregistrer</button>
                 </form>
                 <p className="text-xs text-slate-500">Propre à ce navigateur ; repris dans le journal à chaque connexion.</p>
               </section>
 
               <section aria-labelledby="reg-sessions" className="space-y-2 border-t border-slate-100 pt-4">
-                <h3 id="reg-sessions" className="t-label">4. Sessions</h3>
+                <h3 id="reg-sessions" className="t-h3">4. Sessions</h3>
                 {confirmerDeconnexion ? (
                   <div className="callout callout-warning space-y-2" role="group" aria-labelledby="reg-sessions-confirmer">
                     <p id="reg-sessions-confirmer" className="text-sm">
                       Tous les postes, le vôtre compris, devront ressaisir leur PIN. Continuer ?
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" className="btn-danger min-h-[44px]" disabled={occupe === 'deconnexion'}
+                      <button type="button" className="btn-danger min-h-11" disabled={occupe === 'deconnexion'}
                         aria-busy={occupe === 'deconnexion' || undefined} onClick={deconnecterTout}>
                         {occupe === 'deconnexion'
                           ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
                           : <LogOut aria-hidden="true" />}
                         Oui, déconnecter tout le monde
                       </button>
-                      <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setConfirmerDeconnexion(false)}>
+                      <button type="button" className="btn-ghost min-h-11" onClick={() => setConfirmerDeconnexion(false)}>
                         Annuler
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setConfirmerDeconnexion(true)}>
+                  <button type="button" className="btn-secondary min-h-11" onClick={() => setConfirmerDeconnexion(true)}>
                     <LogOut aria-hidden="true" /> Déconnecter tout le monde
                   </button>
                 )}
@@ -450,13 +443,14 @@ export default function ReglagesEquipe({ open, onFermer, sensible, onInformation
               </p>
             </>
           )}
+          </div>
 
           {/* Retour (succès/erreur) : collé au bas du corps, qui défile avec la liste des salariés ;
               la zone aria-live reste montée (sr-only à vide) pour être annoncée */}
           <p
             aria-live="polite"
             className={retour.texte
-              ? `sticky bottom-0 z-10 !mt-3 -mb-4 -mx-5 px-5 py-2.5 text-sm border-t bg-white/95
+              ? `sticky bottom-0 z-10 mt-3 -mb-4 -mx-5 px-5 py-2.5 text-sm border-t bg-white
                  ${retour.type === 'erreur' ? 'text-red-700 border-red-200' : 'text-emerald-700 border-emerald-200'}`
               : 'sr-only'}
           >

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from './Toast';
+import CarteChiffres from './CarteChiffres';
 import {
   FenetrePrix, SANS_ELEVATION, alertesPrix, clavierOnglets, euros, fusionnerRegles, messageAnnulation, messageErreurPrix,
   prixClientApple, prixClientPiece, variationTexte,
@@ -184,22 +185,6 @@ function nomColonne(valeur, colonnes) {
   return String(valeur);
 }
 
-function Tuile({ label, valeur, ton = 'slate', detail }) {
-  const tons = {
-    slate: 'bg-slate-50 text-slate-900',
-    violet: 'bg-brand-50 text-brand-800',
-    amber: 'bg-amber-50 text-amber-800',
-    red: 'bg-red-50 text-red-800',
-  };
-  return (
-    <div className={`rounded-lg px-3 py-2 ${tons[ton]}`}>
-      <div className="text-xs font-medium opacity-80">{label}</div>
-      <div className="text-xl font-semibold tabular-nums leading-tight">{valeur}</div>
-      {detail && <div className="text-xs font-medium opacity-80">{detail}</div>}
-    </div>
-  );
-}
-
 // Recherche d'une pièce du catalogue pour une ligne non reconnue, puis aperçu « avant → après »
 function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCocher, absente = false, obsoletes = false }) {
   const [q, setQ] = useState('');
@@ -289,7 +274,7 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
             <Lock className="w-3 h-3" aria-hidden="true" /> Pièce verrouillée : son prix ne sera pas modifié.
           </p>
         ) : (
-          <label className={`mt-1 flex items-center gap-3 min-h-[44px] text-sm font-semibold text-slate-900 ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
+          <label className={`mt-1 flex items-center gap-3 min-h-11 text-sm font-semibold text-slate-900 ${enCours ? 'cursor-wait' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               checked={!!coche}
@@ -335,7 +320,7 @@ function AssocierLigne({ ligne, options, valeur, onChoisir, apercu, coche, onCoc
               <button
                 type="button"
                 onClick={() => { focusApres.current = 'retirer'; onChoisir(o.cle); setQ(''); }}
-                className="w-full min-h-[44px] text-left px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-brand-50 hover:border-brand-300 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                className="w-full min-h-11 text-left px-3 rounded-md border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 {o.label}
               </button>
@@ -711,7 +696,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
   } else {
     pied = (
       <div className="flex justify-end">
-        <button type="button" onClick={onClose} disabled={!!occupe} className={boutonPrincipal}>Fermer</button>
+        <button type="button" onClick={onClose} disabled={!!occupe} className={confirmerAnnulation ? boutonSecondaire : boutonPrincipal}>Fermer</button>
       </div>
     );
   }
@@ -743,9 +728,9 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             onDragOver={(e) => { e.preventDefault(); setSurvol(true); }}
             onDragLeave={() => setSurvol(false)}
             onDrop={(e) => { e.preventDefault(); setSurvol(false); choisirFichier(e.dataTransfer?.files?.[0]); }}
-            className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors duration-150 ${survol ? 'border-brand-500 bg-brand-50' : 'border-slate-300 bg-slate-50'}`}
+            className={`rounded-lg border-2 border-dashed p-6 text-center transition-colors duration-150 ${survol ? 'border-brand-500 bg-white' : 'border-slate-300 bg-slate-50'}`}
           >
-            <Upload className="w-8 h-8 mx-auto text-brand-600" aria-hidden="true" />
+            <Upload className="w-6 h-6 mx-auto text-slate-500" aria-hidden="true" />
             <p className="mt-2 text-sm font-semibold text-slate-900">Déposez le fichier ici</p>
             <p className="t-caption">Excel (.xlsx) ou CSV (séparateur ; ou ,), 5 Mo au maximum</p>
             <input
@@ -788,7 +773,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
               <legend className="input-label">Le fichier contient</legend>
               <div className="flex flex-wrap gap-2">
                 {[['tarifs', 'Pièces téléphones'], ['tarifs_apple_devices', 'Pièces iPad / MacBook']].map(([v, l]) => (
-                  <label key={v} className={`choice ${cible === v ? 'border-brand-300 bg-brand-50 text-brand-800' : ''}`}>
+                  <label key={v} className="choice has-[:checked]:border-brand-600 has-[:checked]:text-slate-900">
                     <input type="radio" name="import-cible" value={v} checked={cible === v} onChange={() => setCible(v)} className="radio" />
                     {l}
                   </label>
@@ -808,7 +793,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
           </p>
 
           <details open={mappingIncomplet || mappingModifie} className="group mb-4 rounded-lg border border-slate-200 p-4">
-            <summary className="cursor-pointer min-h-[44px] flex items-center gap-1.5 t-h3 text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />
+            <summary className="cursor-pointer min-h-11 flex items-center gap-1.5 t-h3 text-slate-900 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-500 motion-safe:transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />
               Correspondance des colonnes {mappingIncomplet ? '— à compléter' : '— reconnue'}
             </summary>
             <p className="t-caption mb-3">Indiquez quelle colonne du fichier contient chaque information. Ce choix sera retenu pour « {fournisseur} » à l’application.</p>
@@ -836,7 +821,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   type="button"
                   onClick={() => lancerApercu(Object.fromEntries(Object.entries(mapping).filter(([, v]) => v)))}
                   disabled={!!occupe || !mapping.prix_ht}
-                  className={boutonPrincipal}
+                  className={mappingModifie ? boutonPrincipal : boutonSecondaire}
                 >
                   {occupe === 'apercu' && <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />}
                   Relire avec ces colonnes
@@ -846,15 +831,19 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
             )}
           </details>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
-            <Tuile label="Prix reconnus" valeur={reconnues.length} ton="violet" detail={nbInchanges ? `${nbInchanges} inchangé${nbInchanges > 1 ? 's' : ''} (confirmé${nbInchanges > 1 ? 's' : ''})` : null} />
-            <Tuile label="À vérifier" valeur={nbAlertes} ton={nbAlertes ? 'amber' : 'slate'} detail={nbDecocheesAlerte ? `${nbDecocheesAlerte} décoché${nbDecocheesAlerte > 1 ? 's' : ''}` : null} />
-            <Tuile label="Nouvelles pièces" valeur={nouvelles.length} />
-            <Tuile label="À associer" valeur={nonReconnues.length} ton={nonReconnues.length ? 'amber' : 'slate'} detail={absentesVisibles.length ? `${absentesVisibles.length} absente${absentesVisibles.length > 1 ? 's' : ''} du fichier` : null} />
-          </div>
+          {/* Chiffres de l'aperçu : un bloc unique à colonnes (2 × 2 sur téléphone, 4 dès lg) ; la couleur ne marque qu'une alerte */}
+          <CarteChiffres label="Résumé de l’aperçu" dense colonnes={{ base: 2, lg: 4 }} className="mb-4" chiffres={[
+            { cle: 'reconnues', label: 'Prix reconnus', valeur: reconnues.length,
+              detail: nbInchanges ? `${nbInchanges} inchangé${nbInchanges > 1 ? 's' : ''} (confirmé${nbInchanges > 1 ? 's' : ''})` : null },
+            { cle: 'alertes', label: 'À vérifier', valeur: nbAlertes, ton: nbAlertes ? 'attention' : 'neutre',
+              detail: nbDecocheesAlerte ? `${nbDecocheesAlerte} décoché${nbDecocheesAlerte > 1 ? 's' : ''}` : null },
+            { cle: 'nouvelles', label: 'Nouvelles pièces', valeur: nouvelles.length },
+            { cle: 'associer', label: 'À associer', valeur: nonReconnues.length, ton: nonReconnues.length ? 'attention' : 'neutre',
+              detail: absentesVisibles.length ? `${absentesVisibles.length} absente${absentesVisibles.length > 1 ? 's' : ''} du fichier` : null },
+          ]} />
 
           {invalides.length > 0 && (
-            <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <div role="alert" className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
               <p className="font-semibold flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
                 {invalides.length} ligne{invalides.length > 1 ? 's' : ''} illisible{invalides.length > 1 ? 's' : ''} dans le fichier : rien n’est appliqué tant qu’elles y sont.
@@ -865,7 +854,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                 ))}
                 {invalides.length > 5 && <li>… et {invalides.length - 5} autres</li>}
               </ul>
-              <label className="mt-2 flex items-center gap-3 min-h-[44px] cursor-pointer font-semibold">
+              <label className="mt-2 flex items-center gap-3 min-h-11 cursor-pointer font-semibold">
                 <input type="checkbox" checked={ignorerInvalides} onChange={(e) => setIgnorerInvalides(e.target.checked)} className="checkbox accent-red-700" />
                 Appliquer quand même, sans ces lignes
               </label>
@@ -963,8 +952,8 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                         const coche = cochees.has(l.n);
                         const multiple = (piecesParLigne.get(l.n) || 0) > 1;
                         return (
-                          <tr key={cleLigne(l)} className={`table-row ${alerte ? 'bg-amber-50 hover:bg-amber-50' : ''} ${!modifie ? 'text-slate-500' : ''}`}>
-                            <td className="!px-1 !py-1 text-center">
+                          <tr key={cleLigne(l)} className={`table-row [&>td:first-child]:px-1 [&>td:first-child]:py-1 ${alerte ? 'bg-amber-50 hover:bg-amber-50' : ''} ${!modifie ? 'text-slate-500' : ''}`}>
+                            <td className="text-center">
                               <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer">
                                 <input
                                   type="checkbox"
@@ -1021,7 +1010,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
               <div>
                 <p className="text-sm text-slate-700 mb-2">Pièces du fichier absentes de votre grille. Cochez celles à ajouter (prix client calculé avec vos règles).</p>
                 {nouvelles.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">Aucune nouvelle pièce.</p> : (
-                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                  <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
                     {nouvelles.map((l) => (
                       <li key={l.n} className="flex items-center gap-2 px-2 py-1 min-h-12">
                         <label className="inline-flex items-center justify-center w-11 h-11 cursor-pointer shrink-0">
@@ -1135,7 +1124,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
       {etape === 'termine' && resultat && (
         <div className="py-4">
           <div role="status" className={`rounded-lg border px-4 py-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-            <p className="font-bold flex items-center gap-2">
+            <p className="font-semibold flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5" aria-hidden="true" />
               {annule ? (annule.ton === 'warning' ? annule.texte : 'Import annulé : les prix sont revenus à leur valeur d’avant.') : 'Import appliqué.'}
             </p>
@@ -1164,7 +1153,7 @@ export default function ImportPrixModal({ open, onClose, sensible = SANS_ELEVATI
                   <Undo2 className="w-4 h-4" aria-hidden="true" /> Annuler cet import
                 </button>
               ) : (
-                <div role="alertdialog" aria-label="Confirmer l’annulation de l’import" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div role="alertdialog" aria-label="Confirmer l’annulation de l’import" className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   <p className="font-semibold">Remettre tous les prix de cet import à leur valeur d’avant ?</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" onClick={() => setConfirmerAnnulation(false)} disabled={occupe === 'annuler'} className="btn-ghost">Non, garder</button>

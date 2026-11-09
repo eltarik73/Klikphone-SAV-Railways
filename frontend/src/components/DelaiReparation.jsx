@@ -284,7 +284,7 @@ export default function DelaiReparation({
               onClick={() => choisir(opt)}
               onKeyDown={(e) => surTouche(e, i)}
               onFocus={() => setIndexFocus(i)}
-              className={`relative flex items-center justify-center gap-1.5 rounded-lg border-2 font-semibold tabular-nums
+              className={`relative flex items-center justify-center gap-1.5 rounded-md border-2 font-semibold tabular-nums
                 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2
                 ${borne ? 'min-h-14 px-2 text-base' : 'min-h-11 px-1.5 text-sm'}
                 ${actif
@@ -302,7 +302,7 @@ export default function DelaiReparation({
       </div>
 
       {courante === CLE_AUTRE && (
-        <div className="animate-in">
+        <div>
           <label htmlFor={autreId} className="input-label">Date et heure de récupération</label>
           <input
             id={autreId}
@@ -321,8 +321,8 @@ export default function DelaiReparation({
 
       <div aria-live="polite" aria-atomic="true">
         {dateChoisie ? (
-          <span className={`flex items-center gap-2 rounded-lg px-3 py-2 font-semibold ${borne ? 'text-base' : 'text-sm'} ${
-            passee ? 'bg-amber-50 text-amber-800' : 'bg-brand-50 text-brand-800'}`}>
+          <span className={`flex items-center gap-2 rounded-md px-3 py-2 font-semibold ${borne ? 'text-base' : 'text-sm'} ${
+            passee ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-800'}`}>
             <CalendarCheck className={`${borne ? 'w-5 h-5' : 'w-4 h-4'} shrink-0`} aria-hidden="true" />
             <span>
               {phrasePret(dateChoisie, now)}

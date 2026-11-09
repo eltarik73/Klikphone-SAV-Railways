@@ -162,12 +162,12 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
   );
 
   const apercu = selectedId ? (
-    <div className="animate-in">
+    <div>
       {isCustom ? (
         <textarea
           value={customText}
           onChange={e => setCustomText(e.target.value)}
-          placeholder="Tapez votre message..."
+          placeholder="Tapez votre message…"
           aria-label="Message personnalisé"
           rows={3}
           className="textarea resize-none mb-3"
@@ -222,7 +222,7 @@ export default function MessageComposer({ ticket, onMessageSent, statutPropose =
       <div>
         {apercu}
         <details className="mt-3">
-          <summary className="min-h-[44px] flex items-center cursor-pointer rounded text-sm font-semibold text-slate-700 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          <summary className="min-h-11 flex items-center cursor-pointer rounded text-sm font-semibold text-slate-700 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
             Choisir un autre modèle
           </summary>
           <div className="mt-2">{grille}</div>

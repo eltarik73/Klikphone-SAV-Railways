@@ -7,7 +7,7 @@ import AdminLoginModal, { ADMIN_MODE_EVENT } from './AdminLoginModal';
 import NotificationCenter from './NotificationCenter';
 import { openSearchPalette, shortcutLabel } from './SearchPalette';
 import { cheminsTarifs } from './OngletsTarifs';
-import LogoK from './LogoK';
+import LogoK, { LogoKlikPhone } from './LogoK';
 import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
@@ -318,10 +318,7 @@ export default function Navbar() {
           className={`w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
           <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
-        <div className="flex items-center gap-2.5 ml-1 min-w-0">
-          <LogoK className="w-7 h-7" label="Klikphone" />
-          <span className="text-white font-semibold tracking-tight">KLIKPHONE</span>
-        </div>
+        <LogoKlikPhone theme="sombre" taille="sm" className="ml-1 min-w-0" />
         <div className="ml-auto flex items-center gap-1">
           <button type="button" onClick={() => openSearchPalette()} aria-label="Rechercher un ticket, un client…"
             className={`w-11 h-11 flex items-center justify-center rounded-lg text-slate-200 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
@@ -352,12 +349,12 @@ export default function Navbar() {
         {/* Logo header */}
         <div className={`h-16 flex items-center border-b border-white/[0.06] shrink-0 overflow-hidden
           ${collapsed ? 'px-3 justify-center' : 'px-4 gap-3'}`}>
-          <LogoK className="w-10 h-10" label="Klikphone" />
-          <div className={`flex-1 min-w-0 transition-opacity duration-200 ease-out
-            ${collapsed ? 'opacity-0 w-0 pointer-events-none' : 'opacity-100'}`}>
-            <h1 className="text-white font-semibold text-base tracking-tight leading-none whitespace-nowrap">KLIKPHONE</h1>
-            <p className="text-slate-400 text-xs mt-1 whitespace-nowrap">Service après-vente</p>
-          </div>
+          {/* Logo officiel : le « K » seul en barre réduite, le K + « KlikPhone » + « Service après-vente » dépliée */}
+          {collapsed ? (
+            <LogoK className="w-10 h-10" label="KlikPhone" />
+          ) : (
+            <LogoKlikPhone theme="sombre" taille="md" sousTitre="Service après-vente" className="flex-1 min-w-0" />
+          )}
           <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fermer le menu"
             className={`lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
             <X className="w-5 h-5" aria-hidden="true" />

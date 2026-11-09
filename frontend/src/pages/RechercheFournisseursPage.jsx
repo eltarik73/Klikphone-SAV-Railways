@@ -49,13 +49,14 @@ export function libelleSourcePrix(c) {
 
 const deuxDecimales = (v) => Number(v).toFixed(2).replace('.', ',');
 
-/** Badge de stock d'un prix fournisseur : « En stock » / « Rupture » / rien quand le fournisseur ne le dit pas. */
+/** Badge de stock d'un prix fournisseur : « En stock » / « Rupture » / rien quand le fournisseur ne le dit pas.
+ *  Rupture chez le fournisseur = une alerte (ambre), pas une erreur : le rouge reste réservé aux erreurs et aux retards. */
 export function BadgeStock({ enStock, fournisseur = '', className = '' }) {
   if (enStock === null || enStock === undefined) return null;
   const Icone = enStock ? PackageCheck : PackageX;
   const suffixe = fournisseur ? ` chez ${fournisseur}` : '';
   return (
-    <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'} ${className}`}>
+    <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-warning'} ${className}`}>
       <Icone className="w-3 h-3" aria-hidden="true" />
       {enStock ? 'En stock' : 'Rupture'}<span className="sr-only">{suffixe}</span>
     </span>
@@ -67,7 +68,7 @@ function CelluleFournisseur({ d, fournisseur, admin, retenu }) {
   const connu = !!d && (d.connu || (d.ht !== null && d.ht !== undefined) || (d.client !== null && d.client !== undefined));
   if (!connu) {
     return (
-      <div className="text-slate-400 text-sm">
+      <div className="text-slate-500 text-sm">
         <span>—</span>
         {d?.en_stock === false && <BadgeStock enStock={false} fournisseur={fournisseur} className="ml-2" />}
         <span className="sr-only"> pas de prix {fournisseur}</span>
@@ -98,7 +99,7 @@ function CelluleFournisseur({ d, fournisseur, admin, retenu }) {
           {d.ref && <span>réf. {d.ref}</span>}
           {d.url && (
             <a href={d.url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+              className="inline-flex items-center gap-0.5 min-h-11 -my-3.5 px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
               <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {fournisseur} (nouvel onglet)</span>
             </a>
           )}
@@ -138,7 +139,7 @@ function CarteModele({ m, admin }) {
                 <tr key={p.cle} className="table-row align-top">
                   <td className="table-sticky-col">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Icone className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />
+                      <Icone className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />
                       <div className="min-w-0">
                         <span className="font-semibold text-slate-900">{p.type_piece}</span>
                         {p.qualite && <span className="badge badge-sm badge-neutral ml-1.5">{p.qualite}</span>}
@@ -183,9 +184,9 @@ function CatalogueFournisseur({ fournisseur, produits }) {
   return (
     <section aria-labelledby={titreId} className="card">
       <header className="card-header flex items-center gap-2">
-        <Truck className="w-4 h-4 text-slate-400" aria-hidden="true" />
+        <Truck className="w-4 h-4 text-slate-500" aria-hidden="true" />
         <h2 id={titreId} className="t-h3 text-slate-900">Catalogue {fournisseur}</h2>
-        <span className="badge badge-sm badge-neutral ml-auto">{produits.length} produit{produits.length > 1 ? 's' : ''}</span>
+        <span className="text-xs text-slate-500 tabular-nums ml-auto">{produits.length} produit{produits.length > 1 ? 's' : ''}</span>
       </header>
       {produits.length === 0 ? (
         <p className="card-body text-sm text-slate-500">Aucun produit {fournisseur} ne répond à cette recherche dans le dernier passage.</p>
@@ -196,15 +197,15 @@ function CatalogueFournisseur({ fournisseur, produits }) {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-900 break-words">{p.nom}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                  {p.type_piece && <span className="badge badge-sm badge-neutral">{p.type_piece}</span>}
+                  {p.type_piece && <span className="text-slate-600">{p.type_piece}</span>}
                   {p.qualite && <span className={`badge badge-sm ${/original/i.test(p.qualite) ? 'badge-info' : 'badge-neutral'}`}>{p.qualite}</span>}
                   <BadgeStock enStock={p.en_stock} fournisseur={fournisseur} />
                   <BadgeChassis chassis={p.chassis} fournisseur={fournisseur} />
-                  {p.tarif_cle ? <span className="badge badge-sm badge-success">dans la grille</span> : <span className="badge badge-sm badge-warning">hors grille</span>}
+                  {p.tarif_cle ? <span>dans la grille</span> : <span className="badge badge-sm badge-warning">hors grille</span>}
                   {p.ref && <span>réf. {p.ref}</span>}
                   {p.url && (
                     <a href={p.url} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      className="inline-flex items-center gap-0.5 min-h-11 -my-3.5 px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                       <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {fournisseur} (nouvel onglet)</span>
                     </a>
                   )}
@@ -245,10 +246,10 @@ function DerniersPrixAppliques({ q, jours, onJours }) {
   return (
     <section aria-labelledby={titreId} className="card mt-6">
       <header className="card-header flex flex-wrap items-center gap-2">
-        <History className="w-4 h-4 text-slate-400" aria-hidden="true" />
+        <History className="w-4 h-4 text-slate-500" aria-hidden="true" />
         <h2 id={titreId} className="t-h3 text-slate-900">Derniers prix appliqués automatiquement</h2>
-        {donnees && !chargement && <span className="badge badge-sm badge-neutral">{Number(donnees.n) || 0}{donnees.tronque ? '+' : ''}</span>}
-        {chargement && <Loader2 className="w-4 h-4 motion-safe:animate-spin text-slate-400" aria-hidden="true" />}
+        {donnees && !chargement && <span className="text-xs text-slate-500 tabular-nums">{Number(donnees.n) || 0}{donnees.tronque ? '+' : ''}</span>}
+        {chargement && <Loader2 className="w-4 h-4 motion-safe:animate-spin text-slate-500" aria-hidden="true" />}
         <div className="segmented ml-auto" role="group" aria-label="Période">
           {PERIODES_RECENTS.map((p) => (
             <button key={p.jours} type="button" aria-pressed={jours === p.jours} onClick={() => onJours(p.jours)}
@@ -287,7 +288,7 @@ function DerniersPrixAppliques({ q, jours, onJours }) {
                     <span className="badge badge-sm badge-warning">Prix à renseigner</span>
                   ) : (
                     <p className="text-sm text-slate-900">
-                      {Number.isFinite(ancien) && ancien > 0 ? <span className="text-slate-400 line-through mr-1">{euros(ancien)}</span> : null}
+                      {Number.isFinite(ancien) && ancien > 0 ? <span className="text-slate-500 line-through mr-1">{euros(ancien)}</span> : null}
                       <span className={`font-semibold ${hausse ? 'text-amber-800' : ''}`}>{Number.isFinite(nouveau) ? euros(nouveau) : '—'}</span>
                     </p>
                   )}
@@ -370,7 +371,7 @@ export default function RechercheFournisseursPage() {
     <div className="page">
       <header className="page-header">
         <div>
-          <h1 className="page-header-title flex items-center gap-2"><Search className="w-6 h-6 text-brand-600" aria-hidden="true" /> Recherche fournisseurs</h1>
+          <h1 className="page-header-title">Recherche fournisseurs</h1>
           <p className="page-header-subtitle">
             Mobilax et Utopya côte à côte : prix d’achat, prix client, en stock ou en rupture, fiche produit — d’après la dernière synchro et la dernière collecte.
           </p>
@@ -381,7 +382,7 @@ export default function RechercheFournisseursPage() {
         <div>
           <label htmlFor={champId} className="input-label">Modèle, pièce ou référence</label>
           <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
             <input id={champId} type="search" value={saisie} onChange={(e) => setSaisie(e.target.value)} autoComplete="off" autoFocus
               placeholder="Pixel 6, Galaxy A54, iPhone 13, iPad 9…" className="input input-lg pl-9" aria-describedby={`${champId}-aide`} />
           </div>
@@ -424,8 +425,8 @@ export default function RechercheFournisseursPage() {
 
       {q.length >= 2 && resultat && modeles.length === 0 && !chargement && (
         <div className="empty-state mt-3">
-          <SearchX className="empty-state-icon" aria-hidden="true" />
-          <p className="font-medium text-slate-900">Rien dans la grille pour « {resultat.q} »</p>
+          <div className="empty-state-icon"><SearchX aria-hidden="true" /></div>
+          <p className="t-h2">Rien dans la grille pour « {resultat.q} »</p>
           <p className="text-sm text-slate-500">Vérifiez l’orthographe du modèle, ou ajoutez-le dans « Réparation smartphones ».</p>
         </div>
       )}

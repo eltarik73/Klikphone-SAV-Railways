@@ -3,14 +3,16 @@ import { useLocation, Link } from 'react-router-dom';
 import {
   ShoppingBag, Phone, Mail, User, Package, Clock, Check, X,
   MessageSquare, ArrowLeft, RefreshCw, Loader2, Filter, Trash2, Lock,
-  AlertTriangle,
 } from 'lucide-react';
 import api from '../lib/api';
+import { euros } from '../components/HistoriquePrix';
 import { useToast } from '../components/Toast';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
+// 4 teintes comme les statuts de ticket : nouvelle = à nous, pas commencée (contour neutre) ;
+// en cours = en main (bleu) ; confirmée = fait (émeraude) ; annulée = fini (neutre)
 const STATUS_CONFIG = {
-  nouvelle: { label: 'Nouvelle', badge: 'badge-warning' },
+  nouvelle: { label: 'Nouvelle', badge: 'bg-white border border-slate-300 text-slate-700' },
   en_cours: { label: 'En cours', badge: 'badge-info' },
   confirmee: { label: 'Confirmée', badge: 'badge-success' },
   annulee: { label: 'Annulée', badge: 'badge-neutral' },
@@ -73,7 +75,7 @@ export default function DemandesCommandesPage() {
   }
 
   function ouvrirSuppression(d) {
-    setDeleteTarget({ id: d.id, label: `#${d.id} — ${d.marque} ${d.modele} (${d.nom})` });
+    setDeleteTarget({ id: d.id, label: `n° ${d.id} — ${d.marque} ${d.modele} (${d.nom})` });
     setDeletePassword('');
     setDeleteError('');
   }
@@ -130,7 +132,7 @@ export default function DemandesCommandesPage() {
 
       {/* Filtres */}
       <div className="flex items-center gap-2 mb-6 max-sm:scroll-fade-x">
-        <Filter className="w-4 h-4 text-slate-400 shrink-0 max-sm:hidden" aria-hidden="true" />
+        <Filter className="w-4 h-4 text-slate-500 shrink-0 max-sm:hidden" aria-hidden="true" />
         <div className="segmented" role="group" aria-label="Filtrer par statut">
           {[
             ['all', 'Toutes', demandes.length],
@@ -146,7 +148,7 @@ export default function DemandesCommandesPage() {
               aria-pressed={filterStatut === v}
               className={`segmented-item ${filterStatut === v ? 'segmented-item-active' : ''}`}
             >
-              {label} {n > 0 && <span className={`badge badge-sm ${filterStatut === v ? 'badge-brand' : 'badge-neutral'}`}>{n}</span>}
+              {label} {n > 0 && <span className="text-slate-500 tabular-nums">({n})</span>}
             </button>
           ))}
         </div>
@@ -174,20 +176,15 @@ export default function DemandesCommandesPage() {
             return (
               <div key={d.id} className="card card-body">
                 <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0" aria-hidden="true">
-                      <ShoppingBag className="w-5 h-5 text-slate-500" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="t-h2">
-                        #{d.id} · {d.marque} {d.modele}
-                      </p>
-                      <p className="t-caption mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span className="flex items-center gap-1 tabular-nums"><Clock className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> {fmtDate(d.date_creation)}</span>
-                        {d.stockage && <><span>·</span><span>{d.stockage}</span></>}
-                        {d.prix > 0 && <><span>·</span><span className="t-num text-sm">{d.prix}€</span></>}
-                      </p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="t-h2">
+                      n° {d.id} · {d.marque} {d.modele}
+                    </p>
+                    <p className="t-caption mt-0.5 flex items-center gap-2 flex-wrap">
+                      <span className="flex items-center gap-1 tabular-nums"><Clock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" /> {fmtDate(d.date_creation)}</span>
+                      {d.stockage && <><span aria-hidden="true">·</span><span>{d.stockage}</span></>}
+                      {d.prix > 0 && <><span aria-hidden="true">·</span><span className="t-num text-sm">{euros(d.prix)}</span></>}
+                    </p>
                   </div>
                   <span className={`badge ${sc.badge} shrink-0`}>
                     <span className="badge-dot" aria-hidden="true" />
@@ -197,15 +194,15 @@ export default function DemandesCommandesPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-3 gap-y-1 text-sm mb-3">
                   <div className="flex items-center gap-2 min-h-11 text-slate-800 min-w-0">
-                    <User className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                    <User className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                     <span className="font-semibold truncate">{d.nom}</span>
                   </div>
-                  <a href={`tel:${d.telephone}`} className="inline-flex items-center gap-2 min-h-11 text-brand-700 hover:text-brand-800 font-medium tabular-nums rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  <a href={`tel:${d.telephone}`} className="inline-flex items-center gap-2 min-h-11 text-brand-700 hover:text-brand-800 font-medium tabular-nums rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                     <Phone className="w-4 h-4 shrink-0" aria-hidden="true" />
                     {d.telephone}
                   </a>
                   {d.email && (
-                    <a href={`mailto:${d.email}`} className="inline-flex items-center gap-2 min-h-11 text-slate-600 hover:text-brand-700 min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                    <a href={`mailto:${d.email}`} className="inline-flex items-center gap-2 min-h-11 text-slate-600 hover:text-brand-700 min-w-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                       <Mail className="w-4 h-4 shrink-0" aria-hidden="true" />
                       <span className="truncate">{d.email}</span>
                     </a>
@@ -226,7 +223,7 @@ export default function DemandesCommandesPage() {
                       type="button"
                       onClick={() => changerStatut(d.id, 'en_cours')}
                       disabled={isSaving}
-                      className="btn-primary grow sm:grow-0"
+                      className="btn-secondary grow sm:grow-0"
                     >
                       {isSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Package aria-hidden="true" />}
                       Prendre en charge
@@ -237,7 +234,7 @@ export default function DemandesCommandesPage() {
                       type="button"
                       onClick={() => changerStatut(d.id, 'confirmee')}
                       disabled={isSaving}
-                      className={`${d.statut === 'en_cours' ? 'btn-primary' : 'btn-secondary'} grow sm:grow-0`}
+                      className={`${d.statut === 'en_cours' ? 'btn-secondary' : 'btn-ghost'} grow sm:grow-0`}
                     >
                       {isSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
                       Confirmer
@@ -263,7 +260,7 @@ export default function DemandesCommandesPage() {
                       <RefreshCw aria-hidden="true" /> Rouvrir
                     </button>
                   )}
-                  {/* Suppression definitive (code admin requis) */}
+                  {/* Suppression définitive (code admin requis) */}
                   <button
                     type="button"
                     onClick={() => ouvrirSuppression(d)}
@@ -285,14 +282,9 @@ export default function DemandesCommandesPage() {
         <div className="modal-overlay" onClick={() => !deleting && setDeleteTarget(null)}>
           <div ref={supprRef} role="dialog" aria-modal="true" aria-labelledby="demande-suppr-titre" className="modal sm:max-w-sm" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center shrink-0" aria-hidden="true">
-                  <AlertTriangle className="w-5 h-5 text-red-700" />
-                </div>
-                <div className="min-w-0">
-                  <h3 id="demande-suppr-titre" className="t-h2">Supprimer la demande</h3>
-                  <p className="t-caption truncate">{deleteTarget.label}</p>
-                </div>
+              <div className="min-w-0">
+                <h3 id="demande-suppr-titre" className="t-h2">Supprimer la demande ?</h3>
+                <p className="t-caption truncate">{deleteTarget.label}</p>
               </div>
             </div>
             <div className="modal-body">
@@ -337,7 +329,7 @@ export default function DemandesCommandesPage() {
                 className="btn-danger"
               >
                 {deleting ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-                {deleting ? 'Suppression…' : 'Supprimer'}
+                {deleting ? 'Suppression…' : 'Supprimer la demande'}
               </button>
             </div>
           </div>

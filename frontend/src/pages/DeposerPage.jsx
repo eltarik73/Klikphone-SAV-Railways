@@ -9,6 +9,7 @@ import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail, es
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import { LogoKlikPhone } from '../components/LogoK';
 import {
   ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, AlertCircle, KeyRound,
   Send, MapPin, Phone, Clock, Copy, Share2, MessageCircle, Loader2,
@@ -180,6 +181,7 @@ export default function DeposerPage() {
     return (
       <div className="min-h-screen bg-slate-50">
         <div className="max-w-[640px] mx-auto px-4 py-6 sm:py-8">
+          <div className="flex justify-center mb-5"><LogoKlikPhone taille="sm" /></div>
           <div className="card p-6 sm:p-8 text-center">
             <h2 className="t-h1 text-balance mb-5 inline-flex items-center justify-center gap-2">
               <CircleCheck className="w-5 h-5 text-emerald-600 shrink-0" aria-hidden="true" /> Demande enregistrée
@@ -279,6 +281,7 @@ export default function DeposerPage() {
       <div className="depot-form max-w-[640px] mx-auto px-4 py-6 sm:py-8">
         {/* Header */}
         <div className="text-center mb-6">
+          <LogoKlikPhone taille="sm" className="mb-5" />
           <h1 className="t-display">Dépôt à distance</h1>
           <span className="block text-base text-slate-500 mt-1.5">Pré-enregistrez votre appareil en ligne</span>
         </div>

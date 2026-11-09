@@ -41,7 +41,7 @@ function ContenuCellule({ j, mode }) {
         </span>
       ) : (
         <span className="min-w-0 flex-1">
-          <span className={`block font-semibold tabular-nums text-slate-900 whitespace-nowrap ${j.en_cours ? 'text-xs' : 'text-[13px]'}`}>
+          <span className={`block font-semibold tabular-nums text-slate-900 whitespace-nowrap ${j.en_cours ? 'text-xs' : 't-small'}`}>
             {heureParis(j.arrivee)} – {depart}
           </span>
           <span className="mt-0.5 block text-xs text-slate-600 tabular-nums whitespace-nowrap">
@@ -61,7 +61,7 @@ function BoutonCellule({ nom, jour, j, mode, selection, onChoisir }) {
   const choisi = selection?.utilisateur === nom && selection?.jour === jour;
   if (!j) {
     return (
-      <span className="flex items-center justify-center min-h-[48px] text-slate-400" title="Aucune connexion">
+      <span className="flex items-center justify-center min-h-12 text-slate-500" title="Aucune connexion">
         <span aria-hidden="true">—</span>
         <span className="sr-only">Aucune connexion</span>
       </span>
@@ -74,7 +74,7 @@ function BoutonCellule({ nom, jour, j, mode, selection, onChoisir }) {
       onClick={(e) => onChoisir({ utilisateur: nom, jour, resume: j }, e.currentTarget)}
       aria-label={`${resumeCellule(nom, jour, j)}. Afficher le détail`}
       aria-expanded={choisi}
-      className={`w-full min-h-[48px] rounded-md ${mode === 'compact' ? 'px-1' : 'px-1.5'} py-1 text-left transition-colors duration-150 motion-reduce:transition-none
+      className={`w-full min-h-12 rounded-md ${mode === 'compact' ? 'px-1' : 'px-1.5'} py-1 text-left transition-colors duration-150 motion-reduce:transition-none
         focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
         ${choisi ? 'bg-brand-50 ring-2 ring-brand-500' : 'hover:bg-slate-100'}`}
     >
@@ -87,7 +87,7 @@ function TotalSemaine({ total }) {
   const t = total || {};
   return (
     <>
-      <span className="block text-[13px] font-semibold tabular-nums text-slate-900 whitespace-nowrap">{formatMinutes(t.duree_min)}</span>
+      <span className="block t-small font-semibold tabular-nums text-slate-900 whitespace-nowrap">{formatMinutes(t.duree_min)}</span>
       <span className="block text-xs text-slate-600 tabular-nums whitespace-nowrap">
         {nb(t.jours)} j · {nb(t.actions)} act.
       </span>
@@ -113,8 +113,8 @@ export default function GrilleSemaine({ jours, salaries, aujourdhui, mode, selec
           return (
             <li key={s.utilisateur} className="card overflow-hidden">
               <div className="flex items-baseline justify-between gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60">
-                <h3 className="font-semibold text-slate-900 truncate">{s.utilisateur}</h3>
-                <span className="text-[13px] text-slate-600 tabular-nums whitespace-nowrap">
+                <h3 className="t-h2 truncate">{s.utilisateur}</h3>
+                <span className="t-small text-slate-600 tabular-nums whitespace-nowrap">
                   <strong className="text-slate-900">{formatMinutes(s.total?.duree_min)}</strong>
                   {' · '}{nb(s.total?.jours)} j · {nb(s.total?.actions)} act.
                 </span>
@@ -133,9 +133,9 @@ export default function GrilleSemaine({ jours, salaries, aujourdhui, mode, selec
                           onClick={(ev) => onChoisir({ utilisateur: s.utilisateur, jour, resume: j }, ev.currentTarget)}
                           aria-label={`${resumeCellule(s.utilisateur, jour, j)}. Afficher le détail`}
                           aria-expanded={choisi}
-                          className={`w-full min-h-[48px] flex items-center gap-3 px-4 py-2 text-left text-[13px]
+                          className={`w-full min-h-12 flex items-center gap-3 px-4 py-2 text-left text-sm transition-colors duration-150 motion-reduce:transition-none
                             focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500
-                            ${choisi ? 'bg-brand-50' : jour === aujourdhui ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}
+                            ${choisi ? 'bg-brand-50' : jour === aujourdhui ? 'bg-slate-50 hover:bg-slate-100' : 'hover:bg-slate-50'}`}
                         >
                           <span className="w-14 shrink-0 font-medium text-slate-700 capitalize">{e.court} {e.num}</span>
                           <span className="font-semibold tabular-nums text-slate-900 whitespace-nowrap">
@@ -152,7 +152,7 @@ export default function GrilleSemaine({ jours, salaries, aujourdhui, mode, selec
                   })}
                 </ul>
               ) : (
-                <p className="px-4 py-3 text-[13px] text-slate-500">Aucune connexion cette semaine</p>
+                <p className="px-4 py-3 t-small">Aucune connexion cette semaine</p>
               )}
             </li>
           );
@@ -182,7 +182,7 @@ export default function GrilleSemaine({ jours, salaries, aujourdhui, mode, selec
               const auj = jour === aujourdhui;
               return (
                 <th key={jour} scope="col"
-                  className={`table-header px-1.5 py-2 text-left ${auj ? 'text-brand-700 bg-brand-50/70' : ''}`}>
+                  className={`table-header px-1.5 py-2 text-left ${auj ? 'text-slate-900 bg-slate-100' : ''}`}>
                   <abbr title={e.long} className="no-underline">{e.court}</abbr> {e.num}
                   {auj && <span className="sr-only"> (aujourd’hui)</span>}
                 </th>
@@ -198,7 +198,7 @@ export default function GrilleSemaine({ jours, salaries, aujourdhui, mode, selec
                 <span className="line-clamp-3 break-words leading-5">{s.utilisateur}</span>
               </th>
               {cols.map((jour) => (
-                <td key={jour} className={`${mode === 'compact' ? 'p-0.5' : 'p-1'} align-middle ${jour === aujourdhui ? 'bg-brand-50/40' : ''}`}>
+                <td key={jour} className={`${mode === 'compact' ? 'p-0.5' : 'p-1'} align-middle ${jour === aujourdhui ? 'bg-slate-50' : ''}`}>
                   <BoutonCellule nom={s.utilisateur} jour={jour} j={s.jours?.[jour]} mode={mode}
                     selection={selection} onChoisir={onChoisir} />
                 </td>

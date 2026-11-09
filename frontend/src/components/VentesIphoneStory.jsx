@@ -1,11 +1,17 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
 import {
   Check, Download, Share2, X, Loader2, Plus, Pencil, Trash2, RefreshCw,
-  Film, Sparkles, ShieldCheck, Package2, Battery, Award, Zap, Truck,
-  Instagram, Music2, Wand2,
+  Film, ShieldCheck, Package2, Battery, Award, Zap, Truck,
 } from 'lucide-react';
 import api from '../lib/api';
 import { getIPhoneImage, PLACEHOLDER_SVG } from '../utils/appleCDN';
+import { useConfirmDialog } from './ConfirmDialog';
+import { useToast } from './Toast';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+
+// Outil du personnel (onglet « Ventes iPhone » du Community Manager) : il suit le back-office
+// (fond clair, card, btn-*, input, segmented, modal). La vidéo elle-même est rendue côté serveur
+// (backend/app/video/story_template.py) : rien ici ne fixe son apparence.
 
 const CONDITIONS = [
   { id: '', label: 'Tous' },
@@ -17,136 +23,154 @@ const CONDITIONS = [
 const LOADER_STEPS = [
   'Préparation des scènes…',
   'Téléchargement des photos iPhone…',
-  'Rendu des frames…',
+  'Rendu des images…',
   'Encodage MP4 via ffmpeg…',
   'Ajout de la musique…',
-  'Upload de la vidéo…',
+  'Envoi de la vidéo…',
 ];
+
+const MAX_IPHONES = 8;
+
+// Prix au format français (« 1 299 € », espaces insécables fournis par Intl)
+const FORMAT_EUROS = new Intl.NumberFormat('fr-FR', {
+  style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 2,
+});
+function euros(valeur) {
+  const n = Number(valeur);
+  return Number.isFinite(n) ? FORMAT_EUROS.format(n) : `${valeur} €`;
+}
+const secondes = (n) => n.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
 
 function AppleLogo({ className = 'w-3 h-3', fill = 'currentColor' }) {
   return (
-    <svg className={className} viewBox="0 0 170 170" xmlns="http://www.w3.org/2000/svg" fill={fill}>
+    <svg className={className} viewBox="0 0 170 170" xmlns="http://www.w3.org/2000/svg" fill={fill} aria-hidden="true">
       <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.197-2.12-9.973-3.17-14.34-3.17-4.58 0-9.492 1.05-14.746 3.17-5.262 2.13-9.501 3.24-12.742 3.35-4.929.21-9.842-1.96-14.746-6.52-3.13-2.73-7.045-7.41-11.735-14.04-5.032-7.08-9.169-15.29-12.41-24.65-3.471-10.11-5.211-19.9-5.211-29.38 0-10.86 2.346-20.23 7.045-28.08 3.693-6.303 8.606-11.275 14.755-14.925s12.793-5.51 19.948-5.629c3.915 0 9.049 1.211 15.429 3.591 6.362 2.388 10.447 3.599 12.238 3.599 1.339 0 5.877-1.416 13.57-4.239 7.275-2.618 13.415-3.702 18.445-3.275 13.63 1.1 23.87 6.473 30.68 16.153-12.19 7.386-18.22 17.731-18.1 31.002.11 10.337 3.86 18.939 11.23 25.769 3.34 3.17 7.07 5.62 11.22 7.36-.9 2.61-1.85 5.11-2.86 7.51zM119.11 7.24c0 8.102-2.96 15.667-8.86 22.669-7.12 8.324-15.732 13.134-25.071 12.375a25.222 25.222 0 0 1-.188-3.07c0-7.778 3.386-16.102 9.399-22.908 3.002-3.446 6.82-6.311 11.45-8.597 4.62-2.252 8.99-3.497 13.1-3.71.12 1.083.17 2.166.17 3.24z" />
     </svg>
   );
 }
 
-const condColor = (c) =>
-  c === 'Neuf' ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-  : c === 'Reconditionné Premium' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-  : 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-
 const trustBadges = (c) =>
   c === 'Neuf' ? [{ icon: Package2, label: 'Scellé Apple' }, { icon: ShieldCheck, label: 'Garantie 2 ans' }, { icon: Truck, label: 'Dispo boutique' }]
-  : c === 'Reconditionné Premium' ? [{ icon: Award, label: '100% pièces Apple' }, { icon: Battery, label: 'Batterie 90%+' }, { icon: ShieldCheck, label: 'Garantie 12 mois' }]
-  : [{ icon: ShieldCheck, label: '100% satisfait' }, { icon: Battery, label: 'Batterie 85%+' }, { icon: Zap, label: 'Testé 40 points' }];
+  : c === 'Reconditionné Premium' ? [{ icon: Award, label: '100 % pièces Apple' }, { icon: Battery, label: 'Batterie ≥ 90 %' }, { icon: ShieldCheck, label: 'Garantie 12 mois' }]
+  : [{ icon: ShieldCheck, label: '100 % satisfait' }, { icon: Battery, label: 'Batterie ≥ 85 %' }, { icon: Zap, label: 'Testé sur 40 points' }];
 
 const tagline = (c) =>
   c === 'Neuf' ? 'Neuf scellé · livré avec accessoires'
   : c === 'Reconditionné Premium' ? 'Comme neuf · sans rayure visible'
   : 'Reconditionné vérifié chez Klikphone';
 
+// Carte d'un iPhone : la carte entière (sauf les actions d'administration) est un bouton à bascule.
 function IphoneCard({ phone, selected, onToggle, adminMode, onEdit, onDelete }) {
   const [imgError, setImgError] = useState(false);
   const src = imgError ? PLACEHOLDER_SVG : getIPhoneImage(phone);
   const savings = (phone.old_price || 0) - phone.price;
   const badges = trustBadges(phone.condition);
   const label = phone.condition === 'Reconditionné Premium' ? 'Premium' : phone.condition;
+  const enStock = phone.stock > 0;
 
   return (
     <div
-      onClick={onToggle}
-      className={`relative cursor-pointer rounded-2xl border overflow-hidden group flex flex-col transition-all duration-300 ease-out will-change-transform ${
-        selected
-          ? 'border-orange-500/80 ring-2 ring-orange-500/40 shadow-[0_8px_32px_-4px_rgba(232,100,26,0.35)] -translate-y-0.5'
-          : 'border-white/10 hover:border-white/30 hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(0,0,0,0.6)]'
+      className={`relative flex flex-col rounded-lg border bg-white transition-colors duration-150 ${
+        selected ? 'border-brand-600 ring-1 ring-brand-600' : 'border-slate-200 hover:border-slate-300'
       }`}
-      style={{ backgroundColor: '#14141c' }}
     >
-      <div className="pointer-events-none absolute inset-0 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full [transition:transform_1s_ease,opacity_0.4s_ease]" />
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={selected}
+        className="flex-1 flex flex-col text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
+      >
+        <span className="relative flex items-center justify-center h-40 sm:h-48 p-4">
+          <img src={src} alt="" loading="lazy" onError={() => setImgError(true)}
+            className="max-h-full max-w-full object-contain" />
+          <span className="badge badge-neutral absolute top-2 left-2">{label}</span>
+          <span
+            aria-hidden="true"
+            className={`absolute top-2 right-2 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-colors duration-150 ${
+              selected ? 'bg-brand-600 border-brand-600 text-white' : 'bg-white border-slate-300'
+            }`}
+          >
+            {selected && <Check className="w-4 h-4" strokeWidth={3} />}
+          </span>
+        </span>
 
-      <div className={`absolute top-3 right-3 z-20 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all duration-200 ${
-        selected ? 'bg-orange-500 border-orange-500 scale-110' : 'bg-black/50 backdrop-blur border-white/30 group-hover:border-white/60 group-hover:scale-105'
-      }`}>
-        {selected && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
-      </div>
+        <span className="flex-1 flex flex-col px-3 sm:px-4 pb-3">
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+            <AppleLogo className="w-3 h-3 shrink-0" />
+            <span className="truncate">{phone.model}</span>
+          </span>
+          <span className="flex items-center gap-1.5 t-small mt-0.5 min-w-0">
+            {phone.color_hex && (
+              <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                style={{ backgroundColor: phone.color_hex }} />
+            )}
+            <span className="truncate">{phone.storage} · {phone.color_name}</span>
+          </span>
+          <span className="text-xs text-slate-600 mt-2 line-clamp-1">{tagline(phone.condition)}</span>
 
-      <div className={`absolute top-3 left-3 z-20 text-[10px] font-bold px-2 py-1 rounded-md border uppercase tracking-wider backdrop-blur-sm ${condColor(phone.condition)}`}>
-        {label}
-      </div>
+          <span className="mt-3 flex flex-wrap items-baseline gap-x-2">
+            <span className="text-2xl font-semibold tracking-tight tabular-nums text-slate-900">{euros(phone.price)}</span>
+            {phone.old_price > phone.price && (
+              <span className="text-xs text-slate-500 line-through tabular-nums">{euros(phone.old_price)}</span>
+            )}
+            {savings > 0 && (
+              <span className="text-xs font-medium text-emerald-700 tabular-nums">−{euros(savings)}</span>
+            )}
+          </span>
 
-      {savings > 0 && (
-        <div className="absolute top-12 left-3 z-20 text-[10px] font-black px-2 py-0.5 rounded-md bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30">
-          −{savings}€
+          <span className="mt-3 space-y-1">
+            {badges.map(({ icon: Icon, label: texte }) => (
+              <span key={texte} className="flex items-center gap-1.5 text-xs text-slate-600">
+                <Icon className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
+                <span className="truncate">{texte}</span>
+              </span>
+            ))}
+          </span>
+
+          <span className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 text-xs font-medium text-slate-700">
+            <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${enStock ? 'bg-emerald-600' : 'bg-slate-300'}`} />
+            {enStock ? `En stock · ${phone.stock}` : 'Rupture'}
+          </span>
+        </span>
+      </button>
+
+      {adminMode && (
+        <div className="flex items-center justify-end gap-1 px-2 pb-2">
+          <button type="button" onClick={() => onEdit(phone)} className="btn-ghost btn-icon btn-sm"
+            title="Modifier" aria-label={`Modifier ${phone.model}`}>
+            <Pencil aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onDelete(phone)} className="btn-danger-ghost btn-icon btn-sm"
+            title="Supprimer" aria-label={`Supprimer ${phone.model}`}>
+            <Trash2 aria-hidden="true" />
+          </button>
         </div>
       )}
-
-      <div className="relative h-48 sm:h-56 flex items-center justify-center p-4 sm:p-5 overflow-hidden"
-        style={{ background: `radial-gradient(ellipse at center, ${phone.color_hex || '#333'}30 0%, transparent 65%)` }}>
-        <img src={src} alt={phone.model} loading="lazy" onError={() => setImgError(true)}
-          className="max-h-full max-w-full object-contain drop-shadow-2xl transition-transform duration-500 ease-out group-hover:scale-110 group-hover:-rotate-2" />
-      </div>
-
-      <div className="px-3 sm:px-4 pb-4 flex-1 flex flex-col">
-        <div className="flex items-center gap-1.5 text-white font-bold text-[14px] sm:text-[15px] tracking-tight">
-          <AppleLogo className="w-3 h-3 shrink-0" fill="white" />
-          <span className="truncate">{phone.model}</span>
-        </div>
-        <div className="text-white/60 text-[11px] sm:text-xs mt-0.5 truncate">{phone.storage} · {phone.color_name}</div>
-        <div className="text-orange-300/90 text-[10.5px] sm:text-[11px] mt-2 font-medium italic line-clamp-1">{tagline(phone.condition)}</div>
-
-        <div className="mt-3 flex items-end gap-2">
-          <div className="flex items-baseline">
-            <span className="text-white font-black text-[24px] sm:text-[28px] tracking-tight leading-none">{phone.price}</span>
-            <span className="text-white font-bold text-base ml-0.5">€</span>
-          </div>
-          {phone.old_price > phone.price && <span className="text-white/35 text-xs line-through mb-0.5">{phone.old_price}€</span>}
-        </div>
-
-        <div className="mt-3 space-y-1">
-          {badges.map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-1.5 text-[10.5px] text-white/70 font-medium">
-              <Icon className="w-3 h-3 text-emerald-400 shrink-0" strokeWidth={2.5} />
-              <span className="truncate">{label}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/5">
-          <span className={`text-[10px] uppercase tracking-wider font-bold flex items-center gap-1 ${phone.stock > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${phone.stock > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-            {phone.stock > 0 ? `Stock · ${phone.stock}` : 'Rupture'}
-          </span>
-          {adminMode && (
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => onEdit(phone)} className="p-1.5 rounded-md bg-white/5 hover:bg-white/15 text-white/80 transition-all" title="Modifier"><Pencil className="w-3 h-3" /></button>
-              <button onClick={() => onDelete(phone)} className="p-1.5 rounded-md bg-red-500/10 hover:bg-red-500/25 text-red-300 transition-all" title="Supprimer"><Trash2 className="w-3 h-3" /></button>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
 
-function Field({ label, value, onChange, type = 'text', placeholder }) {
+function Field({ label, value, onChange, type = 'text', placeholder, help }) {
+  const id = useId();
   return (
-    <label className="block">
-      <span className="text-[11px] text-white/60 font-semibold uppercase tracking-wider">{label}</span>
-      <input type={type} value={value ?? ''} onChange={onChange} placeholder={placeholder}
-        className="w-full mt-1 px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-sm text-white placeholder-white/30 focus:outline-none focus:border-orange-500" />
-    </label>
+    <div>
+      <label htmlFor={id} className="input-label">{label}</label>
+      <input id={id} type={type} value={value ?? ''} onChange={onChange} placeholder={placeholder}
+        aria-describedby={help ? `${id}-aide` : undefined} className="input" />
+      {help && <p id={`${id}-aide`} className="input-help">{help}</p>}
+    </div>
   );
 }
 
 function Select({ label, value, onChange, options }) {
+  const id = useId();
   return (
-    <label className="block">
-      <span className="text-[11px] text-white/60 font-semibold uppercase tracking-wider">{label}</span>
-      <select value={value} onChange={onChange} className="w-full mt-1 px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500">
+    <div>
+      <label htmlFor={id} className="input-label">{label}</label>
+      <select id={id} value={value} onChange={onChange} className="select">
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
-    </label>
+    </div>
   );
 }
 
@@ -154,7 +178,14 @@ function IphoneFormModal({ open, initial, onClose, onSave }) {
   const empty = { model: '', model_key: '', storage: '128GB', color_name: '', color_hex: '#333333', color_key: '', condition: 'Neuf', price: 0, old_price: null, stock: 1, image_url: '' };
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) setForm(initial ? { ...empty, ...initial } : empty); }, [open, initial]);
+  const [erreur, setErreur] = useState(null);
+  const boiteRef = useRef(null);
+  const titreId = useId();
+  useFocusTrap(boiteRef, open && !saving, { onEscape: onClose });
+  useEffect(() => {
+    if (open) { setForm(initial ? { ...empty, ...initial } : empty); setErreur(null); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
   if (!open) return null;
 
   const set = (k) => (e) => {
@@ -163,42 +194,47 @@ function IphoneFormModal({ open, initial, onClose, onSave }) {
   };
   const submit = async () => {
     setSaving(true);
+    setErreur(null);
     try { await onSave(form); onClose(); }
-    catch (err) { alert('Erreur : ' + (err.message || 'inconnue')); }
+    catch (err) { setErreur(`L'enregistrement a échoué : ${err.message || 'erreur inconnue'}.`); }
     finally { setSaving(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-zinc-900 text-white rounded-2xl border border-white/10 max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h3 className="font-bold text-lg">{initial ? 'Modifier' : 'Nouvel iPhone'}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+    <div className="modal-overlay">
+      <div ref={boiteRef} role="dialog" aria-modal="true" aria-labelledby={titreId} className="modal">
+        <div className="modal-header">
+          <h2 id={titreId} className="t-h2">{initial ? 'Modifier l’iPhone' : 'Nouvel iPhone'}</h2>
+          <button type="button" onClick={onClose} className="btn-ghost btn-icon" aria-label="Fermer">
+            <X aria-hidden="true" />
+          </button>
         </div>
-        <div className="p-5 space-y-3">
+        <div className="modal-body space-y-4">
           <Field label="Modèle" value={form.model} onChange={set('model')} placeholder="iPhone 16 Pro" />
-          <Field label="Model key (slug)" value={form.model_key} onChange={set('model_key')} placeholder="iphone-16-pro" />
+          <Field label="Clé du modèle (slug)" value={form.model_key} onChange={set('model_key')} placeholder="iphone-16-pro" />
           <div className="grid grid-cols-2 gap-3">
             <Field label="Stockage" value={form.storage} onChange={set('storage')} />
-            <Select label="Condition" value={form.condition} onChange={set('condition')} options={['Neuf', 'Reconditionné Premium', 'Reconditionné']} />
+            <Select label="État" value={form.condition} onChange={set('condition')} options={['Neuf', 'Reconditionné Premium', 'Reconditionné']} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Couleur (nom)" value={form.color_name} onChange={set('color_name')} />
             <Field label="Couleur (clé)" value={form.color_key} onChange={set('color_key')} placeholder="natural-titanium" />
           </div>
-          <Field label="Couleur HEX" value={form.color_hex} onChange={set('color_hex')} placeholder="#b8a898" />
+          <Field label="Couleur (hex)" value={form.color_hex} onChange={set('color_hex')} placeholder="#b8a898" />
           <div className="grid grid-cols-3 gap-3">
             <Field label="Prix (€)" type="number" value={form.price ?? ''} onChange={set('price')} />
             <Field label="Ancien prix" type="number" value={form.old_price ?? ''} onChange={set('old_price')} />
             <Field label="Stock" type="number" value={form.stock ?? 0} onChange={set('stock')} />
           </div>
-          <Field label="Image URL (override)" value={form.image_url || ''} onChange={set('image_url')} placeholder="Laisse vide pour utiliser l'image locale" />
+          <Field label="Image (URL, optionnel)" value={form.image_url || ''} onChange={set('image_url')}
+            help="Laissez vide pour utiliser l’image locale" />
+          {erreur && <p role="alert" className="input-error">{erreur}</p>}
         </div>
-        <div className="flex justify-end gap-2 p-5 border-t border-white/10">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-sm font-semibold">Annuler</button>
-          <button onClick={submit} disabled={saving || !form.model || !form.model_key}
-            className="px-5 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-bold flex items-center gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+        <div className="modal-footer">
+          <button type="button" onClick={onClose} className="btn-ghost">Annuler</button>
+          <button type="button" onClick={submit} disabled={saving || !form.model || !form.model_key}
+            aria-busy={saving || undefined} className="btn-primary">
+            {saving && <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />}
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </div>
@@ -209,6 +245,10 @@ function IphoneFormModal({ open, initial, onClose, onSave }) {
 
 function VideoModal({ open, result, onClose, onRegenerate }) {
   const [downloading, setDownloading] = useState(false);
+  const toast = useToast();
+  const boiteRef = useRef(null);
+  const titreId = useId();
+  useFocusTrap(boiteRef, open && Boolean(result), { onEscape: onClose });
   if (!open || !result) return null;
   const filename = result.filename || 'klikphone-story.mp4';
 
@@ -229,74 +269,58 @@ function VideoModal({ open, result, onClose, onRegenerate }) {
 
   const shareLink = async () => {
     if (navigator.share) { try { await navigator.share({ title: 'Klikphone — Story iPhone', url: result.video_url }); } catch {} }
-    else { await navigator.clipboard.writeText(result.video_url); alert('URL copiée dans le presse-papier'); }
+    else {
+      try {
+        await navigator.clipboard.writeText(result.video_url);
+        toast.success('Lien de la vidéo copié dans le presse-papier');
+      } catch {
+        toast.error(`Le lien n’a pas pu être copié : ${result.video_url}`);
+      }
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease]" onClick={onClose}>
-      <div className="relative bg-gradient-to-b from-zinc-900 to-black text-white rounded-3xl border border-white/10 max-w-md w-full overflow-hidden shadow-2xl shadow-orange-500/10"
-        onClick={(e) => e.stopPropagation()} style={{ maxHeight: '95vh' }}>
-        <div className="pointer-events-none absolute -top-24 -left-24 w-64 h-64 rounded-full bg-orange-500/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-24 -right-24 w-64 h-64 rounded-full bg-amber-500/10 blur-3xl" />
-
-        <div className="relative flex items-center justify-between p-4 border-b border-white/10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-              <Film className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <div className="font-bold text-[15px] leading-tight">Ta Story est prête</div>
-              <div className="text-[10.5px] text-white/50 uppercase tracking-wider font-semibold">1080 × 1920 · 9:16</div>
-            </div>
+    <div className="modal-overlay" onMouseDown={onClose}>
+      <div ref={boiteRef} role="dialog" aria-modal="true" aria-labelledby={titreId}
+        onMouseDown={(e) => e.stopPropagation()} className="modal sm:max-w-md">
+        <div className="modal-header">
+          <div>
+            <h2 id={titreId} className="t-h2">La story est prête</h2>
+            <p className="t-small mt-0.5">1080 × 1920 · 9:16</p>
           </div>
-          <button onClick={onClose} aria-label="Fermer" className="p-2 rounded-full bg-white/5 hover:bg-white/20 active:scale-95 transition-all"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} className="btn-ghost btn-icon" aria-label="Fermer">
+            <X aria-hidden="true" />
+          </button>
         </div>
 
-        <div className="relative bg-black flex items-center justify-center" style={{ aspectRatio: '9/16', maxHeight: '60vh' }}>
-          <video src={result.video_url} controls autoPlay loop playsInline className="w-full h-full object-contain" />
+        <div className="overflow-y-auto min-h-0">
+          <div className="bg-slate-900 flex items-center justify-center" style={{ aspectRatio: '9/16', maxHeight: '60vh' }}>
+            <video src={result.video_url} controls autoPlay loop playsInline className="w-full h-full object-contain" />
+          </div>
+          <p className="t-small text-center px-5 py-2 tabular-nums">
+            Durée {result.duration_seconds} s · rendu en {result.render_time_s} s
+          </p>
         </div>
 
-        <div className="px-4 py-2.5 text-[11px] text-white/50 text-center flex items-center justify-center gap-3">
-          <span>Durée {result.duration_seconds}s</span>
-          <span className="w-1 h-1 rounded-full bg-white/30" />
-          <span>Rendu en {result.render_time_s}s</span>
-        </div>
-
-        <div className="p-4 pt-1 space-y-2">
-          <button onClick={downloadVideo} disabled={downloading}
-            className="group relative w-full flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-60 text-white font-bold text-[15px] shadow-lg shadow-orange-500/30 hover:shadow-xl hover:shadow-orange-500/40 transition-all active:scale-[0.98]">
-            {downloading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            {downloading ? 'Téléchargement…' : 'Télécharger MP4'}
+        <div className="px-5 py-4 border-t border-slate-100 space-y-2 shrink-0">
+          <button type="button" onClick={downloadVideo} disabled={downloading} aria-busy={downloading || undefined}
+            className="btn-primary btn-lg btn-block">
+            {downloading
+              ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
+              : <Download aria-hidden="true" />}
+            {downloading ? 'Téléchargement…' : 'Télécharger le MP4'}
           </button>
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={shareLink} className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-sm font-semibold transition-all active:scale-[0.98]">
-              <Share2 className="w-4 h-4" /> Partager
+            <button type="button" onClick={shareLink} className="btn-secondary">
+              <Share2 aria-hidden="true" /> Partager
             </button>
-            <button onClick={onRegenerate} className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-sm font-semibold transition-all active:scale-[0.98]">
-              <RefreshCw className="w-4 h-4" /> Rejouer
+            <button type="button" onClick={onRegenerate} className="btn-secondary">
+              <RefreshCw aria-hidden="true" /> Générer à nouveau
             </button>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function EmptyStateSVG() {
-  return (
-    <svg width="120" height="120" viewBox="0 0 120 120" fill="none" className="mx-auto mb-4 opacity-80">
-      <defs>
-        <linearGradient id="phoneGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#f97316" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#7c3aed" stopOpacity="0.2" />
-        </linearGradient>
-      </defs>
-      <rect x="38" y="18" width="44" height="84" rx="8" fill="url(#phoneGrad)" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" />
-      <rect x="42" y="24" width="36" height="64" rx="3" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-      <circle cx="60" cy="96" r="2.5" fill="rgba(255,255,255,0.3)" />
-      <circle cx="60" cy="54" r="14" fill="none" stroke="rgba(249,115,22,0.5)" strokeWidth="1.5" strokeDasharray="3 3" />
-      <path d="M54 54 L58 58 L66 48" stroke="rgba(249,115,22,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
   );
 }
 
@@ -312,6 +336,11 @@ export default function VentesIphoneStory() {
   const [error, setError] = useState(null);
   const [loaderStep, setLoaderStep] = useState(0);
   const adminMode = false;
+  const toast = useToast();
+  const confirmation = useConfirmDialog();
+  const titreId = useId();
+  const attenteRef = useRef(null);
+  useFocusTrap(attenteRef, generating && !videoResult);
 
   useEffect(() => {
     if (!generating) { setLoaderStep(0); return; }
@@ -335,13 +364,14 @@ export default function VentesIphoneStory() {
   }, [phones]);
 
   const toggleSelect = (id) => {
+    if (!selected.has(id) && selected.size >= MAX_IPHONES) {
+      toast.warning(`${MAX_IPHONES} iPhones au maximum par vidéo`);
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else {
-        if (next.size >= 8) { alert('Maximum 8 iPhones par vidéo'); return prev; }
-        next.add(id);
-      }
+      else if (next.size < MAX_IPHONES) next.add(id);
       return next;
     });
   };
@@ -361,120 +391,123 @@ export default function VentesIphoneStory() {
     await load();
   };
 
-  const handleDelete = async (phone) => {
-    if (!window.confirm(`Supprimer ${phone.model} ${phone.storage} ${phone.color_name} ?`)) return;
-    try {
-      await api.deleteIphone(phone.id);
-      setSelected((prev) => { const next = new Set(prev); next.delete(phone.id); return next; });
-      await load();
-    } catch (err) { alert('Erreur : ' + err.message); }
+  const handleDelete = (phone) => {
+    confirmation.demander({
+      title: `Supprimer ${phone.model} ${phone.storage} ${phone.color_name} ?`,
+      description: 'L’iPhone disparaît du catalogue des ventes et de la sélection en cours.',
+      confirmLabel: 'Supprimer l’iPhone',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deleteIphone(phone.id);
+          setSelected((prev) => { const next = new Set(prev); next.delete(phone.id); return next; });
+          await load();
+        } catch (err) {
+          toast.error(`La suppression a échoué : ${err.message || 'erreur inconnue'}`);
+        }
+      },
+    });
   };
 
   const estimatedDuration = 1.8 + selected.size * 3.0 + 2.2;
   const progressPct = Math.round(((loaderStep + 1) / LOADER_STEPS.length) * 100);
+  const pluriel = selected.size > 1 ? 's' : '';
 
   return (
-    <div className="relative rounded-2xl overflow-hidden" style={{ backgroundColor: '#0a0a10' }}>
-      <div className="pointer-events-none absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-orange-500/[0.04] via-transparent to-transparent" />
-      <div className="pointer-events-none absolute top-0 right-0 w-96 h-96 rounded-full bg-orange-500/[0.06] blur-3xl" />
+    <section aria-labelledby={titreId} className="space-y-4 pb-28">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id={titreId} className="t-h2">Ventes iPhone</h2>
+          <p className="t-small mt-1">
+            Sélectionnez jusqu’à {MAX_IPHONES} modèles pour générer une story vidéo 9:16 (Instagram, TikTok).
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {adminMode && (
+            <button type="button" onClick={() => { setFormInitial(null); setFormOpen(true); }} className="btn-secondary btn-sm">
+              <Plus aria-hidden="true" /> Ajouter un iPhone
+            </button>
+          )}
+          <button type="button" onClick={load} className="btn-secondary btn-sm" title="Rafraîchir">
+            <RefreshCw aria-hidden="true" /> Actualiser
+          </button>
+        </div>
+      </div>
 
-      <div className="relative px-5 sm:px-7 py-6 sm:py-7 border-b border-white/10">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white flex items-center justify-center shadow-xl shrink-0">
-              <AppleLogo className="w-6 h-6 sm:w-7 sm:h-7 text-black" fill="black" />
-            </div>
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-orange-500/15 to-amber-500/15 border border-orange-500/25 mb-1.5">
-                <Instagram className="w-3 h-3 text-orange-300" />
-                <Music2 className="w-3 h-3 text-orange-300" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-orange-200">Stories Insta · TikTok</span>
-              </div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight leading-tight">Ventes iPhone</h2>
-              <p className="text-[12.5px] sm:text-sm text-white/55 mt-0.5 leading-snug">Sélectionne jusqu'à 8 modèles, génère ta vidéo Story 9:16</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {adminMode && (
-              <button onClick={() => { setFormInitial(null); setFormOpen(true); }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-white text-xs font-bold transition-all">
-                <Plus className="w-4 h-4" /> iPhone
+      <div className="segmented" role="group" aria-label="Filtrer par état">
+        {CONDITIONS.map((c) => {
+          const active = filter === c.id;
+          const count = counts[c.id] ?? 0;
+          return (
+            <button key={c.id} type="button" onClick={() => setFilter(c.id)} aria-pressed={active}
+              className={`segmented-item ${active ? 'segmented-item-active' : ''}`}>
+              {c.label}
+              <span className="text-slate-500 tabular-nums">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {error && <div role="alert" className="error-state">{error}</div>}
+
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" aria-busy="true">
+          <span className="sr-only" role="status">Chargement des iPhones…</span>
+          {Array.from({ length: 8 }, (_, i) => <div key={i} className="skeleton h-80 sm:h-96" aria-hidden="true" />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        !error && (
+          <div className="empty-state">
+            <p className="t-h2">{filter ? 'Aucun iPhone dans cette catégorie' : 'Aucun iPhone en vente'}</p>
+            <p className="t-small max-w-xs">
+              {filter
+                ? 'Essayez un autre filtre ou actualisez la liste.'
+                : 'Les iPhones du catalogue des ventes apparaîtront ici.'}
+            </p>
+            {filter ? (
+              <button type="button" onClick={() => setFilter('')} className="btn-secondary btn-sm">
+                Voir tous les iPhones
+              </button>
+            ) : (
+              <button type="button" onClick={load} className="btn-secondary btn-sm">
+                <RefreshCw aria-hidden="true" /> Actualiser la liste
               </button>
             )}
-            <button onClick={load} className="p-2.5 rounded-xl bg-white/5 hover:bg-white/15 text-white/70 transition-all active:scale-95" title="Rafraîchir">
-              <RefreshCw className="w-4 h-4" />
-            </button>
           </div>
+        )
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          {filtered.map((p) => (
+            <IphoneCard key={p.id} phone={p} selected={selected.has(p.id)} onToggle={() => toggleSelect(p.id)}
+              adminMode={adminMode} onEdit={(ph) => { setFormInitial(ph); setFormOpen(true); }} onDelete={handleDelete} />
+          ))}
         </div>
-      </div>
-
-      <div className="relative px-5 sm:px-7 pt-5">
-        <div className="inline-flex bg-white/5 rounded-2xl p-1 gap-0.5 text-xs border border-white/5 max-w-full overflow-x-auto">
-          {CONDITIONS.map((c) => {
-            const active = filter === c.id;
-            const count = counts[c.id] ?? 0;
-            return (
-              <button key={c.id} onClick={() => setFilter(c.id)}
-                className={`relative whitespace-nowrap px-3 sm:px-3.5 py-2 rounded-xl font-bold transition-all duration-300 flex items-center gap-1.5 ${active ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white'}`}>
-                <span>{c.label}</span>
-                <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md transition-colors ${active ? 'bg-black/10 text-black/70' : 'bg-white/10 text-white/50'}`}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="relative px-5 sm:px-7 py-5 pb-32">
-        {error && <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{error}</div>}
-        {loading ? (
-          <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-white/50" /></div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-14 max-w-xs mx-auto">
-            <EmptyStateSVG />
-            <div className="text-white font-bold text-base mb-1">Aucun iPhone ici</div>
-            <div className="text-white/50 text-[13px] leading-relaxed">Cette catégorie est vide. Essaie un autre filtre ou rafraîchis la liste.</div>
-            <button onClick={() => setFilter('')} className="mt-4 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all">
-              Voir tous les iPhones
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-            {filtered.map((p) => (
-              <IphoneCard key={p.id} phone={p} selected={selected.has(p.id)} onToggle={() => toggleSelect(p.id)}
-                adminMode={adminMode} onEdit={(ph) => { setFormInitial(ph); setFormOpen(true); }} onDelete={handleDelete} />
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {selected.size > 0 && (
-        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-[min(94vw,680px)] animate-[slideUp_0.3s_ease-out]">
-          <div className="relative overflow-hidden bg-zinc-950/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl shadow-black/70 p-2.5 sm:p-3 flex items-center gap-2 sm:gap-3">
-            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-orange-500 to-transparent" />
-            <div className="shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/40 font-black text-white text-base sm:text-lg">
-              {selected.size}
+        <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-[min(94vw,680px)]">
+          <div className="flex items-center gap-2 sm:gap-3 rounded-xl border border-slate-200 bg-white shadow-lg p-2.5 sm:p-3">
+            <div className="flex-1 min-w-0 pl-1">
+              <p className="text-sm font-semibold text-slate-900 truncate tabular-nums">
+                {selected.size}/{MAX_IPHONES} iPhone{pluriel} sélectionné{pluriel}
+              </p>
+              <p className="t-small flex items-center gap-1.5 mt-0.5 tabular-nums">
+                <Film className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>≈ {secondes(estimatedDuration)} s · 1080 × 1920</span>
+              </p>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-white text-[13px] sm:text-sm font-bold tracking-tight truncate">
-                {selected.size}/8 iPhone{selected.size > 1 ? 's' : ''} sélectionné{selected.size > 1 ? 's' : ''}
-              </div>
-              <div className="text-white/50 text-[11px] sm:text-xs flex items-center gap-1.5 mt-0.5">
-                <Film className="w-3 h-3" /><span>≈ {estimatedDuration.toFixed(1)}s · 1080×1920</span>
-              </div>
-            </div>
-            <button onClick={() => setSelected(new Set())}
-              className="hidden sm:flex px-3 py-2 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 text-xs font-semibold transition-all" title="Vider la sélection">
-              Vider
+            <button type="button" onClick={() => setSelected(new Set())} className="btn-ghost btn-sm hidden sm:inline-flex">
+              Vider la sélection
             </button>
-            <button onClick={() => setSelected(new Set())}
-              className="sm:hidden p-2 rounded-lg bg-white/5 hover:bg-white/15 text-white/70 transition-all" aria-label="Vider">
-              <X className="w-4 h-4" />
+            <button type="button" onClick={() => setSelected(new Set())} className="btn-ghost btn-icon btn-sm sm:hidden"
+              aria-label="Vider la sélection">
+              <X aria-hidden="true" />
             </button>
-            <button onClick={generateVideo} disabled={generating}
-              className="relative overflow-hidden flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-60 text-white text-[13px] sm:text-sm font-bold shadow-lg shadow-orange-500/40 transition-all active:scale-[0.97]">
+            <button type="button" onClick={generateVideo} disabled={generating} aria-busy={generating || undefined}
+              className="btn-primary">
               {generating
-                ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="hidden sm:inline">Génération…</span></>
-                : <><Wand2 className="w-4 h-4" /><span>Générer</span></>}
+                ? <><Loader2 className="motion-safe:animate-spin" aria-hidden="true" /><span className="hidden sm:inline">Génération…</span></>
+                : <><Film aria-hidden="true" /><span>Générer la vidéo</span></>}
             </button>
           </div>
         </div>
@@ -485,39 +518,33 @@ export default function VentesIphoneStory() {
         onRegenerate={() => { setVideoResult(null); generateVideo(); }} />
 
       {generating && !videoResult && (
-        <div className="fixed inset-0 z-40 bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease]">
-          <div className="relative bg-gradient-to-b from-zinc-900 to-black rounded-3xl border border-white/10 p-7 sm:p-8 max-w-sm w-full text-center shadow-2xl overflow-hidden">
-            <div className="pointer-events-none absolute -top-20 -left-20 w-52 h-52 rounded-full bg-orange-500/20 blur-3xl animate-pulse" />
-            <div className="pointer-events-none absolute -bottom-20 -right-20 w-52 h-52 rounded-full bg-amber-500/15 blur-3xl animate-pulse [animation-delay:1s]" />
-            <div className="relative">
-              <div className="relative w-20 h-20 mx-auto mb-5">
-                <div className="absolute inset-0 rounded-full border-[3px] border-orange-500/15" />
-                <div className="absolute inset-0 rounded-full border-[3px] border-transparent border-t-orange-500 border-r-orange-500/60 animate-spin" />
-                <div className="absolute inset-2 rounded-full bg-gradient-to-br from-orange-500/20 to-amber-500/10 flex items-center justify-center">
-                  <Sparkles className="w-7 h-7 text-orange-400 animate-pulse" />
-                </div>
+        <div className="modal-overlay">
+          <div ref={attenteRef} role="dialog" aria-modal="true" aria-labelledby={`${titreId}-attente`}
+            className="modal sm:max-w-sm">
+            <div className="px-5 py-5">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 text-brand-600 motion-safe:animate-spin shrink-0" aria-hidden="true" />
+                <h2 id={`${titreId}-attente`} className="t-h2">Génération de la vidéo</h2>
               </div>
-              <div className="text-white font-bold text-lg mb-1 tracking-tight">Génération en cours</div>
-              <div className="text-orange-400 text-[13px] font-semibold min-h-[20px] transition-all duration-300">{LOADER_STEPS[loaderStep]}</div>
-              <div className="mt-5 h-1.5 rounded-full bg-white/5 overflow-hidden relative">
-                <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-orange-500 to-amber-400 rounded-full transition-all duration-500 ease-out" style={{ width: `${progressPct}%` }} />
-                <div className="absolute inset-y-0 w-16 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-[shimmer_1.8s_infinite]" style={{ left: `${Math.max(0, progressPct - 20)}%` }} />
+              <p className="t-body mt-2" aria-live="polite">{LOADER_STEPS[loaderStep]}</p>
+              <div className="mt-4 h-1.5 rounded-full bg-slate-100 overflow-hidden" role="progressbar"
+                aria-label="Avancement estimé" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPct}>
+                <div className="h-full rounded-full bg-brand-600 transition-[width] duration-200 ease-out"
+                  style={{ width: `${progressPct}%` }} />
               </div>
-              <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                <span className="text-white/40 font-medium">Étape {loaderStep + 1}/{LOADER_STEPS.length}</span>
-                <span className="text-orange-300/80 font-bold tabular-nums">{progressPct}%</span>
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-500 tabular-nums">
+                <span>Étape {loaderStep + 1} sur {LOADER_STEPS.length}</span>
+                <span>{progressPct} %</span>
               </div>
-              <div className="text-white/35 text-[11px] mt-3">≈ {Math.round(estimatedDuration * 1.5)}s pour {selected.size} iPhone{selected.size > 1 ? 's' : ''}</div>
+              <p className="t-small mt-3 tabular-nums">
+                Environ {Math.round(estimatedDuration * 1.5)} s pour {selected.size} iPhone{pluriel}
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
-        @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
-      `}</style>
-    </div>
+      {confirmation.dialog}
+    </section>
   );
 }

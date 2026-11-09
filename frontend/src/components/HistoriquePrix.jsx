@@ -353,11 +353,8 @@ export function FenetrePrix({ open, onClose, titre, sousTitre, icone: Icone, chi
         className={`modal ${largeur} max-sm:rounded-none max-h-full sm:max-h-[92vh] overflow-hidden`}
       >
         <div className="modal-header items-start">
-          {Icone && (
-            <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-              <Icone className="w-5 h-5" aria-hidden="true" />
-            </div>
-          )}
+          {/* Icône nue (plus de tuile violette : signal « template ») */}
+          {Icone && <Icone className="w-5 h-5 mt-0.5 text-slate-500 shrink-0" aria-hidden="true" />}
           <div className="min-w-0 flex-1">
             <h2 id={idTitre} className="t-h2">{titre}</h2>
             {sousTitre && <p className="text-sm text-slate-500 mt-0.5">{sousTitre}</p>}
@@ -655,9 +652,9 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
                   onClick={() => basculer(lot)}
                   aria-expanded={ouvert}
                   aria-controls={idDetail}
-                  className="flex-1 min-w-[200px] min-h-[44px] flex items-center gap-2 text-left rounded-lg px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                  className="flex-1 min-w-[200px] min-h-11 flex items-center gap-2 text-left rounded-md px-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
-                  {ouvert ? <ChevronDown className="w-4 h-4 text-brand-600 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />}
+                  {ouvert ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />}
                   <span className="min-w-0">
                     <span className="block font-semibold text-sm text-slate-900">
                       {libelleSource(lot.source)} — {lot.nb} prix modifié{lot.nb > 1 ? 's' : ''}
@@ -683,7 +680,7 @@ export default function HistoriquePrix({ open, onClose, sensible = SANS_ELEVATIO
                 )}
               </div>
               {confirmer && (
-                <div role="alertdialog" aria-label="Confirmer l’annulation du lot" className="mx-3 mb-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                <div role="alertdialog" aria-label="Confirmer l’annulation du lot" className="mx-3 mb-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   <p className="font-semibold">Remettre ces {lot.nb} prix à leur valeur d’avant ?</p>
                   <p className="mt-1">Les tickets déjà créés gardent leur prix. Un prix modifié depuis n’est pas touché. L’annulation est elle-même notée dans l’historique.</p>
                   <div className="mt-3 flex flex-wrap gap-2">

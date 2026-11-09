@@ -3,10 +3,9 @@ import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { SynchroLcdPhone } from '../components/SantePrixWidget';
+import CarteChiffres from '../components/CarteChiffres';
 import {
-  Smartphone, Search, Package, Euro, Tag, Filter,
-  Loader2, Shield, ChevronLeft, ChevronRight,
-  SlidersHorizontal,
+  Smartphone, Search, Loader2, Shield, ChevronLeft, ChevronRight, SlidersHorizontal,
 } from 'lucide-react';
 
 // Grade = information neutre (badge gris) ; « Neuf » = information (bleu)
@@ -31,23 +30,23 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
   const inStock = phone.en_stock !== false && phone.en_stock !== 0;
 
   return (
-    <div className={`card overflow-hidden transition-colors duration-150 hover:border-slate-300 group ${!inStock ? 'opacity-60' : ''}`}>
-      {/* Image */}
+    <div className="card overflow-hidden transition-colors duration-150 hover:border-slate-300 group">
+      {/* Image (atténuée en rupture : le texte de la carte garde son contraste) */}
       <div className="relative h-44 bg-slate-50 flex items-center justify-center overflow-hidden">
         {phone.image_url ? (
           <img src={phone.image_url} alt={phone.modele || ''}
-            className="h-full w-full object-contain p-3"
+            className={`h-full w-full object-contain p-3 ${!inStock ? 'opacity-50' : ''}`}
             loading="lazy"
             onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling?.classList.remove('hidden'); }} />
         ) : null}
         <div className={`flex flex-col items-center justify-center text-slate-300 ${phone.image_url ? 'hidden' : ''}`}>
-          <Smartphone className="w-12 h-12 mb-1" aria-hidden="true" />
+          <Smartphone className="w-8 h-8" strokeWidth={1.5} aria-hidden="true" />
         </div>
 
         {/* Badge grade */}
         {gs && (
           <span className={`absolute top-2 left-2 badge badge-sm ${gs}`}>
-            {grade === 'Neuf' ? 'NEUF' : grade.toUpperCase()}
+            {grade}
           </span>
         )}
 
@@ -67,7 +66,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
         </p>
         <p className="text-lg font-semibold text-slate-900 tabular-nums">{fp(phone.prix_vente)}</p>
         <div className="flex items-center gap-1.5 t-caption mt-1.5">
-          <Shield className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Shield className="w-4 h-4 text-slate-500" aria-hidden="true" />
           <span>Garantie {phone.garantie_mois || 12} mois</span>
         </div>
       </div>
@@ -159,57 +158,27 @@ export default function TelephonesVentePage() {
         <SynchroLcdPhone estAdmin={isAdmin} onTerminee={handleSyncTerminee} dateRepli={stats.derniere_sync} />
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-        <div className="kpi-card-sm">
-          <div className="kpi-icon"><Smartphone aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <p className="kpi-value">{stats.total || 0}</p>
-            <p className="kpi-label">Total</p>
-          </div>
-        </div>
-        <div className="kpi-card-sm">
-          <div className="kpi-icon bg-emerald-50 text-emerald-700"><Package aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <p className="kpi-value">{stats.en_stock || 0}</p>
-            <p className="kpi-label">En stock</p>
-          </div>
-        </div>
-        <div className="kpi-card-sm">
-          <div className="kpi-icon"><Tag aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <p className="kpi-value">{stats.neufs || 0}</p>
-            <p className="kpi-label">Neufs</p>
-          </div>
-        </div>
-        <div className="kpi-card-sm">
-          <div className="kpi-icon"><Tag aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <p className="kpi-value">{stats.reconditionnes || 0}</p>
-            <p className="kpi-label">Reconditionnés</p>
-          </div>
-        </div>
-        <div className="kpi-card-sm">
-          <div className="kpi-icon"><Euro aria-hidden="true" /></div>
-          <div className="min-w-0">
-            <p className="kpi-value">{stats.nb_marques || 0}</p>
-            <p className="kpi-label">Marques</p>
-          </div>
-        </div>
-      </div>
+      {/* Chiffres clés */}
+      <CarteChiffres label="Chiffres du catalogue" colonnes={{ base: 2, sm: 3, lg: 5 }} className="mb-6" chiffres={[
+        { label: 'Total', valeur: stats.total || 0 },
+        { label: 'En stock', valeur: stats.en_stock || 0 },
+        { label: 'Neufs', valeur: stats.neufs || 0 },
+        { label: 'Reconditionnés', valeur: stats.reconditionnes || 0 },
+        { label: 'Marques', valeur: stats.nb_marques || 0 },
+      ]} />
 
       {/* Search & Filters */}
       <div className="card overflow-hidden mb-6">
         <div className="p-3 sm:p-4 border-b border-slate-100">
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
-            <input type="search" placeholder="Rechercher par marque, modèle..." aria-label="Rechercher un téléphone par marque ou modèle"
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
+            <input type="search" placeholder="Rechercher par marque, modèle…" aria-label="Rechercher un téléphone par marque ou modèle"
               value={search} onChange={e => setSearch(e.target.value)} autoComplete="off"
               className="input pl-10" />
           </div>
         </div>
         <div className="px-3 sm:px-4 py-3 flex items-center gap-2 flex-wrap bg-slate-50">
-          <SlidersHorizontal className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+          <SlidersHorizontal className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
           <select value={filterMarque} onChange={e => setFilterMarque(e.target.value)} aria-label="Filtrer par marque"
             className="select w-auto">
             <option value="">Toutes marques</option>
@@ -233,7 +202,7 @@ export default function TelephonesVentePage() {
             className="select w-auto ml-auto">
             <option value="prix_asc">Prix croissant</option>
             <option value="prix_desc">Prix décroissant</option>
-            <option value="marque">Marque A-Z</option>
+            <option value="marque">Marque A → Z</option>
             <option value="nouveautes">Nouveautés</option>
           </select>
         </div>
@@ -276,17 +245,17 @@ export default function TelephonesVentePage() {
                 {Array.from({ length: totalPages }, (_, i) => i + 1)
                   .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
                   .reduce((acc, p, i, arr) => {
-                    if (i > 0 && p - arr[i - 1] > 1) acc.push('...');
+                    if (i > 0 && p - arr[i - 1] > 1) acc.push('…');
                     acc.push(p);
                     return acc;
                   }, [])
                   .map((p, i) =>
-                    p === '...' ? (
-                      <span key={`dots-${i}`} className="px-1 text-slate-500" aria-hidden="true">...</span>
+                    p === '…' ? (
+                      <span key={`dots-${i}`} className="px-1 text-slate-500" aria-hidden="true">…</span>
                     ) : (
                       <button key={p} type="button" onClick={() => setCurrentPage(p)} aria-label={`Page ${p}`}
                         aria-current={p === currentPage ? 'page' : undefined}
-                        className={`w-11 h-11 rounded-lg text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                        className={`w-11 h-11 rounded-md text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
                           p === currentPage ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                         }`}>
                         {p}

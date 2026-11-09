@@ -198,9 +198,9 @@ export default function AttestationPage() {
     try {
       const result = await api.generateAttestation(getPayload());
       setHtmlPreview(result.html);
-      toast.success('Attestation générée et sauvegardée');
+      toast.success('Attestation générée et enregistrée');
     } catch (err) {
-      toast.error('Erreur génération');
+      toast.error(err?.message || 'Génération de l’attestation impossible');
     } finally {
       setLoading(false);
     }
@@ -217,10 +217,10 @@ export default function AttestationPage() {
     try {
       await api.emailAttestation(getPayload(), email, emailFormat);
       setEmailSent(true);
-      toast.success(`Email envoyé (${emailFormat === 'word' ? 'Word' : 'PDF'}) et attestation sauvegardée`);
+      toast.success(`E-mail envoyé (${emailFormat === 'word' ? 'Word' : 'PDF'}) et attestation enregistrée`);
       setTimeout(() => setEmailSent(false), 3000);
     } catch (err) {
-      toast.error('Erreur envoi email');
+      toast.error(err?.message || 'Envoi de l’e-mail impossible');
     }
   };
 
@@ -234,7 +234,7 @@ export default function AttestationPage() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success('Word téléchargé');
-    } catch { toast.error('Erreur Word'); }
+    } catch { toast.error('Téléchargement du Word impossible'); }
   };
 
   const handleWhatsApp = () => {
@@ -294,7 +294,7 @@ export default function AttestationPage() {
                     key={att.id}
                     type="button"
                     onClick={() => handleReload(att)}
-                    className="w-full flex items-center gap-3 px-3 min-h-14 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    className="w-full flex items-center gap-3 px-3 min-h-14 py-2 rounded-md hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                   >
                     <FileText className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                     <div className="flex-1 min-w-0">
@@ -308,7 +308,7 @@ export default function AttestationPage() {
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {att.email_envoye && (
-                        <span className="badge badge-sm badge-success">Email envoyé</span>
+                        <span className="badge badge-sm badge-success">E-mail envoyé</span>
                       )}
                     </div>
                   </button>
@@ -361,7 +361,7 @@ export default function AttestationPage() {
                     value={clientSearch}
                     onChange={e => setClientSearch(e.target.value)}
                     className="input pl-9 pr-12"
-                    placeholder="Nom, prénom ou téléphone..."
+                    placeholder="Nom, prénom ou téléphone…"
                     autoComplete="off"
                   />
                   {clientSearchLoading && (
@@ -377,13 +377,13 @@ export default function AttestationPage() {
 
                 {/* Results dropdown */}
                 {showClientDropdown && filteredResults.length > 0 && (
-                  <div className="mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-56 overflow-y-auto z-30 relative">
+                  <div className="mt-1 bg-white border border-slate-200 rounded-lg shadow-md max-h-56 overflow-y-auto z-30 relative">
                     {filteredResults.map(c => (
                       <button
                         key={c.id}
                         type="button"
                         onClick={() => handleSelectClient(c)}
-                        className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:bg-brand-50"
+                        className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 transition-colors duration-150 text-left focus:outline-none focus-visible:bg-slate-100"
                       >
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800 truncate">{c.prenom} {c.nom}</p>
@@ -432,7 +432,7 @@ export default function AttestationPage() {
               <div>
                 <label htmlFor="attestation-telephone" className="input-label">Téléphone</label>
                 <input id="attestation-telephone" maxLength={20} type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
-                  className="input tabular-nums" placeholder="06 ..."
+                  className="input tabular-nums" placeholder="06 12 34 56 78"
                   readOnly={clientMode === 'existing' && !!selectedClient} />
               </div>
               <div>
@@ -506,7 +506,7 @@ export default function AttestationPage() {
                     }}
                     className="select"
                   >
-                    <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Sélectionner...'}</option>
+                    <option value="">{catalogue.loading && !catalogue.marques.length ? 'Chargement…' : 'Choisir la marque…'}</option>
                     {catalogue.marques.map(m => <option key={m} value={m}>{m}</option>)}
                     <option value="__autre__">Autre (saisie manuelle)</option>
                   </select>
@@ -542,7 +542,7 @@ export default function AttestationPage() {
                   onChange={e => updateForm('etat', e.target.value)}
                   className="select"
                 >
-                  <option value="">Sélectionner...</option>
+                  <option value="">Choisir l’état…</option>
                   {etats.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
               </div>
@@ -563,7 +563,7 @@ export default function AttestationPage() {
                 value={form.motif}
                 onChange={e => updateForm('motif', e.target.value)}
                 className="textarea min-h-[96px] resize-none"
-                placeholder="Expliquez pourquoi l'appareil ne peut pas être réparé..."
+                placeholder="Expliquez pourquoi l'appareil ne peut pas être réparé"
               />
             </div>
             <div>
@@ -574,7 +574,7 @@ export default function AttestationPage() {
                 value={form.compte_rendu}
                 onChange={e => updateForm('compte_rendu', e.target.value)}
                 className="textarea min-h-[120px] resize-none"
-                placeholder="Détails techniques : tests effectués, composants vérifiés..."
+                placeholder="Détails techniques : tests effectués, composants vérifiés…"
               />
             </div>
           </div>
@@ -582,7 +582,8 @@ export default function AttestationPage() {
           {/* Generate button */}
           <button type="button" onClick={handleGenerate}
             disabled={loading || !form.nom || !form.marque || !form.modele || !form.motif}
-            className="btn-primary btn-lg btn-block">
+            aria-busy={loading || undefined}
+            className={`${htmlPreview ? 'btn-secondary' : 'btn-primary'} btn-lg btn-block`}>
             {loading ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <FileText aria-hidden="true" />}
             Générer l'attestation
           </button>
@@ -610,7 +611,7 @@ export default function AttestationPage() {
                   <FileText aria-hidden="true" />
                 </div>
                 <p className="t-h2">Aucun aperçu</p>
-                <p className="t-body text-slate-500 max-w-sm">Remplissez le formulaire et cliquez sur "Générer"</p>
+                <p className="t-body text-slate-500 max-w-sm">Remplissez le formulaire puis « Générer l’attestation » : l’aperçu s’affiche ici.</p>
               </div>
             )}
           </div>
@@ -637,7 +638,7 @@ export default function AttestationPage() {
                       a.click();
                       URL.revokeObjectURL(url);
                       toast.success('PDF téléchargé');
-                    } catch { toast.error('Erreur PDF'); }
+                    } catch { toast.error('Téléchargement du PDF impossible'); }
                   }}
                   className="btn-secondary flex-1"
                 >
@@ -664,22 +665,22 @@ export default function AttestationPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <label htmlFor="attestation-email-envoi" className="sr-only">Email du client</label>
+                  <label htmlFor="attestation-email-envoi" className="sr-only">E-mail du client</label>
                   <input id="attestation-email-envoi" maxLength={255} type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    className="input flex-1 min-w-0" placeholder="Email du client" />
+                    className="input flex-1 min-w-0" placeholder="E-mail du client" />
                   <button type="button" onClick={handleSendEmail} disabled={!email || emailSent}
-                    className={`shrink-0 ${emailSent ? 'btn-success' : 'btn-secondary'}`}>
-                    {emailSent ? <Check aria-hidden="true" /> : <Mail aria-hidden="true" />}
-                    {emailSent ? 'Envoyé' : 'Email'}
+                    className="btn-secondary shrink-0">
+                    {emailSent ? <Check className="text-emerald-700" aria-hidden="true" /> : <Mail aria-hidden="true" />}
+                    {emailSent ? 'Envoyé' : 'Envoyer'}
                   </button>
                 </div>
               </div>
 
               {/* WhatsApp */}
               <div className="flex gap-2">
-                <label htmlFor="attestation-tel-envoi" className="sr-only">Tél du client</label>
+                <label htmlFor="attestation-tel-envoi" className="sr-only">Téléphone du client</label>
                 <input id="attestation-tel-envoi" maxLength={20} type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
-                  className="input flex-1 min-w-0 tabular-nums" placeholder="Tél du client" />
+                  className="input flex-1 min-w-0 tabular-nums" placeholder="Téléphone du client" />
                 <button type="button" onClick={handleWhatsApp} disabled={!telephone}
                   className="btn-whatsapp shrink-0">
                   <MessageCircle aria-hidden="true" /> WhatsApp

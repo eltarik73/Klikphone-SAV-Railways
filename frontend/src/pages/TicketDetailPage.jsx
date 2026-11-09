@@ -735,9 +735,9 @@ function RestitutionModal({ ticket, reste, dejaApplique = 0, fidelite, devisRefu
             {paiement === 'non_paye' && (
               <div className="pl-3">
                 <label htmlFor={motifId} className="input-label">Motif (obligatoire)</label>
-                <textarea id={motifId} ref={motifRef} value={motif} onChange={e => setMotif(e.target.value)} rows={2}
+                <textarea id={motifId} ref={motifRef} value={motif} onChange={e => setMotif(e.target.value)} rows={3}
                   aria-required="true" aria-invalid={motifManquant && erreur?.code === 'motif_requis' ? true : undefined}
-                  className="input resize-none !min-h-[72px]" placeholder="Ex : règle demain, paiement en attente…" />
+                  className="input textarea-sm resize-none" placeholder="Ex : règle demain, paiement en attente…" />
               </div>
             )}
           </fieldset>
@@ -2675,7 +2675,7 @@ function TicketDetail({ id }) {
                   ].map(({ label, value, mono }) => (
                     <div key={label} className="min-w-0">
                       <p className="t-caption mb-0.5">{label}</p>
-                      <p className={`font-medium text-slate-900 break-words ${mono ? 'font-mono tabular-nums text-[13px]' : ''}`}>{value || '—'}</p>
+                      <p className={`font-medium text-slate-900 break-words ${mono ? 't-mono' : ''}`}>{value || '—'}</p>
                     </div>
                   ))}
                 </div>
@@ -2775,12 +2775,12 @@ function TicketDetail({ id }) {
                 />
               </div>
               {/* Le symptôme reste le motif du client ; le forfait vit dans les lignes de prix */}
-              <div onBlur={finSaisieAppareil}><AutocompleteField label="Panne (motif client)" categorie="panne" value={deviceForm.panne} onChange={v => updateDeviceForm({ panne: v })} onSelect={s => { updateDeviceForm({ panne: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie..." /></div>
+              <div onBlur={finSaisieAppareil}><AutocompleteField label="Panne (motif client)" categorie="panne" value={deviceForm.panne} onChange={v => updateDeviceForm({ panne: v })} onSelect={s => { updateDeviceForm({ panne: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Écran cassé, Batterie…" /></div>
               <div>
                 <label htmlFor={`${uid}-imei`} className="input-label">IMEI</label>
                 <input id={`${uid}-imei`} data-scan-target="imei" inputMode="numeric" value={deviceForm.imei} onChange={e => updateDeviceForm({ imei: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input font-mono tabular-nums" autoComplete="off" />
               </div>
-              <div onBlur={finSaisieAppareil}><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => updateDeviceForm({ panne_detail: v })} onSelect={s => { updateDeviceForm({ panne_detail: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Détails supplémentaires..." /></div>
+              <div onBlur={finSaisieAppareil}><AutocompleteField label="Détail panne" categorie="detail_panne" value={deviceForm.panne_detail} onChange={v => updateDeviceForm({ panne_detail: v })} onSelect={s => { updateDeviceForm({ panne_detail: s.value }, { wait: 0 }); finSaisieAppareil(); }} enabled={autocompletionEnabled} placeholder="Détails supplémentaires…" /></div>
               <div>
                 <label htmlFor={`${uid}-pin`} className="input-label">Code PIN</label>
                 <input id={`${uid}-pin`} value={deviceForm.pin} onChange={e => updateDeviceForm({ pin: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input font-mono tracking-widest" maxLength={10} autoComplete="off" />
@@ -2791,7 +2791,7 @@ function TicketDetail({ id }) {
               </div>
               <div className="col-span-2 sm:col-span-3">
                 <label htmlFor={`${uid}-notes-client`} className="input-label">Note client</label>
-                <textarea id={`${uid}-notes-client`} value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input resize-none !min-h-[72px]" rows={2} />
+                <textarea id={`${uid}-notes-client`} value={deviceForm.notes_client} onChange={e => updateDeviceForm({ notes_client: e.target.value })} onBlur={flushSilencieux(deviceSave)} className="input textarea-sm resize-none" rows={3} />
               </div>
               {(() => {
                 const modelePret = String(deviceForm.telephone_pret || '').trim();
@@ -3984,7 +3984,7 @@ function TicketDetail({ id }) {
                 value={retourSAVForm.panne}
                 onChange={e => setRetourSAVForm(f => ({ ...f, panne: e.target.value }))}
                 className="input"
-                placeholder="Ex: Même panne réapparue, écran décollé..."
+                placeholder="Ex: Même panne réapparue, écran décollé…"
                 aria-required="true"
                 autoFocus
               />
@@ -3997,7 +3997,7 @@ function TicketDetail({ id }) {
                 onChange={e => setRetourSAVForm(f => ({ ...f, panne_detail: e.target.value }))}
                 className="input"
                 rows={3}
-                placeholder="Précisions complémentaires..."
+                placeholder="Précisions complémentaires…"
               />
             </div>
           </div>

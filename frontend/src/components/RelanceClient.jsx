@@ -116,13 +116,13 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !envoi) { e.stopPropagation(); onCancel?.(); }
       }}
-      className="mt-3 basis-full rounded-xl border border-brand-200 bg-brand-50/50 p-3 sm:p-4">
+      className="mt-3 basis-full rounded-lg border border-slate-200 bg-slate-50 p-3 sm:p-4">
       <div className="flex items-start gap-2">
         <label htmlFor={messageId} className="flex-1 t-label pt-2">
           Message de relance{Number.isFinite(Number(jours)) ? ` (J+${jours})` : ''}
         </label>
         <button type="button" onClick={onCancel} disabled={!!envoi} aria-label={`Fermer la relance ${code}`}
-          className="btn-ghost btn-icon -mr-1 -mt-1 hover:bg-white">
+          className="btn-ghost btn-icon -mr-1 -mt-1">
           <X aria-hidden="true" />
         </button>
       </div>
@@ -172,11 +172,11 @@ export default function RelanceClient({ id, ticket: t, smsServeur = false, onDon
         <label htmlFor={noteId} className="t-label">Note d’appel (facultatif)</label>
         <input id={noteId} type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); relancer('appel'); } }}
-          placeholder="ex. passe samedi, messagerie"
+          placeholder="Par exemple : passe samedi, messagerie"
           className="input min-w-0 flex-1 basis-48" />
         {tel && (
           <a href={`tel:${tel.replace(/[^\d+]/g, '')}`}
-            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-sm font-semibold tabular-nums text-brand-700 underline-offset-2 hover:underline ${FOCUS_RING}`}>
+            className={`inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm font-semibold tabular-nums text-brand-700 underline-offset-2 hover:underline ${FOCUS_RING}`}>
             <Phone className="h-4 w-4" aria-hidden="true" /> {libelleJoignable(t)}
           </a>
         )}

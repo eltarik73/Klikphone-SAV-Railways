@@ -7,12 +7,8 @@ import api from '../lib/api';
 import { useToast } from '../components/Toast';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import PrintPreview from '../components/PrintPreview';
-import {
-  FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy,
-  Send, CheckCircle, XCircle, ArrowRightCircle, Printer,
-  Loader2, X, ChevronDown, Package, Euro, AlertTriangle,
-  BarChart3, Clock, TrendingUp, User, Phone,
-} from 'lucide-react';
+import CarteChiffres from '../components/CarteChiffres';
+import { FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy, Send, CheckCircle, XCircle, ArrowRightCircle, Printer, Loader2, X, ChevronDown, Package, Euro, AlertTriangle, BarChart3, User, Phone } from 'lucide-react';
 
 const STATUTS = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Converti'];
 // Badges du système : la couleur ne porte que le statut (bleu = envoyé, vert = accepté, rouge = refusé, violet = converti)
@@ -388,33 +384,21 @@ export default function DevisPage() {
         </div>
       </div>
 
-      {/* Stats cards : grille rendue dès le premier affichage (valeurs en squelette), la liste ne saute pas */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6" aria-busy={!stats}>
-        {[
-          { cle: 'total', label: 'Total', icon: FileText, valeur: stats?.total || 0 },
-          { cle: 'acceptes', label: 'Acceptés', icon: CheckCircle, valeur: stats?.acceptes || 0, iconClass: 'bg-emerald-50 text-emerald-700' },
-          { cle: 'envoyes', label: 'En attente', icon: Clock, valeur: stats?.envoyes || 0 },
-          { cle: 'ca', label: 'CA Accepté', icon: TrendingUp, valeur: `${fp(stats?.ca_accepte)} €`, montant: true },
-        ].map(({ cle, label, icon: Icone, valeur, iconClass = '', montant }) => (
-          <div key={cle} className="kpi-card">
-            {/* Montant : sans icône sous sm, pour que « 12345,67 € » tienne dans la demi-largeur */}
-            <div className={`kpi-icon ${iconClass} ${montant ? 'hidden sm:flex' : ''}`} aria-hidden="true"><Icone /></div>
-            <div className="min-w-0">
-              {stats
-                ? <p className={`kpi-value ${montant ? 'whitespace-nowrap text-xl sm:text-2xl' : ''}`}>{valeur}</p>
-                : <p className="kpi-value" aria-hidden="true"><span className="skeleton-line block w-14 h-6" /></p>}
-              <p className="kpi-label">{label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Chiffres des devis : une seule carte à colonnes (plus de rangée de cartes identiques à icône) ;
+          rendue dès le premier affichage (valeurs en squelette), la liste ne saute pas */}
+      <CarteChiffres label="Chiffres des devis" chargement={!stats} colonnes={{ base: 2, xl: 4 }} className="mb-6" chiffres={[
+        { cle: 'total', label: 'Total', valeur: stats?.total || 0 },
+        { cle: 'acceptes', label: 'Acceptés', valeur: stats?.acceptes || 0 },
+        { cle: 'envoyes', label: 'En attente de réponse', valeur: stats?.envoyes || 0 },
+        { cle: 'ca', label: 'CA des devis acceptés', valeur: `${fp(stats?.ca_accepte)} €`, montant: true },
+      ]} />
 
       {/* Search + Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
           <input type="search" value={searchInput} onChange={e => setSearchInput(e.target.value)}
-            placeholder="Rechercher par nom, téléphone, numéro..."
+            placeholder="Rechercher par nom, téléphone, numéro…"
             aria-label="Rechercher un devis"
             className="input pl-9 min-h-11" />
         </div>
@@ -526,13 +510,13 @@ export default function DevisPage() {
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                       <input value={clientQuery}
                         onChange={e => setClientQuery(e.target.value)}
-                        placeholder="Nom, prénom ou téléphone..."
+                        placeholder="Nom, prénom ou téléphone…"
                         aria-label="Rechercher un client"
                         className="input pl-9 pr-9" />
                       {clientSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 motion-safe:animate-spin text-brand-600" aria-hidden="true" />}
 
                       {showClientDropdown && clientResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-200 z-50 max-h-52 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-md border border-slate-200 z-50 max-h-52 overflow-y-auto">
                           {clientResults.map(c => (
                             <button key={c.id} type="button" onClick={() => selectClient(c)}
                               className="w-full flex items-center gap-3 px-3 min-h-11 py-1.5 hover:bg-slate-50 text-left border-b border-slate-100 last:border-0 transition-colors duration-150 focus:outline-none focus-visible:bg-brand-50">
@@ -660,9 +644,9 @@ export default function DevisPage() {
                   <span className="text-slate-600">Total HT</span>
                   <span className="t-num">{fp(totalHT)} €</span>
                 </div>
-                <div className="flex items-center justify-between text-lg font-bold mt-2 pt-2 border-t border-slate-200">
+                <div className="flex items-center justify-between text-lg font-semibold mt-2 pt-2 border-t border-slate-200">
                   <span className="text-slate-900">Total TTC</span>
-                  <span className="text-brand-700 tabular-nums">{fp(totalTTC)} €</span>
+                  <span className="text-slate-900 tabular-nums">{fp(totalTTC)} €</span>
                 </div>
               </div>
 
@@ -670,7 +654,7 @@ export default function DevisPage() {
               <div>
                 <label htmlFor="devis-notes" className="input-label">Notes</label>
                 <textarea id="devis-notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  className="textarea min-h-[80px]" placeholder="Notes internes ou conditions..." />
+                  className="textarea min-h-20" placeholder="Notes internes ou conditions…" />
               </div>
             </div>
 
@@ -756,8 +740,8 @@ export default function DevisPage() {
                 )}
                 <div className="flex justify-between text-sm text-slate-700"><span>Total HT</span><span>{fp(viewDevis.total_ht)} €</span></div>
                 <div className="flex justify-between text-sm text-slate-700"><span>TVA ({fp(viewDevis.tva)}%)</span><span>{fp(Number(viewDevis.total_ttc) - Number(viewDevis.total_ht))} €</span></div>
-                <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t border-slate-200">
-                  <span className="text-slate-900">Total TTC</span><span className="text-brand-700">{fp(viewDevis.total_ttc)} €</span>
+                <div className="flex justify-between text-lg font-semibold mt-2 pt-2 border-t border-slate-200">
+                  <span className="text-slate-900">Total TTC</span><span className="text-slate-900 tabular-nums">{fp(viewDevis.total_ttc)} €</span>
                 </div>
               </div>
 

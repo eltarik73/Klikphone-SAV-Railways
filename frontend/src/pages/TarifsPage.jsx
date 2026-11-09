@@ -294,7 +294,7 @@ function MethodeCalcul({ regles, methode, isAdmin, onModifier }) {
         <h2 id="methode-calcul-titre" className="t-h3">Méthode de calcul</h2>
         {texte
           ? <p className="t-body mt-1 text-slate-800">{texte}</p>
-          : <p className="t-body mt-1 text-slate-500 min-h-[3rem]">Prix client = prix fournisseur HT × TVA + marge selon la pièce, arrondi.</p>}
+          : <p className="t-body mt-1 text-slate-500 min-h-12">Prix client = prix fournisseur HT × TVA + marge selon la pièce, arrondi.</p>}
         {exemple && (
           <p className="t-caption mt-1 tabular-nums">
             Exemple, écran standard acheté 42,00 € HT : {texteCalcul(exemple)}
@@ -1153,11 +1153,11 @@ export default function TarifsPage() {
                       <tr key={d.id} className="table-row">
                         <td className="font-semibold text-slate-900">{d.modele}</td>
                         <td className="table-cell-num">
-                          {d.ecran_prix_vente ? euros(d.ecran_prix_vente) : <span className="text-slate-400 font-normal">—</span>}
+                          {d.ecran_prix_vente ? euros(d.ecran_prix_vente) : <span className="text-slate-500 font-normal">—</span>}
                           {htVisibleListe && d.ecran_prix_ht != null && <div className="table-cell-muted font-normal">achat {Number(d.ecran_prix_ht).toFixed(2).replace('.', ',')} € HT</div>}
                           {m !== null && <div className="text-xs mt-1 font-semibold text-red-700">Marge : {euros(m)} (seuil {euros(contexteFiltres.seuilMarge)})</div>}
                         </td>
-                        <td className="table-cell-num">{d.batterie_prix_vente ? euros(d.batterie_prix_vente) : <span className="text-slate-400 font-normal">—</span>}</td>
+                        <td className="table-cell-num">{d.batterie_prix_vente ? euros(d.batterie_prix_vente) : <span className="text-slate-500 font-normal">—</span>}</td>
                         <td><BadgeDatePrix row={d} seuils={seuils} court /></td>
                       </tr>
                     );

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from './Toast';
+import CarteChiffres from './CarteChiffres';
 import {
   FenetrePrix, REGLES_DEFAUT, SANS_ELEVATION, arrondi9, clavierOnglets, estEcran, euros, fusionnerRegles,
   messageAnnulation, messageErreurPrix, prixClientApple, prixClientPiece, variationTexte,
@@ -194,17 +195,17 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
   // variation_moy / min / max : en euros de prix client ; variation_moy_pct : en %
   const tuiles = surAchat
     ? [
-      { label: 'Prix client qui changent', valeur: client.exact ? client.n : `${client.n} ou plus`, ton: client.n ? 'text-slate-900' : 'text-slate-800',
+      { label: 'Prix client qui changent', valeur: client.exact ? client.n : `${client.n} ou plus`, ton: 'neutre',
         detail: `sur ${modifies} prix d’achat mis à jour` },
-      { label: 'Prix d’achat mis à jour', valeur: modifies, ton: 'text-slate-800', detail: detailAlertes },
-      { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'text-amber-800' },
-      { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'text-slate-800', detail: detailIgnores },
+      { label: 'Prix d’achat mis à jour', valeur: modifies, ton: 'neutre', detail: detailAlertes },
+      { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'attention' },
+      { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'neutre', detail: detailIgnores },
     ]
     : [
-      { label: 'Prix qui changeraient', valeur: modifies, ton: modifies ? 'text-slate-900' : 'text-slate-800', detail: detailAlertes },
-      { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'text-slate-800', detail: detailIgnores },
-      { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'text-amber-800' },
-      { label: 'Variation moyenne', valeur: modifies ? ecartEuros(resultat.variation_moy) : '—', ton: 'text-slate-800',
+      { label: 'Prix qui changeraient', valeur: modifies, ton: 'neutre', detail: detailAlertes },
+      { label: 'Inchangés', valeur: resultat.inchanges ?? '—', ton: 'neutre', detail: detailIgnores },
+      { label: 'Verrouillés (ne bougent pas)', valeur: resultat.verrouilles ?? 0, ton: 'attention' },
+      { label: 'Variation moyenne', valeur: modifies ? ecartEuros(resultat.variation_moy) : '—', ton: 'neutre',
         detail: modifies
           ? [resultat.variation_moy_pct != null ? pourcent(resultat.variation_moy_pct) : null,
              resultat.variation_min != null ? `de ${ecartEuros(resultat.variation_min)} à ${ecartEuros(resultat.variation_max)}` : null]
@@ -216,7 +217,7 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
     <section aria-label={titre} className="mt-4">
       <h3 className="t-h3 mb-2">{titre}</h3>
       {ajustement && modifies > 0 && (
-        <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-brand-800" role="status">
+        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-slate-800" role="status">
           <p className="text-sm font-semibold">
             Vous demandez {texteAjustement(ajustement)}{surAchat ? ' sur le prix d’achat HT' : ''}. Effet réel sur le prix
             client : {pourcent(resultat.variation_moy_pct)} en moyenne ({ecartEuros(resultat.variation_moy)}),
@@ -225,14 +226,8 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
           {note && <p className="mt-0.5 text-sm">{note}</p>}
         </div>
       )}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2" role="status">
-        {tuiles.map((t) => (
-          <div key={t.label} className="card-section px-3 py-2">
-            <div className="t-caption">{t.label}</div>
-            <div className={`text-xl font-semibold tabular-nums leading-tight ${t.ton}`}>{t.valeur}</div>
-            {t.detail && <div className="t-caption">{t.detail}</div>}
-          </div>
-        ))}
+      <div role="status">
+        <CarteChiffres label="Résumé de l’aperçu" dense colonnes={{ base: 2, lg: 4 }} chiffres={tuiles} />
       </div>
       {modifies === 0 ? (
         <p className="mt-3 text-sm text-slate-700">Aucun prix ne changerait avec ces réglages.</p>
@@ -284,8 +279,8 @@ export function ApercuSimulation({ resultat, titre = 'Aperçu avant application'
         </div>
       )}
       {verrouillesListe.length > 0 && (
-        <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          <summary className="cursor-pointer min-h-[44px] flex items-center font-semibold">
+        <details className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <summary className="cursor-pointer min-h-11 flex items-center font-semibold">
             Voir les {resultat.verrouilles} prix verrouillés (non modifiés)
           </summary>
           <ul className="mt-1 columns-1 sm:columns-2 gap-4">
@@ -323,15 +318,15 @@ export function ResultatApplication({ resultat, sensible, onAnnule }) {
     }
   }
   return (
-    <div role="status" className={`mt-4 rounded-lg border px-4 py-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+    <div role="status" className={`mt-4 rounded-md border px-4 py-3 text-sm ${annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
       <p className="font-semibold flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
         {annule ? (annule.ton === 'warning' ? annule.texte : 'Changement annulé.') : `${n} prix mis à jour.`}
         {!annule && Number(resultat.verrouilles) > 0 && ` ${resultat.verrouilles} prix verrouillés n’ont pas bougé.`}
       </p>
       {!annule && verrouillesListe.length > 0 && (
-        <details className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1 text-amber-800">
-          <summary className="cursor-pointer min-h-[44px] flex items-center font-semibold">
+        <details className="mt-2 rounded-md border border-amber-200 bg-white px-3 py-1 text-amber-800">
+          <summary className="cursor-pointer min-h-11 flex items-center font-semibold">
             {`Lignes verrouillées, non modifiées (${Math.max(verrouillesListe.length, Number(resultat.verrouilles) || 0)})`}
           </summary>
           <ul className="mb-2 columns-1 sm:columns-2 gap-4">
@@ -406,7 +401,7 @@ function ConfirmationAlertes({ alertes, confirme, onConfirme }) {
   const id = useId();
   if (!(alertes > 0)) return null;
   return (
-    <label htmlFor={id} className="callout callout-warning items-start min-h-[44px] cursor-pointer">
+    <label htmlFor={id} className="callout callout-warning items-start min-h-11 cursor-pointer">
       <input
         id={id}
         type="checkbox"
@@ -616,7 +611,7 @@ function OngletMarges({ sensible, onApplique }) {
 
   return (
     <div>
-      <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
         <p className="font-semibold">Prix client = prix d’achat HT × {String((verif.regles || REGLES_DEFAUT).tva).replace('.', ',')} (TVA) + marge, arrondi au 9 supérieur.</p>
         <p className="mt-0.5">{exemple}</p>
       </div>
@@ -629,7 +624,7 @@ function OngletMarges({ sensible, onApplique }) {
       </fieldset>
 
       <details className="group mt-4 rounded-lg border border-slate-200 p-4">
-        <summary className="cursor-pointer min-h-[44px] flex items-center gap-1.5 t-h3 text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />Seuils d’alerte</summary>
+        <summary className="cursor-pointer min-h-11 flex items-center gap-1.5 t-h3 text-slate-900 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-500 motion-safe:transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />Seuils d’alerte</summary>
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {CHAMPS_ALERTE.map((c) => champ(c, c.unite))}
         </div>
@@ -962,7 +957,7 @@ export function FenetreRecalcul({ open, onClose, sensible = SANS_ELEVATION, onAp
       pied={pied}
     >
       {fait ? (
-        <div role="status" className={`rounded-lg border px-4 py-3 text-sm ${execution.annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : execution.annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+        <div role="status" className={`rounded-md border px-4 py-3 text-sm ${execution.annule?.ton === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : execution.annule ? 'border-slate-200 bg-slate-50 text-slate-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
           <p className="font-semibold">{execution.annule ? (execution.annule.ton === 'warning' ? execution.annule.texte : 'Recalcul annulé.') : 'Recalcul terminé.'}</p>
           {!execution.annule && (
             <ul className="mt-1 space-y-0.5">
@@ -1164,7 +1159,7 @@ export function AjoutPiecePrix({ open, onClose, sensible = SANS_ELEVATION, regle
           <legend className="px-1 t-label">Prix</legend>
           <div className="flex flex-wrap gap-2">
             {[['ht', 'Prix d’achat HT (prix client calculé)'], ['client', 'Prix client fixé à la main']].map(([v, l]) => (
-              <label key={v} className={`choice ${form.mode === v ? 'border-brand-300 bg-brand-50 text-brand-800' : ''}`}>
+              <label key={v} className="choice has-[:checked]:border-brand-600 has-[:checked]:text-slate-900">
                 <input type="radio" name={`${idBase}-mode`} value={v} checked={form.mode === v} onChange={maj('mode')} className="radio" />
                 {l}
               </label>
@@ -1261,7 +1256,7 @@ export function AjustementColonne({ open, onClose, sensible = SANS_ELEVATION, ci
       icone={SlidersHorizontal}
     >
       {nonEnregistrees > 0 && (
-        <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div role="alert" className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <p className="font-semibold flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
             {nonEnregistrees} ligne{nonEnregistrees > 1 ? 's' : ''} modifiée{nonEnregistrees > 1 ? 's' : ''} pas encore enregistrée{nonEnregistrees > 1 ? 's' : ''}.

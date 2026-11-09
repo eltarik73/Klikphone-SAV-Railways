@@ -3,14 +3,14 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { annoncerModeAdmin } from '../components/AdminLoginModal';
 import { useApi } from '../hooks/useApi';
+import CarteChiffres from '../components/CarteChiffres';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import {
-  Lock, LogOut, TrendingUp, TrendingDown, Minus,
-  BarChart3, Users, Clock, Receipt, UserPlus, Target, Wrench,
-  Calendar, ChevronUp, ChevronDown, Award, Smartphone, Tag,
+  Lock, LogOut, Minus, BarChart3,
+  Calendar, ChevronUp, ChevronDown, Smartphone, Tag,
   Home, Search, User,
 } from 'lucide-react';
 
@@ -28,41 +28,34 @@ const PERIOD_OPTIONS = [
   { label: 'Personnalisé', value: 'custom', gran: 'jour' },
 ];
 
-const KPI_ICONS = {
-  tickets_ouverts: Wrench,
-  tickets_periode: Receipt,
-  clotures: BarChart3,
-  ca_encaisse: TrendingUp,
-  ca_moyen: Target,
-  temps_moyen: Clock,
-  taux_conversion: Award,
-  nouveaux_clients: UserPlus,
-};
-
 // Texte de légende des graphiques en slate-600 (recharts le colore sinon avec la couleur de la série)
 const legendeTexte = (value) => <span className="text-slate-600">{value}</span>;
 const AUTH_KEY = 'kp_admin_auth';
 
 // ─── Helpers ──────────────────────────────────────────────
+// Formats français (Intl) : « 1 234,50 € », « 2 h 30 min », « 12 % »
 function formatEuro(n) {
-  if (n === null || n === undefined) return '0,00 €';
-  return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2 }) + ' €';
+  return (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
 function formatTemps(heures) {
   if (!heures && heures !== 0) return '—';
   const h = Math.floor(heures);
   const m = Math.round((heures - h) * 60);
-  if (h === 0) return `${m}min`;
-  return `${h}h${m > 0 ? ` ${m}min` : ''}`;
+  if (h === 0) return `${m} min`;
+  return `${h} h${m > 0 ? ` ${m} min` : ''}`;
 }
+
+// L'API envoie 12 pour 12 %
+const fmtPourcent = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 });
+const pourcent = (v) => fmtPourcent.format((Number(v) || 0) / 100);
 
 function formatKpiValue(value, format) {
   switch (format) {
     case 'euro': return formatEuro(value);
     case 'heures': return formatTemps(value);
-    case 'pct': return `${value}%`;
-    default: return String(value);
+    case 'pct': return pourcent(value);
+    default: return typeof value === 'number' ? value.toLocaleString('fr-FR') : String(value ?? '—');
   }
 }
 
@@ -108,12 +101,16 @@ function DarkTooltip({ active, payload, label }) {
   );
 }
 
-// Squelettes aux dimensions finales des sections (pas de décalage à l'arrivée des données, CLS)
+// Squelette aux dimensions finales de la carte des indicateurs (pas de décalage à l'arrivée des données, CLS) :
+// mêmes cellules que la carte chargée, libellés et valeurs encore inconnus
+const INDICATEURS_EN_CHARGEMENT = [0, 1, 2, 3, 4, 5, 6, 7].map((cle) => ({ cle }));
+
 function Spinner() {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3" role="status" aria-label="Chargement du reporting">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <div key={i} className="skeleton-card h-[127px]" aria-hidden="true" />)}
-    </div>
+    <>
+      <CarteChiffres label="Indicateurs du reporting" chargement colonnes={{ base: 2, sm: 4 }} chiffres={INDICATEURS_EN_CHARGEMENT} />
+      <p className="sr-only" role="status">Chargement du reporting</p>
+    </>
   );
 }
 
@@ -140,12 +137,13 @@ function TrendBadge({ trend }) {
   if (trend === null || trend === undefined) return null;
   const isUp = trend > 0;
   const isFlat = trend === 0;
-  const color = isFlat ? 'badge-neutral' : isUp ? 'badge-success' : 'badge-danger';
+  const color = isFlat ? 'text-slate-600' : isUp ? 'text-emerald-700' : 'text-red-700';
   const Icon = isFlat ? Minus : isUp ? ChevronUp : ChevronDown;
   return (
-    <span className={`kpi-delta tabular-nums ${color}`}>
+    <span className={`inline-flex items-center gap-0.5 text-xs font-medium tabular-nums ${color}`}>
       <Icon className="w-3 h-3" aria-hidden="true" />
-      {Math.abs(trend)}%
+      <span className="sr-only">{isFlat ? 'Stable' : isUp ? 'En hausse de' : 'En baisse de'} </span>
+      {pourcent(Math.abs(trend))}
     </span>
   );
 }
@@ -176,7 +174,7 @@ function PeriodSelector({ period, setPeriod, customStart, setCustomStart, custom
         <div className="flex items-center gap-2">
           <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} aria-label="Date de début"
             className="input w-auto" />
-          <span className="text-slate-500 text-sm" aria-hidden="true">&rarr;</span>
+          <span className="text-slate-500 text-sm" aria-hidden="true">→</span>
           <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} aria-label="Date de fin"
             className="input w-auto" />
         </div>
@@ -245,7 +243,7 @@ function AdminLogin({ onLogin }) {
               className="btn-primary btn-lg btn-block">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full motion-safe:animate-spin" aria-hidden="true" /> Connexion...
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full motion-safe:animate-spin" aria-hidden="true" /> Connexion…
                 </span>
               ) : 'Se connecter'}
             </button>
@@ -309,7 +307,7 @@ function AdminDashboard({ onLogout }) {
       </div>
       {/* Period filter */}
       <div className="flex items-center gap-2 mb-6">
-        <Calendar className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+        <Calendar className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
         <PeriodSelector period={period} setPeriod={setPeriod}
           customStart={customStart} setCustomStart={setCustomStart}
           customEnd={customEnd} setCustomEnd={setCustomEnd} />
@@ -320,58 +318,38 @@ function AdminDashboard({ onLogout }) {
         {/* ═══ Section 1: KPI Cards ═══ */}
         <section>
           {loading && kpis.length === 0 ? <Spinner /> : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
-              {kpis.map((kpi) => {
-                const Icon = KPI_ICONS[kpi.id] || BarChart3;
-                return (
-                  <div key={kpi.id} className="kpi-card flex-col items-stretch gap-0">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="kpi-icon">
-                        <Icon aria-hidden="true" />
-                      </div>
-                      <TrendBadge trend={kpi.trend} />
-                    </div>
-                    <p className="kpi-value">
-                      {formatKpiValue(kpi.value, kpi.format)}
-                    </p>
-                    <p className="kpi-label">{kpi.label}</p>
-                  </div>
-                );
-              })}
-            </div>
+            <CarteChiffres label="Indicateurs du reporting" colonnes={{ base: 2, sm: 4 }} chiffres={kpis.map((kpi) => ({
+              cle: kpi.id,
+              label: kpi.label,
+              valeur: formatKpiValue(kpi.value, kpi.format),
+              variation: <TrendBadge trend={kpi.trend} />,
+            }))} />
           )}
         </section>
 
-        {/* ═══ Section 1b: Tracking clics vitrine tarifs (squelette réservé pendant la lecture) ═══ */}
-        {!tracking && trackingLoading && (
-          <section aria-hidden="true">
-            <div className="skeleton h-[22px] w-72 max-w-full mb-4" />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[0, 1, 2].map((i) => <div key={i} className="skeleton-card h-[99px] sm:h-[107px]" />)}
-            </div>
-          </section>
-        )}
-        {tracking && (
+        {/* ═══ Section 1b: Tracking clics vitrine tarifs (mêmes cellules en squelette pendant la lecture) ═══ */}
+        {(tracking || trackingLoading) && (
           <section>
             <h2 className="t-h2 mb-4 flex items-center gap-2">
-              <Tag className="w-4 h-4 text-slate-400" aria-hidden="true" /> Vitrine tarifs téléphones <span className="t-caption">— 30 derniers jours</span>
+              <Tag className="w-4 h-4 text-slate-500" aria-hidden="true" /> Vitrine tarifs téléphones <span className="t-caption">— 30 derniers jours</span>
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="card card-body">
-                <p className="t-caption mb-1">Clics 30 jours</p>
-                <p className="kpi-value">{tracking.total || 0}</p>
-                <p className="t-caption mt-1">
-                  {tracking.unique_visitors || 0} visiteur{(tracking.unique_visitors || 0) > 1 ? 's' : ''} unique{(tracking.unique_visitors || 0) > 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="card card-body">
-                <p className="t-caption mb-1">Aujourd'hui</p>
-                <p className="kpi-value">{tracking.today || 0}</p>
-                <p className="t-caption mt-1">clic{(tracking.today || 0) > 1 ? 's' : ''} sur « Voir nos tarifs »</p>
-              </div>
-              <div className="card card-body">
-                <p className="t-caption mb-2">Par source</p>
-                {(tracking.by_source || []).length === 0 ? (
+            <CarteChiffres label="Chiffres de la vitrine tarifs" chargement={!tracking} colonnes={{ base: 1, sm: 3 }} chiffres={[
+              {
+                cle: 'total',
+                label: 'Clics sur 30 jours',
+                valeur: tracking?.total || 0,
+                detail: `${tracking?.unique_visitors || 0} visiteur${(tracking?.unique_visitors || 0) > 1 ? 's' : ''} unique${(tracking?.unique_visitors || 0) > 1 ? 's' : ''}`,
+              },
+              {
+                cle: 'jour',
+                label: "Aujourd'hui",
+                valeur: tracking?.today || 0,
+                detail: `clic${(tracking?.today || 0) > 1 ? 's' : ''} sur « Voir nos tarifs »`,
+              },
+              {
+                cle: 'source',
+                label: 'Par source',
+                contenu: (tracking?.by_source || []).length === 0 ? (
                   <p className="text-sm text-slate-500">Aucun clic pour le moment</p>
                 ) : (
                   <div className="space-y-1">
@@ -386,9 +364,9 @@ function AdminDashboard({ onLogout }) {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
-            </div>
+                ),
+              },
+            ]} />
           </section>
         )}
 
@@ -427,7 +405,7 @@ function AdminDashboard({ onLogout }) {
         {/* ═══ Section 3: Performance Accueil ═══ */}
         {perfAccueil.length > 0 && (
           <section>
-            <h2 className="t-h2 mb-4">Performance Accueil</h2>
+            <h2 className="t-h2 mb-4">Performance de l’accueil</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {perfAccueil.map((p) => {
                 return (
@@ -458,7 +436,7 @@ function AdminDashboard({ onLogout }) {
 
         {/* ═══ Section 4: Performance Techniciens ═══ */}
         <section>
-          <h2 className="t-h2 mb-4">Performance Techniciens</h2>
+          <h2 className="t-h2 mb-4">Performance des techniciens</h2>
           <ChartCard title="Classement des techniciens">
             {perfTech.length ? (
               <div className="overflow-x-auto -mx-4 sm:-mx-5">
@@ -467,8 +445,8 @@ function AdminDashboard({ onLogout }) {
                     <tr className="border-b border-slate-100">
                       <th className="table-header w-10">#</th>
                       <th className="table-header">Technicien</th>
-                      <th className="table-header text-center">Réparations</th>
-                      <th className="table-header text-center">Temps moy.</th>
+                      <th className="table-header text-right">Réparations</th>
+                      <th className="table-header text-right">Temps moy.</th>
                       <th className="table-header text-right">CA généré</th>
                     </tr>
                   </thead>
@@ -480,21 +458,16 @@ function AdminDashboard({ onLogout }) {
                         </td>
                         <td>
                           <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center"
-                              style={{ backgroundColor: (t.couleur || '#7C3AED') + '20' }} aria-hidden="true">
-                              <span className="text-xs font-bold text-slate-900">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100" aria-hidden="true">
+                              <span className="text-xs font-semibold text-slate-700">
                                 {(t.technicien || '?')[0].toUpperCase()}
                               </span>
                             </div>
                             <span className="text-sm font-medium text-slate-900">{t.technicien}</span>
                           </div>
                         </td>
-                        <td className="text-center">
-                          <span className="badge badge-brand tabular-nums">
-                            {t.reparations}
-                          </span>
-                        </td>
-                        <td className="text-center text-sm text-slate-700 tabular-nums">{formatTemps(t.temps_moyen_h)}</td>
+                        <td className="table-cell-num">{t.reparations}</td>
+                        <td className="text-right text-sm text-slate-700 tabular-nums">{formatTemps(t.temps_moyen_h)}</td>
                         <td className="table-cell-num">{formatEuro(t.ca_genere)}</td>
                       </tr>
                     ))}
@@ -510,14 +483,14 @@ function AdminDashboard({ onLogout }) {
           <h2 className="t-h2 mb-4">Analyses</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Top Pannes */}
-            <ChartCard title="Top 10 Pannes">
+            <ChartCard title="Top 10 des pannes">
               {topPannes.length ? (
                 <div className="space-y-3">
                   {topPannes.map((p, i) => (
                     <div key={i}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm text-slate-700 truncate max-w-[60%]">{p.label}</span>
-                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{p.count} <span className="text-slate-500 font-normal">({p.pct}%)</span></span>
+                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{p.count} <span className="text-slate-500 font-normal">({pourcent(p.pct)})</span></span>
                       </div>
                       <ProgressBar pct={p.pct} />
                     </div>
@@ -527,19 +500,19 @@ function AdminDashboard({ onLogout }) {
             </ChartCard>
 
             {/* Top Modèles */}
-            <ChartCard title="Top 10 Modèles réparés">
+            <ChartCard title="Top 10 des modèles réparés">
               {topModeles.length ? (
                 <div className="space-y-3">
                   {topModeles.map((m, i) => (
                     <div key={i}>
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2 truncate max-w-[60%]">
-                          <Smartphone className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+                          <Smartphone className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
                           <span className="text-sm text-slate-700 truncate">{m.label}</span>
                         </div>
-                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{m.count} <span className="text-slate-500 font-normal">({m.pct}%)</span></span>
+                        <span className="text-sm font-semibold text-slate-900 ml-2 tabular-nums">{m.count} <span className="text-slate-500 font-normal">({pourcent(m.pct)})</span></span>
                       </div>
-                      <ProgressBar pct={m.pct} color="bg-brand-400" />
+                      <ProgressBar pct={m.pct} />
                     </div>
                   ))}
                 </div>
@@ -548,10 +521,6 @@ function AdminDashboard({ onLogout }) {
           </div>
         </section>
 
-        {/* Footer */}
-        <div className="pt-4 pb-8 text-center">
-          <p className="t-caption">Klikphone SAV — Reporting</p>
-        </div>
       </div>
     </div>
   );

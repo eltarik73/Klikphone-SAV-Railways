@@ -4,10 +4,13 @@ import { useAuth } from '../hooks/useAuth';
 import { invalidateCache } from '../hooks/useApi';
 import api from '../lib/api';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
+import CarteChiffres from '../components/CarteChiffres';
+import { euros } from '../components/HistoriquePrix';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
-  Zap, Search, Wrench, Smartphone, Package, Plus, Edit3, Trash2,
-  X, Loader2, Filter, ChevronDown, Eye, EyeOff, Maximize2, Minimize2,
-  Tag, Euro, Battery, Monitor as MonitorIcon, FileText, Ticket,
+  Search, Wrench, Smartphone, Package, Plus, Edit3, Trash2,
+  X, Loader2, Eye, EyeOff, Maximize2, Minimize2, FileText, Ticket,
   Check, ChevronRight,
 } from 'lucide-react';
 
@@ -16,28 +19,9 @@ const fp = (v) => {
   return Number(v).toFixed(2).replace('.', ',');
 };
 
-const BRAND_COLORS = {
-  Apple: '#18181b', Samsung: '#2563eb', Xiaomi: '#ea580c', Huawei: '#dc2626',
-  Honor: '#6d28d9', Google: '#16a34a', Oppo: '#059669', OnePlus: '#dc2626',
-  Motorola: '#0891b2', Nothing: '#18181b',
-};
-
-const COMPOSANT_COLORS = {
-  'Écran': '#3B82F6', 'Ecran': '#3B82F6',
-  'Batterie': '#F59E0B',
-  'Connecteur': '#6366F1', 'Connecteur de charge': '#6366F1',
-  'Caméra': '#EC4899', 'Camera': '#EC4899', 'Caméra arrière': '#EC4899', 'Caméra avant': '#EC4899',
-  'Vitre': '#14B8A6', 'Vitre arrière': '#14B8A6',
-  'Face ID': '#EF4444',
-  'Désoxydation': '#0EA5E9',
-};
-
-// Badge de qualité : classes du système (fond -50 / texte -700), jamais de blanc sur couleur vive
+// Badge de qualité : « Original » en information (bleu), les autres qualités neutres — le violet reste à l'action
 const QUALITE_BADGE = {
-  'Original': 'badge-success',
-  'Soft OLED': 'badge-info',
-  'Incell': 'badge-brand',
-  'Hard OLED': 'badge-brand',
+  'Original': 'badge-info',
 };
 
 const arrondi = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -66,13 +50,6 @@ export function lignesDevisHT(reparations, tva = 20) {
   const autres = arrondi(lignes.slice(0, -1).reduce((s, l) => s + l.prix_unitaire, 0));
   lignes[lignes.length - 1].prix_unitaire = Math.max(0, arrondi(totalHT - autres));
   return lignes;
-}
-
-function getComposantColor(composant) {
-  for (const [key, color] of Object.entries(COMPOSANT_COLORS)) {
-    if (composant?.toLowerCase().includes(key.toLowerCase())) return color;
-  }
-  return '#64748b';
 }
 
 export default function DevisFlashPage() {
@@ -107,6 +84,12 @@ export default function DevisFlashPage() {
   const [editTelId, setEditTelId] = useState(null);
   const [telForm, setTelForm] = useState(getEmptyTelForm());
   const [telSaving, setTelSaving] = useState(false);
+  const confirmation = useConfirmDialog();
+  const telFormRef = useRef(null);
+  useFocusTrap(telFormRef, showTelForm && !confirmation.ouvert, {
+    initialFocus: '#tel-form-marque',
+    onEscape: () => { if (!telSaving) setShowTelForm(false); },
+  });
 
   function getEmptyTelForm() {
     return { marque: '', modele: '', capacite: '', couleur: '', etat: 'Occasion', prix_achat: 0, prix_vente: 0, imei: '', notes: '' };
@@ -240,11 +223,19 @@ export default function DevisFlashPage() {
     setTelSaving(false);
   };
 
-  const handleDeleteTel = async (id) => {
-    if (!confirm('Supprimer ce téléphone ?')) return;
-    try { await api.deleteTelephoneVente(id); invalidateCache('telephones'); loadTelephones(); } catch (e) {
-      toast.error(`Suppression impossible : ${e?.message || 'erreur inconnue'}`);
-    }
+  const handleDeleteTel = (t) => {
+    const nom = [t.marque, t.modele].filter(Boolean).join(' ') || 'ce téléphone';
+    confirmation.demander({
+      title: `Supprimer le téléphone ${nom} ?`,
+      description: 'Il disparaît de la liste des téléphones en vente. La suppression est définitive.',
+      confirmLabel: 'Supprimer le téléphone',
+      destructive: true,
+      onConfirm: async () => {
+        try { await api.deleteTelephoneVente(t.id); invalidateCache('telephones'); loadTelephones(); } catch (e) {
+          toast.error(`Suppression impossible : ${e?.message || 'erreur inconnue'}`);
+        }
+      },
+    });
   };
 
   const handleToggleStock = async (id, currentStock) => {
@@ -274,12 +265,11 @@ export default function DevisFlashPage() {
   };
 
   const kioskText = kioskMode ? 'text-white' : 'text-slate-900';
-  const kioskSubtext = kioskMode ? 'text-slate-400' : 'text-slate-500';
-  const kioskCard = kioskMode ? 'bg-slate-800/80 border border-slate-700 rounded-xl' : 'card';
-  const kioskFontSize = kioskMode ? 'text-[115%]' : '';
+  const kioskSubtext = kioskMode ? 'text-slate-300' : 'text-slate-500';
+  const kioskCard = kioskMode ? 'bg-slate-800 border border-slate-700 rounded-lg' : 'card';
 
   return (
-    <div className={`page ${kioskMode ? 'fixed inset-0 z-[100] overflow-auto bg-[#0F172A] text-white max-w-none' : 'max-w-[1280px]'} ${kioskFontSize}`}>
+    <div className={`page ${kioskMode ? 'fixed inset-0 z-[100] overflow-auto bg-slate-900 text-white text-lg max-w-none' : 'max-w-[1280px]'}`}>
       {/* Header */}
       <div className="page-header">
         <div>
@@ -287,9 +277,9 @@ export default function DevisFlashPage() {
           <p className={`page-header-subtitle ${kioskSubtext}`}>Consultation rapide des prix de réparation</p>
         </div>
         <div className="page-header-actions">
-          <button type="button" onClick={toggleKiosk} className={kioskMode ? 'btn bg-slate-700 text-white hover:bg-slate-600' : 'btn-secondary'}>
+          <button type="button" onClick={toggleKiosk} className={kioskMode ? 'btn border border-slate-600 bg-slate-800 text-white hover:bg-slate-700' : 'btn-secondary'}>
             {kioskMode ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}
-            {kioskMode ? 'Quitter kiosque' : 'Mode kiosque'}
+            {kioskMode ? 'Quitter le mode kiosque' : 'Mode kiosque'}
           </button>
         </div>
       </div>
@@ -319,7 +309,7 @@ export default function DevisFlashPage() {
             <label htmlFor="devis-flash-recherche" className="sr-only">Rechercher un modèle</label>
             <input id="devis-flash-recherche" value={repQuery}
               onChange={e => { setRepQuery(e.target.value); setSelectedModel(null); setCheckedRepairs(new Set()); }}
-              placeholder="Rechercher un modèle (ex: iPhone 15 Pro, Galaxy S24...)"
+              placeholder="Rechercher un modèle (ex. : iPhone 15 Pro, Galaxy S24…)"
               className={`input input-lg min-h-14 pl-12 pr-14 text-base lg:text-base
                 ${kioskMode ? 'bg-slate-800 border-slate-600 text-white placeholder:text-slate-400 hover:border-slate-500' : ''}`}
               autoFocus />
@@ -334,7 +324,7 @@ export default function DevisFlashPage() {
             {/* Dropdown suggestions */}
             {showDropdown && !selectedModel && repResults.length > 0 && (
               <div ref={dropdownRef}
-                className={`absolute top-full left-0 right-0 mt-2 rounded-xl shadow-lg border z-50 max-h-80 overflow-y-auto
+                className={`absolute top-full left-0 right-0 mt-2 rounded-lg shadow-md border z-50 max-h-80 overflow-y-auto
                   ${kioskMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
                 {repResults.map((m, i) => {
                   const minPrice = Math.min(...m.reparations.map(r => r.prix_vente));
@@ -343,15 +333,11 @@ export default function DevisFlashPage() {
                       className={`w-full flex items-center gap-3 px-4 min-h-14 py-2 text-left transition-colors duration-150 focus:outline-none
                         ${kioskMode ? 'hover:bg-slate-700 focus-visible:bg-slate-700' : 'hover:bg-slate-50 focus-visible:bg-brand-50'}
                         ${i > 0 ? (kioskMode ? 'border-t border-slate-700' : 'border-t border-slate-100') : ''}`}>
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" aria-hidden="true"
-                        style={{ background: (BRAND_COLORS[m.marque] || '#6d28d9') + '15' }}>
-                        <Smartphone className="w-5 h-5" style={{ color: BRAND_COLORS[m.marque] || '#6d28d9' }} />
-                      </div>
                       <div className="flex-1 min-w-0">
                         <p className={`font-semibold text-sm ${kioskText}`}>{m.marque} {m.modele}</p>
                         <p className={`text-xs ${kioskSubtext}`}>{m.reparations.length} réparation{m.reparations.length > 1 ? 's' : ''} disponible{m.reparations.length > 1 ? 's' : ''}</p>
                       </div>
-                      <span className={`text-sm font-semibold tabular-nums whitespace-nowrap ${kioskText}`}>dès {minPrice}€</span>
+                      <span className={`text-sm font-semibold tabular-nums whitespace-nowrap ${kioskText}`}>dès {euros(minPrice)}</span>
                       <ChevronRight className={`w-4 h-4 ${kioskSubtext}`} aria-hidden="true" />
                     </button>
                   );
@@ -379,7 +365,7 @@ export default function DevisFlashPage() {
               <div className={`empty-state-icon ${kioskMode ? 'bg-slate-800 text-slate-400' : ''}`}>
                 <Package aria-hidden="true" />
               </div>
-              <p className={`t-h2 ${kioskText}`}>Aucun résultat pour "{repQuery}"</p>
+              <p className={`t-h2 ${kioskText}`}>Aucun résultat pour « {repQuery} »</p>
             </div>
           )}
 
@@ -387,17 +373,13 @@ export default function DevisFlashPage() {
           {selectedModel && (
             <div className={`overflow-hidden ${kioskCard}`}>
               {/* Card header */}
-              <div className={`px-4 sm:px-5 py-4 flex items-center gap-4 ${kioskMode ? 'bg-slate-700/50' : 'bg-slate-50 border-b border-slate-100'}`}>
-                <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" aria-hidden="true"
-                  style={{ background: (BRAND_COLORS[selectedModel.marque] || '#6d28d9') + '20' }}>
-                  <Smartphone className="w-6 h-6" style={{ color: BRAND_COLORS[selectedModel.marque] || '#6d28d9' }} />
-                </div>
+              <div className={`px-4 sm:px-5 py-4 border-b ${kioskMode ? 'border-slate-700' : 'border-slate-100'}`}>
                 <div className="min-w-0">
-                  <h2 className={`text-xl font-bold leading-tight ${kioskText}`}>
+                  <h2 className={`text-xl font-semibold leading-tight tracking-tight ${kioskText}`}>
                     {selectedModel.marque} {selectedModel.modele}
                   </h2>
-                  <p className={`text-sm ${kioskSubtext}`}>
-                    {selectedModel.marque} — {selectedModel.reparations.length} réparation{selectedModel.reparations.length > 1 ? 's' : ''} disponible{selectedModel.reparations.length > 1 ? 's' : ''}
+                  <p className={`text-sm mt-0.5 ${kioskSubtext}`}>
+                    {selectedModel.reparations.length} réparation{selectedModel.reparations.length > 1 ? 's' : ''} disponible{selectedModel.reparations.length > 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
@@ -406,7 +388,6 @@ export default function DevisFlashPage() {
               <div className={`divide-y ${kioskMode ? 'divide-slate-700' : 'divide-slate-100'}`}>
                 {selectedModel.reparations.map((r, i) => {
                   const isChecked = checkedRepairs.has(i);
-                  const color = getComposantColor(r.composant);
                   return (
                     <button key={i} type="button"
                       onClick={() => toggleRepair(i)}
@@ -420,9 +401,6 @@ export default function DevisFlashPage() {
                         ${isChecked ? 'bg-brand-600 border-brand-600' : (kioskMode ? 'border-slate-500' : 'border-slate-300')}`} aria-hidden="true">
                         {isChecked && <Check className="w-4 h-4 text-white" />}
                       </div>
-
-                      {/* Color bar */}
-                      <div className="w-1 h-8 rounded-full shrink-0" style={{ background: color }} aria-hidden="true" />
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
@@ -440,8 +418,8 @@ export default function DevisFlashPage() {
                       </div>
 
                       {/* Price */}
-                      <span className={`text-lg font-bold tabular-nums shrink-0 ${isChecked ? (kioskMode ? 'text-brand-300' : 'text-brand-700') : (kioskMode ? 'text-slate-200' : 'text-slate-900')}`}>
-                        {r.prix_vente}€
+                      <span className={`text-lg font-semibold tabular-nums whitespace-nowrap shrink-0 ${kioskMode ? 'text-white' : 'text-slate-900'}`}>
+                        {euros(r.prix_vente)}
                       </span>
                     </button>
                   );
@@ -450,7 +428,7 @@ export default function DevisFlashPage() {
 
               {/* Summary + Actions */}
               {selectedRepairs.length > 0 && (
-                <div className={`px-4 sm:px-5 py-5 ${kioskMode ? 'bg-slate-700/50 border-t border-slate-600' : 'bg-slate-50 border-t border-slate-200'}`}>
+                <div className={`px-4 sm:px-5 py-5 border-t ${kioskMode ? 'border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
                   {/* Selected items */}
                   <div className="mb-4 space-y-1.5">
                     <p className={`t-h3 mb-2 ${kioskSubtext}`}>
@@ -459,15 +437,15 @@ export default function DevisFlashPage() {
                     {selectedRepairs.map((r, i) => (
                       <div key={i} className={`flex items-center justify-between gap-3 text-sm ${kioskText}`}>
                         <span>{r.qualite ? `${r.composant} (${r.qualite})` : r.composant}</span>
-                        <span className="font-medium tabular-nums whitespace-nowrap">{r.prix_vente}€</span>
+                        <span className="font-medium tabular-nums whitespace-nowrap">{euros(r.prix_vente)}</span>
                       </div>
                     ))}
                   </div>
 
                   {/* Total */}
-                  <div className={`flex items-center justify-between py-3 px-4 rounded-lg mb-4 ${kioskMode ? 'bg-brand-600/20' : 'bg-white border border-slate-200'}`}>
-                    <span className={`text-base font-bold ${kioskMode ? 'text-brand-200' : 'text-slate-900'}`}>TOTAL TTC</span>
-                    <span className={`text-2xl font-bold tabular-nums ${kioskMode ? 'text-white' : 'text-brand-700'}`}>{totalSelected}€</span>
+                  <div className={`flex items-baseline justify-between gap-3 pt-3 mb-4 border-t ${kioskMode ? 'border-slate-600' : 'border-slate-200'}`}>
+                    <span className={`text-base font-semibold ${kioskText}`}>Total TTC</span>
+                    <span className={`text-2xl font-semibold tabular-nums whitespace-nowrap ${kioskText}`}>{euros(totalSelected)}</span>
                   </div>
 
                   {/* Action buttons */}
@@ -488,8 +466,8 @@ export default function DevisFlashPage() {
 
           {/* Kiosk footer */}
           {kioskMode && (
-            <div className="text-center mt-12 text-slate-400 text-sm">
-              KLIKPHONE SAV — Chambéry
+            <div className="text-center mt-12 text-slate-300 text-sm">
+              Klikphone SAV — Chambéry
             </div>
           )}
         </div>
@@ -500,24 +478,12 @@ export default function DevisFlashPage() {
         <div>
           {/* Stats */}
           {telStats && (
-            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-              <div className={`kpi-card ${kioskCard}`}>
-                <div className={`kpi-icon ${kioskMode ? 'bg-slate-700 text-slate-200' : ''}`} aria-hidden="true"><Smartphone /></div>
-                <div className="min-w-0"><p className={`kpi-value ${kioskText}`}>{telStats.total || 0}</p><p className={`kpi-label ${kioskSubtext}`}>Total</p></div>
-              </div>
-              <div className={`kpi-card ${kioskCard}`}>
-                <div className={`kpi-icon ${kioskMode ? 'bg-slate-700 text-slate-200' : 'bg-emerald-50 text-emerald-700'}`} aria-hidden="true"><Package /></div>
-                <div className="min-w-0"><p className={`kpi-value ${kioskText}`}>{telStats.en_stock || 0}</p><p className={`kpi-label ${kioskSubtext}`}>En stock</p></div>
-              </div>
-              <div className={`kpi-card ${kioskCard}`}>
-                <div className={`kpi-icon ${kioskMode ? 'bg-slate-700 text-slate-200' : ''}`} aria-hidden="true"><Tag /></div>
-                <div className="min-w-0"><p className={`kpi-value ${kioskText}`}>{telStats.nb_marques || 0}</p><p className={`kpi-label ${kioskSubtext}`}>Marques</p></div>
-              </div>
-              <div className={`kpi-card ${kioskCard}`}>
-                <div className={`kpi-icon ${kioskMode ? 'bg-slate-700 text-slate-200' : ''}`} aria-hidden="true"><Euro /></div>
-                <div className="min-w-0"><p className={`kpi-value whitespace-nowrap ${kioskText}`}>{fp(telStats.valeur_stock)} €</p><p className={`kpi-label ${kioskSubtext}`}>Valeur stock</p></div>
-              </div>
-            </div>
+            <CarteChiffres label="Chiffres des téléphones en vente" sombre={kioskMode} colonnes={{ base: 2, xl: 4 }} className="mb-6" chiffres={[
+              { label: 'Total', valeur: telStats.total || 0 },
+              { label: 'En stock', valeur: telStats.en_stock || 0 },
+              { label: 'Marques', valeur: telStats.nb_marques || 0 },
+              { label: 'Valeur du stock', valeur: `${fp(telStats.valeur_stock)} €`, montant: true },
+            ]} />
           )}
 
           {/* Search + Filters + Add */}
@@ -525,7 +491,7 @@ export default function DevisFlashPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
               <input value={telSearch} onChange={e => setTelSearch(e.target.value)} aria-label="Rechercher un téléphone"
-                placeholder="Rechercher un téléphone..." className="input pl-9 min-h-11" />
+                placeholder="Rechercher un téléphone…" className="input pl-9 min-h-11" />
             </div>
             <select value={telMarque} onChange={e => setTelMarque(e.target.value)} aria-label="Filtrer par marque" className="select sm:w-auto sm:min-w-[150px] min-h-11">
               <option value="">Toutes marques</option>
@@ -563,38 +529,34 @@ export default function DevisFlashPage() {
               {telList.map(t => (
                 <div key={t.id} className={`p-3 sm:p-4 ${kioskCard}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" aria-hidden="true"
-                        style={{ background: (BRAND_COLORS[t.marque] || '#6d28d9') + '15' }}>
-                        <Smartphone className="w-5 h-5" style={{ color: BRAND_COLORS[t.marque] || '#6d28d9' }} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`font-semibold text-sm ${kioskText}`}>{t.marque} {t.modele}</p>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          {t.capacite && <span className="badge badge-sm badge-neutral">{t.capacite}</span>}
-                          {t.couleur && <span className="badge badge-sm badge-neutral">{t.couleur}</span>}
-                          <span className={`badge badge-sm ${t.etat === 'Neuf' ? 'badge-success' : 'badge-neutral'}`}>
-                            {t.etat}
-                          </span>
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-semibold text-sm ${kioskText}`}>{t.marque} {t.modele}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className={`badge badge-sm ${t.etat === 'Neuf' ? 'badge-info' : 'badge-neutral'}`}>
+                          {t.etat}
+                        </span>
+                        {(t.capacite || t.couleur) && (
+                          <span className={`text-xs ${kioskSubtext}`}>{[t.capacite, t.couleur].filter(Boolean).join(' · ')}</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="text-right">
-                        <p className={`text-lg font-bold tabular-nums whitespace-nowrap ${kioskText}`}>{fp(t.prix_vente)} €</p>
-                        {Number(t.prix_achat) > 0 && !kioskMode && <p className="t-caption tabular-nums whitespace-nowrap">Achat: {fp(t.prix_achat)} €</p>}
+                        <p className={`text-lg font-semibold tabular-nums whitespace-nowrap ${kioskText}`}>{fp(t.prix_vente)} €</p>
+                        {Number(t.prix_achat) > 0 && !kioskMode && <p className="t-caption tabular-nums whitespace-nowrap">Achat : {fp(t.prix_achat)} €</p>}
                       </div>
                       {!kioskMode && (
                         <div className="flex items-center gap-0.5 -mr-2">
                           <button type="button" onClick={() => handleToggleStock(t.id, t.en_stock)}
-                            className={`btn-ghost btn-icon ${t.en_stock ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-700 hover:bg-red-50'}`}
-                            title={t.en_stock ? 'En stock' : 'Vendu'} aria-pressed={Boolean(t.en_stock)}>
+                            className="btn-ghost btn-icon"
+                            title={t.en_stock ? 'En stock' : 'Vendu'} aria-pressed={Boolean(t.en_stock)}
+                            aria-label={`En stock : ${t.marque} ${t.modele}`}>
                             {t.en_stock ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}
                           </button>
                           <button type="button" onClick={() => openEditTel(t)} className="btn-ghost btn-icon" title="Modifier" aria-label={`Modifier ${t.marque} ${t.modele}`}>
                             <Edit3 aria-hidden="true" />
                           </button>
-                          <button type="button" onClick={() => handleDeleteTel(t.id)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer ${t.marque} ${t.modele}`}>
+                          <button type="button" onClick={() => handleDeleteTel(t)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer ${t.marque} ${t.modele}`}>
                             <Trash2 aria-hidden="true" />
                           </button>
                         </div>
@@ -609,10 +571,10 @@ export default function DevisFlashPage() {
           {/* ═══ TEL ADD/EDIT MODAL ═══ */}
           {showTelForm && (
             <div className="modal-overlay">
-              <div role="dialog" aria-modal="true" aria-labelledby="tel-form-titre" className="modal sm:max-w-md">
+              <div ref={telFormRef} role="dialog" aria-modal="true" aria-labelledby="tel-form-titre" className="modal sm:max-w-md">
                 <div className="modal-header">
                   <h2 id="tel-form-titre" className="t-h2">
-                    {editTelId ? 'Modifier' : 'Ajouter un téléphone'}
+                    {editTelId ? 'Modifier le téléphone' : 'Ajouter un téléphone'}
                   </h2>
                   <button type="button" onClick={() => setShowTelForm(false)} className="btn-ghost btn-icon -mr-2" aria-label="Fermer">
                     <X aria-hidden="true" />
@@ -654,12 +616,12 @@ export default function DevisFlashPage() {
                         className="input t-mono" placeholder="IMEI" maxLength={20} inputMode="numeric" />
                     </div>
                     <div>
-                      <label htmlFor="tel-form-prix-achat" className="input-label">Prix achat (€)</label>
+                      <label htmlFor="tel-form-prix-achat" className="input-label">Prix d’achat (€)</label>
                       <input id="tel-form-prix-achat" type="number" value={telForm.prix_achat} onChange={e => setTelForm(f => ({ ...f, prix_achat: parseFloat(e.target.value) || 0 }))}
                         className="input tabular-nums" step="0.01" min="0" />
                     </div>
                     <div>
-                      <label htmlFor="tel-form-prix-vente" className="input-label">Prix vente (€)</label>
+                      <label htmlFor="tel-form-prix-vente" className="input-label">Prix de vente (€)</label>
                       <input id="tel-form-prix-vente" type="number" value={telForm.prix_vente} onChange={e => setTelForm(f => ({ ...f, prix_vente: parseFloat(e.target.value) || 0 }))}
                         className="input tabular-nums" step="0.01" min="0" />
                     </div>
@@ -667,7 +629,7 @@ export default function DevisFlashPage() {
                   <div>
                     <label htmlFor="tel-form-notes" className="input-label">Notes</label>
                     <textarea id="tel-form-notes" value={telForm.notes} onChange={e => setTelForm(f => ({ ...f, notes: e.target.value }))}
-                      className="textarea min-h-[80px]" placeholder="Notes..." />
+                      className="textarea min-h-20" placeholder="Notes…" />
                   </div>
                 </div>
                 <div className="modal-footer">
@@ -682,12 +644,14 @@ export default function DevisFlashPage() {
           )}
 
           {kioskMode && (
-            <div className="text-center mt-12 text-slate-400 text-sm">
-              KLIKPHONE SAV — Chambéry
+            <div className="text-center mt-12 text-slate-300 text-sm">
+              Klikphone SAV — Chambéry
             </div>
           )}
         </div>
       )}
+
+      {confirmation.dialog}
     </div>
   );
 }

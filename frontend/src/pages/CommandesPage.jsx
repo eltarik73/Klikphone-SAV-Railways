@@ -7,12 +7,13 @@ import { formatDateShort, formatPrix, waLink } from '../lib/utils';
 import { envoyerSms, messageSmsEnvoye } from '../lib/sms';
 import { useSmsServeur } from '../hooks/useSmsServeur';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import { matchesQuery, formatPhone } from '../components/SearchPalette';
 import { fraicheurPrix } from '../components/TarifPicker';
 import {
   Search, Package, Plus, Edit3, Trash2, Save, X,
-  Check, Clock, AlertTriangle, ChevronDown, ExternalLink, Calendar,
-  Truck, Wrench, Archive, ShoppingCart, UserCheck,
+  Check, Clock, AlertTriangle, ExternalLink, Calendar,
+  Wrench, Archive, ShoppingCart, UserCheck,
   MessageSquare, Send, Tag, PackageCheck,
 } from 'lucide-react';
 
@@ -174,7 +175,7 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
       <div className="col-span-2 sm:col-span-2">
         <label htmlFor={`${id}-piece`} className="input-label">Pièce de la grille</label>
         <select id={`${id}-piece`} value={valeurs.tarif_cle || ''} onChange={e => choisir(e.target.value)}
-          className="select min-h-[44px]" disabled={grille.statut !== 'pret' || (pieces.length === 0 && !horsListe)} aria-describedby={aideId}>
+          className="select min-h-11" disabled={grille.statut !== 'pret' || (pieces.length === 0 && !horsListe)} aria-describedby={aideId}>
           <option value="">{grille.statut === 'chargement' ? 'Chargement des pièces…' : 'Aucune (ne pas mettre à jour la grille)'}</option>
           {horsListe && <option value={horsListe}>Pièce enregistrée ({horsListe})</option>}
           {pieces.map(s => <option key={s.id} value={String(s.id)}>{libellePiece(s, isAdmin)}</option>)}
@@ -190,7 +191,7 @@ function ChampsPrixPaye({ id, valeurs, onChange, grille, description, isAdmin, c
       <div>
         <label htmlFor={`${id}-ht`} className="input-label">Prix HT payé (€)</label>
         <input id={`${id}-ht`} type="text" inputMode="decimal" autoComplete="off" value={valeurs.prix_ht}
-          onChange={e => onChange({ prix_ht: e.target.value })} className="input min-h-[44px]" placeholder="Facture fournisseur"
+          onChange={e => onChange({ prix_ht: e.target.value })} className="input min-h-11" placeholder="Facture fournisseur"
           aria-describedby={`${id}-ht-aide`} />
         <p id={`${id}-ht-aide`} className="input-help min-h-[2.5em]" aria-live="polite">
           {valeurs.prix_ht && ht === null ? <span className="text-red-700 font-medium">Montant invalide</span>
@@ -239,7 +240,7 @@ function ReceptionPrixDialog({ part, isAdmin, onEnregistrer, onPasser }) {
             <ChampsPrixPaye id={champsId} valeurs={valeurs} onChange={patch => setValeurs(v => ({ ...v, ...patch }))}
               grille={grille} description={part.description} isAdmin={isAdmin} cleEnregistree={part.tarif_cle || ''} />
           </div>
-          <p className="t-caption mt-3">Le prix de la grille ne change pas : le gérant valide la mise à jour.</p>
+          <p className="t-caption mt-3">Facultatif. Avec une pièce choisie, un écart de plus de 1 € met à jour le prix de la grille.</p>
         </div>
         <div className="modal-footer flex-wrap">
           <button type="button" onClick={onPasser} disabled={envoi} className="btn-ghost">
@@ -293,6 +294,7 @@ export default function CommandesPage() {
   const [notifPart, setNotifPart] = useState(null);
   const [notifEnvoi, setNotifEnvoi] = useState(false);
   const { actif: smsServeur } = useSmsServeur();
+  const confirmation = useConfirmDialog();
   const [form, setForm] = useState({
     description: '', fournisseur: '', reference: '',
     prix: '', ticket_code: '', statut: 'En attente', notes: '', prix_ht: '', tarif_cle: '',
@@ -436,17 +438,28 @@ export default function CommandesPage() {
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('Supprimer cette commande ?')) return;
-    try {
-      await api.deletePart(id);
-      // Une commande pièce peut auto-changer le statut du ticket lié
-      // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
-      invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
-      setToast({ type: 'success', msg: 'Commande supprimée' });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleDelete = (part) => {
+    const piece = String(part.description || '').trim();
+    confirmation.demander({
+      title: piece ? `Supprimer la commande « ${piece} » ?` : 'Supprimer cette commande ?',
+      description: part.ticket_code
+        ? `Elle disparaît de la liste et du suivi du ticket ${part.ticket_code}. Le ticket lui-même n’est pas modifié.`
+        : 'Elle disparaît de la liste des commandes. La suppression est définitive.',
+      confirmLabel: 'Supprimer la commande',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await api.deletePart(part.id);
+          // Une commande pièce peut auto-changer le statut du ticket lié
+          // (parts.py: "Reçu" → ticket "Pièce reçue"). Invalide donc aussi tickets + dashboard.
+          invalidateCache('commandes', 'tickets', 'dashboard', 'interactions');
+          setToast({ type: 'success', msg: 'Commande supprimée' });
+        } catch (err) {
+          console.error(err);
+          setToast({ type: 'error', msg: `Suppression impossible : ${err?.message || 'erreur inconnue'}` });
+        }
+      },
+    });
   };
 
   const handleStatusChange = async (part, newStatut) => {
@@ -586,7 +599,7 @@ export default function CommandesPage() {
       {/* Toast */}
       {toast && (
         <div role={toast.type === 'error' ? 'alert' : 'status'}
-          className={`toast fixed top-16 right-4 lg:top-auto lg:bottom-20 lg:right-6 z-[120] animate-in font-medium
+          className={`toast fixed top-16 right-4 lg:top-auto lg:bottom-20 lg:right-6 z-[120] font-medium
           ${toast.type === 'success' ? 'border-l-emerald-600' : 'border-l-red-600'}`}>
           {toast.type === 'success'
             ? <Check className="w-5 h-5 shrink-0 text-emerald-700" aria-hidden="true" />
@@ -645,7 +658,7 @@ export default function CommandesPage() {
           </p>
         </div>
         <div className="page-header-actions">
-          <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary">
+          <button type="button" onClick={() => { resetForm(); setShowForm(true); }} className={showForm ? 'btn-secondary' : 'btn-primary'}>
             <Plus aria-hidden="true" /> Nouvelle commande
           </button>
         </div>
@@ -657,10 +670,10 @@ export default function CommandesPage() {
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
             <label htmlFor="commandes-search" className="sr-only">Rechercher une commande de pièce</label>
-            <input id="commandes-search" type="text" placeholder="Pièce, référence, fournisseur, client, modèle, ticket..."
+            <input id="commandes-search" type="text" placeholder="Pièce, référence, fournisseur, client, modèle, ticket…"
               value={search} onChange={(e) => setSearch(e.target.value)}
               autoComplete="off"
-              className="input min-h-[44px] pl-10 pr-12"
+              className="input min-h-11 pl-10 pr-12"
             />
             {search && (
               <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
@@ -681,7 +694,7 @@ export default function CommandesPage() {
                 <button key={tab.value} type="button" onClick={() => setFilterTab(tab.value)}
                   aria-pressed={isActive}
                   className={`segmented-item ${isActive ? 'segmented-item-active' : ''}`}>
-                  {IconComp && <IconComp className={`w-4 h-4 ${isActive ? 'text-brand-600' : 'text-slate-400'}`} aria-hidden="true" />}
+                  {IconComp && <IconComp className={`w-4 h-4 ${isActive ? 'text-brand-600' : 'text-slate-500'}`} aria-hidden="true" />}
                   {tab.label} ({count})
                 </button>
               );
@@ -692,7 +705,7 @@ export default function CommandesPage() {
 
       {/* Form modal */}
       {showForm && (
-        <div className="card mb-6 border-brand-300 animate-in">
+        <div className="card mb-6 border-brand-300">
           <div className="card-header">
             <h2 className="t-h2">
               {editingPart ? 'Modifier la commande' : 'Nouvelle commande'}
@@ -704,7 +717,7 @@ export default function CommandesPage() {
           <div className="px-4 sm:px-5 pb-4 sm:pb-5 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-4">
             <div className="col-span-2 sm:col-span-1">
               <label htmlFor={`${formId}-description`} className="input-label">Désignation *</label>
-              <input id={`${formId}-description`} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="&Eacute;cran iPhone 15..." />
+              <input id={`${formId}-description`} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="input" placeholder="Écran iPhone 15…" />
             </div>
             <div>
               <label htmlFor={`${formId}-fournisseur`} className="input-label">Fournisseur</label>
@@ -717,7 +730,7 @@ export default function CommandesPage() {
             <div>
               <label htmlFor={`${formId}-prix`} className="input-label">Prix client TTC (€)</label>
               <input id={`${formId}-prix`} type="number" step="0.01" min="0" inputMode="decimal" value={form.prix}
-                onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-[44px] tabular-nums"
+                onChange={e => setForm(f => ({ ...f, prix: e.target.value }))} className="input min-h-11 tabular-nums"
                 aria-describedby={`${formId}-prix-aide`} />
               <p id={`${formId}-prix-aide`} className="input-help">Prix annoncé au client. La facture du fournisseur va dans « Prix HT payé ».</p>
             </div>
@@ -735,7 +748,7 @@ export default function CommandesPage() {
               grille={grilleForm} description={form.description} isAdmin={isAdmin} cleEnregistree={cleEnregistree} />
             <div className="col-span-2 sm:col-span-3">
               <label htmlFor={`${formId}-notes`} className="input-label">Notes</label>
-              <input id={`${formId}-notes`} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Notes..." />
+              <input id={`${formId}-notes`} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="input" placeholder="Notes…" />
             </div>
           </div>
           <div className="card-footer">
@@ -763,7 +776,7 @@ export default function CommandesPage() {
         {loading ? (
           <div className="p-4 space-y-3" role="status">
             {[1, 2, 3, 4, 5].map(i => <div key={i} className="skeleton-row" aria-hidden="true" />)}
-            <p className="sr-only">Chargement...</p>
+            <p className="sr-only">Chargement…</p>
           </div>
         ) : parts.length === 0 ? (
           <div className="empty-state">
@@ -778,7 +791,7 @@ export default function CommandesPage() {
                 ? (filterTab !== 'all' && searchedParts.length > 0
                   ? `${searchedParts.length} résultat(s) avec un autre statut : choisissez l’onglet « Tous ».`
                   : 'Essayez le nom du client, le modèle, la référence ou le code du ticket.')
-                : filterTab === 'all' ? 'Créez votre première commande de pièce' : `Aucune commande avec le statut "${filterTab}"`}
+                : filterTab === 'all' ? 'Créez votre première commande de pièce' : `Aucune commande avec le statut « ${filterTab} »`}
             </p>
           </div>
         ) : (
@@ -852,14 +865,14 @@ export default function CommandesPage() {
                   {/* Dates */}
                   <div className="hidden xl:block">
                     <p className="t-caption tabular-nums flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                      <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                       {p.date_creation ? formatDateShort(p.date_creation) : '—'}
                     </p>
                     {p.date_commande && (
-                      <p className="t-caption tabular-nums">Cmd: {formatDateShort(p.date_commande)}</p>
+                      <p className="t-caption tabular-nums">Cmd : {formatDateShort(p.date_commande)}</p>
                     )}
                     {p.date_reception && (
-                      <p className="t-caption tabular-nums text-emerald-700">Reçue: {formatDateShort(p.date_reception)}</p>
+                      <p className="t-caption tabular-nums text-emerald-700">Reçue : {formatDateShort(p.date_reception)}</p>
                     )}
                   </div>
 
@@ -883,7 +896,7 @@ export default function CommandesPage() {
                       <button type="button" onClick={() => handleEdit(p)} className="btn-ghost btn-icon" title="Modifier" aria-label={`Modifier la commande ${p.description || ''}`.trim()}>
                         <Edit3 aria-hidden="true" />
                       </button>
-                      <button type="button" onClick={() => handleDelete(p.id)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer la commande ${p.description || ''}`.trim()}>
+                      <button type="button" onClick={() => handleDelete(p)} className="btn-danger-ghost btn-icon" title="Supprimer" aria-label={`Supprimer la commande ${p.description || ''}`.trim()}>
                         <Trash2 aria-hidden="true" />
                       </button>
                     </div>
@@ -894,6 +907,8 @@ export default function CommandesPage() {
           </div>
         )}
       </div>
+
+      {confirmation.dialog}
     </div>
   );
 }

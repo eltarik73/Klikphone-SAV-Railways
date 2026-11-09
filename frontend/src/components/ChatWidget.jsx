@@ -105,7 +105,7 @@ function ChatMessageContent({ content }) {
   // KP-XXXXXX codes
   html = html.replace(
     /(KP-\d{6})/g,
-    '<span class="text-brand-700 font-mono font-bold bg-brand-50 px-1 rounded">$1</span>'
+    '<span class="text-slate-900 font-mono font-semibold bg-slate-100 px-1 rounded">$1</span>'
   );
 
   // Line breaks
@@ -122,7 +122,7 @@ function ChatMessageContent({ content }) {
   return (
     <div
       onClick={handleClick}
-      className="prose-sm break-words [&_strong]:font-bold [&_a]:cursor-pointer"
+      className="prose-sm break-words [&_strong]:font-semibold [&_a]:cursor-pointer"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -263,7 +263,7 @@ function TabAssistant() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Pose une question..."
+            placeholder="Posez une question…"
             aria-label="Question pour l'assistant"
             className="input flex-1 min-w-0 min-h-11"
             disabled={loading}
@@ -275,7 +275,7 @@ function TabAssistant() {
             aria-label="Envoyer la question"
             className="btn-primary btn-icon min-w-11 min-h-11 shrink-0"
           >
-            {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+            {loading ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -402,7 +402,7 @@ function TabGeneral({ onReadMessages, registerPoll }) {
         role="region" aria-label="Messages du canal général" tabIndex={0}>
         {messages.length === 0 && (
           <div className="text-center py-8">
-            <Megaphone className="w-8 h-8 text-slate-400 mx-auto mb-2" aria-hidden="true" />
+            <Megaphone className="w-6 h-6 text-slate-500 mx-auto mb-2" strokeWidth={1.5} aria-hidden="true" />
             <p className="text-sm text-slate-500">Aucun message pour le moment</p>
           </div>
         )}
@@ -438,7 +438,7 @@ function TabGeneral({ onReadMessages, registerPoll }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-          placeholder="Message a tout le monde..."
+          placeholder="Message à tout le monde…"
           aria-label="Message à toute l'équipe"
           className="input flex-1 min-w-0 min-h-11"
           disabled={sending}
@@ -558,7 +558,7 @@ function TabPrivate({ onReadMessages, registerPoll }) {
         <div className="flex-1 overflow-y-auto">
           {contacts.length === 0 && (
             <div className="text-center py-8">
-              <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" aria-hidden="true" />
+              <Users className="w-6 h-6 text-slate-500 mx-auto mb-2" strokeWidth={1.5} aria-hidden="true" />
               <p className="text-sm text-slate-500">Aucun contact</p>
             </div>
           )}
@@ -570,8 +570,8 @@ function TabPrivate({ onReadMessages, registerPoll }) {
               className="w-full flex items-center gap-3 min-h-14 px-4 py-2.5 text-left transition-colors duration-150 hover:bg-slate-50 border-b border-slate-100 focus:outline-none focus-visible:bg-slate-100"
             >
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
-                style={{ background: contact.color || '#94a3b8' }}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0"
+                style={{ background: contact.color || '#475569' }}
                 aria-hidden="true"
               >
                 {contact.name.charAt(0).toUpperCase()}
@@ -615,8 +615,8 @@ function TabPrivate({ onReadMessages, registerPoll }) {
           <ArrowLeft aria-hidden="true" />
         </button>
         <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
-          style={{ background: contactInfo?.color || '#94a3b8' }}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-xs shrink-0"
+          style={{ background: contactInfo?.color || '#475569' }}
           aria-hidden="true"
         >
           {selectedContact.charAt(0).toUpperCase()}

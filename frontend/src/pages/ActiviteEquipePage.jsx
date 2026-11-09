@@ -126,7 +126,7 @@ export function regrouperConnectes(connectes) {
 function EnLigne({ connectes }) {
   const groupes = regrouperConnectes(connectes);
   return (
-    <section aria-labelledby="en-ligne-titre" className="flex flex-wrap items-center gap-x-3 gap-y-2 min-h-[36px]">
+    <section aria-labelledby="en-ligne-titre" className="flex flex-wrap items-center gap-x-3 gap-y-2 min-h-9">
       <h2 id="en-ligne-titre" className="t-overline shrink-0">En ligne maintenant</h2>
       {groupes.length ? (
         <ul className="flex flex-wrap items-center gap-2">
@@ -141,8 +141,8 @@ function EnLigne({ connectes }) {
             ].filter(Boolean).join(' · ');
             return (
               <li key={g.utilisateur} title={complet}
-                className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2.5 rounded-full bg-white border border-slate-200 text-[13px] text-slate-700">
-                <span aria-hidden="true" className="grid place-items-center w-6 h-6 rounded-full bg-brand-50 text-brand-700 text-xs font-semibold">
+                className="inline-flex items-center gap-1.5 h-8 pl-1 pr-2.5 rounded-full bg-white border border-slate-200 t-small text-slate-700">
+                <span aria-hidden="true" className="grid place-items-center w-6 h-6 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
                   {g.utilisateur.trim().charAt(0).toUpperCase()}
                 </span>
                 <span aria-hidden="true" className="font-medium text-slate-900">{g.utilisateur}</span>
@@ -152,7 +152,7 @@ function EnLigne({ connectes }) {
                 <span className="sr-only">{complet}</span>
                 {g.carte && (
                   <a href={g.carte} target="_blank" rel="noopener noreferrer"
-                    className="-mr-1.5 inline-flex items-center gap-1 h-11 -my-1.5 px-1.5 rounded-full text-brand-700 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    className="-mr-1.5 inline-flex items-center gap-1 h-11 -my-1.5 px-1.5 rounded-full text-brand-700 transition-colors duration-150 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     aria-label={`${g.lieu ? `${g.utilisateur} connecté près de ${g.lieu}` : `Lieu de connexion de ${g.utilisateur}`} : voir sur la carte (s’ouvre dans un nouvel onglet)`}
                     title={g.lieu ? `Près de ${g.lieu}` : 'Voir sur la carte'}>
                     <MapPin className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -164,7 +164,7 @@ function EnLigne({ connectes }) {
           })}
         </ul>
       ) : (
-        <p className="text-[13px] text-slate-500">Personne n’est connecté</p>
+        <p className="t-small">Personne n’est connecté</p>
       )}
     </section>
   );
@@ -213,14 +213,14 @@ function MenuExport({ salaries, semaine, onExporter, occupe }) {
 
   return (
     <div className="relative" ref={zone}>
-      <button ref={bouton} type="button" className="btn-secondary min-h-[44px]" aria-expanded={ouvert}
+      <button ref={bouton} type="button" className="btn-secondary min-h-11" aria-expanded={ouvert}
         aria-controls="menu-export" onClick={() => setOuvert((o) => !o)} disabled={occupe}>
         {occupe ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download aria-hidden="true" />}
         Exporter
       </button>
       {ouvert && (
-        <div id="menu-export" className="absolute right-0 z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] card shadow-lg py-1">
-          <button type="button" className="w-full min-h-[44px] px-3 text-left text-sm hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100"
+        <div id="menu-export" className="absolute right-0 z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] card shadow-md py-1">
+          <button type="button" className="w-full min-h-11 px-3 text-left text-sm transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100"
             onClick={() => choisir({ depuis: semaine.debut, jusqua: semaine.fin })}>
             <span className="font-medium text-slate-900">{libelleSemaine(semaine.debut, semaine.fin)}</span>
             <span className="block text-xs text-slate-500">Toute l’équipe (CSV)</span>
@@ -231,7 +231,7 @@ function MenuExport({ salaries, semaine, onExporter, occupe }) {
               <ul className="max-h-60 overflow-y-auto">
                 {salaries.map((s) => (
                   <li key={s.utilisateur}>
-                    <button type="button" className="w-full min-h-[44px] px-3 text-left text-sm text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100"
+                    <button type="button" className="w-full min-h-11 px-3 text-left text-sm text-slate-700 transition-colors duration-150 hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-100"
                       onClick={() => choisir({ utilisateur: s.utilisateur })}>
                       {s.utilisateur} <span className="text-xs text-slate-500">— 6 derniers mois</span>
                     </button>
@@ -333,13 +333,13 @@ export default function ActiviteEquipePage() {
 
       {data && (!data.information_remise || data.pointage_en_pause) && (
         <div className="callout callout-warning items-center py-2 mb-3">
-          <AlertTriangle aria-hidden="true" className="!mt-0" />
+          <AlertTriangle aria-hidden="true" />
           <p className="flex-1 min-w-0">
             {!data.information_remise
               ? 'Pointage de présence désactivé : la remise de la note d’information aux salariés n’est pas confirmée.'
               : `Pointage de présence en pause, aucune position n’est demandée : ${data.pointage_raison || 'voir les réglages.'}`}
           </p>
-          <button type="button" className="btn-ghost btn-sm min-h-[44px] underline text-amber-900" onClick={() => setReglages(true)}>
+          <button type="button" className="btn-ghost btn-sm min-h-11 underline text-amber-900 hover:bg-amber-100 hover:text-amber-900" onClick={() => setReglages(true)}>
             Ouvrir les réglages
           </button>
         </div>
@@ -348,26 +348,26 @@ export default function ActiviteEquipePage() {
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
         <h1 className="t-h1 mr-auto">Activité de l’équipe</h1>
         <nav aria-label="Choix de la semaine" className="flex items-center gap-1">
-          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-[44px]" aria-label="Semaine précédente"
+          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-11" aria-label="Semaine précédente"
             onClick={() => setSemaine(ajouterJours(lundiAffiche, -7))}>
             <ChevronLeft aria-hidden="true" />
           </button>
           <p className="text-sm font-semibold text-slate-900 tabular-nums text-center min-w-[11.5rem]" aria-live="polite">{libelle}</p>
-          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-[44px]" aria-label="Semaine suivante"
+          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-11" aria-label="Semaine suivante"
             disabled={estCourante} onClick={() => setSemaine(ajouterJours(lundiAffiche, 7))}>
             <ChevronRight aria-hidden="true" />
           </button>
           {!estCourante && (
-            <button type="button" className="btn-ghost btn-sm min-h-[44px]" onClick={() => setSemaine(null)}>Cette semaine</button>
+            <button type="button" className="btn-ghost btn-sm min-h-11" onClick={() => setSemaine(null)}>Cette semaine</button>
           )}
         </nav>
         <div className="flex items-center gap-2">
-          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-[44px]" aria-label="Actualiser" title="Actualiser"
+          <button type="button" className="btn-ghost btn-icon w-11 h-11 min-w-11" aria-label="Actualiser" title="Actualiser"
             onClick={charger} disabled={etat.statut === 'chargement'}>
             <RefreshCw className={etat.statut === 'chargement' ? 'animate-spin motion-reduce:animate-none' : ''} aria-hidden="true" />
           </button>
           <MenuExport salaries={data?.salaries || []} semaine={sem} onExporter={exporter} occupe={export_.occupe} />
-          <button type="button" className="btn-secondary btn-icon w-11 h-11 min-w-[44px]" aria-label="Réglages" title="Réglages"
+          <button type="button" className="btn-secondary btn-icon w-11 h-11 min-w-11" aria-label="Réglages" title="Réglages"
             onClick={() => setReglages(true)}>
             <Settings aria-hidden="true" />
           </button>
@@ -380,7 +380,7 @@ export default function ActiviteEquipePage() {
         {etat.statut === 'erreur' && !data && (
           <div className="callout callout-danger items-center" role="alert">
             <p className="flex-1">{etat.erreur}</p>
-            <button type="button" className="btn-secondary btn-sm min-h-[44px]" onClick={charger}>Réessayer</button>
+            <button type="button" className="btn-secondary btn-sm min-h-11" onClick={charger}>Réessayer</button>
           </div>
         )}
         {etat.statut === 'erreur' && data && <p role="alert" className="mb-2 text-sm text-red-700">{etat.erreur}</p>}
@@ -393,7 +393,7 @@ export default function ActiviteEquipePage() {
         )}
 
         {data && (
-          <div className={etat.statut === 'chargement' ? 'opacity-60 transition-opacity motion-reduce:transition-none' : ''}
+          <div className={etat.statut === 'chargement' ? 'opacity-60 transition-opacity duration-150 motion-reduce:transition-none' : ''}
             aria-busy={etat.statut === 'chargement'}>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
               <EnLigne connectes={data.connectes} />

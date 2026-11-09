@@ -1,17 +1,18 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  FileText, Sparkles, Calendar, LayoutGrid, BarChart3,
+  FileText, Calendar, LayoutGrid, BarChart3,
   Instagram, Facebook, Linkedin, Globe, Plus, Send, Clock,
-  Trash2, Edit3, Eye, Hash, ChevronLeft, ChevronRight,
-  TrendingUp, Users, MousePointerClick,
-  Copy, Check, Share2, X, Loader2, ImagePlus, Trash, Smartphone,
+  Trash2, Edit3, Eye, ChevronLeft, ChevronRight,
+  Copy, Check, X, Loader2, ImagePlus, Trash, Smartphone,
   Camera, Link2, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import api from '../lib/api';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import VentesIphoneStory from '../components/VentesIphoneStory';
+import CarteChiffres from '../components/CarteChiffres';
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -94,6 +95,10 @@ function formatDateHeure(d) {
 
 const sansDiese = (tag) => String(tag || '').replace(/^#+/, '');
 
+// Variation en pourcentage (l’API envoie 12 pour 12 %) : « +12 % »
+const fmtTendance = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1, signDisplay: 'exceptZero' });
+const formatTendance = (v) => fmtTendance.format(Number(v) / 100);
+
 const TYPE_LABELS = {
   promo: 'Promo',
   actualite: 'Actualité',
@@ -106,6 +111,7 @@ const TYPE_LABELS = {
 
 export default function CommunityManager() {
   const toast = useToast();
+  const confirmation = useConfirmDialog();
   // Routes marketing : rôle admin ET code admin saisi sur ce poste (403 admin_requis sinon)
   const { sensible, adminPrompt } = useAdminElevation();
   const signalerErreur = (err, defaut) => {
@@ -480,14 +486,21 @@ export default function CommunityManager() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer ce brouillon ?')) return;
-    try {
-      await sensible(() => api.deleteMarketingPost(id));
-      invalidateCache('marketing-posts');
-    } catch (err) {
-      signalerErreur(err, 'Suppression impossible');
-    }
+  const handleDelete = (post) => {
+    confirmation.demander({
+      title: post.titre ? `Supprimer le brouillon « ${post.titre} » ?` : 'Supprimer ce brouillon ?',
+      description: 'Le texte et la photo du brouillon seront effacés. Rien n’a été publié.',
+      confirmLabel: 'Supprimer le brouillon',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await sensible(() => api.deleteMarketingPost(post.id));
+          invalidateCache('marketing-posts');
+        } catch (err) {
+          signalerErreur(err, 'Suppression impossible');
+        }
+      },
+    });
   };
 
   const handleProgrammer = async (id) => {
@@ -612,6 +625,7 @@ export default function CommunityManager() {
   return (
     <div className="page max-w-[1280px]">
       {adminPrompt}
+      {confirmation.dialog}
       {/* Header */}
       <div className="page-header mb-0">
         <div>
@@ -687,14 +701,11 @@ export default function CommunityManager() {
                 </select>
               </div>
 
-              {/* Info workflow */}
-              <div className="callout callout-info">
-                <Share2 aria-hidden="true" />
-                <p>
-                  <span className="font-semibold">Publication :</span> chaque post part directement sur le compte de sa
-                  plateforme, via Zernio (ex-Late). Instagram exige une photo : ajoutez la vôtre ou générez-en une.
-                </p>
-              </div>
+              {/* Fonctionnement de la publication : une phrase, pas un bandeau */}
+              <p className="t-small text-slate-600">
+                Chaque post part directement sur le compte de sa plateforme, via Zernio (ex-Late). Instagram exige
+                une photo : ajoutez la vôtre ou générez-en une.
+              </p>
 
               {/* Posts list */}
               {loading ? (
@@ -735,7 +746,7 @@ export default function CommunityManager() {
                         </div>
                       )}
                       {brouillon && photoManquante && (
-                        <p className="flex items-center gap-1.5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                        <p className="flex items-center gap-1.5 text-sm text-amber-800 mb-2">
                           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
                           Photo obligatoire pour Instagram
                         </p>
@@ -752,7 +763,7 @@ export default function CommunityManager() {
                           />
                           <div className="flex gap-2">
                             <button type="button" onClick={() => handleSaveEdit(post)}
-                              disabled={savingEdit || !editTexte.trim()} className="btn-primary btn-sm">
+                              disabled={savingEdit || !editTexte.trim()} aria-busy={savingEdit || undefined} className="btn-secondary btn-sm">
                               {savingEdit ? <Loader2 className="animate-spin" /> : <Check />} Enregistrer
                             </button>
                             <button type="button" onClick={() => setEditingId(null)} className="btn-ghost btn-sm">
@@ -777,12 +788,9 @@ export default function CommunityManager() {
                             </span>
                           )}
                           {post.hashtags && post.hashtags.length > 0 && (
-                            <div className="flex items-center gap-1 overflow-hidden">
+                            <div className="flex items-center gap-1.5 overflow-hidden">
                               {(Array.isArray(post.hashtags) ? post.hashtags : []).slice(0, 3).map((tag, i) => (
-                                <span
-                                  key={i}
-                                  className="badge badge-sm badge-brand font-medium truncate"
-                                >
+                                <span key={i} className="t-caption truncate">
                                   #{sansDiese(tag)}
                                 </span>
                               ))}
@@ -831,7 +839,7 @@ export default function CommunityManager() {
                           {brouillon && (
                             <button
                               type="button"
-                              onClick={() => handleDelete(post.id)}
+                              onClick={() => handleDelete(post)}
                               className="btn-danger-ghost btn-icon text-slate-500 hover:text-red-700"
                               title="Supprimer le brouillon"
                               aria-label="Supprimer le brouillon"
@@ -850,15 +858,16 @@ export default function CommunityManager() {
                             onClick={() => handlePublish(post.id)}
                             disabled={publishing === post.id || photoManquante}
                             title={photoManquante ? 'Ajoutez d’abord une photo' : undefined}
-                            className="btn-primary btn-sm"
+                            aria-busy={publishing === post.id || undefined}
+                            className="btn-secondary btn-sm"
                           >
                             {publishing === post.id ? (
-                              <><Loader2 className="animate-spin" /> Publication...</>
+                              <><Loader2 className="animate-spin" /> Publication…</>
                             ) : (
                               <><Send /> Publier sur {libelleReseau(post.plateforme)}</>
                             )}
                           </button>
-                          <label className={`btn-sm ${photoManquante ? 'btn-primary' : 'btn-secondary'} cursor-pointer focus-within:ring-2 focus-within:ring-brand-500 ${envoiPhoto === post.id ? 'opacity-60 pointer-events-none' : ''}`}>
+                          <label className={`${photoManquante ? 'btn-secondary' : 'btn-ghost'} btn-sm cursor-pointer focus-within:ring-2 focus-within:ring-brand-500 ${envoiPhoto === post.id ? 'opacity-60 pointer-events-none' : ''}`}>
                             <input
                               type="file"
                               accept="image/*"
@@ -877,20 +886,20 @@ export default function CommunityManager() {
                                 min={new Date().toLocaleDateString('sv-SE')}
                                 onChange={(e) => setProgramDate(e.target.value)}
                                 aria-label="Date de publication"
-                                className="input w-auto min-h-[44px] py-1"
+                                className="input w-auto"
                               />
                               <input
                                 type="time"
                                 value={programHeure}
                                 onChange={(e) => setProgramHeure(e.target.value)}
                                 aria-label="Heure de publication"
-                                className="input w-auto min-h-[44px] py-1"
+                                className="input w-auto"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleProgrammer(post.id)}
                                 disabled={!programDate || photoManquante}
-                                className="btn-primary btn-sm"
+                                className="btn-secondary btn-sm"
                               >
                                 Programmer
                               </button>
@@ -906,7 +915,7 @@ export default function CommunityManager() {
                             <button
                               type="button"
                               onClick={() => setProgrammingId(post.id)}
-                              className="btn-secondary btn-sm"
+                              className="btn-ghost btn-sm"
                             >
                               <Clock /> Programmer
                             </button>
@@ -925,7 +934,6 @@ export default function CommunityManager() {
               {/* Comptes connectés (Late / Zernio) */}
               <section className="card card-body" aria-labelledby="cm-comptes-titre">
                 <div className="flex items-center gap-2 mb-3">
-                  <Link2 className="w-5 h-5 text-brand-600" aria-hidden="true" />
                   <h2 id="cm-comptes-titre" className="t-h2 flex-1">Comptes connectés</h2>
                   <button
                     type="button"
@@ -948,7 +956,7 @@ export default function CommunityManager() {
                 ) : (
                   <ul className="space-y-2">
                     {comptes.map((c) => (
-                      <li key={c.id} className="flex items-center gap-2 min-h-[44px]">
+                      <li key={c.id} className="flex items-center gap-2 min-h-11">
                         <PlatformIcon platform={c.plateforme} size={18} />
                         <span className="text-sm text-slate-900 flex-1 min-w-0 truncate">
                           <span className="font-semibold">{libelleReseau(c.plateforme)}</span>
@@ -970,7 +978,7 @@ export default function CommunityManager() {
                       </li>
                     ))}
                     {RESEAUX_CONNECTABLES.filter((p) => !connectes.has(p)).map((p) => (
-                      <li key={p} className="flex items-center gap-2 min-h-[44px]">
+                      <li key={p} className="flex items-center gap-2 min-h-11">
                         <PlatformIcon platform={p} size={18} />
                         <span className="text-sm text-slate-600 flex-1">{libelleReseau(p)} non connecté</span>
                         <button
@@ -989,10 +997,7 @@ export default function CommunityManager() {
               </section>
 
               <div className="card card-body">
-                <div className="flex items-center gap-2 mb-4">
-                  <Sparkles className="w-5 h-5 text-brand-600" aria-hidden="true" />
-                  <h2 className="t-h2">Générer un post</h2>
-                </div>
+                <h2 className="t-h2 mb-4">Générer un post</h2>
 
                 {/* Plateforme */}
                 <p id="cm-plateforme" className="input-label">Plateforme</p>
@@ -1033,7 +1038,7 @@ export default function CommunityManager() {
                   id="cm-contexte"
                   value={genContexte}
                   onChange={(e) => setGenContexte(e.target.value)}
-                  placeholder="Décrivez le contexte du post..."
+                  placeholder="Décrivez le contexte du post…"
                   rows={4}
                   className="textarea resize-none mb-4"
                 />
@@ -1053,7 +1058,7 @@ export default function CommunityManager() {
                           onChange={handlePhotoGenerateur}
                           disabled={envoiPhoto === 'gen'}
                         />
-                        {envoiPhoto === 'gen' ? <Loader2 className="animate-spin" /> : <Camera className="text-brand-600" />}
+                        {envoiPhoto === 'gen' ? <Loader2 className="animate-spin" /> : <Camera />}
                         {envoiPhoto === 'gen' ? 'Envoi de la photo…' : 'Ajouter une photo'}
                       </label>
                       <p className="t-caption text-center">ou générez une image avec l'IA</p>
@@ -1067,9 +1072,9 @@ export default function CommunityManager() {
                         className="textarea min-h-[72px] resize-none"
                       />
                       {generatingImage ? (
-                        <div className="flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2" role="status">
-                          <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none text-brand-600 shrink-0" aria-hidden="true" />
-                          <span className="text-sm text-brand-800 flex-1">
+                        <div className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2" role="status">
+                          <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none text-slate-500 shrink-0" aria-hidden="true" />
+                          <span className="text-sm text-slate-700 flex-1 tabular-nums">
                             Génération IA… {iaSecondes > 0 ? `${iaSecondes} s` : ''} <span className="text-slate-600">(1 à 6 min)</span>
                           </span>
                           <button type="button" onClick={annulerGeneration} className="btn-ghost btn-sm">
@@ -1083,16 +1088,16 @@ export default function CommunityManager() {
                           disabled={!genImagePrompt.trim()}
                           className="btn-secondary btn-block"
                         >
-                          <ImagePlus className="text-brand-600" /> Générer l'image avec l'IA
+                          <ImagePlus /> Générer l'image avec l'IA
                         </button>
                       )}
                     </div>
                   ) : (
                     <div className="relative rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
                       {imageLoading && (
-                        <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-brand-50" role="status">
-                          <Loader2 className="w-8 h-8 animate-spin motion-reduce:animate-none text-brand-600" aria-hidden="true" />
-                          <span className="text-sm text-brand-700 font-medium">Chargement de l'image…</span>
+                        <div className="w-full h-52 flex flex-col items-center justify-center gap-2 bg-slate-50" role="status">
+                          <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none text-slate-500" aria-hidden="true" />
+                          <span className="text-sm text-slate-600">Chargement de l'image…</span>
                         </div>
                       )}
                       <img
@@ -1119,27 +1124,26 @@ export default function CommunityManager() {
 
                 {/* Generate button */}
                 <button
+                  type="button"
                   onClick={handleGenerate}
                   disabled={generating || !genContexte.trim()}
-                  className="btn-primary btn-block"
+                  aria-busy={generating || undefined}
+                  className={`${generatedPost ? 'btn-secondary' : 'btn-primary'} btn-block`}
                 >
                   {generating ? (
                     <>
                       <Loader2 className="animate-spin" />
-                      Génération en cours...
+                      Génération en cours…
                     </>
                   ) : (
-                    <>
-                      <Sparkles />
-                      Générer avec l'IA
-                    </>
+                    "Générer avec l'IA"
                   )}
                 </button>
               </div>
 
               {/* Generated post preview */}
               {generatedPost && (
-                <div className="card card-body animate-in">
+                <div className="card card-body">
                   <div className="flex items-center gap-2 mb-3">
                     <PlatformIcon platform={generatedPost.plateforme || genPlateforme} size={18} />
                     <span className="text-sm font-semibold text-slate-900">
@@ -1154,8 +1158,8 @@ export default function CommunityManager() {
                   {genImageUrl && (
                     <div className="mb-3 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
                       {imageLoading && (
-                        <div className="w-full h-32 flex items-center justify-center bg-brand-50" role="status">
-                          <Loader2 className="w-5 h-5 animate-spin text-brand-600" aria-hidden="true" />
+                        <div className="w-full h-32 flex items-center justify-center bg-slate-50" role="status">
+                          <Loader2 className="w-5 h-5 animate-spin motion-reduce:animate-none text-slate-500" aria-hidden="true" />
                         </div>
                       )}
                       <img
@@ -1171,10 +1175,7 @@ export default function CommunityManager() {
                   {generatedPost.hashtags && generatedPost.hashtags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-4">
                       {(Array.isArray(generatedPost.hashtags) ? generatedPost.hashtags : []).map((tag, i) => (
-                        <span
-                          key={i}
-                          className="badge badge-sm badge-brand font-medium"
-                        >
+                        <span key={i} className="badge badge-sm badge-neutral">
                           #{sansDiese(tag)}
                         </span>
                       ))}
@@ -1183,6 +1184,7 @@ export default function CommunityManager() {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => handleSaveDraft(generatedPost)}
                       className="btn-secondary flex-1"
                     >
@@ -1190,17 +1192,20 @@ export default function CommunityManager() {
                       Sauvegarder en brouillon
                     </button>
                     <button
+                      type="button"
                       onClick={() => handlePublishGenerated(generatedPost)}
                       disabled={publishing === 'gen'}
+                      aria-busy={publishing === 'gen' || undefined}
                       className="btn-primary flex-1"
                     >
                       {publishing === 'gen' ? (
-                        <><Loader2 className="animate-spin" /> Publication...</>
+                        <><Loader2 className="animate-spin" /> Publication…</>
                       ) : (
                         <><Send /> Publier maintenant</>
                       )}
                     </button>
                     <button
+                      type="button"
                       onClick={() => copyToClipboard(getFullPostText(generatedPost), 'gen-copy')}
                       className="btn-ghost"
                     >
@@ -1259,15 +1264,14 @@ export default function CommunityManager() {
                     return (
                       <div
                         key={idx}
-                        className={`card min-h-[180px] overflow-hidden ${
-                          isToday ? 'border-brand-300' : ''
-                        }`}
+                        className="card min-h-[180px] overflow-hidden"
+                        aria-current={isToday ? 'date' : undefined}
                       >
                         {/* Day header */}
-                        <div className={`px-3 py-2 border-b text-center ${
-                          isToday ? 'bg-brand-50 border-brand-100' : 'bg-slate-50 border-slate-100'
-                        }`}>
-                          <div className="t-caption">{JOURS[idx]}</div>
+                        <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 text-center">
+                          <div className="t-caption">
+                            {JOURS[idx]}{isToday && <span className="sr-only"> (aujourd’hui)</span>}
+                          </div>
                           <div className={`text-lg font-semibold tabular-nums ${isToday ? 'text-brand-700' : 'text-slate-900'}`}>
                             {day.getDate()}
                           </div>
@@ -1279,22 +1283,21 @@ export default function CommunityManager() {
                             <div
                               key={event.id}
                               className="group relative rounded-lg p-2 pr-9 text-xs bg-slate-50 hover:bg-slate-100 transition-colors duration-150"
-                              style={{ borderLeft: `3px solid ${event.couleur || '#7C3AED'}` }}
                             >
-                              <div className="font-semibold text-slate-800 truncate">{event.titre}</div>
-                              {event.heure && (
-                                <div className="text-slate-500 mt-0.5 tabular-nums">{event.heure}</div>
-                              )}
-                              {event.type && (
-                                <span className="badge badge-sm badge-brand mt-1">
-                                  {event.type}
-                                </span>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: event.couleur || '#7C3AED' }} aria-hidden="true" />
+                                <span className="font-semibold text-slate-800 truncate">{event.titre}</span>
+                              </div>
+                              {(event.heure || event.type) && (
+                                <div className="text-slate-600 mt-0.5 tabular-nums">
+                                  {event.heure}{event.heure && event.type ? ' · ' : ''}{event.type}
+                                </div>
                               )}
                               <button
                                 type="button"
                                 onClick={() => handleDeleteEvent(event.id)}
                                 aria-label={`Supprimer l'événement ${event.titre}`}
-                                className="btn-danger-ghost btn-icon btn-sm absolute top-0.5 right-0.5 text-slate-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150"
+                                className="btn-danger-ghost btn-icon btn-sm absolute top-0.5 right-0.5 text-slate-500 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-150"
                               >
                                 <Trash2 />
                               </button>
@@ -1318,33 +1321,34 @@ export default function CommunityManager() {
                     return (
                       <div
                         key={idx}
-                        className={`card p-3 ${
-                          isToday ? 'border-brand-300' : ''
-                        }`}
+                        className="card p-3"
+                        aria-current={isToday ? 'date' : undefined}
                       >
                         <div className="flex items-center gap-2 mb-2">
                           <span className={`text-sm font-semibold ${isToday ? 'text-brand-700' : 'text-slate-900'}`}>
                             {JOURS[idx]} {day.getDate()}
                           </span>
                           {isToday && (
-                            <span className="badge badge-sm badge-brand">
-                              Aujourd'hui
+                            <span className="badge badge-sm badge-neutral">
+                              Aujourd’hui
                             </span>
                           )}
                         </div>
                         {dayEvents.length === 0 ? (
-                          <p className="t-caption italic">Aucun événement</p>
+                          <p className="t-caption">Aucun événement</p>
                         ) : (
                           <div className="space-y-1.5">
                             {dayEvents.map((event) => (
                               <div
                                 key={event.id}
                                 className="flex items-center justify-between gap-2 rounded-lg p-2 bg-slate-50"
-                                style={{ borderLeft: `3px solid ${event.couleur || '#7C3AED'}` }}
                               >
                                 <div className="min-w-0">
-                                  <div className="text-sm font-semibold text-slate-800 truncate">{event.titre}</div>
-                                  <div className="t-caption">{event.heure} {event.type && `· ${event.type}`}</div>
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: event.couleur || '#7C3AED' }} aria-hidden="true" />
+                                    <span className="text-sm font-semibold text-slate-800 truncate">{event.titre}</span>
+                                  </div>
+                                  <div className="text-xs text-slate-600 tabular-nums">{event.heure}{event.heure && event.type ? ' · ' : ''}{event.type}</div>
                                 </div>
                                 <button
                                   type="button"
@@ -1435,19 +1439,21 @@ export default function CommunityManager() {
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 mt-4">
+                <div className="flex flex-wrap items-center justify-end gap-2 mt-6">
                   <button
-                    onClick={handleAddEvent}
-                    disabled={!newEvent.titre.trim() || !newEvent.date}
-                    className="btn-primary"
-                  >
-                    <Plus /> Ajouter
-                  </button>
-                  <button
+                    type="button"
                     onClick={() => setShowAddEvent(false)}
                     className="btn-ghost"
                   >
                     Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddEvent}
+                    disabled={!newEvent.titre.trim() || !newEvent.date}
+                    className="btn-primary"
+                  >
+                    Ajouter l’événement
                   </button>
                 </div>
               </div>
@@ -1455,7 +1461,7 @@ export default function CommunityManager() {
               <button
                 type="button"
                 onClick={() => setShowAddEvent(true)}
-                className="btn-secondary btn-block border-dashed border-slate-300 text-slate-600 hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50"
+                className="btn-secondary btn-block border-dashed border-slate-300"
               >
                 <Plus /> Ajouter un événement
               </button>
@@ -1481,24 +1487,15 @@ export default function CommunityManager() {
                 {templates.map((template) => (
                   <div
                     key={template.id}
-                    className="card overflow-hidden"
+                    className="card flex flex-col"
                   >
-                    {/* Colored accent bar */}
-                    <div
-                      className="h-1"
-                      style={{ backgroundColor: template.couleur || '#7C3AED' }}
-                    />
-
-                    <div className="p-4 sm:p-5">
-                      {/* Icon + name */}
-                      <div className="flex items-start gap-3 mb-3">
-                        {template.icone && <span className="text-xl leading-none mt-0.5" aria-hidden="true">{template.icone}</span>}
-                        <div className="min-w-0 flex-1">
-                          <h3 className="t-h2 truncate">{template.nom}</h3>
-                          {template.description && (
-                            <p className="text-sm text-slate-500 mt-0.5 line-clamp-2">{template.description}</p>
-                          )}
-                        </div>
+                    <div className="p-4 sm:p-5 flex flex-col flex-1">
+                      {/* Nom */}
+                      <div className="mb-3">
+                        <h3 className="t-h2 truncate">{template.nom}</h3>
+                        {template.description && (
+                          <p className="text-sm text-slate-600 mt-0.5 line-clamp-2">{template.description}</p>
+                        )}
                       </div>
 
                       {/* Platform badge */}
@@ -1511,7 +1508,7 @@ export default function CommunityManager() {
 
                       {/* Content preview */}
                       {template.contenu && (
-                        <p className="text-sm text-slate-500 italic line-clamp-3 mb-3">
+                        <p className="text-sm text-slate-600 line-clamp-3 mb-3">
                           {template.contenu}
                         </p>
                       )}
@@ -1520,10 +1517,7 @@ export default function CommunityManager() {
                       {template.hashtags && template.hashtags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-3">
                           {(Array.isArray(template.hashtags) ? template.hashtags : []).slice(0, 4).map((tag, i) => (
-                            <span
-                              key={i}
-                              className="badge badge-sm badge-brand font-medium"
-                            >
+                            <span key={i} className="badge badge-sm badge-neutral">
                               #{sansDiese(tag)}
                             </span>
                           ))}
@@ -1532,10 +1526,11 @@ export default function CommunityManager() {
 
                       {/* Use button */}
                       <button
+                        type="button"
                         onClick={() => handleUseTemplate(template)}
-                        className="btn-secondary btn-block"
+                        className="btn-secondary btn-block mt-auto"
                       >
-                        <Sparkles className="text-brand-600" /> Utiliser
+                        Utiliser ce modèle
                       </button>
                     </div>
                   </div>
@@ -1555,68 +1550,20 @@ export default function CommunityManager() {
               <Spinner />
             ) : (
               <>
-                {/* KPI cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {/* Portée totale */}
-                  <div className="kpi-card flex-col items-stretch gap-0">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="kpi-icon">
-                        <TrendingUp aria-hidden="true" />
-                      </div>
-                      {analytics?.portee_trend != null && (
-                        <span className={`kpi-delta tabular-nums ${
-                          analytics.portee_trend >= 0 ? 'badge-success' : 'badge-danger'
-                        }`}>
-                          {analytics.portee_trend >= 0 ? '+' : ''}{analytics.portee_trend}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="kpi-value">
-                      {analytics?.portee_totale?.toLocaleString('fr-FR') ?? '—'}
-                    </p>
-                    <p className="kpi-label">Portée totale</p>
-                  </div>
-
-                  {/* Interactions */}
-                  <div className="kpi-card flex-col items-stretch gap-0">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="kpi-icon">
-                        <MousePointerClick aria-hidden="true" />
-                      </div>
-                      {analytics?.interactions_trend != null && (
-                        <span className={`kpi-delta tabular-nums ${
-                          analytics.interactions_trend >= 0 ? 'badge-success' : 'badge-danger'
-                        }`}>
-                          {analytics.interactions_trend >= 0 ? '+' : ''}{analytics.interactions_trend}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="kpi-value">
-                      {analytics?.interactions?.toLocaleString('fr-FR') ?? '—'}
-                    </p>
-                    <p className="kpi-label">Interactions</p>
-                  </div>
-
-                  {/* Nouveaux abonnés */}
-                  <div className="kpi-card flex-col items-stretch gap-0">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="kpi-icon">
-                        <Users aria-hidden="true" />
-                      </div>
-                      {analytics?.abonnes_trend != null && (
-                        <span className={`kpi-delta tabular-nums ${
-                          analytics.abonnes_trend >= 0 ? 'badge-success' : 'badge-danger'
-                        }`}>
-                          {analytics.abonnes_trend >= 0 ? '+' : ''}{analytics.abonnes_trend}%
-                        </span>
-                      )}
-                    </div>
-                    <p className="kpi-value">
-                      {analytics?.nouveaux_abonnes?.toLocaleString('fr-FR') ?? '—'}
-                    </p>
-                    <p className="kpi-label">Nouveaux abonnés</p>
-                  </div>
-                </div>
+                {/* Chiffres clés : une carte, trois colonnes séparées par un trait */}
+                <CarteChiffres label="Chiffres de l’audience" colonnes={{ base: 1, sm: 3 }} chiffres={[
+                  { label: 'Portée totale', valeur: analytics?.portee_totale, tendance: analytics?.portee_trend },
+                  { label: 'Interactions', valeur: analytics?.interactions, tendance: analytics?.interactions_trend },
+                  { label: 'Nouveaux abonnés', valeur: analytics?.nouveaux_abonnes, tendance: analytics?.abonnes_trend },
+                ].map(({ label, valeur, tendance }) => ({
+                  label,
+                  valeur: valeur?.toLocaleString('fr-FR') ?? '—',
+                  variation: tendance != null && (
+                    <span className={`text-xs font-medium tabular-nums ${Number(tendance) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                      {formatTendance(tendance)}
+                    </span>
+                  ),
+                }))} />
 
                 {/* Posts performance table */}
                 <div className="card overflow-hidden">
@@ -1695,7 +1642,7 @@ export default function CommunityManager() {
       {/* ─── TOAST PUBLICATION ────────────────────────── */}
       {publishResult && (
         <div role={publishResult.success ? 'status' : 'alert'}
-          className={`toast fixed bottom-4 right-4 lg:bottom-20 lg:right-6 z-[60] items-center animate-in ${
+          className={`toast fixed bottom-4 right-4 lg:bottom-20 lg:right-6 z-[60] items-center ${
             publishResult.success ? 'border-l-emerald-600' : 'border-l-red-600'
           }`}>
           {publishResult.success ? (
@@ -1705,6 +1652,7 @@ export default function CommunityManager() {
           )}
           <span className="flex-1 font-medium">{publishResult.message}</span>
           <button
+            type="button"
             onClick={() => setPublishResult(null)}
             aria-label="Fermer le message"
             className="btn-ghost btn-icon shrink-0"

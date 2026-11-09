@@ -786,8 +786,8 @@ const PrintPreview = forwardRef(function PrintPreview({
 
       {current.status === 'error' ? (
         <div className="flex h-full min-h-[320px] items-center justify-center p-6">
-          <div role="alert" className="max-w-sm rounded-xl bg-white p-6 text-center shadow-xs border border-slate-200">
-            <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-600" aria-hidden="true" />
+          <div role="alert" className="max-w-sm rounded-lg bg-white p-6 text-center border border-slate-200">
+            <AlertCircle className="mx-auto mb-3 h-6 w-6 text-red-600" aria-hidden="true" />
             <p className="t-h2">Impossible d'afficher l'aperçu</p>
             <p className="mt-1 text-sm text-slate-600">{current.error}</p>
             <button type="button" onClick={retry} className="btn-secondary mt-4">
@@ -834,7 +834,8 @@ const PrintPreview = forwardRef(function PrintPreview({
               ))}
               {!ready && (
                 <div className="absolute inset-0 flex flex-col items-center justify-start gap-3 bg-white pt-16">
-                  <div className="w-3/4 space-y-3 motion-safe:animate-pulse" aria-hidden="true">
+                  {/* Squelette statique (aucune pulsation) : le chargement se lit au spinner et au texte dessous */}
+                  <div className="w-3/4 space-y-3" aria-hidden="true">
                     <div className="mx-auto h-10 w-1/2 rounded bg-slate-200" />
                     <div className="h-3 rounded bg-slate-200" />
                     <div className="h-3 w-5/6 rounded bg-slate-200" />
@@ -956,7 +957,7 @@ const PrintPreview = forwardRef(function PrintPreview({
           : <CheckCircle className="h-5 w-5 shrink-0" aria-hidden="true" />}
         <span>{toast.message}</span>
         <button type="button" onClick={() => setToast(null)} aria-label="Fermer la notification"
-          className={`-mr-1 inline-flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/15 ${FOCUS_RING}`}>
+          className={`-mr-1 inline-flex h-11 w-11 items-center justify-center rounded-md transition-colors duration-150 hover:bg-white/15 ${FOCUS_RING}`}>
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>

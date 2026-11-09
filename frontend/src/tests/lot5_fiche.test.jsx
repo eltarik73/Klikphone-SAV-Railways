@@ -154,7 +154,7 @@ describe('Fiche : priorité atelier', () => {
     await waitFor(() => expect(apiMock.updateTicket).toHaveBeenCalledWith('42', { priorite: 'attente' }));
     expect(attente).toBeChecked();
     // Design épuré : la priorité vit dans sa carte, l'en-tête ne porte plus que le statut
-    expect(screen.queryByText('Client attend sur place', { selector: 'span.rounded-full' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Client attend sur place', { selector: 'span.badge' })).not.toBeInTheDocument();
   });
 
   it('valeur déjà enregistrée : aucun envoi', async () => {

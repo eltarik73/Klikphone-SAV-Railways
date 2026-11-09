@@ -235,8 +235,8 @@ export default function PrevenirClient({
     <section aria-labelledby={titreId} className="card p-4" data-carte-prevenir="">
       <div className="flex items-start justify-between gap-3">
         <h3 id={titreId} ref={titreRef} tabIndex={-1}
-          className="flex min-h-[40px] items-center gap-2 rounded t-h2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-          <BellRing className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
+          className="flex min-h-10 items-center gap-2 rounded t-h2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          <BellRing className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
           Prévenir {prenom || 'le client'}
         </h3>
         <button type="button" aria-expanded={ouverte} aria-controls={corpsId}
@@ -253,7 +253,7 @@ export default function PrevenirClient({
             return (
               <li key={l.id} className={`flex items-start gap-2 text-sm font-medium ${cls}`}>
                 {l.spin
-                  ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none text-slate-500" aria-hidden="true" />
+                  ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 motion-safe:animate-spin text-slate-500" aria-hidden="true" />
                   : <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${icone}`} aria-hidden="true" />}
                 <span className="min-w-0 break-words">{l.texte}</span>
               </li>
@@ -313,13 +313,9 @@ export default function PrevenirClient({
                     onClick={() => demander(id)}
                     disabled={occupe || bloque}
                     aria-describedby={bloque ? raisonsId : undefined}
-                    className={`btn-lg px-2 ${
-                      enAvant
-                        ? 'btn bg-emerald-700 text-white shadow-xs hover:bg-emerald-800 disabled:border disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:hover:bg-slate-100'
-                        : 'btn-secondary'
-                    }`}>
+                    className={`btn-lg px-2 ${enAvant ? 'btn-success' : 'btn-secondary'}`}>
                     {sending === id
-                      ? <Loader2 className="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" />
                       : <Icon className={enAvant ? '' : teinte} aria-hidden="true" />}
                     {label}
                   </button>
@@ -341,7 +337,7 @@ export default function PrevenirClient({
                   e.stopPropagation();
                   annulerConfirmation();
                 }}
-                className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
                 <p id={confirmId} className="text-sm font-semibold text-amber-900">{texteConfirmation()}</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <button ref={nonRef} type="button" onClick={annulerConfirmation} className="btn-secondary">

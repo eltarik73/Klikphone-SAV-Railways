@@ -13,7 +13,7 @@ import EmplacementInput, { useEtagereConfig } from './EmplacementInput';
 import RelanceClient from './RelanceClient';
 import ContactClient from './ContactClient';
 import {
-  AlertTriangle, BellRing, Clock, FileWarning, PackageCheck, RefreshCw, Search, Send, X,
+  AlertTriangle, BellRing, Clock, FileWarning, RefreshCw, Search, Send, X,
 } from 'lucide-react';
 
 const PrintPreview = lazy(() => import('./PrintPreview'));
@@ -73,12 +73,12 @@ function Ligne({
               onSaved={(v) => onEmplacement(t.id, v)} />
           )}
           {badge ? (
-            <span className={`inline-flex items-center justify-center rounded-lg px-2 py-1 t-mono text-sm font-bold ${badge.classe}`}>
+            <span className={`inline-flex items-center justify-center rounded-md px-2 py-1 t-mono text-sm font-semibold ${badge.classe}`}>
               <span aria-hidden="true">{badge.label}</span>
               <span className="sr-only">Réparation terminée depuis {pluriel(badge.jours, 'jour')}</span>
             </span>
           ) : (
-            <span className="inline-flex items-center justify-center rounded-lg bg-slate-100 px-2 py-1 t-mono text-sm text-slate-700">
+            <span className="inline-flex items-center justify-center rounded-md bg-slate-100 px-2 py-1 t-mono text-sm text-slate-700">
               <span aria-hidden="true">J+?</span><span className="sr-only">Date de fin de réparation inconnue</span>
             </span>
           )}
@@ -92,7 +92,7 @@ function Ligne({
                   e.preventDefault();
                   onOpenTicket(t.id);
                 }}
-                className={`-my-1.5 inline-flex min-h-[44px] items-center rounded t-mono font-bold text-brand-700 hover:underline ${FOCUS_RING}`}>
+                className={`-my-1.5 inline-flex min-h-11 items-center rounded t-mono font-semibold text-brand-700 hover:underline ${FOCUS_RING}`}>
                 {code}
               </a>
               <span className="min-w-0 truncate font-semibold text-slate-900">{client}</span>
@@ -114,12 +114,12 @@ function Ligne({
           {(aRelancer || impaye || abandon?.atteint || reste > 0) && (
             <div className="flex flex-wrap items-center gap-1.5">
               {aRelancer && (
-                <span className="badge badge-brand">
+                <span className="badge badge-warning">
                   <BellRing className="h-3.5 w-3.5" aria-hidden="true" /> Relance à faire
                 </span>
               )}
               {impaye ? (
-                <span className={`text-sm font-bold tabular-nums ${reste > 0 ? 'text-red-700' : 'text-slate-600'}`}>
+                <span className={`text-sm font-semibold tabular-nums ${reste > 0 ? 'text-red-700' : 'text-slate-600'}`}>
                   {reste > 0 ? `Reste ${formatPrix(reste)}` : 'Rien à payer'}
                 </span>
               ) : abandon?.atteint ? (
@@ -128,7 +128,7 @@ function Ligne({
                 </span>
               ) : null}
               {!impaye && reste > 0 && (
-                <span className="text-sm font-bold tabular-nums text-red-700">Reste {formatPrix(reste)}</span>
+                <span className="text-sm font-semibold tabular-nums text-red-700">Reste {formatPrix(reste)}</span>
               )}
             </div>
           )}
@@ -141,7 +141,7 @@ function Ligne({
               aria-controls={relanceOuverte ? panneauId : undefined}
               aria-label={`Relancer ${code}`}
               className={`btn-secondary flex-1 sm:flex-none ${
-                relanceOuverte ? 'border-brand-300 bg-brand-50 text-brand-700 hover:border-brand-300 hover:bg-brand-50' : ''
+                relanceOuverte ? 'border-slate-300 bg-slate-100 text-slate-900 hover:border-slate-300 hover:bg-slate-100' : ''
               }`}>
               <Send aria-hidden="true" /> Relancer
             </button>
@@ -184,7 +184,7 @@ function Groupe({ titre, aide, tickets, parEmplacement = false, ligne }) {
   if (!tickets.length) return null;
   return (
     <section aria-labelledby={titreId}>
-      <h3 id={titreId} className="sticky top-0 z-[1] bg-slate-50 px-4 sm:px-5 py-2 text-[13px] font-semibold text-slate-700 border-b border-slate-100">
+      <h3 id={titreId} className="sticky top-0 z-[1] bg-slate-50 px-4 sm:px-5 py-2 text-sm font-semibold text-slate-700 border-b border-slate-100">
         {titre} <span className="font-normal text-slate-500">— {aide}</span>
       </h3>
       {parEmplacement ? grouperParEmplacement(tickets).map((g) => (
@@ -192,7 +192,7 @@ function Groupe({ titre, aide, tickets, parEmplacement = false, ligne }) {
           aria-label={g.emplacement ? `Emplacement ${g.emplacement}` : 'Sans emplacement'}>
           <p className="flex items-center gap-2 border-t border-slate-100 bg-white px-4 sm:px-5 pt-2 text-xs font-semibold text-slate-700">
             {g.emplacement
-              ? <span className="rounded-lg bg-slate-900 px-2 py-0.5 t-mono text-xs text-white">{g.emplacement}</span>
+              ? <span className="rounded-md bg-slate-900 px-2 py-0.5 t-mono text-xs text-white">{g.emplacement}</span>
               : <span>Sans emplacement</span>}
             <span className="font-normal text-slate-500">{pluriel(g.tickets.length, 'appareil')}</span>
           </p>
@@ -278,9 +278,6 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
       className="card mb-6 overflow-hidden">
       <div className="border-b border-slate-100 px-4 sm:px-5 py-3 sm:py-4">
         <div className="flex items-center gap-3">
-          <div className="kpi-icon bg-emerald-50 text-emerald-700" aria-hidden="true">
-            <PackageCheck />
-          </div>
           <h2 id={titreId} className="min-w-0 flex-1 t-h2">À récupérer</h2>
           <button type="button" onClick={() => mutate()} aria-label="Rafraîchir l’étagère" className="btn-ghost btn-icon">
             <RefreshCw className={isRevalidating ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
@@ -298,7 +295,7 @@ export default function EtagereARecuperer({ id, basePath, onOpenTicket, onRemett
             : 'Chargement…'}
           {data && aRelancer > 0 && ' '}
           {data && aRelancer > 0 && (
-            <strong className="font-semibold text-brand-700">
+            <strong className="font-semibold text-amber-800">
               {pluriel(aRelancer, 'relance à faire', 'relances à faire')}.
             </strong>
           )}

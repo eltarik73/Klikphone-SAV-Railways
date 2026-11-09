@@ -220,7 +220,7 @@ function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer, brouill
   const avecUrl = !estPieceApple(piece);
   return (
     <form onSubmit={valider} aria-label={`Mettre à jour le prix d’achat HT de ${nom}`}
-      className="card-section border border-brand-200 bg-brand-50/40 space-y-3">
+      className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,180px)_1fr] sm:items-end">
         <div>
           <label htmlFor={`${idBase}-ht`} className="input-label">Nouveau prix d’achat HT (€)</label>
@@ -258,7 +258,7 @@ function EditeurHt({ piece, nom, regles, liens, onEnregistrer, onFermer, brouill
       )}
 
       {/* Aperçu : le nouveau prix client AVANT validation, mêmes règles que le serveur */}
-      <div id={`${idBase}-apercu`} aria-live="polite" className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm">
+      <div id={`${idBase}-apercu`} aria-live="polite" className="rounded-md bg-slate-50 px-3 py-2 text-sm">
         {apercu ? (
           <>
             <p className="font-medium text-slate-900 tabular-nums">
@@ -357,7 +357,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
             </div>
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
               {retenu && <span className="badge badge-sm badge-success">retenu</span>}
-              {stockDit && <span className={`badge badge-sm ${rupture ? 'badge-danger' : 'badge-success'}`}>{rupture ? 'Rupture' : 'En stock'}</span>}
+              {stockDit && <span className={`badge badge-sm ${rupture ? 'badge-warning' : 'badge-success'}`}>{rupture ? 'Rupture' : 'En stock'}</span>}
               {connu && <BadgeChassis chassis={d.chassis} />}
               {!connu && <span className="badge badge-sm badge-neutral">pas de prix {grille}</span>}
             </div>
@@ -366,7 +366,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
       </td>
       {htVisible && (
         <td className="tabular-nums align-top">
-          {!connu ? <span className="text-slate-400">—</span>
+          {!connu ? <span className="text-slate-500">—</span>
             : d.ht !== null && d.ht !== undefined ? <span className="font-medium text-slate-900">{deuxDecimales(d.ht)} € HT</span>
               : <span className="text-slate-400" title="Masqué sans le code administrateur"><Lock className="w-4 h-4 inline" aria-hidden="true" /><span className="sr-only">Prix d’achat masqué</span></span>}
           {connu && (
@@ -375,7 +375,7 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
               {d.ref && <span>· réf. {d.ref}</span>}
               {d.url && (
                 <a href={d.url} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                  className="inline-flex items-center gap-0.5 min-h-11 -my-3.5 px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                   <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> {grille} (nouvel onglet)</span>
                 </a>
               )}
@@ -389,9 +389,9 @@ function LigneGrilleFournisseur({ piece, marque, modele, grille, htVisible, seui
         </td>
       )}
       <td className="table-cell-num align-top">
-        {connu && Number(d.client) > 0 ? <span className="text-base">{euros(d.client)}</span> : <span className="text-slate-400 font-normal">—</span>}
+        {connu && Number(d.client) > 0 ? <span className="text-base">{euros(d.client)}</span> : <span className="text-slate-500 font-normal">—</span>}
       </td>
-      {!htVisible && <td className="align-top">{badgeDate || <span className="text-slate-400">—</span>}</td>}
+      {!htVisible && <td className="align-top">{badgeDate || <span className="text-slate-500">—</span>}</td>}
     </tr>
   );
 }
@@ -472,13 +472,13 @@ export default function PieceFournisseurRow({
                 {!stockConnu ? null : isAdmin && onStock && !estPieceApple(piece) ? (
                   <button type="button" onClick={() => onStock(piece)} aria-pressed={!enStock}
                     aria-label={`${nom} : ${enStock ? 'en stock' : 'en rupture'}. Changer`}
-                    className="inline-flex items-center justify-center min-h-[44px] -my-2 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
-                    <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
+                    className="inline-flex items-center justify-center min-h-11 -my-2 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                    <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-warning'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
                   </button>
                 ) : (
-                  <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-danger'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
+                  <span className={`badge badge-sm ${enStock ? 'badge-success' : 'badge-warning'}`}>{enStock ? 'En stock' : 'Rupture'}</span>
                 )}
-                {ruptureFournisseur && <span className="badge badge-sm badge-danger">Rupture chez {retenu}</span>}
+                {ruptureFournisseur && <span className="badge badge-sm badge-warning">Rupture chez {retenu}</span>}
                 <BadgeChassis chassis={chassisRetenu} fournisseur={retenu || ''} />
                 {isAdmin && onVerrou
                   ? <BoutonVerrou verrouille={verrou} onClick={() => onVerrou(piece)} disabled={occupe || envoi} nom={`le prix de ${nom}`} />
@@ -499,7 +499,7 @@ export default function PieceFournisseurRow({
                   <Pencil aria-hidden="true" /> Saisir le HT
                 </button>
               ) : (
-                <span className="text-slate-400">—</span>
+                <span className="text-slate-500">—</span>
               )
             ) : (
               <>
@@ -507,7 +507,7 @@ export default function PieceFournisseurRow({
                   // Éditable au clic : le montant ouvre le volet « Mettre à jour le HT »
                   <button type="button" onClick={() => setEdition((v) => !v)} aria-expanded={edition} disabled={occupe}
                     aria-label={`Modifier le prix d’achat HT de ${nom}`}
-                    className="font-medium text-slate-900 underline decoration-dotted decoration-slate-400 underline-offset-4 hover:text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 min-h-[44px] -my-2">
+                    className="font-medium text-slate-900 underline decoration-dotted decoration-slate-400 underline-offset-4 hover:text-brand-700 rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 min-h-11 -my-2">
                     {deuxDecimales(piece.prix_fournisseur_ht)} € HT
                   </button>
                 ) : htConnu ? (
@@ -527,7 +527,7 @@ export default function PieceFournisseurRow({
                   {piece.url_fournisseur && (
                     // Cible tactile de 44 px sans écarter la ligne de 16 px (marges négatives)
                     <a href={piece.url_fournisseur} target="_blank" rel="noopener noreferrer"
-                      className="inline-flex items-center gap-0.5 min-h-[44px] -my-[14px] px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                      className="inline-flex items-center gap-0.5 min-h-11 -my-3.5 px-1 -mx-1 text-brand-700 hover:underline rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                       <ExternalLink className="w-3 h-3" aria-hidden="true" /> fiche<span className="sr-only"> fournisseur (nouvel onglet)</span>
                     </a>
                   )}
@@ -540,20 +540,20 @@ export default function PieceFournisseurRow({
         {htVisible && (
           <td className="text-xs text-slate-500 tabular-nums align-top">
             {calcul ? <span className="whitespace-nowrap">{texteCalcul(calcul)}</span> : <span aria-hidden="true">—</span>}
-            {calcul?.par_ecran && <div className="text-brand-700">écran{calcul.ecran_qualite ? ` ${calcul.ecran_qualite}` : ''} + batterie (changée par l’écran)</div>}
+            {calcul?.par_ecran && <div className="text-slate-600">écran{calcul.ecran_qualite ? ` ${calcul.ecran_qualite}` : ''} + batterie (changée par l’écran)</div>}
             {calcul && verrou && <div className="text-amber-800">Prix client fixé à la main</div>}
           </td>
         )}
 
 
         <td className="table-cell-num align-top">
-          {aRenseigner || !(Number(piece.prix_client) > 0) ? <span className="text-slate-400 font-normal">—</span> : <span className="text-base">{euros(piece.prix_client)}</span>}
+          {aRenseigner || !(Number(piece.prix_client) > 0) ? <span className="text-slate-500 font-normal">—</span> : <span className="text-base">{euros(piece.prix_client)}</span>}
           {marge && <div className="text-xs mt-1 font-semibold text-red-700 tabular-nums">{marge}</div>}
         </td>
 
         {!htVisible && (
           <td className="align-top">
-            {aRenseigner ? <span className="text-slate-400">—</span> : <BadgeDatePrix row={piece} seuils={seuils} court />}
+            {aRenseigner ? <span className="text-slate-500">—</span> : <BadgeDatePrix row={piece} seuils={seuils} court />}
           </td>
         )}
 
@@ -577,8 +577,8 @@ export default function PieceFournisseurRow({
         <tr>
           {/* Le volet occupe la largeur VISIBLE du tableau (100cqw : le .table-wrap est un conteneur de taille)
               et reste collé à gauche quand le tableau défile sur téléphone ; sans cqw, il prend la ligne entière */}
-          <td colSpan={nbColonnes} className="bg-slate-50/60 !px-0">
-            <div className="sticky left-4 w-[calc(100cqw-2rem)] max-w-full mx-4">
+          <td colSpan={nbColonnes} className="bg-slate-50/60">
+            <div className="sticky left-4 w-[calc(100cqw-2rem)] max-w-full">
               <EditeurHt piece={piece} nom={nom} regles={regles} liens={liens} brouillon={brouillon}
                 onEnregistrer={enregistrer} onFermer={() => { setEdition(false); setBrouillon(null); }} />
             </div>

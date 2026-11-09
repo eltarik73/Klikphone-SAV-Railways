@@ -339,7 +339,7 @@ function TicketRow({ t, query }) {
       <span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${getStatusConfig(t.statut).dot}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="flex items-baseline gap-2 min-w-0">
-          <span className="font-mono text-xs font-bold text-brand-700 shrink-0">
+          <span className="font-mono text-xs font-semibold text-slate-900 shrink-0">
             <Highlight text={t.ticket_code || ''} query={query} />
           </span>
           <span className="text-sm font-semibold text-slate-900 truncate">
@@ -901,14 +901,14 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
         <div className="sr-only" aria-live="polite" role="status">{statusText}</div>
 
         {notice && (
-          <div role="alert" className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2.5 text-sm text-amber-900">
+          <div role="alert" className="mx-3 mt-3 flex items-start gap-2 rounded-md bg-amber-50 ring-1 ring-amber-200 px-3 py-2.5 text-sm text-amber-900">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
             <span>{notice}</span>
           </div>
         )}
 
         {error && showResults && (
-          <div role="alert" className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-red-50 ring-1 ring-red-200 px-3 py-2.5 text-sm text-red-800">
+          <div role="alert" className="mx-3 mt-3 flex flex-wrap items-center gap-2 rounded-md bg-red-50 ring-1 ring-red-200 px-3 py-2.5 text-sm text-red-800">
             <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span className="flex-1 min-w-0">La recherche n’a pas abouti : {error}</span>
             <button type="button" onClick={() => setRetryTick((n) => n + 1)} className="btn-secondary btn-sm text-red-800">
@@ -982,18 +982,18 @@ function PaletteDialog({ initialQuery, basePath, userKey, onClose, onNavigate })
         <div className="border-t border-slate-200 px-3 py-2 flex flex-wrap items-center gap-2 text-xs text-slate-600 bg-slate-50/80">
           {!showResults && recents.items.length + recents.queries.length > 0 && (
             <button type="button" onClick={clearHistory}
-              className="min-h-[44px] px-3 rounded-lg font-medium text-slate-600 hover:text-slate-900 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+              className="min-h-11 px-3 rounded-md font-medium text-slate-600 transition-colors duration-150 hover:text-slate-900 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
               Effacer l’historique
             </button>
           )}
           {resultsReady && (
             <>
               <button type="button" onClick={() => onNavigate(`${basePath}?q=${encodeURIComponent(resQ)}`)}
-                className="min-h-[44px] px-3 rounded-lg font-medium text-brand-700 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="min-h-11 px-3 rounded-md font-medium text-brand-700 transition-colors duration-150 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 Tous les tickets « {resQ.length > 24 ? `${resQ.slice(0, 24)}…` : resQ} »
               </button>
               <button type="button" onClick={() => onNavigate(`${basePath}/clients?q=${encodeURIComponent(resQ)}`)}
-                className="min-h-[44px] px-3 rounded-lg font-medium text-brand-700 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+                className="min-h-11 px-3 rounded-md font-medium text-brand-700 transition-colors duration-150 hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 Tous les clients
               </button>
             </>

@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import api from '../lib/api';
 import { ArrowLeft, Loader2, MapPin, Phone, RefreshCw, AlertTriangle } from 'lucide-react';
-import LogoK from '../components/LogoK';
+import { LogoKlikPhone } from '../components/LogoK';
 
 export default function LoginPage() {
   const { target } = useParams();
@@ -108,9 +108,9 @@ export default function LoginPage() {
         </button>
 
         <div className="card p-6 sm:p-8">
-          {/* Logo : « K » en aplat brand-600 (le PNG est un dégradé) */}
-          <div className="flex justify-center mb-5">
-            <LogoK className="w-14 h-14" label="Klikphone" />
+          {/* Logo officiel KlikPhone (K + mot), centré au-dessus du titre */}
+          <div className="flex justify-center mb-6">
+            <LogoKlikPhone vertical taille="md" />
           </div>
 
           <h1 className="t-h1 text-center mb-1">

@@ -84,7 +84,7 @@ function AnonymiserDialog({ client, busy, onCancel, onConfirm }) {
           </label>
           <input id="anonymiser-saisie" value={saisie} onChange={e => setSaisie(e.target.value)}
             autoComplete="off" autoCapitalize="characters" spellCheck={false}
-            className="input min-h-[44px] font-mono uppercase tabular-nums" />
+            className="input min-h-11 font-mono uppercase tabular-nums" />
         </div>
         <div className="modal-footer flex-wrap">
           <button type="button" onClick={onCancel} disabled={busy} className="btn-ghost">Annuler</button>
@@ -468,10 +468,10 @@ export default function ClientsPage() {
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
             <label htmlFor="clients-search" className="sr-only">Rechercher un client</label>
-            <input id="clients-search" type="text" placeholder="Rechercher par nom, téléphone, email, société..."
+            <input id="clients-search" type="text" placeholder="Rechercher par nom, téléphone, email, société…"
               value={search} onChange={(e) => setSearch(e.target.value)}
               autoComplete="off"
-              className="input min-h-[44px] pl-10 pr-12"
+              className="input min-h-11 pl-10 pr-12"
             />
             {search && (
               <button type="button" onClick={() => setSearch('')} aria-label="Effacer la recherche"
@@ -765,7 +765,7 @@ export default function ClientsPage() {
               {/* RGPD : droit d'accès (export) et d'effacement (anonymisation) — élévation admin */}
               <div className="card card-body">
                 <h3 className="t-h2 flex items-center gap-2 mb-3">
-                  <ShieldCheck className="w-4 h-4 text-brand-600" aria-hidden="true" /> Données personnelles
+                  <ShieldCheck className="w-4 h-4 text-slate-500" aria-hidden="true" /> Données personnelles
                 </h3>
                 <button type="button" onClick={handleConsentement}
                   disabled={consentBusy || Boolean(selectedClient.anonymise_le)}

@@ -9,29 +9,30 @@ import { Circle, Zap, Hourglass, Briefcase } from 'lucide-react';
  * - <PrioriteBadge priorite="attente" /> : rien pour « normal » (sauf afficherNormal).
  * - <PrioriteSelecteur value={...} onChange={(valeur) => ...} /> : 4 boutons radio (flèches au clavier).
  *
- * Design V2 : badges uniformes (.badge-neutral / .badge-warning / .badge-danger-solid / .badge-info,
- * sans bordure) ; le sélecteur est un segmented control neutre où seule l'icône porte la couleur.
+ * Design épuré : badges du système (.badge + .badge-neutral / .badge-warning / .badge-danger, fond teinté,
+ * jamais plein ; le bleu reste la teinte « en cours » des statuts, donc Pro est neutre) ; le sélecteur est un
+ * segmented control neutre où seule l'icône porte la couleur.
  */
 export const PRIORITES = [
   {
     valeur: 'normal', libelle: 'Normal', court: 'Normal', icone: Circle,
-    badge: 'bg-slate-100 text-slate-700',
+    badge: 'badge-neutral',
     icone_couleur: 'text-slate-700',
   },
   {
     valeur: 'express', libelle: 'Express', court: 'Express', icone: Zap,
-    badge: 'bg-amber-50 text-amber-800',
+    badge: 'badge-warning',
     icone_couleur: 'text-amber-700',
   },
   {
     valeur: 'attente', libelle: 'Client attend sur place', court: 'Attend sur place', icone: Hourglass,
-    badge: 'bg-red-600 text-white',
+    badge: 'badge-danger',
     icone_couleur: 'text-red-700',
   },
   {
     valeur: 'pro', libelle: 'Pro', court: 'Pro', icone: Briefcase,
-    badge: 'bg-blue-50 text-blue-700',
-    icone_couleur: 'text-blue-700',
+    badge: 'badge-neutral',
+    icone_couleur: 'text-slate-700',
   },
 ];
 
@@ -59,11 +60,11 @@ export function comparerPriorite(a, b) {
   return ORDRE_PRIORITE[normaliserPriorite(a)] - ORDRE_PRIORITE[normaliserPriorite(b)];
 }
 
-// Jamais moins de 12 px (plancher de lisibilité)
+// Jamais moins de 12 px (plancher de lisibilité) ; .badge = 24 px, 12 px / 500, coins 6 px
 const TAILLES = {
-  sm: 'text-xs h-5 px-2 gap-1',
-  md: 'text-xs h-6 px-2.5 gap-1.5',
-  lg: 'text-sm h-8 px-3 gap-1.5',
+  sm: 'badge-sm gap-1',
+  md: '',
+  lg: 'h-8 px-3 text-sm',
 };
 const ICONES = { sm: 'w-3 h-3', md: 'w-3.5 h-3.5', lg: 'w-4 h-4' };
 
@@ -73,7 +74,7 @@ export function PrioriteBadge({ priorite, taille = 'sm', afficherNormal = false,
   const Icone = p.icone;
   return (
     <span
-      className={`inline-flex items-center rounded-full font-semibold whitespace-nowrap leading-none ${TAILLES[taille] || TAILLES.sm} ${p.badge} ${className}`}
+      className={`badge ${TAILLES[taille] ?? TAILLES.sm} ${p.badge} ${className}`}
       title={`Priorité : ${p.libelle}`}
     >
       <Icone className={`shrink-0 ${ICONES[taille] || ICONES.sm}`} aria-hidden="true" />

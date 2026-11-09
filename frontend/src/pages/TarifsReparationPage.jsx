@@ -7,7 +7,8 @@ import { PaperFrame, PAPERS, computeFitZoom, mmToPx } from '../components/PrintP
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useAvertirAvantDepart, useEnvoisOptimistes } from '../hooks/useEnvoisOptimistes';
 import { useToast } from '../components/Toast';
-import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, alertesPrix, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
+import { useConfirmDialog } from '../components/ConfirmDialog';
+import HistoriquePrix, { BadgeDatePrix, BoutonVerrou, FiltreAnciens, alertesPrix, euros, messageErreurPrix, plusDeTroisMois } from '../components/HistoriquePrix';
 import { AIDE_VERROU_BOUTIQUE, AjustementColonne, useVerrousBoutique } from '../components/ReglesPrixPanel';
 
 const PRINT_MARGIN_MM = 1;
@@ -18,7 +19,7 @@ function LienReparationSmartphones() {
   const dansRouteur = useInRouterContext();
   const chemin = typeof window !== 'undefined' && String(window.location?.pathname || '').startsWith('/tech') ? '/tech/tarifs' : '/accueil/tarifs';
   // Cible tactile de 44 px dans la phrase : marges négatives pour ne pas écarter la ligne
-  const classes = 'font-semibold underline underline-offset-2 inline-flex items-center gap-1 min-h-[44px] -my-[10px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
+  const classes = 'font-semibold underline underline-offset-2 inline-flex items-center gap-1 min-h-11 -my-2.5 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500';
   const contenu = <><Smartphone className="w-3.5 h-3.5" aria-hidden="true" /> Réparation smartphones</>;
   return dansRouteur ? <Link to={chemin} className={classes}>{contenu}</Link> : <a href={chemin} className={classes}>{contenu}</a>;
 }
@@ -31,9 +32,9 @@ const COLUMNS = [
   { key: 'batterie', label: 'Batterie', shortLabel: 'Batterie', accent: 'border-t-amber-400' },
   { key: 'desoxydation', label: 'Désoxydation', shortLabel: 'Désoxy.', accent: 'border-t-emerald-400' },
   { key: 'connecteur_charge', label: 'Connecteur', shortLabel: 'Connect.', accent: 'border-t-rose-400' },
-  { key: 'reparation_divers', label: 'Réparation', shortLabel: 'Répar.', accent: 'border-t-indigo-400' },
-  { key: 'ecouteur_apn', label: 'Écouteur/APN', shortLabel: 'Écout.', accent: 'border-t-violet-400' },
-  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', accent: 'border-t-orange-400' },
+  { key: 'reparation_divers', label: 'Réparation', shortLabel: 'Répar.', accent: 'border-t-slate-500' },
+  { key: 'ecouteur_apn', label: 'Écouteur/APN', shortLabel: 'Écout.', accent: 'border-t-slate-300' },
+  { key: 'vitre_arriere', label: 'Vitre Arrière', shortLabel: 'Vitre Arr.', accent: 'border-t-amber-600' },
   { key: 'chassis', label: 'Châssis', shortLabel: 'Châssis', accent: 'border-t-slate-400' },
 ];
 
@@ -54,6 +55,7 @@ function getBarrePrice(val, barreDb) {
 export default function TarifsReparationPage() {
   const toast = useToast();
   const { sensible, adminPrompt } = useAdminElevation();
+  const confirmation = useConfirmDialog();
   const [tarifs, setTarifs] = useState([]);
   const [search, setSearch] = useState('');
   const [anciensSeuls, setAnciensSeuls] = useState(false);
@@ -146,14 +148,26 @@ export default function TarifsReparationPage() {
     const courant = tarifs.find((t) => t.id === cell.id);
     const ancien = courant ? (courant[cell.key] ?? null) : null;
     if (courant && ancien === val) { cancelEdit(); return; }
-    // Grosse variation (règles de prix : plus de 25 % ou de 30 €) : le prix part aussitôt sur la vitrine
+    // Grosse variation (règles de prix : plus de 25 % ou de 30 €) : le prix part aussitôt sur la vitrine,
+    // la cellule se referme sur l'ancien prix et la modale demande confirmation ; « Annuler » ne publie rien
     const variation = ancien != null && val != null && alertesPrix({ ancienHt: ancien, nouveauHt: val }).includes('variation');
-    if (variation && !window.confirm(`${courant.modele} : passer de ${ancien} € à ${val} € ? Le prix est publié aussitôt.`)) {
-      cancelEdit();
+    cancelEdit();
+    if (variation) {
+      const colonne = COLUMNS.find((c) => c.key === cell.key)?.label || 'Prix';
+      confirmation.demander({
+        title: `${colonne} de ${courant.modele} : passer de ${euros(ancien)} à ${euros(val)} ?`,
+        description: 'La variation est forte. Le nouveau prix est publié aussitôt sur la grille.',
+        confirmLabel: 'Publier le prix',
+        // Sans attendre : la modale se ferme, le prix s'affiche et part derrière (comme une petite variation)
+        onConfirm: () => { publierPrix(cell, ancien, val); },
+      });
       return;
     }
+    await publierPrix(cell, ancien, val);
+  };
+
+  const publierPrix = async (cell, ancien, val) => {
     setTarifs(prev => prev.map((t) => (t.id === cell.id ? { ...t, [cell.key]: val } : t)));
-    cancelEdit();
     const res = await envois.envoyer(cell.id, () => sensible(() => api.updateTarifReparation(cell.id, { [cell.key]: val })),
       { avant: { [cell.key]: ancien }, apres: { [cell.key]: val } });
     if (res.ok) {
@@ -198,21 +212,28 @@ export default function TarifsReparationPage() {
   };
 
   // ─── Delete model ───
-  const handleDelete = async (id, modele) => {
+  const handleDelete = (id, modele) => {
     if (!isAdmin) return;
     if (verrouilles.has(id)) {
       toast.info(`${modele} est verrouillé : ouvrez le cadenas avant de le supprimer.`);
       return;
     }
-    if (!confirm(`Supprimer "${modele}" ?`)) return;
-    try {
-      await sensible(() => api.deleteTarifReparation(id));
-      setTarifs(prev => prev.filter(t => t.id !== id));
-      toast.success(`${modele} supprimé.`);
-    } catch (e) {
-      const msg = messageErreurPrix(e, 'Suppression impossible');
-      if (msg) toast.error(msg);
-    }
+    confirmation.demander({
+      title: `Supprimer ${modele} de la grille ?`,
+      description: 'Le modèle et tous ses prix sont retirés de la grille de réparation iPhone.',
+      confirmLabel: 'Supprimer',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await sensible(() => api.deleteTarifReparation(id));
+          setTarifs(prev => prev.filter(t => t.id !== id));
+          toast.success(`${modele} supprimé.`);
+        } catch (e) {
+          const msg = messageErreurPrix(e, 'Suppression impossible');
+          if (msg) toast.error(msg);
+        }
+      },
+    });
   };
 
   // ─── Move model ───
@@ -290,18 +311,18 @@ export default function TarifsReparationPage() {
             <X aria-hidden="true" />
           </button>
           <span className="font-medium text-sm">Aperçu A4 paysage — {pages.length} page(s)</span>
-          <div role="group" aria-label="Nombre de pages" className="flex items-center gap-1 sm:ml-2 bg-white/10 rounded-lg overflow-hidden">
+          <div role="group" aria-label="Nombre de pages" className="flex items-center gap-1 sm:ml-2 bg-white/10 rounded-md overflow-hidden">
             {[1, 2].map((n) => (
               <button key={n} onClick={() => setPrintPages(n)} aria-pressed={printPages === n}
-                className={`h-11 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printPages === n ? 'bg-brand-600' : 'hover:bg-white/10'}`}>
+                className={`h-11 px-3 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printPages === n ? 'bg-brand-600' : 'hover:bg-white/10'}`}>
                 {n === 1 ? '1 page' : '2 pages'}
               </button>
             ))}
           </div>
-          <div role="group" aria-label="Zoom" className="flex items-center gap-1 bg-white/10 rounded-lg overflow-hidden">
+          <div role="group" aria-label="Zoom" className="flex items-center gap-1 bg-white/10 rounded-md overflow-hidden">
             {[['fit', 'Ajuster'], [1, '100 %']].map(([value, label]) => (
               <button key={label} onClick={() => setPrintZoom(value)} aria-pressed={printZoom === value}
-                className={`h-11 px-3 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printZoom === value ? 'bg-white text-slate-900' : 'hover:bg-white/10'}`}>
+                className={`h-11 px-3 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white ${printZoom === value ? 'bg-white text-slate-900' : 'hover:bg-white/10'}`}>
                 {label}
               </button>
             ))}
@@ -411,7 +432,7 @@ export default function TarifsReparationPage() {
       {/* Header */}
       <div className="page-header">
         <div className="min-w-0">
-          <h1 className="page-header-title">Tarifs Réparation iPhone</h1>
+          <h1 className="page-header-title">Tarifs réparation iPhone</h1>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <p className="text-sm text-slate-500">{tarifs.length} modèles</p>
             {isAdmin ? (
@@ -431,7 +452,7 @@ export default function TarifsReparationPage() {
             <input
               type="search"
               aria-label="Rechercher un modèle"
-              placeholder="Rechercher..."
+              placeholder="Rechercher…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="input pl-9 w-44"
@@ -455,7 +476,8 @@ export default function TarifsReparationPage() {
               <button type="button" onClick={() => setFenetre('ajuster')} className="btn-secondary">
                 <SlidersHorizontal aria-hidden="true" /> Ajuster en %
               </button>
-              <button type="button" onClick={() => setShowAdd(true)} className="btn-primary">
+              {/* Barre d'ajout ouverte : son « Ajouter le modèle » est la seule action pleine */}
+              <button type="button" onClick={() => setShowAdd(true)} aria-expanded={showAdd} className={showAdd ? 'btn-secondary' : 'btn-primary'}>
                 <Plus aria-hidden="true" /> Ajouter
               </button>
             </>
@@ -515,11 +537,11 @@ export default function TarifsReparationPage() {
             value={newModele}
             onChange={e => setNewModele(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setShowAdd(false); setNewModele(''); } }}
-            placeholder="Nom du modèle (ex: iPhone 17 Pro Max)"
+            placeholder="Nom du modèle (par exemple iPhone 17 Pro Max)"
             className="input flex-1"
           />
           <button type="button" onClick={handleAdd} disabled={!newModele.trim()} className="btn-primary">
-            Ajouter
+            Ajouter le modèle
           </button>
           <button type="button" onClick={() => { setShowAdd(false); setNewModele(''); }} aria-label="Annuler l’ajout"
             className="btn-ghost btn-icon">
@@ -535,11 +557,11 @@ export default function TarifsReparationPage() {
             <thead>
               <tr className="bg-slate-50">
                 {isAdmin && (
-                  <th scope="col" className="table-header table-sticky-col !bg-slate-50 px-2 py-3 text-center w-[100px]">
+                  <th scope="col" className="table-header table-sticky-col bg-slate-50 px-2 py-3 text-center w-[100px]">
                     Ordre
                   </th>
                 )}
-                <th scope="col" className={`table-header px-4 py-3 text-left min-w-[170px] ${isAdmin ? '' : 'table-sticky-col !bg-slate-50'}`}>
+                <th scope="col" className={`table-header px-4 py-3 text-left min-w-[170px] ${isAdmin ? '' : 'table-sticky-col bg-slate-50'}`}>
                   Modèle iPhone
                 </th>
                 <th scope="col" className="table-header px-3 py-3 text-left whitespace-nowrap hidden md:table-cell">
@@ -558,7 +580,7 @@ export default function TarifsReparationPage() {
                 const realIndex = tarifs.findIndex(x => x.id === t.id);
                 const verrou = verrouilles.has(t.id);
                 return (
-                  <tr key={t.id} className="group border-t border-slate-100 even:bg-slate-50 hover:bg-brand-50/40 transition-colors">
+                  <tr key={t.id} className="group border-t border-slate-100 even:bg-slate-50 hover:bg-slate-100 transition-colors duration-150">
                     {/* Move buttons */}
                     {isAdmin && (
                       <td className={`px-1 py-1 text-center table-sticky-col ${celluleFixe}`}>
@@ -598,7 +620,7 @@ export default function TarifsReparationPage() {
                           <span className="block text-sm font-semibold text-slate-900">{val}€</span>
                         </span>
                       ) : (
-                        <span className="text-slate-400 text-sm" aria-hidden="true">—</span>
+                        <span className="text-slate-500 text-sm" aria-hidden="true">—</span>
                       );
                       // Prix affiché aussitôt, petit indicateur tant que le serveur n'a pas confirmé
                       const contenuCellule = envoiCellule ? (
@@ -628,7 +650,7 @@ export default function TarifsReparationPage() {
                               onClick={() => startEdit(t, c.key, val)}
                               aria-label={`${c.label} de ${t.modele} : ${val != null ? `${val} euros` : 'pas de prix'}. ${verrou ? 'Verrouillé' : 'Modifier'}`}
                               aria-busy={envoiCellule || undefined}
-                              className={`w-full min-h-[44px] rounded-lg px-1 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-brand-50 hover:ring-1 hover:ring-brand-200'}`}
+                              className={`w-full min-h-11 rounded-md px-1 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${verrou ? 'cursor-not-allowed' : 'hover:bg-white hover:ring-1 hover:ring-slate-300'}`}
                             >
                               {contenuCellule}
                             </button>
@@ -666,7 +688,7 @@ export default function TarifsReparationPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={colSpan} className="text-center py-12 text-slate-500 text-sm">
-                    {anciensSeuls && !search ? 'Aucun prix de plus de 3 mois.' : `Aucun modèle trouvé pour "${search}"`}
+                    {anciensSeuls && !search ? 'Aucun prix de plus de 3 mois.' : `Aucun modèle trouvé pour « ${search} »`}
                   </td>
                 </tr>
               )}
@@ -709,6 +731,7 @@ export default function TarifsReparationPage() {
           setShowAdminModal(false);
         }}
       />
+      {confirmation.dialog}
       {adminPrompt}
     </div>
   );

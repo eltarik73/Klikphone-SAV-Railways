@@ -5,7 +5,7 @@
  * mode admin suivi par AdminGuard, un seul GET /api/config, méthodes mortes retirées, boutons nommés.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { api, formatErrorDetail, httpError } from '../lib/api';
 import { AdminGuard } from '../App';
@@ -259,8 +259,15 @@ describe('Boutons icône nommés sur mobile', () => {
     const { container } = render(<MemoryRouter initialEntries={['/accueil/admin']}><AdminPage /></MemoryRouter>);
     const bouton = screen.getByRole('button', { name: 'Déconnexion' });
     expect(bouton).toHaveAttribute('type', 'button');
-    // 8 cartes KPI + 3 cartes « vitrine » réservées : rien ne saute à l'arrivée des données
-    expect(container.querySelectorAll('.skeleton-card')).toHaveLength(11);
+    // 8 cellules d'indicateurs + 3 cellules « vitrine » réservées (CarteChiffres en chargement) :
+    // rien ne saute à l'arrivée des données
+    const indicateurs = screen.getByRole('region', { name: 'Indicateurs du reporting' });
+    expect(indicateurs).toHaveAttribute('aria-busy', 'true');
+    expect(within(indicateurs).getAllByRole('term')).toHaveLength(8);
+    const vitrine = screen.getByRole('region', { name: 'Chiffres de la vitrine tarifs' });
+    expect(vitrine).toHaveAttribute('aria-busy', 'true');
+    expect(within(vitrine).getAllByRole('term')).toHaveLength(3);
+    expect(container.querySelectorAll('.skeleton-line').length).toBeGreaterThanOrEqual(11);
     fireEvent.click(bouton);
     await waitFor(() => expect(global.fetch.mock.calls.some(([u, o]) => u === '/api/admin/lock' && o?.method === 'POST')).toBe(true));
     expect(localStorage.getItem('klikphone_admin')).toBeNull();

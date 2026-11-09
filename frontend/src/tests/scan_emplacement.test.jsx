@@ -188,8 +188,8 @@ describe('« Rangé où ? » après « Terminé »', () => {
     // Boutons des emplacements configurés (normalisés, sans doublon), cibles de 44 px
     const proposes = within(dialog).getByRole('group', { name: 'Emplacements proposés' });
     expect(within(proposes).getAllByRole('button').map((b) => b.textContent)).toEqual(['A1', 'B3', 'C2']);
-    within(proposes).getAllByRole('button').forEach((b) => expect(b.className).toMatch(/min-h-\[44px\]/));
-    expect(within(dialog).getByRole('button', { name: 'Ranger l’appareil plus tard' }).className).toMatch(/min-h-\[44px\]/);
+    within(proposes).getAllByRole('button').forEach((b) => expect(b).toHaveClass('min-h-11'));
+    expect(within(dialog).getByRole('button', { name: 'Ranger l’appareil plus tard' })).toHaveClass('min-h-11');
 
     fireEvent.click(within(proposes).getByRole('button', { name: 'B3' }));
     await waitFor(() => expect(apiMock.setEmplacement).toHaveBeenCalledWith(42, 'B3'));
@@ -366,7 +366,7 @@ describe('ticket « Réparation terminée » scanné (client qui vient chercher)
     expect(within(dialog).getByText('Pas d’emplacement noté')).toBeInTheDocument();
     expect(dialog).toHaveAccessibleDescription(/Pas d’emplacement noté/);
     const noter = within(dialog).getByRole('button', { name: 'Noter l’emplacement' });
-    expect(noter.className).toMatch(/min-h-\[44px\]/);
+    expect(noter).toHaveClass('min-h-11');
     fireEvent.click(noter);
     const champ = within(dialog).getByRole('textbox', { name: 'Rangé où ?' });
     await waitFor(() => expect(document.activeElement).toBe(champ));

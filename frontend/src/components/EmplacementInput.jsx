@@ -199,7 +199,7 @@ export default function EmplacementInput({
           {propositions.map((e) => (
             <button key={e} type="button" aria-pressed={actuel === e} disabled={enCours}
               onMouseDown={garderFocus} onClick={() => enregistrer(e)}
-              className={`choice min-h-[44px] min-w-[44px] font-mono font-bold disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING} ${
+              className={`choice min-h-11 min-w-11 font-mono font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING} ${
                 actuel === e ? 'choice-on' : ''
               }`}>
               {e}
@@ -208,7 +208,7 @@ export default function EmplacementInput({
           {actuel && (
             <button type="button" disabled={enCours} onMouseDown={garderFocus} onClick={() => enregistrer(null)}
               aria-label={`Retirer l’emplacement ${actuel}`}
-              className={`choice min-h-[44px] disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING}`}>
+              className={`choice min-h-11 disabled:cursor-not-allowed disabled:opacity-60 ${FOCUS_RING}`}>
               <X className="h-4 w-4" aria-hidden="true" /> Retirer
             </button>
           )}
@@ -246,7 +246,7 @@ export default function EmplacementInput({
         aria-controls={ouvert ? editeurId : undefined}
         aria-label={actuel ? `Emplacement ${actuel}, modifier` : 'Emplacement non renseigné, ranger l’appareil'}
         title={actuel && actuel.length > 8 ? actuel : undefined}
-        className={`flex h-12 w-full min-w-[4.5rem] items-center justify-center gap-1 rounded-lg px-2 transition-colors duration-150 ${FOCUS_RING} focus-visible:ring-offset-2 ${
+        className={`flex h-12 w-full min-w-[4.5rem] items-center justify-center gap-1 rounded-md px-2 transition-colors duration-150 ${FOCUS_RING} focus-visible:ring-offset-2 ${
           actuel
             ? `bg-slate-900 font-mono font-semibold tracking-wide text-white hover:bg-slate-800 ${taille}`
             : 'border-2 border-dashed border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:border-brand-500 hover:text-brand-700'
@@ -266,7 +266,7 @@ export default function EmplacementInput({
             setErreur(null);
             fermer();
           }}
-          className="absolute left-0 top-full z-20 mt-1.5 w-[19rem] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-lg motion-safe:animate-scale-in">
+          className="absolute left-0 top-full z-20 mt-1.5 w-[19rem] max-w-[calc(100vw-2rem)] origin-top-left rounded-lg border border-slate-200 bg-white p-3 shadow-md motion-safe:animate-scale-in">
           {editeur}
         </div>
       )}

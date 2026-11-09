@@ -5,6 +5,7 @@ import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useAdminElevation } from '../hooks/useAdminElevation';
 import { useToast } from '../components/Toast';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 import { formatDateShort } from '../lib/utils';
 
 // Anciennement « Prix à revoir » avec un onglet « Propositions de prix » : plus rien à valider depuis le 06/11/2026
@@ -70,24 +71,24 @@ function FormAlias({ initial, verrouAlias = false, onAnnuler, onEnregistrer }) {
         <label htmlFor={`${id}-alias`} className="input-label">Nom saisi sur les tickets</label>
         <input id={`${id}-alias`} value={v.alias} readOnly={verrouAlias} ref={verrouAlias ? undefined : champRef}
           onChange={e => setV(x => ({ ...x, alias: e.target.value }))}
-          className={`input min-h-[44px] ${verrouAlias ? 'bg-slate-100 text-slate-700' : ''}`} placeholder="iPhone Air" autoComplete="off" />
+          className={`input min-h-11 ${verrouAlias ? 'bg-slate-100 text-slate-700' : ''}`} placeholder="iPhone Air" autoComplete="off" />
       </div>
       <div>
         <label htmlFor={`${id}-canonique`} className="input-label">Nom dans la grille de prix</label>
         <input id={`${id}-canonique`} value={v.modele_canonique} ref={verrouAlias ? champRef : undefined}
           onChange={e => setV(x => ({ ...x, modele_canonique: e.target.value }))}
-          className="input min-h-[44px]" placeholder="iPhone 17 Air" autoComplete="off" aria-describedby={`${id}-aide`} />
+          className="input min-h-11" placeholder="iPhone 17 Air" autoComplete="off" aria-describedby={`${id}-aide`} />
       </div>
       <div>
         <label htmlFor={`${id}-categorie`} className="input-label">Catégorie</label>
-        <select id={`${id}-categorie`} value={v.categorie} onChange={e => setV(x => ({ ...x, categorie: e.target.value }))} className="select min-h-[44px]">
+        <select id={`${id}-categorie`} value={v.categorie} onChange={e => setV(x => ({ ...x, categorie: e.target.value }))} className="select min-h-11">
           <option value="">Toutes</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
       <div className="flex gap-2">
-        <button type="button" onClick={onAnnuler} className="btn-ghost min-h-[44px]">Annuler</button>
-        <button type="submit" disabled={!valide || envoi} aria-busy={envoi || undefined} className="btn-primary min-h-[44px]">
+        <button type="button" onClick={onAnnuler} className="btn-ghost min-h-11">Annuler</button>
+        <button type="submit" disabled={!valide || envoi} aria-busy={envoi || undefined} className="btn-primary min-h-11">
           <Link2 aria-hidden="true" /> {envoi ? 'Ajout…' : 'Ajouter l’alias'}
         </button>
       </div>
@@ -209,7 +210,7 @@ function ModelesSansPrix({ basePath, sensible }) {
       </p>
       {visibles.length === 0 ? (
         <div className="card empty-state">
-          <div className="empty-state-icon bg-emerald-50 text-emerald-700"><ListChecks aria-hidden="true" /></div>
+          <div className="empty-state-icon"><ListChecks aria-hidden="true" /></div>
           <p className="t-h2">{etat.modeles.length ? 'Aucun modèle ne correspond.' : 'Tous les modèles du catalogue ont un prix.'}</p>
         </div>
       ) : (
@@ -286,6 +287,7 @@ function ModelesSansPrix({ basePath, sensible }) {
 
 function AliasModeles({ sensible }) {
   const toast = useToast();
+  const confirmation = useConfirmDialog();
   const [etat, setEtat] = useState({ statut: 'chargement', alias: [], erreur: '' });
   const [essai, setEssai] = useState(0);
   const [ajout, setAjout] = useState(false);
@@ -310,16 +312,22 @@ function AliasModeles({ sensible }) {
     }
   };
 
-  const supprimer = async (a) => {
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm(`Supprimer l’alias « ${a.alias} » → « ${a.modele_canonique} » ?`)) return;
-    try {
-      await sensible(() => api.supprimerAliasModele(a.id));
-      setEtat(e => ({ ...e, alias: e.alias.filter(x => x.id !== a.id) }));
-      toast.success('Alias supprimé');
-    } catch (err) {
-      if (err?.code !== 'admin_cancelled') toast.error(messageErreur(err, 'Alias non supprimé'));
-    }
+  const supprimer = (a) => {
+    confirmation.demander({
+      title: `Supprimer l’alias « ${a.alias} » → « ${a.modele_canonique} » ?`,
+      description: `Les tickets « ${a.alias} » ne recevront plus les prix de « ${a.modele_canonique} ».`,
+      confirmLabel: 'Supprimer l’alias',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await sensible(() => api.supprimerAliasModele(a.id));
+          setEtat(e => ({ ...e, alias: e.alias.filter(x => x.id !== a.id) }));
+          toast.success('Alias supprimé');
+        } catch (err) {
+          if (err?.code !== 'admin_cancelled') toast.error(messageErreur(err, 'Alias non supprimé'));
+        }
+      },
+    });
   };
 
   return (
@@ -375,6 +383,7 @@ function AliasModeles({ sensible }) {
           ))}
         </ul>
       )}
+      {confirmation.dialog}
     </div>
   );
 }

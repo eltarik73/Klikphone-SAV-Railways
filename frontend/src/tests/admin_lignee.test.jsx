@@ -106,7 +106,7 @@ describe('pages marketing : 403 admin_requis → code admin demandé', () => {
     });
     renderPage(AvisGoogle);
     await saisirCodeAdmin();
-    expect(await screen.findByText('1 avis · Note moyenne 5.0/5')).toBeInTheDocument();
+    expect(await screen.findByText('1 avis · Note moyenne 5,0/5')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Accès Administrateur' })).not.toBeInTheDocument();
     const avis = global.fetch.mock.calls.filter(([u]) => String(u).startsWith('/api/marketing/avis'));
     expect(avis.at(-1)[1].headers['X-Admin-Token']).toBeTruthy();
@@ -128,7 +128,7 @@ describe('pages marketing : 403 admin_requis → code admin demandé', () => {
     });
     renderPage(CommunityManager);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
-    fireEvent.change(screen.getByPlaceholderText('Décrivez le contexte du post...'), { target: { value: 'Promo écran iPhone' } });
+    fireEvent.change(screen.getByPlaceholderText('Décrivez le contexte du post…'), { target: { value: 'Promo écran iPhone' } });
     fireEvent.click(screen.getByRole('button', { name: /Générer avec l'IA/ }));
     expect(await screen.findByText('Clé ANTHROPIC_API_KEY absente')).toBeInTheDocument();
   });

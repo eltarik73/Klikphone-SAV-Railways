@@ -1,8 +1,8 @@
 import { Search, FileText, Wrench, CheckCircle2, Package, Truck, Globe, Check } from 'lucide-react';
 
-// Stepper monochrome (design V2) : la progression se lit au poids, pas à la couleur.
-// Étape faite = cercle plein brand + coche ; courante = cercle blanc cerclé brand + icône ;
-// à venir = cercle slate. Libellés 12 px minimum.
+// Stepper monochrome (design épuré) : la progression se lit au poids, pas à la couleur.
+// Étape faite = cercle plein slate-700 + coche ; courante (seule en violet : le violet marque l'actif) =
+// cercle plein brand-600 + icône, aria-current="step" ; à venir = cercle blanc cerclé slate. Libellés 12 px minimum.
 const STEPS_NORMAL = [
   { label: 'Diagnostic', icon: Search },
   { label: 'Devis', icon: FileText },
@@ -54,9 +54,7 @@ export default function ProgressTracker({ statut, hasPiece, isDistance }) {
   if (isPreRegistered) {
     return (
       <div className="text-center py-2">
-        <div className="w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center bg-brand-50 text-brand-600">
-          <Globe className="w-6 h-6" aria-hidden="true" />
-        </div>
+        <Globe className="w-6 h-6 mx-auto mb-2 text-slate-500" strokeWidth={1.5} aria-hidden="true" />
         <p className="text-sm font-semibold text-brand-700">Pré-enregistré</p>
         <p className="t-caption mt-1">En attente de validation par l'équipe</p>
       </div>
@@ -75,14 +73,16 @@ export default function ProgressTracker({ statut, hasPiece, isDistance }) {
         const isCurrent = i === currentStep;
 
         const circleCls = done
-          ? 'bg-brand-600 text-white'
+          ? 'bg-slate-700 text-white'
           : isCurrent
-            ? 'bg-white border-2 border-brand-600 text-brand-700'
-            : 'bg-slate-100 text-slate-400';
-        const labelCls = done || isCurrent
+            ? 'bg-brand-600 text-white'
+            : 'bg-white border border-slate-300 text-slate-500';
+        const labelCls = isCurrent
           ? 'text-xs font-semibold text-brand-700'
-          : 'text-xs font-medium text-slate-500';
-        const lineCls = i <= currentStep ? 'bg-brand-200' : 'bg-slate-200';
+          : done
+            ? 'text-xs font-medium text-slate-700'
+            : 'text-xs font-medium text-slate-500';
+        const lineCls = i <= currentStep ? 'bg-slate-400' : 'bg-slate-200';
 
         return (
           <div key={i} className="relative flex flex-col items-center min-w-0 px-0.5">

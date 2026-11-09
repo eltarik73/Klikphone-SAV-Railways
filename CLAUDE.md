@@ -85,7 +85,13 @@ klikphone-sav/
   `StatusBadge` variante `dot` (listes) ou `solid` / `size="lg"` (en-tête de fiche). Aucun statut en rouge.
 - **Sidebar** : sombre (`#0F172A`, `sidebar`), version « muette » (texte slate-300, actif `bg-white/10`) — décision du gérant.
 - **Police** : Inter variable seule (Google Fonts `opsz,wght@14..32,400..700`, `font-optical-sizing: auto`) ;
-  plus de Plus Jakarta Sans ni d'Instrument Serif. Logo « K » en aplat : `components/LogoK.jsx`.
+  plus de Plus Jakarta Sans ni d'Instrument Serif.
+- **Logo officiel KlikPhone** (fourni par le gérant le 8 nov. 2026, PDF vectoriel) : le « K » orange `#FF6600` /
+  gris `#9A9A9A` avec le tournevis blanc — `components/LogoK.jsx` (`LogoK` = le K seul, carré à angles vifs ;
+  `LogoKlikPhone` = K + mot « KlikPhone® », `theme` clair/sombre, `vertical`, `sousTitre`). Fichiers :
+  `public/brand/klikphone-k.svg`, `klikphone-wordmark-noir.png` / `-blanc.png`, `favicon.svg`, `icon-192/512.png`,
+  `icon-maskable-512.png`, `apple-touch-icon.png`, `logo_k.png` ; côté serveur `backend/app/api/logo_k.png` (tickets
+  thermiques en 1 bit, PDF). Ne jamais redessiner, arrondir, recolorer ni mettre en dégradé le logo.
 - **Confirmations** : `components/ConfirmDialog.jsx` (`useConfirmDialog`), jamais `confirm()` / `prompt()` natifs.
 - **Composants UI** : Tailwind natif (pas de librairie UI externe), classes partagées d'`index.css`
 - **Icons** : lucide-react exclusivement, nues (16–20 px, slate-500), jamais d'emoji

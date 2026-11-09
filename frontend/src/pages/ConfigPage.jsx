@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache, clearCache } from '../hooks/useApi';
 import api from '../lib/api';
 import SmsBrevoConfig from '../components/SmsBrevoConfig';
+import Interrupteur from '../components/Interrupteur';
 import { useToast } from '../components/Toast';
 import { useConfirmDialog } from '../components/ConfirmDialog';
 import { useSettings } from '../hooks/useSettings';
@@ -28,29 +29,6 @@ const BULK_MAX = 500;
 // Secrets : l'API ne les renvoie plus en clair (absents ou masqués « •••• »). Une valeur masquée
 // n'est jamais renvoyée au serveur : seule une nouvelle saisie remplace le secret enregistré.
 const isMasked = (v) => typeof v === 'string' && (v.includes('••') || /^\*{3,}/.test(v.trim()));
-
-/** Interrupteur accessible (cible 44 px, piste brand quand actif). Le libellé reste porté par le texte voisin. */
-function Interrupteur({ actif, onClick, disabled = false, busy = false, label, labelledBy, describedBy, refBouton }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      ref={refBouton}
-      aria-checked={!!actif}
-      aria-label={label}
-      aria-labelledby={labelledBy}
-      aria-describedby={describedBy}
-      aria-busy={busy || undefined}
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed"
-    >
-      <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors duration-150 ${actif ? 'bg-brand-600' : 'bg-slate-300'} ${disabled ? 'opacity-60' : ''}`}>
-        <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 ${actif ? 'translate-x-5' : 'translate-x-0'}`} />
-      </span>
-    </button>
-  );
-}
 
 function SecretInput({ id, value, onChange, placeholder, className = 'input', reveal = false }) {
   const masked = isMasked(value);
@@ -474,7 +452,7 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
         <p className="text-sm text-slate-500 mb-3">Indicatif : la mise en page dépend du format (ticket, A4, PDF).</p>
         <div className="mx-auto max-w-[320px] rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 font-mono text-xs leading-snug text-slate-800 text-center">
           {lignesPiedDocument(config, origine).map((l, i) => (
-            <p key={i} className={`[overflow-wrap:anywhere] ${i === 0 ? 'font-bold' : ''}`}>{l}</p>
+            <p key={i} className={`[overflow-wrap:anywhere] ${i === 0 ? 'font-semibold' : ''}`}>{l}</p>
           ))}
           {valeurMention(config, 'CGV_DEPOT').trim() && (
             <p className="mt-2 pt-2 border-t border-dashed border-slate-300 text-left whitespace-pre-line text-xs [overflow-wrap:anywhere]">
@@ -554,15 +532,15 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
               Une fois par jour, applique les durées de conservation ci-dessus sans intervention. Désactivée par défaut.
             </p>
           </div>
-          <Interrupteur refBouton={interrupteurRef}
-            actif={auto.actif} labelledBy="retention-auto-titre" describedBy="retention-auto-aide"
+          <Interrupteur ref={interrupteurRef}
+            checked={auto.actif} aria-labelledby="retention-auto-titre" aria-describedby="retention-auto-aide"
             busy={autoBusy}
-            onClick={basculerAuto}
+            onChange={basculerAuto}
             disabled={autoBusy || (!auto.actif && !activation && dureesModifiees)} />
         </div>
 
         <ul className="mt-3 space-y-1 text-sm" aria-live="polite">
-          <li className={`font-semibold ${auto.actif ? 'text-brand-800' : 'text-slate-800'}`}>
+          <li className="font-semibold text-slate-900">
             {!auto.actif ? 'Désactivée : aucune anonymisation automatique.'
               : !auto.debut ? `Activée : première exécution ${RETENTION_AUTO_DELAI_JOURS} jours après l’activation.`
                 : auto.debut > aujourdhui ? `Activée : première exécution le ${dateFr(auto.debut)}. D’ici là, rien n’est effacé.`
@@ -593,7 +571,7 @@ function OngletMentionsRgpd({ config, initial, onChange, onSave, saving, sensibl
               fermerActivation();
             }}
             className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-            <p id="retention-auto-confirm-titre" className="font-bold">Activer l'anonymisation automatique ?</p>
+            <p id="retention-auto-confirm-titre" className="font-semibold">Activer l'anonymisation automatique ?</p>
             <p className="font-semibold mt-1">{texteActivationAuto(activation.mois, debutRetentionAuto())}</p>
             <p className="mt-1">
               Noms, téléphones, e-mails et adresses seront définitivement effacés (les montants restent : obligation comptable).
@@ -744,7 +722,7 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
     <div className="space-y-5">
       <div className="card card-body">
         <h2 className="t-h2 mb-1 flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-slate-400" aria-hidden="true" /> Emplacements de l’étagère
+          <MapPin className="w-4 h-4 text-slate-500" aria-hidden="true" /> Emplacements de l’étagère
         </h2>
         <p className="text-sm text-slate-600 mb-4">
           Boutons proposés pour ranger un appareil réparé (fiche ticket, scan comptoir, étagère « À récupérer »).
@@ -753,7 +731,7 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
         {emplacements.length > 0 ? (
           <ul aria-label="Emplacements proposés" className="flex flex-wrap gap-2">
             {emplacements.map(e => (
-              <li key={e} className="inline-flex items-center rounded-lg border border-slate-200 bg-white pl-3 t-mono font-bold text-slate-900">
+              <li key={e} className="inline-flex items-center rounded-md border border-slate-200 bg-white pl-3 t-mono font-semibold text-slate-900">
                 {e}
                 <button type="button" onClick={() => retirer(e)} aria-label={`Retirer ${e}`}
                   className="btn-ghost btn-icon ml-1 rounded-l-none hover:bg-red-50 hover:text-red-700">
@@ -791,7 +769,7 @@ function OngletEtagere({ config, onChange, onSave, saving }) {
 
       <div className="card card-body">
         <h2 className="t-h2 mb-4 flex items-center gap-2">
-          <Archive className="w-4 h-4 text-slate-400" aria-hidden="true" /> Appareils non récupérés
+          <Archive className="w-4 h-4 text-slate-500" aria-hidden="true" /> Appareils non récupérés
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -1462,7 +1440,7 @@ export default function ConfigPage() {
     { id: 'team', label: 'Équipe', icon: Users },
     { id: 'catalog', label: 'Catalogue', icon: BookOpen },
     { id: 'messages', label: 'Messages', icon: MessageCircle },
-    { id: 'notifications', label: 'Notifs', icon: Bell },
+    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'fidelite', label: 'Fidélité', icon: Star },
     { id: 'caisse', label: 'Caisse', icon: CreditCard },
     { id: 'security', label: 'Sécurité', icon: Shield },
@@ -1500,7 +1478,7 @@ export default function ConfigPage() {
           <div className="page-tabs lg:flex-col lg:gap-1 lg:border-b-0 lg:mb-0 lg:overflow-visible">
             {tabs.map(({ id, label, icon: Icon }) => (
               <button key={id} type="button" onClick={() => setActiveTab(id)} aria-pressed={activeTab === id}
-                className={`page-tab lg:justify-start lg:rounded-lg lg:border-b-0 lg:px-3 lg:w-full ${activeTab === id ? 'page-tab-active lg:bg-brand-50' : 'lg:hover:bg-slate-100'}`}
+                className={`page-tab lg:justify-start lg:rounded-md lg:border-b-0 lg:px-3 lg:w-full ${activeTab === id ? 'page-tab-active lg:bg-slate-100' : 'lg:hover:bg-slate-100'}`}
               >
                 <Icon className="w-4 h-4 shrink-0" aria-hidden="true" /> {label}
               </button>
@@ -1511,13 +1489,9 @@ export default function ConfigPage() {
         <div className="min-w-0">
       {/* Unsaved changes banner */}
       {hasUnsavedChanges() && ['general', 'legal', 'etagere', 'notifications', 'fidelite'].includes(activeTab) && (
-        <div className="callout callout-warning items-center mb-5 animate-in">
+        <div className="callout callout-warning items-center mb-5" role="status">
           <AlertTriangle aria-hidden="true" />
-          <p className="font-medium flex-1">Modifications non sauvegardées</p>
-          <button onClick={handleSaveConfig} disabled={saving} className="btn-primary btn-sm">
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            Enregistrer
-          </button>
+          <p className="flex-1">Modifications non enregistrées : « Enregistrer » en bas de la page.</p>
         </div>
       )}
 
@@ -1555,9 +1529,9 @@ export default function ConfigPage() {
                 <label className="input-label" htmlFor="boutique-tva">TVA</label>
                 <select id="boutique-tva" value={config.tva || '20'} onChange={e => updateConfig('tva', e.target.value)} className="select">
                   <option value="0">Sans TVA</option>
-                  <option value="20">20%</option>
-                  <option value="10">10%</option>
-                  <option value="5.5">5.5%</option>
+                  <option value="20">20 %</option>
+                  <option value="10">10 %</option>
+                  <option value="5.5">5,5 %</option>
                 </select>
               </div>
             </div>
@@ -1581,8 +1555,8 @@ export default function ConfigPage() {
           </div>
 
           <div className={BARRE_ENREGISTRER}>
-            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            <button type="button" onClick={handleSaveConfig} disabled={saving} aria-busy={saving || undefined} className="btn-primary">
+              {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
               Enregistrer
             </button>
           </div>
@@ -1602,25 +1576,27 @@ export default function ConfigPage() {
       {/* ═══ Team tab ═══ */}
       {activeTab === 'team' && (
         <div className="space-y-5">
-          <div className="flex justify-end">
-            <button onClick={() => { resetTeamForm(); setShowTeamForm(true); }} className="btn-primary">
-              <Plus /> Ajouter un membre
-            </button>
-          </div>
+          {!showTeamForm && (
+            <div className="flex justify-end">
+              <button type="button" onClick={() => { resetTeamForm(); setShowTeamForm(true); }} className="btn-primary">
+                <Plus aria-hidden="true" /> Ajouter un membre
+              </button>
+            </div>
+          )}
 
           {showTeamForm && (
-            <div className="card border-brand-300 animate-in">
+            <div className="card">
               <div className="card-header">
                 <h3 className="t-h2">
                   {editingMember ? 'Modifier le membre' : 'Nouveau membre'}
                 </h3>
-                <button onClick={resetTeamForm} className="btn-ghost btn-icon" aria-label="Fermer le formulaire">
+                <button type="button" onClick={resetTeamForm} className="btn-ghost btn-icon" aria-label="Fermer le formulaire">
                   <X />
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-4 sm:px-5 pb-4 sm:pb-5">
                 <div>
-                  <label className="input-label" htmlFor="team-nom">Nom *</label>
+                  <label className="input-label" htmlFor="team-nom">Nom</label>
                   <input id="team-nom" value={teamForm.nom} onChange={e => setTeamForm(f => ({ ...f, nom: e.target.value }))} className="input" />
                 </div>
                 <div>
@@ -1633,12 +1609,12 @@ export default function ConfigPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="input-label">Couleur</label>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Couleur du membre">
+                  <p className="input-label" id="team-couleur">Couleur</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="team-couleur">
                     {COLORS.map(c => (
                       <button key={c} type="button" onClick={() => setTeamForm(f => ({ ...f, couleur: c }))}
                         aria-label={`Couleur ${c}`} aria-pressed={teamForm.couleur === c}
-                        className={`w-9 h-9 rounded-lg border-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                        className={`w-9 h-9 rounded-md border-2 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
                           teamForm.couleur === c ? 'border-slate-900' : 'border-transparent hover:border-slate-300'
                         }`}
                         style={{ backgroundColor: c }}
@@ -1656,8 +1632,9 @@ export default function ConfigPage() {
                 </div>
               </div>
               <div className="card-footer">
-                <button onClick={() => handleSaveTeamMember()} disabled={!teamForm.nom} className="btn-primary">
-                  <Save /> {editingMember ? 'Mettre à jour' : 'Créer'}
+                <button type="button" onClick={resetTeamForm} className="btn-ghost">Annuler</button>
+                <button type="button" onClick={() => handleSaveTeamMember()} disabled={!teamForm.nom} className="btn-primary">
+                  {editingMember ? 'Enregistrer le membre' : 'Créer le membre'}
                 </button>
               </div>
             </div>
@@ -1673,9 +1650,8 @@ export default function ConfigPage() {
               <div className="divide-y divide-slate-100">
                 {team.map(member => (
                   <div key={member.id} className="flex items-center gap-4 px-4 sm:px-5 py-3 min-h-14">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: (member.couleur || '#3B82F6') + '20' }} aria-hidden="true">
-                      <span className="font-bold text-sm text-slate-900">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-slate-100" aria-hidden="true">
+                      <span className="font-semibold text-sm text-slate-700">
                         {(member.nom?.[0] || '').toUpperCase()}
                       </span>
                     </div>
@@ -1690,10 +1666,10 @@ export default function ConfigPage() {
                       <p className="t-caption capitalize">{member.role}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => handleEditMember(member)} className="btn-ghost btn-icon" aria-label={`Modifier ${member.nom}`}>
+                      <button type="button" onClick={() => handleEditMember(member)} className="btn-ghost btn-icon" aria-label={`Modifier ${member.nom}`}>
                         <Edit3 />
                       </button>
-                      <button onClick={() => handleDeleteMember(member)} className="btn-danger-ghost btn-icon" aria-label={`Supprimer ${member.nom}`}>
+                      <button type="button" onClick={() => handleDeleteMember(member)} className="btn-danger-ghost btn-icon" aria-label={`Supprimer ${member.nom}`}>
                         <Trash2 />
                       </button>
                     </div>
@@ -1708,9 +1684,7 @@ export default function ConfigPage() {
             <div className="modal-overlay" onClick={() => setShowAdminCodeModal(false)}>
               <div className="modal sm:max-w-sm" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 className="t-h2 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-slate-400" aria-hidden="true" /> Code administrateur requis
-                  </h3>
+                  <h3 className="t-h2">Code administrateur requis</h3>
                 </div>
                 <div className="modal-body">
                   <p className="text-sm text-slate-600 mb-4">Le rôle Manager donne accès aux données financières. Entrez le code administrateur pour continuer.</p>
@@ -1730,10 +1704,10 @@ export default function ConfigPage() {
                   )}
                 </div>
                 <div className="modal-footer">
-                  <button onClick={() => setShowAdminCodeModal(false)} className="btn-ghost">
+                  <button type="button" onClick={() => setShowAdminCodeModal(false)} className="btn-ghost">
                     Annuler
                   </button>
-                  <button onClick={() => handleSaveTeamMember(adminCode)} disabled={!adminCode} className="btn-primary">
+                  <button type="button" onClick={() => handleSaveTeamMember(adminCode)} disabled={!adminCode} className="btn-primary">
                     Valider
                   </button>
                 </div>
@@ -1788,7 +1762,7 @@ export default function ConfigPage() {
                   placeholder="Nom de la marque"
                   autoComplete="off"
                 />
-                <button type="button" onClick={handleAddMarque} disabled={catalogBusy || !newMarque.trim()} className="btn-primary btn-icon" aria-label="Ajouter la marque">
+                <button type="button" onClick={handleAddMarque} disabled={catalogBusy || !newMarque.trim()} className="btn-secondary btn-icon" aria-label="Ajouter la marque">
                   <Plus aria-hidden="true" />
                 </button>
               </div>
@@ -1841,7 +1815,7 @@ export default function ConfigPage() {
                   maxLength={80}
                   autoComplete="off"
                 />
-                <button type="button" onClick={handleAddModele} disabled={catalogBusy || !newModele.modele.trim() || !newModele.marque} className="btn-primary btn-icon" aria-label="Ajouter le modèle">
+                <button type="button" onClick={handleAddModele} disabled={catalogBusy || !newModele.modele.trim() || !newModele.marque} className="btn-secondary btn-icon" aria-label="Ajouter le modèle">
                   <Plus aria-hidden="true" />
                 </button>
               </div>
@@ -1851,7 +1825,7 @@ export default function ConfigPage() {
                 onClick={() => setBulkOpen(o => !o)}
                 aria-expanded={bulkOpen}
                 aria-controls="catalog-bulk"
-                className="btn-ghost btn-sm mt-3 -ml-3 text-brand-700 hover:text-brand-800 hover:bg-brand-50"
+                className="btn-ghost btn-sm mt-3 -ml-3"
               >
                 {bulkOpen ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
                 Ajout en masse
@@ -1908,7 +1882,7 @@ export default function ConfigPage() {
             <div className="px-4 sm:px-5 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-2">
               <span className="t-h3 mr-auto">Catalogue {catalogCategorie}</span>
               <div className="relative flex-1 min-w-[12rem] sm:flex-none sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
                 <label htmlFor="catalog-search" className="sr-only">Rechercher un modèle</label>
                 <input
                   id="catalog-search"
@@ -1952,9 +1926,9 @@ export default function ConfigPage() {
                         aria-expanded={ouvert}
                         aria-controls={panelId}
                         disabled={catalogFiltreActif}
-                        className="flex-1 min-w-0 flex items-center gap-2 min-h-12 px-2 rounded-lg text-left text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                        className="flex-1 min-w-0 flex items-center gap-2 min-h-12 px-2 rounded-md text-left text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
-                        {ouvert ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-400" aria-hidden="true" />}
+                        {ouvert ? <ChevronDown className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" /> : <ChevronRight className="w-4 h-4 shrink-0 text-slate-500" aria-hidden="true" />}
                         <span className="truncate">{marque}</span>
                         <span className="t-caption shrink-0">
                           {visibles.length !== modeles.length ? `${visibles.length} / ${modeles.length}` : modeles.length} modèle{modeles.length > 1 ? 's' : ''}
@@ -1978,7 +1952,7 @@ export default function ConfigPage() {
                         ) : (
                           <ul className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
                             {visibles.map(({ m, a }) => (
-                              <li key={m} className="flex items-center gap-2 pl-3 rounded-lg bg-slate-50">
+                              <li key={m} className="flex items-center gap-2 pl-3 rounded-md bg-slate-50">
                                 <span className="flex-1 min-w-0 truncate text-sm text-slate-800" title={m}>{m}</span>
                                 {a && <span className="t-caption tabular-nums shrink-0">{a}</span>}
                                 <button
@@ -2010,7 +1984,7 @@ export default function ConfigPage() {
         <div className="space-y-5">
           <div className="card card-body">
             <h2 className="t-h2 mb-1 flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" /> Messages predefinis
+              <MessageCircle className="w-4 h-4 text-slate-500" aria-hidden="true" /> Messages prédéfinis
             </h2>
             <p className="t-caption mb-4">
               Variables disponibles : {'{prenom}'} {'{nom}'} {'{appareil}'} {'{code}'} {'{montant}'} {'{adresse}'} {'{tel_boutique}'} {'{horaires}'}
@@ -2029,31 +2003,35 @@ export default function ConfigPage() {
                     }}
                     rows={2}
                     className="textarea min-h-[72px] resize-none"
-                    placeholder={tp.id === 10 ? 'Template libre (le texte sera modifiable)' : 'Message...'}
+                    placeholder={tp.id === 10 ? 'Modèle libre (le texte reste modifiable)' : 'Message…'}
                   />
                 </div>
               ))}
             </div>
             <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-slate-100">
               <button
+                type="button"
                 onClick={async () => {
                   setMsgSaving(true);
                   try {
                     await sensible(() => api.saveMessageTemplates(msgTemplates));
-                    toast.success('Templates sauvegardes');
-                  } catch (err) { toast.error(err?.message || 'Erreur sauvegarde'); }
+                    toast.success('Messages enregistrés');
+                  } catch (err) { toast.error(err?.message || 'Enregistrement impossible'); }
                   finally { setMsgSaving(false); }
                 }}
                 disabled={msgSaving}
+                aria-busy={msgSaving || undefined}
                 className="btn-primary"
               >
-                <Save /> {msgSaving ? 'Sauvegarde...' : 'Sauvegarder'}
+                {msgSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
+                {msgSaving ? 'Enregistrement…' : 'Enregistrer les messages'}
               </button>
               <button
-                onClick={() => { setMsgTemplates(DEFAULT_MSG_TEMPLATES); toast.success('Templates reinitialises (sauvegarder pour appliquer)'); }}
+                type="button"
+                onClick={() => { setMsgTemplates(DEFAULT_MSG_TEMPLATES); toast.success('Messages par défaut rétablis : enregistrez pour les appliquer'); }}
                 className="btn-ghost"
               >
-                Reinitialiser
+                Rétablir les messages par défaut
               </button>
             </div>
           </div>
@@ -2066,7 +2044,7 @@ export default function ConfigPage() {
           <fieldset className="card card-body">
             <legend className="sr-only">Message proposé au client</legend>
             <h2 className="t-h2 mb-1 flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-slate-400" aria-hidden="true" /> Message proposé au client
+              <MessageCircle className="w-4 h-4 text-slate-500" aria-hidden="true" /> Message proposé au client
             </h2>
             <p className="text-sm text-slate-500 mb-4">
               Au passage à ces statuts (fiche ticket et scan comptoir), le message WhatsApp / SMS correspondant
@@ -2076,7 +2054,7 @@ export default function ConfigPage() {
               {STATUTS_MESSAGE.map(statut => {
                 const actifs = statutsNotifies(config.NOTIFICATIONS_STATUTS);
                 return (
-                  <label key={statut} className="flex items-center gap-3 min-h-11 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors text-sm text-slate-700">
+                  <label key={statut} className="flex items-center gap-3 min-h-11 px-3 rounded-md border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors duration-150 text-sm text-slate-700">
                     <input
                       type="checkbox"
                       checked={actifs.includes(statut)}
@@ -2091,14 +2069,15 @@ export default function ConfigPage() {
           </fieldset>
 
           <div className="card card-body">
-            <h2 className="t-h2 mb-4">Discord Webhook</h2>
+            <h2 className="t-h2 mb-4">Webhook Discord</h2>
             <div className="space-y-4">
               <div>
                 <label className="input-label" htmlFor="cfg-discord">URL du webhook</label>
                 <div className="flex gap-2">
                   <SecretInput id="cfg-discord" reveal value={config.DISCORD_WEBHOOK} onChange={v => updateSecret('DISCORD_WEBHOOK', v)}
-                    className="input font-mono flex-1" placeholder="https://discord.com/api/webhooks/..." />
+                    className="input font-mono flex-1" placeholder="https://discord.com/api/webhooks/…" />
                   <button
+                    type="button"
                     onClick={async () => {
                       setDiscordTesting(true);
                       try {
@@ -2113,9 +2092,10 @@ export default function ConfigPage() {
                       }
                     }}
                     disabled={discordTesting}
+                    aria-busy={discordTesting || undefined}
                     className="btn-secondary"
                   >
-                    {discordTesting ? <Loader2 className="animate-spin" /> : 'Tester'}
+                    {discordTesting ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : 'Tester'}
                   </button>
                 </div>
               </div>
@@ -2130,7 +2110,7 @@ export default function ConfigPage() {
                     { key: 'accord_client', label: 'Accord client', desc: 'Acceptation ou refus du devis' },
                     { key: 'connexion', label: 'Connexions', desc: 'Connexions / déconnexions' },
                   ].map(n => (
-                    <label key={n.key} className="flex items-start gap-3 min-h-11 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors">
+                    <label key={n.key} className="flex items-start gap-3 min-h-11 p-3 rounded-md border border-slate-200 hover:bg-slate-50 cursor-pointer transition-colors duration-150">
                       <input
                         type="checkbox"
                         checked={(config[`discord_notif_${n.key}`] || '1') !== '0'}
@@ -2150,22 +2130,19 @@ export default function ConfigPage() {
 
           <div className="card card-body">
             <h2 className="t-h2 mb-4 flex items-center gap-2">
-              <Mail className="w-4 h-4 text-slate-400" aria-hidden="true" /> Email
+              <Mail className="w-4 h-4 text-slate-500" aria-hidden="true" /> E-mail
             </h2>
 
-            <div className="callout callout-info mb-4">
-              <Mail aria-hidden="true" />
-              <div>
-                <p className="font-semibold">Resend (recommandé)</p>
-                <p>Créez un compte gratuit sur resend.com, récupérez votre clé API. 100 emails/jour gratuits.</p>
-              </div>
-            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Resend (recommandé) : créez un compte gratuit sur resend.com et récupérez votre clé API
+              (100 e-mails par jour gratuits).
+            </p>
 
             <div className="space-y-4 mb-4">
               <div>
                 <label className="input-label" htmlFor="cfg-resend">Clé API Resend</label>
                 <SecretInput id="cfg-resend" value={config.RESEND_API_KEY} onChange={v => updateSecret('RESEND_API_KEY', v)}
-                  className="input font-mono" placeholder="re_xxxxxxxx..." />
+                  className="input font-mono" placeholder="re_xxxxxxxx…" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -2181,7 +2158,7 @@ export default function ConfigPage() {
             </div>
 
             <details className="group">
-              <summary className="min-h-11 flex items-center gap-1.5 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-400 transition-transform duration-150 group-open:rotate-90" aria-hidden="true" />SMTP avancé (fallback si Resend non configuré)</summary>
+              <summary className="min-h-11 flex items-center gap-1.5 text-sm font-semibold text-slate-600 cursor-pointer hover:text-slate-900 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"><ChevronRight className="w-4 h-4 text-slate-500 transition-transform duration-150 motion-reduce:transition-none group-open:rotate-90" aria-hidden="true" />SMTP avancé (fallback si Resend non configuré)</summary>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
                 <div>
                   <label className="input-label" htmlFor="cfg-smtp-host">Serveur SMTP</label>
@@ -2210,6 +2187,7 @@ export default function ConfigPage() {
                   type="email"
                 />
                 <button
+                  type="button"
                   onClick={async () => {
                     if (!smtpTestEmail.trim()) { toast.error('Saisissez une adresse email de test'); return; }
                     setSmtpTesting(true);
@@ -2225,9 +2203,10 @@ export default function ConfigPage() {
                     }
                   }}
                   disabled={smtpTesting || !smtpTestEmail.trim()}
+                  aria-busy={smtpTesting || undefined}
                   className="btn-secondary"
                 >
-                  {smtpTesting ? <Loader2 className="animate-spin" /> : <Mail />}
+                  {smtpTesting ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Mail aria-hidden="true" />}
                   Envoyer un email de test
                 </button>
               </div>
@@ -2237,12 +2216,12 @@ export default function ConfigPage() {
           <SmsBrevoConfig config={config} updateConfig={updateConfig} saveParamNow={saveParamNow} />
 
           <div className="card card-body">
-            <h2 className="t-h2 mb-4">Chat & Assistant IA</h2>
+            <h2 className="t-h2 mb-4">Chat et assistant IA</h2>
             <div className="space-y-4">
               <div>
                 <label className="input-label" htmlFor="cfg-anthropic">Clé API Anthropic</label>
                 <SecretInput id="cfg-anthropic" value={config.ANTHROPIC_API_KEY} onChange={v => updateSecret('ANTHROPIC_API_KEY', v)}
-                  className="input font-mono" placeholder="sk-ant-..." />
+                  className="input font-mono" placeholder="sk-ant-…" />
                 <p className="input-help">Nécessaire pour l'assistant IA. Clé à créer sur console.anthropic.com</p>
               </div>
               <div>
@@ -2254,8 +2233,8 @@ export default function ConfigPage() {
           </div>
 
           <div className={BARRE_ENREGISTRER}>
-            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            <button type="button" onClick={handleSaveConfig} disabled={saving} aria-busy={saving || undefined} className="btn-primary">
+              {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
               Enregistrer
             </button>
           </div>
@@ -2268,16 +2247,12 @@ export default function ConfigPage() {
           <div className="card card-body">
             <h2 className="t-h2 mb-4">Programme de fidélité</h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p id="cfg-fidelite-actif" className="text-sm font-medium text-slate-800">Activer le programme fidélité</p>
-                  <p className="t-caption mt-0.5">Les clients cumulent des points sur chaque réparation</p>
-                </div>
-                <Interrupteur
-                  actif={(config.fidelite_active || '1') === '1'}
-                  labelledBy="cfg-fidelite-actif"
-                  onClick={() => updateConfig('fidelite_active', (config.fidelite_active || '1') === '1' ? '0' : '1')} />
-              </div>
+              <Interrupteur
+                id="cfg-fidelite-actif"
+                label="Activer le programme fidélité"
+                description="Les clients cumulent des points sur chaque réparation"
+                checked={(config.fidelite_active || '1') === '1'}
+                onChange={() => updateConfig('fidelite_active', (config.fidelite_active || '1') === '1' ? '0' : '1')} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="input-label" htmlFor="cfg-fidelite-points">Points par euro dépensé</label>
@@ -2306,28 +2281,24 @@ export default function ConfigPage() {
           <div className="card card-body">
             <h2 className="t-h2 mb-4">Jeu de grattage</h2>
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p id="cfg-grattage-actif" className="text-sm font-medium text-slate-800">Activer le jeu de grattage</p>
-                  <p className="t-caption mt-0.5">Un ticket grattable sur la page de suivi client</p>
-                </div>
-                <Interrupteur
-                  actif={(config.grattage_actif || '1') === '1'}
-                  labelledBy="cfg-grattage-actif"
-                  onClick={() => updateConfig('grattage_actif', (config.grattage_actif || '1') === '1' ? '0' : '1')} />
-              </div>
+              <Interrupteur
+                id="cfg-grattage-actif"
+                label="Activer le jeu de grattage"
+                description="Un ticket grattable sur la page de suivi client"
+                checked={(config.grattage_actif || '1') === '1'}
+                onChange={() => updateConfig('grattage_actif', (config.grattage_actif || '1') === '1' ? '0' : '1')} />
               <div>
                 <label className="input-label" htmlFor="cfg-grattage-frequence">Fréquence de gain (1 gagnant tous les N tickets)</label>
                 <input id="cfg-grattage-frequence" type="number" value={config.grattage_frequence || '10'} onChange={e => updateConfig('grattage_frequence', e.target.value)}
                   className="input w-40" min="2" />
-                <p className="input-help">Ex: 10 = en moyenne 1 gagnant sur 10 tickets grattés</p>
+                <p className="input-help">Par exemple 10 : en moyenne 1 gagnant sur 10 tickets grattés</p>
               </div>
             </div>
           </div>
 
           <div className={BARRE_ENREGISTRER}>
-            <button onClick={handleSaveConfig} disabled={saving} className="btn-primary">
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            <button type="button" onClick={handleSaveConfig} disabled={saving} aria-busy={saving || undefined} className="btn-primary">
+              {saving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
               Enregistrer
             </button>
           </div>
@@ -2338,15 +2309,15 @@ export default function ConfigPage() {
       {activeTab === 'caisse' && (
         <div className="space-y-5">
           <div className="card card-body">
-            <h3 className="t-h2 mb-4 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-slate-400" aria-hidden="true" /> Caisse Enregistreuse
-            </h3>
+            <h2 className="t-h2 mb-4 flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-slate-500" aria-hidden="true" /> Caisse enregistreuse
+            </h2>
 
             <label className="flex items-center gap-3 min-h-11 py-2 mb-4 cursor-pointer">
               <input type="checkbox" checked={caisseConfig.CAISSE_ENABLED === '1'}
                 onChange={e => setCaisseConfig(c => ({ ...c, CAISSE_ENABLED: e.target.checked ? '1' : '0' }))}
                 className="checkbox" />
-              <span className="text-sm font-semibold text-slate-700">Activer l'intégration Caisse Enregistreuse</span>
+              <span className="text-sm font-medium text-slate-800">Activer l'intégration de la caisse enregistreuse</span>
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2412,15 +2383,16 @@ export default function ConfigPage() {
                     }}
                     className="btn-secondary"
                   >
-                    <Search aria-hidden="true" />Charger rayons
+                    <Search aria-hidden="true" />Charger les rayons
                   </button>
                 </div>
-                <p className="input-help">Rayon avec le bon taux de TVA (ex: "Réparations" à 20%). Cliquez "Charger rayons" pour voir la liste. Sans rayon, pas de TVA.</p>
+                <p className="input-help">Rayon portant le bon taux de TVA (par exemple « Réparations » à 20 %). « Charger les rayons » affiche la liste. Sans rayon, pas de TVA.</p>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2 mt-5">
               <button
+                type="button"
                 onClick={async () => {
                   setCaisseTesting(true);
                   try {
@@ -2435,12 +2407,14 @@ export default function ConfigPage() {
                   }
                 }}
                 disabled={caisseTesting}
+                aria-busy={caisseTesting || undefined}
                 className="btn-secondary"
               >
-                {caisseTesting ? <Loader2 className="animate-spin" /> : <Zap />}
+                {caisseTesting ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Zap aria-hidden="true" />}
                 Tester la connexion
               </button>
               <button
+                type="button"
                 onClick={async () => {
                   setCaisseSaving(true);
                   try {
@@ -2454,9 +2428,10 @@ export default function ConfigPage() {
                   }
                 }}
                 disabled={caisseSaving}
+                aria-busy={caisseSaving || undefined}
                 className="btn-primary"
               >
-                {caisseSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                {caisseSaving ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
                 Enregistrer
               </button>
             </div>
@@ -2489,10 +2464,11 @@ export default function ConfigPage() {
               </div>
             </div>
             <div className="flex justify-end mt-4">
-              <button onClick={handleChangePin}
+              <button type="button" onClick={handleChangePin}
                 disabled={pinChanging || pinForm.old_pin.length !== 4 || pinForm.new_pin.length !== 4}
-                className="btn-primary">
-                {pinChanging ? <Loader2 className="animate-spin" /> : <Key />}
+                aria-busy={pinChanging || undefined}
+                className="btn-secondary">
+                {pinChanging ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Key aria-hidden="true" />}
                 Changer le PIN
               </button>
             </div>
@@ -2501,7 +2477,7 @@ export default function ConfigPage() {
           {/* Admin password */}
           <div className="card card-body">
             <h2 className="t-h2 mb-1 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-slate-400" aria-hidden="true" />
+              <Shield className="w-4 h-4 text-slate-500" aria-hidden="true" />
               Mot de passe administrateur
             </h2>
             <p className="text-sm text-slate-500 mb-4">
@@ -2531,10 +2507,11 @@ export default function ConfigPage() {
               <p className="input-error mt-2" role="alert">{adminPwdError}</p>
             )}
             <div className="flex justify-end mt-4">
-              <button onClick={handleChangeAdminPassword}
+              <button type="button" onClick={handleChangeAdminPassword}
                 disabled={adminPwdChanging || !adminPwdForm.old_password || !adminPwdForm.new_password || !adminPwdForm.confirm}
-                className="btn-primary">
-                {adminPwdChanging ? <Loader2 className="animate-spin" /> : <Shield />}
+                aria-busy={adminPwdChanging || undefined}
+                className="btn-secondary">
+                {adminPwdChanging ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Shield aria-hidden="true" />}
                 Changer le mot de passe
               </button>
             </div>
@@ -2550,36 +2527,28 @@ export default function ConfigPage() {
             <p className="text-sm text-slate-500 mb-4">Activez ou désactivez les modules pour afficher les pages correspondantes dans le menu latéral.</p>
 
             {/* Module Devis */}
-            <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-              <div>
-                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" /> Module Devis
-                </p>
-                <p className="t-caption mt-0.5">Gestion complète des devis clients avec statuts, impression et conversion en ticket</p>
-              </div>
-              <Interrupteur
-                onClick={() => {
-                  const newVal = config.MODULE_DEVIS_VISIBLE === 'true' ? 'false' : 'true';
-                  saveParamNow('MODULE_DEVIS_VISIBLE', newVal, newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
-                }}
-                actif={config.MODULE_DEVIS_VISIBLE === 'true'} label="Module Devis" />
-            </div>
+            <Interrupteur
+              className="py-3 border-t border-slate-100"
+              icone={FileText}
+              label="Module Devis"
+              description="Gestion complète des devis clients avec statuts, impression et conversion en ticket"
+              checked={config.MODULE_DEVIS_VISIBLE === 'true'}
+              onChange={() => {
+                const newVal = config.MODULE_DEVIS_VISIBLE === 'true' ? 'false' : 'true';
+                saveParamNow('MODULE_DEVIS_VISIBLE', newVal, newVal === 'true' ? 'Module Devis activé' : 'Module Devis désactivé');
+              }} />
 
             {/* Module Devis Flash */}
-            <div className="flex items-center justify-between gap-4 py-3 border-t border-slate-100">
-              <div>
-                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <Zap className="w-4 h-4 text-slate-400" aria-hidden="true" /> Module Devis Flash
-                </p>
-                <p className="t-caption mt-0.5">Consultation rapide des prix de réparation et catalogue de téléphones en vente</p>
-              </div>
-              <Interrupteur
-                onClick={() => {
-                  const newVal = config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'false' : 'true';
-                  saveParamNow('MODULE_DEVIS_FLASH_VISIBLE', newVal, newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
-                }}
-                actif={config.MODULE_DEVIS_FLASH_VISIBLE === 'true'} label="Module Devis Flash" />
-            </div>
+            <Interrupteur
+              className="py-3 border-t border-slate-100"
+              icone={Zap}
+              label="Module Devis Flash"
+              description="Consultation rapide des prix de réparation et catalogue de téléphones en vente"
+              checked={config.MODULE_DEVIS_FLASH_VISIBLE === 'true'}
+              onChange={() => {
+                const newVal = config.MODULE_DEVIS_FLASH_VISIBLE === 'true' ? 'false' : 'true';
+                saveParamNow('MODULE_DEVIS_FLASH_VISIBLE', newVal, newVal === 'true' ? 'Module Devis Flash activé' : 'Module Devis Flash désactivé');
+              }} />
 
             <p className="t-caption mt-4 pt-3 border-t border-slate-100">
               Rechargez la page après activation pour voir les changements dans le menu.
@@ -2593,32 +2562,28 @@ export default function ConfigPage() {
         <div className="space-y-5">
           <div className="card card-body">
             <h2 className="t-h2 mb-4">Apparence</h2>
-            <div className="flex items-center justify-between gap-4 py-3">
-              <div>
-                <p id="cfg-animations" className="text-sm font-medium text-slate-800">Activer les animations</p>
-                <p className="t-caption mt-0.5">Transitions, effets de survol, apparitions progressives</p>
-              </div>
-              <Interrupteur actif={animations} labelledBy="cfg-animations" onClick={() => setAnimations(!animations)} />
-            </div>
+            <Interrupteur
+              id="cfg-animations"
+              className="py-3"
+              label="Activer les animations"
+              description="Transitions, effets de survol, apparitions progressives"
+              checked={animations}
+              onChange={() => setAnimations(!animations)} />
             <p className="t-caption mt-2 pt-3 border-t border-slate-100">
               Désactivez les animations pour améliorer la fluidité sur les appareils plus lents.
             </p>
 
             {/* Autocomplétion toggle */}
-            <div className="flex items-center justify-between gap-4 py-3 mt-3 pt-3 border-t border-slate-100">
-              <div>
-                <p className="text-sm font-medium text-slate-800 flex items-center gap-1.5">
-                  <Search className="w-4 h-4 text-slate-400" aria-hidden="true" /> Autocomplétion intelligente
-                </p>
-                <p className="t-caption mt-0.5">Suggestions dans les formulaires de modification de tickets</p>
-              </div>
-              <Interrupteur
-                onClick={() => {
-                  const newVal = config.AFFICHER_AUTOCOMPLETION === 'false' ? 'true' : 'false';
-                  saveParamNow('AFFICHER_AUTOCOMPLETION', newVal, newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
-                }}
-                actif={config.AFFICHER_AUTOCOMPLETION !== 'false'} label="Autocomplétion intelligente" />
-            </div>
+            <Interrupteur
+              className="py-3 mt-3 pt-3 border-t border-slate-100"
+              icone={Search}
+              label="Autocomplétion intelligente"
+              description="Suggestions dans les formulaires de modification de tickets"
+              checked={config.AFFICHER_AUTOCOMPLETION !== 'false'}
+              onChange={() => {
+                const newVal = config.AFFICHER_AUTOCOMPLETION === 'false' ? 'true' : 'false';
+                saveParamNow('AFFICHER_AUTOCOMPLETION', newVal, newVal === 'true' ? 'Autocomplétion activée' : 'Autocomplétion désactivée');
+              }} />
             <p className="t-caption mt-2">
               L'apprentissage continue en arrière-plan même si l'affichage est désactivé.
             </p>
@@ -2633,11 +2598,11 @@ export default function ConfigPage() {
             <h2 className="t-h2 mb-1">Export clients</h2>
             <p className="text-sm text-slate-500 mb-4">Téléchargez la liste de tous les clients (avec nombre de tickets).</p>
             <div className="flex flex-wrap gap-2">
-              <button onClick={handleExportCSV} className="btn-secondary">
-                <Download /> CSV
+              <button type="button" onClick={handleExportCSV} className="btn-secondary">
+                <Download aria-hidden="true" /> CSV
               </button>
-              <button onClick={handleExportExcel} className="btn-secondary">
-                <Download /> Excel (.xlsx)
+              <button type="button" onClick={handleExportExcel} className="btn-secondary">
+                <Download aria-hidden="true" /> Excel (.xlsx)
               </button>
             </div>
           </div>
@@ -2645,11 +2610,11 @@ export default function ConfigPage() {
           <div className="card card-body">
             <h2 className="t-h2 mb-1">Sauvegarde complète</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Téléchargez un backup JSON complet de la base de données (clients, tickets, config, équipe, catalogue).
+              Téléchargez une sauvegarde JSON complète de la base de données (clients, tickets, configuration, équipe, catalogue).
             </p>
             <div className="flex gap-2">
-              <button onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary">
-                {backupBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Database aria-hidden="true" />}
+              <button type="button" onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary">
+                {backupBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Database aria-hidden="true" />}
                 {backupBusy ? 'Export en cours… (peut prendre une minute)' : 'Télécharger le backup (JSON)'}
               </button>
             </div>
@@ -2657,14 +2622,12 @@ export default function ConfigPage() {
 
           <div className="card card-body">
             <h2 className="t-h2 mb-1">Restaurer un backup</h2>
-            <div className="callout callout-warning mb-4">
-              <AlertTriangle aria-hidden="true" />
-              <p>
-                Importez un fichier JSON de backup pour restaurer les données. Attention : cela remplacera toutes les données actuelles.
-              </p>
-            </div>
-            <label className={`btn-secondary focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2 ${importBusy ? 'cursor-wait text-slate-400' : 'cursor-pointer'}`}>
-              {importBusy ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
+            <p className="text-sm text-slate-600 mb-4">
+              Importez un fichier JSON de sauvegarde pour restaurer les données. Toutes les données actuelles sont
+              remplacées (confirmation demandée avant).
+            </p>
+            <label className={`btn-secondary focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2 ${importBusy ? 'cursor-wait text-slate-500' : 'cursor-pointer'}`}>
+              {importBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
               {importBusy ? 'Restauration en cours…' : 'Importer un backup (.json)'}
               <input type="file" accept=".json" onChange={handleImportBackup} disabled={importBusy} className="sr-only" />
             </label>

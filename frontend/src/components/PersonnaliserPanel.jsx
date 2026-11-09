@@ -1,4 +1,5 @@
 import { X, Timer, Clock, ListOrdered, RotateCcw, Info, Shuffle } from 'lucide-react';
+import Interrupteur from './Interrupteur';
 
 const WIDGET_META = {
   client: { label: 'Client' },
@@ -13,37 +14,8 @@ const WIDGET_META = {
   fidelite: { label: 'Fidélité' },
 };
 
-function ToggleSwitch({ icon: Icon, label, desc, value, onChange }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-b-0">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-          {typeof Icon === 'string'
-            ? <span className="text-sm" aria-hidden="true">{Icon}</span>
-            : <Icon className="w-4 h-4 text-slate-500 shrink-0" aria-hidden="true" />
-          }
-          {label}
-        </div>
-        <div className="t-caption mt-0.5 ml-6">{desc}</div>
-      </div>
-      {/* Interrupteur : zone tactile 44 px autour d'un rail 44 × 24 */}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={!!value}
-        aria-label={label}
-        onClick={onChange}
-        className="relative flex items-center justify-center w-11 h-11 shrink-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-      >
-        <span className={`relative block w-11 h-6 rounded-full transition-colors duration-150 ${value ? 'bg-brand-600' : 'bg-slate-300'}`} aria-hidden="true">
-          <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-xs transition-transform duration-150 ${
-            value ? 'translate-x-5' : ''
-          }`} />
-        </span>
-      </button>
-    </div>
-  );
-}
+// Ligne de réglage : libellé + icône, description, interrupteur partagé (cible 44 px, piste 44 × 24)
+const LIGNE_REGLAGE = 'py-2 border-b border-slate-100 last:border-b-0';
 
 export default function PersonnaliserPanel({
   open,
@@ -72,7 +44,7 @@ export default function PersonnaliserPanel({
         <div className="drawer-header py-2">
           <div className="min-w-0">
             <div className="t-h2">Personnaliser</div>
-            <div className="t-caption mt-0.5">Tes préférences d'affichage</div>
+            <div className="t-caption mt-0.5">Vos préférences d’affichage</div>
           </div>
           <button
             type="button"
@@ -91,25 +63,28 @@ export default function PersonnaliserPanel({
             <div className="t-h3 mb-1">
               Widgets
             </div>
-            <ToggleSwitch
-              icon={Timer}
+            <Interrupteur
+              className={LIGNE_REGLAGE}
+              icone={Timer}
               label="Timer de réparation"
-              desc="Chrono du temps passé sur la réparation"
-              value={prefs.timer}
+              description="Chrono du temps passé sur la réparation"
+              checked={prefs.timer}
               onChange={() => handleToggle('timer')}
             />
-            <ToggleSwitch
-              icon={Clock}
+            <Interrupteur
+              className={LIGNE_REGLAGE}
+              icone={Clock}
               label="Compte à rebours"
-              desc="Temps restant avant récupération"
-              value={prefs.countdown}
+              description="Temps restant avant récupération"
+              checked={prefs.countdown}
               onChange={() => handleToggle('countdown')}
             />
-            <ToggleSwitch
-              icon={ListOrdered}
+            <Interrupteur
+              className={LIGNE_REGLAGE}
+              icone={ListOrdered}
               label="File d'attente"
-              desc="Widget avec les prochaines réparations"
-              value={prefs.queue}
+              description="Widget avec les prochaines réparations"
+              checked={prefs.queue}
               onChange={() => handleToggle('queue')}
             />
           </div>
@@ -119,11 +94,12 @@ export default function PersonnaliserPanel({
             <div className="t-h3 mb-1">
               Disposition
             </div>
-            <ToggleSwitch
-              icon={Shuffle}
+            <Interrupteur
+              className={LIGNE_REGLAGE}
+              icone={Shuffle}
               label="Mode édition"
-              desc="Déplacer les widgets entre colonnes"
-              value={editMode}
+              description="Déplacer les widgets entre colonnes"
+              checked={editMode}
               onChange={() => { onToggleEditMode(); onClose(); }}
             />
             {editMode && (
@@ -132,7 +108,7 @@ export default function PersonnaliserPanel({
                 <div>
                   <div className="text-sm font-semibold">Mode édition activé</div>
                   <div className="text-xs mt-0.5">
-                    Glisse les widgets sur la page. Désactive quand c'est bon.
+                    Glissez les widgets sur la page, puis désactivez le mode édition.
                   </div>
                 </div>
               </div>
@@ -151,7 +127,7 @@ export default function PersonnaliserPanel({
                 <div className="t-caption mb-1.5">Colonne gauche</div>
                 <div className="space-y-1">
                   {layout.left.map(key => (
-                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 text-xs font-medium text-slate-700">
+                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-slate-50 text-xs font-medium text-slate-700">
                       {WIDGET_META[key]?.label || key}
                     </div>
                   ))}
@@ -163,7 +139,7 @@ export default function PersonnaliserPanel({
                 <div className="t-caption mb-1.5">Colonne droite</div>
                 <div className="space-y-1">
                   {layout.right.map(key => (
-                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 text-xs font-medium text-slate-700">
+                    <div key={key} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-slate-50 text-xs font-medium text-slate-700">
                       {WIDGET_META[key]?.label || key}
                     </div>
                   ))}
@@ -191,7 +167,7 @@ export default function PersonnaliserPanel({
                 Les données sont toujours enregistrées
               </div>
               <div className="t-caption mt-0.5">
-                Même si un widget est masqué, les données sont sauvegardées pour le reporting.
+                Même si un widget est masqué, ses données restent enregistrées pour le reporting.
               </div>
             </div>
           </div>

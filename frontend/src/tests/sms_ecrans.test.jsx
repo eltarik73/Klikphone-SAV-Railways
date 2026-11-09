@@ -50,7 +50,7 @@ async function envoyerSmsDepuisComposer(onMessageSent = vi.fn()) {
   // L'état de l'envoi serveur arrive avant le clic
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   fireEvent.click(screen.getByRole('button', { name: /Personnalis/ }));
-  fireEvent.change(screen.getByPlaceholderText('Tapez votre message...'), { target: { value: 'Votre iPhone est prêt' } });
+  fireEvent.change(screen.getByPlaceholderText('Tapez votre message…'), { target: { value: 'Votre iPhone est prêt' } });
   fireEvent.click(screen.getByRole('button', { name: /^SMS$/ }));
   return onMessageSent;
 }

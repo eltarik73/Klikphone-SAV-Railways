@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import {
-  Smartphone, Search, RefreshCw, ChevronDown, Shield,
-  Package, SlidersHorizontal, Sparkles, Tag,
-  ChevronLeft, ChevronRight,
+  Smartphone, Search, ChevronDown, Shield, SlidersHorizontal, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
 import { useApi, invalidateCache } from '../hooks/useApi';
 import { SynchroLcdPhone } from '../components/SantePrixWidget';
+import CarteChiffres from '../components/CarteChiffres';
+import Interrupteur from '../components/Interrupteur';
 
 // ─── Constantes ──────────────────────────────────
 
@@ -23,9 +23,9 @@ const GRADE_COLORS = {
 
 const SORT_OPTIONS = [
   { value: 'prix_asc', label: 'Prix croissant' },
-  { value: 'prix_desc', label: 'Prix decroissant' },
-  { value: 'marque', label: 'Marque A-Z' },
-  { value: 'nouveautes', label: 'Nouveautes' },
+  { value: 'prix_desc', label: 'Prix décroissant' },
+  { value: 'marque', label: 'Marque A → Z' },
+  { value: 'nouveautes', label: 'Nouveautés' },
 ];
 
 // ─── Helpers ─────────────────────────────────────
@@ -42,10 +42,6 @@ function getGradeStyle(grade) {
 
 // ─── Skeleton Components ─────────────────────────
 
-function KPICardSkeleton() {
-  return <div className="skeleton-card" />;
-}
-
 function PhoneCardSkeleton() {
   return (
     <div className="card overflow-hidden">
@@ -56,22 +52,6 @@ function PhoneCardSkeleton() {
         <div className="skeleton-line h-3 w-1/2" />
         <div className="skeleton-line h-7 w-24" />
         <div className="skeleton-line h-3 w-32" />
-      </div>
-    </div>
-  );
-}
-
-// ─── KPI Card ────────────────────────────────────
-
-function KPICard({ icon: Icon, value, label }) {
-  return (
-    <div className="kpi-card">
-      <div className="kpi-icon">
-        <Icon aria-hidden="true" />
-      </div>
-      <div className="min-w-0">
-        <p className="kpi-value">{value ?? '-'}</p>
-        <p className="kpi-label">{label}</p>
       </div>
     </div>
   );
@@ -92,7 +72,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
         {phone.image_url ? (
           <img
             src={phone.image_url}
-            alt={phone.modele || 'Telephone'}
+            alt={phone.modele || 'Téléphone'}
             className="h-full w-full object-contain p-4"
             loading="lazy"
             onError={(e) => {
@@ -101,15 +81,15 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
             }}
           />
         ) : null}
-        <div className={`flex flex-col items-center justify-center text-slate-400 ${phone.image_url ? 'hidden' : ''}`}>
-          <Smartphone className="w-12 h-12 mb-2" aria-hidden="true" />
+        <div className={`flex flex-col items-center justify-center text-slate-500 ${phone.image_url ? 'hidden' : ''}`}>
+          <Smartphone className="w-8 h-8 mb-2" strokeWidth={1.5} aria-hidden="true" />
           <span className="t-caption">Pas d'image</span>
         </div>
 
         {/* Badge top-left: Grade or Neuf */}
         {gradeStyle && (
           <span className={`absolute top-3 left-3 badge ${gradeStyle}`}>
-            {grade === 'Neuf' ? 'NEUF' : grade.toUpperCase()}
+            {grade}
           </span>
         )}
 
@@ -138,7 +118,7 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
 
         {/* Model name */}
         <h3 className="text-sm font-semibold text-slate-900 leading-tight mb-1 line-clamp-2">
-          {phone.modele || 'Modele inconnu'}
+          {phone.modele || 'Modèle inconnu'}
         </h3>
 
         {/* Storage + Color */}
@@ -160,34 +140,13 @@ const PhoneCard = memo(function PhoneCard({ phone }) {
 
         {/* Guarantee */}
         <div className="flex items-center gap-1.5 t-caption">
-          <Shield className="w-4 h-4 text-slate-400" aria-hidden="true" />
+          <Shield className="w-4 h-4 text-slate-500" aria-hidden="true" />
           <span>Garantie 12 mois</span>
         </div>
       </div>
     </div>
   );
 });
-
-// ─── Toggle Switch ───────────────────────────────
-
-function ToggleSwitch({ checked, onChange, label }) {
-  return (
-    <label className="flex items-center gap-3 min-h-11 cursor-pointer select-none">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className="inline-flex min-h-[44px] min-w-[56px] shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
-      >
-        <span aria-hidden="true" className={`relative block h-6 w-11 rounded-full transition-colors duration-150 ${checked ? 'bg-brand-600' : 'bg-slate-300'}`}>
-          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-xs transition-transform duration-150 ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
-        </span>
-      </button>
-      <span className="text-sm text-slate-700">{label}</span>
-    </label>
-  );
-}
 
 // ─── Main Component ──────────────────────────────
 
@@ -309,9 +268,9 @@ export default function TarifsTelephonesPage() {
       <div className="page-header">
         {/* Title */}
         <div>
-          <h1 className="page-header-title">Tarifs Telephones</h1>
+          <h1 className="page-header-title">Catalogue téléphones</h1>
           <p className="page-header-subtitle">
-            Telephones neufs et reconditionnes &mdash; Garantie 12 mois
+            Téléphones neufs et reconditionnés — garantie 12 mois
           </p>
         </div>
 
@@ -320,40 +279,13 @@ export default function TarifsTelephonesPage() {
       </div>
 
       <div>
-        {/* ───────── KPI CARDS ───────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loadingStats ? (
-            <>
-              <KPICardSkeleton />
-              <KPICardSkeleton />
-              <KPICardSkeleton />
-              <KPICardSkeleton />
-            </>
-          ) : (
-            <>
-              <KPICard
-                icon={Package}
-                value={stats?.total ?? 0}
-                label="Total modeles"
-              />
-              <KPICard
-                icon={Sparkles}
-                value={stats?.en_stock ?? 0}
-                label="En stock"
-              />
-              <KPICard
-                icon={Tag}
-                value={stats?.neufs ?? 0}
-                label="Neufs"
-              />
-              <KPICard
-                icon={RefreshCw}
-                value={stats?.reconditionnes ?? 0}
-                label="Reconditionnes"
-              />
-            </>
-          )}
-        </div>
+        {/* ───────── CHIFFRES CLÉS ───────── */}
+        <CarteChiffres label="Chiffres du catalogue" chargement={loadingStats} colonnes={{ base: 2, lg: 4 }} chiffres={[
+          { label: 'Modèles', valeur: stats?.total ?? 0 },
+          { label: 'En stock', valeur: stats?.en_stock ?? 0 },
+          { label: 'Neufs', valeur: stats?.neufs ?? 0 },
+          { label: 'Reconditionnés', valeur: stats?.reconditionnes ?? 0 },
+        ]} />
 
         {/* ───────── FILTER BAR ───────── */}
         <div className="mt-6 space-y-4">
@@ -412,10 +344,10 @@ export default function TarifsTelephonesPage() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {/* Search input */}
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" aria-hidden="true" />
               <input
                 type="search"
-                placeholder="Rechercher un telephone..."
+                placeholder="Rechercher un téléphone…"
                 aria-label="Rechercher un téléphone"
                 autoComplete="off"
                 value={searchInput}
@@ -425,7 +357,8 @@ export default function TarifsTelephonesPage() {
             </div>
 
             {/* En stock toggle */}
-            <ToggleSwitch
+            <Interrupteur
+              placement="debut"
               checked={enStockOnly}
               onChange={setEnStockOnly}
               label="En stock"
@@ -449,7 +382,7 @@ export default function TarifsTelephonesPage() {
               </button>
 
               {showSortDropdown && (
-                <div role="listbox" aria-label="Trier" className="absolute right-0 top-full mt-2 w-52 card shadow-lg z-30 overflow-hidden animate-in">
+                <div role="listbox" aria-label="Trier" className="absolute right-0 top-full mt-2 w-52 card shadow-md z-30 overflow-hidden">
                   {SORT_OPTIONS.map((option) => (
                     <button
                       key={option.value}
@@ -491,10 +424,10 @@ export default function TarifsTelephonesPage() {
                 <Smartphone aria-hidden="true" />
               </div>
               <h3 className="t-h2">
-                Aucun telephone trouve
+                Aucun téléphone trouvé
               </h3>
               <p className="t-body text-slate-500 max-w-md">
-                Essayez de modifier vos filtres ou lancez une synchronisation pour importer les derniers telephones disponibles.
+                Modifiez vos filtres ou lancez une synchronisation pour importer les derniers téléphones disponibles.
               </p>
               <button
                 type="button"
@@ -509,7 +442,7 @@ export default function TarifsTelephonesPage() {
                 }}
                 className="btn-secondary"
               >
-                Reinitialiser les filtres
+                Réinitialiser les filtres
               </button>
             </div>
           ) : (
@@ -561,7 +494,7 @@ export default function TarifsTelephonesPage() {
                       onClick={() => setCurrentPage(pageNum)}
                       aria-label={`Page ${pageNum}`}
                       aria-current={currentPage === pageNum ? 'page' : undefined}
-                      className={`hidden sm:inline-flex items-center justify-center w-11 h-11 rounded-lg text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
+                      className={`hidden sm:inline-flex items-center justify-center w-11 h-11 rounded-md text-sm font-medium tabular-nums transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 ${
                         currentPage === pageNum
                           ? 'bg-brand-600 text-white'
                           : 'text-slate-600 hover:bg-slate-100'
@@ -586,8 +519,8 @@ export default function TarifsTelephonesPage() {
 
             {/* Count */}
             <p className="t-caption">
-              {totalItems} telephone{totalItems > 1 ? 's' : ''}
-              {totalPages > 1 ? ` · Page ${currentPage}/${totalPages}` : ''}
+              {totalItems} téléphone{totalItems > 1 ? 's' : ''}
+              {totalPages > 1 ? ` · page ${currentPage}/${totalPages}` : ''}
               {stats?.nb_marques ? ` · ${stats.nb_marques} marques` : ''}
               {stats?.prix_min != null && stats?.prix_max != null
                 ? ` · ${formatPrice(stats.prix_min)} → ${formatPrice(stats.prix_max)}`

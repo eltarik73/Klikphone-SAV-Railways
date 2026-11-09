@@ -826,7 +826,7 @@ describe('Réparation iPhone : bandeau d’aide', () => {
     expect(await screen.findByText('Où sont les prix ?')).toBeInTheDocument();
     const lien = screen.getByRole('link', { name: /Réparation smartphones/ });
     expect(lien).toHaveAttribute('href', '/accueil/tarifs');
-    expect(lien).toHaveClass('min-h-[44px]'); // cible tactile dans la phrase
+    expect(lien).toHaveClass('min-h-11'); // cible tactile de 44 px dans la phrase
     expect(screen.getByText(/autres marques et iPad \/ Mac/)).toBeInTheDocument();
   });
 
