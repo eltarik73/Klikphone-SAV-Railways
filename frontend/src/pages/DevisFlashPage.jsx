@@ -19,7 +19,7 @@ const fp = (v) => {
   return Number(v).toFixed(2).replace('.', ',');
 };
 
-// Badge de qualité : « Original » en information (bleu), les autres qualités neutres — le violet reste à l'action
+// Badge de qualité : « Original » en information (bleu), les autres qualités neutres — le noir reste à l'action
 const QUALITE_BADGE = {
   'Original': 'badge-info',
 };
@@ -394,12 +394,12 @@ export default function DevisFlashPage() {
                       aria-pressed={isChecked}
                       className={`w-full flex items-center gap-4 px-4 sm:px-5 min-h-14 py-3 text-left transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-inset
                         ${isChecked
-                          ? (kioskMode ? 'bg-brand-600/20' : 'bg-brand-50/70')
+                          ? (kioskMode ? 'bg-white/10' : 'bg-brand-50/70')
                           : (kioskMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50')}`}>
                       {/* Checkbox */}
                       <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors duration-150
-                        ${isChecked ? 'bg-brand-600 border-brand-600' : (kioskMode ? 'border-slate-500' : 'border-slate-300')}`} aria-hidden="true">
-                        {isChecked && <Check className="w-4 h-4 text-white" />}
+                        ${isChecked ? (kioskMode ? 'bg-white border-white' : 'bg-brand-600 border-brand-600') : (kioskMode ? 'border-slate-500' : 'border-slate-300')}`} aria-hidden="true">
+                        {isChecked && <Check className={`w-4 h-4 ${kioskMode ? 'text-slate-900' : 'text-white'}`} />}
                       </div>
 
                       {/* Info */}

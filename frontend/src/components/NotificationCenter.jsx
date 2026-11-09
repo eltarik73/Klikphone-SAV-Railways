@@ -186,9 +186,9 @@ export default function NotificationCenter({ collapsed = false }) {
         title={unread > 0 ? `${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}` : 'Notifications'}
         className={`relative flex items-center rounded-lg text-[13px] font-medium transition-colors duration-150
           ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-11 gap-3 px-3 py-2.5'}
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300
           ${unread > 0
-            ? 'text-brand-300 hover:text-white hover:bg-white/[0.06]'
+            ? 'text-white hover:bg-white/[0.06]'
             : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
           ${open ? 'bg-white/[0.08] text-white' : ''}
         `}

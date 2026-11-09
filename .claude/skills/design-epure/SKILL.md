@@ -46,9 +46,16 @@ Ce fichier donne les décisions. Les preuves et les valeurs de référence sont 
 2. **Une action primaire par écran** (`btn-primary`), à droite de l'en-tête ou en pied de modale. Les
    autres actions : `btn-secondary` (contour), `btn-ghost` (texte), ou menu « ⋯ » au-delà de trois.
    Jamais deux fois la même action à l'écran. Le vert plein est réservé à l'encaissement / remise.
-3. **Le violet porte l'action, pas la décoration.** `brand-600` : bouton primaire, item de menu actif,
-   anneau de focus, lien, élément sélectionné. Interdit : fonds `brand-50/100` décoratifs (tuiles
-   d'icônes, avatars), codes ou titres en violet, bordure gauche violette, dégradés, ombre violette.
+3. **Le noir porte l'action, pas la décoration** (décision du gérant, 9 nov. 2026 : le violet venait de
+   l'ancien K et n'est pas la marque ; l'orange du logo se confond avec l'ambre des alertes et n'atteint
+   que 2,9:1 avec du blanc). Le jeton `brand` est désormais une rampe slate : `brand-600` = slate-900
+   `#0F172A` (bouton primaire, onglet actif, case cochée, étape en cours ; 17,9:1), `brand-700` = slate-800
+   (survol, texte d'action), `brand-500` = slate-600 (anneau de focus, 7,6:1), `brand-50` = slate-100
+   (fond sélectionné), `brand-300` = slate-400 (bordure sélectionnée). **Sur fond sombre** (barre latérale,
+   borne, vitrine) l'action s'inverse : blanc plein, texte `slate-900`, focus `ring-slate-300`.
+   `badge-brand` = contour (`ring-slate-300`), pour rester distinct de `badge-neutral`. Interdit : fonds
+   `brand-50/100` décoratifs (tuiles d'icônes, avatars), codes ou titres colorés, bordure gauche colorée,
+   dégradés, ombre colorée, retour du violet.
    **Exception : le logo officiel KlikPhone** (K orange `#FF6600` / gris `#9A9A9A`, `components/LogoK.jsx`)
    garde ses couleurs partout ; on ne le redessine, n'arrondit, ne recolore ni ne le met en dégradé.
 4. **Texte d'interface 14 px / interligne 20 px**, secondaire 13 px, légende 12 px (plancher absolu),
@@ -61,13 +68,14 @@ Ce fichier donne les décisions. Les preuves et les valeurs de référence sont 
    marqueur reconnu des sites « vibe-codés » 2025, sans chiffres tabulaires. Inter n'est un « tell » que
    posée par défaut sur une landing page ; réglée (500/600, optique, tabulaires, une seule famille) elle
    lit « outil », pas « IA ». Plan B documenté : Geist Sans ; voir `references/typo-couleur.md` § 1.3.
-5. **Gris = slate, du 50 au 900, sans noir pur** (slate gardé : gris froids à côté du violet, zéro
-   migration ; pas de mauve) : titres et valeurs `slate-900`, corps `slate-700` (10,4:1), secondaire
+5. **Gris = slate, du 50 au 950, sans noir pur** (slate gardé : gris froids, cohérents avec la barre
+   latérale `#0F172A` et le gris du logo ; pas de mauve) : titres et valeurs `slate-900`, corps `slate-700` (10,4:1), secondaire
    `slate-600` (7,6:1), tertiaire `slate-500` **sur blanc seulement** (4,8:1 ; 4,3:1 sur `slate-100`,
    donc interdit là), `slate-400` jamais porteur de sens (2,6:1 : placeholders, désactivé). Bordure
    `slate-200`, champ `slate-300`, fond de page `slate-50`, surface `white`, zone neutre `slate-100`
-   jamais empilée sur `slate-50` sans bordure. Trois niveaux de texte par écran, pas plus. En texte,
-   `brand-700` (jamais `brand-500` : 4,2:1).
+   jamais empilée sur `slate-50` sans bordure. Trois niveaux de texte par écran, pas plus. Un lien
+   d'interface est en `brand-700` + `font-medium` ; dans une phrase, il est souligné (le noir seul ne le
+   distingue pas du texte).
 6. **Statuts en 4 teintes sémantiques, pas 9 couleurs** — la couleur dit *qui doit agir* :
 
    | Statut | Sens | Liste : pastille + texte `slate-700` | Fiche : badge | Icône lucide |
@@ -127,7 +135,7 @@ Le système de `frontend/src/styles/index.css` est bon et adopté à 78 % : la r
 | Boutons | 40 px (`btn`), 36 (`sm`), 48 (`lg`) ; 44 au doigt | hauteurs gardées (consensus GitHub : 36 par défaut, 32 dense, 40 pour l'action principale et le tactile) : `btn-sm` 36 dans les barres d'outils et tableaux, `btn` 40 pour les actions, `btn-lg` 48 sur les bornes ; primaire **unique** ; `btn-success` réservé à l'encaissement / remise ; `btn-icon` sans fond coloré |
 | KPI | `kpi-icon` (carré brand-50 + icône) | **supprimer la tuile d'icône** : libellé 14 px slate-600, valeur 24 px tabulaire, variation en 12 px (« +12 % vs semaine passée »), 4–5 KPI max, dans une seule carte à colonnes séparées par un trait (modèle Plausible/shadcn) |
 | Tableaux | lignes 56 px, en-tête 12 px capitales | lignes **48 px** (40 dense, 52 au doigt), en-tête 12 px / 600 capitales OK ou 13 px sentence case ; texte à gauche, nombres à droite ; 1 lien par ligne (la ligne) + menu « ⋯ » ; ≤ 3 marqueurs |
-| Barre latérale | sombre `#0F172A`, item actif `brand-600/20` + barre 3 px, avatar dégradé + point vert, pill BETA, signature | gardée sombre (décision du gérant, 8 nov. 2026 ; Shopify y est revenu en 2026 ; 26 des 28 projets open source étudiés ont une barre claire, choix d'identité assumé), 256 px (Vercel, shadcn, Carbon), items 36 px à la souris / 44 px au doigt, mais **muette** : texte `slate-300`, icônes `slate-400` 18 px, intitulés de groupe 11 px capitales `slate-400`, survol `bg-white/5`, actif `bg-white/10 text-white` (la barre violette 3 px est la seule trace de violet tolérée), compteurs `bg-white/10` sauf urgence rouge ; avatar = initiale sur `slate-700` ; **retirer** dégradé, point vert, pill BETA, signature « TkS∞26 », tagline en capitales espacées |
+| Barre latérale | sombre `#0F172A`, item actif `brand-600/20` + barre 3 px, avatar dégradé + point vert, pill BETA, signature | gardée sombre (décision du gérant, 8 nov. 2026 ; Shopify y est revenu en 2026 ; 26 des 28 projets open source étudiés ont une barre claire, choix d'identité assumé), 256 px (Vercel, shadcn, Carbon), items 36 px à la souris / 44 px au doigt, mais **muette** : texte `slate-300`, icônes `slate-400` 18 px, intitulés de groupe 11 px capitales `slate-400`, survol `bg-white/5`, actif `bg-white/10 text-white` (la barre blanche 3 px marque l'item actif ; plus aucun violet tolérée), compteurs `bg-white/10` sauf urgence rouge ; avatar = initiale sur `slate-700` ; **retirer** dégradé, point vert, pill BETA, signature « TkS∞26 », tagline en capitales espacées |
 | Icônes | lucide 16–24 px, 77 tuiles colorées | lucide `w-4 h-4` avec du texte 12–14, `w-5 h-5` dans les boutons, champs et menu, `w-6 h-6` seulement titres et états vides ; `strokeWidth` 2 (1,5 à partir de 24 px) ; `text-slate-500` au repos, `currentColor` dans les boutons ; toujours un libellé ou un `aria-label` ; **aucune tuile colorée** autour d'une icône, aucun emoji |
 | Callouts | 95 usages, jusqu'à 8 empilés | **1 bandeau d'état par écran**, une ligne, priorisé ; le reste en texte dans la carte concernée |
 | Motion | `animate-in` ×55, `wiggle`, `shimmer`, `pulse` | garder `animate-scale-in` (modale), `animate-slide-in` (drawer), toast, loaders ; retirer `wiggle` et `fadeUp` de la config ; squelette statique ou pulsation lente |

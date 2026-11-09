@@ -11,7 +11,7 @@ import CarteChiffres from '../components/CarteChiffres';
 import { FileText, Plus, Search, Filter, Eye, Edit3, Trash2, Copy, Send, CheckCircle, XCircle, ArrowRightCircle, Printer, Loader2, X, ChevronDown, Package, Euro, AlertTriangle, BarChart3, User, Phone } from 'lucide-react';
 
 const STATUTS = ['Brouillon', 'Envoyé', 'Accepté', 'Refusé', 'Converti'];
-// Badges du système : la couleur ne porte que le statut (bleu = envoyé, vert = accepté, rouge = refusé, violet = converti)
+// Badges du système : la couleur ne porte que le statut (bleu = envoyé, vert = accepté, rouge = refusé, contour = converti)
 const STATUT_BADGE = {
   Brouillon: 'badge-neutral',
   Envoyé: 'badge-info',

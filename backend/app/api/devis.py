@@ -903,18 +903,18 @@ def print_devis(devis_id: int, user: dict = Depends(get_current_user)):
     body {{ font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; color: #1e293b; margin: 0; padding: 20px; overflow-wrap: anywhere; }}
     .header {{ display: flex; justify-content: space-between; gap: 24px; margin-bottom: 30px; }}
     .shop {{ font-size: 12px; color: #64748b; line-height: 1.6; }}
-    .shop-name {{ font-size: 20px; font-weight: 800; color: #7c3aed; margin-bottom: 4px; }}
+    .shop-name {{ font-size: 20px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }}
     .devis-info {{ text-align: right; }}
     .devis-num {{ font-size: 18px; font-weight: 700; color: #1e293b; }}
     .client-box {{ background: #f8fafc; border-radius: 8px; padding: 16px; margin-bottom: 24px; }}
     .client-label {{ font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; margin-bottom: 6px; font-weight: 600; }}
     table {{ width: 100%; border-collapse: collapse; margin-bottom: 24px; }}
-    th {{ background: #7c3aed; color: white; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }}
+    th {{ background: #0f172a; color: white; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }}
     th:nth-child(2), th:nth-child(3), th:last-child {{ text-align: center; }}
     th:last-child {{ text-align: right; }}
     .totals {{ margin-left: auto; width: 280px; }}
     .total-row {{ display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }}
-    .total-final {{ font-size: 18px; font-weight: 800; color: #7c3aed; border-top: 2px solid #7c3aed; padding-top: 8px; margin-top: 4px; }}
+    .total-final {{ font-size: 18px; font-weight: 700; color: #0f172a; border-top: 2px solid #0f172a; padding-top: 8px; margin-top: 4px; }}
     .footer {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; }}
     .status-badge {{ display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; }}
     @media print {{ body {{ padding: 0; }} * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }} }}

@@ -1,7 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 import colors from 'tailwindcss/colors'
 
-// Design épuré (nov. 2026, skill `design-epure`) : la marque (brand, sidebar) ne bouge pas. Alias
+// Design épuré (nov. 2026, skill `design-epure`). `brand` = la couleur d'ACTION, pas la marque : depuis le
+// 09/11/2026 (décision du gérant) elle est noire (rampe slate, 600 = slate-900) ; l'orange #FF6600 reste au
+// seul logo officiel (LogoK.jsx). Le nom du jeton est gardé pour ne pas toucher aux 250 usages. Alias
 // sémantiques (success/warning/danger/info) sur la palette Tailwind (emerald/amber/red/blue) et trois
 // ombres : `xs` (boutons secondaires), `md` (menus), `lg` (modales, drawers, toasts). Aucune animation
 // décorative déclarée ici (wiggle/shimmer retirés). Tout le reste reste Tailwind natif.
@@ -11,16 +13,16 @@ export default {
     extend: {
       colors: {
         brand: {
-          50: '#F5F3FF',
-          100: '#EDE9FE',
-          200: '#DDD6FE',
-          300: '#C4B5FD',
-          400: '#A78BFA',
-          500: '#8B5CF6',
-          600: '#7C3AED',
-          700: '#6D28D9',
-          800: '#5B21B6',
-          900: '#4C1D95',
+          50: '#F1F5F9',  // slate-100 : fond d'un élément sélectionné (lisible sur blanc)
+          100: '#E2E8F0', // slate-200
+          200: '#CBD5E1', // slate-300
+          300: '#94A3B8', // slate-400 : bordure d'un élément sélectionné
+          400: '#64748B', // slate-500
+          500: '#475569', // slate-600 : anneau de focus (7,6:1 sur blanc)
+          600: '#0F172A', // slate-900 : bouton primaire, onglet actif, case cochée (17,9:1)
+          700: '#1E293B', // slate-800 : survol du primaire, texte d'action
+          800: '#020617', // slate-950 : bouton pressé
+          900: '#020617',
         },
         sidebar: {
           DEFAULT: '#0F172A',

@@ -2010,7 +2010,7 @@ function Rangement({
     contenu = (
       // Pavé sombre conservé : l'emplacement se lit de loin, c'est le repère pour aller chercher l'appareil
       <div className="flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2 text-white">
-        <MapPin className="h-7 w-7 shrink-0 text-brand-300" aria-hidden="true" />
+        <MapPin className="h-7 w-7 shrink-0 text-slate-300" aria-hidden="true" />
         <p id={descId} className="min-w-0 flex-1">
           <span className="block text-xs font-semibold text-slate-300">Rangé en</span>{' '}
           {/* t-display (30 px / 700) : lisible de loin ; texte blanc sur le pavé sombre (t-display pose slate-900) */}
@@ -2052,7 +2052,7 @@ const ACTION_ICONS = {
   rendre: PackageCheck, demarrer: Play, terminer: Send, terminer_seul: CircleCheckBig,
   encaisser: HandCoins, facturer: Receipt, pret: Smartphone,
 };
-// Vert plein réservé à la remise et à l'encaissement ; toute autre action principale est violette (marque)
+// Vert plein réservé à la remise et à l'encaissement ; toute autre action principale est noire (brand-600)
 const ACTION_COLORS = {
   rendre: 'btn-success',
   encaisser: 'btn-success',

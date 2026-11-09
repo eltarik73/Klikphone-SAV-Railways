@@ -9,19 +9,19 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // ─── Design de la vitrine (épuré, sans effets) ─────────────────
 // Fond slate-900 en aplat, surfaces slate-800 bordées white/10 ; texte blanc / slate-300 / slate-400
-// (slate-400 ≥ 5,7:1 sur slate-800) ; un seul accent : brand-600 en aplat pour l'action principale,
-// blanc pour l'élément choisi. Ni dégradé, ni flou, ni halo, ni ombre colorée ; rayons 6–12 px ;
+// (slate-400 ≥ 5,7:1 sur slate-800) ; action principale en blanc plein (texte slate-900 : l'action est noire
+// sur fond clair, inversée sur ce fond sombre), blanc aussi pour l'élément choisi. Ni dégradé, ni flou, ni halo, ni ombre colorée ; rayons 6–12 px ;
 // seul mouvement : fondu de 200 ms au changement de produit et bandeau de prix (désactivables).
-const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900';
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900';
 const BTN = `inline-flex items-center justify-center gap-2 rounded-lg whitespace-nowrap transition-colors duration-150 ${FOCUS}`;
 const BTN_SOMBRE = `${BTN} border border-white/10 bg-slate-800 font-medium text-slate-100 hover:bg-slate-700`;
-const BTN_PRINCIPAL = `${BTN} bg-brand-600 font-semibold text-white hover:bg-brand-700 disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed`;
+const BTN_PRINCIPAL = `${BTN} bg-white font-semibold text-slate-900 hover:bg-slate-200 disabled:bg-slate-700 disabled:text-slate-300 disabled:cursor-not-allowed`;
 const BTN_DISCRET = `${BTN} font-medium text-slate-300 hover:bg-white/10 hover:text-white`;
 const BTN_ICONE = `${BTN} w-11 h-11 shrink-0 text-slate-300 hover:bg-white/10 hover:text-white`;
 const TAILLE_M = 'min-h-11 px-4 text-sm';
 const TAILLE_L = 'min-h-12 px-5 text-base';
 const LIBELLE = 'block text-sm font-medium text-slate-200';
-const CHAMP = 'mt-1.5 w-full min-h-11 px-3 py-2.5 rounded-md border border-white/15 bg-slate-900 text-base text-white placeholder:text-slate-500 hover:border-white/25 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40 transition-colors duration-150';
+const CHAMP = 'mt-1.5 w-full min-h-11 px-3 py-2.5 rounded-md border border-white/15 bg-slate-900 text-base text-white placeholder:text-slate-500 hover:border-white/25 focus:outline-none focus:border-slate-300 focus:ring-2 focus:ring-white/20 transition-colors duration-150';
 const PASTILLE = 'inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-white/10 bg-slate-800 text-sm font-medium text-slate-200';
 
 // Prix au format français (« 1 299 € », espaces insécables fournis par Intl)
@@ -175,7 +175,7 @@ function ReglageCase({ k, label, help, settings, update }) {
         type="checkbox"
         checked={settings[k]}
         onChange={e => update({ [k]: e.target.checked })}
-        className={`mt-0.5 w-5 h-5 rounded accent-brand-600 shrink-0 ${FOCUS}`}
+        className={`mt-0.5 w-5 h-5 rounded accent-slate-200 shrink-0 ${FOCUS}`}
       />
       <span className="flex-1">
         <span className="block text-sm font-medium text-white">{label}</span>

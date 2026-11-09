@@ -6,7 +6,7 @@
    Klikphone SAV — système de style partagé (design V2, « polish »)
 
    Principe : la couleur porte un sens, la hiérarchie vient du poids et de l'espace.
-   Violet (brand) = marque/action · vert = ok/payé · ambre = attention · rouge = danger ·
+   Noir (brand, rampe slate) = action · vert = ok/payé · ambre = attention · rouge = danger ·
    bleu = information · tout le reste est slate.
 
    Les pages n'utilisent QUE les classes ci-dessous + les utilitaires Tailwind.
@@ -228,7 +228,8 @@
   }
   .badge-dot { @apply w-1.5 h-1.5 rounded-full bg-current opacity-80 shrink-0; }
   .badge-neutral { @apply bg-slate-100 text-slate-700; }
-  .badge-brand { @apply bg-brand-50 text-brand-700; }
+  /* Marqueur distinct des badges neutres : contour (l'action est noire, un fond gris ne se distinguerait plus) */
+  .badge-brand { @apply bg-white text-slate-800 ring-1 ring-inset ring-slate-300; }
   .badge-success { @apply bg-emerald-50 text-emerald-700; }
   .badge-warning { @apply bg-amber-50 text-amber-800; }
   .badge-danger { @apply bg-red-50 text-red-700; }

@@ -30,7 +30,7 @@ const OFFLINE_HTML = '<!doctype html><html lang="fr"><meta charset="utf-8">'
   + '<body style="font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">'
   + '<div style="text-align:center;padding:24px"><p style="font-weight:700;font-size:18px">Connexion impossible</p>'
   + '<p style="color:#64748b">Vérifiez la connexion internet puis réessayez.</p>'
-  + '<button onclick="location.reload()" style="margin-top:12px;padding:12px 20px;border:0;border-radius:12px;background:#7C3AED;color:#fff;font-weight:700;font-size:15px">Réessayer</button>'
+  + '<button onclick="location.reload()" style="margin-top:12px;padding:12px 20px;border:0;border-radius:12px;background:#0F172A;color:#fff;font-weight:700;font-size:15px">Réessayer</button>'
   + '</div></body></html>';
 
 self.addEventListener('fetch', (event) => {

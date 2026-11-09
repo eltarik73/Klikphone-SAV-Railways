@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────
-const VIOLET = '#7C3AED';
+// Trait des graphiques : neutre foncé, comme l'action (le violet a quitté l'interface le 09/11/2026)
+const COULEUR_GRAPHE = '#334155';
 const SERIE_SECONDAIRE = '#64748B'; // slate-500 : 4,76:1 sur blanc (≥ 3:1 pour le trait et les barres)
 const GRILLE = '#E2E8F0';
 const TEXTE_AXES = '#64748B';
@@ -93,7 +94,7 @@ function DarkTooltip({ active, payload, label }) {
       <p className="t-caption mb-1">{label}</p>
       {payload.map((entry, i) => (
         <p key={i} className="font-semibold text-slate-900 tabular-nums">
-          <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: entry.color || entry.fill || VIOLET }} aria-hidden="true" />
+          <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle" style={{ background: entry.color || entry.fill || COULEUR_GRAPHE }} aria-hidden="true" />
           {entry.name}: {entry.value}
         </p>
       ))}
@@ -383,7 +384,7 @@ function AdminDashboard({ onLogout }) {
                     <YAxis tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} allowDecimals={false} />
                     <Tooltip content={<DarkTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendeTexte} />
-                    <Line type="monotone" dataKey="tickets" name="Tickets" stroke={VIOLET} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey="tickets" name="Tickets" stroke={COULEUR_GRAPHE} strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey="clients" name="Clients" stroke={SERIE_SECONDAIRE} strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 4 }} strokeDasharray="5 5" />
                   </LineChart>
                 ) : (
@@ -393,7 +394,7 @@ function AdminDashboard({ onLogout }) {
                     <YAxis tick={{ fontSize: 12, fill: TEXTE_AXES }} tickLine={false} axisLine={{ stroke: GRILLE }} allowDecimals={false} />
                     <Tooltip content={<DarkTooltip />} cursor={{ fill: '#F1F5F9' }} />
                     <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendeTexte} />
-                    <Bar dataKey="tickets" name="Tickets" fill={VIOLET} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                    <Bar dataKey="tickets" name="Tickets" fill={COULEUR_GRAPHE} radius={[4, 4, 0, 0]} maxBarSize={32} />
                     <Bar dataKey="clients" name="Clients" fill={SERIE_SECONDAIRE} radius={[4, 4, 0, 0]} maxBarSize={32} />
                   </BarChart>
                 )}

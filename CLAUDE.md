@@ -68,7 +68,7 @@ klikphone-sav/
 │   │   ├── pages/               # ~20 pages (DashboardPage, TicketDetailPage, ClientFormPage...)
 │   │   └── components/          # Navbar, StatusBadge, PatternGrid, Toast...
 │   ├── vite.config.js           # Proxy /api → localhost:8000, port 5173
-│   ├── tailwind.config.js       # Palette brand (violet), police Inter variable
+│   ├── tailwind.config.js       # Palette brand (action noire, rampe slate), police Inter variable
 │   └── package.json
 └── CLAUDE.md
 ```
@@ -76,11 +76,15 @@ klikphone-sav/
 ## Design & UI
 
 - **Skill `design-epure`** (`.claude/skills/design-epure/`, nov. 2026) : à charger avant toute modification
-  d'interface — dix décisions (un point focal et un seul `btn-primary` par écran, violet = action seulement,
+  d'interface — dix décisions (un point focal et un seul `btn-primary` par écran, noir = action seulement,
   statuts en 4 teintes, cartes sans ombre, rayons 6/8/12, aucune animation décorative, ton et formats
   français), checklist anti-« look IA », gabarits de page, audit chiffré du code et restes à traiter (§ 8).
-- **Palette** : violet `#7C3AED` (`brand`) réservé à l'action, l'état actif et le focus ; neutres slate ;
-  sémantiques success/warning/danger/info (emerald/amber/red/blue). Jamais de dégradé ni de tuile d'icône colorée.
+- **Palette** : action **noire** depuis le 9 nov. 2026 (décision du gérant) — le jeton `brand` est une rampe slate,
+  `brand-600` = `#0F172A` (bouton primaire, actif, case cochée), `brand-500` = `#475569` (focus) ; sur fond sombre
+  (barre latérale, borne, vitrine) l'action s'inverse en blanc. **Plus de violet** (ancien K), et l'orange `#FF6600`
+  reste au seul logo (il se confond avec l'ambre des alertes). Neutres slate ; sémantiques success/warning/danger/info
+  (emerald/amber/red/blue). Jamais de dégradé ni de tuile d'icône colorée. Documents clients (devis, e-mail de
+  dépôt à distance, reçu) alignés sur le noir ; couleurs de données (calendrier marketing, équipe) inchangées.
 - **Statuts** : 4 teintes (`lib/utils.js` → `getStatusConfig`, clés `bg/text/ring/dot/color/icon/groupe`) ;
   `StatusBadge` variante `dot` (listes) ou `solid` / `size="lg"` (en-tête de fiche). Aucun statut en rouge.
 - **Sidebar** : sombre (`#0F172A`, `sidebar`), version « muette » (texte slate-300, actif `bg-white/10`) — décision du gérant.

@@ -1208,16 +1208,16 @@ table.rt{width:100%;border-collapse:collapse}
 .rt thead th:last-child{text-align:right}.rt thead th.c{text-align:center}
 .rt tbody td{padding:10px 14px;font-size:11px;border-bottom:1px solid #F4F4F5}
 .rt tbody tr.alt td{background:#FAFAFA}.rt .c{text-align:center}.rt .r{text-align:right}
-.qb{display:inline-block;background:#EDE9FE;color:#7C3AED;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px}
+.qb{display:inline-block;background:#F1F5F9;color:#0F172A;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px}
 .tots{margin-bottom:20px}
 .tr{display:flex;justify-content:space-between;padding:7px 14px;font-size:11px;color:#52525B;border-bottom:1px solid #F4F4F5}
 .tr .v{font-weight:700;color:#18181B}.tr.grn,.tr.grn .v{color:#059669}
 .tttc{display:flex;justify-content:space-between;padding:12px 14px;color:#fff;font-size:18px;font-weight:700}
 .trap{display:flex;justify-content:space-between;padding:10px 14px;background:#18181B;color:#fff;font-size:16px;font-weight:700;border-radius:0 0 10px 10px}
 .paye{display:inline-block;color:#059669;font-size:32px;font-weight:700;border:4px solid #059669;padding:4px 24px;letter-spacing:6px;opacity:.6;transform:rotate(-5deg)}
-.fidel{background:#F5F3FF;border:1px solid #DDD6FE;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
-.fl{font-size:10px;font-weight:700;color:#7C3AED;text-transform:uppercase;letter-spacing:1px}
-.fp{font-size:13px;font-weight:700;color:#5B21B6}
+.fidel{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.fl{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:1px}
+.fp{font-size:13px;font-weight:700;color:#0F172A}
 .cond{background:#FAFAFA;border:1px solid #F4F4F5;border-radius:10px;padding:14px;margin-bottom:20px}
 .cond .cdt{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:#A1A1AA;margin-bottom:6px;font-weight:500}
 .cond .cdx{font-size:9px;color:#71717A;line-height:1.6}

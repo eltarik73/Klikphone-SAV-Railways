@@ -442,7 +442,7 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne,
         escape(str(v or "")) for v in (nom_boutique, adresse, tel, prenom, code, appareil, panne, lien)
     )
     bouton = (
-        f'<p style="text-align:center;margin:0 0 24px;"><a href="{lien}" style="display:inline-block;background:#7C3AED;'
+        f'<p style="text-align:center;margin:0 0 24px;"><a href="{lien}" style="display:inline-block;background:#0F172A;'
         f'color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px;">'
         f'Suivre ma réparation</a></p>'
     ) if lien else ""
@@ -450,7 +450,7 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne,
 <html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background:#f1f5f9;">
 <div style="max-width:500px;margin:20px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-  <div style="background:linear-gradient(135deg,#6366F1,#7C3AED);padding:32px 24px;text-align:center;">
+  <div style="background:#0F172A;padding:32px 24px;text-align:center;">
     <h1 style="color:#fff;font-size:22px;margin:0;">{nom_boutique}</h1>
     <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:8px 0 0;">Confirmation de pré-enregistrement</p>
   </div>
@@ -458,9 +458,9 @@ def html_confirmation(nom_boutique, adresse, tel, prenom, code, appareil, panne,
     <p style="color:#334155;font-size:15px;margin:0 0 20px;">Bonjour <strong>{prenom}</strong>,</p>
     <p style="color:#64748B;font-size:14px;margin:0 0 24px;">Votre demande de réparation a bien été enregistrée.</p>
 
-    <div style="background:#F5F3FF;border:2px solid #C4B5FD;border-radius:12px;padding:20px;text-align:center;margin:0 0 24px;">
-      <p style="color:#7C3AED;font-size:12px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Votre numéro de suivi</p>
-      <p style="color:#7C3AED;font-size:32px;font-weight:800;font-family:monospace;margin:0;letter-spacing:3px;">{code}</p>
+    <div style="background:#F8FAFC;border:1px solid #CBD5E1;border-radius:12px;padding:20px;text-align:center;margin:0 0 24px;">
+      <p style="color:#475569;font-size:12px;font-weight:600;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;">Votre numéro de suivi</p>
+      <p style="color:#0F172A;font-size:32px;font-weight:700;font-family:monospace;margin:0;letter-spacing:3px;">{code}</p>
     </div>
     {bouton}
 

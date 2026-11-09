@@ -65,7 +65,7 @@ export default function FideliteCard({ clientId, ticketCode, preuve = null, comp
     }
   };
 
-  // Barre de progression : monochrome slate sur slate-100, hauteur 8 px (le violet reste aux actions)
+  // Barre de progression : monochrome slate sur slate-100, hauteur 8 px (le noir reste aux actions)
   const barre = (pourcent) => (
     <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden" aria-hidden="true">
       <div className="h-full bg-slate-700 rounded-full transition-[width] duration-150 motion-reduce:transition-none"

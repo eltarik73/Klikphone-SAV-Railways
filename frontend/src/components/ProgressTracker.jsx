@@ -1,8 +1,8 @@
 import { Search, FileText, Wrench, CheckCircle2, Package, Truck, Globe, Check } from 'lucide-react';
 
 // Stepper monochrome (design épuré) : la progression se lit au poids, pas à la couleur.
-// Étape faite = cercle plein slate-700 + coche ; courante (seule en violet : le violet marque l'actif) =
-// cercle plein brand-600 + icône, aria-current="step" ; à venir = cercle blanc cerclé slate. Libellés 12 px minimum.
+// Étape faite = cercle plein slate-500 + coche ; courante = cercle noir (brand-600, la couleur d'action)
+// + halo slate-200 + icône, aria-current="step" ; à venir = cercle blanc cerclé slate. Libellés 12 px minimum.
 const STEPS_NORMAL = [
   { label: 'Diagnostic', icon: Search },
   { label: 'Devis', icon: FileText },
@@ -73,9 +73,9 @@ export default function ProgressTracker({ statut, hasPiece, isDistance }) {
         const isCurrent = i === currentStep;
 
         const circleCls = done
-          ? 'bg-slate-700 text-white'
+          ? 'bg-slate-500 text-white'
           : isCurrent
-            ? 'bg-brand-600 text-white'
+            ? 'bg-brand-600 text-white ring-4 ring-brand-100'
             : 'bg-white border border-slate-300 text-slate-500';
         const labelCls = isCurrent
           ? 'text-xs font-semibold text-brand-700'

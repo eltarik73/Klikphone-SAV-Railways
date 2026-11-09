@@ -26,7 +26,7 @@ const AVIS_EVERY_MS = 5 * 60_000;
 
 // Design V2 : une seule couleur d'accent (brand) dans la barre latérale ; les rubriques ne sont plus
 // colorées, la hiérarchie vient du poids et de l'espace. Texte slate-300, secondaire slate-400 (AA).
-const FOCUS_DARK = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-inset';
+const FOCUS_DARK = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-inset';
 
 // La préférence « barre repliée » (kp_sidebar_collapsed) n'a de sens qu'au bureau (≥ lg, barre fixe) :
 // sous lg la barre est un tiroir qui s'ouvre toujours complet (icônes + libellés), sinon la croix
@@ -53,7 +53,7 @@ function Tooltip({ label, children, badge, collapsed }) {
         >
           {label}
           {badge > 0 && (
-            <span className="badge-count badge-count-brand ml-2">
+            <span className="badge-count bg-white text-slate-900 ml-2">
               {badge > 99 ? '99+' : badge}
             </span>
           )}
@@ -64,10 +64,10 @@ function Tooltip({ label, children, badge, collapsed }) {
 }
 
 // Compteur rond 18 px : neutre (total, blanc translucide sur la barre sombre), rouge (urgence),
-// brand (total mis en avant)
+// clair (total mis en avant : blanc sur la barre sombre, l'action noire y serait invisible)
 function Badge({ value, tone = 'neutral' }) {
   if (!value || value <= 0) return null;
-  const toneCls = { neutral: 'bg-white/10 text-slate-200', brand: 'badge-count-brand', red: 'badge-count-danger' }[tone] || '';
+  const toneCls = { neutral: 'bg-white/10 text-slate-200', brand: 'bg-white text-slate-900', red: 'badge-count-danger' }[tone] || '';
   const label = value > 99 ? '99+' : value;
   return <span className={`badge-count ${toneCls}`}>{label}</span>;
 }
@@ -80,7 +80,7 @@ function AlertDot({ value }) {
 
 function DotBadge({ value, tone = 'neutral' }) {
   if (!value || value <= 0) return null;
-  const bg = tone === 'red' ? 'badge-count-danger' : 'badge-count-brand';
+  const bg = tone === 'red' ? 'badge-count-danger' : 'bg-white text-slate-900';
   return (
     <span className={`badge-count ${bg} absolute top-0.5 right-0.5 ring-2 ring-slate-900`}>
       {value > 9 ? '9+' : value}
@@ -295,14 +295,14 @@ export default function Navbar() {
     navigate(`/login/${user.target}?switch=1`);
   };
 
-  // ─── Entrée de menu muette : actif = fond blanc/10 + texte blanc + barre gauche 3 px brand (seule
-  // trace de violet), inactif = texte slate-300, icône slate-400 ───
+  // ─── Entrée de menu muette : actif = fond blanc/10 + texte blanc + barre gauche 3 px blanche,
+  // inactif = texte slate-300, icône slate-400 ───
   const navBtnClass = (active) => {
     const base = `group/nav w-full min-h-11 flex items-center gap-3 rounded-lg text-[13px] font-medium
       transition-colors duration-150 ease-out relative ${FOCUS_DARK}
       ${collapsed ? 'justify-center px-0 py-2.5 short:py-1.5' : 'px-3 py-2.5 short:py-1.5'}`;
     const activeCls = `bg-white/10 text-white
-      ${collapsed ? '' : 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-brand-500'}`;
+      ${collapsed ? '' : 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-white'}`;
     const idle = 'text-slate-300 hover:text-white hover:bg-white/[0.06]';
     return `${base} ${active ? activeCls : idle}`;
   };
@@ -325,7 +325,7 @@ export default function Navbar() {
             <Search className="w-5 h-5" aria-hidden="true" />
           </button>
           {pendingCount > 0 && (
-            <span className="badge-count badge-count-brand"
+            <span className="badge-count bg-white text-slate-900"
               aria-label={`${pendingCount} tickets actifs`}>
               {pendingCount}
             </span>

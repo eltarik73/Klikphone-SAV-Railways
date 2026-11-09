@@ -3,7 +3,8 @@
  * - index.css expose les classes partagées (boutons, badges, cartes, en-têtes, tableaux, états,
  *   modales, toasts, échelle typographique) avec les contraintes AA (plus de 11 px, plus de slate-400
  *   pour du texte, vert plein = emerald-700, focus visible au clavier) ;
- * - tailwind.config.js garde la marque (brand-600 #7C3AED, sidebar #0F172A) et ajoute les ombres xs/lg ;
+ * - tailwind.config.js : action noire (brand-600 = slate-900 #0F172A depuis le 09/11/2026, l'orange reste au logo),
+ *   sidebar #0F172A, ombres xs/lg ;
  * - StatusBadge : pastille + texte en liste, badge plein cerclé en fiche ; PrioriteBadge : badges du système, sans ring ;
  * - Navbar : toutes les entrées rendues, focus visible, boutons icône nommés en mode replié ;
  * - Toast / ProgressTracker / ErrorBoundary : classes du système, plus de styles inline colorés.
@@ -165,11 +166,15 @@ describe('index.css : classes partagées du design V2', () => {
 });
 
 // ─── tailwind.config.js ───────────────────────────────────
-describe('tailwind.config.js : marque intacte, tokens ajoutés', () => {
+describe('tailwind.config.js : action noire, tokens ajoutés', () => {
   const t = tailwindConfig.theme.extend;
-  it('garde brand-600 #7C3AED, sidebar #0F172A ; police Inter (variable, taille optique)', () => {
-    expect(t.colors.brand[600]).toBe('#7C3AED');
-    expect(t.colors.brand[700]).toBe('#6D28D9');
+  it('action noire : brand-600 slate-900, survol slate-800, focus slate-600 ; sidebar #0F172A ; police Inter', () => {
+    // Décision du gérant (09/11/2026) : plus de violet, l'orange #FF6600 reste au seul logo
+    expect(t.colors.brand[600]).toBe('#0F172A');
+    expect(t.colors.brand[700]).toBe('#1E293B');
+    expect(t.colors.brand[500]).toBe('#475569');
+    expect(Object.values(t.colors.brand).map(v => v.toUpperCase())).not.toContain('#7C3AED');
+    expect(Object.values(t.colors.brand).map(v => v.toUpperCase())).not.toContain('#FF6600');
     expect(t.colors.sidebar.DEFAULT).toBe('#0F172A');
     expect(t.fontFamily.sans[0]).toBe('Inter');
     expect(t.fontFamily.display[0]).toBe('Inter');
@@ -426,20 +431,20 @@ describe('Toast : blanc, bordure gauche sémantique, croix 40 px', () => {
 });
 
 // ─── ProgressTracker / ErrorBoundary ──────────────────────
-describe('ProgressTracker : stepper monochrome, seule l’étape courante en violet', () => {
-  it('étapes faites = coche sur slate-700, courante = brand-600 (aria-current="step"), à venir = cerclée slate, libellés 12 px', () => {
+describe('ProgressTracker : stepper monochrome, seule l’étape courante en couleur d’action', () => {
+  it('étapes faites = coche sur slate-500, courante = brand-600 + halo (aria-current="step"), à venir = cerclée slate, libellés 12 px', () => {
     const { container } = render(<ProgressTracker statut="En cours de réparation" hasPiece={false} />);
     expect(container.querySelector('[style]')).toBeNull();
     const courante = container.querySelector('[aria-current="step"]');
-    expect(courante.className).toMatch(/bg-brand-600 text-white/);
+    expect(courante.className).toMatch(/bg-brand-600 text-white ring-4 ring-brand-100/);
     expect(courante.parentElement).toHaveTextContent('Réparation');
     const cercles = container.querySelectorAll('.rounded-full.w-8');
     expect(cercles).toHaveLength(5);
-    expect(cercles[0].className).toMatch(/bg-slate-700 text-white/);
+    expect(cercles[0].className).toMatch(/bg-slate-500 text-white/);
     expect(cercles[0].querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
     expect(cercles[4].className).toMatch(/border-slate-300 text-slate-500/);
     expect(container.innerHTML).not.toMatch(/text-slate-400/);
-    // Le violet est réservé à l'étape courante
+    // La couleur d'action (noir) est réservée à l'étape courante
     expect([...cercles].filter(c => /brand/.test(c.className))).toHaveLength(1);
     expect(screen.getByText('Diagnostic').className).toMatch(/text-slate-700/);
     expect(screen.getByText('Diagnostic').className).toMatch(/text-xs/);

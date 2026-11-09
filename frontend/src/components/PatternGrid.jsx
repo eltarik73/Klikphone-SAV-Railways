@@ -15,9 +15,9 @@ for (let row = 0; row < GRID_SIZE; row++) {
 }
 
 // Design V2 : tracé brand-600, point pris brand-700 (blanc dessus : 5,9:1), anneau libre slate-500 (3:1 sur slate-50)
-const BRAND_500 = '#8B5CF6';
-const BRAND_600 = '#7C3AED';
-const BRAND_700 = '#6D28D9';
+const BRAND_500 = '#475569'; // slate-600 (action noire, 09/11/2026)
+const BRAND_600 = '#0F172A'; // slate-900
+const BRAND_700 = '#1E293B'; // slate-800
 const SLATE_500 = '#64748B';
 
 // Saisi au clavier sans tirets (« 15963 », « 1 5 9 6 3 ») : chiffres 1 à 9, chacun une seule fois
