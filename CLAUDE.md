@@ -87,7 +87,9 @@ klikphone-sav/
   dépôt à distance, reçu) alignés sur le noir ; couleurs de données (calendrier marketing, équipe) inchangées.
 - **Statuts** : 4 teintes (`lib/utils.js` → `getStatusConfig`, clés `bg/text/ring/dot/color/icon/groupe`) ;
   `StatusBadge` variante `dot` (listes) ou `solid` / `size="lg"` (en-tête de fiche). Aucun statut en rouge.
-- **Sidebar** : sombre (`#0F172A`, `sidebar`), version « muette » (texte slate-300, actif `bg-white/10`) — décision du gérant.
+- **Navigation** : jetons `nav-*` (`tailwind.config.js`, variables CSS d'`index.css`). Sous 1 024 px (téléphone, iPad en
+  portrait) barre du haut et menu sur **fond blanc** (gérant, 09/11/2026) ; au-dessus, barre latérale **sombre** `#0F172A`,
+  version « muette » (gérant, 08/11). Ne pas réécrire `text-white` / `bg-white/10` en dur dans `Navbar.jsx` : passer par `nav-*`.
 - **Police** : Inter variable seule (Google Fonts `opsz,wght@14..32,400..700`, `font-optical-sizing: auto`) ;
   plus de Plus Jakarta Sans ni d'Instrument Serif.
 - **Logo officiel KlikPhone** (fourni par le gérant le 8 nov. 2026, PDF vectoriel) : le « K » orange `#FF6600` /

@@ -24,9 +24,9 @@ const DEMANDES_EVERY_MS = 2 * 60_000;
 const COMMANDES_EVERY_MS = 2 * 60_000;
 const AVIS_EVERY_MS = 5 * 60_000;
 
-// Design V2 : une seule couleur d'accent (brand) dans la barre latérale ; les rubriques ne sont plus
-// colorées, la hiérarchie vient du poids et de l'espace. Texte slate-300, secondaire slate-400 (AA).
-const FOCUS_DARK = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-inset';
+// Couleurs de navigation = jetons `nav-*` (tailwind.config.js, variables d'index.css) : fond blanc sous 1 024 px
+// (téléphone, iPad en portrait), barre sombre au-dessus. Rubriques non colorées, hiérarchie par le poids.
+const FOCUS_DARK = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-nav-anneau focus-visible:ring-inset';
 
 // La préférence « barre repliée » (kp_sidebar_collapsed) n'a de sens qu'au bureau (≥ lg, barre fixe) :
 // sous lg la barre est un tiroir qui s'ouvre toujours complet (icônes + libellés), sinon la croix
@@ -53,7 +53,7 @@ function Tooltip({ label, children, badge, collapsed }) {
         >
           {label}
           {badge > 0 && (
-            <span className="badge-count bg-white text-slate-900 ml-2">
+            <span className="badge-count bg-nav-fort text-nav-fond ml-2">
               {badge > 99 ? '99+' : badge}
             </span>
           )}
@@ -63,11 +63,11 @@ function Tooltip({ label, children, badge, collapsed }) {
   );
 }
 
-// Compteur rond 18 px : neutre (total, blanc translucide sur la barre sombre), rouge (urgence),
-// clair (total mis en avant : blanc sur la barre sombre, l'action noire y serait invisible)
+// Compteur rond 18 px : neutre (voile translucide), rouge (urgence), mis en avant (couleur forte de la barre :
+// blanc sur la barre sombre, noir sur le menu blanc du téléphone)
 function Badge({ value, tone = 'neutral' }) {
   if (!value || value <= 0) return null;
-  const toneCls = { neutral: 'bg-white/10 text-slate-200', brand: 'bg-white text-slate-900', red: 'badge-count-danger' }[tone] || '';
+  const toneCls = { neutral: 'bg-nav-calque/10 text-nav-vif', brand: 'bg-nav-fort text-nav-fond', red: 'badge-count-danger' }[tone] || '';
   const label = value > 99 ? '99+' : value;
   return <span className={`badge-count ${toneCls}`}>{label}</span>;
 }
@@ -80,9 +80,9 @@ function AlertDot({ value }) {
 
 function DotBadge({ value, tone = 'neutral' }) {
   if (!value || value <= 0) return null;
-  const bg = tone === 'red' ? 'badge-count-danger' : 'bg-white text-slate-900';
+  const bg = tone === 'red' ? 'badge-count-danger' : 'bg-nav-fort text-nav-fond';
   return (
-    <span className={`badge-count ${bg} absolute top-0.5 right-0.5 ring-2 ring-slate-900`}>
+    <span className={`badge-count ${bg} absolute top-0.5 right-0.5 ring-2 ring-nav-fond`}>
       {value > 9 ? '9+' : value}
     </span>
   );
@@ -93,8 +93,8 @@ function SectionHeader({ label, icon: Icon, open, onToggle, collapsed }) {
   if (collapsed) {
     return (
       <div className="relative my-2 flex justify-center" aria-hidden="true">
-        <span className="block w-8 h-px bg-white/10" />
-        <Icon className="w-4 h-4 absolute -top-2 bg-slate-900 px-0.5 text-slate-400" />
+        <span className="block w-8 h-px bg-nav-calque/10" />
+        <Icon className="w-4 h-4 absolute -top-2 bg-nav-fond px-0.5 text-nav-discret" />
       </div>
     );
   }
@@ -104,9 +104,9 @@ function SectionHeader({ label, icon: Icon, open, onToggle, collapsed }) {
       onClick={onToggle}
       aria-expanded={!!open}
       className={`w-full min-h-11 flex items-center justify-between px-3 py-2 mb-1 short:mb-0 rounded-lg group/sec
-        text-slate-400 hover:text-slate-200 transition-colors duration-150 ${FOCUS_DARK}`}
+        text-nav-discret hover:text-nav-vif transition-colors duration-150 ${FOCUS_DARK}`}
     >
-      <span className="flex items-center gap-2 t-overline text-slate-400 group-hover/sec:text-slate-200">
+      <span className="flex items-center gap-2 t-overline text-nav-discret group-hover/sec:text-nav-vif">
         <Icon className="w-4 h-4" aria-hidden="true" />
         {label}
       </span>
@@ -295,37 +295,37 @@ export default function Navbar() {
     navigate(`/login/${user.target}?switch=1`);
   };
 
-  // ─── Entrée de menu muette : actif = fond blanc/10 + texte blanc + barre gauche 3 px blanche,
-  // inactif = texte slate-300, icône slate-400 ───
+  // ─── Entrée de menu muette : actif = voile /10 + texte fort + barre gauche 3 px (blanc sur la barre sombre,
+  // noir sur le menu blanc), inactif = texte nav-texte, icône nav-discret ───
   const navBtnClass = (active) => {
     const base = `group/nav w-full min-h-11 flex items-center gap-3 rounded-lg text-[13px] font-medium
       transition-colors duration-150 ease-out relative ${FOCUS_DARK}
       ${collapsed ? 'justify-center px-0 py-2.5 short:py-1.5' : 'px-3 py-2.5 short:py-1.5'}`;
-    const activeCls = `bg-white/10 text-white
-      ${collapsed ? '' : 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-white'}`;
-    const idle = 'text-slate-300 hover:text-white hover:bg-white/[0.06]';
+    const activeCls = `bg-nav-calque/10 text-nav-fort
+      ${collapsed ? '' : 'before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-nav-fort'}`;
+    const idle = 'text-nav-texte hover:text-nav-fort hover:bg-nav-calque/[0.06]';
     return `${base} ${active ? activeCls : idle}`;
   };
 
   const iconCls = (active) =>
-    `w-5 h-5 shrink-0 ${active ? 'text-white' : 'text-slate-400 group-hover/nav:text-slate-200'}`;
+    `w-5 h-5 shrink-0 ${active ? 'text-nav-fort' : 'text-nav-discret group-hover/nav:text-nav-vif'}`;
 
   return (
     <>
       {/* Mobile top bar */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-slate-900 border-b border-white/10 flex items-center px-4 z-40">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-nav-fond border-b border-nav-calque/10 flex items-center px-4 z-40">
         <button type="button" onClick={() => setMobileOpen(true)} aria-label="Ouvrir le menu"
-          className={`w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
+          className={`w-11 h-11 -ml-2.5 flex items-center justify-center rounded-lg text-nav-texte hover:text-nav-fort hover:bg-nav-calque/10 transition-colors ${FOCUS_DARK}`}>
           <Menu className="w-5 h-5" aria-hidden="true" />
         </button>
-        <LogoKlikPhone theme="sombre" taille="sm" className="ml-1 min-w-0" />
+        <LogoKlikPhone theme="clair" taille="sm" className="ml-1 min-w-0" />
         <div className="ml-auto flex items-center gap-1">
           <button type="button" onClick={() => openSearchPalette()} aria-label="Rechercher un ticket, un client…"
-            className={`w-11 h-11 flex items-center justify-center rounded-lg text-slate-200 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
+            className={`w-11 h-11 flex items-center justify-center rounded-lg text-nav-vif hover:text-nav-fort hover:bg-nav-calque/10 transition-colors ${FOCUS_DARK}`}>
             <Search className="w-5 h-5" aria-hidden="true" />
           </button>
           {pendingCount > 0 && (
-            <span className="badge-count bg-white text-slate-900"
+            <span className="badge-count bg-nav-fort text-nav-fond"
               aria-label={`${pendingCount} tickets actifs`}>
               {pendingCount}
             </span>
@@ -340,23 +340,27 @@ export default function Navbar() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed top-0 left-0 bottom-0 bg-slate-900 flex flex-col z-50
-        border-r border-white/[0.06]
+        fixed top-0 left-0 bottom-0 bg-nav-fond flex flex-col z-50
+        border-r border-nav-calque/[0.06]
         transition-[width,transform] duration-200 ease-in-out motion-reduce:transition-none
         ${collapsed ? 'w-[72px]' : 'w-64'}
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
       `}>
         {/* Logo header */}
-        <div className={`h-16 flex items-center border-b border-white/[0.06] shrink-0 overflow-hidden
+        <div className={`h-16 flex items-center border-b border-nav-calque/[0.06] shrink-0 overflow-hidden
           ${collapsed ? 'px-3 justify-center' : 'px-4 gap-3'}`}>
           {/* Logo officiel : le « K » seul en barre réduite, le K + « KlikPhone » + « Service après-vente » dépliée */}
           {collapsed ? (
             <LogoK className="w-10 h-10" label="KlikPhone" />
           ) : (
-            <LogoKlikPhone theme="sombre" taille="md" sousTitre="Service après-vente" className="flex-1 min-w-0" />
+            <>
+              {/* Menu mobile sur fond blanc : mot noir ; barre latérale sombre (≥ lg) : mot blanc */}
+              <LogoKlikPhone theme="clair" taille="md" sousTitre="Service après-vente" className="flex-1 min-w-0 lg:hidden" />
+              <LogoKlikPhone theme="sombre" taille="md" sousTitre="Service après-vente" className="flex-1 min-w-0 hidden lg:inline-flex" />
+            </>
           )}
           <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fermer le menu"
-            className={`lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors ${FOCUS_DARK}`}>
+            className={`lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-nav-discret hover:text-nav-fort hover:bg-nav-calque/10 transition-colors ${FOCUS_DARK}`}>
             <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
@@ -369,7 +373,7 @@ export default function Navbar() {
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 short:py-2 px-2 space-y-0.5"
           style={{
             scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(255,255,255,0.08) transparent',
+            scrollbarColor: 'rgb(var(--nav-calque) / 0.12) transparent',
           }}
         >
           {/* Recherche globale (palette Ctrl/Cmd+K) */}
@@ -379,15 +383,15 @@ export default function Navbar() {
                 onClick={() => { setMobileOpen(false); openSearchPalette(); }}
                 aria-label={`Rechercher un ticket, un client, un devis ou une commande (${searchShortcut})`}
                 aria-keyshortcuts="Control+K Meta+K /"
-                className={`flex items-center rounded-lg bg-white/[0.07] border border-white/10 text-slate-200
-                  hover:text-white hover:bg-white/[0.12] hover:border-white/20 transition-colors duration-150
+                className={`flex items-center rounded-lg bg-nav-calque/[0.07] border border-nav-calque/10 text-nav-vif
+                  hover:text-nav-fort hover:bg-nav-calque/[0.12] hover:border-nav-calque/20 transition-colors duration-150
                   ${FOCUS_DARK}
                   ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-11 gap-2.5 px-3'}`}
               >
-                <Search className="w-5 h-5 shrink-0 text-slate-400" aria-hidden="true" />
+                <Search className="w-5 h-5 shrink-0 text-nav-discret" aria-hidden="true" />
                 {!collapsed && <span className="flex-1 text-left text-[13px] font-medium">Rechercher…</span>}
                 {!collapsed && (
-                  <kbd className="font-sans text-xs font-semibold text-slate-300 bg-white/10 rounded px-1.5 py-0.5" aria-hidden="true">
+                  <kbd className="font-sans text-xs font-semibold text-nav-texte bg-nav-calque/10 rounded px-1.5 py-0.5" aria-hidden="true">
                     {searchShortcut}
                   </kbd>
                 )}
@@ -396,7 +400,7 @@ export default function Navbar() {
           </div>
 
           {!collapsed && (
-            <p className="px-3 mb-1 min-h-8 short:min-h-6 flex items-center t-overline text-slate-400">
+            <p className="px-3 mb-1 min-h-8 short:min-h-6 flex items-center t-overline text-nav-discret">
               Menu principal
             </p>
           )}
@@ -427,7 +431,7 @@ export default function Navbar() {
 
           {/* ─── Devis section (conditional) ─── */}
           {(moduleDevis || moduleDevisFlash) && (
-            <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
+            <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-nav-calque/[0.06]">
               <SectionHeader
                 collapsed={collapsed}
                 label="Devis"
@@ -472,7 +476,7 @@ export default function Navbar() {
 
           {/* ─── Administration section : réservée aux membres autorisés (ADMIN_MEMBRES, côté serveur) ─── */}
           {isRoleAdmin && (
-          <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-white/[0.06]">
+          <div className="pt-3 mt-3 short:pt-1.5 short:mt-1.5 border-t border-nav-calque/[0.06]">
             <SectionHeader
                 collapsed={collapsed}
               label="Administration"
@@ -509,11 +513,11 @@ export default function Navbar() {
         </div>
 
         {/* Collapse toggle (44 px ; nom accessible en mode replié, où le libellé disparaît) */}
-        <div className="hidden lg:block px-2 py-2 short:py-1 border-t border-white/[0.06]">
+        <div className="hidden lg:block px-2 py-2 short:py-1 border-t border-nav-calque/[0.06]">
           <button onClick={toggleCollapse}
             type="button"
             className={`group/col w-full min-h-11 flex items-center gap-3 px-3 py-2 rounded-lg
-              text-slate-400 hover:text-white hover:bg-white/[0.06]
+              text-nav-discret hover:text-nav-fort hover:bg-nav-calque/[0.06]
               transition-colors duration-150 ease-out text-xs font-medium ${FOCUS_DARK}
               ${collapsed ? 'justify-center' : ''}`}
             title={collapsed ? 'Ouvrir la barre' : 'Réduire la barre'}
@@ -532,11 +536,11 @@ export default function Navbar() {
         {/* Mode admin : bandeau neutre (le rouge reste réservé aux urgences et aux erreurs) */}
         {isAdminMode && !collapsed && (
           <div className="flex items-center gap-2 mx-2 mb-1 pl-3 pr-1 py-1 rounded-lg
-            bg-white/5 border border-white/10 text-slate-300">
-            <Unlock className="w-4 h-4 text-slate-400 shrink-0" aria-hidden="true" />
+            bg-nav-calque/5 border border-nav-calque/10 text-nav-texte">
+            <Unlock className="w-4 h-4 text-nav-discret shrink-0" aria-hidden="true" />
             <span className="text-xs font-semibold flex-1">Mode Admin</span>
             <button onClick={lockAdmin} type="button"
-              className={`min-h-11 px-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 text-xs font-medium underline underline-offset-2 transition-colors ${FOCUS_DARK}`}>
+              className={`min-h-11 px-2 rounded-lg text-nav-texte hover:text-nav-fort hover:bg-nav-calque/10 text-xs font-medium underline underline-offset-2 transition-colors ${FOCUS_DARK}`}>
               Verrouiller
             </button>
           </div>
@@ -545,7 +549,7 @@ export default function Navbar() {
           <div className="flex justify-center px-2 pb-1">
             <Tooltip collapsed={collapsed} label="Verrouiller admin">
               <button onClick={lockAdmin} type="button" aria-label="Verrouiller le mode admin"
-                className={`w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors ${FOCUS_DARK}`}>
+                className={`w-10 h-10 flex items-center justify-center rounded-lg text-nav-discret hover:text-nav-fort hover:bg-nav-calque/[0.06] transition-colors ${FOCUS_DARK}`}>
                 <Unlock className="w-5 h-5" aria-hidden="true" />
               </button>
             </Tooltip>
@@ -554,7 +558,7 @@ export default function Navbar() {
 
         {/* Utilisateur : initiale sur slate-700 (sans dégradé ni point « en ligne »), nom tronqué, deux actions.
             Écran bas (short:) : une seule ligne, avatar + nom + deux boutons icône 44 px (libellés en sr-only). */}
-        <div className="px-2 py-3 short:py-2 border-t border-white/[0.06] shrink-0 bg-slate-900">
+        <div className="px-2 py-3 short:py-2 border-t border-nav-calque/[0.06] shrink-0 bg-nav-fond">
           {collapsed ? (
             <div className="flex flex-col items-center gap-1">
               <Tooltip collapsed={collapsed} label={user.utilisateur || 'Utilisateur'}>
@@ -566,30 +570,30 @@ export default function Navbar() {
               </Tooltip>
               <Tooltip collapsed={collapsed} label="Changer d'utilisateur">
                 <button onClick={handleSwitchUser} type="button" aria-label="Changer d'utilisateur"
-                  className={`w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors duration-150 ${FOCUS_DARK}`}>
+                  className={`w-10 h-10 flex items-center justify-center rounded-lg text-nav-discret hover:text-nav-fort hover:bg-nav-calque/[0.06] transition-colors duration-150 ${FOCUS_DARK}`}>
                   <RefreshCw className="w-5 h-5" aria-hidden="true" />
                 </button>
               </Tooltip>
               <Tooltip collapsed={collapsed} label="Déconnexion">
                 <button onClick={() => { logout(); navigate('/'); }} type="button" aria-label="Déconnexion"
-                  className={`w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-300 hover:bg-red-500/10 transition-colors duration-150 ${FOCUS_DARK}`}>
+                  className={`w-10 h-10 flex items-center justify-center rounded-lg text-nav-discret hover:text-red-600 hover:bg-red-50 lg:hover:text-red-300 lg:hover:bg-red-500/10 transition-colors duration-150 ${FOCUS_DARK}`}>
                   <LogOut className="w-5 h-5" aria-hidden="true" />
                 </button>
               </Tooltip>
             </div>
           ) : (
             <div className="space-y-2 short:space-y-0 short:flex short:items-center short:gap-1">
-              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.03] short:flex-1 short:min-w-0 short:gap-2 short:px-1.5 short:py-1">
+              <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-nav-calque/[0.03] short:flex-1 short:min-w-0 short:gap-2 short:px-1.5 short:py-1">
                 <div className="w-9 h-9 rounded-full shrink-0 bg-slate-700 flex items-center justify-center">
                   <span className="text-white font-semibold text-sm">
                     {user.utilisateur?.charAt(0)?.toUpperCase()}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                  <p className="text-[13px] font-semibold text-nav-fort truncate leading-tight">
                     {user.utilisateur}
                   </p>
-                  <p className="text-xs text-slate-400 capitalize truncate leading-tight mt-0.5">
+                  <p className="text-xs text-nav-discret capitalize truncate leading-tight mt-0.5">
                     {user.target}{user.role ? ` · ${user.role}` : ''}
                   </p>
                 </div>
@@ -598,7 +602,7 @@ export default function Navbar() {
                 <button onClick={handleSwitchUser} type="button"
                   className={`flex-1 min-h-11 flex items-center justify-center gap-1.5 px-2 rounded-lg
                     short:flex-none short:w-11 short:px-0
-                    text-xs font-medium text-slate-400 hover:text-white hover:bg-white/[0.06]
+                    text-xs font-medium text-nav-discret hover:text-nav-fort hover:bg-nav-calque/[0.06]
                     transition-colors duration-150 ${FOCUS_DARK}`}>
                   <RefreshCw className="w-4 h-4 shrink-0" aria-hidden="true" />
                   <span className="short:sr-only">Changer</span>
@@ -606,7 +610,7 @@ export default function Navbar() {
                 <button onClick={() => { logout(); navigate('/'); }} type="button"
                   className={`flex-1 min-h-11 flex items-center justify-center gap-1.5 px-2 rounded-lg
                     short:flex-none short:w-11 short:px-0
-                    text-xs font-medium text-slate-400 hover:text-red-300 hover:bg-red-500/10
+                    text-xs font-medium text-nav-discret hover:text-red-600 hover:bg-red-50 lg:hover:text-red-300 lg:hover:bg-red-500/10
                     transition-colors duration-150 ${FOCUS_DARK}`}>
                   <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
                   <span className="short:sr-only">Déconnexion</span>

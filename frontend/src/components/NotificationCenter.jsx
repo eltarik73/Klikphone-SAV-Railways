@@ -175,7 +175,7 @@ export default function NotificationCenter({ collapsed = false }) {
 
   return (
     <>
-      {/* Bouton cloche dans la sidebar : même rendu que les entrées de menu */}
+      {/* Bouton cloche dans la barre : même rendu que les entrées de menu (jetons nav-*) */}
       <button
         ref={buttonRef}
         type="button"
@@ -186,16 +186,16 @@ export default function NotificationCenter({ collapsed = false }) {
         title={unread > 0 ? `${unread} notification${unread > 1 ? 's' : ''} non lue${unread > 1 ? 's' : ''}` : 'Notifications'}
         className={`relative flex items-center rounded-lg text-[13px] font-medium transition-colors duration-150
           ${collapsed ? 'w-11 h-11 justify-center' : 'w-full min-h-11 gap-3 px-3 py-2.5'}
-          focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300
+          focus:outline-none focus-visible:ring-2 focus-visible:ring-nav-anneau
           ${unread > 0
-            ? 'text-white hover:bg-white/[0.06]'
-            : 'text-slate-300 hover:text-white hover:bg-white/[0.06]'}
-          ${open ? 'bg-white/[0.08] text-white' : ''}
+            ? 'text-nav-fort hover:bg-nav-calque/[0.06]'
+            : 'text-nav-texte hover:text-nav-fort hover:bg-nav-calque/[0.06]'}
+          ${open ? 'bg-nav-calque/[0.08] text-nav-fort' : ''}
         `}
       >
         {unread > 0
           ? <BellRing className="w-5 h-5 shrink-0" aria-hidden="true" />
-          : <Bell className="w-5 h-5 shrink-0 text-slate-400" aria-hidden="true" />
+          : <Bell className="w-5 h-5 shrink-0 text-nav-discret" aria-hidden="true" />
         }
         {!collapsed && <span className="flex-1 text-left">Notifications</span>}
         {unread > 0 && (

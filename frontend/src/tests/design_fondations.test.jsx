@@ -179,6 +179,18 @@ describe('tailwind.config.js : action noire, tokens ajoutés', () => {
     expect(t.fontFamily.sans[0]).toBe('Inter');
     expect(t.fontFamily.display[0]).toBe('Inter');
   });
+  it('navigation : jetons nav-* sur variables CSS, fond blanc sous 1 024 px et sombre au-dessus', () => {
+    // Décision du gérant (09/11/2026) : sur téléphone, barre du haut et menu sur fond blanc ;
+    // la barre latérale d'ordinateur reste sombre (décision du 08/11)
+    for (const jeton of ['fond', 'texte', 'vif', 'fort', 'discret', 'calque', 'anneau']) {
+      expect(t.colors.nav[jeton]).toBe(`rgb(var(--nav-${jeton}) / <alpha-value>)`);
+    }
+    const [mobile, bureau] = css.split('@media (min-width: 1024px)');
+    expect(mobile).toMatch(/--nav-fond: 255 255 255;/);
+    expect(mobile).toMatch(/--nav-texte: 51 65 85;/);
+    expect(bureau).toMatch(/--nav-fond: 15 23 42;/);
+    expect(bureau).toMatch(/--nav-texte: 203 213 225;/);
+  });
   it('ajoute boxShadow.xs / boxShadow.lg et les alias success/warning/danger/info', () => {
     expect(t.boxShadow.xs).toMatch(/^0 1px 2px/);
     expect(t.boxShadow.lg).toMatch(/32px/);
@@ -291,8 +303,10 @@ describe('Navbar : entrées, états et focus', () => {
     }
     const clients = screen.getByRole('button', { name: /^Clients/ });
     expect(clients).toHaveAttribute('aria-current', 'page');
-    // Entrée active muette : fond blanc/10 + texte blanc (la barre gauche brand-500 est la seule trace de violet)
-    expect(clients.className).toMatch(/bg-white\/10 text-white/);
+    // Entrée active muette : voile /10 + texte fort (jetons nav-* : blanc sur la barre sombre, noir sur le menu
+    // blanc du téléphone) et barre gauche 3 px de la couleur forte
+    expect(clients.className).toMatch(/bg-nav-calque\/10 text-nav-fort/);
+    expect(clients.className).toMatch(/before:bg-nav-fort/);
     expect(clients.className).not.toMatch(/bg-brand-600\/20/);
     expect(screen.getByRole('button', { name: /^Commandes/ })).not.toHaveAttribute('aria-current');
     // Rubriques : un seul style, plus de couleur par rubrique (« Tarifs » est une entrée simple, sans rubrique)
@@ -388,8 +402,12 @@ describe('Navbar : entrées, états et focus', () => {
     const verrou = await screen.findByRole('button', { name: 'Verrouiller' });
     expect(verrou.className).toMatch(/min-h-11/);
     expect(screen.getByText('Mode Admin').className).toMatch(/text-xs/);
-    const sousTitre = screen.getByText('Service après-vente');
-    expect(sousTitre).toHaveClass('text-xs', 'text-slate-400');
+    // Deux logos : mot noir sur le menu blanc (sous lg), mot blanc sur la barre sombre (lg et plus)
+    const [clair, sombre] = screen.getAllByText('Service après-vente');
+    expect(clair).toHaveClass('text-xs', 'text-slate-600');
+    expect(clair.closest('.inline-flex')).toHaveClass('lg:hidden');
+    expect(sombre).toHaveClass('text-xs', 'text-slate-400');
+    expect(sombre.closest('.inline-flex')).toHaveClass('hidden', 'lg:inline-flex');
     // Écran bas : « Changer » / « Déconnexion » passent en icônes 44 px, libellé conservé pour les lecteurs d'écran
     expect(screen.getByText('Changer', { selector: 'span' })).toHaveClass('short:sr-only');
     expect(screen.getByRole('button', { name: /^Déconnexion/ }).className).toMatch(/short:w-11/);

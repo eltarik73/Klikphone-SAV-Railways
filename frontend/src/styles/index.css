@@ -22,6 +22,28 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @layer base {
+  /* Navigation : fond blanc sous 1 024 px (barre du haut + menu des téléphones et de l'iPad en portrait),
+     barre latérale sombre au-dessus. Triplets RGB pour les opacités Tailwind (jetons `nav-*`). */
+  :root {
+    --nav-fond: 255 255 255;    /* blanc */
+    --nav-texte: 51 65 85;      /* slate-700, 10,4:1 */
+    --nav-vif: 30 41 59;        /* slate-800 */
+    --nav-fort: 15 23 42;       /* slate-900 */
+    --nav-discret: 100 116 139; /* slate-500, 4,8:1 */
+    --nav-calque: 15 23 42;     /* voile slate-900 */
+    --nav-anneau: 71 85 105;    /* slate-600, 7,6:1 */
+  }
+  @media (min-width: 1024px) {
+    :root {
+      --nav-fond: 15 23 42;       /* #0F172A */
+      --nav-texte: 203 213 225;   /* slate-300 */
+      --nav-vif: 226 232 240;     /* slate-200 */
+      --nav-fort: 255 255 255;    /* blanc */
+      --nav-discret: 148 163 184; /* slate-400, 6,9:1 sur #0F172A */
+      --nav-calque: 255 255 255;  /* voile blanc */
+      --nav-anneau: 203 213 225;  /* slate-300 */
+    }
+  }
   * { -webkit-tap-highlight-color: transparent; }
   html { scroll-behavior: smooth; font-optical-sizing: auto; }
   body { @apply bg-slate-50 text-slate-900 antialiased; }

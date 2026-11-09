@@ -7,9 +7,11 @@
     <title>KlikPhone SAV</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=3" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0F172A" />
+    <!-- Barre du navigateur : blanche sur téléphone (menu à fond blanc), sombre au-dessus de 1 024 px -->
+    <meta name="theme-color" content="#FFFFFF" media="(max-width: 1023px)" />
+    <meta name="theme-color" content="#0F172A" media="(min-width: 1024px)" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="KlikPhone" />
     <!-- v3 icons (2026-11-08) : le « K » officiel KlikPhone (orange #FF6600, gris, tournevis blanc),
          tiré du PDF vectoriel fourni par le gérant ; remplace le K violet de la v2 -->

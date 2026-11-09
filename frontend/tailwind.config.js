@@ -24,6 +24,18 @@ export default {
           800: '#020617', // slate-950 : bouton pressé
           900: '#020617',
         },
+        // Navigation (barre latérale, barre du haut et menu mobile) : variables CSS d'index.css, claires sous
+        // 1 024 px (téléphone, iPad en portrait : fond blanc, décision du gérant 09/11/2026) et sombres au-dessus
+        // (barre latérale #0F172A, décision du 08/11). Les opacités Tailwind marchent (bg-nav-calque/10).
+        nav: {
+          fond: 'rgb(var(--nav-fond) / <alpha-value>)',       // fond de la barre
+          texte: 'rgb(var(--nav-texte) / <alpha-value>)',     // entrée au repos
+          vif: 'rgb(var(--nav-vif) / <alpha-value>)',         // texte un cran plus fort (recherche, compteur)
+          fort: 'rgb(var(--nav-fort) / <alpha-value>)',       // actif, survol ; fond des compteurs mis en avant
+          discret: 'rgb(var(--nav-discret) / <alpha-value>)', // icônes, intitulés de rubrique
+          calque: 'rgb(var(--nav-calque) / <alpha-value>)',   // voiles et traits translucides (/5 à /20)
+          anneau: 'rgb(var(--nav-anneau) / <alpha-value>)',   // anneau de focus
+        },
         sidebar: {
           DEFAULT: '#0F172A',
           light: '#1E293B',
