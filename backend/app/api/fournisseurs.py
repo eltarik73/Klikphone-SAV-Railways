@@ -9,7 +9,8 @@ POST /api/tarifs/fournisseurs/mobilax/active     {active} : synchro quotidienne 
 GET  /api/tarifs/fournisseurs/mobilax/diagnostic pièces de la grille sans prix Mobilax après le dernier passage
                                                   (prix des candidats pour l'admin seulement)
 
-Collecte Utopya (services/utopya : le navigateur du gérant lit utopya.fr, le serveur importe) :
+Utopya (services/utopya) — synchro automatique du serveur (accès Magento), collecte du favori en secours :
+POST /api/tarifs/fournisseurs/utopya/sync        (admin) lance la synchro serveur en tâche de fond (quelques minutes)
 GET  /api/tarifs/fournisseurs/utopya/collecteur   (admin) adresse du favori « Collecte Utopya » (clé créée au besoin)
 POST /api/tarifs/fournisseurs/utopya/collecteur/regenerer  (admin) nouvelle clé : l'ancien favori ne marche plus
 POST /api/tarifs/fournisseurs/utopya/plan         (clé X-Collecte-Cle) {liens} → pages à lire
@@ -298,6 +299,14 @@ class CollecteIn(BaseModel):
     erreurs: list = Field(default_factory=list, max_length=utopya.MAX_PAGES)
     interrompu: bool = False
     version: Optional[str] = Field(default=None, max_length=10)
+
+
+@router.post("/utopya/sync")
+def lancer_sync_utopya(user: dict = Depends(_admin)):
+    """Lance la synchro Utopya du serveur en arrière-plan (accès REST de Magento, quelques minutes) ; /etat la suit."""
+    if not utopya.lancer_synchro():
+        raise HTTPException(409, "Une synchro ou une collecte Utopya est déjà en cours : réessayez dans quelques minutes.")
+    return {"lance": True}
 
 
 @router.get("/utopya/collecteur")

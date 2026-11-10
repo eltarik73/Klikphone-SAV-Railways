@@ -1,8 +1,18 @@
-"""Collecte des prix Utopya depuis le navigateur du gérant (utopya.fr refuse les serveurs).
+"""Prix Utopya : synchro automatique du serveur (accès Magento) et, en secours, collecte depuis le
+navigateur du gérant.
 
-Utopya (Magento) ne montre ses prix qu'à un compte connecté et répond 403 (challenge Cloudflare)
-à tout programme : aucune synchro serveur possible. La voie automatique passe donc par le
-navigateur du gérant, déjà connecté : un **collecteur** (favori « Collecte Utopya », script
+**Synchro serveur** (`synchroniser`, chaque jour dans la boucle de services/fournisseurs, bouton
+« Synchroniser maintenant ») : les pages de utopya.fr répondent 403 (challenge Cloudflare) à tout
+programme et masquent les prix aux visiteurs, mais l'accès REST anonyme de Magento
+`rest/V1/products-render-info` répond, avec le prix HT de chaque produit (identique à celui du compte
+pro du gérant, vérifié le 10/11/2026 : écran Pixel 6 97 €, ReLife 54,91 €) et sa disponibilité
+(`is_salable`). `ClientUtopya` lit tout le catalogue par pages, puis les écrans à référence chiffrée
+(filtre `sku` : un écran sans étiquette à référence numérique est un écran d'origine) ; `produits_api`
+traduit chaque produit en tuile du collecteur (marque lue dans le nom, référence retrouvée par l'adresse
+de la fiche dans le catalogue, sinon le nombre en fin d'adresse, sinon UT<id>) et `traiter` fait le reste,
+comme pour une collecte. Accès fermé ou bloqué → état « bloqué » et le favori reste la voie de secours.
+
+**Collecte depuis le navigateur** (secours) : un **collecteur** (favori « Collecte Utopya », script
 généré par `script_collecteur`) lit depuis utopya.fr les pages des modèles de la grille
 (même origine, session du gérant) et envoie les noms, références et prix à l'API, qui les passe
 au moteur d'import comme la synchro Mobilax (`fournisseurs._importer`, fournisseur « Utopya »).
@@ -22,7 +32,7 @@ Déroulé (une seule action du gérant : cliquer le favori sur utopya.fr) :
 
 Authentification du collecteur : clé `UTOPYA_COLLECTE_TOKEN` (params, masquée par api/config),
 créée à la première demande du script par l'admin, envoyée dans l'en-tête X-Collecte-Cle ;
-« Régénérer » invalide l'ancien favori. Aucune requête réseau depuis ce module.
+« Régénérer » invalide l'ancien favori. Seule la synchro serveur fait des requêtes réseau (utopya.fr).
 """
 
 import json
@@ -33,6 +43,8 @@ import secrets
 import threading
 import time
 from datetime import date, datetime, timezone
+
+import httpx
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
@@ -46,6 +58,7 @@ logger = logging.getLogger(__name__)
 
 FOURNISSEUR = "Utopya"
 AUTEUR = "Collecte Utopya"
+AUTEUR_SYNCHRO = "Synchro Utopya"
 SOURCE = "utopya"
 VERSION = "3"
 SITE = "https://www.utopya.fr/"
@@ -267,15 +280,18 @@ def prix_collecte(p: dict, tva=None) -> Optional[Decimal]:
     return valeur.quantize(Decimal("0.01"))
 
 
-def qualite_nom(nom: str, sku: str = "") -> Optional[str]:
+def qualite_nom(nom: str, sku: str = "", numerique: Optional[bool] = None) -> Optional[str]:
     """Qualité d'un écran Utopya : étiquette du nom (Service Pack, Soft OLED, Incell, ReLife,
     Pulled A…) ; sans étiquette, une référence toute numérique est un écran d'origine du catalogue
-    Utopya (Samsung, Google…), sinon une pièce compatible."""
+    Utopya (Samsung, Google…), sinon une pièce compatible. `numerique` : ce que la synchro serveur a lu
+    (filtre sur la référence) quand elle ne connaît pas la référence elle-même."""
     bas = normaliser(nom)
     for motif, q in _QUALITES_NOM:
         if re.search(rf"\b{re.escape(motif)}\b", bas):
             return q
-    return "Original" if _NUMERIQUE.match(str(sku or "").strip()) else "Compatible"
+    if numerique is None:
+        numerique = bool(_NUMERIQUE.match(str(sku or "").strip()))
+    return "Original" if numerique else "Compatible"
 
 
 def modele_nom(nom: str, motif_piece: str, piece: str = None) -> str:
@@ -345,7 +361,7 @@ def ligne_collecte(p: dict, marque_page: str, tva=None) -> Optional[dict]:
     if ht is None:
         return None
     type_piece = import_prix._TYPE_PIECE[cle]
-    qualite = qualite_nom(nom, p.get("sku")) if cle == "ecran" else (
+    qualite = qualite_nom(nom, p.get("sku"), p.get("sku_numerique")) if cle == "ecran" else (
         "Original" if re.search(r"\b(service pack|original|origine)\b", bas) else None)
     modele = modele_nom(nom, motif, cle)
     if not modele:
@@ -427,10 +443,12 @@ def _noter(cur, resume: dict):
     fournisseurs._ecrire(cur, P_DERNIERE, resume.get("fin") or _utc())
 
 
-def traiter(collecte: dict) -> dict:
-    """Une collecte reçue : lignes, import automatique (tarifs puis iPad / MacBook), diagnostic.
-    Ne lève jamais : le résumé est renvoyé et enregistré dans params."""
+def traiter(collecte: dict, mode: str = "favori") -> dict:
+    """Une collecte reçue (favori) ou lue par le serveur (mode « serveur ») : lignes, import automatique
+    (tarifs puis iPad / MacBook), diagnostic. Ne lève jamais : le résumé est renvoyé et enregistré dans params."""
     resume = _resume_vide()
+    resume["mode"] = mode
+    auteur = AUTEUR_SYNCHRO if mode == "serveur" else AUTEUR
     try:
         produits = [p for p in (collecte.get("produits") or [])[:MAX_PRODUITS] if isinstance(p, dict)]
         pages = {str(pg.get("url") or ""): pg for pg in (collecte.get("pages") or []) if isinstance(pg, dict)}
@@ -444,6 +462,9 @@ def traiter(collecte: dict) -> dict:
         resume["lignes_envoyees"] = len(lignes)
         resume["produits_prix"] = sum(1 for d in diag if d["price"] is not None)
         if produits and not resume["produits_prix"]:
+            if mode == "serveur":
+                raise ValueError("L'accès automatique d'Utopya ne donne plus les prix : lancez le favori "
+                                 "« Collecte Utopya » depuis utopya.fr (connecté à votre compte).")
             raise ValueError("Aucun prix dans les pages lues : connectez-vous à votre compte sur utopya.fr "
                              "(les prix sont masqués aux visiteurs), puis relancez la collecte.")
         cles_reconnues = set()
@@ -453,12 +474,12 @@ def traiter(collecte: dict) -> dict:
             with get_cursor() as cur:
                 infos = fournisseurs.infos_lignes(lignes)
                 resultats = [fournisseurs._importer(cur, "tarifs", fournisseurs.csv_lignes(lignes), f"utopya-{jour}.csv",
-                                                    r, fournisseur=FOURNISSEUR, auteur=AUTEUR, source=SOURCE, infos=infos,
+                                                    r, fournisseur=FOURNISSEUR, auteur=auteur, source=SOURCE, infos=infos,
                                                     lignes=lignes)]
                 if apple:
                     resultats.append(fournisseurs._importer(cur, "tarifs_apple_devices", fournisseurs.csv_lignes(apple),
                                                             f"utopya-{jour}-apple.csv", r, fournisseur=FOURNISSEUR,
-                                                            auteur=AUTEUR, source=SOURCE, infos=infos, lignes=apple))
+                                                            auteur=auteur, source=SOURCE, infos=infos, lignes=apple))
             for res in resultats:
                 cles_reconnues |= set(res.pop("_cles", None) or ())
                 for k in fournisseurs._COMPTES:
@@ -474,13 +495,13 @@ def traiter(collecte: dict) -> dict:
             # Reconditionné / compatible sur une ligne « Original » (ou l'inverse) : retiré et corrigé ; un écran relevé
             # « sans châssis » passe sur l'écran avec châssis du catalogue ; après une collecte complète, le catalogue
             # oublie les produits qu'Utopya ne montre plus
-            resume["purge"] = fournisseurs.purger_prix_incoherents(cur, AUTEUR, r)
-            resume["chassis"] = fournisseurs.corriger_sans_chassis(cur, AUTEUR, r)
+            resume["purge"] = fournisseurs.purger_prix_incoherents(cur, auteur, r)
+            resume["chassis"] = fournisseurs.corriger_sans_chassis(cur, auteur, r)
             if complete:
                 resume["catalogue_retires"] = prix.purger_catalogue(cur, FOURNISSEUR, _age_secondes(resume["debut"]) + 120)
         resume["sans_prix"] = d["n"]
         resume["ok"] = True
-        logger.info("Collecte Utopya : %s prix mis à jour, %s proposition(s), %s produits lus",
+        logger.info("%s : %s prix mis à jour, %s proposition(s), %s produits lus", auteur,
                     resume["modifies"], resume["propositions"], resume["produits"])
     except ValueError as e:
         resume["erreur"] = str(e)
@@ -499,8 +520,8 @@ def traiter(collecte: dict) -> dict:
 
 def lancer(collecte: dict) -> bool:
     """Traite la collecte dans un fil (Railway coupe une requête à ~15 s). False si une collecte
-    est déjà en cours."""
-    if en_cours():
+    ou une synchro serveur est déjà en cours."""
+    if en_cours() or en_cours_synchro():
         return False
     _etat["debut"], _etat["message"] = _utc(), None
 
@@ -516,6 +537,340 @@ def lancer(collecte: dict) -> bool:
     return True
 
 
+# ─── Synchro serveur : accès REST anonyme de Magento ────────────
+
+API_PRODUITS = "rest/V1/products-render-info"
+TAILLE_PAGE = 500
+PAGES_MAX_API = 200                  # 100 000 produits au plus
+PAUSE_API = 0.4                      # secondes entre deux pages (courtoisie envers Utopya)
+ESSAIS_PAGE = 3                      # une page en erreur passagère est rejouée
+BUDGET_SYNCHRO = 20 * 60             # secondes pour lire le catalogue
+AGENT = "Mozilla/5.0 (compatible; KlikphoneSAV/1.0)"
+P_SYNC_ACTIVE = "UTOPYA_SYNCHRO_ACTIVE"      # '0' : synchro quotidienne coupée
+P_SYNC_JOUR = "UTOPYA_SYNCHRO_JOUR"          # AAAA-MM-JJ (fait) ou AAAA-MM-JJ#n (essais)
+P_SYNC_VERROU = "UTOPYA_SYNCHRO_VERROU"      # ISO UTC du passage en cours ('' : libre)
+P_SYNC_DERNIERE = "UTOPYA_SYNCHRO_DERNIERE"  # fin du dernier passage (ISO UTC)
+P_SYNC_OK = "UTOPYA_SYNCHRO_OK"              # '1' / '0'
+P_SYNC_RESUME = "UTOPYA_SYNCHRO_RESUME"      # JSON (compteurs, erreur, code)
+# Écrans à référence chiffrée (« 420921 », pas « A546-OLED@ ») : commence par un chiffre, sans tiret ni @
+FILTRES_NUMERIQUES = (("name", "%cran%", "like"), ("sku", "0", "from"), ("sku", "9~", "to"),
+                      ("sku", "%-%", "nlike"), ("sku", "%@%", "nlike"))
+_SUFFIXE_REF = re.compile(r"-(\d{5,})\.html$")     # « …-a546b-134705.html » : la référence Utopya
+_HOTE = re.compile(r"^https?://[^/]+")
+# Gammes nommées sans leur marque (« Ecran Moto G54 », « Ecran Complet Noir Pixel 6 Pro (Soft OLED) »)
+_GAMMES_MARQUE = {"pixel": "google", "moto": "motorola", "razr": "motorola", "xperia": "sony", "mi": "xiaomi",
+                  "reno": "oppo", "find": "oppo", "nord": "oneplus", "mate": "huawei", "nova": "huawei",
+                  "magic": "honor", "zenfone": "asus", "rog": "asus"}
+# Gammes reconnues n'importe où dans le modèle (jamais un mot courant, contrairement à « mi », « nova », « magic »)
+_GAMMES_SURES = {"pixel", "moto", "razr", "xperia", "reno", "nord", "zenfone"}
+MSG_BLOQUE = ("Utopya bloque l'accès automatique du serveur (protection Cloudflare) : lancez le favori "
+              "« Collecte Utopya » depuis utopya.fr.")
+MSG_FERME = ("Utopya a fermé son accès automatique aux produits : lancez le favori « Collecte Utopya » "
+             "depuis utopya.fr.")
+
+
+class ErreurUtopya(Exception):
+    """Accès Utopya impossible ; code : bloque (Cloudflare), ferme (401/404), limite (429), reseau,
+    reponse (illisible), vide, occupe, import."""
+
+    def __init__(self, message: str, code: str = "reseau"):
+        super().__init__(message)
+        self.code = code
+
+
+class ClientUtopya:
+    """Catalogue Utopya par l'accès REST anonyme de Magento (aucun compte, aucune clé, aucun cookie)."""
+
+    def __init__(self, transport=None, dormir=time.sleep, pause: float = PAUSE_API):
+        self.http = httpx.Client(base_url=SITE, transport=transport, timeout=60.0, follow_redirects=False,
+                                 headers={"Accept": "application/json", "User-Agent": AGENT})
+        self.dormir, self.pause, self.requetes = dormir, pause, 0
+
+    def close(self):
+        self.http.close()
+
+    @staticmethod
+    def parametres(numero: int, filtres=(), taille: int = TAILLE_PAGE) -> dict:
+        """Paramètres searchCriteria : une page, triée par identifiant (pagination stable), filtres en ET."""
+        q = {"storeId": "1", "currencyCode": "EUR", "searchCriteria[pageSize]": str(taille),
+             "searchCriteria[currentPage]": str(numero),
+             "searchCriteria[sortOrders][0][field]": "entity_id", "searchCriteria[sortOrders][0][direction]": "ASC"}
+        for i, (champ, valeur, condition) in enumerate(filtres):
+            base = f"searchCriteria[filter_groups][{i}][filters][0]"
+            q[f"{base}[field]"], q[f"{base}[value]"], q[f"{base}[condition_type]"] = champ, valeur, condition
+        return q
+
+    def page(self, numero: int, filtres=(), taille: int = TAILLE_PAGE) -> list:
+        """Produits d'une page ([] après la dernière). ErreurUtopya si bloqué, fermé, limité ou illisible."""
+        self.requetes += 1
+        try:
+            r = self.http.get(API_PRODUITS, params=self.parametres(numero, filtres, taille))
+        except httpx.HTTPError as e:
+            raise ErreurUtopya(f"Utopya injoignable ({type(e).__name__}).", "reseau")
+        if r.status_code == 429:
+            raise ErreurUtopya("Utopya limite les requêtes (429) : nouvel essai à la prochaine heure.", "limite")
+        if r.status_code in (401, 404):
+            raise ErreurUtopya(MSG_FERME, "ferme")
+        if r.status_code in (403, 503) or "json" not in (r.headers.get("content-type") or "").lower():
+            raise ErreurUtopya(MSG_BLOQUE, "bloque")
+        if r.status_code >= 400:
+            raise ErreurUtopya(f"Utopya a répondu {r.status_code}.", "reseau")
+        try:
+            data = r.json()
+        except ValueError:
+            raise ErreurUtopya("Réponse Utopya illisible.", "reponse")
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            raise ErreurUtopya("Réponse Utopya inattendue (pas de liste de produits).", "reponse")
+        return [p for p in items if isinstance(p, dict)]
+
+    def tout(self, filtres=(), budget_fin: float = None, taille: int = TAILLE_PAGE) -> dict:
+        """Toutes les pages : {produits (sans doublon d'id), pages, complet}. Une erreur passagère (réseau,
+        réponse illisible) est rejouée ESSAIS_PAGE fois ; bloqué, fermé ou limité arrête tout."""
+        produits, vus, numero, complet = [], set(), 0, False
+        while numero < PAGES_MAX_API:
+            if budget_fin is not None and time.monotonic() > budget_fin:
+                break
+            numero += 1
+            lus = []
+            for essai in range(ESSAIS_PAGE):
+                try:
+                    lus = self.page(numero, filtres, taille)
+                    break
+                except ErreurUtopya as e:
+                    if e.code not in ("reseau", "reponse") or essai + 1 >= ESSAIS_PAGE:
+                        raise
+                    self.dormir(self.pause * 5 * (essai + 1))
+            nouveaux = 0
+            for p in lus:
+                pid = p.get("id")
+                if pid is not None and pid not in vus:
+                    vus.add(pid)
+                    produits.append(p)
+                    nouveaux += 1
+            # Fin : page vide, page incomplète, ou page déjà vue (une pagination qui boucle)
+            if not lus or not nouveaux or len(lus) < taille:
+                complet = True
+                break
+            self.dormir(self.pause)
+        return {"produits": produits, "pages": numero, "complet": complet}
+
+
+def marque_produit(nom: str) -> str:
+    """Marque canonique lue dans un nom Utopya : « Ecran Complet Noir Galaxy A54 5G » → samsung,
+    « Ecran Moto G54 » → motorola, « Batterie A1376 iPad 2 » → apple ; '' si le nom n'en cite pas.
+    Le premier mot du modèle d'abord (gammes ambiguës comprises : « Mi 11 », « Nova 5T ») ; sinon le
+    premier mot de marque ou de gamme sûre plus loin (un code, un coloris ou « Inférieur » le précède)."""
+    from app.api import grille
+    cle, motif = import_prix.piece_de(nom)
+    modele = modele_nom(nom, motif, cle) if motif else nom
+    toks = normaliser(modele).split()
+    m = grille.deviner_marque(modele) or (_GAMMES_MARQUE.get(toks[0], "") if toks else "")
+    if not m:
+        m = next((t for t in toks if t in grille._MARQUES_CONNUES or t in grille._ALIAS_MARQUE
+                  or t in _GAMMES_SURES), "")
+        m = _GAMMES_MARQUE.get(m, m)
+    return grille.marque_canonique(m) if m else ""
+
+
+def _chemin(url) -> str:
+    return _HOTE.sub("", str(url or "").strip()).split("?")[0]
+
+
+def refs_catalogue(cur) -> dict:
+    """{chemin de la fiche: référence} des produits Utopya déjà au catalogue (relevés par le favori, qui lit
+    la vraie référence) : la synchro serveur garde ainsi les mêmes références."""
+    cur.execute("SELECT ref, url FROM fournisseurs_catalogue WHERE fournisseur = %s AND url IS NOT NULL", (FOURNISSEUR,))
+    out = {}
+    for r in cur.fetchall() or []:
+        ref, chemin = str(r["ref"] or "").strip(), _chemin(r["url"])
+        if ref and chemin:
+            out[chemin] = ref
+    return out
+
+
+def _vendable(v) -> bool:
+    return v is True or str(v or "").strip().lower() in ("1", "true")
+
+
+def produits_api(items, numeriques=(), refs=None, marques=None) -> tuple:
+    """Produits de l'accès REST → tuiles du collecteur {nom, sku, prix_montant, stock, page, href, sku_numerique}
+    et pages [{url, marque, modele}] (une par marque : traiter lit la marque d'une ligne dans sa page).
+    Seules les pièces suivies d'une marque de la grille sont gardées. Référence : celle du catalogue pour la
+    même fiche, sinon le nombre en fin d'adresse, sinon UT<id>. → (produits, pages, écartés {raison: n})"""
+    refs = refs or {}
+    nums = {str(i) for i in numeriques or ()}
+    produits, pages = [], {}
+    ecartes = {"hors_pieces": 0, "sans_marque": 0, "hors_grille": 0}
+    for p in items or ():
+        nom = " ".join(str(p.get("name") or "").split())
+        if not nom:
+            continue
+        cle, motif = import_prix.piece_de(nom)
+        if not cle or motif is None:
+            ecartes["hors_pieces"] += 1
+            continue
+        marque = marque_produit(nom)
+        if not marque:
+            ecartes["sans_marque"] += 1
+            continue
+        if marques is not None and marque not in marques:
+            ecartes["hors_grille"] += 1
+            continue
+        url = str(p.get("url") or "").strip()
+        chemin = _chemin(url)
+        m = _SUFFIXE_REF.search(chemin)
+        ref = refs.get(chemin) or (m.group(1) if m else f"UT{p.get('id')}")
+        page = f"marque:{marque}"
+        pages.setdefault(page, {"url": page, "marque": marque, "modele": None})
+        produits.append({"nom": nom, "sku": ref, "prix_montant": (p.get("price_info") or {}).get("final_price"),
+                         "prix_texte": "", "stock": "ok" if _vendable(p.get("is_salable")) else "rupture",
+                         "page": page, "href": url, "sku_numerique": str(p.get("id")) in nums})
+    return produits, list(pages.values()), ecartes
+
+
+_etat_sync = {"thread": None, "actif": False, "debut": None, "message": None}
+
+
+def en_cours_synchro() -> bool:
+    t = _etat_sync["thread"]
+    return bool(_etat_sync["actif"] or (t is not None and t.is_alive()))
+
+
+def _resume_synchro() -> dict:
+    return {"debut": _utc(), "fin": None, "ok": False, "erreur": None, "code": None, "requetes": 0,
+            "produits_lus": 0, "ecrans_numeriques": 0, "complet": False, "gardes": 0, "ecartes": {},
+            "references_catalogue": 0, "collecte": None}
+
+
+def _noter_synchro(res: dict):
+    try:
+        with get_cursor() as cur:
+            fournisseurs._ecrire(cur, P_SYNC_DERNIERE, res.get("fin") or _utc())
+            fournisseurs._ecrire(cur, P_SYNC_OK, "1" if res.get("ok") else "0")
+            fournisseurs._ecrire(cur, P_SYNC_RESUME, json.dumps(res, ensure_ascii=False, default=str)[:fournisseurs.RESUME_MAX])
+    except Exception as e:                       # pragma: no cover - base indisponible
+        logger.error("Synchro Utopya : état non enregistré (%s)", type(e).__name__)
+    params_cache.invalidate()
+
+
+def synchroniser(transport=None, dormir=time.sleep) -> dict:
+    """Un passage serveur : catalogue Utopya par l'accès REST (puis les écrans à référence chiffrée), produits
+    traduits en collecte, `traiter` (import, diagnostic, purges). Ne lève jamais : résumé noté dans
+    UTOPYA_SYNCHRO_* (la collecte elle-même dans UTOPYA_COLLECTE_*, comme pour le favori)."""
+    res, t0, client = _resume_synchro(), time.monotonic(), None
+    _etat_sync["actif"] = True
+    try:
+        if en_cours():
+            raise ErreurUtopya("Une collecte depuis le favori est en cours : la synchro repasse plus tard.", "occupe")
+        from app.api import grille
+        with get_cursor() as cur:
+            modeles = fournisseurs.modeles_grille(cur)
+            refs = refs_catalogue(cur)
+        res["references_catalogue"] = len(refs)
+        marques = {grille.marque_canonique(m) for m, _ in modeles} - {""}
+        client = ClientUtopya(transport=transport, dormir=dormir)
+        fin = t0 + BUDGET_SYNCHRO
+        catalogue = client.tout(budget_fin=fin)
+        if not catalogue["produits"]:
+            raise ErreurUtopya("L'accès automatique d'Utopya ne renvoie aucun produit : lancez le favori "
+                               "« Collecte Utopya » depuis utopya.fr.", "vide")
+        numeriques = client.tout(FILTRES_NUMERIQUES, budget_fin=fin)
+        res.update(produits_lus=len(catalogue["produits"]), ecrans_numeriques=len(numeriques["produits"]),
+                   complet=bool(catalogue["complet"] and numeriques["complet"]))
+        if not numeriques["complet"]:
+            # Sans la liste complète des écrans d'origine, un écran sans étiquette serait classé « compatible »
+            raise ErreurUtopya("Lecture des références Utopya inachevée (temps dépassé) : nouvel essai à la "
+                               "prochaine heure.", "incomplet")
+        produits, pages, ecartes = produits_api(catalogue["produits"], {p.get("id") for p in numeriques["produits"]},
+                                                refs, marques)
+        res.update(gardes=len(produits), ecartes=ecartes)
+        lues = int(catalogue["pages"])
+        r = traiter({"produits": produits, "pages": pages, "pages_lues": lues,
+                     "pages_total": lues if res["complet"] else lues + 1, "erreurs": [],
+                     "interrompu": not res["complet"]}, mode="serveur")
+        res["collecte"] = {k: r.get(k) for k in ("modifies", "propositions", "complements", "lignes_envoyees",
+                                                 "produits_prix", "sans_prix", "catalogue_retires")}
+        if not r.get("ok"):
+            raise ErreurUtopya(r.get("erreur") or "Import des prix Utopya impossible.", "import")
+        res["ok"] = True
+    except ErreurUtopya as e:
+        res.update(erreur=str(e), code=e.code)
+    except Exception as e:
+        # Type seul : un message d'erreur SQL peut citer des valeurs
+        logger.error("Synchro Utopya : échec (%s)", type(e).__name__)
+        res.update(erreur=f"Erreur interne ({type(e).__name__})", code="interne")
+    finally:
+        if client is not None:
+            res["requetes"] = client.requetes
+            client.close()
+        _etat_sync["actif"] = False
+    res["fin"] = _utc()
+    if res["ok"]:
+        logger.info("Synchro Utopya : %s produits lus, %s gardés, %s requêtes", res["produits_lus"], res["gardes"],
+                    res["requetes"])
+    else:
+        logger.warning("Synchro Utopya : %s (%s)", res["code"], res["erreur"])
+    _noter_synchro(res)
+    return res
+
+
+def synchro_quotidienne(aujourd_hui: Optional[date] = None, transport=None, dormir=time.sleep) -> Optional[dict]:
+    """Passage du jour (appelé chaque heure par la boucle de services/fournisseurs) : rien si coupé
+    (UTOPYA_SYNCHRO_ACTIVE = 0, KP_SYNC_UTOPYA=0), déjà fait aujourd'hui, 3 essais ratés, collecte du favori en
+    cours ou passage tenu par un autre worker. Renvoie le résumé, sinon None."""
+    if os.getenv("KP_SYNC_UTOPYA") == "0" or en_cours() or en_cours_synchro():
+        return None
+    jour = (aujourd_hui or date.today()).isoformat()
+    with get_cursor() as cur:
+        if str(fournisseurs._lire(cur, [P_SYNC_ACTIVE]).get(P_SYNC_ACTIVE) or "").strip() == "0":
+            return None
+        if not fournisseurs._verrouiller(cur, P_SYNC_VERROU):
+            return None
+        if not fournisseurs._reserver_jour(cur, jour, P_SYNC_JOUR):
+            fournisseurs._liberer(cur, P_SYNC_VERROU)
+            return None
+    res = None
+    try:
+        res = synchroniser(transport=transport, dormir=dormir)
+    finally:
+        with get_cursor() as cur:
+            fournisseurs._liberer(cur, P_SYNC_VERROU)
+            if res and res.get("ok"):
+                fournisseurs._ecrire(cur, P_SYNC_JOUR, jour)
+        params_cache.invalidate()
+    return res
+
+
+def lancer_synchro(transport=None) -> bool:
+    """« Synchroniser maintenant » : un fil (Railway coupe une requête à ~15 s), le verrou params contre un
+    autre worker. False si une synchro ou une collecte du favori est déjà en cours ici."""
+    if en_cours() or en_cours_synchro():
+        return False
+
+    def run():
+        try:
+            with get_cursor() as cur:
+                pris = fournisseurs._verrouiller(cur, P_SYNC_VERROU)
+            if not pris:
+                _etat_sync["message"] = ("Une synchro Utopya est déjà en cours (autre serveur) : "
+                                         "réessayez dans quelques minutes.")
+                return
+            try:
+                synchroniser(transport=transport)
+            finally:
+                with get_cursor() as cur:
+                    fournisseurs._liberer(cur, P_SYNC_VERROU)
+                params_cache.invalidate()
+        except Exception as e:
+            logger.error("Synchro Utopya (manuelle) : échec (%s)", type(e).__name__)
+
+    t = threading.Thread(target=run, daemon=True, name="synchro_utopya")
+    _etat_sync.update(thread=t, debut=_utc(), message=None)
+    t.start()
+    return True
+
+
 # ─── État ───────────────────────────────────────────────────────
 
 def _vrai(v) -> Optional[bool]:
@@ -524,15 +879,28 @@ def _vrai(v) -> Optional[bool]:
 
 def etat(cur=None) -> dict:
     """État de la collecte Utopya, sans la clé : {disponible, configure, en_cours, debut,
-    derniere_collecte, ok, resume, erreur, message}."""
-    p = params_cache.get_params([P_CLE, P_DERNIERE, P_OK, P_RESUME], cur=cur)
+    derniere_collecte, ok, resume, erreur, message, synchro} — `synchro` : la synchro automatique du
+    serveur {active, en_cours, debut, derniere, ok, erreur, code, resume, message}."""
+    p = params_cache.get_params([P_CLE, P_DERNIERE, P_OK, P_RESUME, P_SYNC_ACTIVE, P_SYNC_DERNIERE, P_SYNC_OK,
+                                 P_SYNC_RESUME], cur=cur)
     resume = fournisseurs._resume_lu(p[P_RESUME])
     ok = _vrai(p[P_OK])
+    rs = fournisseurs._resume_lu(p[P_SYNC_RESUME])
+    ok_sync = _vrai(p[P_SYNC_OK])
+    actif = en_cours_synchro()
     return {
-        "disponible": True, "configure": bool((p[P_CLE] or "").strip()), "en_cours": en_cours(),
-        "debut": _etat["debut"] if en_cours() else None, "derniere_collecte": p[P_DERNIERE] or None,
+        "disponible": True, "configure": bool((p[P_CLE] or "").strip()), "en_cours": en_cours() or actif,
+        "debut": _etat["debut"] if en_cours() else (_etat_sync["debut"] if actif else None),
+        "derniere_collecte": p[P_DERNIERE] or None,
         "ok": ok, "resume": resume, "erreur": (resume or {}).get("erreur") if ok is False else None,
         "message": _etat["message"],
+        "synchro": {
+            "active": str(p[P_SYNC_ACTIVE] or "").strip() != "0", "en_cours": actif,
+            "debut": _etat_sync["debut"] if actif else None, "derniere": p[P_SYNC_DERNIERE] or None,
+            "ok": ok_sync, "erreur": (rs or {}).get("erreur") if ok_sync is False else None,
+            "code": (rs or {}).get("code") if ok_sync is False else None, "resume": rs,
+            "message": _etat_sync["message"],
+        },
     }
 
 

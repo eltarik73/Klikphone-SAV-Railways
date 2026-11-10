@@ -59,8 +59,8 @@ ID_LANG = 1
 FOURNISSEUR = "Mobilax"
 AUTEUR = "Synchro Mobilax"
 USER_AGENT = "KlikphoneSAV/1.0 (synchro tarifs)"
-UTOPYA_RAISON = ("Utopya n'offre ni export ni API : ses prix ne sont visibles que connecté et le site refuse "
-                 "les programmes (protection Cloudflare). Utilisez « Importer une liste de prix ».")
+UTOPYA_RAISON = ("État de la synchro Utopya illisible pour le moment : réessayez plus tard, ou utilisez "
+                 "« Importer une liste de prix ».")
 
 # Table params. Les clés contenant TOKEN sont masquées par api/config (est_secret).
 P_TOKEN = "MOBILAX_TOKEN"                    # jeton d'accès (renouvelé à chaque passage)
@@ -1363,8 +1363,10 @@ def _sauver_jetons(client: ClientMobilax):
     params_cache.invalidate()
 
 
-def _verrouiller(cur) -> bool:
-    """Prend le verrou du passage (compare-and-set) : libre, ou tenu depuis plus de VERROU_MINUTES."""
+def _verrouiller(cur, cle: str = P_VERROU) -> bool:
+    """Prend le verrou du passage (compare-and-set) : libre, ou tenu depuis plus de VERROU_MINUTES.
+    `cle` : verrou d'un autre passage (synchro Utopya : UTOPYA_SYNCHRO_VERROU)."""
+    P_VERROU = cle
     maintenant = _utc()
     limite = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=VERROU_MINUTES)).strftime(_FMT)
     cur.execute("SELECT valeur FROM params WHERE cle = %s", (P_VERROU,))
@@ -1380,13 +1382,14 @@ def _verrouiller(cur) -> bool:
     return cur.rowcount == 1
 
 
-def _liberer(cur):
-    cur.execute("UPDATE params SET valeur = '' WHERE cle = %s", (P_VERROU,))
+def _liberer(cur, cle: str = P_VERROU):
+    cur.execute("UPDATE params SET valeur = '' WHERE cle = %s", (cle,))
 
 
-def _reserver_jour(cur, jour: str) -> bool:
+def _reserver_jour(cur, jour: str, cle: str = P_JOUR) -> bool:
     """Réserve l'essai du jour (compare-and-set) : False si déjà fait, en cours ailleurs ou
-    ESSAIS_PAR_JOUR essais ratés."""
+    ESSAIS_PAR_JOUR essais ratés. `cle` : jour d'un autre passage (UTOPYA_SYNCHRO_JOUR)."""
+    P_JOUR = cle
     cur.execute("SELECT valeur FROM params WHERE cle = %s", (P_JOUR,))
     row = cur.fetchone()
     actuel = str((row or {}).get("valeur") or "").strip()
@@ -1662,6 +1665,11 @@ def _boucle(delai_initial: float, periode: float):
             synchro_quotidienne()
         except Exception as e:
             logger.warning("Synchro Mobilax quotidienne : échec (%s)", type(e).__name__)
+        try:
+            from app.services import utopya   # import différé : utopya importe ce module
+            utopya.synchro_quotidienne()
+        except Exception as e:
+            logger.warning("Synchro Utopya quotidienne : échec (%s)", type(e).__name__)
         time.sleep(periode)
 
 

@@ -350,6 +350,59 @@ describe('collecte Utopya (favori dans le navigateur du gérant)', () => {
     expect(screen.getByRole('link', { name: 'Collecte Utopya' })).not.toHaveTextContent('kp.example');
   });
 
+  // Synchro automatique du serveur (accès Magento) : le favori n'est plus qu'un secours
+  const SYNC = { active: true, en_cours: false, debut: null, derniere: '2026-11-10T06:00:00', ok: true, erreur: null, code: null, resume: { ok: true }, message: null };
+  const UTO_SERVEUR = { ...UTO_OK, configure: false, derniere_collecte: '2026-11-10T06:00:00', resume: { ...UTO_OK.resume, mode: 'serveur', produits: 8259 }, synchro: SYNC };
+
+  it('decrireUtopya avec synchro serveur : réussie, en cours, bloquée, jamais lancée, coupée', () => {
+    const ok = decrireUtopya(UTO_SERVEUR);
+    expect(ok.ton).toBe('ok');
+    expect(ok.titre).toMatch(/^Dernière synchro Utopya : 10\/11\/2026/);
+    expect(ok.detail).toMatch(/— 8259 produits lus\.$/);
+    expect(ok.detail).not.toMatch(/pages/);
+    expect(decrireUtopya({ ...UTO_SERVEUR, en_cours: true, synchro: { ...SYNC, en_cours: true } })).toMatchObject({ ton: 'info', titre: 'Synchronisation Utopya en cours…' });
+    const bloque = decrireUtopya({ ...UTO_SERVEUR, synchro: { ...SYNC, ok: false, code: 'bloque', erreur: 'Utopya bloque l’accès automatique : lancez le favori.' } });
+    expect(bloque.ton).toBe('attention');
+    expect(bloque.titre).toMatch(/^Synchro automatique Utopya en échec \(10\/11\/2026/);
+    expect(bloque.detail).toMatch(/lancez le favori\. Derniers prix Utopya : 10\/11\/2026/);
+    // Jamais lancée : ni « collecteur à installer », ni erreur — la synchro passe dans l'heure
+    const neuf = decrireUtopya({ ...UTO_VIDE, synchro: { ...SYNC, derniere: null, ok: null, resume: null } });
+    expect(neuf).toMatchObject({ ton: 'neutre', titre: 'Synchro Utopya automatique' });
+    expect(neuf.detail).toMatch(/chaque jour/);
+    expect(decrireUtopya({ ...UTO_VIDE, synchro: { ...SYNC, active: false, derniere: null, ok: null } }).detail).toMatch(/coupée/);
+    // Collecte du favori après un blocage : titre « collecte », pages lues
+    expect(decrireUtopya({ ...UTO_OK, synchro: { ...SYNC, ok: null } }).titre).toMatch(/^Dernière collecte Utopya : 04\/11\/2026/);
+  });
+
+  it('admin : « Synchroniser maintenant » Utopya lance la synchro serveur, la suit et annonce le résultat', async () => {
+    apiMock.getEtatFournisseurs
+      .mockResolvedValueOnce({ mobilax: CONNECTE, utopya: UTO_SERVEUR })
+      .mockResolvedValueOnce({ mobilax: CONNECTE, utopya: { ...UTO_SERVEUR, en_cours: true, synchro: { ...SYNC, en_cours: true } } })
+      .mockResolvedValue({ mobilax: CONNECTE, utopya: { ...UTO_SERVEUR, resume: { ...UTO_SERVEUR.resume, modifies: 7 } } });
+    apiMock.syncUtopya.mockResolvedValue({ lance: true });
+    rendre({ estAdmin: true });
+    const bouton = await screen.findByRole('button', { name: 'Synchroniser maintenant Utopya' });
+    // Le bouton Mobilax garde son nom : deux boutons distincts pour les lecteurs d'écran
+    expect(screen.getByRole('button', { name: 'Synchroniser maintenant' })).toBeInTheDocument();
+    fireEvent.click(bouton);
+    await waitFor(() => expect(apiMock.syncUtopya).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Synchronisation Utopya lancée : quelques minutes.')).toBeInTheDocument();
+    expect(await screen.findByText('Synchronisation Utopya terminée : 7 prix mis à jour')).toBeInTheDocument();
+    expect(apiMock.syncMobilax).not.toHaveBeenCalled();
+  });
+
+  it('personnel : pas de bouton de synchro Utopya ; ancien serveur sans bloc synchro : pas de bouton non plus', async () => {
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTO_SERVEUR });
+    rendre();
+    expect(await screen.findByText(/^Dernière synchro Utopya : 10\/11\/2026/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Synchroniser maintenant/ })).toBeNull();
+    cleanup();
+    apiMock.getEtatFournisseurs.mockResolvedValue({ mobilax: CONNECTE, utopya: UTO_OK });
+    rendre({ estAdmin: true });
+    expect(await screen.findByText(/^Dernière collecte Utopya : 04\/11\/2026/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Synchroniser maintenant Utopya' })).toBeNull();
+  });
+
   it('collecte en cours : suivie jusqu’à la fin', async () => {
     apiMock.getEtatFournisseurs
       .mockResolvedValueOnce({ mobilax: CONNECTE, utopya: { ...UTO_OK, en_cours: true, ok: null } })

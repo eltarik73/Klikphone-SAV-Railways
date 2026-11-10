@@ -285,10 +285,38 @@ le numéro de téléphone complet reste accepté sans limite de temps.
 - **Tests** : `tests/test_fournisseurs_mobilax.py` (httpx.MockTransport, fixture `fixtures/mobilax_products.json`,
   aucun appel réseau ; base réelle via `KP_TEST_DATABASE_URL`).
 
-## Collecte Utopya depuis le navigateur du gérant (`app/services/utopya.py`)
+## Synchro Utopya automatique du serveur (`app/services/utopya.py`, 10/11/2026)
+
+- **Découverte** : les pages de utopya.fr répondent 403 (Cloudflare) aux programmes et cachent les prix aux visiteurs, mais
+  l'accès REST **anonyme** de Magento `GET https://www.utopya.fr/rest/V1/products-render-info?searchCriteria[…]&storeId=1&currencyCode=EUR`
+  répond (même sans navigateur ni compte) avec `id`, `name`, `url`, `is_salable` ('1' / ''), `price_info.final_price` = prix HT
+  **identique au compte pro du gérant** (vérifié : écran Pixel 6 97 €, ReLife 54,91 €). Pas de `sku` renvoyé, mais filtrable.
+  GraphQL est bloqué (403), `rest/V1/products` et `customers/me` refusés (401). Accès sans doute laissé ouvert par oubli :
+  il peut fermer → le favori reste le secours.
+- **Passage** (`utopya.synchroniser`) : `ClientUtopya.tout()` lit tout le catalogue (pages de 500 triées par `entity_id`, fin sur
+  page vide / incomplète / déjà vue, 0,4 s entre pages, erreurs passagères rejouées 3 fois) — mesuré : 17 224 produits, 35 pages,
+  ~2 min ; puis les écrans à **référence chiffrée** (`FILTRES_NUMERIQUES` : nom `%cran%`, sku `from 0` / `to 9~`, sans `-` ni `@` :
+  1 099 produits) → `sku_numerique` (écran sans étiquette + référence chiffrée = Original, `qualite_nom(…, numerique=)`).
+  `produits_api` : pièces suivies (`import_prix.piece_de`) d'une marque de la grille (`marque_produit` : marque ou gamme dans le
+  modèle — `_GAMMES_MARQUE`, `_GAMMES_SURES`), référence = celle du catalogue pour la même fiche (`refs_catalogue`, relevée par le
+  favori), sinon le nombre en fin d'adresse (« …-a546b-134705.html » = sku 134705), sinon `UT<id>` ; une « page » par marque. Puis
+  `traiter(collecte, mode="serveur")` (auteur « Synchro Utopya ») : mêmes lignes, import, diagnostic, purges, châssis que le favori ;
+  passage complet → `purger_catalogue`. Mesuré : ~8 000 lignes de prix (13 marques).
+- **Chaque jour** : la boucle horaire de `fournisseurs._boucle` appelle `utopya.synchro_quotidienne()` après Mobilax (verrou
+  `UTOPYA_SYNCHRO_VERROU`, jour `UTOPYA_SYNCHRO_JOUR`, 3 essais/jour — `fournisseurs._verrouiller(cur, cle)` /
+  `_reserver_jour(cur, jour, cle)`) ; coupée par `UTOPYA_SYNCHRO_ACTIVE=0` (params) ou `KP_SYNC_UTOPYA=0`. Jamais pendant une
+  collecte du favori (et inversement). Bouton « Synchroniser maintenant » du bloc Utopya (admin) → `POST …/utopya/sync`.
+- **État** : `UTOPYA_SYNCHRO_{DERNIERE,OK,RESUME}` → `etat().synchro {active, en_cours, derniere, ok, erreur, code, resume}` ;
+  codes `bloque` (403 / page HTML : Cloudflare), `ferme` (401/404), `limite` (429), `reseau`, `reponse`, `vide`, `incomplet`,
+  `occupe`, `import`. Un échec n'efface pas la dernière collecte (`UTOPYA_COLLECTE_*`, `resume.mode` 'serveur' | 'favori') ;
+  l'écran dit « Synchro automatique Utopya en échec … Derniers prix Utopya : date » et le favori prend le relais.
+- **Tests** : `tests/test_utopya_synchro.py` (MockTransport, produits réels du 10/11/2026), vitest `synchro_fournisseur.test.jsx`.
+
+## Collecte Utopya depuis le navigateur du gérant (secours, `app/services/utopya.py`)
 
 - **Pourquoi** : utopya.fr (Magento) ne montre ses prix qu'à un compte connecté et répond 403 (challenge Cloudflare) à tout
-  programme : aucune synchro serveur. La collecte passe par le navigateur du gérant, déjà connecté.
+  programme sur ses pages. Avant la synchro serveur (ci-dessus), c'était la seule voie ; c'est désormais le secours si Utopya
+  bloque ou ferme son accès REST.
 - **Une installation** : *Réparation smartphones → Installer le collecteur* (admin) → `GET /api/tarifs/fournisseurs/utopya/collecteur`
   rend l'adresse `javascript:` d'un favori « Collecte Utopya » (script `utopya.SCRIPT`, origine publique du serveur, clé
   `UTOPYA_COLLECTE_TOKEN` créée dans `params`, masquée par `api/config`) à glisser dans la barre des favoris. « Nouvelle clé »

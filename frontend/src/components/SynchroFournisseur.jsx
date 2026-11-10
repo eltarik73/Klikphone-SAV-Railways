@@ -15,10 +15,11 @@ import { useToast } from './Toast';
  * met les prix d'achat à jour chaque jour (GET /api/tarifs/fournisseurs/etat pour l'état ;
  * POST …/mobilax/sync pour « Synchroniser maintenant »). Aucun jeton n'est jamais affiché.
  *
- * Utopya — le site refuse les serveurs (prix sous connexion, Cloudflare) : la collecte passe par
- * le navigateur du gérant. Un favori « Collecte Utopya » (script + clé, GET …/utopya/collecteur,
- * admin) se glisse une fois dans la barre des favoris ; cliqué sur utopya.fr connecté, il lit les
- * pages des modèles de la grille et envoie noms et prix au serveur, qui importe comme Mobilax.
+ * Utopya — le serveur lit chaque jour le catalogue par l'accès REST de Magento (prix HT et stock,
+ * POST …/utopya/sync pour « Synchroniser maintenant », état dans utopya.synchro). En secours (Utopya
+ * bloque ou ferme cet accès), la collecte passe par le navigateur du gérant : un favori « Collecte
+ * Utopya » (script + clé, GET …/utopya/collecteur, admin) se glisse une fois dans la barre des favoris ;
+ * cliqué sur utopya.fr connecté, il lit les pages des modèles et envoie noms et prix au serveur.
  */
 
 export const INTERVALLE_SUIVI = 5000;
@@ -76,25 +77,36 @@ export function decrireMobilax(m) {
   };
 }
 
-/** Phrase d'état de la collecte Utopya (exportée pour les tests) : { ton, titre, detail }. */
+/** Phrase d'état de la synchro / collecte Utopya (exportée pour les tests) : { ton, titre, detail }. */
 export function decrireUtopya(u) {
   if (!u || u.disponible === false) {
     return { ton: 'neutre', titre: 'Utopya : collecte indisponible', detail: u?.raison || 'Passez par « Importer une liste de prix ».' };
   }
+  const s = u.synchro || null;
   if (u.en_cours) {
+    if (s?.en_cours) return { ton: 'info', titre: 'Synchronisation Utopya en cours…', detail: 'Le serveur lit le catalogue Utopya : quelques minutes.' };
     return { ton: 'info', titre: 'Collecte Utopya en cours…', detail: 'Le serveur met les prix à jour : une minute environ.' };
   }
-  if (!u.configure) {
+  // Synchro automatique en échec (Utopya bloque ou a fermé l'accès, temps dépassé…) : le favori prend le relais
+  if (s?.ok === false) {
+    return {
+      ton: 'attention',
+      titre: `Synchro automatique Utopya en échec${s.derniere ? ` (${formatDate(s.derniere)})` : ''}`,
+      detail: `${s.erreur || 'Erreur inconnue — nouvel essai dans l’heure.'}${u.derniere_collecte ? ` Derniers prix Utopya : ${formatDate(u.derniere_collecte)}.` : ''}`,
+    };
+  }
+  if (!u.configure && !s) {
     return {
       ton: 'attention', titre: 'Utopya : collecteur à installer',
       detail: 'Un favori à glisser une fois dans votre navigateur : cliqué sur utopya.fr (connecté), il remonte les prix dans Klikphone.',
     };
   }
   const r = u.resume || {};
+  const serveur = r.mode === 'serveur';
   if (u.ok === false) {
     return {
       ton: 'danger',
-      titre: `Dernière collecte Utopya échouée${u.derniere_collecte ? ` (${formatDate(u.derniere_collecte)})` : ''}`,
+      titre: `Dernière ${serveur ? 'synchro' : 'collecte'} Utopya échouée${u.derniere_collecte ? ` (${formatDate(u.derniere_collecte)})` : ''}`,
       detail: u.erreur || 'Erreur inconnue — relancez la collecte depuis utopya.fr.',
     };
   }
@@ -109,12 +121,20 @@ export function decrireUtopya(u) {
     if (n(r.chassis?.corriges)) morceaux.push(`${n(r.chassis.corriges)} écran${n(r.chassis.corriges) > 1 ? 's' : ''} passé${n(r.chassis.corriges) > 1 ? 's' : ''} sur la variante avec châssis`);
     if (n(r.verrouillees)) morceaux.push(`${n(r.verrouillees)} verrouillé${n(r.verrouillees) > 1 ? 's' : ''}`);
     if (n(r.sans_prix)) morceaux.push(`${n(r.sans_prix)} pièce${n(r.sans_prix) > 1 ? 's' : ''} de la grille sans prix Utopya`);
-    if (r.interrompu) morceaux.push('collecte arrêtée avant la fin');
+    if (r.interrompu) morceaux.push(serveur ? 'passage incomplet (temps écoulé)' : 'collecte arrêtée avant la fin');
     else if (n(r.erreurs_pages)) morceaux.push(`${n(r.erreurs_pages)} page${n(r.erreurs_pages) > 1 ? 's' : ''} illisible${n(r.erreurs_pages) > 1 ? 's' : ''}`);
     return {
       ton: 'ok',
-      titre: `Dernière collecte Utopya : ${formatDate(u.derniere_collecte)}`,
-      detail: `${morceaux.join(' · ')} — ${n(r.produits)} produits lus sur ${n(r.pages_lues)} pages.`,
+      titre: `Dernière ${serveur ? 'synchro' : 'collecte'} Utopya : ${formatDate(u.derniere_collecte)}`,
+      detail: `${morceaux.join(' · ')} — ${n(r.produits)} produits lus${serveur ? '' : ` sur ${n(r.pages_lues)} pages`}.`,
+    };
+  }
+  if (s) {
+    return {
+      ton: 'neutre', titre: 'Synchro Utopya automatique',
+      detail: s.active === false
+        ? 'Synchro quotidienne coupée : lancez-la avec « Synchroniser maintenant » ou passez par le favori.'
+        : 'Le serveur met les prix Utopya à jour chaque jour : première synchro dans l’heure, ou tout de suite avec « Synchroniser maintenant ».',
     };
   }
   return {
@@ -305,6 +325,30 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
   const m = etat?.mobilax || null;
   const u = etat?.utopya || null;
   const enCours = Boolean(m?.en_cours) || occupe === 'sync';
+
+  // Synchro Utopya du serveur (accès Magento) : lancée ici, suivie comme Mobilax, résultat annoncé à la fin
+  const synchroniserUtopya = async () => {
+    if (u?.en_cours || occupe) return;
+    setOccupe('sync-utopya');
+    try {
+      await sensible(() => api.syncUtopya());
+      toast.info('Synchronisation Utopya lancée : quelques minutes.');
+      setEtat((e) => ({ ...(e || {}), utopya: { ...(e?.utopya || {}), en_cours: true, synchro: { ...(e?.utopya?.synchro || {}), en_cours: true } } }));
+      setOccupe('');
+      await suivre(false);
+      if (!monteRef.current) return;
+      const e = await relire().catch(() => null);
+      const s = e?.utopya?.synchro;
+      if (!s || e?.utopya?.en_cours) return;
+      if (s.message) toast.warning(s.message);
+      else if (s.ok === false) toast.error(`Synchronisation Utopya échouée : ${s.erreur || 'erreur inconnue'}`);
+      else if (s.ok === true) toast.success(`Synchronisation Utopya terminée : ${n(e.utopya.resume?.modifies)} prix mis à jour`);
+    } catch (err) {
+      const msg = messageErreur(err, 'Synchronisation Utopya impossible');
+      if (msg) toast.error(msg);
+      if (monteRef.current) setOccupe('');
+    }
+  };
 
   const synchroniser = async () => {
     if (enCours || !m?.configure) return;
@@ -550,6 +594,14 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
 
         {estAdmin && utopyaDisponible && (
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 w-full">
+            {u?.synchro && (
+              <button type="button" onClick={synchroniserUtopya} disabled={Boolean(u?.en_cours) || Boolean(occupe)}
+                aria-busy={Boolean(u?.synchro?.en_cours) || occupe === 'sync-utopya' || undefined} className="btn-secondary btn-sm"
+                aria-label={u?.synchro?.en_cours ? 'Synchronisation… (Utopya)' : 'Synchroniser maintenant Utopya'}>
+                <RefreshCw className={u?.synchro?.en_cours || occupe === 'sync-utopya' ? 'motion-safe:animate-spin' : ''} aria-hidden="true" />
+                {u?.synchro?.en_cours ? 'Synchronisation…' : 'Synchroniser maintenant'}
+              </button>
+            )}
             <button type="button" onClick={ouvrirCollecteur} aria-expanded={panneauUtopya} disabled={occupe === 'collecteur'}
               aria-busy={occupe === 'collecteur' || undefined} className="btn-secondary btn-sm">
               {occupe === 'collecteur' ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Bookmark aria-hidden="true" />}
@@ -582,8 +634,8 @@ export default function SynchroFournisseur({ estAdmin = false, className = '', i
                 </li>
                 <li>
                   Sur utopya.fr, cliquez le favori « Collecte Utopya » : une petite fenêtre suit la lecture des pages des modèles de la grille
-                  (quelques minutes), puis Klikphone met les prix d’achat à jour. Le résultat s’affiche ici. À refaire quand vous voulez
-                  des prix Utopya frais (chaque semaine, par exemple).
+                  (quelques minutes), puis Klikphone met les prix d’achat à jour. Le résultat s’affiche ici. En secours seulement : le
+                  serveur met déjà les prix Utopya à jour chaque jour ; le favori sert quand Utopya bloque la synchro automatique.
                 </li>
               </ol>
             )}
