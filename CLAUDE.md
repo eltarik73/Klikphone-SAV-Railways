@@ -299,7 +299,7 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   1 099 produits) → `sku_numerique` (écran sans étiquette + référence chiffrée = Original, `qualite_nom(…, numerique=)`).
   `produits_api` : pièces suivies (`import_prix.piece_de`) d'une marque de la grille (`marque_produit` : marque ou gamme dans le
   modèle — `_GAMMES_MARQUE`, `_GAMMES_SURES`), référence = celle du catalogue pour la même fiche (`refs_catalogue`, relevée par le
-  favori), sinon le nombre en fin d'adresse (« …-a546b-134705.html » = sku 134705), sinon `UT<id>` ; une « page » par marque. Puis
+  favori), sinon le nombre en fin d'adresse (« …-a546b-134705.html » = sku 134705), sinon `UTN<id>` (écran du filtre « référence chiffrée » : lu comme numérique par `fournisseurs.ref_utopya_numerique` / `qualite_coherente`) ou `UT<id>` (référence maison) — ces références notées ne viennent jamais de `refs_catalogue` ; une « page » par marque. Puis
   `traiter(collecte, mode="serveur")` (auteur « Synchro Utopya ») : mêmes lignes, import, diagnostic, purges, châssis que le favori ;
   passage complet → `purger_catalogue`. Mesuré : ~8 000 lignes de prix (13 marques).
 - **Chaque jour** : la boucle horaire de `fournisseurs._boucle` appelle `utopya.synchro_quotidienne()` après Mobilax (verrou

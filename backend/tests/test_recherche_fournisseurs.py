@@ -57,6 +57,11 @@ class _Cur:
     ("Compatible", "Ecran Complet Google Pixel 6 (ReLife)", "GPIX6-EC", "Utopya", True),
     ("Compatible", "Ecran Complet Google Pixel 6", "420921", "Utopya", False),               # l'origine n'est pas un compatible
     ("Soft OLED", "Ecran Complet Noir Pixel 6 Pro (Soft OLED)", "EC@-GP6PRBSO", "Utopya", True),
+    # Synchro serveur : UTN<id> = référence toute chiffrée (origine), UT<id> = référence maison
+    ("Original", "Ecran Complet Vert OnePlus Nord 3 5G", "UTN62832", "Utopya", True),
+    ("Original", "Ecran Complet Vert OnePlus Nord 3 5G", "UT62832", "Utopya", False),
+    ("Compatible", "Ecran Complet Vert OnePlus Nord 3 5G", "UTN62832", "Utopya", False),
+    ("Compatible", "Ecran Complet OnePlus Nord CE 3 Lite 5G (avec châssis)", "UT49204", "Utopya", True),
     # Rien à juger
     (None, "Ecran Tactile Original Refurb", "1", "Mobilax", True),
     ("Original", "", "1", "Mobilax", True),

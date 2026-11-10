@@ -111,6 +111,10 @@ _CODE_BATTERIE = re.compile(r"^(?:EB-?[A-Z0-9]{5,}|B[PMNL]\d{1,2}[A-Z0-9]?|BLP\d
                             r"[A-Z]{2}\d{2}|SCUD-?[A-Z0-9]+|HQ-?\d+[A-Z]*|WT\d{2,}[A-Z]*|[A-Z]{3}\d{4,}[A-Z]*)$")
 _MEGAPIXELS = re.compile(r"\b\d{1,3}\s?MP\b", re.IGNORECASE)
 _NUMERIQUE = re.compile(r"^\d{4,}$")
+# Références notées par la synchro serveur quand l'accès REST ne donne pas la vraie : UTN<id> = toute chiffrée
+# (filtre sur la référence), UT<id> = référence maison (cf. produits_api, fournisseurs.ref_utopya_numerique)
+_REF_SYNTHETIQUE = re.compile(r"^UTN?\d+$")
+_REF_SYNTHETIQUE_NUM = re.compile(r"^UTN\d+$")
 _COULEURS = fournisseurs._COULEURS_FIN | {
     "verte", "blanche", "violette", "noire", "bleue", "grise", "doree", "rosee", "jaune", "alpin", "alpine",
     "sierra", "minuit", "stellaire", "lumiere", "starlight", "midnight", "graphite", "argente", "argentee",
@@ -290,7 +294,8 @@ def qualite_nom(nom: str, sku: str = "", numerique: Optional[bool] = None) -> Op
         if re.search(rf"\b{re.escape(motif)}\b", bas):
             return q
     if numerique is None:
-        numerique = bool(_NUMERIQUE.match(str(sku or "").strip()))
+        s = str(sku or "").strip()
+        numerique = bool(_NUMERIQUE.match(s) or _REF_SYNTHETIQUE_NUM.match(s))
     return "Original" if numerique else "Compatible"
 
 
@@ -684,7 +689,7 @@ def refs_catalogue(cur) -> dict:
     out = {}
     for r in cur.fetchall() or []:
         ref, chemin = str(r["ref"] or "").strip(), _chemin(r["url"])
-        if ref and chemin:
+        if ref and chemin and not _REF_SYNTHETIQUE.match(ref):   # UT… / UTN… : notée par la synchro, recalculée
             out[chemin] = ref
     return out
 
@@ -697,7 +702,9 @@ def produits_api(items, numeriques=(), refs=None, marques=None) -> tuple:
     """Produits de l'accès REST → tuiles du collecteur {nom, sku, prix_montant, stock, page, href, sku_numerique}
     et pages [{url, marque, modele}] (une par marque : traiter lit la marque d'une ligne dans sa page).
     Seules les pièces suivies d'une marque de la grille sont gardées. Référence : celle du catalogue pour la
-    même fiche, sinon le nombre en fin d'adresse, sinon UT<id>. → (produits, pages, écartés {raison: n})"""
+    même fiche, sinon le nombre en fin d'adresse, sinon UTN<id> (référence toute chiffrée, lue par le filtre :
+    fournisseurs.qualite_coherente la tient pour numérique) ou UT<id> (référence maison).
+    → (produits, pages, écartés {raison: n})"""
     refs = refs or {}
     nums = {str(i) for i in numeriques or ()}
     produits, pages = [], {}
@@ -720,12 +727,13 @@ def produits_api(items, numeriques=(), refs=None, marques=None) -> tuple:
         url = str(p.get("url") or "").strip()
         chemin = _chemin(url)
         m = _SUFFIXE_REF.search(chemin)
-        ref = refs.get(chemin) or (m.group(1) if m else f"UT{p.get('id')}")
+        numerique = str(p.get("id")) in nums
+        ref = refs.get(chemin) or (m.group(1) if m else f"{'UTN' if numerique else 'UT'}{p.get('id')}")
         page = f"marque:{marque}"
         pages.setdefault(page, {"url": page, "marque": marque, "modele": None})
         produits.append({"nom": nom, "sku": ref, "prix_montant": (p.get("price_info") or {}).get("final_price"),
                          "prix_texte": "", "stock": "ok" if _vendable(p.get("is_salable")) else "rupture",
-                         "page": page, "href": url, "sku_numerique": str(p.get("id")) in nums})
+                         "page": page, "href": url, "sku_numerique": numerique})
     return produits, list(pages.values()), ecartes
 
 

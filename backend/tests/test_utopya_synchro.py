@@ -193,6 +193,37 @@ def test_qualite_nom_drapeau_numerique():
     assert U.qualite_nom("Ecran Complet Noir Galaxy A54 5G", "420921", numerique=False) == "Compatible"
     assert U.qualite_nom("Ecran Complet Noir Galaxy A54 5G", "420921") == "Original"
     assert U.qualite_nom("Ecran Complet Galaxy A54 (ReLife)", "420921", numerique=True) == "Compatible"
+    # Références notées par la synchro : UTN = toute chiffrée, UT = maison
+    assert U.qualite_nom("Ecran Complet Vert OnePlus Nord 3 5G", "UTN62832") == "Original"
+    assert U.qualite_nom("Ecran Complet Vert OnePlus Nord 3 5G", "UT62832") == "Compatible"
+
+
+def test_reference_notee_utn_pour_un_ecran_a_reference_chiffree():
+    """Production, 10/11/2026 : « Ecran Complet Vert OnePlus Nord 3 5G » (112 € HT, référence chiffrée, absente
+    de l'adresse et du catalogue) était noté UT62832, lu comme une référence maison par la purge des qualités,
+    qui vidait la ligne « Original » de 12 modèles. La référence notée doit rester cohérente avec la qualité."""
+    produits, pages, _ = U.produits_api([PIXEL6, A54_OLED], {36398}, {}, None)
+    par = {p["nom"]: p["sku"] for p in produits}
+    assert par[PIXEL6["name"]] == "UTN36398" and par[A54_OLED["name"]] == "UT51792"
+    lignes, _ = U.lignes_collecte(produits, {p["url"]: p for p in pages}, 1.2)
+    for l in lignes:
+        assert F.qualite_coherente(l["qualite"], l["designation"], l["reference"], "Utopya"), l
+    assert {l["designation"]: l["qualite"] for l in lignes}[PIXEL6["name"]] == "Original"
+
+
+def test_refs_catalogue_ignore_les_references_notees_par_la_synchro():
+    class Cur:
+        def execute(self, *a):
+            pass
+
+        def fetchall(self):
+            return [{"ref": "420921", "url": "https://www.utopya.fr/ecran-complet-google-pixel-6.html"},
+                    {"ref": "UT62832", "url": "https://www.utopya.fr/ecran-complet-vert-oneplus-nord-3-5g.html"},
+                    {"ref": "UTN1", "url": "https://www.utopya.fr/x.html"},
+                    {"ref": "A546-OLED@", "url": "https://www.utopya.fr/ecran-oled-a54.html?x=1"}]
+
+    assert U.refs_catalogue(Cur()) == {"/ecran-complet-google-pixel-6.html": "420921",
+                                       "/ecran-oled-a54.html": "A546-OLED@"}
 
 
 # ─── Passage complet, jour, lancement manuel ─────────────────────

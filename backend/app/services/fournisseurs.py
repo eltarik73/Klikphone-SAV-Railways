@@ -1025,6 +1025,17 @@ def _a_marqueur(texte: str, marqueurs) -> bool:
     return any(re.search(rf"(?<![a-z0-9]){re.escape(m)}(?![a-z0-9])", texte) for m in marqueurs)
 
 
+# La synchro serveur Utopya ne lit pas toujours la vraie référence (l'accès REST ne la renvoie pas) : elle
+# note « UTN<id> » pour un produit que le filtre sur la référence a trouvé tout chiffré (écran d'origine) et
+# « UT<id> » sinon. « UTN… » vaut donc une référence numérique, « UT… » une référence maison.
+_REF_UTOPYA_NUMERIQUE = re.compile(r"^(?:\d+|UTN\d+)$")
+
+
+def ref_utopya_numerique(ref) -> bool:
+    """Référence Utopya toute chiffrée (420921), ou notée comme telle par la synchro serveur (UTN62832)."""
+    return bool(_REF_UTOPYA_NUMERIQUE.match(str(ref or "").strip()))
+
+
 def qualite_coherente(qualite, designation, ref=None, fournisseur=None) -> bool:
     """Le produit désigné peut-il tenir la ligne d'écran de cette qualité ?
     - « Original » : ni marqueur de reconditionné (Pulled, Refurb, Assembled, Grade…) ni de compatible (ReLife,
@@ -1041,11 +1052,12 @@ def qualite_coherente(qualite, designation, ref=None, fournisseur=None) -> bool:
     ref = str(ref or "").strip()
     recond = _a_marqueur(d, _MARQUEURS_RECONDITIONNE)
     compat = _a_marqueur(d, _MARQUEURS_COMPATIBLE)
-    officiel = _a_marqueur(d, _MARQUEURS_OFFICIEL) or (utopya and bool(ref) and ref.isdigit() and not compat and not recond)
+    numerique = ref_utopya_numerique(ref)
+    officiel = _a_marqueur(d, _MARQUEURS_OFFICIEL) or (utopya and numerique and not compat and not recond)
     if q.startswith("original"):
         if recond or compat:
             return False
-        return not (utopya and ref and not ref.isdigit() and not _a_marqueur(d, _MARQUEURS_OFFICIEL))
+        return not (utopya and ref and not numerique and not _a_marqueur(d, _MARQUEURS_OFFICIEL))
     if q.startswith("reconditionn"):
         return recond
     return not recond and not officiel
