@@ -654,6 +654,10 @@ def lignes_produit(p: dict, palier: dict = None, sans_prix: bool = False) -> lis
     pq = piece_categorie(cat)
     if pq is None and cat and any(normaliser(cat).startswith(m) for m, _ in CATEGORIES_PIECES):
         return []            # famille suivie mais variante écartée (écran externe, batterie secondaire…)
+    if pq and pq[1] == "Original" and _a_marqueur(normaliser(sans_faux_marqueurs(nom)), _MARQUEURS_RECONDITIONNE):
+        # « Bloc Écran Complet avec Châssis Original Huawei P30 Pro (Grade A) » : catégorie « Original », mais un
+        # écran trié / reconditionné — la purge des qualités (qualite_coherente) le refuserait sur la ligne Original
+        pq = (pq[0], "Reconditionnee")
     ref = str(p.get("ean13") or p.get("reference") or p.get("sku") or "").strip()
     if not ref and p.get("id"):
         ref = f"MX{p['id']}"
@@ -1025,6 +1029,22 @@ def _a_marqueur(texte: str, marqueurs) -> bool:
     return any(re.search(rf"(?<![a-z0-9]){re.escape(m)}(?![a-z0-9])", texte) for m in marqueurs)
 
 
+# Mots de qualité qui n'en sont pas (production, 10/11/2026 : P Smart Z et Galaxy A05s vidés chaque nuit) :
+# - « (Original Size) » : Mobilax, écran OLED compatible à la taille d'origine (19 produits) ; « (Original Notch) »
+#   (« Ecran Tactile Incell HD+ Apple iPhone 14 (Original Notch) ») : encoche d'origine d'un écran Incell ;
+# - « Prime » / « Premium » d'un nom de modèle (Huawei Y9 Prime 2019, Realme Narzo 50i Prime, Galaxy Grand
+#   Prime, Xperia XZ Premium) : l'étiquette Utopya s'écrit « (Prime) », celle de Mobilax suit la pièce
+#   (« Batterie Premium ») — jamais directement après un mot de modèle (chiffre, Grand, XZ).
+_FAUX_MARQUEURS = re.compile(r"\boriginal\s+(?:size|notch)\b"
+                             r"|\b(?P<modele>grand|xz|[a-z]*\d+[a-z]{0,2})\s+(?:prime|premium)\b", re.IGNORECASE)
+
+
+def sans_faux_marqueurs(designation) -> str:
+    """Désignation sans les mots qui ressemblent à une qualité sans en être une (« Original Size », « Prime »
+    d'un nom de modèle, le modèle gardé) : à lire avant toute recherche d'étiquette de qualité."""
+    return _FAUX_MARQUEURS.sub(lambda m: f"{m.group('modele') or ''} ", str(designation or ""))
+
+
 # La synchro serveur Utopya ne lit pas toujours la vraie référence (l'accès REST ne la renvoie pas) : elle
 # note « UTN<id> » pour un produit que le filtre sur la référence a trouvé tout chiffré (écran d'origine) et
 # « UT<id> » sinon. « UTN… » vaut donc une référence numérique, « UT… » une référence maison.
@@ -1045,9 +1065,9 @@ def qualite_coherente(qualite, designation, ref=None, fournisseur=None) -> bool:
       produit Utopya d'origine à référence numérique).
     Qualité ou désignation vide : True (rien à juger)."""
     q = normaliser(qualite or "")
-    d = normaliser(designation or "")
-    if not q or not d:
+    if not q or not normaliser(designation or ""):
         return True
+    d = normaliser(sans_faux_marqueurs(designation))
     utopya = bool(fournisseur) and normaliser(fournisseur) == "utopya"
     ref = str(ref or "").strip()
     recond = _a_marqueur(d, _MARQUEURS_RECONDITIONNE)

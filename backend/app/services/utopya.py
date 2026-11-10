@@ -289,7 +289,7 @@ def qualite_nom(nom: str, sku: str = "", numerique: Optional[bool] = None) -> Op
     Pulled A…) ; sans étiquette, une référence toute numérique est un écran d'origine du catalogue
     Utopya (Samsung, Google…), sinon une pièce compatible. `numerique` : ce que la synchro serveur a lu
     (filtre sur la référence) quand elle ne connaît pas la référence elle-même."""
-    bas = normaliser(nom)
+    bas = normaliser(fournisseurs.sans_faux_marqueurs(nom))   # « Y9 Prime 2019 » n'est pas l'étiquette (Prime)
     for motif, q in _QUALITES_NOM:
         if re.search(rf"\b{re.escape(motif)}\b", bas):
             return q

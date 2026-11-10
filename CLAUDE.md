@@ -391,6 +391,13 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   `_boucle` → `purger_qualites`) retire ces prix de la grille comparative et corrige la pièce dont le coût venait d'un tel
   produit : prix cohérent du fournisseur retenu ou de l'autre, sinon « prix à renseigner » (`prix.vider_prix` : HT 0,
   client 0, `prix_source` a_renseigner) — jamais un prix faux gardé. Résumé `purge {examines, supprimes, reassignees, videes}`.
+  **L'import et la purge doivent dire la même chose**, sinon la pièce est écrite puis vidée à chaque passage (P Smart Z,
+  Galaxy A05s vidés chaque nuit jusqu'au 10/11/2026) : `fournisseurs.sans_faux_marqueurs` retire avant toute lecture
+  d'étiquette « (Original Size) », « (Original Notch) » et le « Prime » / « Premium » d'un nom de modèle (Y9 Prime 2019,
+  Narzo 50i Prime, Grand Prime, XZ Premium ; l'étiquette Utopya s'écrit « (Prime) ») — utilisé par `qualite_coherente`
+  et `utopya.qualite_nom` ; un écran de catégorie Mobilax « Original » dont le nom porte un marqueur de reconditionné
+  (« (Grade A) ») est importé « Reconditionnee » (`lignes_produit`). Test d'invariant :
+  `test_lignes_produit_qualite_coherente_avec_la_purge`.
 - **Catalogue fournisseur et recherche de tarifs pro** : `fournisseurs_catalogue` (`prix.enregistrer_catalogue`, appelé par
   `_importer(lignes=)` : un produit par (fournisseur, ref) tel que le fournisseur le nomme, HT, `en_stock`, fiche, marque /
   modèle / pièce / qualité lus, `tarif_cle` reçue, texte `recherche` normalisé ; `purger_catalogue` après un passage complet).

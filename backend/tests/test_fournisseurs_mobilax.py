@@ -265,6 +265,22 @@ def test_lignes_produit_lisent_le_chassis_des_noms_mobilax():
     assert F.csv_lignes(sans).decode("utf-8-sig").count("sans Châssis") == 1
 
 
+def test_lignes_produit_qualite_coherente_avec_la_purge():
+    """Production, 10/11/2026 : l'import écrivait un prix que la purge des qualités retirait aussitôt (P Smart Z,
+    Galaxy A05s vidés chaque nuit). La qualité d'import d'un écran doit tenir devant qualite_coherente."""
+    produits = [
+        ("Bloc Écran Complet avec Châssis Original Huawei P Smart Z/Y9 Prime 2019", "Bloc Écran Complet avec Châssis Original", "Original"),
+        ("Ecran Tactile Oled avec Châssis Samsung Galaxy A05s A057 (Original Size)", "Ecran Tactile Oled avec Châssis", "OLED"),
+        ("Ecran Tactile Incell HD+ Apple iPhone 14 (Original Notch)", "Ecran Tactile Incell HD+", "Incell"),
+        ("Bloc Écran Complet avec Châssis Original Huawei P30 Pro/P30 Pro New Edition (Grade A)",
+         "Bloc Écran Complet avec Châssis Original", "Reconditionnee"),
+    ]
+    for i, (nom, cat, qualite) in enumerate(produits):
+        l = F.lignes_produit({"id": i + 1, "price": 20, "name": nom, "category_name": cat})[0]
+        assert l["qualite"] == qualite, nom
+        assert F.qualite_coherente(l["qualite"], l["designation"], l["reference"], "Mobilax"), nom
+
+
 # ─── Prix sans valeur de référence : remplacés sans validation ──
 
 def test_remplacable_absent_estime_perime_ou_recent():

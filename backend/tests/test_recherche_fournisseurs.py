@@ -62,6 +62,14 @@ class _Cur:
     ("Original", "Ecran Complet Vert OnePlus Nord 3 5G", "UT62832", "Utopya", False),
     ("Compatible", "Ecran Complet Vert OnePlus Nord 3 5G", "UTN62832", "Utopya", False),
     ("Compatible", "Ecran Complet OnePlus Nord CE 3 Lite 5G (avec châssis)", "UT49204", "Utopya", True),
+    # Mots de modèle ou de format qui ne sont pas des qualités (production, 10/11/2026)
+    ("Original", "Bloc Écran Complet avec Châssis Original Huawei P Smart Z/Y9 Prime 2019", "3000000002353", "Mobilax", True),
+    ("Compatible", "Ecran Tactile Oled avec Châssis Samsung Galaxy A05s A057 (Original Size)", "3000000272138", "Mobilax", True),
+    ("OLED", "Ecran Tactile Oled Xiaomi Redmi Note 11 4G/Redmi Note 11S 4G (Original Size)", "3000000147283", "Mobilax", True),
+    ("Incell", "Ecran Tactile Incell HD+ Apple iPhone 14 (Original Notch)", "3000000298435", "Mobilax", True),
+    ("Original", "Ecran Complet Huawei Y9 Prime 2019", "386090", "Utopya", True),
+    ("Original", "Ecran Complet Noir Galaxy A54 5G (Prime)", "123456", "Utopya", False),   # l'étiquette (Prime) reste
+    ("Original", "Bloc Écran Complet avec Châssis Original Huawei P30 Pro (Grade A)", "3000000026878", "Mobilax", False),
     # Rien à juger
     (None, "Ecran Tactile Original Refurb", "1", "Mobilax", True),
     ("Original", "", "1", "Mobilax", True),
