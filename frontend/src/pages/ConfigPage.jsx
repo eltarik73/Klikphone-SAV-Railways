@@ -843,6 +843,29 @@ const DEFAULT_MSG_TEMPLATES = [
   { id: 12, label: "Demande d'accord", message: "Bonjour {prenom}, le devis pour la réparation de votre {marque} {modele} est de {montant} €. Vous pouvez accepter ou refuser directement en cliquant ici : {lien_suivi}. Merci, l'équipe Klikphone" },
 ];
 
+/** Rappel de la dernière sauvegarde : jamais faite, ancienne (plus de 30 jours), tables non lues. */
+export function EtatSauvegarde({ etat }) {
+  if (!etat) return null;
+  if (!etat.derniere) {
+    return <p className="text-sm font-medium text-amber-800 mb-3">Aucune sauvegarde téléchargée pour l'instant.</p>;
+  }
+  const date = new Date(etat.derniere).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const quand = etat.jours === 0 ? "aujourd'hui" : etat.jours === 1 ? 'hier' : `il y a ${etat.jours} jours`;
+  const ancienne = etat.jours > 30;
+  return (
+    <div className="mb-3 space-y-1">
+      <p className={`text-sm ${ancienne ? 'font-medium text-amber-800' : 'text-slate-600'}`}>
+        Dernière sauvegarde : {date} ({quand}){ancienne ? ' — pensez à en refaire une.' : ''}
+      </p>
+      {etat.erreurs?.length > 0 && (
+        <p className="text-sm font-medium text-red-700">
+          Tables non sauvées la dernière fois : {etat.erreurs.join(', ')}. Recommencez la sauvegarde.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ConfigPage() {
   const { user } = useAuth();
   const toast = useToast();
@@ -886,6 +909,8 @@ export default function ConfigPage() {
 
   // Sauvegarde
   const [backupBusy, setBackupBusy] = useState(false);
+  const [lisibleBusy, setLisibleBusy] = useState(false);
+  const [etatSauvegarde, setEtatSauvegarde] = useState(null);
   const [importBusy, setImportBusy] = useState(false);
 
   // Élévation admin : une action sensible refusée faute de jeton (valable 10 min) rouvre
@@ -1352,25 +1377,37 @@ export default function ConfigPage() {
   const catalogNbModeles = catalog.marques.reduce((n, x) => n + x.modeles.length, 0);
   const bulkApercu = parseModelesEnMasse(bulkText, newModele.marque);
 
-  // Backup
-  // Export lourd : un seul appel (pas de relance automatique), bouton bloqué pendant l'export
+  // Sauvegarde : fichier complet (restaurable) et classeur lisible sans le logiciel. Export lourd : un seul
+  // appel (pas de relance automatique), bouton bloqué pendant l'export
+  const chargerEtatSauvegarde = useCallback(async () => {
+    try { setEtatSauvegarde(await api.getBackupEtat()); } catch { setEtatSauvegarde(null); }
+  }, []);
+  useEffect(() => { if (activeTab === 'backup') chargerEtatSauvegarde(); }, [activeTab, chargerEtatSauvegarde]);
+
   const handleDownloadBackup = async () => {
     if (backupBusy) return;
     setBackupBusy(true);
     try {
-      const data = await sensible(() => api.getBackup());
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `klikphone_backup_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success('Backup téléchargé');
+      await sensible(() => api.exportBackup());
+      toast.success('Sauvegarde téléchargée');
+      chargerEtatSauvegarde();
     } catch (err) {
-      toast.error(err?.message ? `Erreur backup : ${err.message}` : 'Erreur backup');
+      toast.error(err?.message ? `Sauvegarde impossible : ${err.message}` : 'Sauvegarde impossible');
     } finally {
       setBackupBusy(false);
+    }
+  };
+
+  const handleDownloadLisible = async () => {
+    if (lisibleBusy) return;
+    setLisibleBusy(true);
+    try {
+      await sensible(() => api.exportBackupLisible());
+      toast.success('Classeur clients et réparations téléchargé');
+    } catch (err) {
+      toast.error(err?.message ? `Export impossible : ${err.message}` : 'Export impossible');
+    } finally {
+      setLisibleBusy(false);
     }
   };
 
@@ -1397,7 +1434,7 @@ export default function ConfigPage() {
     try {
       const result = await sensible(() => api.importBackup(data));
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
-      toast.success(`Backup restauré : ${total} enregistrements importés`);
+      toast.success(`Sauvegarde restaurée : ${total.toLocaleString('fr-FR')} enregistrements`);
       // Une restauration remplace TOUTES les données : on vide tout le cache
       // (sinon dashboard/clients/commandes affichent les données d'avant le restore).
       clearCache();
@@ -1416,13 +1453,13 @@ export default function ConfigPage() {
       const text = await file.text();
       const data = JSON.parse(text);
       if (!data.tables) {
-        toast.error('Format de backup invalide');
+        toast.error("Ce fichier n'est pas une sauvegarde Klikphone");
         return;
       }
       confirmation.demander({
-        title: `Restaurer le backup du ${data.backup_date?.slice(0, 10) || '?'} ?`,
+        title: `Restaurer la sauvegarde du ${data.backup_date ? new Date(data.backup_date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '?'} ?`,
         description: 'Toutes les données actuelles (tickets, clients, réglages) sont remplacées par celles du fichier. Cette action est définitive.',
-        confirmLabel: 'Restaurer le backup',
+        confirmLabel: 'Restaurer la sauvegarde',
         destructive: true,
         onConfirm: () => restaurerBackup(data),
       });
@@ -2609,26 +2646,37 @@ export default function ConfigPage() {
 
           <div className="card card-body">
             <h2 className="t-h2 mb-1">Sauvegarde complète</h2>
-            <p className="text-sm text-slate-500 mb-4">
-              Téléchargez une sauvegarde JSON complète de la base de données (clients, tickets, configuration, équipe, catalogue).
+            <p className="text-sm text-slate-600 mb-3">
+              Toutes les données du logiciel : clients, réparations, devis, commandes, tarifs et réglages. Rangez le fichier
+              sur une clé USB ou un espace en ligne personnel. Les codes et mots de passe n'y figurent jamais : vous les
+              ressaisirez après une restauration.
             </p>
-            <div className="flex gap-2">
+            <EtatSauvegarde etat={etatSauvegarde} />
+            <div className="flex flex-wrap gap-2">
               <button type="button" onClick={handleDownloadBackup} disabled={backupBusy} aria-busy={backupBusy} className="btn-primary">
                 {backupBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Database aria-hidden="true" />}
-                {backupBusy ? 'Export en cours… (peut prendre une minute)' : 'Télécharger le backup (JSON)'}
+                {backupBusy ? 'Sauvegarde en cours… (jusqu’à une minute)' : 'Télécharger la sauvegarde'}
+              </button>
+              <button type="button" onClick={handleDownloadLisible} disabled={lisibleBusy} aria-busy={lisibleBusy}
+                aria-describedby="sauvegarde-lisible-aide" className="btn-secondary">
+                {lisibleBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+                Clients et réparations (Excel)
               </button>
             </div>
+            <p id="sauvegarde-lisible-aide" className="input-help mt-2">
+              Le classeur Excel se lit sans le logiciel : en cas de panne, vous retrouvez chaque réparation et son client.
+            </p>
           </div>
 
           <div className="card card-body">
-            <h2 className="t-h2 mb-1">Restaurer un backup</h2>
+            <h2 className="t-h2 mb-1">Restaurer une sauvegarde</h2>
             <p className="text-sm text-slate-600 mb-4">
-              Importez un fichier JSON de sauvegarde pour restaurer les données. Toutes les données actuelles sont
-              remplacées (confirmation demandée avant).
+              Les données du fichier remplacent les données actuelles (confirmation demandée avant). Tout ou rien :
+              en cas d'erreur, rien n'est modifié.
             </p>
             <label className={`btn-secondary focus-within:ring-2 focus-within:ring-brand-500 focus-within:ring-offset-2 ${importBusy ? 'cursor-wait text-slate-500' : 'cursor-pointer'}`}>
               {importBusy ? <Loader2 className="motion-safe:animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
-              {importBusy ? 'Restauration en cours…' : 'Importer un backup (.json)'}
+              {importBusy ? 'Restauration en cours…' : 'Restaurer une sauvegarde (.json)'}
               <input type="file" accept=".json" onChange={handleImportBackup} disabled={importBusy} className="sr-only" />
             </label>
           </div>

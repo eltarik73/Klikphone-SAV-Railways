@@ -24,6 +24,7 @@ from app.services import etagere
 from app.services import mentions
 from app.services import params as params_cache
 from app.services import presence
+from app.services import sauvegarde
 from app.services import prix as prix_moteur
 from app.services import sms
 
@@ -391,122 +392,81 @@ def change_pin(data: PinChangeRequest, request: Request, user: dict = Depends(re
     return {"ok": True}
 
 
-ALLOWED_BACKUP_TABLES = frozenset([
-    "clients", "tickets", "params", "membres_equipe", "commandes_pieces",
-    "catalog_marques", "catalog_modeles", "historique", "chat_messages",
-    "notes_tickets", "autocompletion", "devis", "devis_lignes",
-    "telephones_vente", "fidelite_historique",
-])
+# ─── Sauvegarde complète (app/services/sauvegarde.py) ────────────
+# Toutes les tables lues dans la base (plus de liste figée : l'ancienne n'en couvrait que 15 sur 44 — ni la grille
+# des tarifs, ni les attestations, ni le stock iPhone) ; secrets et codes de déverrouillage jamais dans le fichier.
 
-import re as _re_sql
-_SAFE_IDENT = _re_sql.compile(r"^[a-z][a-z0-9_]{0,63}$")
-
-
-def _safe_ident(name: str) -> str:
-    """Protection defense-in-depth : meme si `name` sort de la whitelist,
-    on valide qu'il correspond a un identifiant SQL strict (lowercase,
-    underscore, digits, max 64 chars). Empeche toute injection f-string."""
-    if not isinstance(name, str) or not _SAFE_IDENT.match(name):
-        raise HTTPException(400, f"Nom de table/colonne invalide: {name!r}")
-    return name
+def _journaliser_sauvegarde(request: Request, user: dict, action: str, details: str):
+    """Trace admin (compte, action, volumes ; aucune donnée personnelle). Jamais bloquant."""
+    import hashlib
+    from app.api.auth import client_ip
+    try:
+        ip_hash = hashlib.sha256(("kp:" + client_ip(request)).encode("utf-8")).hexdigest()[:16]
+        with get_cursor() as cur:
+            cur.execute(
+                """INSERT INTO admin_audit_log (user_login, user_target, action, target_type, target_id, details, ip_hash)
+                   VALUES (%s, %s, %s, 'sauvegarde', NULL, %s, %s)""",
+                (str(user.get("sub") or "")[:60], str(user.get("target") or "")[:30], action, details[:500], ip_hash))
+    except Exception as e:
+        print(f"[config] trace de sauvegarde non enregistrée : {type(e).__name__}")
 
 
 @router.get("/backup")
-def export_backup(user: dict = Depends(require_admin)):
-    """Exporte toute la BDD au format JSON pour backup."""
-    tables = {}
+def export_backup(request: Request, user: dict = Depends(require_admin)):
+    """Sauvegarde complète de la base au format JSON (restaurable par POST /backup/import)."""
     with get_cursor() as cur:
-        for table in ALLOWED_BACKUP_TABLES:
-            try:
-                cur.execute(f"SELECT * FROM {_safe_ident(table)}")
-                rows = cur.fetchall()
-                def serialize(v):
-                    if isinstance(v, (datetime, date)):
-                        return v.isoformat()
-                    if isinstance(v, Decimal):
-                        return float(v)
-                    if isinstance(v, timedelta):
-                        return v.total_seconds()
-                    return v
-                tables[table] = [{k: serialize(v) for k, v in row.items()} for row in rows]
-            except Exception:
-                tables[table] = []
-
+        contenu = sauvegarde.exporter(cur)
+        sauvegarde.noter_sauvegarde(cur, contenu["erreurs"])
+    total = sum(contenu["comptes"].values())
+    _journaliser_sauvegarde(request, user, "sauvegarde_export",
+                            f"{len(contenu['tables'])} tables, {total} lignes, erreurs : {len(contenu['erreurs'])}")
+    params_cache.invalidate()
     return JSONResponse(
-        content={"backup_date": datetime.now().isoformat(), "tables": tables},
-        headers={"Content-Disposition": f"attachment; filename=klikphone_backup_{datetime.now().strftime('%Y%m%d')}.json"},
+        content=contenu,
+        headers={"Content-Disposition": f"attachment; filename=klikphone_sauvegarde_{datetime.now().strftime('%Y-%m-%d')}.json"},
+    )
+
+
+@router.get("/backup/etat")
+def etat_backup(user: dict = Depends(get_current_user)):
+    """{derniere, jours, erreurs} : dernière sauvegarde téléchargée (rappel affiché à tout le personnel)."""
+    with get_cursor() as cur:
+        return sauvegarde.etat(cur)
+
+
+@router.get("/backup/lisible")
+def export_backup_lisible(request: Request, user: dict = Depends(require_admin)):
+    """Clients et réparations en Excel : lisible sans le logiciel (en cas de panne)."""
+    from fastapi.responses import Response
+    with get_cursor() as cur:
+        contenu = sauvegarde.classeur_lisible(cur)
+    _journaliser_sauvegarde(request, user, "sauvegarde_lisible", f"{len(contenu)} octets")
+    return Response(
+        content=contenu,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 f"attachment; filename=klikphone_clients_reparations_{datetime.now().strftime('%Y-%m-%d')}.xlsx"},
     )
 
 
 @router.post("/backup/import")
-def import_backup(backup: dict, user: dict = Depends(require_admin)):
-    """Importe un backup JSON complet. Remplace toutes les données existantes."""
-    tables = backup.get("tables", {})
-    if not tables:
-        raise HTTPException(400, "Format de backup invalide (pas de clé 'tables')")
-
-    # Ordre d'import : tables parentes d'abord
-    import_order = ["params", "membres_equipe", "catalog_marques", "catalog_modeles", "clients", "tickets", "commandes_pieces", "historique", "chat_messages", "notes_tickets", "autocompletion", "devis", "devis_lignes", "telephones_vente", "fidelite_historique"]
-    counts = {}
-
-    with get_cursor() as cur:
-        # Réglages de l'activité de l'équipe (pointage, position de la boutique) : jamais repris
-        # d'une sauvegarde (ils ne s'activent que par /api/equipe/reglages, tracé) ; valeurs
-        # actuelles conservées
-        equipe_gardes = []
-        if "params" in tables:
-            cur.execute("SELECT cle, valeur FROM params")
-            equipe_gardes = [r for r in cur.fetchall() or [] if est_cle_equipe(r["cle"])]
-            tables = {**tables, "params": [r for r in tables.get("params") or []
-                                           if not (isinstance(r, dict) and est_cle_equipe(str(r.get("cle") or "")))]}
-        # Supprimer dans l'ordre inverse (FK)
-        for table in reversed(import_order):
-            if table not in ALLOWED_BACKUP_TABLES:
-                continue
-            if table in tables:
-                cur.execute(f"DELETE FROM {_safe_ident(table)}")
-        for r in equipe_gardes:
-            cur.execute("INSERT INTO params (cle, valeur) VALUES (%s, %s) ON CONFLICT (cle) DO NOTHING",
-                        (r["cle"], r["valeur"]))
-
-        for table in import_order:
-            if table not in ALLOWED_BACKUP_TABLES:
-                continue
-            rows = tables.get(table, [])
-            if not rows:
-                counts[table] = 0
-                continue
-            # Whitelist stricte des noms de colonnes via _safe_ident
-            cols = [_safe_ident(c.lower()) for c in rows[0].keys() if _SAFE_IDENT.match(c.lower())]
-            placeholders = ", ".join(["%s"] * len(cols))
-            col_names = ", ".join(cols)
-            for row in rows:
-                vals = [row.get(c) for c in cols]
-                cur.execute(
-                    f"INSERT INTO {_safe_ident(table)} ({col_names}) VALUES ({placeholders}) ON CONFLICT DO NOTHING",
-                    vals,
-                )
-            counts[table] = len(rows)
-
-        # Reset sequences
-        for table in import_order:
-            if table not in ALLOWED_BACKUP_TABLES or table == "params":
-                continue
-            try:
-                safe = _safe_ident(table)
-                cur.execute(
-                    f"SELECT setval(pg_get_serial_sequence('{safe}', 'id'), COALESCE(MAX(id), 1)) FROM {safe}"
-                )
-            except Exception:
-                pass
-
+def import_backup(backup: dict, request: Request, user: dict = Depends(require_admin)):
+    """Restaure une sauvegarde JSON : les tables du fichier remplacent celles de la base (tout ou rien).
+    Secrets et réglages de l'activité de l'équipe actuels toujours gardés."""
+    try:
+        with get_cursor() as cur:
+            res = sauvegarde.restaurer(cur, backup)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    _journaliser_sauvegarde(request, user, "sauvegarde_restauration",
+                            f"{len(res['imported'])} tables, {sum(res['imported'].values())} lignes")
     clear_catalog_cache()
     params_cache.invalidate()
     from app.api.chat import invalider_cache_chat
     from app.api.notifications_center import invalider_cache_notifications
     invalider_cache_chat()
     invalider_cache_notifications()
-    return {"ok": True, "imported": counts}
+    return {"ok": True, **res}
 
 
 @router.post("/test-discord")

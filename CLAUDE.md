@@ -519,6 +519,24 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   daté ou fiche anonymisée ; source `boutique:clients-existants-2026-11-11` (retour arrière possible par cette source).
 - **Tests** : `tests/test_offres_cochees.py`, `test_lot5_conformite.py` (base réelle), vitest `lot5_accueil`, `borne_depot`.
 
+## Sauvegarde complète (`app/services/sauvegarde.py`, gérant 11/11/2026)
+
+- **Pourquoi** : Supabase est au plan **gratuit** (aucune sauvegarde téléchargeable de son côté) : le fichier de
+  *Configuration → Sauvegarde* est la seule copie du gérant. L'ancien export ne couvrait que 15 tables sur 44 (ni la
+  grille des tarifs, ni les attestations, ni le stock iPhone) et rendait vide en silence une table illisible.
+- **Export** `GET /api/config/backup` (élévation admin) : toutes les tables du schéma public lues dans la base (une table
+  ajoutée plus tard est sauvée sans rien changer), sauf `TABLES_EXCLUES` (sessions / révocations admin ; catalogue
+  fournisseur et imports de prix, refaits par la synchro) ; jamais les secrets de `params` (`config.est_secret`, listés
+  dans `secrets_omis`) ni `tickets.pin / pattern` ; table illisible → `erreurs` (savepoint), jamais vide en silence.
+  Format v2 `{format, version, backup_date, tables, comptes, erreurs, exclues, colonnes_omises, secrets_omis}` ;
+  binaire en `{"$base64": …}`. Date et tables en erreur gardées dans `params` (`SAUVEGARDE_DERNIERE[_ERREURS]`),
+  `GET …/backup/etat` (tout le personnel) → rappel « Dernière sauvegarde … — pensez à en refaire une » après 30 jours.
+- **Classeur lisible** `GET …/backup/lisible` : Excel « Réparations » + « Clients », lisible sans le logiciel.
+- **Restauration** `POST …/backup/import` : tables du fichier présentes dans la base, parents d'abord (clés étrangères
+  lues dans `pg_constraint`), colonnes communes, `execute_values` par 500, jsonb / bytea / interval adaptés, secrets et
+  réglages d'équipe actuels gardés, séquences recalées ; tout ou rien (une transaction). Un fichier v1 se restaure.
+- **Tests** : `tests/test_sauvegarde.py`, vitest `sauvegarde.test.jsx`.
+
 ## Workflow automatique après chaque modification UI
 
 Après chaque modification d'un fichier .tsx, .jsx ou .html dans src/components ou app/ :

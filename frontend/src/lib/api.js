@@ -853,6 +853,17 @@ class ApiClient {
     this._invalidate('/api/');
     return this.request('/api/config/backup/import', { method: 'POST', body: JSON.stringify(data) }, 180_000);
   }
+  // Sauvegarde complète : le fichier du serveur téléchargé tel quel (restaurable), jamais relancé
+  exportBackup() {
+    return this.exportFile('/api/config/backup', `klikphone_sauvegarde_${new Date().toISOString().slice(0, 10)}.json`);
+  }
+  // Clients et réparations en Excel : lisible sans le logiciel, en cas de panne
+  exportBackupLisible() {
+    return this.exportFile('/api/config/backup/lisible',
+      `klikphone_clients_reparations_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+  // → { derniere (ISO) | null, jours | null, erreurs: [tables non lues la dernière fois] }
+  getBackupEtat() { return this.request('/api/config/backup/etat', { cache: 'no-store' }); }
   // Fichier téléchargé (export clients : élévation admin exigée par le serveur, jeton envoyé comme
   // request()). Refus d'élévation : err.code = 'admin_required', comme request() (useAdminElevation).
   async exportFile(path, filename) {
