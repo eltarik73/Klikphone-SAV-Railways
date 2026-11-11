@@ -212,3 +212,8 @@ def test_classeur_lisible_reparations_et_clients_sans_formule():
     assert ligne[10] == 129.0 and ligne[11] == "Oui"
     assert rep.cell(row=2, column=16).data_type == "s"           # « =… » reste du texte
     assert [c.value for c in wb["Clients"][2]] == ["Martin", "Léa", "0612345678", None, None, "02/01/2026", 1, "Oui"]
+
+
+def test_valeurs_non_finies_jamais_dans_le_fichier():
+    assert S.valeur_json(float("nan")) is None and S.valeur_json(Decimal("NaN")) is None
+    assert S.valeur_json(float("inf")) is None and S.valeur_json(Decimal("12.50")) == 12.5

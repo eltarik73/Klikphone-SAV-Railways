@@ -17,6 +17,7 @@ secrets_omis} ; une sauvegarde version 1 (15 tables, sans « format ») se resta
 """
 import base64
 import io
+import math
 import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -84,8 +85,9 @@ def ordre_parents(cur, tables) -> list:
 def valeur_json(v):
     if isinstance(v, (datetime, date, time)):
         return v.isoformat()
-    if isinstance(v, Decimal):
-        return float(v)
+    if isinstance(v, (Decimal, float)):
+        # NaN / infini : interdits en JSON (la réponse entière échouerait) → valeur vide
+        return float(v) if math.isfinite(v) else None
     if isinstance(v, timedelta):
         return v.total_seconds()
     if isinstance(v, (bytes, bytearray, memoryview)):
