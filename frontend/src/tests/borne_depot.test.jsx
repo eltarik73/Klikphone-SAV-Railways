@@ -311,7 +311,10 @@ describe('Borne /client en 4 étapes', () => {
     expect(probleme).toHaveTextContent('Code de 4 caractères (masqué)');
     expect(probleme).not.toHaveTextContent('2580');
     expect(screen.getByRole('region', { name: 'Vos données personnelles' })).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: /J'accepte de recevoir/ })).not.toBeChecked();
+    // Offres cochées d'office (gérant, 11/11/2026) : décochées ici pour vérifier l'envoi du refus
+    const offres = screen.getByRole('checkbox', { name: /Recevoir par SMS ou e-mail les offres/ });
+    expect(offres).toBeChecked();
+    fireEvent.click(offres);
     expect(screen.getByRole('checkbox', { name: /Je patiente en boutique/ })).not.toBeChecked();
 
     // « Modifier » renvoie à l'étape 1 avec les valeurs ; retour à la vérification en 3 « Suivant »

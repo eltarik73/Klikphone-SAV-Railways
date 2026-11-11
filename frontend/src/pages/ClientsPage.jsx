@@ -782,7 +782,7 @@ export default function ClientsPage() {
                   </span>
                 </button>
                 <p id="client-consentement-aide" className="input-help mb-4">
-                  À activer seulement avec l'accord exprès du client. Le retrait s'applique tout de suite.
+                  Activé d'office pour nos clients. À couper dès que le client le demande : le retrait s'applique tout de suite.
                 </p>
                 <p className="text-xs text-slate-500 mb-3">
                   Demande du client : export de ses données (fichier JSON) ou anonymisation. Code administrateur requis.

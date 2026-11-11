@@ -12,7 +12,7 @@ import {
 } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
-import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import { MentionRgpd, ConsentementMarketing, CONSENTEMENT_PAR_DEFAUT, useInfosRgpd } from './ConfidentialitePage';
 import DelaiReparation from '../components/DelaiReparation';
 import { dateDelai, phrasePret } from '../lib/delai';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
@@ -43,7 +43,7 @@ const FORM_INITIAL = {
   nom: '', prenom: '', telephone: '', tel_contact: '', email: '', societe: '',
   categorie: '', marque: '', modele: '', modele_autre: '',
   panne: '', panne_detail: '', pin: '', pattern: '', acces_mode: null, notes_client: '',
-  imei: '', carte_camby: false, consentement_marketing: false, attente_boutique: false,
+  imei: '', carte_camby: false, consentement_marketing: CONSENTEMENT_PAR_DEFAUT, attente_boutique: false,
 };
 
 // Session du personnel ouverte sur ce poste : tableau de bord de retour (/accueil ou /tech), sinon null

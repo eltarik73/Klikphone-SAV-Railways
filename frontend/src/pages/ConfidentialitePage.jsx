@@ -205,9 +205,15 @@ export function MentionRgpd({ codes = true, kiosque = false, className = '' }) {
 }
 
 /**
- * Case FACULTATIVE, jamais pré-cochée : sans effet sur le dépôt. Canal et objet nommés
- * (consentement spécifique, CPCE L34-5) ; les demandes d'avis n'en dépendent pas aujourd'hui.
+ * Offres de la boutique à ses clients : case COCHÉE D'OFFICE (gérant, 11/11/2026), que le client
+ * décoche pour refuser. Cadre : offres sur des services analogues à un client existant (CPCE L34-5
+ * al. 4) — le client est informé et peut s'y opposer simplement ici, puis dans chaque message.
+ * Ce n'est pas un consentement « opt-in » : le libellé ne dit donc pas « J'accepte ».
+ * Sans effet sur le dépôt ; une case décochée ne retire pas un accord donné avant, et une case restée
+ * cochée ne remet pas un client qui avait retiré son accord (côté serveur, clients._SET_CONSENTEMENTS).
  */
+export const CONSENTEMENT_PAR_DEFAUT = true;
+
 export function ConsentementMarketing({ id, checked, onChange }) {
   const { nom } = useInfosRgpd();
   const aideId = `${id}-aide`;
@@ -217,11 +223,12 @@ export function ConsentementMarketing({ id, checked, onChange }) {
         <input id={id} type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)}
           aria-describedby={aideId}
           className="checkbox w-6 h-6 mt-0.5" />
-        <span className="text-base font-medium leading-snug text-slate-800 pt-0.5">J'accepte de recevoir par SMS ou e-mail des offres de {nom}</span>
+        <span className="text-base font-medium leading-snug text-slate-800 pt-0.5">Recevoir par SMS ou e-mail les offres de {nom}</span>
       </label>
       {/* <span> et non <p> : `.depot-form p` imposerait 16 px slate-700 à cette aide */}
       <span id={aideId} className="block mt-1 pl-9 text-sm leading-snug text-slate-500">
-        Facultatif, sans effet sur votre réparation. Vous pouvez retirer votre accord à tout moment.
+        Décochez la case si vous ne souhaitez pas les recevoir. Sans effet sur votre réparation ;
+        vous pourrez aussi vous désinscrire depuis chaque message.
       </span>
     </div>
   );

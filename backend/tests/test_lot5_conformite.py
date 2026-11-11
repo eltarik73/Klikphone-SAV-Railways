@@ -713,13 +713,17 @@ def test_reel_client_consentements(reel):
     assert _cid_ref(r) == sans_nom
     row = _sql(reel, "SELECT * FROM clients WHERE id = %s", sans_nom)[0]
     assert row["rgpd_informe_le"] and row["consentement_marketing"] is False and row["consentement_marketing_le"] is None
-    # Même identité (casse et accents ignorés) : rattachement comme avant, accord enregistré avec son canal
+    # Même identité (casse et accents ignorés) : rattachement comme avant ; la case des offres, cochée
+    # d'office depuis le 11/11/2026, ne remet JAMAIS un client qui avait retiré son accord
     r = c.post("/api/clients", json={"nom": "FICTIF", "prenom": "elodie", "telephone": "06 00 00 09 02",
                                      "consentement_marketing": True})
     assert _cid_ref(r) == cid
     row = ligne()
-    assert row["consentement_marketing"] is True and row["consentement_marketing_source"] == src("borne")
-    assert row["consentement_marketing_le"] > retrait and row["consentement_marketing_retire_le"] == retrait
+    assert row["consentement_marketing"] is False and row["consentement_marketing_retire_le"] == retrait
+    assert row["consentement_marketing_le"].isoformat() == premier
+    # Le personnel peut le rétablir à la demande du client, depuis la fiche
+    assert c.patch(f"/api/clients/{cid}", headers=_h(), json={"consentement_marketing": True}).status_code == 200
+    assert ligne()["consentement_marketing"] is True
     # Sans information RGPD : aucune date posée
     _sql(reel, "DELETE FROM clients WHERE telephone = %s", "0600000903")
     r = c.post("/api/clients", headers=_h(), json={"nom": "Fictif", "telephone": "0600000903"})

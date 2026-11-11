@@ -123,16 +123,19 @@ def politique(ident: dict = None) -> dict:
             "e-mail ;\n"
             "- code ou schéma de déverrouillage : facultatif ; sans lui, certains tests (écran tactile, "
             "caméras, Face ID ou Touch ID…) ne peuvent pas être faits avant et après la réparation ;\n"
-            "- accord pour les communications commerciales : facultatif ; le refuser est sans conséquence "
-            "sur la réparation.\n\n"
+            "- offres commerciales : la case est cochée d'office ; la décocher (ou vous désinscrire plus tard) "
+            "est sans conséquence sur la réparation.\n\n"
             "Aucune décision automatisée ni aucun profilage n'est fondé sur vos données.")},
         {"titre": "Finalités et bases légales", "texte": (
             "- Suivi de votre réparation (réception, diagnostic, devis, messages d'avancement, restitution, "
             "garantie) : exécution du contrat ;\n"
             "- facturation et comptabilité : obligation légale ;\n"
             "- programme de fidélité : exécution du contrat ;\n"
-            "- communications commerciales (offres, nouveautés) : votre consentement, que vous pouvez "
-            "retirer à tout moment.")},
+            "- offres et nouveautés de la boutique (réparation, téléphones, accessoires) par SMS ou e-mail : "
+            "en tant que client, sur des services analogues à ceux que vous nous avez confiés (article L34-5 du "
+            "code des postes et des communications électroniques). Vous pouvez vous y opposer gratuitement et "
+            "à tout moment : en décochant la case lors du dépôt, en le demandant en boutique, ou depuis chaque "
+            "message (lien de désinscription, réponse STOP).")},
         {"titre": "Destinataires", "texte": (
             f"Vos données sont réservées à l'équipe de {nom}. Elles ne sont ni vendues ni cédées. "
             f"Nos sous-traitants techniques n'y accèdent que pour rendre leur service :\n{_sous_traitants()}"
@@ -623,3 +626,55 @@ def demarrer_retention_quotidienne(delai_initial: float = 300, periode: float = 
                          name="rgpd_retention")
     _tache["thread"] = t
     t.start()
+
+
+# ─── Offres : clients existants cochés une fois (gérant, 11/11/2026) ─────────
+# « Tous nos clients ont accepté d'être contactés » : la case des offres devient cochée d'office et
+# les fiches existantes sont cochées une seule fois, au démarrage. Jamais une fiche anonymisée, et
+# JAMAIS un client qui avait retiré son accord (consentement_marketing_retire_le) : le recontacter
+# serait illégal. La source « boutique:clients-existants-2026-11-11 » distingue ces fiches (preuve,
+# et retour arrière possible : UPDATE … WHERE consentement_marketing_source = SOURCE_CLIENTS_EXISTANTS).
+MARQUEUR_OFFRES_EXISTANTS = "OFFRES_CLIENTS_EXISTANTS_2026_11_11"
+SOURCE_CLIENTS_EXISTANTS = "boutique:clients-existants-2026-11-11"
+
+
+def cocher_offres_clients_existants(cur) -> dict:
+    """Coche les offres de toutes les fiches qui ne l'étaient pas, sauf retrait d'accord ou anonymisation.
+    → {coches, retraits_respectes}"""
+    cur.execute("""
+        UPDATE clients
+           SET consentement_marketing = TRUE, consentement_marketing_le = NOW(),
+               consentement_marketing_source = %s
+         WHERE NOT COALESCE(consentement_marketing, FALSE)
+           AND consentement_marketing_retire_le IS NULL
+           AND anonymise_le IS NULL
+    """, (SOURCE_CLIENTS_EXISTANTS,))
+    coches = cur.rowcount or 0
+    cur.execute("""
+        SELECT COUNT(*) AS n FROM clients
+         WHERE NOT COALESCE(consentement_marketing, FALSE)
+           AND consentement_marketing_retire_le IS NOT NULL AND anonymise_le IS NULL
+    """)
+    return {"coches": coches, "retraits_respectes": int((cur.fetchone() or {}).get("n") or 0)}
+
+
+def cocher_offres_au_demarrage():
+    """Au démarrage, une seule fois (marqueur posé dans la même transaction, résultat gardé dans params).
+    Jamais bloquant. → résumé ou None (déjà fait, ou échec)."""
+    try:
+        with get_cursor() as cur:
+            cur.execute("INSERT INTO params (cle, valeur) VALUES (%s, NOW()::text) "
+                        "ON CONFLICT (cle) DO NOTHING RETURNING cle", (MARQUEUR_OFFRES_EXISTANTS,))
+            if not cur.fetchone():
+                return None
+            res = cocher_offres_clients_existants(cur)
+            cur.execute("UPDATE params SET valeur = %s WHERE cle = %s",
+                        (f"{datetime.now().isoformat(timespec='seconds')} coches={res['coches']} "
+                         f"retraits_respectes={res['retraits_respectes']}", MARQUEUR_OFFRES_EXISTANTS))
+    except Exception as e:
+        logger.warning("Offres des clients existants : échec (%s)", type(e).__name__)
+        return None
+    logger.info("Offres cochées pour %s clients existants (%s retraits d'accord respectés)",
+                res["coches"], res["retraits_respectes"])
+    params_cache.invalidate()
+    return res

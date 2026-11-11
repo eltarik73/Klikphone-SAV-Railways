@@ -8,7 +8,7 @@ import { tuile, EnTete, ChampsVous, TuilesPannes, isValidPhone, isValidEmail, es
 } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, modeleRequis, MARQUE_AUTRE } from '../lib/catalog';
-import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import { MentionRgpd, ConsentementMarketing, CONSENTEMENT_PAR_DEFAUT, useInfosRgpd } from './ConfidentialitePage';
 import { LogoKlikPhone } from '../components/LogoK';
 import {
   ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, AlertCircle, KeyRound,
@@ -35,7 +35,7 @@ export default function DeposerPage() {
     categorie: '', marque: '', modele: '', modele_autre: '',
     panne: '', panne_detail: '', notes_client: '',
     pin: '', pattern: '', acces_mode: null,
-    carte_camby: false, consentement_marketing: false,
+    carte_camby: false, consentement_marketing: CONSENTEMENT_PAR_DEFAUT,
   });
   const catalogue = useCatalog(form.categorie || null, form.marque);
 

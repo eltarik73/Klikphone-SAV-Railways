@@ -1409,6 +1409,8 @@ async def lifespan(app: FastAPI):
         auth.deconnexion_generale_unique("2026_10_25")
     # Plus rien à valider (gérant, 06/11/2026) : les propositions de prix encore en attente sont réglées une fois
     propositions_prix.valider_en_attente_au_demarrage()
+    # Offres : clients existants cochés une fois, retraits d'accord respectés (gérant, 11/11/2026)
+    rgpd_api.cocher_offres_au_demarrage()
     # Recherche staff : après les ALTER, pour que toutes les colonnes indexées existent
     _migrations_recherche()
     # Fiche ticket : après le seed, pour fusionner « Écran casse » dans « Écran cassé »

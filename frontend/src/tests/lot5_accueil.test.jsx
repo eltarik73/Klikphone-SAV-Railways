@@ -296,11 +296,12 @@ async function allerALaVerification() {
   await screen.findByRole('heading', { name: 'Vérification' });
 }
 
-async function remplirJusquAuDepot({ consentir = false, attendre = false } = {}) {
+async function remplirJusquAuDepot({ refuser = false, attendre = false } = {}) {
   await allerALaVerification();
-  const consentement = screen.getByRole('checkbox', { name: /J'accepte de recevoir par SMS ou e-mail des offres de/ });
-  expect(consentement).not.toBeChecked();
-  if (consentir) fireEvent.click(consentement);
+  // Cochée d'office (gérant, 11/11/2026) : le client la décoche pour refuser les offres
+  const consentement = screen.getByRole('checkbox', { name: /Recevoir par SMS ou e-mail les offres de/ });
+  expect(consentement).toBeChecked();
+  if (refuser) fireEvent.click(consentement);
   const attente = screen.getByRole('checkbox', { name: /Je patiente en boutique/ });
   expect(attente).not.toBeChecked();
   if (attendre) fireEvent.click(attente);
@@ -335,23 +336,24 @@ describe('Borne /client : RGPD et priorité', () => {
     expect(within(dialog).getByRole('link', { name: /Ouvrir dans une page/ })).toHaveAttribute('href', '/confidentialite');
   });
 
-  it('libellé du consentement : canal et objet, au nom de la boutique', async () => {
+  it('libellé des offres : canal et objet, au nom de la boutique, case cochée d’office et refus expliqué', async () => {
     await allerALaVerification();
-    expect(await screen.findByRole('checkbox', { name: "J'accepte de recevoir par SMS ou e-mail des offres de Klikphone Chambéry" }))
-      .not.toBeChecked();
+    const caseOffres = await screen.findByRole('checkbox', { name: 'Recevoir par SMS ou e-mail les offres de Klikphone Chambéry' });
+    expect(caseOffres).toBeChecked();
+    expect(caseOffres).toHaveAccessibleDescription(/Décochez la case si vous ne souhaitez pas les recevoir/);
     expect(screen.queryByText(/demandes d'avis/)).not.toBeInTheDocument();
   });
 
   it('refus des offres : dépôt possible, rgpd_informe envoyé, priorité normale', async () => {
-    await remplirJusquAuDepot();
+    await remplirJusquAuDepot({ refuser: true });
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({
       nom: 'Martin', rgpd_informe: true, consentement_marketing: false,
     }), { asStaff: false });
     expect(apiMock.createTicket.mock.calls[0][0]).not.toHaveProperty('priorite');
   });
 
-  it('accord aux offres et client qui patiente : consentement et priorité « attente »', async () => {
-    await remplirJusquAuDepot({ consentir: true, attendre: true });
+  it('offres laissées cochées et client qui patiente : accord et priorité « attente »', async () => {
+    await remplirJusquAuDepot({ attendre: true });
     expect(apiMock.createOrGetClient).toHaveBeenCalledWith(expect.objectContaining({
       rgpd_informe: true, consentement_marketing: true,
     }), { asStaff: false });
@@ -411,7 +413,7 @@ describe('Fiche client : droits RGPD', () => {
     render(wrap(<ClientsPage />, ['/accueil/clients?client=12']));
     const bouton = await screen.findByRole('button', { name: /Accepte les offres/ });
     expect(bouton).toHaveAttribute('aria-pressed', 'true');
-    expect(bouton).toHaveAccessibleDescription(/accord exprès/);
+    expect(bouton).toHaveAccessibleDescription(/Activé d'office pour nos clients/);
     apiMock.getClient.mockResolvedValue({ ...CLIENT, consentement_marketing: false, consentement_marketing_le: null });
     fireEvent.click(bouton);
     await waitFor(() => expect(apiMock.updateClient).toHaveBeenCalledWith(12, { consentement_marketing: false }));

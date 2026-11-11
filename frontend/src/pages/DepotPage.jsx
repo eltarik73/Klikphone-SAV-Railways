@@ -9,7 +9,7 @@ import {
 } from '../components/DepotEtapes';
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
-import { MentionRgpd, ConsentementMarketing, useInfosRgpd } from './ConfidentialitePage';
+import { MentionRgpd, ConsentementMarketing, CONSENTEMENT_PAR_DEFAUT, useInfosRgpd } from './ConfidentialitePage';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
 import { LogoKlikPhone } from '../components/LogoK';
 import {
@@ -36,7 +36,7 @@ const INITIAL_FORM = {
   nom: '', prenom: '', telephone: '', tel_contact: '', email: '', societe: '',
   categorie: '', marque: '', modele: '', modele_autre: '',
   panne: '', panne_detail: '', pin: '', pattern: '', acces_mode: null, notes_client: '',
-  imei: '', carte_camby: false, consentement_marketing: false, attente_boutique: false,
+  imei: '', carte_camby: false, consentement_marketing: CONSENTEMENT_PAR_DEFAUT, attente_boutique: false,
 };
 
 export default function DepotPage() {

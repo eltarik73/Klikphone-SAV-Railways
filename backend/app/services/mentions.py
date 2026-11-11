@@ -20,7 +20,7 @@ CLES = (
 TVA_FRANCHISE = "TVA non applicable, art. 293 B du CGI"
 
 # Version de la politique de confidentialité (preuve du consentement : clients.consentement_marketing_source)
-POLITIQUE_VERSION = "2026-10-16"
+POLITIQUE_VERSION = "2026-11-11"   # offres : case cochée d'office, opposition (L34-5)
 
 CGV_DEPOT_DEFAUT = (
     "Nous ne consultons ni n'accédons aux données de votre appareil. Sauvegardez vos "

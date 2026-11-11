@@ -501,6 +501,24 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   pièce `par_ecran: true` et `calcul {ht, ht_ecran, …}` — « (15,00 + 13,00) × 1,2 + 70 = 103,60 → 109 € ».
 - **Tests** : `tests/test_batterie_par_ecran.py` (curseurs simulés), vitest `reparation_smartphones.test.jsx`.
 
+## Offres commerciales : case cochée d'office (gérant, 11/11/2026)
+
+- **Cadre** : offres de la boutique à ses propres clients sur des services analogues (réparation, téléphones,
+  accessoires) — exception « client existant » de l'article L34-5 du CPCE, pas un consentement « opt-in » : le client
+  doit pouvoir s'y opposer simplement **à la collecte** (case à décocher) **et dans chaque message** (lien de
+  désinscription, « STOP » en SMS — à mettre dans toute campagne). Une case pré-cochée ne vaut jamais consentement RGPD :
+  ne pas l'utiliser pour autre chose (partenaires, revente, profilage).
+- **Formulaires** (comptoir `ClientFormPage`, borne `DepotPage`, dépôt à distance `DeposerPage`) : état initial
+  `CONSENTEMENT_PAR_DEFAUT` (`ConfidentialitePage.jsx`), libellé « Recevoir par SMS ou e-mail les offres de … » et aide
+  « Décochez la case si vous ne souhaitez pas les recevoir… ». Politique de confidentialité `POLITIQUE_VERSION` 2026-11-11.
+- **Retrait respecté** : `clients._SET_CONSENTEMENTS` n'écrit l'accord que si `consentement_marketing_retire_le IS NULL`
+  — une case restée cochée ne remet jamais un client qui avait retiré son accord ; seul le personnel le rétablit sur la
+  fiche (PATCH), à la demande du client.
+- **Clients existants** : cochés une fois au démarrage (`rgpd.cocher_offres_au_demarrage`, marqueur
+  `OFFRES_CLIENTS_EXISTANTS_2026_11_11` dans `params`, valeur = date + `coches=… retraits_respectes=…`), sauf retrait
+  daté ou fiche anonymisée ; source `boutique:clients-existants-2026-11-11` (retour arrière possible par cette source).
+- **Tests** : `tests/test_offres_cochees.py`, `test_lot5_conformite.py` (base réelle), vitest `lot5_accueil`, `borne_depot`.
+
 ## Workflow automatique après chaque modification UI
 
 Après chaque modification d'un fichier .tsx, .jsx ou .html dans src/components ou app/ :

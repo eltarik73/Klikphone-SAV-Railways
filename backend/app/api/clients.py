@@ -85,18 +85,20 @@ def source_consentement(canal: str) -> str:
     return f"{canal}:politique-{mentions.POLITIQUE_VERSION}"
 
 
-# Information : date du dernier avis de confidentialité accepté. Consentement : seule
-# l'acceptation compte ici (case décochée par défaut : elle ne retire pas un accord
-# donné avant) ; le retrait passe par PATCH /api/clients/{id}. Date et source ne
-# changent qu'au passage à l'accord. Dans un UPDATE, chaque expression lit
-# l'ancienne ligne : l'ordre des colonnes est sans effet.
-_SET_CONSENTEMENTS = """
+# Information : date du dernier avis de confidentialité accepté. Offres : seule l'acceptation
+# compte ici (une case décochée ne retire pas un accord donné avant) ; le retrait passe par
+# PATCH /api/clients/{id}. Date et source ne changent qu'au passage à l'accord. La case des
+# formulaires est cochée d'office (gérant, 11/11/2026) : une case restée cochée ne remet donc
+# JAMAIS un client qui avait retiré son accord (consentement_marketing_retire_le) — seul le
+# personnel, sur la fiche (PATCH), peut le rétablir à sa demande. Dans un UPDATE, chaque
+# expression lit l'ancienne ligne : l'ordre des colonnes est sans effet.
+_ACCORD_NOUVEAU = ("%(accord)s AND NOT COALESCE(consentement_marketing, FALSE)"
+                   " AND consentement_marketing_retire_le IS NULL")
+_SET_CONSENTEMENTS = f"""
     rgpd_informe_le = CASE WHEN %(informe)s THEN NOW() ELSE rgpd_informe_le END,
-    consentement_marketing_le = CASE WHEN %(accord)s AND NOT COALESCE(consentement_marketing, FALSE)
-                                     THEN NOW() ELSE consentement_marketing_le END,
-    consentement_marketing_source = CASE WHEN %(accord)s AND NOT COALESCE(consentement_marketing, FALSE)
-                                         THEN %(source)s ELSE consentement_marketing_source END,
-    consentement_marketing = CASE WHEN %(accord)s THEN TRUE ELSE consentement_marketing END"""
+    consentement_marketing_le = CASE WHEN {_ACCORD_NOUVEAU} THEN NOW() ELSE consentement_marketing_le END,
+    consentement_marketing_source = CASE WHEN {_ACCORD_NOUVEAU} THEN %(source)s ELSE consentement_marketing_source END,
+    consentement_marketing = CASE WHEN {_ACCORD_NOUVEAU} THEN TRUE ELSE consentement_marketing END"""
 
 
 def _consentements(data, canal: str, accord_autorise: bool = True) -> dict:
