@@ -279,6 +279,8 @@ def _anonymiser(cur, ids: list) -> tuple:
         UPDATE attestations SET nom = %s, prenom = '', adresse = '', telephone = '', email = '', imei = ''
         WHERE client_id = ANY(%s)
     """, (NOM_ANONYME, faits))
+    # Tombola : une fiche anonymisée ne participe plus (les gagnants passés perdent leur nom avec la fiche)
+    _sous_savepoint(cur, "DELETE FROM tombola_participations WHERE client_id = ANY(%s) AND rang IS NULL", (faits,))
     _anonymiser_notifications(cur, faits)
     return faits, codes
 
@@ -358,6 +360,11 @@ def export_client(client_id: int, request: Request, user: dict = Depends(require
         devis_lignes = _lignes(cur.fetchall())
         attestations = _optionnel(
             cur, "SELECT * FROM attestations WHERE client_id = %s ORDER BY date_creation, id", (client_id,))
+        tombolas = _optionnel(cur, """
+            SELECT t.titre, t.tirage_le, p.source, p.inscrit_le, p.rang AS lot_gagne, p.tire_le,
+                   p.prevenu_le, p.lot_remis_le, p.remplace_le
+            FROM tombola_participations p JOIN tombolas t ON t.id = p.tombola_id
+            WHERE p.client_id = %s ORDER BY p.inscrit_le, p.id""", (client_id,))
         _journaliser(cur, request, user, "rgpd_export", client_id, f"{len(tickets)} ticket(s)")
     contenu = {
         "export_le": datetime.now().isoformat(timespec="seconds"),
@@ -370,6 +377,7 @@ def export_client(client_id: int, request: Request, user: dict = Depends(require
         "devis": devis,
         "devis_lignes": devis_lignes,
         "attestations": attestations,
+        "tombolas": tombolas,
     }
     return JSONResponse(contenu, headers={
         "Cache-Control": "no-store",

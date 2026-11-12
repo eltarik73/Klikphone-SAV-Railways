@@ -42,9 +42,11 @@ from app.api import rgpd as rgpd_api
 from app.api import propositions_prix
 from app.api import fournisseurs as fournisseurs_api
 from app.api import equipe as equipe_api
+from app.api import tombola as tombola_api
 from app.services import presence
 from app.services import veille_prix
 from app.services import nettoyage
+from app.services import tombola as tombola_service
 from app.services import fournisseurs
 from app.services import mentions
 
@@ -585,6 +587,37 @@ _DDL_ALTERS = [
         prix_maj_le TIMESTAMP,
         PRIMARY KEY (fournisseur, ref)
     )""",
+    # Tombola des clients (services/tombola) : gratuite, une participation par numéro, tirage daté.
+    # lots = un lot par ligne (autant de gagnants que de lignes) ; aucune colonne de prix ni de mise.
+    """CREATE TABLE IF NOT EXISTS tombolas (
+        id SERIAL PRIMARY KEY,
+        titre TEXT NOT NULL,
+        lots TEXT NOT NULL,
+        tirage_le TIMESTAMPTZ NOT NULL,
+        statut TEXT NOT NULL DEFAULT 'ouverte',
+        reglement TEXT,
+        participants_au_tirage INTEGER,
+        tiree_le TIMESTAMPTZ,
+        tiree_par TEXT,
+        cree_par TEXT,
+        cree_le TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )""",
+    # rang = lot gagné (1 = premier tiré) ; remplace_le = gagnant injoignable, remplacé par un nouveau tirage
+    """CREATE TABLE IF NOT EXISTS tombola_participations (
+        id SERIAL PRIMARY KEY,
+        tombola_id INTEGER NOT NULL REFERENCES tombolas(id) ON DELETE CASCADE,
+        client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+        cle_personne TEXT NOT NULL,
+        source TEXT,
+        inscrit_le TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        inscrit_par TEXT,
+        rang INTEGER,
+        tire_le TIMESTAMPTZ,
+        prevenu_le TIMESTAMPTZ,
+        lot_remis_le TIMESTAMPTZ,
+        remplace_le TIMESTAMPTZ,
+        UNIQUE (tombola_id, cle_personne)
+    )""",
 ]
 
 # Index déjà présent : écarté avant exécution (CREATE INDEX IF NOT EXISTS prend
@@ -649,6 +682,9 @@ _DDL_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_sid ON connexions_equipe (sid)",
     "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_activite ON connexions_equipe (derniere_activite)",
     "CREATE INDEX IF NOT EXISTS idx_connexions_equipe_debut ON connexions_equipe (debut)",
+    # Tombola : une seule ouverte à la fois (l'unicité d'une participation par numéro est dans la table)
+    "CREATE INDEX IF NOT EXISTS idx_tombola_participations_client ON tombola_participations (client_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tombolas_une_ouverte ON tombolas (statut) WHERE statut = 'ouverte'",
 ]
 
 
@@ -1437,6 +1473,8 @@ async def lifespan(app: FastAPI):
     # Veille des prix : un passage par semaine (comptages et notification, aucun prix écrit) ;
     # KP_VEILLE_PRIX=0 empêche même la tâche
     veille_prix.demarrer_veille_hebdomadaire()
+    # Tombola : chaque minute, tirage au sort des tombolas arrivées à leur date (KP_TOMBOLA_AUTO=0 l'empêche)
+    tombola_service.demarrer_tirage_automatique()
     params_cache.invalidate()
     # Connexions du pool ouvertes en tâche de fond (une seule a servi au démarrage)
     threading.Thread(target=_prechauffer_pool, daemon=True, name="pool_prechauffage").start()
@@ -1600,6 +1638,7 @@ app.include_router(grille.router)
 app.include_router(reception_api.router)
 app.include_router(rgpd_api.router)
 app.include_router(equipe_api.router)
+app.include_router(tombola_api.router)
 
 
 # --- HEALTH CHECK ---

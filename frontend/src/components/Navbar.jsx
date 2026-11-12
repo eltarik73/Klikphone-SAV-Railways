@@ -12,7 +12,7 @@ import {
   LogOut, LayoutDashboard, Users, Package, FileText,
   Menu, X, Search, PanelLeftClose, QrCode,
   RefreshCw, Tag, Star, Megaphone, ChevronDown,
-  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, Tv, CalendarClock,
+  Lock, Unlock, BarChart3, Settings, Zap, ShoppingBag, Tv, CalendarClock, Ticket,
 } from 'lucide-react';
 
 // Badges : un tour par minute onglet visible (aucun onglet masqué), sans relance automatique.
@@ -233,6 +233,8 @@ export default function Navbar() {
     { path: `${basePath}/attestation`, label: 'Attestation', icon: FileText },
     // Une seule entrée pour toutes les grilles (réparations, ventes, catalogue) : onglets sur la page
     { path: `${basePath}/tarifs`, label: 'Tarifs', icon: Tag, match: cheminsTarifs(basePath) },
+    // Tombola des clients : tout le personnel inscrit au comptoir et remet les lots ; créer et tirer = code admin
+    { path: `${basePath}/tombola`, label: 'Tombola', icon: Ticket },
     { path: '/suivi', label: 'Suivi (vue client)', icon: QrCode },
   ];
 
@@ -248,7 +250,11 @@ export default function Navbar() {
     { path: '/site-tarifs-iphone', label: 'Site Tarifs iPhone', icon: Tv },
   ];
 
-  const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
+  // Le tableau de bord (chemin racine de l'espace) ne s'allume que sur lui-même et sur ses fiches ticket :
+  // sinon il resterait « page en cours » sur toutes les pages, à côté de la vraie
+  const isActive = (path) => (path === basePath
+    ? location.pathname === path || location.pathname === `${path}/` || location.pathname.startsWith(`${path}/ticket/`)
+    : location.pathname === path || location.pathname.startsWith(path + '/'));
 
   const adminPages = ['/admin', '/avis-google', '/community', '/config', '/modeles-sans-prix', '/activite'];
   const isOnAdminPage = adminPages.some(p => location.pathname.includes(p));

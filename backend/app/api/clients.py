@@ -19,6 +19,7 @@ from app.api.public_documents import LimiteurDebit
 from app.services import client_ref
 from app.services import mentions
 from app.services import search as search_engine
+from app.services import tombola as tombola_service
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -38,6 +39,8 @@ class ClientCreateRgpd(ClientCreate):
     carte_camby: Optional[int] = Field(0, ge=0, le=1)
     rgpd_informe: Optional[bool] = None
     consentement_marketing: Optional[bool] = None
+    # Case « Je participe à la tombola » (jamais pré-cochée) : inscription gratuite à la tombola ouverte
+    tombola: Optional[bool] = None
 
 
 class ClientUpdateRgpd(ClientUpdate):
@@ -78,6 +81,8 @@ class ClientCreeOut(ClientOutRgpd):
     """Réponse de POST /api/clients : la fiche (personnel) ou la seule référence signée (anonyme)."""
     id: Optional[int] = None
     client_ref: Optional[str] = None
+    # Présent seulement si la case tombola était cochée : vrai = participation enregistrée
+    tombola_inscrit: Optional[bool] = None
 
 
 def source_consentement(canal: str) -> str:
@@ -412,7 +417,16 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
         _LIMITEUR_CREATION.verifier_ip(ip)
         verifier_essais(request, _cible_numero(data.telephone))
     camby = data.carte_camby if "carte_camby" in data.model_fields_set and data.carte_camby is not None else None
-    champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing"})
+    champs = data.model_dump(exclude={"rgpd_informe", "consentement_marketing", "tombola"})
+
+    def avec_tombola(cur, reponse, client_id: int):
+        """Case cochée : inscrit ce client (jamais bloquant) et le dit dans la réponse."""
+        if not data.tombola or fictif:
+            return reponse
+        inscrit = tombola_service.inscrire_sans_bloquer(
+            cur, client_id, data.telephone, "comptoir" if user else "borne", (user or {}).get("sub"))
+        return {**dict(reponse), "tombola_inscrit": inscrit}
+
     with get_cursor() as cur:
         # Vérifier si le client existe (numéro normalisé : évite les doublons 06 12… / 0612…).
         # Un numéro de remplissage (comptoir) ne désigne personne : jamais rattaché à une fiche.
@@ -443,7 +457,7 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
                 WHERE id = %(id)s
                 RETURNING *
             """, {**champs, **_consentements(data, "comptoir"), "camby": camby, "id": existing["id"]})
-            return cur.fetchone()
+            return avec_tombola(cur, cur.fetchone(), existing["id"])
 
         if existing:
             # Public : compléter seulement (jamais l'email) ; la carte peut être déclarée, jamais retirée
@@ -456,7 +470,7 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
                 WHERE id = %(id)s
             """, {**champs, **_consentements(data, "borne", meme_personne(existing, data.nom, data.prenom)),
                   "camby": 1 if camby else 0, "id": existing["id"]})
-            return reference_client(existing["id"], request)
+            return avec_tombola(cur, reference_client(existing["id"], request), existing["id"])
 
         # Créer le client
         accord = bool(data.consentement_marketing)
@@ -474,7 +488,7 @@ def create_or_get_client(data: ClientCreateRgpd, request: Request,
             source_consentement("comptoir" if user else "borne") if accord else None,
         ))
         row = cur.fetchone()
-    return row if user else reference_client(row["id"], request)
+        return avec_tombola(cur, row if user else reference_client(row["id"], request), row["id"])
 
 
 @router.patch("/{client_id}", response_model=dict)

@@ -702,6 +702,22 @@ class ApiClient {
   deleteClient(id) { return this.delete(`/api/clients/${id}`); }
   getClientTickets(id) { return this.get(`/api/clients/${id}/tickets`); }
 
+  // ─── TOMBOLA ───────────────────────────────
+  // Tombola ouverte aux inscriptions (publique : borne, dépôt en ligne, affiche) : { tombola | null }
+  getTombolaEnCours() { return this.get('/api/tombola/en-cours', { auth: false }); }
+  getTombolas() { return this.get('/api/tombola'); }
+  getTombola(id) { return this.get(`/api/tombola/${id}`); }
+  // Gérant (élévation admin) : créer, modifier, tirer au sort, annuler, tirer un remplaçant
+  createTombola(data) { return this.post('/api/tombola', data); }
+  updateTombola(id, data) { return this.patch(`/api/tombola/${id}`, data); }
+  tirerTombola(id) { return this.post(`/api/tombola/${id}/tirage`, {}); }
+  annulerTombola(id) { return this.post(`/api/tombola/${id}/annuler`, {}); }
+  remplacerGagnant(participationId) { return this.post(`/api/tombola/participations/${participationId}/remplacer`, {}); }
+  // Personnel : inscrire quelqu'un au comptoir (sans dépôt ni achat), retirer, suivre un gagnant
+  inscrireTombola(id, data) { return this.post(`/api/tombola/${id}/participants`, data); }
+  retirerParticipation(participationId) { return this.delete(`/api/tombola/participations/${participationId}`); }
+  suivreGagnant(participationId, data) { return this.patch(`/api/tombola/participations/${participationId}`, data); }
+
   // ─── RGPD ──────────────────────────────────
   // Politique de confidentialité (publique) : ni session ni élévation
   getConfidentialite() { return this.get('/api/public/confidentialite', { auth: false }); }

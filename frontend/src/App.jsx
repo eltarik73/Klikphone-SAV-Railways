@@ -51,6 +51,8 @@ const ConfidentialitePage = lazy(() => import('./pages/ConfidentialitePage'));
 // Modèles sans prix et alias (admin) — anciennement « Prix à revoir » (plus de propositions à valider)
 const ModelesSansPrixPage = lazy(() => import('./pages/ModelesSansPrixPage'));
 const ActiviteEquipePage = lazy(() => import('./pages/ActiviteEquipePage'));
+const TombolaPage = lazy(() => import('./pages/TombolaPage'));
+const TombolaAffichePage = lazy(() => import('./pages/TombolaAffichePage'));
 
 // Shell et pages staff les plus fréquentes, préchargés au repos UNIQUEMENT pour un utilisateur
 // connecté : un client sur /, /suivi ou /deposer ne télécharge aucun chunk réservé au personnel.
@@ -389,6 +391,10 @@ function AppRoutes() {
         <Route path="/tech/prix-a-revoir" element={<Navigate to="/tech/modeles-sans-prix" replace />} />
         <Route path="/accueil/activite" element={<AG targets={['accueil']}><ActiviteEquipePage /></AG>} />
         <Route path="/tech/activite" element={<AG targets={['tech']}><ActiviteEquipePage /></AG>} />
+        <Route path="/accueil/tombola" element={<P targets={['accueil']}><TombolaPage /></P>} />
+        <Route path="/tech/tombola" element={<P targets={['tech']}><TombolaPage /></P>} />
+        <Route path="/accueil/tombola/affiche" element={<P targets={['accueil']}><TombolaAffichePage /></P>} />
+        <Route path="/tech/tombola/affiche" element={<P targets={['tech']}><TombolaAffichePage /></P>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

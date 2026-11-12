@@ -537,6 +537,39 @@ le numéro de téléphone complet reste accepté sans limite de temps.
   réglages d'équipe actuels gardés, séquences recalées ; tout ou rien (une transaction). Un fichier v1 se restaure.
 - **Tests** : `tests/test_sauvegarde.py`, vitest `sauvegarde.test.jsx`.
 
+## Tombola des clients (`app/services/tombola.py`, `app/api/tombola.py`, 11/11/2026)
+
+- **Demande du gérant** : une tombola « dans les règles malikites » — le client coche une case à son inscription, le
+  logiciel tire au sort à une date précise ; une affiche pour l'annoncer.
+- **Règles tenues par le code** (ne pas les assouplir sans le gérant) : **aucune mise** (ni prix, ni ticket, ni montant
+  d'achat dans le schéma : sans mise ce n'est pas un jeu d'argent mais un don de la boutique attribué par tirage au sort),
+  **sans obligation d'achat** (le personnel inscrit au comptoir quelqu'un qui ne dépose rien), **une participation par
+  numéro de téléphone** (`UNIQUE (tombola_id, cle_personne)`, même chance pour tous, jamais plus de chances pour qui
+  dépense plus), **lots offerts et annoncés** (un lot par ligne = un gagnant par ligne, le premier tiré reçoit le premier),
+  **tirage loyal** (`secrets.SystemRandom`, une seule fois, à la date), **lot remis** (gagnant injoignable → remplaçant
+  tiré parmi les autres). Case **jamais pré-cochée** (contrairement aux offres de la boutique).
+- **Tables** `tombolas` (titre, lots, `tirage_le` TIMESTAMPTZ, statut `ouverte | tiree | annulee`, règlement, participants
+  au tirage, auteur) et `tombola_participations` (client, clé du numéro, source, `rang` = lot gagné, `prevenu_le`,
+  `lot_remis_le`, `remplace_le`) ; une seule tombola ouverte à la fois (`idx_tombolas_une_ouverte`).
+- **Inscription** : champ `tombola: true` de `POST /api/clients` (borne `/depot`, formulaire `/client`) et de
+  `POST /api/depot-distance` → `tombola.inscrire_sans_bloquer` (jamais bloquant pour le dépôt), réponse `tombola_inscrit` ;
+  au comptoir `POST /api/tombola/{id}/participants` (personnel). Composant `components/CaseTombola.jsx` (rien sans
+  tombola ouverte, règlement dans une fenêtre), `GET /api/tombola/en-cours` (public, cache 20 s).
+- **Tirage** : `tombola.demarrer_tirage_automatique` (lifespan, chaque minute, `FOR UPDATE SKIP LOCKED`, `KP_TOMBOLA_AUTO=0`
+  l'empêche) → `tirer` : autant de gagnants que de lots parmi les inscrits joignables et non anonymisés, équipe prévenue
+  (cloche + chat, sans nom). Les inscriptions s'arrêtent à l'heure du tirage. Admin (élévation) : créer, modifier,
+  « Tirer au sort maintenant », annuler (participations effacées), `POST …/participations/{id}/remplacer`.
+  Personnel : retirer une participation avant le tirage, noter « prévenu » / « lot remis ».
+- **RGPD** : participations non gagnantes effacées 90 jours après le tirage (`purger_anciennes`), effacées à
+  l'anonymisation d'un client, présentes dans l'export ; règlement automatique (`reglement_defaut`) ou écrit par le gérant.
+- **Écrans** : menu « Tombola » (`TombolaPage.jsx`, tout le personnel) ; affiche générée depuis la tombola ouverte
+  (`TombolaAffichePage.jsx`, `lib/afficheTombola.js` : canvas, A4 300 ppp à imprimer, Instagram 4:5, story 9:16, fond
+  clair ou sombre, noir et blanc + logo officiel ; la typographie se réduit si le contenu déborde, les trois garanties
+  « gratuite · sans obligation d'achat · une participation par personne » y figurent toujours).
+- **Tests** : `tests/test_tombola.py` (curseurs simulés, équité du tirage, routes ; base réelle via
+  `KP_TEST_DATABASE_URL`), vitest `tombola.test.jsx`. Essai local : configuration `backend-tombola` de
+  `.claude/launch.json` (base `kp_tombola` du conteneur `kp-testdb`).
+
 ## Workflow automatique après chaque modification UI
 
 Après chaque modification d'un fichier .tsx, .jsx ou .html dans src/components ou app/ :

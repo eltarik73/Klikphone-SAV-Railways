@@ -13,6 +13,7 @@ import {
 import { useCatalog } from '../hooks/useCatalog';
 import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, CONSENTEMENT_PAR_DEFAUT, useInfosRgpd } from './ConfidentialitePage';
+import CaseTombola from '../components/CaseTombola';
 import DelaiReparation from '../components/DelaiReparation';
 import { dateDelai, phrasePret } from '../lib/delai';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
@@ -44,6 +45,7 @@ const FORM_INITIAL = {
   categorie: '', marque: '', modele: '', modele_autre: '',
   panne: '', panne_detail: '', pin: '', pattern: '', acces_mode: null, notes_client: '',
   imei: '', carte_camby: false, consentement_marketing: CONSENTEMENT_PAR_DEFAUT, attente_boutique: false,
+  tombola: false,
 };
 
 // Session du personnel ouverte sur ce poste : tableau de bord de retour (/accueil ou /tech), sinon null
@@ -83,6 +85,7 @@ export default function ClientFormPage() {
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState(null);
   const [createdToken, setCreatedToken] = useState(null); // jeton du lien de suivi (si renvoyé)
+  const [tombolaInscrit, setTombolaInscrit] = useState(false);
   const [errors, setErrors] = useState({});
   const [countdown, setCountdown] = useState(null);
   const [retourEnCours, setRetourEnCours] = useState(false);
@@ -138,6 +141,7 @@ export default function ClientFormPage() {
     setAchatPrix('');
     setCreatedCode(null);
     setCreatedToken(null);
+    setTombolaInscrit(false);
     setStep(0);
     setErrors({});
     setCountdown(null);
@@ -330,6 +334,7 @@ export default function ClientFormPage() {
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
+        ...(form.tombola ? { tombola: true } : {}),
       }, { asStaff: modePersonnel });
       let client = await creerFiche();
       // Personnel sans fiche complète : le serveur a traité l'appel comme anonyme, le jeton du poste
@@ -344,6 +349,8 @@ export default function ClientFormPage() {
         return;
       }
       const refClient = modePersonnel ? { client_id: client.id } : { client_ref: client.client_ref };
+      setTombolaInscrit(Boolean(client.tombola_inscrit));
+      if (modePersonnel && client.tombola_inscrit) toast.success('Participation à la tombola enregistrée');
       const session = { asStaff: modePersonnel };
       const telContact = form.tel_contact.trim() || null;
 
@@ -793,6 +800,7 @@ export default function ClientFormPage() {
             {!sansModele && (
               <CaseAttente prefix={PREFIX} checked={form.attente_boutique} onChange={(v) => updateForm('attente_boutique', v)} />
             )}
+            <CaseTombola id={`${PREFIX}-tombola`} checked={form.tombola} onChange={(v) => updateForm('tombola', v)} />
             <ConsentementMarketing id={`${PREFIX}-consentement`} checked={form.consentement_marketing}
               onChange={(v) => updateForm('consentement_marketing', v)} />
             <MentionRgpd kiosque />
@@ -815,6 +823,9 @@ export default function ClientFormPage() {
             <p className="text-slate-600 mb-6">
               Conservez ce code pour suivre l'avancement de votre {isAchat ? 'achat' : isCommande ? 'commande' : 'réparation'}.
             </p>
+            {tombolaInscrit && (
+              <p className="text-slate-600 -mt-3 mb-6">Votre participation à la tombola est enregistrée.</p>
+            )}
             {countdown !== null && (
               <span className="block text-sm text-slate-600 tabular-nums mb-6">Retour à l'accueil dans {countdown} s</span>
             )}

@@ -28,6 +28,7 @@ from app.models import telephone_contact_canonique
 from app.services import contact
 from app.services.prestations import PRESTATIONS, cle_panne, normaliser
 from app.services.search import phone_canonical
+from app.services import tombola as tombola_service
 
 try:
     from zoneinfo import ZoneInfo
@@ -96,6 +97,8 @@ class DepotDistanceRequest(BaseModel):
     carte_camby: Optional[int] = 0
     rgpd_informe: Optional[bool] = None
     consentement_marketing: Optional[bool] = None
+    # Case « Je participe à la tombola » (jamais pré-cochée)
+    tombola: Optional[bool] = None
 
     @field_validator("nom", "prenom", "telephone", "email", "categorie", "marque",
                      "modele", "modele_autre", "panne", "panne_detail", "notes_client",
@@ -207,6 +210,8 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
             accord = data.consentement_marketing
             email_client = data.email or None
         enregistrer_consentements(cur, client_id, data.rgpd_informe, accord, canal="depot_distance")
+        tombola_inscrit = bool(data.tombola) and tombola_service.inscrire_sans_bloquer(
+            cur, client_id, data.telephone, "depot_distance")
 
         # Créer le ticket en statut "Pré-enregistré"
         cur.execute("""
@@ -258,7 +263,8 @@ def creer_depot_distance(data: DepotDistanceRequest, bg: BackgroundTasks, reques
 
     # Le jeton (= QR du ticket) n'est rendu qu'au demandeur : « Suivre ma réparation » s'ouvre
     # sans lui redemander le numéro qu'il vient de saisir
-    return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré", "suivi_token": jeton}
+    return {"id": tid, "ticket_code": code, "statut": "Pré-enregistré", "suivi_token": jeton,
+            **({"tombola_inscrit": tombola_inscrit} if data.tombola else {})}
 
 
 # ─── AUTH: Valider un pré-enregistrement ─────────────────────

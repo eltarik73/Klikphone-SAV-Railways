@@ -12,6 +12,7 @@ import { champsModele, modeleManquant, MARQUE_AUTRE } from '../lib/catalog';
 import { MentionRgpd, ConsentementMarketing, CONSENTEMENT_PAR_DEFAUT, useInfosRgpd } from './ConfidentialitePage';
 import { rechargerSiNouvelleVersion, useRechargementAuRepos, formulaireIntact } from '../lib/miseAJour';
 import { LogoKlikPhone } from '../components/LogoK';
+import CaseTombola from '../components/CaseTombola';
 import {
   ArrowLeft, ArrowRight, Check, CircleCheck, Smartphone, User, AlertTriangle, KeyRound, Plus, RotateCcw, ClipboardCheck,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ const INITIAL_FORM = {
   categorie: '', marque: '', modele: '', modele_autre: '',
   panne: '', panne_detail: '', pin: '', pattern: '', acces_mode: null, notes_client: '',
   imei: '', carte_camby: false, consentement_marketing: CONSENTEMENT_PAR_DEFAUT, attente_boutique: false,
+  tombola: false,
 };
 
 export default function DepotPage() {
@@ -46,6 +48,7 @@ export default function DepotPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [createdCode, setCreatedCode] = useState(null);
+  const [tombolaInscrit, setTombolaInscrit] = useState(false);
   const [countdown, setCountdown] = useState(null);
   const [retourEnCours, setRetourEnCours] = useState(false);
   const timerRef = useRef(null);
@@ -117,6 +120,7 @@ export default function DepotPage() {
     setStep(0);
     setErrors({});
     setCreatedCode(null);
+    setTombolaInscrit(false);
     setCountdown(null);
   };
 
@@ -191,7 +195,9 @@ export default function DepotPage() {
         telephone: form.telephone, email: form.email,
         societe: form.societe, carte_camby: form.carte_camby ? 1 : 0,
         rgpd_informe: true, consentement_marketing: Boolean(form.consentement_marketing),
+        ...(form.tombola ? { tombola: true } : {}),
       });
+      setTombolaInscrit(Boolean(client.tombola_inscrit));
       const result = await api.createTicket({
         client_ref: client.client_ref, categorie: form.categorie,
         marque: form.marque,
@@ -314,6 +320,7 @@ export default function DepotPage() {
               <EnTete icone={etape.icone} titre={etape.titre} sousTitre={etape.sousTitre} />
               <Recapitulatif sections={sectionsRecap} />
               <CaseAttente prefix={PREFIX} checked={form.attente_boutique} onChange={(v) => updateForm('attente_boutique', v)} />
+              <CaseTombola id={`${PREFIX}-tombola`} checked={form.tombola} onChange={(v) => updateForm('tombola', v)} />
               <ConsentementMarketing id={`${PREFIX}-consentement`} checked={form.consentement_marketing}
                 onChange={(v) => updateForm('consentement_marketing', v)} />
               <MentionRgpd kiosque />
@@ -335,6 +342,9 @@ export default function DepotPage() {
               <p className="text-slate-600 mb-6">
                 Conservez ce code pour suivre l'avancement de votre réparation.
               </p>
+              {tombolaInscrit && (
+                <p className="text-slate-600 -mt-3 mb-6">Votre participation à la tombola est enregistrée.</p>
+              )}
 
               {countdown !== null && (
                 <span className="block text-sm text-slate-600 tabular-nums mb-6">Retour automatique dans {countdown} s</span>
